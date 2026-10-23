@@ -5,9 +5,6 @@ import (
 	"strings"
 )
 
-// Limits is how many tokens one request to a model may use. Context is the
-// model's window, prompt and reply together; Output is kept free for the
-// reply, so a prompt may take Input() tokens.
 type Limits struct {
 	Context int `json:"context"`
 	Output  int `json:"output"`
@@ -22,11 +19,6 @@ func (l Limits) check() error {
 	return nil
 }
 
-// knownLimits are the published limits of models this library is used with.
-// A key matches a model name that equals it or continues it after a dash
-// ("gpt-4o" matches "gpt-4o-mini" and "gpt-4o-2024-08-06", not "gpt-4o1");
-// the longest matching key wins. Output is the most a reply may take, which
-// keeps the input side safe whatever reply length the provider defaults to.
 var knownLimits = map[string]Limits{
 	"gpt-4o":       {Context: 128_000, Output: 16_384},
 	"gpt-4.1":      {Context: 1_047_576, Output: 32_768},
@@ -57,9 +49,6 @@ var knownLimits = map[string]Limits{
 	"gemini-2.5-flash": {Context: 1_048_576 + 65_536, Output: 65_536},
 }
 
-// Limits returns the limits of a model on this connection: the ones the
-// connection was given for that exact name first, then the known ones. A model
-// with neither is an error, not a guess.
 func (c *OpenAI) Limits(model string) (Limits, error) {
 	if l, ok := c.limits[model]; ok {
 		if err := l.check(); err != nil {

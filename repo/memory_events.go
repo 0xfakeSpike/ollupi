@@ -7,9 +7,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// MemoryEventRow is one pending memory job. Events are append-only: every
-// relevant source change inserts a new row and the worker consumes the rows it
-// read by ID. There is no version column or revision reconciliation.
 type MemoryEventRow struct {
 	ID          int64  `gorm:"primaryKey;autoIncrement"`
 	WorkspaceID string `gorm:"not null;default:'';index:memory_events_scope"`
@@ -59,9 +56,6 @@ func (d *DB) DeferEvent(id int64, message string, nowMillis int64) (bool, error)
 	return res.RowsAffected == 1, res.Error
 }
 
-// memoryTriggersSQL emits memory events only for terminal state, not for every
-// streaming item write: a turn becoming completed/failed/interrupted is the
-// only in-conversation trigger, plus workspace, thread and cron job changes.
 func memoryTriggersSQL() string {
 	return `
 CREATE TRIGGER memory_turn_ended AFTER UPDATE OF status ON turns

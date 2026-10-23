@@ -19,10 +19,6 @@ type job struct {
 	args map[string]any
 }
 
-// planCalls walks the in-progress call items once and turns each into an
-// action, without executing anything. It keeps the original semantics: an
-// approval wait stops later calls, and once a call decided the turn must stop,
-// the remaining calls are skipped.
 func (rt *Runtime) planCalls(ctx context.Context) (callPlan, error) {
 	var plan callPlan
 	halt := ""
@@ -61,9 +57,6 @@ func (rt *Runtime) readOnly(tool string) bool {
 	return ok && d.Annotations.ReadOnlyHint && !d.Serial
 }
 
-// handleCall decides what one in-progress call item needs next. At most one of
-// pending and ready is returned: pending means the call waits for the user
-// (approval), ready carries the work to execute.
 func (rt *Runtime) handleCall(ctx context.Context, it repo.ItemRow) (string, *repo.ItemRow, *job, error) {
 	if it.Await != nil {
 		return "", nil, nil, nil
@@ -85,8 +78,6 @@ func (rt *Runtime) handleCall(ctx context.Context, it repo.ItemRow) (string, *re
 		h, err := rt.refuse(it, fmt.Sprintf("invalid arguments for %s: %v", it.Tool, err))
 		return h, nil, nil, err
 	}
-	// The limit is a hard stop: check it before anything with side effects,
-	// so the loop cannot be pushed past it by expensive prepares or approvals.
 	if rt.toolCalls() >= maxToolCalls {
 		if err := rt.fail(it, "skipped: the tool call limit for this turn was reached"); err != nil {
 			return "", nil, nil, err
@@ -167,9 +158,6 @@ func callArguments(it repo.ItemRow) (map[string]any, error) {
 	return args, nil
 }
 
-// toolCalls counts every call item that has been handled: executed, failed,
-// declined, skipped, or still waiting. Refused calls count too, otherwise the
-// model could push the turn past the limit with invalid calls.
 func (rt *Runtime) toolCalls() int {
 	n := 0
 	for _, it := range rt.Items {

@@ -10,12 +10,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// responseRecorder accumulates the streamed parts of one model response and
-// writes them as items. Each response has one context/usage carrier: the agent
-// message item when there is one, otherwise the first tool call, otherwise the
-// reasoning item. The carrier holds the response's ContextStats and Usage so
-// the context manager can calibrate its token estimate against the provider's
-// real count.
 type responseRecorder struct {
 	rt    *Runtime
 	id    string
@@ -63,8 +57,6 @@ type responsePart struct {
 	text string
 }
 
-// finish completes the text items of a successful response. The agent message
-// carries the stats/usage when it exists; otherwise the reasoning item does.
 func (r *responseRecorder) finish(resp llm.ChatResponse) error {
 	if r.err != nil {
 		return r.err
@@ -93,8 +85,6 @@ func (r *responseRecorder) finish(resp llm.ChatResponse) error {
 	return nil
 }
 
-// fail marks the streamed items as failed, or records one error item when
-// nothing was streamed yet.
 func (r *responseRecorder) fail(cause error) error {
 	if r.reasoning == nil && r.agent == nil {
 		now := time.Now().UTC()

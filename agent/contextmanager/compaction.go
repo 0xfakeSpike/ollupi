@@ -24,8 +24,6 @@ func (m *Manager) CompactionPrompt(in Input) (Prompt, error) {
 		return Prompt{}, err
 	}
 	instructions := llm.ChatMessage{Role: llm.RoleUser, Content: compactionInstructions}
-	// After an earlier compaction the first message is its summary, which the
-	// new one has to build on: trimming drops whole user turns after it.
 	keep := 0
 	if latestCompaction(in.Items) >= 0 {
 		keep = 1
@@ -85,8 +83,6 @@ func (m *Manager) compactedHistory(before []repo.ItemRow, summary string) string
 	return b.String()
 }
 
-// recentArtifacts keeps the most recently brought artifacts that fit the
-// budget together, in their original order, and names the rest.
 func recentArtifacts(active []tools.ContextArtifact, budget int) (kept, dropped []tools.ContextArtifact) {
 	used := 0
 	fits := make([]bool, len(active))
@@ -123,8 +119,6 @@ func recentUserMessages(items []repo.ItemRow, budget int) []string {
 	return out
 }
 
-// nextUserMessage is the first user message after the one at keep, so that
-// messages[keep:next] is the oldest whole turn that can be dropped.
 func nextUserMessage(messages []llm.ChatMessage, keep int) int {
 	for i := keep + 1; i < len(messages); i++ {
 		if messages[i].Role == llm.RoleUser {

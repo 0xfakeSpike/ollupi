@@ -20,18 +20,12 @@ type slot struct {
 	steered bool
 }
 
-// work is one queue element: the smallest identifiers a consumer needs. Every
-// relational detail (thread, workspace, items) is read from SQL at consumption
-// time; the only in-memory objects involved come from the agent itself.
 type work struct {
 	threadID string
 	turnID   string
 	ctx      context.Context
 }
 
-// scheduler owns the shared turn queue, the per-thread cancellation slots and
-// the persistent consumers. It is the only place that decides whether a turn
-// continues, waits, or ends.
 type scheduler struct {
 	a   *Agent
 	ctx context.Context
@@ -80,7 +74,6 @@ func (s *scheduler) queued(threadID string) bool {
 	return slices.ContainsFunc(s.queue, func(w work) bool { return w.threadID == threadID })
 }
 
-// nextWork blocks a consumer until a turn is queued or the agent shuts down.
 func (s *scheduler) nextWork() (work, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -138,8 +131,6 @@ func (s *scheduler) run(w work) {
 	s.afterStep(w.threadID, outcome, err, interrupted)
 }
 
-// release cancels and forgets the slot of a thread whose turn is no longer
-// running on this work item.
 func (s *scheduler) release(threadID string) {
 	if sl, exists := s.slots[threadID]; exists {
 		sl.cancel()
@@ -147,7 +138,7 @@ func (s *scheduler) release(threadID string) {
 	}
 }
 
-func (s *scheduler) afterStep(threadID string, outcome runtime.Outcome, err error, interrupted bool) {
+func (s *scheduler) afterStep(threadID string, outcome runtime.Outcome, stepErr error, interrupted bool) {
 	sl, ok := s.slots[threadID]
 	if !ok {
 		return
@@ -163,14 +154,14 @@ func (s *scheduler) afterStep(threadID string, outcome runtime.Outcome, err erro
 		return
 	}
 	switch {
-	case s.ctx.Err() != nil && (err != nil || interrupted):
-		log.Printf("agent: thread %s turn %s left in progress at shutdown: %v", threadID, turn.ID, err)
+	case s.ctx.Err() != nil && (stepErr != nil || interrupted):
+		log.Printf("agent: thread %s turn %s left in progress at shutdown: %v", threadID, turn.ID, stepErr)
 	case interrupted:
 		turn.Status, turn.Error = repo.TurnInterrupted, "interrupted by the user"
 		s.endTurn(turn)
-	case err != nil:
-		turn.Status, turn.Error = repo.TurnFailed, err.Error()
-		log.Printf("agent: thread %s turn %s failed: %v", threadID, turn.ID, err)
+	case stepErr != nil:
+		turn.Status, turn.Error = repo.TurnFailed, stepErr.Error()
+		log.Printf("agent: thread %s turn %s failed: %v", threadID, turn.ID, stepErr)
 		s.endTurn(turn)
 	case outcome == runtime.Continue || (outcome == runtime.Done && sl.steered):
 		s.enqueue(threadID, turn.ID)
@@ -293,8 +284,6 @@ func (s *scheduler) sendJob(view repo.ThreadView, job repo.CronJobRow) error {
 	return err
 }
 
-// recover rebuilds the queue from SQL: close items cut off by a restart, settle
-// subagent calls whose children already ended, and enqueue every ready turn.
 func (s *scheduler) recover() error {
 	active, err := s.a.DB.ActiveThreadIDs()
 	if err != nil {
