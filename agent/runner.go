@@ -9,8 +9,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/repo"
 )
 
-// step assembles one iteration of a turn: the runtime executor filled with the
-// turn's immutable context and this iteration's items.
 func (a *Agent) step(ctx context.Context, view repo.ThreadView, turn repo.TurnRow) (runtime.Outcome, repo.Usage, error) {
 	if _, err := a.modelOn(turn.Model.Connection); err != nil {
 		return runtime.Done, repo.Usage{}, err

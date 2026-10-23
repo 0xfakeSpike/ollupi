@@ -10,8 +10,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/repo"
 )
 
-// policyFor resolves the approval policy of a thread: thread override, then
-// workspace setting, then the agent default.
 func (a *Agent) policyFor(t repo.ThreadRow) permission.Policy {
 	if t.ApprovalPolicy != "" {
 		return permission.Policy(t.ApprovalPolicy)
@@ -22,8 +20,6 @@ func (a *Agent) policyFor(t repo.ThreadRow) permission.Policy {
 	return a.ApprovalPolicy
 }
 
-// rulesFor resolves the permission rules of a thread: workspace rules replace
-// the agent defaults when set; subagents additionally lose the Agent tool.
 func (a *Agent) rulesFor(t repo.ThreadRow) permission.Rules {
 	rules := a.Permissions
 	if w, err := a.workspaceOf(t); err == nil && w.Permissions.Set() {
@@ -42,9 +38,6 @@ func (a *Agent) workspaceOf(t repo.ThreadRow) (repo.WorkspaceRow, error) {
 	return a.DB.Workspace(t.WorkspaceID)
 }
 
-// ValidateWorkspaceSettings checks a stored workspace profile. An empty policy
-// means "inherit the agent default", and empty rules mean "inherit the agent
-// rules", so validation runs on the effective values.
 func (a *Agent) ValidateWorkspaceSettings(policy string, rules repo.PermissionRules) error {
 	if a.registry == nil {
 		return fmt.Errorf("agent: the tool registry is not ready")

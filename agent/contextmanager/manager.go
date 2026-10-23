@@ -11,8 +11,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/repo"
 )
 
-// Manager builds the prompts of one model. Every budget it hands out is a
-// share of that model's input limit, which pkg/llm reports.
 type Manager struct {
 	model       string
 	inputTokens int
@@ -30,8 +28,6 @@ const (
 
 func share(inputTokens, pct int) int { return max(256, inputTokens*pct/100) }
 
-// Fits reports whether the parts sent with every request, the system prompt
-// and the tool definitions, leave room for a conversation.
 func (m *Manager) Fits(system string, tools any) error {
 	s := m.stats(system, nil, tools)
 	if limit := m.inputTokens * fixedPercent / 100; s.EstimatedTokens > limit {
@@ -90,11 +86,6 @@ func (m *Manager) stats(system string, messages []llm.ChatMessage, tools any) re
 	return s
 }
 
-// calibrate corrects the estimate with the provider's count. The latest
-// response to this model since the latest compaction carries both the estimate
-// of the prompt it was sent and the prompt tokens the provider counted; the
-// prompt now is that count plus what the estimate grew by since. Before a
-// compaction the prompt had another shape, so nothing there is used.
 func (m *Manager) calibrate(s *repo.ContextStats, items []repo.ItemRow) {
 	for i, from := len(items)-1, latestCompaction(items); i > from; i-- {
 		it := items[i]
@@ -115,15 +106,10 @@ func (m *Manager) MemoryBudget() int {
 	return max(0, min(2000, m.inputTokens*5/100))
 }
 
-// ArtifactBudget bounds the context artifacts (activated skills) one tool
-// result may bring, and all the active ones a compacted history carries.
 func (m *Manager) ArtifactBudget() int {
 	return share(m.inputTokens, artifactPercent)
 }
 
-// CheckArtifacts refuses artifacts that would not fit their budget, so a
-// skill too large for this model is an error the model sees instead of a
-// prompt that can no longer be compacted.
 func (m *Manager) CheckArtifacts(artifacts []tools.ContextArtifact) error {
 	if len(artifacts) == 0 {
 		return nil
@@ -227,8 +213,6 @@ func (m *Manager) transcript(items []repo.ItemRow, turnID string, memory string)
 	return out, nil
 }
 
-// activeArtifacts returns the latest version of every artifact the items
-// brought, ordered by when each was last brought in.
 func activeArtifacts(items []repo.ItemRow) []tools.ContextArtifact {
 	var out []tools.ContextArtifact
 	for _, it := range items {

@@ -14,8 +14,6 @@ import (
 
 const maxTurnEntries = 20
 
-// Context selects and renders the long-term memories a turn should see,
-// limited by the caller's token budget. An empty result is a valid answer.
 func (m *Manager) Context(workspaceID, query string, budget int) (Context, error) {
 	if !m.opts.Use || budget <= 0 {
 		return Context{}, nil

@@ -10,10 +10,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// commit applies one batch's extraction to the memories of its scope inside a
-// single transaction. Current rows are re-read at apply time so user edits
-// made while the model was running take precedence (last write wins); there is
-// no revision comparison.
 func commit(db *repo.DB, b *Batch, ops []Operation, report repo.MemoryReport) error {
 	if b == nil || len(b.Events) == 0 {
 		return errors.New("memory batch has no events")
@@ -110,9 +106,6 @@ func (s *applyState) apply(ops []Operation) error {
 	return nil
 }
 
-// prepare validates an operation's target and returns the row it will write.
-// skip reports an operation that must be dropped (already covered, forgotten,
-// or user-edited) rather than applied.
 func (s *applyState) prepare(op Operation) (repo.MemoryRow, bool, error) {
 	switch op.Action {
 	case "add":
@@ -142,9 +135,6 @@ func (s *applyState) prepare(op Operation) (repo.MemoryRow, bool, error) {
 	}
 }
 
-// evidenceFor resolves the operation's citations to canonical sources. blocked
-// reports evidence a forgotten memory owns or, for active writes, sources that
-// no longer exist.
 func (s *applyState) evidenceFor(op Operation) ([]repo.MemorySource, bool, error) {
 	sources := []repo.MemorySource{}
 	seen := map[string]bool{}
@@ -210,8 +200,6 @@ func (s *applyState) assign(e *repo.MemoryRow, op Operation, sources []repo.Memo
 	return nil
 }
 
-// retireDeletedSources retires active memories that cite an entity deleted in
-// this batch.
 func (s *applyState) retireDeletedSources(deleted map[string]bool) error {
 	for _, e := range s.byID {
 		if e.Status != "active" || e.UserEdited {

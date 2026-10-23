@@ -36,10 +36,6 @@ type callPlan struct {
 	actions []callAction
 }
 
-// executePlan runs a plan in order. Consecutive read-only actions execute in
-// parallel; a serial action flushes the pending read-only batch and runs
-// alone. A wait action ends the step with Wait, and a halt action finishes the
-// turn after everything planned before it has completed.
 func (rt *Runtime) executePlan(ctx context.Context, plan callPlan) (Outcome, bool, error) {
 	var batch []job
 	halt := ""
@@ -135,9 +131,6 @@ func (rt *Runtime) executePlan(ctx context.Context, plan callPlan) (Outcome, boo
 	return Continue, false, nil
 }
 
-// runJobs executes a batch in parallel, records their progress lines in order,
-// and returns the results. It is also used with one job for serial calls, so
-// progress and recording behave the same in both paths.
 func (rt *Runtime) runJobs(ctx context.Context, jobs []job) []tools.Result {
 	results := make([]tools.Result, len(jobs))
 	progress := make(chan string, 64)

@@ -114,7 +114,7 @@ pkg/*
 2. **runtime 只通过 `agent/tools` 使用工具**,不直接 import 任何具体工具。加一个工具或去掉一个工具都不用改 runtime。
 3. **不随手加 interface。** 只有真的有多个实现时才用 interface。
 
-项目还在快速迭代,目前没有测试,等实现稳定后再补。代码里不写注释,设计说明都在这份 README 里。
+项目不带测试,代码里不写注释(只保留 `//go:build`、`//go:embed` 这类编译指令),设计说明都在这份 README 里。
 
 **agent 与 runtime 的几个关键行为**:
 
@@ -125,7 +125,7 @@ pkg/*
 - **runtime 不认识任何具体工具。** 所有工具都来自注册表,runtime 只认工具结果的一种形态:`tools.Result.Await`,表示"这次调用在 turn 内答不了,由用户或另一个 agent 回答"。runtime 把它记在 item 上(调用保持进行中),继续处理同一回复里后面的调用;处理完后只要还有等待中的调用,这次迭代就以 `Wait` 结束。回答由 agent 写成那条调用的普通结果,turn 回到队列。审批不一样:等批准的调用会挡住后面的调用,因为后面的调用可能依赖它的效果。
 - **模型跟着 turn 走。** 模型是一个值 `llm.Model{Name, Connection, Thinking}`,turn 开始时确定并存进 turn,之后这个 turn 的每次请求、重启后的恢复都用它。 用户可选的模型就是 `Agent.Models`,一组 `llm.Model`,每个连接一个,连接名(`Connection`)就是它的标识;不另设"模型档案"类型。`model/list` 返回这组模型和默认连接,`turn/start` 用 `connection` 指定这一轮用哪个,不指定就沿用这个会话上一轮的,新会话用 `Models` 的第一个。 模型(`llm.Model`,存进 turn 的值)和怎么连上它(`*llm.OpenAI`,客户端)是两回事:`Agent.Connections` 按连接名给出每个连接的客户端,`Start` 时检查 `Models` 里每个连接都有客户端;执行一个 turn 时,agent 按这个 turn 的 `Model.Connection` 取出客户端交给执行器。
 - **没有子代理这个实体。** 派生出来的 turn 就是同一个 agent 在干活:同样的 prompt、工具、模型(沿用父 turn 的)和审批策略,任务内容来自父 turn 那次 `Agent` 调用的参数;每个派生的 turn 放在一个子会话里(有 `ParentThreadID`,会话列表里不显示),上下文只有这个任务。它不能再派生:system message 里写明了这一点,工具列表里没有 `Agent`(加了一条 deny 规则),就算真发起了 `Agent` 调用,agent 派生时也会拒绝。父 turn 等待时不在队列里;子 turn 结束时报告写回那次调用,全部到齐父 turn 才回到队列。
-- **记忆在 turn 开始时冻结一次。** 第一次模型调用前,runtime 把本 turn 的用户消息和 contextmanager 给的预算交给 `memory.Context`,把返回的条目和文本记成 `memoryContext` item;之后的请求、审批后的恢复、重启都只读这个 item。"用哪些消息做查询、挑哪些、怎么控制长度、读失败怎么办"全在 memory 包里;runtime 只负责时机和记录。
+- **记忆在 turn 开始时冻结一次。** 第一次模型调用前,runtime 把本 turn 的用户消息和 contextmanager 给的预算交给 `memory.Context`,把返回的条目和文本记成 `memoryContext` item;之后的请求、审批后的恢复、重启都只读这个 item。召回只发生在这个 turn 还没有任何模型调用、也没有 `memoryContext` item 的那次迭代:召回为空或失败,整个 turn 就不带记忆;运行中追加的消息(`SteerTurn`)不会触发重新召回。这样一个 turn 内 prompt 的前缀不变,便于服务商的前缀缓存。"用哪些消息做查询、挑哪些、怎么控制长度、读失败怎么办"全在 memory 包里;runtime 只负责时机和记录。
 - **上限只防失控。** 每个 turn 默认最多 200 次模型调用、400 次工具调用、连续 10 次失败(`agent/runtime` 里的常量,不对外配置)。Codex 没有上限,这些数值只是为了拦住陷入死循环的模型,不会打断正常的长任务。
 - **不另记执行日志。** 执行过程的每一步都已经是 SQL 里的 item(模型调用的上下文统计和用量、工具调用的参数、审批、结果和错误、等待、压缩、强制收尾的原因),所以 runtime 和工具注册表不再往日志里重复写一遍;日志只记录 SQL 里没有的东西,也就是写库本身失败、后台循环出错、连接异常这类错误。
 - **暂时没有缓存。** 所有数据只存在数据库里,每次读都查库。等业务代码稳定后,再按实际需要在合适的位置加缓存。
@@ -133,7 +133,7 @@ pkg/*
 
 **各包职责**:
 
-- `agent` — 整个系统:它自己的 prompt、模型、工具、审批策略、权限规则(审批策略、权限规则和模型在 turn 创建时存进 turn;派生出来的子会话额外禁止再派生),以及一条跨线程共享的 turn 队列(`queue.go`)和多个常驻消费者。队列元素只带 threadID 和 turnID,消费者按 ID 从 SQL 现查 thread、workspace 和 items,再用 turn 里记录的模型连接取 LLM 客户端;线程、工作区和业务数据之间没有别的传递通道,也没有内存缓存。会话、turn、item 的存取规则分在 `threads.go`、`turns.go`、`items.go`:一个会话同时只有一个进行中的 turn、只写进行中 turn 的 item、item 不改类型和所属 turn、已准备的调用不能改;不存任何状态,每次读都查库,每次写都在一个事务里先读、检查规则、再写。写入都是 agent 的不导出方法,所以每次写入都伴随它的事件推送和调度。它只认工作区的一条规则:归档了的工作区不能开新会话、新 turn;项目根目录交给工具(`tools.Caller.Root`),目录能不能跑命令由 shell 在跑命令时判断。审批策略和权限规则按 会话覆盖 > 工作区设置 > agent 默认 解析(`policyFor` / `rulesFor`)。消费者把 turn 交给 runtime 跑一次迭代,按结果放回队列、等待或结束;用户的新消息、追加消息(`SteerTurn`)、批准、回答、中断、子代理的派生和报告、到期定时任务的发送、重启恢复都是它的方法。agent 有要告诉用户的事(流式文字、新的或完成的 item、等批准或回答、turn 开始和结束、会话状态),就调用应用给的 `OnEvent` 回调;它在 agent 持锁时被调用,必须很快返回、不能回调 agent。
+- `agent` — 整个系统:它自己的 prompt、模型、工具、审批策略、权限规则(审批策略、权限规则和模型在 turn 创建时存进 turn;派生出来的子会话额外禁止再派生),以及一条跨线程共享的 turn 队列和多个常驻消费者(`scheduler.go`:队列、worker、继续/等待/结束的判定、定时任务的发送、重启恢复;turn 的开始、追加、中断、子代理派生与报告在 `turnflow.go`)。队列元素只带 threadID 和 turnID,消费者按 ID 从 SQL 现查 thread、workspace 和 items,再用 turn 里记录的模型连接取 LLM 客户端;线程、工作区和业务数据之间没有别的传递通道,也没有内存缓存。会话、turn、item 的存取规则分在 `threads.go`、`turns.go`、`items.go`:一个会话同时只有一个进行中的 turn、只写进行中 turn 的 item、item 不改类型和所属 turn、已准备的调用不能改;不存任何状态,每次读都查库,每次写都在一个事务里先读、检查规则、再写。写入都是 agent 的不导出方法,所以每次写入都伴随它的事件推送和调度。它只认工作区的一条规则:归档了的工作区不能开新会话、新 turn;项目根目录交给工具(`tools.Caller.Root`),目录能不能跑命令由 shell 在跑命令时判断。审批策略和权限规则按 会话覆盖 > 工作区设置 > agent 默认 解析(`policyFor` / `rulesFor`)。消费者把 turn 交给 runtime 跑一次迭代,按结果放回队列、等待或结束;用户的新消息、追加消息(`SteerTurn`)、批准、回答、中断、子代理的派生和报告、到期定时任务的发送、重启恢复都是它的方法。agent 有要告诉用户的事(流式文字、新的或完成的 item、等批准或回答、turn 开始和结束、会话状态),就调用应用给的 `OnEvent` 回调;它在 agent 持锁时被调用,必须很快返回、不能回调 agent。
 - `agent/runtime` — ReAct 循环的一次迭代(`Runtime.Step`):先处理上次留下的调用,再请求一次模型并处理它的调用,返回 `Continue` / `Wait` / `Done`。`Runtime` 是一个 turn 的执行器,不是全局共享的对象:worker 每跑一次迭代就由 agent 新建一个,填上它用的部件(这个 turn 所在连接的模型客户端 `LLM`、工具注册表 `Registry`、技能目录、上下文管理、记忆)和这次要执行的东西:turn 本身(`Turn` 就是 `repo.TurnRow`,模型也从它上面取)、prompt、这个 turn 可用的工具(`Tools`)、权限检查器、调用者(会话、项目根目录)、写 item 的函数,以及这个 turn 已有的 item(`Items`)和之前各 turn 的 item(`History`,只用来拼上下文和查本会话的授权)。这次迭代里新产生的 item(模型的回答、工具调用和结果、进度、压缩)都由它记下并追加到 `Items`;迭代中的工作状态(system message、脱敏表、用量)是它的不导出字段,迭代结束就和它一起丢掉,迭代之间不保留状态。并行执行的工具只拿到注册表和调用者,碰不到执行器的状态。文件按内容分:`runtime.go`(Runtime 与一次迭代的流程)、`calls.go`(把每条调用判定成 run / 并行读 / 跳过 / 等待 / 停止的动作,不执行)、`execute.go`(按顺序执行动作,相邻只读并行、串行单独跑、停止后跳过)、`chat.go`(和模型的一次对话:拼请求、需要时先压缩、脱敏后发送再还原、检查回答、记下它请求的工具调用)、`stream.go`(流式文字)。每个响应的 token 统计挂在它的 agentMessage item 上;只有工具调用的响应挂在第一条 toolCall 上,contextmanager 用它校准预算。
 - `agent/permission` — 授权判断:权限规则(deny / ask / allow,Claude Code 语法)、审批策略(`untrusted` / `on-request` / `never`)、用户之前"本会话都允许"的回答。`New` 在启动时对照工具目录检查规则,`Decide` 对一次调用按固定顺序给出 执行 / 问用户 / 拒绝:越权提权(`never` 下)→ deny → ask → allow → 本会话已允许 → 审批策略。工具只声明事实(只读、访问外部、规则匹配的内容、命令怎么跑),判断都在这里。它只管决策,配置的持久化归属是 `repo.WorkspaceRow`(审批策略和规则都存成工作区字段)和 turn 的快照。
 - `agent/contextmanager` — 把 system message 和对话拼成一次请求、按预算截断和压缩。预算是当前 turn 所用模型的输入上限(来自 `pkg/llm`);请求大小先按字符估算,再用同一模型上一次请求的真实 prompt tokens 校准。给出记忆、技能目录和已激活技能能占的预算(`MemoryBudget`、`SkillBudget`、`ArtifactBudget`)。
@@ -142,14 +142,14 @@ pkg/*
 - `agent/tools/shell` — `run_command` 工具:命令能在哪些目录跑(由调用者的项目根目录和配置现算,`dirs.go`)、命令参数、提权申请(`require_escalated`)、超时与黑名单,命令经 `pkg/sandbox` 执行;`shell.Config` 是用户可配的 exec 设置(带 JSON 字段名,`Normalize` 是唯一一份校验规则),agent 自己的数据目录和 skills 由它固定保护,应用不必也不能关掉。
 - `agent/tools/mcp` — 远程 MCP 服务器的客户端,把它的工具接入注册表。
 - `agent/tools/plan`、`agent/tools/userinput` — `update_plan`(计划就是调用参数)和 `request_user_input`(结果是 `Await` 给用户,回答成为调用结果)。
-- `agent/tools/cron` — 定时任务的四个工具(创建、暂停/恢复、删除、列出),`*cron.Jobs` 本身就是工具提供者,读写 `repo` 的 cron_jobs 表:每个任务属于一个会话(`thread_id`,会话删除时一并删除),存着下次运行时间(`next_run_at`)。它只记录;到期的任务由 agent 发出(`agent/cron.go`,直接查 `DB.DueCronJobs`)。
+- `agent/tools/cron` — 定时任务的四个工具(创建、暂停/恢复、删除、列出),`*cron.Jobs` 本身就是工具提供者,读写 `repo` 的 cron_jobs 表:每个任务属于一个会话(`thread_id`,会话删除时一并删除),存着下次运行时间(`next_run_at`)。它只记录;到期的任务由 agent 的调度器发出(`agent/scheduler.go`,直接查 `DB.DueCronJobs`)。
 - `agent/tools/subagent` — `Agent` 工具:模型用它派生子任务(简短说明 + 完整任务),结果是 `Await` 给另一个 turn;派生由 agent 完成。
 - `agent/skills` — Agent Skills:`skills.New(dir)` 扫描、校验技能目录,得到的 `*skills.Catalog` 既是 runtime 把技能列进 prompt 的来源,本身也是提供列出、激活、读取资源三个工具的提供者。
 - `agent/memory` — 长期记忆:后台抽取(只处理已完成/失败/中断的 turn 和工作区、会话、定时任务的变化)、列出(`List`)、用户编辑与遗忘(`Edit`、`Forget`,文字长度和凭据只在这里检查一次)、状态(`Status`);以及每个 turn 开始时给它的记忆(`Context`):在调用方给的 token 预算内挑选、排序并渲染成 `memoryContext` item。
 
 - `gateway` — WebSocket 上的 JSON-RPC 2.0 网关,方法名对齐 Codex app-server;另有 Ollupi 自己能力的方法(`memory/*`、`workspace/*`,以及直接调用工具的 `tool/call`)。应用自己的方法(比如读写它的配置文件)通过 `Options.Methods` 注册,不属于 Ollupi 的协议,也不能覆盖协议里的方法名。 应用用 `gateway.NewServer(agent, options)` 建好服务(长期记忆的接口直接用 `agent.Memory`),在 `agent.Start` 之前把 `agent.OnEvent` 接到 `server.Deliver`,再 `server.Serve(ctx, listener)`。`Deliver` 只是挑出关心这个会话的连接,把通知放进各自的发送队列,马上返回。 工作区的增删改查是界面的操作,也都在这里(`workspaces.go`):直接读写 `repo` 的工作区表;添加时把路径规范成真实目录(`sandbox.CanonicalDirectory`,shell 判断命令目录用的也是这一个),同一个目录再加一次复用已有的工作区,已归档的顺便恢复;`workspace/add` 和 `workspace/updatePermissions` 可以带上审批策略与权限规则,校验规则与 `agent/permission` 共用一套。
 - `repo` — 数据库和数据模型,通过 gorm:打开 SQLite(WAL、外键、单连接),用行结构体建表(gorm 的 AutoMigrate,开发期没有 schema 版本,格式不兼容时重建数据库,不做旧库兼容迁移);gorm 不建模的部分(记忆事件队列的触发器)是原生 SQL(在 `memory_events.go` 里),每次打开时重建;触发器只关注终态 turn 和少数字段,不追每次 item 写入。每张表的读写方法。不变的列由带条件的 upsert 保护:改了不该改的列,写入就失败。
-- `pkg/llm` — 和模型对话的类型(`Model`、`ChatRequest`、`ChatResponse`)与 OpenAI 兼容 Chat Completions 客户端 `*llm.OpenAI`。模型客户端不是 interface:所有模型都走 OpenAI 兼容接口,测试时把客户端指向一个本地的假服务器即可。
+- `pkg/llm` — 和模型对话的类型(`Model`、`ChatRequest`、`ChatResponse`)与 OpenAI 兼容 Chat Completions 客户端 `*llm.OpenAI`。模型客户端不是 interface:所有模型都走 OpenAI 兼容接口,需要假模型时把客户端指向一个本地的假服务器即可。
 - `pkg/sandbox` — macOS Seatbelt 沙箱:策略、profile、域名代理、进程监管、主机进程运行。
 - `pkg/jsonrpc` — WebSocket 上的双向 JSON-RPC 2.0 连接。每个连接有自己的发送队列和写 goroutine:发出的响应、通知、请求先入队,按顺序写出;一个读得慢的客户端只会拖慢它自己。
 - `pkg/redact` — 敏感值脱敏与还原。

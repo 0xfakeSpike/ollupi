@@ -191,8 +191,6 @@ func resultText(it repo.ItemRow) string {
 	return string(it.Result.Output)
 }
 
-// visibleEvidence drops facts a forgotten memory owns, so extraction cannot
-// recreate what the user deliberately removed.
 func visibleEvidence(batch *Batch) *Batch {
 	blocked := map[string]bool{}
 	for _, e := range batch.Existing {

@@ -36,8 +36,6 @@ func (a *Agent) checkModels() error {
 	return nil
 }
 
-// contextsFor builds the prompts of a turn on model m, within the limits its
-// connection reports for it.
 func (a *Agent) contextsFor(m llm.Model) (*contextmanager.Manager, error) {
 	conn := a.Connections[m.Connection]
 	if conn == nil {
@@ -50,8 +48,6 @@ func (a *Agent) contextsFor(m llm.Model) (*contextmanager.Manager, error) {
 	return contextmanager.New(m.Name, limits), nil
 }
 
-// checkBudgets makes sure every model has known limits and room for a
-// conversation next to the system prompt and the tool definitions.
 func (a *Agent) checkBudgets() error {
 	descriptors, _, err := a.toolsFor(a.Tools, a.ApprovalPolicy, a.Permissions)
 	if err != nil {

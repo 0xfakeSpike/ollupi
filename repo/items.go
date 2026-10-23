@@ -64,10 +64,6 @@ const (
 	ItemDeclined   ItemStatus = "declined"
 )
 
-// ContextStats describes one prompt. EstimatedTokens is the character-based
-// estimate of its parts; CalibratedTokens is what the budget is checked
-// against: the provider's count of an earlier prompt to the same model plus
-// the estimated growth since (the plain estimate when there is no such count).
 type ContextStats struct {
 	Model            string `json:"model,omitempty"`
 	BudgetTokens     int    `json:"budgetTokens"`

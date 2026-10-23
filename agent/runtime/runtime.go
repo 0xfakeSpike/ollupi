@@ -80,7 +80,7 @@ func (rt *Runtime) start() error {
 		Agent: rt.Prompt, Subagent: rt.Caller.Subagent, Root: rt.Caller.Root,
 		Skills: catalog, SkillTokens: rt.Contexts.SkillBudget(),
 	})
-	if rt.Memory != nil {
+	if rt.Memory != nil && rt.modelCalls() == 0 && !slices.ContainsFunc(rt.Items, isMemoryContext) {
 		ctx, err := rt.Memory.Context(rt.Caller.WorkspaceID, turnQuery(rt.Items), rt.Contexts.MemoryBudget())
 		if err != nil {
 			log.Printf("memory: turn %s starts without memory: %v", rt.Turn.ID, err)
@@ -96,6 +96,8 @@ func (rt *Runtime) start() error {
 	}
 	return nil
 }
+
+func isMemoryContext(it repo.ItemRow) bool { return it.Type == repo.ItemMemoryContext }
 
 func turnQuery(items []repo.ItemRow) string {
 	var requests []string
@@ -117,7 +119,6 @@ func (rt *Runtime) tool(name string) (tools.ToolDescriptor, bool) {
 
 func (rt *Runtime) specs() []llm.ToolSpec { return Specs(rt.Tools) }
 
-// Specs are the tool definitions a request carries for these tools.
 func Specs(descriptors []tools.ToolDescriptor) []llm.ToolSpec {
 	specs := make([]llm.ToolSpec, 0, len(descriptors))
 	for _, d := range descriptors {
@@ -126,8 +127,6 @@ func Specs(descriptors []tools.ToolDescriptor) []llm.ToolSpec {
 	return specs
 }
 
-// step is one iteration: finish calls left over from the previous iteration,
-// ask the model once, then run the calls the model returned.
 func (rt *Runtime) step(ctx context.Context) (Outcome, error) {
 	if outcome, done, err := rt.resume(ctx); done {
 		return outcome, err
@@ -149,8 +148,6 @@ func (rt *Runtime) step(ctx context.Context) (Outcome, error) {
 	return Continue, nil
 }
 
-// resume finishes the calls left over from the previous iteration; drain runs
-// the calls the model just returned. Both plan first, then execute.
 func (rt *Runtime) resume(ctx context.Context) (Outcome, bool, error) {
 	plan, err := rt.planCalls(ctx)
 	if err != nil {

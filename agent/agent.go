@@ -139,6 +139,3 @@ func (a *Agent) callerOf(t repo.ThreadRow) tools.Caller {
 	}
 	return c
 }
-
-// policyFor resolves the approval policy of a thread: thread override, then
-// workspace setting, then the agent default.

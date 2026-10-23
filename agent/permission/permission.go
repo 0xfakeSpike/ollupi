@@ -35,8 +35,6 @@ func New(policy Policy, rules Rules, registry *tools.Registry) (*Checker, error)
 	return &Checker{policy: policy, rules: set}, nil
 }
 
-// Validate checks a policy and rule set against the registry without keeping
-// the checker. It is the single entry point for validating a stored profile.
 func Validate(policy Policy, rules Rules, registry *tools.Registry) error {
 	_, err := New(policy, rules, registry)
 	return err

@@ -27,8 +27,6 @@ type Operation struct {
 	Sources []repo.MemorySource `json:"sources"`
 }
 
-// Context is the memory snapshot a turn receives. It is transport-agnostic;
-// the runtime turns it into a memoryContext item.
 type Context struct {
 	Entries []repo.MemoryReference
 	Text    string

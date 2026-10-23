@@ -22,9 +22,6 @@ type OpenAI struct {
 	limits map[string]Limits
 }
 
-// NewOpenAI connects to an OpenAI-compatible endpoint. limits declares, by
-// exact model name, the limits of models this endpoint serves; they take
-// precedence over the known ones (see Limits). It may be nil.
 func NewOpenAI(baseURL, apiKey string, limits map[string]Limits) *OpenAI {
 	opts := []option.RequestOption{option.WithAPIKey(apiKey)}
 	if apiKey == "" {

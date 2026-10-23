@@ -123,10 +123,6 @@ const (
 	minOutputTokens      = 256
 )
 
-// renderObservation renders one tool result within budget. Its artifacts
-// count against the budget too: the output text gets what they leave, and at
-// least minOutputTokens. The artifacts themselves are never cut (a skill cut
-// in half misleads); CheckArtifacts bounded them when the tool ran.
 func renderObservation(it *repo.ItemRow, budget int) (string, error) {
 	result, err := it.LiveResult()
 	if err != nil {

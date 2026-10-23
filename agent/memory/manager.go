@@ -15,13 +15,11 @@ import (
 )
 
 type Options struct {
-	Model    llm.Model
-	Generate bool
-	Use      bool
-	Interval time.Duration
-	Timeout  time.Duration
-	// ExtractionTokens caps one extraction request, to keep its cost down;
-	// the model's own input limit (from pkg/llm) caps it further.
+	Model            llm.Model
+	Generate         bool
+	Use              bool
+	Interval         time.Duration
+	Timeout          time.Duration
 	ExtractionTokens int
 	BatchSize        int
 }
@@ -124,9 +122,6 @@ func (m *Manager) RunOnce(ctx context.Context) (err error) {
 	return commit(m.db, batch, ops, report)
 }
 
-// gatherEvidence reads the next pending batch and, if needed, shrinks it until
-// its evidence fits the extraction budget. A nil batch means there is nothing
-// to do. On error the batch is still returned so the caller can defer it.
 func (m *Manager) gatherEvidence() (batch, evidence *Batch, payload string, estimated int, err error) {
 	limit := m.opts.BatchSize
 	for {
