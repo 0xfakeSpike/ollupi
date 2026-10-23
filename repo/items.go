@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/tools"
@@ -203,4 +204,105 @@ func (d *DB) EndedItem(id string) (ItemRow, error) {
 	err := d.gorm.Table("items AS i").Select("i.*").Joins("JOIN turns t ON t.id = i.turn_id").
 		Where("i.id = ? AND t.status <> 'inProgress' AND i.type NOT IN ('reasoning', 'contextCompaction', 'memoryContext')", id).Take(&row).Error
 	return row, notFound(err)
+}
+
+func (d *DB) RecordItem(threadID string, item ItemRow) (ItemRow, bool, error) {
+	var stored ItemRow
+	var isNew bool
+	err := d.Tx(func(tx *DB) error {
+		active, err := tx.ActiveTurn(threadID)
+		if IsNotFound(err) || (err == nil && active.ID != item.TurnID) {
+			return fmt.Errorf("item %s belongs to turn %s, which is not in progress", item.ID, item.TurnID)
+		}
+		if err != nil {
+			return err
+		}
+		_, err = tx.Item(item.ID)
+		isNew = IsNotFound(err)
+		if err != nil && !isNew {
+			return err
+		}
+		if err := tx.saveItemOf(threadID, item); err != nil {
+			return err
+		}
+		stored, err = tx.Item(item.ID)
+		return err
+	})
+	if err != nil {
+		return ItemRow{}, false, fmt.Errorf("storage: record item: %w", err)
+	}
+	return stored, isNew, nil
+}
+
+func (d *DB) RecoverItems(threadID string) ([]ItemRow, error) {
+	var closed []ItemRow
+	err := d.Tx(func(tx *DB) error {
+		v, err := tx.Thread(threadID)
+		if err != nil {
+			return err
+		}
+		active, ok := v.ActiveTurn()
+		if !ok {
+			return nil
+		}
+		now := time.Now().UTC()
+
+		handling := true
+		for _, it := range v.Items {
+			if it.TurnID != active.ID || it.Status != ItemInProgress {
+				continue
+			}
+			switch {
+			case it.Type == ItemReasoning || it.Type == ItemAgentMessage || it.Type == ItemContextCompaction:
+				it.Error = "the app stopped before this finished"
+			case it.IsCall() && handling:
+				if it.Awaits() {
+					continue
+				}
+				handling = false
+				declined := it.Approval != nil && it.Approval.Decision == DecisionDecline
+				if it.IsPending() || declined {
+					continue
+				}
+				it.Error = "the app stopped while this call was being handled; it may or may not have taken effect, so check before repeating it"
+			default:
+				continue
+			}
+			it.Status, it.CompletedAt = ItemFailed, &now
+			if err := tx.saveItemOf(threadID, it); err != nil {
+				return err
+			}
+			closed = append(closed, it)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("storage: recover thread %s: %w", threadID, err)
+	}
+	return closed, nil
+}
+
+func (d *DB) saveItemOf(threadID string, it ItemRow) error {
+	if it.ID == "" || it.TurnID == "" || it.Type == "" || it.Status == "" {
+		return fmt.Errorf("item needs an id, turn, type, and status")
+	}
+	prev, err := d.Item(it.ID)
+	switch {
+	case IsNotFound(err):
+		if it.Seq, err = d.NextItemSeq(threadID); err != nil {
+			return err
+		}
+	case err != nil:
+		return err
+	default:
+		if prev.ThreadID != threadID || prev.Type != it.Type || prev.TurnID != it.TurnID {
+			return fmt.Errorf("item %s cannot change its thread, type, or turn", it.ID)
+		}
+		if prev.PreparedExecution != nil && (!reflect.DeepEqual(prev.PreparedExecution, it.PreparedExecution) || prev.Arguments != it.Arguments || prev.Tool != it.Tool || prev.Server != it.Server) {
+			return fmt.Errorf("item %s cannot change its prepared execution or tool arguments", it.ID)
+		}
+		it.Seq = prev.Seq
+	}
+	it.ThreadID = threadID
+	return d.SaveItem(it)
 }

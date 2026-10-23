@@ -53,7 +53,7 @@ type Agent struct {
 	registry *tools.Registry
 	skills   *skills.Catalog
 	cron     *cron.Jobs
-	run      *scheduler
+	run      *orchestrator
 	loops    sync.WaitGroup
 }
 
@@ -74,7 +74,7 @@ func (a *Agent) Start(ctx context.Context) error {
 	if err := a.checkBudgets(); err != nil {
 		return fmt.Errorf("agent %s: %w", a.Name, err)
 	}
-	a.run = newScheduler(a, ctx)
+	a.run = newOrchestrator(a, ctx)
 	if err := a.run.recover(); err != nil {
 		return err
 	}

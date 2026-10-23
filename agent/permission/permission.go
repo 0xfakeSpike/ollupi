@@ -19,7 +19,7 @@ func New(policy Policy, rules Rules, registry *tools.Registry) (*Checker, error)
 	if err := policy.Validate(); err != nil {
 		return nil, err
 	}
-	set, err := rules.parse()
+	set, err := parseRules(rules)
 	if err != nil {
 		return nil, err
 	}

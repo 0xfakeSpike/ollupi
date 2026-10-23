@@ -53,6 +53,9 @@ func New(db *repo.DB, model *llm.OpenAI, opts Options) (*Manager, error) {
 	if opts.BatchSize <= 0 {
 		opts.BatchSize = 24
 	}
+	if err := db.ReplaceTriggers("memory_", triggersSQL); err != nil {
+		return nil, fmt.Errorf("memory: %w", err)
+	}
 	m := &Manager{db: db, model: model, opts: opts, budget: opts.ExtractionTokens}
 	if opts.Generate {
 		limits, err := model.Limits(opts.Model.Name)

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/tools"
@@ -14,7 +15,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func (s *scheduler) startTurn(threadID, text, connection string) (repo.TurnRow, error) {
+func (s *orchestrator) startTurn(threadID, text, connection string) (repo.TurnRow, error) {
 	text, err := checkMessage(text)
 	if err != nil {
 		return repo.TurnRow{}, err
@@ -33,7 +34,7 @@ func (s *scheduler) startTurn(threadID, text, connection string) (repo.TurnRow, 
 	return s.beginTurn(view, repo.NewUserMessage(uuid.NewString(), "", text, time.Now().UTC()), model)
 }
 
-func (s *scheduler) beginTurn(view repo.ThreadView, message repo.ItemRow, model llm.Model) (repo.TurnRow, error) {
+func (s *orchestrator) beginTurn(view repo.ThreadView, message repo.ItemRow, model llm.Model) (repo.TurnRow, error) {
 	threadID := view.Thread.ID
 	if _, active := view.ActiveTurn(); active {
 		return repo.TurnRow{}, errTurnActive
@@ -46,10 +47,10 @@ func (s *scheduler) beginTurn(view repo.ThreadView, message repo.ItemRow, model 
 	policy := s.a.policyFor(view.Thread)
 	turn := repo.TurnRow{
 		ID: uuid.NewString(), ThreadID: threadID, Status: repo.TurnInProgress,
-		Model: model.Clone(), ApprovalPolicy: string(policy), Permissions: s.a.rulesFor(view.Thread).ToRepo(), StartedAt: time.Now().UTC(),
+		Model: model.Clone(), ApprovalPolicy: string(policy), Permissions: s.a.rulesFor(view.Thread), StartedAt: time.Now().UTC(),
 	}
 	message.TurnID = turn.ID
-	turn, err := s.a.insertTurn(threadID, turn, []repo.ItemRow{message})
+	turn, err := s.a.DB.BeginTurn(threadID, turn, []repo.ItemRow{message})
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
@@ -60,7 +61,7 @@ func (s *scheduler) beginTurn(view repo.ThreadView, message repo.ItemRow, model 
 	return turn, nil
 }
 
-func (s *scheduler) steer(threadID, expectedTurnID, text string) (repo.TurnRow, error) {
+func (s *orchestrator) steer(threadID, expectedTurnID, text string) (repo.TurnRow, error) {
 	text, err := checkMessage(text)
 	if err != nil {
 		return repo.TurnRow{}, err
@@ -79,7 +80,7 @@ func (s *scheduler) steer(threadID, expectedTurnID, text string) (repo.TurnRow, 
 	if turn.ID != expectedTurnID {
 		return repo.TurnRow{}, fmt.Errorf("%w (expected %s, in progress %s)", ErrTurnMismatch, expectedTurnID, turn.ID)
 	}
-	stored, isNew, err := s.a.recordItem(threadID, repo.NewUserMessage(uuid.NewString(), turn.ID, text, time.Now().UTC()))
+	stored, isNew, err := s.a.DB.RecordItem(threadID, repo.NewUserMessage(uuid.NewString(), turn.ID, text, time.Now().UTC()))
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
@@ -90,7 +91,7 @@ func (s *scheduler) steer(threadID, expectedTurnID, text string) (repo.TurnRow, 
 	return turn, nil
 }
 
-func (s *scheduler) interrupt(threadID string) error {
+func (s *orchestrator) interrupt(threadID string) error {
 	if sl, ok := s.slots[threadID]; ok {
 		s.stop(threadID, sl)
 		return nil
@@ -116,7 +117,7 @@ func (s *scheduler) interrupt(threadID string) error {
 	return nil
 }
 
-func (s *scheduler) stopThread(threadID string) {
+func (s *orchestrator) stopThread(threadID string) {
 	if sl, ok := s.slots[threadID]; ok {
 		s.stop(threadID, sl)
 		return
@@ -132,7 +133,7 @@ func (s *scheduler) stopThread(threadID string) {
 	}
 }
 
-func (s *scheduler) endTurn(turn repo.TurnRow) {
+func (s *orchestrator) endTurn(turn repo.TurnRow) {
 	view, err := s.a.ReadThread(turn.ThreadID)
 	if err != nil {
 		log.Printf("agent: thread %s cannot be read to end turn %s: %v", turn.ThreadID, turn.ID, err)
@@ -142,12 +143,12 @@ func (s *scheduler) endTurn(turn repo.TurnRow) {
 	report, parent, reports := s.reportLocked(view, turn)
 	if reports {
 		var stored repo.ItemRow
-		closed, stored, err = s.a.completeSubagentTurn(turn.ThreadID, turn, report)
+		closed, stored, err = s.a.DB.EndSubagentTurn(turn.ThreadID, turn, report)
 		if err == nil {
 			s.a.emitItem(parent.Thread, parent.Turn, stored, false)
 		}
 	} else {
-		closed, err = s.a.completeTurn(turn.ThreadID, turn)
+		closed, err = s.a.DB.EndTurn(turn.ThreadID, turn)
 	}
 	if err != nil {
 		log.Printf("agent: thread %s: record end of turn %s: %v", turn.ThreadID, turn.ID, err)
@@ -174,7 +175,7 @@ type parentTurn struct {
 	Turn   repo.TurnRow
 }
 
-func (s *scheduler) launchSubagents(threadID string) {
+func (s *orchestrator) launchSubagents(threadID string) {
 	view, err := s.a.ReadThread(threadID)
 	if err != nil {
 		log.Printf("agent: thread %s cannot be read to launch subagents: %v", threadID, err)
@@ -191,7 +192,7 @@ func (s *scheduler) launchSubagents(threadID string) {
 		} else {
 			call.Await.ThreadID = child.ID
 		}
-		stored, _, err := s.a.recordItem(threadID, call)
+		stored, _, err := s.a.DB.RecordItem(threadID, call)
 		if err != nil {
 			log.Printf("agent: thread %s: record Agent call %s: %v", threadID, call.ID, err)
 			continue
@@ -200,7 +201,7 @@ func (s *scheduler) launchSubagents(threadID string) {
 	}
 }
 
-func (s *scheduler) launchSubagent(parent repo.ThreadRow, parentTurn repo.TurnRow, call repo.ItemRow) (repo.ThreadRow, error) {
+func (s *orchestrator) launchSubagent(parent repo.ThreadRow, parentTurn repo.TurnRow, call repo.ItemRow) (repo.ThreadRow, error) {
 	if parent.ParentThreadID != "" {
 		return repo.ThreadRow{}, fmt.Errorf("a subagent cannot launch subagents; do the task yourself with your tools")
 	}
@@ -226,7 +227,7 @@ func (s *scheduler) launchSubagent(parent repo.ThreadRow, parentTurn repo.TurnRo
 	return child, nil
 }
 
-func (s *scheduler) reportLocked(child repo.ThreadView, ended repo.TurnRow) (repo.ItemRow, parentTurn, bool) {
+func (s *orchestrator) reportLocked(child repo.ThreadView, ended repo.TurnRow) (repo.ItemRow, parentTurn, bool) {
 	if child.Thread.ParentThreadID == "" {
 		return repo.ItemRow{}, parentTurn{}, false
 	}
@@ -267,7 +268,7 @@ func report(call repo.ItemRow, child repo.ThreadView, ended repo.TurnRow) repo.I
 	return call
 }
 
-func (s *scheduler) resolveApproval(threadID, approvalID string, decision repo.Decision, decidedBy string) error {
+func (s *orchestrator) resolveApproval(threadID, approvalID string, decision repo.Decision, decidedBy string) error {
 	return s.respond(threadID, func(it repo.ItemRow) bool { return it.WaitsForApproval() && it.Approval.ID == approvalID }, func(it repo.ItemRow) (repo.ItemRow, error) {
 		if available := it.Approval.AvailableDecisions(); !slices.Contains(available, decision) {
 			return repo.ItemRow{}, fmt.Errorf("agent: decision %q is not one of %q", decision, available)
@@ -278,7 +279,7 @@ func (s *scheduler) resolveApproval(threadID, approvalID string, decision repo.D
 	})
 }
 
-func (s *scheduler) answerUserInput(threadID, itemID string, answers map[string]userinput.Answer) error {
+func (s *orchestrator) answerUserInput(threadID, itemID string, answers map[string]userinput.Answer) error {
 	return s.respond(threadID, func(it repo.ItemRow) bool { return it.ID == itemID && !it.WaitsForApproval() }, func(it repo.ItemRow) (repo.ItemRow, error) {
 		req, err := userinput.Decode(it.Await.Request)
 		if err != nil {
@@ -297,7 +298,7 @@ func (s *scheduler) answerUserInput(threadID, itemID string, answers map[string]
 	})
 }
 
-func (s *scheduler) respond(threadID string, match func(repo.ItemRow) bool, apply func(repo.ItemRow) (repo.ItemRow, error)) error {
+func (s *orchestrator) respond(threadID string, match func(repo.ItemRow) bool, apply func(repo.ItemRow) (repo.ItemRow, error)) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	view, err := s.a.ReadThread(threadID)
@@ -317,7 +318,7 @@ func (s *scheduler) respond(threadID string, match func(repo.ItemRow) bool, appl
 	if err != nil {
 		return err
 	}
-	stored, _, err := s.a.recordItem(threadID, answered)
+	stored, _, err := s.a.DB.RecordItem(threadID, answered)
 	if err != nil {
 		return err
 	}
@@ -326,4 +327,15 @@ func (s *scheduler) respond(threadID string, match func(repo.ItemRow) bool, appl
 		s.a.emitStatus(threadID)
 	}
 	return nil
+}
+
+func checkMessage(text string) (string, error) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return "", fmt.Errorf("agent: empty message")
+	}
+	if n := len([]rune(text)); n > maxInputRunes {
+		return "", fmt.Errorf("agent: message has %d characters; at most %d are accepted", n, maxInputRunes)
+	}
+	return text, nil
 }

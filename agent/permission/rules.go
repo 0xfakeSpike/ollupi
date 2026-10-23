@@ -8,19 +8,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/repo"
 )
 
-type Rules struct {
-	Allow []string
-	Ask   []string
-	Deny  []string
-}
-
-func RulesFrom(r repo.PermissionRules) Rules {
-	return Rules{Allow: r.Allow, Ask: r.Ask, Deny: r.Deny}
-}
-
-func (r Rules) ToRepo() repo.PermissionRules {
-	return repo.PermissionRules{Allow: r.Allow, Ask: r.Ask, Deny: r.Deny}
-}
+type Rules = repo.PermissionRules
 
 type ruleVerdict int
 
@@ -92,7 +80,7 @@ type ruleSet struct {
 	allow, ask, deny []rule
 }
 
-func (p Rules) parse() (ruleSet, error) {
+func parseRules(p Rules) (ruleSet, error) {
 	var set ruleSet
 	for _, list := range []struct {
 		name  string

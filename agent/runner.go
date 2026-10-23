@@ -17,7 +17,7 @@ func (a *Agent) step(ctx context.Context, view repo.ThreadView, turn repo.TurnRo
 	if err != nil {
 		return runtime.Done, repo.Usage{}, err
 	}
-	descriptors, checker, err := a.toolsFor(a.Tools, permission.Policy(turn.ApprovalPolicy), permission.RulesFrom(turn.Permissions))
+	descriptors, checker, err := a.toolsFor(a.Tools, permission.Policy(turn.ApprovalPolicy), turn.Permissions)
 	if err != nil {
 		return runtime.Done, repo.Usage{}, err
 	}
@@ -52,7 +52,7 @@ func (a *Agent) step(ctx context.Context, view repo.ThreadView, turn repo.TurnRo
 
 func (a *Agent) recorder(t repo.ThreadRow, turn repo.TurnRow) func(repo.ItemRow) (repo.ItemRow, error) {
 	return func(it repo.ItemRow) (repo.ItemRow, error) {
-		stored, isNew, err := a.recordItem(t.ID, it)
+		stored, isNew, err := a.DB.RecordItem(t.ID, it)
 		if err != nil {
 			return repo.ItemRow{}, err
 		}
