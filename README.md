@@ -65,7 +65,7 @@ go get github.com/0xfakeSpike/ollupi
 
 ```
 ollupi/
-  agent/                    agent 本身:定义、会话、turn 队列与 worker、审批与提问、子代理、定时任务的发送、重启恢复、事件
+  agent/                    agent 本身:定义、编排(turn 队列与 worker)、工作区、审批与提问、子代理、定时任务的发送、重启恢复、事件
     runtime/                ReAct 循环的一次迭代:调用处理、请求模型、压缩、流式输出
     permission/             授权:权限规则、审批策略、"本会话都允许",判断一次调用 执行/问/拒绝
     systemprompt/           拼 system message
@@ -78,7 +78,7 @@ ollupi/
     skills/                 Agent Skills:技能目录、激活、读取资源
     memory/                 长期记忆:抽取、召回、编辑
   gateway/                  对外协议:WebSocket 上的 JSON-RPC 2.0
-  repo/                     数据库(gorm):每张表的行结构体与读写方法
+  repo/                     数据库(gorm)与会话状态机:每张表的行结构体、读写方法和不变量
   pkg/                      通用组件,不知道 agent 的存在
     llm/  sandbox/  jsonrpc/  redact/
 ```
@@ -88,20 +88,18 @@ ollupi/
 ```
 gateway
     ↓
-agent(系统:会话、队列与 worker)
+agent(系统:编排、工作区)
     ↓
 runtime(一次迭代)
     ↓
 systemprompt  contextmanager  permission  memory  tools/*  skills
     ↓
-tools(工具契约)
+repo(数据库与会话状态机)
     ↓
-repo(数据库)
-    ↓
-pkg/*
+tools(工具契约)    pkg/*
 ```
 
-**依赖都是真实的,不靠 interface 绕开。** 所有和数据库打交道的代码都在 `repo`:一张表一个文件(`workspaces.go`、`threads.go`、`turns.go`、`items.go`、`cron_jobs.go`、`memories.go`、`memory_events.go`、`memory_state.go`),里面是这张表的行结构体(gorm 据此建表)、它的读写方法和它身上那几个很轻的判断;`db.go` 是打开数据库和公用的小工具。行结构体就是业务直接用的类型,没有另一份业务模型,也没有转换函数:会话、turn、item 就是 `repo.ThreadRow`、`repo.TurnRow`、`repo.ItemRow`(带 JSON 标签,也就是接口返回给界面的样子),它们身上那几个很轻的判断(进行中的 turn、等待中的请求、子任务调用、会话状态)也定义在 repo 里。嵌套的字段用 gorm 的 JSON 序列化各存一列(turn 的模型,item 的审批、调用结果、冻结的命令等),用量是内嵌的三列。工作区、定时任务、长期记忆也一样:记忆就是 `repo.MemoryRow`(证据来源用 JSON 序列化存成一列),待处理的增量就是 `repo.MemoryEventRow`(追加式队列,不合并、不带版本号),记忆状态就是 `repo.MemoryStatus`(几个计数加上 `memory_state` 那一行,上次的报告也是 JSON 序列化的一列)。业务规则(比如已准备的调用不能改、遗忘过的证据不再生成、删除的源要废弃相关记忆)留在 `agent/memory` 包里。事务也不另设类型:`DB.Tx(func(tx *repo.DB) error)` 把同一个 `*repo.DB` 绑在事务上交给回调,所以每个读写方法在事务里外都能用,不会有"事务里一份、事务外一份"的重复方法。别的包需要的数据结构也尽量直接用现成的:contextmanager 拼的就是 `[]llm.ChatMessage`,技能目录工具直接返回 `skills.Skill`,定时任务工具直接用 `repo.CronJobRow`。不需要为了"分层"而定义 `Persistence`、`Store` 这类只有一个实现的接口。同理,runtime 直接持有 `*tools.Registry`、`*skills.Catalog`、`*memory.Manager` 和要执行的 `repo.TurnRow`,gateway 直接持有 `*agent.Agent`。runtime 写 item 用的是 agent 交给它的函数(写库并通知订阅者),所以它碰不到会话的存储。
+**依赖都是真实的,不靠 interface 绕开。** 所有和数据库打交道的代码都在 `repo`:一张表一个文件(`workspaces.go`、`threads.go`、`turns.go`、`items.go`、`cron_jobs.go`、`memories.go`、`memory_events.go`、`memory_state.go`),里面是这张表的行结构体(gorm 据此建表)、它的读写方法和它的状态规则;`db.go` 是打开数据库和公用的小工具。行结构体就是业务直接用的类型,没有另一份业务模型,也没有转换函数:会话、turn、item 就是 `repo.ThreadRow`、`repo.TurnRow`、`repo.ItemRow`(带 JSON 标签,也就是接口返回给界面的样子),它们的状态机也只在 repo 里:判断(进行中的 turn、等待中的请求、子任务调用、会话状态)和转换(`BeginTurn`、`RecordItem`、`EndTurn`、`EndSubagentTurn`、`RecoverItems`、`AddUsage`)放在同一个包,一个会话同时只有一个进行中的 turn、只写进行中 turn 的 item、item 不改类型和所属 turn、已准备的调用不能改,这些不变量都在这些转换的事务里检查,带条件的 upsert 再兜底一次。runtime、contextmanager、permission、gateway 都要读这些状态,它们都在 agent 之下,所以状态机只能放在它们都能 import 的 repo,而不是 agent。嵌套的字段用 gorm 的 JSON 序列化各存一列(turn 的模型,item 的审批、调用结果、冻结的命令等),用量是内嵌的三列。工作区、定时任务、长期记忆也一样:记忆就是 `repo.MemoryRow`(证据来源用 JSON 序列化存成一列),待处理的增量就是 `repo.MemoryEventRow`(追加式队列,不合并、不带版本号),记忆状态就是 `repo.MemoryStatus`(几个计数加上 `memory_state` 那一行,上次的报告也是 JSON 序列化的一列)。记忆的业务规则(哪些变化算证据、遗忘过的证据不再生成、删除的源要废弃相关记忆)留在 `agent/memory` 包里。事务也不另设类型:`DB.Tx(func(tx *repo.DB) error)` 把同一个 `*repo.DB` 绑在事务上交给回调,所以每个读写方法在事务里外都能用,不会有"事务里一份、事务外一份"的重复方法。别的包需要的数据结构也尽量直接用现成的:contextmanager 拼的就是 `[]llm.ChatMessage`,技能目录工具直接返回 `skills.Skill`,定时任务工具直接用 `repo.CronJobRow`。不需要为了"分层"而定义 `Persistence`、`Store` 这类只有一个实现的接口。同理,runtime 直接持有 `*tools.Registry`、`*skills.Catalog`、`*memory.Manager` 和要执行的 `repo.TurnRow`,gateway 直接持有 `*agent.Agent`。runtime 写 item 用的是 agent 交给它的函数(写库并通知订阅者),所以它碰不到会话的存储。
 
 整个库只有 2 个 interface,都是因为真的有多个实现:
 
@@ -110,7 +108,7 @@ pkg/*
 
 设计上的三条规则:
 
-1. **只能往下 import,同层之间互不依赖。** 所以 memory 不知道 cron,shell 不知道 mcp。
+1. **只能往下 import,同层之间互不依赖。** 所以 memory 不知道 cron,shell 不知道 mcp。工具契约 `agent/tools` 虽然放在 agent 目录下,却是最底层之一:它不 import 任何内部包,repo 的 item 行直接存它的类型(`Prepared`、`Await`、`Annotations`、`ContextArtifact`)。所以 **`tools.Prepared` 的结构就是数据库里的存储格式**:给它加减字段会改变已存的冻结记录,而"本会话都允许"按整个 `Prepared` 相等来匹配,改了结构,旧的会话授权就不再生效。
 2. **runtime 只通过 `agent/tools` 使用工具**,不直接 import 任何具体工具。加一个工具或去掉一个工具都不用改 runtime。
 3. **不随手加 interface。** 只有真的有多个实现时才用 interface。
 
@@ -133,22 +131,22 @@ pkg/*
 
 **各包职责**:
 
-- `agent` — 整个系统:它自己的 prompt、模型、工具、审批策略、权限规则(审批策略、权限规则和模型在 turn 创建时存进 turn;派生出来的子会话额外禁止再派生),以及一条跨线程共享的 turn 队列和多个常驻消费者(`scheduler.go`:队列、worker、继续/等待/结束的判定、定时任务的发送、重启恢复;turn 的开始、追加、中断、子代理派生与报告在 `turnflow.go`)。队列元素只带 threadID 和 turnID,消费者按 ID 从 SQL 现查 thread、workspace 和 items,再用 turn 里记录的模型连接取 LLM 客户端;线程、工作区和业务数据之间没有别的传递通道,也没有内存缓存。会话、turn、item 的存取规则分在 `threads.go`、`turns.go`、`items.go`:一个会话同时只有一个进行中的 turn、只写进行中 turn 的 item、item 不改类型和所属 turn、已准备的调用不能改;不存任何状态,每次读都查库,每次写都在一个事务里先读、检查规则、再写。写入都是 agent 的不导出方法,所以每次写入都伴随它的事件推送和调度。它只认工作区的一条规则:归档了的工作区不能开新会话、新 turn;项目根目录交给工具(`tools.Caller.Root`),目录能不能跑命令由 shell 在跑命令时判断。审批策略和权限规则按 会话覆盖 > 工作区设置 > agent 默认 解析(`policyFor` / `rulesFor`)。消费者把 turn 交给 runtime 跑一次迭代,按结果放回队列、等待或结束;用户的新消息、追加消息(`SteerTurn`)、批准、回答、中断、子代理的派生和报告、到期定时任务的发送、重启恢复都是它的方法。agent 有要告诉用户的事(流式文字、新的或完成的 item、等批准或回答、turn 开始和结束、会话状态),就调用应用给的 `OnEvent` 回调;它在 agent 持锁时被调用,必须很快返回、不能回调 agent。
+- `agent` — 整个系统:它自己的 prompt、模型、工具、审批策略、权限规则(审批策略、权限规则和模型在 turn 创建时存进 turn;派生出来的子会话额外禁止再派生),以及一条跨线程共享的 turn 队列和多个常驻消费者(`orchestrator.go`:队列、worker、继续/等待/结束的判定、定时任务的发送、重启恢复;turn 的开始、追加、中断、子代理派生与报告在 `turnflow.go`)。队列元素只带 threadID 和 turnID,消费者按 ID 从 SQL 现查 thread、workspace 和 items,再用 turn 里记录的模型连接取 LLM 客户端;线程、工作区和业务数据之间没有别的传递通道,也没有内存缓存。会话、turn、item 的状态转换调用 repo(见上),agent 不存任何状态,每次读都查库;每次写入之后由 agent 推送事件、推进调度。工作区的业务也在 agent(`workspaces.go`):`AddWorkspace` 把路径规范成真实目录(`sandbox.CanonicalDirectory`,shell 判断命令目录用的也是这一个),同一个目录再加一次复用已有的工作区,已归档的顺便恢复;`RenameWorkspace`、`ArchiveWorkspace`、`UpdateWorkspacePermissions`;带审批策略和权限规则时先对照工具注册表校验;归档了的工作区不能开新会话、新 turn。所以不用 gateway、直接嵌入 agent 的应用拿到的是同一套工作区规则;项目根目录交给工具(`tools.Caller.Root`),目录能不能跑命令由 shell 在跑命令时判断。审批策略和权限规则按 会话覆盖 > 工作区设置 > agent 默认 解析(`policyFor` / `rulesFor`)。消费者把 turn 交给 runtime 跑一次迭代,按结果放回队列、等待或结束;用户的新消息、追加消息(`SteerTurn`)、批准、回答、中断、子代理的派生和报告、到期定时任务的发送、重启恢复都是它的方法。agent 有要告诉用户的事(流式文字、新的或完成的 item、等批准或回答、turn 开始和结束、会话状态),就调用应用给的 `OnEvent` 回调;它在 agent 持锁时被调用,必须很快返回、不能回调 agent。
 - `agent/runtime` — ReAct 循环的一次迭代(`Runtime.Step`):先处理上次留下的调用,再请求一次模型并处理它的调用,返回 `Continue` / `Wait` / `Done`。`Runtime` 是一个 turn 的执行器,不是全局共享的对象:worker 每跑一次迭代就由 agent 新建一个,填上它用的部件(这个 turn 所在连接的模型客户端 `LLM`、工具注册表 `Registry`、技能目录、上下文管理、记忆)和这次要执行的东西:turn 本身(`Turn` 就是 `repo.TurnRow`,模型也从它上面取)、prompt、这个 turn 可用的工具(`Tools`)、权限检查器、调用者(会话、项目根目录)、写 item 的函数,以及这个 turn 已有的 item(`Items`)和之前各 turn 的 item(`History`,只用来拼上下文和查本会话的授权)。这次迭代里新产生的 item(模型的回答、工具调用和结果、进度、压缩)都由它记下并追加到 `Items`;迭代中的工作状态(system message、脱敏表、用量)是它的不导出字段,迭代结束就和它一起丢掉,迭代之间不保留状态。并行执行的工具只拿到注册表和调用者,碰不到执行器的状态。文件按内容分:`runtime.go`(Runtime 与一次迭代的流程)、`calls.go`(把每条调用判定成 run / 并行读 / 跳过 / 等待 / 停止的动作,不执行)、`execute.go`(按顺序执行动作,相邻只读并行、串行单独跑、停止后跳过)、`chat.go`(和模型的一次对话:拼请求、需要时先压缩、脱敏后发送再还原、检查回答、记下它请求的工具调用)、`stream.go`(流式文字)。每个响应的 token 统计挂在它的 agentMessage item 上;只有工具调用的响应挂在第一条 toolCall 上,contextmanager 用它校准预算。
-- `agent/permission` — 授权判断:权限规则(deny / ask / allow,Claude Code 语法)、审批策略(`untrusted` / `on-request` / `never`)、用户之前"本会话都允许"的回答。`New` 在启动时对照工具目录检查规则,`Decide` 对一次调用按固定顺序给出 执行 / 问用户 / 拒绝:越权提权(`never` 下)→ deny → ask → allow → 本会话已允许 → 审批策略。工具只声明事实(只读、访问外部、规则匹配的内容、命令怎么跑),判断都在这里。它只管决策,配置的持久化归属是 `repo.WorkspaceRow`(审批策略和规则都存成工作区字段)和 turn 的快照。
+- `agent/permission` — 授权判断:权限规则(deny / ask / allow,Claude Code 语法)、审批策略(`untrusted` / `on-request` / `never`)、用户之前"本会话都允许"的回答。`New` 在启动时对照工具目录检查规则,`Decide` 对一次调用按固定顺序给出 执行 / 问用户 / 拒绝:越权提权(`never` 下)→ deny → ask → allow → 本会话已允许 → 审批策略。工具只声明事实(只读、访问外部、规则匹配的内容、命令怎么跑),判断都在这里。它只管决策,配置存在 `repo.WorkspaceRow`(审批策略和规则都是工作区字段)和 turn 的快照里;规则只有一种类型,`permission.Rules` 就是 `repo.PermissionRules` 的别名,存储和判断之间不做转换。
 - `agent/contextmanager` — 把 system message 和对话拼成一次请求、按预算截断和压缩。预算是当前 turn 所用模型的输入上限(来自 `pkg/llm`);请求大小先按字符估算,再用同一模型上一次请求的真实 prompt tokens 校准。给出记忆、技能目录和已激活技能能占的预算(`MemoryBudget`、`SkillBudget`、`ArtifactBudget`)。
 - `agent/systemprompt` — system message 的全部组成都在这里,按顺序拼:agent 自己的 prompt(`Agent.Prompt`,留空用默认范本 `AgentPrompt`)、子代理说明(子代理才有)、循环规则、执行环境、技能目录(在预算内整条列出,放不下的说明省略了几个)。每个 turn 开始时拼一次,turn 内不变,便于前缀缓存。
 - `agent/tools` — 工具契约(`Provider`、`Spec`、`Result`、注解、本地命令的冻结记录 `Prepared`)与注册表;调用时通过 context 告诉工具进度回调和所属工作区。
 - `agent/tools/shell` — `run_command` 工具:命令能在哪些目录跑(由调用者的项目根目录和配置现算,`dirs.go`)、命令参数、提权申请(`require_escalated`)、超时与黑名单,命令经 `pkg/sandbox` 执行;`shell.Config` 是用户可配的 exec 设置(带 JSON 字段名,`Normalize` 是唯一一份校验规则),agent 自己的数据目录和 skills 由它固定保护,应用不必也不能关掉。
 - `agent/tools/mcp` — 远程 MCP 服务器的客户端,把它的工具接入注册表。
 - `agent/tools/plan`、`agent/tools/userinput` — `update_plan`(计划就是调用参数)和 `request_user_input`(结果是 `Await` 给用户,回答成为调用结果)。
-- `agent/tools/cron` — 定时任务的四个工具(创建、暂停/恢复、删除、列出),`*cron.Jobs` 本身就是工具提供者,读写 `repo` 的 cron_jobs 表:每个任务属于一个会话(`thread_id`,会话删除时一并删除),存着下次运行时间(`next_run_at`)。它只记录;到期的任务由 agent 的调度器发出(`agent/scheduler.go`,直接查 `DB.DueCronJobs`)。
+- `agent/tools/cron` — 定时任务的四个工具(创建、暂停/恢复、删除、列出),`*cron.Jobs` 本身就是工具提供者,读写 `repo` 的 cron_jobs 表:每个任务属于一个会话(`thread_id`,会话删除时一并删除),存着下次运行时间(`next_run_at`)。它只记录;到期的任务由 agent 的调度器发出(`agent/orchestrator.go`,直接查 `DB.DueCronJobs`)。
 - `agent/tools/subagent` — `Agent` 工具:模型用它派生子任务(简短说明 + 完整任务),结果是 `Await` 给另一个 turn;派生由 agent 完成。
 - `agent/skills` — Agent Skills:`skills.New(dir)` 扫描、校验技能目录,得到的 `*skills.Catalog` 既是 runtime 把技能列进 prompt 的来源,本身也是提供列出、激活、读取资源三个工具的提供者。
-- `agent/memory` — 长期记忆:后台抽取(只处理已完成/失败/中断的 turn 和工作区、会话、定时任务的变化)、列出(`List`)、用户编辑与遗忘(`Edit`、`Forget`,文字长度和凭据只在这里检查一次)、状态(`Status`);以及每个 turn 开始时给它的记忆(`Context`):在调用方给的 token 预算内挑选、排序并渲染成 `memoryContext` item。
+- `agent/memory` — 长期记忆:后台抽取(只处理已完成/失败/中断的 turn 和工作区、会话、定时任务的变化)、列出(`List`)、用户编辑与遗忘(`Edit`、`Forget`,文字长度和凭据只在这里检查一次)、状态(`Status`);以及每个 turn 开始时给它的记忆(`Context`):在调用方给的 token 预算内挑选、排序并渲染成 `memoryContext` item。记忆事件由 SQLite 触发器写进事件队列,触发器的 SQL 也在这里(`triggers.go`),`memory.New` 时用 `DB.ReplaceTriggers` 重建;它只关注终态 turn 和少数字段,不追每次 item 写入。没有配置记忆的应用不会新装触发器。
 
-- `gateway` — WebSocket 上的 JSON-RPC 2.0 网关,方法名对齐 Codex app-server;另有 Ollupi 自己能力的方法(`memory/*`、`workspace/*`,以及直接调用工具的 `tool/call`)。应用自己的方法(比如读写它的配置文件)通过 `Options.Methods` 注册,不属于 Ollupi 的协议,也不能覆盖协议里的方法名。 应用用 `gateway.NewServer(agent, options)` 建好服务(长期记忆的接口直接用 `agent.Memory`),在 `agent.Start` 之前把 `agent.OnEvent` 接到 `server.Deliver`,再 `server.Serve(ctx, listener)`。`Deliver` 只是挑出关心这个会话的连接,把通知放进各自的发送队列,马上返回。 工作区的增删改查是界面的操作,也都在这里(`workspaces.go`):直接读写 `repo` 的工作区表;添加时把路径规范成真实目录(`sandbox.CanonicalDirectory`,shell 判断命令目录用的也是这一个),同一个目录再加一次复用已有的工作区,已归档的顺便恢复;`workspace/add` 和 `workspace/updatePermissions` 可以带上审批策略与权限规则,校验规则与 `agent/permission` 共用一套。
-- `repo` — 数据库和数据模型,通过 gorm:打开 SQLite(WAL、外键、单连接),用行结构体建表(gorm 的 AutoMigrate,开发期没有 schema 版本,格式不兼容时重建数据库,不做旧库兼容迁移);gorm 不建模的部分(记忆事件队列的触发器)是原生 SQL(在 `memory_events.go` 里),每次打开时重建;触发器只关注终态 turn 和少数字段,不追每次 item 写入。每张表的读写方法。不变的列由带条件的 upsert 保护:改了不该改的列,写入就失败。
+- `gateway` — WebSocket 上的 JSON-RPC 2.0 网关,方法名对齐 Codex app-server;另有 Ollupi 自己能力的方法(`memory/*`、`workspace/*`,以及直接调用工具的 `tool/call`)。应用自己的方法(比如读写它的配置文件)通过 `Options.Methods` 注册,不属于 Ollupi 的协议,也不能覆盖协议里的方法名。 应用用 `gateway.NewServer(agent, options)` 建好服务(长期记忆的接口直接用 `agent.Memory`),在 `agent.Start` 之前把 `agent.OnEvent` 接到 `server.Deliver`,再 `server.Serve(ctx, listener)`。`Deliver` 只是挑出关心这个会话的连接,把通知放进各自的发送队列,马上返回。 gateway 只做协议:解码参数、调用 agent 的方法、编码结果和通知,不含业务规则,也不直接碰数据库;`workspace/*` 方法对应 agent 的工作区方法(`workspaces.go`),改动后向所有连接广播 `workspace/changed`。
+- `repo` — 数据库和数据模型,通过 gorm:打开 SQLite(WAL、外键、单连接),用行结构体建表(gorm 的 AutoMigrate,开发期没有 schema 版本,格式不兼容时重建数据库,不做旧库兼容迁移);gorm 不建模的触发器由使用它的包提供 SQL,通过 `ReplaceTriggers(前缀, SQL)` 按名字前缀整组重建(目前只有记忆)。每张表的读写方法,以及会话状态机的判断和转换(见上)。不变的列由带条件的 upsert 保护:改了不该改的列,写入就失败。
 - `pkg/llm` — 和模型对话的类型(`Model`、`ChatRequest`、`ChatResponse`)与 OpenAI 兼容 Chat Completions 客户端 `*llm.OpenAI`。模型客户端不是 interface:所有模型都走 OpenAI 兼容接口,需要假模型时把客户端指向一个本地的假服务器即可。
 - `pkg/sandbox` — macOS Seatbelt 沙箱:策略、profile、域名代理、进程监管、主机进程运行。
 - `pkg/jsonrpc` — WebSocket 上的双向 JSON-RPC 2.0 连接。每个连接有自己的发送队列和写 goroutine:发出的响应、通知、请求先入队,按顺序写出;一个读得慢的客户端只会拖慢它自己。

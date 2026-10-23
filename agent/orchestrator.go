@@ -26,7 +26,7 @@ type work struct {
 	ctx      context.Context
 }
 
-type scheduler struct {
+type orchestrator struct {
 	a   *Agent
 	ctx context.Context
 
@@ -38,13 +38,13 @@ type scheduler struct {
 	workers    sync.WaitGroup
 }
 
-func newScheduler(a *Agent, ctx context.Context) *scheduler {
-	s := &scheduler{a: a, ctx: ctx, slots: map[string]*slot{}}
+func newOrchestrator(a *Agent, ctx context.Context) *orchestrator {
+	s := &orchestrator{a: a, ctx: ctx, slots: map[string]*slot{}}
 	s.cond = sync.NewCond(&s.mu)
 	return s
 }
 
-func (s *scheduler) start() {
+func (s *orchestrator) start() {
 	for range workers {
 		s.workers.Add(1)
 		go s.workerLoop()
@@ -53,14 +53,14 @@ func (s *scheduler) start() {
 	go s.keepTime()
 }
 
-func (s *scheduler) wait() {
+func (s *orchestrator) wait() {
 	s.background.Wait()
 	if s.ctx.Err() != nil {
 		s.workers.Wait()
 	}
 }
 
-func (s *scheduler) enqueue(threadID, turnID string) {
+func (s *orchestrator) enqueue(threadID, turnID string) {
 	if s.ctx.Err() != nil {
 		return
 	}
@@ -70,11 +70,11 @@ func (s *scheduler) enqueue(threadID, turnID string) {
 	s.cond.Signal()
 }
 
-func (s *scheduler) queued(threadID string) bool {
+func (s *orchestrator) queued(threadID string) bool {
 	return slices.ContainsFunc(s.queue, func(w work) bool { return w.threadID == threadID })
 }
 
-func (s *scheduler) nextWork() (work, bool) {
+func (s *orchestrator) nextWork() (work, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for len(s.queue) == 0 && s.ctx.Err() == nil {
@@ -88,7 +88,7 @@ func (s *scheduler) nextWork() (work, bool) {
 	return w, true
 }
 
-func (s *scheduler) workerLoop() {
+func (s *orchestrator) workerLoop() {
 	defer s.workers.Done()
 	for {
 		w, ok := s.nextWork()
@@ -101,7 +101,7 @@ func (s *scheduler) workerLoop() {
 	}
 }
 
-func (s *scheduler) run(w work) {
+func (s *orchestrator) run(w work) {
 	view, err := s.a.ReadThread(w.threadID)
 	if err != nil {
 		log.Printf("agent: thread %s cannot be read while turn %s is queued: %v", w.threadID, w.turnID, err)
@@ -122,7 +122,7 @@ func (s *scheduler) run(w work) {
 		return
 	}
 	outcome, usage, err := s.a.step(w.ctx, view, turn)
-	if err := s.a.addUsage(w.threadID, turn.ID, usage); err != nil {
+	if err := s.a.DB.AddUsage(w.threadID, turn.ID, usage); err != nil {
 		log.Printf("agent: thread %s: record usage of turn %s: %v", w.threadID, turn.ID, err)
 	}
 	interrupted := w.ctx.Err() != nil
@@ -131,14 +131,14 @@ func (s *scheduler) run(w work) {
 	s.afterStep(w.threadID, outcome, err, interrupted)
 }
 
-func (s *scheduler) release(threadID string) {
+func (s *orchestrator) release(threadID string) {
 	if sl, exists := s.slots[threadID]; exists {
 		sl.cancel()
 		delete(s.slots, threadID)
 	}
 }
 
-func (s *scheduler) afterStep(threadID string, outcome runtime.Outcome, stepErr error, interrupted bool) {
+func (s *orchestrator) afterStep(threadID string, outcome runtime.Outcome, stepErr error, interrupted bool) {
 	sl, ok := s.slots[threadID]
 	if !ok {
 		return
@@ -181,7 +181,7 @@ func (s *scheduler) afterStep(threadID string, outcome runtime.Outcome, stepErr 
 	}
 }
 
-func (s *scheduler) resumeIfReady(threadID string) bool {
+func (s *orchestrator) resumeIfReady(threadID string) bool {
 	if _, queued := s.slots[threadID]; queued {
 		return false
 	}
@@ -201,7 +201,7 @@ func (s *scheduler) resumeIfReady(threadID string) bool {
 	return true
 }
 
-func (s *scheduler) stop(threadID string, sl *slot) {
+func (s *orchestrator) stop(threadID string, sl *slot) {
 	if !s.queued(threadID) {
 		sl.cancel()
 		return
@@ -219,7 +219,7 @@ func (s *scheduler) stop(threadID string, sl *slot) {
 	}
 }
 
-func (s *scheduler) keepTime() {
+func (s *orchestrator) keepTime() {
 	defer s.workers.Done()
 	tick := time.NewTicker(time.Minute)
 	defer tick.Stop()
@@ -235,7 +235,7 @@ func (s *scheduler) keepTime() {
 	}
 }
 
-func (s *scheduler) sendDue(threadID string) {
+func (s *orchestrator) sendDue(threadID string) {
 	if s.ctx.Err() != nil {
 		return
 	}
@@ -269,7 +269,7 @@ func (s *scheduler) sendDue(threadID string) {
 	}
 }
 
-func (s *scheduler) sendJob(view repo.ThreadView, job repo.CronJobRow) error {
+func (s *orchestrator) sendJob(view repo.ThreadView, job repo.CronJobRow) error {
 	text, err := checkMessage(job.Prompt)
 	if err != nil {
 		return err
@@ -284,13 +284,13 @@ func (s *scheduler) sendJob(view repo.ThreadView, job repo.CronJobRow) error {
 	return err
 }
 
-func (s *scheduler) recover() error {
+func (s *orchestrator) recover() error {
 	active, err := s.a.DB.ActiveThreadIDs()
 	if err != nil {
 		return fmt.Errorf("agent: active threads: %w", err)
 	}
 	for _, id := range active {
-		closed, err := s.a.recoverItems(id)
+		closed, err := s.a.DB.RecoverItems(id)
 		if err != nil {
 			return fmt.Errorf("agent: recover thread %s: %w", id, err)
 		}
@@ -316,7 +316,7 @@ func (s *scheduler) recover() error {
 		}
 		for _, call := range view.AgentCalls() {
 			if settled, ok := s.settledCall(call); ok {
-				if _, _, err := s.a.recordItem(id, settled); err != nil {
+				if _, _, err := s.a.DB.RecordItem(id, settled); err != nil {
 					return fmt.Errorf("agent: thread %s: settle Agent call %s: %w", id, call.ID, err)
 				}
 			}
@@ -329,7 +329,7 @@ func (s *scheduler) recover() error {
 	return nil
 }
 
-func (s *scheduler) settledCall(call repo.ItemRow) (repo.ItemRow, bool) {
+func (s *orchestrator) settledCall(call repo.ItemRow) (repo.ItemRow, bool) {
 	if call.Await.ThreadID == "" {
 		return repo.ItemRow{}, false
 	}

@@ -23,7 +23,7 @@ func (a *Agent) policyFor(t repo.ThreadRow) permission.Policy {
 func (a *Agent) rulesFor(t repo.ThreadRow) permission.Rules {
 	rules := a.Permissions
 	if w, err := a.workspaceOf(t); err == nil && w.Permissions.Set() {
-		rules = permission.RulesFrom(w.Permissions)
+		rules = w.Permissions
 	}
 	if t.ParentThreadID != "" {
 		rules.Deny = append(slices.Clone(rules.Deny), subagent.Tool)
@@ -36,21 +36,6 @@ func (a *Agent) workspaceOf(t repo.ThreadRow) (repo.WorkspaceRow, error) {
 		return repo.WorkspaceRow{}, repo.ErrNotFound
 	}
 	return a.DB.Workspace(t.WorkspaceID)
-}
-
-func (a *Agent) ValidateWorkspaceSettings(policy string, rules repo.PermissionRules) error {
-	if a.registry == nil {
-		return fmt.Errorf("agent: the tool registry is not ready")
-	}
-	p := a.ApprovalPolicy
-	if policy != "" {
-		p = permission.Policy(policy)
-	}
-	r := a.Permissions
-	if rules.Set() {
-		r = permission.RulesFrom(rules)
-	}
-	return permission.Validate(p, r, a.registry)
 }
 
 func (a *Agent) toolsFor(names []string, policy permission.Policy, rules permission.Rules) ([]tools.ToolDescriptor, *permission.Checker, error) {

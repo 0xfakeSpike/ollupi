@@ -78,7 +78,7 @@ Codex 和 Claude Code 两列来自公开文档和发布说明，两者更新很�
 
 | # | 能力 | 说明 | Codex | Claude Code | Ollupi | Ollupi 现状与位置 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 3.1 | ReAct 循环 | 推理、调用工具、观察，循环到完成 | 有 | 有 | 有 | `agent/queue.go`（推进循环）、`agent/runtime`（一次迭代） |
+| 3.1 | ReAct 循环 | 推理、调用工具、观察，循环到完成 | 有 | 有 | 有 | `agent/orchestrator.go`（推进循环）、`agent/runtime`（一次迭代） |
 | 3.2 | 计划工具 | 模型维护带状态的步骤清单 | 有：`update_plan` | 有：TodoWrite | 有 | `update_plan`（Codex 格式），普通工具（`agent/tools/plan`），计划就是调用参数 |
 | 3.3 | 计划模式 | 只调研规划、不执行，确认后再做 | ? | 有：plan mode | 无 | |
 | 3.4 | 停止条件 | 模型不再调用工具即完成 | 有 | 有 | 有 | |

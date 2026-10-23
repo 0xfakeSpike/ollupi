@@ -2,6 +2,7 @@ package repo
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -166,4 +167,12 @@ func (v ThreadView) PendingRequests() []ItemRow {
 		}
 	}
 	return out
+}
+
+func preview(text string) string {
+	line, _, _ := strings.Cut(strings.TrimSpace(text), "\n")
+	if runes := []rune(line); len(runes) > 80 {
+		return string(runes[:80])
+	}
+	return line
 }
