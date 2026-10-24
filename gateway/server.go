@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
@@ -21,6 +22,8 @@ const (
 	maxMessageBytes = 1 << 20
 	defaultLimit    = 20
 	maxLimit        = 100
+	defaultItems    = 100
+	maxItems        = 500
 )
 
 type Server struct {
@@ -29,7 +32,7 @@ type Server struct {
 	methods map[string]Method
 	origins []string
 	mu      sync.Mutex
-	conns   map[*conn]struct{}
+	client  *conn
 	served  sync.WaitGroup
 }
 
@@ -42,13 +45,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ws.SetReadLimit(maxMessageBytes)
-	c := &conn{s: s, rpc: jsonrpc.NewConn(ws), threads: make(map[string]bool), asked: make(map[string]bool)}
+	c := &conn{s: s, ws: ws, rpc: jsonrpc.NewConn(ws), asked: make(map[string]bool)}
 	s.mu.Lock()
-	s.conns[c] = struct{}{}
+	previous := s.client
+	s.client = c
 	s.mu.Unlock()
+	if previous != nil {
+		go previous.ws.Close(websocket.StatusPolicyViolation, "replaced by a newer connection")
+	}
 	defer func() {
 		s.mu.Lock()
-		delete(s.conns, c)
+		if s.client == c {
+			s.client = nil
+		}
 		s.mu.Unlock()
 	}()
 
@@ -65,42 +74,34 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) Deliver(e agent.Event) {
-	if e.Kind == agent.EventThreadStatusChanged {
-		s.broadcast(notifyThreadStatusChanged, threadStatusNotification{ThreadID: e.Thread.ID, Status: e.Status})
-		return
-	}
-	for _, c := range s.connections() {
-		if c.watches(e.Thread.ID) || (e.Thread.ParentThreadID != "" && c.watches(string(e.Thread.ParentThreadID))) {
-			c.event(e)
-		}
+	if c := s.current(); c != nil {
+		c.event(e)
 	}
 }
 
-func (s *Server) broadcast(method string, payload any) {
-	for _, c := range s.connections() {
-		if c.isInitialized() {
-			c.rpc.Notify(method, payload)
-		}
+func (s *Server) notify(method string, payload any) {
+	if c := s.current(); c != nil {
+		c.rpc.Notify(method, payload)
 	}
 }
 
-func (s *Server) connections() []*conn {
+func (s *Server) current() *conn {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	conns := make([]*conn, 0, len(s.conns))
-	for c := range s.conns {
-		conns = append(conns, c)
+	c := s.client
+	s.mu.Unlock()
+	if c == nil || !c.isInitialized() {
+		return nil
 	}
-	return conns
+	return c
 }
 
 type conn struct {
 	s   *Server
+	ws  *websocket.Conn
 	rpc *jsonrpc.Conn
 
 	mu          sync.Mutex
 	initialized bool
-	threads     map[string]bool
 	asked       map[string]bool
 }
 
@@ -108,18 +109,6 @@ func (c *conn) isInitialized() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.initialized
-}
-
-func (c *conn) watches(threadID string) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.threads[threadID]
-}
-
-func (c *conn) watch(threadID string) {
-	c.mu.Lock()
-	c.threads[threadID] = true
-	c.mu.Unlock()
 }
 
 func (c *conn) Notify(method string, _ json.RawMessage) {
@@ -168,30 +157,48 @@ func (c *conn) Call(method string, params json.RawMessage) (any, func(), *jsonrp
 		if err != nil {
 			return nil, nil, serverError(err)
 		}
-		c.watch(t.ID)
 		result := threadResult{Thread: t}
 		return result, func() { c.rpc.Notify(notifyThreadStarted, result) }, nil
 
 	case methodThreadResume, methodThreadRead:
-		var p threadIDParams
+		var p threadPageParams
 		if err := jsonrpc.DecodeParams(params, &p); err != nil {
 			return nil, nil, err
 		}
-		view, err := ag.ReadThread(p.ThreadID)
+		if p.Limit == 0 {
+			p.Limit = defaultItems
+		}
+		if p.Limit < 1 || p.Limit > maxItems || p.BeforeSeq < 0 {
+			return nil, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "limit must be 1 to %d and beforeSeq not negative", maxItems)
+		}
+		view, more, err := ag.ReadThreadPage(p.ThreadID, p.BeforeSeq, p.Limit)
 		if err != nil {
-			return nil, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "thread %q not found", p.ThreadID)
+			return nil, nil, serverError(err)
 		}
+		result := threadPageResult{ThreadView: view, HasMore: more}
 		if method == methodThreadRead {
-			return view, nil, nil
+			return result, nil, nil
 		}
-
-		c.watch(p.ThreadID)
 		after := func() {
 			for _, r := range ag.PendingRequests(p.ThreadID) {
 				c.request(r.Thread.ID, r.Item)
 			}
 		}
-		return view, after, nil
+		return result, after, nil
+
+	case methodThreadPermissions:
+		var p struct {
+			ThreadID string `json:"threadId"`
+			repo.PermissionSettings
+		}
+		if err := jsonrpc.DecodeParams(params, &p); err != nil {
+			return nil, nil, err
+		}
+		t, err := ag.UpdateThreadSettings(p.ThreadID, p.PermissionSettings)
+		if err != nil {
+			return nil, nil, serverError(err)
+		}
+		return threadResult{Thread: t}, nil, nil
 
 	case methodThreadList:
 		var p repo.ThreadFilter
@@ -219,11 +226,6 @@ func (c *conn) Call(method string, params json.RawMessage) (any, func(), *jsonrp
 		if rpcErr != nil {
 			return nil, nil, rpcErr
 		}
-		if _, err := ag.ReadThread(p.ThreadID); err != nil {
-			return nil, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "thread %q not found", p.ThreadID)
-		}
-
-		c.watch(p.ThreadID)
 		turn, err := ag.StartTurn(p.ThreadID, agent.Input{Text: text, Connection: p.Connection})
 		if err != nil {
 			return nil, nil, serverError(err)
@@ -242,15 +244,8 @@ func (c *conn) Call(method string, params json.RawMessage) (any, func(), *jsonrp
 		if rpcErr != nil {
 			return nil, nil, rpcErr
 		}
-		if _, err := ag.ReadThread(p.ThreadID); err != nil {
-			return nil, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "thread %q not found", p.ThreadID)
-		}
 		turn, err := ag.SteerTurn(p.ThreadID, p.ExpectedTurnID, text)
-		switch {
-		case errors.Is(err, agent.ErrNoActiveTurn), errors.Is(err, agent.ErrTurnMismatch):
-
-			return nil, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidRequest, "%v", err)
-		case err != nil:
+		if err != nil {
 			return nil, nil, serverError(err)
 		}
 		return turnSteerResult{TurnID: turn.ID}, nil, nil
@@ -260,15 +255,10 @@ func (c *conn) Call(method string, params json.RawMessage) (any, func(), *jsonrp
 		if err := jsonrpc.DecodeParams(params, &p); err != nil {
 			return nil, nil, err
 		}
-		if _, err := ag.ReadThread(p.ThreadID); err != nil {
-			return nil, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "thread %q not found", p.ThreadID)
-		}
 		if strings.TrimSpace(p.TurnID) == "" {
 			return nil, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "turnId is required")
 		}
-		if err := ag.InterruptTurn(p.ThreadID, p.TurnID); errors.Is(err, agent.ErrNoActiveTurn) || errors.Is(err, agent.ErrTurnMismatch) {
-			return nil, nil, jsonrpc.Errorf(jsonrpc.CodeServerError, "turn %q is not in progress", p.TurnID)
-		} else if err != nil {
+		if err := ag.InterruptTurn(p.ThreadID, p.TurnID); err != nil {
 			return nil, nil, serverError(err)
 		}
 		return struct{}{}, nil, nil
@@ -320,6 +310,8 @@ func (c *conn) event(e agent.Event) {
 		c.rpc.Notify(method, deltaNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, ItemID: e.Item.ID, Delta: e.Delta})
 	case agent.EventTurnCompleted:
 		c.rpc.Notify(notifyTurnCompleted, turnNotification{ThreadID: e.Thread.ID, Turn: e.Turn})
+	case agent.EventThreadStatusChanged:
+		c.rpc.Notify(notifyThreadStatusChanged, threadStatusNotification{ThreadID: e.Thread.ID, Status: e.Status})
 	case agent.EventApprovalRequested, agent.EventUserInputRequested:
 		c.request(e.Thread.ID, *e.Item)
 	}
@@ -391,7 +383,29 @@ func inputText(input []userInput) (string, *jsonrpc.Error) {
 	return strings.Join(texts, "\n"), nil
 }
 
+var errorCodes = []struct {
+	err  error
+	code int
+}{
+	{repo.ErrNotFound, errNotFound},
+	{agent.ErrNoActiveTurn, errNoActiveTurn},
+	{agent.ErrTurnMismatch, errTurnMismatch},
+	{agent.ErrNoSuchRequest, errNoSuchRequest},
+	{agent.ErrSubagentThread, errSubagentThread},
+	{agent.ErrWorkspaceArchived, errWorkspaceArchived},
+	{agent.ErrInvalidMessage, jsonrpc.CodeInvalidParams},
+	{agent.ErrInvalidAnswer, jsonrpc.CodeInvalidParams},
+	{agent.ErrInvalidDecision, jsonrpc.CodeInvalidParams},
+	{agent.ErrInvalidName, jsonrpc.CodeInvalidParams},
+	{permission.ErrInvalidSettings, jsonrpc.CodeInvalidParams},
+}
+
 func serverError(err error) *jsonrpc.Error {
+	for _, e := range errorCodes {
+		if errors.Is(err, e.err) {
+			return jsonrpc.Errorf(e.code, "%v", err)
+		}
+	}
 	return jsonrpc.Errorf(jsonrpc.CodeServerError, "%v", err)
 }
 

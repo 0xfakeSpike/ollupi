@@ -13,7 +13,7 @@ type Method func(params json.RawMessage) (any, error)
 
 var builtinMethods = map[string]bool{
 	methodInitialize: true, methodInitialized: true,
-	methodThreadStart: true, methodThreadResume: true, methodThreadList: true, methodThreadRead: true,
+	methodThreadStart: true, methodThreadResume: true, methodThreadList: true, methodThreadRead: true, methodThreadPermissions: true,
 	methodTurnStart: true, methodTurnSteer: true, methodTurnInterrupt: true,
 	methodModelList:     true,
 	methodWorkspaceList: true, methodWorkspaceAdd: true, methodWorkspaceRename: true, methodWorkspaceArchive: true,

@@ -60,7 +60,7 @@ func (s *orchestrator) startTurn(threadID string, in Input) (repo.TurnRow, error
 		return repo.TurnRow{}, err
 	}
 	if view.Thread.ParentThreadID != "" {
-		return repo.TurnRow{}, errSubagentThread
+		return repo.TurnRow{}, ErrSubagentThread
 	}
 	model, err := s.a.conversationModel(view, in.Connection)
 	if err != nil {
@@ -78,7 +78,7 @@ func (s *orchestrator) beginTurn(view repo.ThreadView, text, cronJobID string, m
 		}
 	}
 	turn := repo.TurnRow{
-		ID: uuid.NewString(), Model: model.Clone(), Settings: env.settings,
+		ID: uuid.NewString(), Model: model.Clone(),
 		Input: text, CronJobID: cronJobID, StartedAt: time.Now().UTC(),
 	}
 	turn, message, err := s.a.DB.SubmitTurn(threadID, turn)
@@ -107,7 +107,7 @@ func (s *orchestrator) steer(threadID, expectedTurnID, text string) (repo.TurnRo
 		return repo.TurnRow{}, err
 	}
 	if view.Thread.ParentThreadID != "" {
-		return repo.TurnRow{}, errSubagentThread
+		return repo.TurnRow{}, ErrSubagentThread
 	}
 	turn, active := view.ActiveTurn()
 	if !active {
@@ -212,7 +212,7 @@ func (s *orchestrator) endTurn(turn repo.TurnRow) {
 func (s *orchestrator) resolveApproval(threadID, approvalID string, decision repo.Decision, decidedBy string) error {
 	return s.respond(threadID, func(it repo.ItemRow) bool { return it.WaitsForApproval() && it.Approval.ID == approvalID }, func(it repo.ItemRow) (repo.ItemRow, error) {
 		if available := it.Approval.AvailableDecisions(); !slices.Contains(available, decision) {
-			return repo.ItemRow{}, fmt.Errorf("agent: decision %q is not one of %q", decision, available)
+			return repo.ItemRow{}, fmt.Errorf("agent: %w: %q is not one of %q", ErrInvalidDecision, decision, available)
 		}
 		now := time.Now().UTC()
 		it.Approval.Decision, it.Approval.DecidedBy, it.Approval.DecidedAt = decision, decidedBy, &now
@@ -227,7 +227,7 @@ func (s *orchestrator) answerUserInput(threadID, itemID string, answers map[stri
 			return repo.ItemRow{}, err
 		}
 		if err := req.Check(answers, maxInputRunes); err != nil {
-			return repo.ItemRow{}, fmt.Errorf("agent: %w", err)
+			return repo.ItemRow{}, fmt.Errorf("agent: %w: %v", ErrInvalidAnswer, err)
 		}
 		result, _, err := repo.ResultOf(tools.Result{Output: answers})
 		if err != nil {
@@ -245,11 +245,11 @@ func (s *orchestrator) respond(threadID string, match func(repo.ItemRow) bool, a
 		return err
 	}
 	if _, scheduled := s.slots[threadID]; scheduled {
-		return errNoSuchRequest
+		return ErrNoSuchRequest
 	}
 	i := slices.IndexFunc(view.PendingRequests(), match)
 	if i < 0 {
-		return errNoSuchRequest
+		return ErrNoSuchRequest
 	}
 	pending := view.PendingRequests()[i]
 	activeTurn, _ := view.ActiveTurn()
@@ -271,10 +271,10 @@ func (s *orchestrator) respond(threadID string, match func(repo.ItemRow) bool, a
 func checkMessage(text string) (string, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
-		return "", fmt.Errorf("agent: empty message")
+		return "", fmt.Errorf("agent: %w: empty message", ErrInvalidMessage)
 	}
 	if n := len([]rune(text)); n > maxInputRunes {
-		return "", fmt.Errorf("agent: message has %d characters; at most %d are accepted", n, maxInputRunes)
+		return "", fmt.Errorf("agent: %w: %d characters; at most %d are accepted", ErrInvalidMessage, n, maxInputRunes)
 	}
 	return text, nil
 }

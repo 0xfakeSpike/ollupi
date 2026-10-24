@@ -25,7 +25,6 @@ func NewServer(a *agent.Agent, opts Options) (*Server, error) {
 		agent:   a,
 		token:   opts.Token,
 		origins: append([]string{"localhost:*", "127.0.0.1:*", "[::1]:*"}, opts.AllowedOrigins...),
-		conns:   make(map[*conn]struct{}),
 		methods: make(map[string]Method),
 	}
 	for name, m := range opts.Methods {
