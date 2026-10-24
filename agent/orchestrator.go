@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"slices"
@@ -14,6 +15,8 @@ import (
 )
 
 const workers = 4
+
+var errStopped = errors.New("agent: the agent is shutting down")
 
 type phase int
 
@@ -29,39 +32,91 @@ type slot struct {
 	cancel context.CancelFunc
 }
 
+type work struct {
+	threadID string
+	slot     *slot
+}
+
 type orchestrator struct {
 	a   *Agent
 	ctx context.Context
 
-	mu      sync.Mutex
-	cond    *sync.Cond
-	slots   map[string]*slot
-	queue   []string
-	workers sync.WaitGroup
+	events chan func()
+	work   chan work
+	slots  map[string]*slot
+	queue  []string
+	done   sync.WaitGroup
 }
 
 func newOrchestrator(a *Agent, ctx context.Context) *orchestrator {
-	s := &orchestrator{a: a, ctx: ctx, slots: map[string]*slot{}}
-	s.cond = sync.NewCond(&s.mu)
-	return s
+	return &orchestrator{a: a, ctx: ctx, events: make(chan func()), work: make(chan work), slots: map[string]*slot{}}
 }
 
 func (s *orchestrator) start() {
-	context.AfterFunc(s.ctx, func() {
-		s.mu.Lock()
-		s.cond.Broadcast()
-		s.mu.Unlock()
-	})
 	for range workers {
-		s.workers.Add(1)
-		go s.workerLoop()
+		s.done.Add(1)
+		go s.worker()
 	}
-	s.workers.Add(1)
-	go s.keepTime()
+	s.done.Add(1)
+	go s.loop()
 }
 
 func (s *orchestrator) wait() {
-	s.workers.Wait()
+	s.done.Wait()
+}
+
+func (s *orchestrator) loop() {
+	defer s.done.Done()
+	tick := time.NewTicker(time.Minute)
+	defer tick.Stop()
+	s.sendDue("")
+	for {
+		for len(s.queue) > 0 {
+			if sl, ok := s.slots[s.queue[0]]; ok && sl.phase == queued {
+				break
+			}
+			s.queue = s.queue[1:]
+		}
+		var out chan work
+		var next work
+		if len(s.queue) > 0 {
+			out, next = s.work, work{threadID: s.queue[0], slot: s.slots[s.queue[0]]}
+		}
+		select {
+		case <-s.ctx.Done():
+			return
+		case fn := <-s.events:
+			fn()
+		case out <- next:
+			s.queue = s.queue[1:]
+			next.slot.phase = running
+		case <-tick.C:
+			s.sendDue("")
+			s.reconcile()
+		}
+	}
+}
+
+func (s *orchestrator) post(fn func()) bool {
+	select {
+	case s.events <- fn:
+		return true
+	case <-s.ctx.Done():
+		return false
+	}
+}
+
+func (s *orchestrator) call(fn func() error) error {
+	done := make(chan error, 1)
+	if !s.post(func() { done <- fn() }) {
+		return errStopped
+	}
+	select {
+	case err := <-done:
+		return err
+	case <-s.ctx.Done():
+		return errStopped
+	}
 }
 
 func (s *orchestrator) settle(threadID string) bool {
@@ -109,36 +164,17 @@ func (s *orchestrator) enqueue(threadID, turnID string) {
 	ctx, cancel := context.WithCancel(s.ctx)
 	s.slots[threadID] = &slot{turnID: turnID, phase: queued, ctx: ctx, cancel: cancel}
 	s.queue = append(s.queue, threadID)
-	s.cond.Signal()
 }
 
-func (s *orchestrator) nextWork() (string, *slot, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (s *orchestrator) worker() {
+	defer s.done.Done()
 	for {
-		for len(s.queue) == 0 && s.ctx.Err() == nil {
-			s.cond.Wait()
-		}
-		if s.ctx.Err() != nil {
-			return "", nil, false
-		}
-		threadID := s.queue[0]
-		s.queue = s.queue[1:]
-		if sl, ok := s.slots[threadID]; ok && sl.phase == queued {
-			sl.phase = running
-			return threadID, sl, true
-		}
-	}
-}
-
-func (s *orchestrator) workerLoop() {
-	defer s.workers.Done()
-	for {
-		threadID, sl, ok := s.nextWork()
-		if !ok {
+		select {
+		case <-s.ctx.Done():
 			return
+		case w := <-s.work:
+			s.run(w.threadID, w.slot)
 		}
-		s.run(threadID, sl)
 	}
 }
 
@@ -146,27 +182,26 @@ func (s *orchestrator) run(threadID string, sl *slot) {
 	view, err := s.a.ReadThread(threadID)
 	if err != nil {
 		log.Printf("agent: thread %s cannot be read while turn %s is queued: %v", threadID, sl.turnID, err)
-		s.mu.Lock()
-		s.release(threadID)
-		s.failTurn(sl.turnID, repo.TurnFailed, "the thread could not be read from storage")
-		s.mu.Unlock()
+		s.post(func() {
+			s.release(threadID)
+			s.failTurn(sl.turnID, repo.TurnFailed, "the thread could not be read from storage")
+		})
 		return
 	}
 	turn, ok := findTurn(view, sl.turnID)
 	if !ok || turn.Status != repo.TurnInProgress {
-		s.mu.Lock()
-		s.release(threadID)
-		s.settle(threadID)
-		s.mu.Unlock()
+		s.post(func() {
+			s.release(threadID)
+			s.settle(threadID)
+		})
 		return
 	}
 	outcome, usage, err := s.a.step(sl.ctx, view, turn)
 	if err := s.a.DB.AddUsage(threadID, turn.ID, usage); err != nil {
 		log.Printf("agent: thread %s: record usage of turn %s: %v", threadID, turn.ID, err)
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.afterStep(threadID, sl, len(view.Items), outcome, err)
+	seen := len(view.Items)
+	s.post(func() { s.afterStep(threadID, sl, seen, outcome, err) })
 }
 
 func (s *orchestrator) release(threadID string) {
@@ -246,23 +281,6 @@ func (s *orchestrator) stop(threadID string, sl *slot) {
 	if turn, ok := view.ActiveTurn(); ok {
 		turn.Status, turn.Error = repo.TurnInterrupted, "interrupted before it ran again"
 		s.endTurn(turn)
-	}
-}
-
-func (s *orchestrator) keepTime() {
-	defer s.workers.Done()
-	tick := time.NewTicker(time.Minute)
-	defer tick.Stop()
-	for {
-		s.mu.Lock()
-		s.sendDue("")
-		s.reconcile()
-		s.mu.Unlock()
-		select {
-		case <-s.ctx.Done():
-			return
-		case <-tick.C:
-		}
 	}
 }
 
@@ -391,19 +409,23 @@ func (s *orchestrator) settledCall(call repo.ItemRow) (repo.ItemRow, bool) {
 }
 
 func (a *Agent) StartTurn(threadID, text, connection string) (repo.TurnRow, error) {
-	a.run.mu.Lock()
-	defer a.run.mu.Unlock()
-	return a.run.startTurn(threadID, text, connection)
+	var turn repo.TurnRow
+	err := a.run.call(func() (err error) {
+		turn, err = a.run.startTurn(threadID, text, connection)
+		return err
+	})
+	return turn, err
 }
 
 func (a *Agent) SteerTurn(threadID, expectedTurnID, text string) (repo.TurnRow, error) {
-	a.run.mu.Lock()
-	defer a.run.mu.Unlock()
-	return a.run.steer(threadID, expectedTurnID, text)
+	var turn repo.TurnRow
+	err := a.run.call(func() (err error) {
+		turn, err = a.run.steer(threadID, expectedTurnID, text)
+		return err
+	})
+	return turn, err
 }
 
 func (a *Agent) InterruptTurn(threadID, expectedTurnID string) error {
-	a.run.mu.Lock()
-	defer a.run.mu.Unlock()
-	return a.run.interrupt(threadID, expectedTurnID)
+	return a.run.call(func() error { return a.run.interrupt(threadID, expectedTurnID) })
 }
