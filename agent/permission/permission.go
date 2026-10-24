@@ -76,18 +76,18 @@ func (c *Checker) Decide(call Call, history []repo.ItemRow) Decision {
 	case ruleAsk:
 		return Decision{Verdict: Ask, Rule: rule, Reason: fmt.Sprintf("Your permission rule %s asks before this call.", rule)}
 	case ruleAllow:
-		return Decision{Verdict: Run, Rule: rule}
+		if p := call.Prepared; p == nil || !p.Escalated {
+			return Decision{Verdict: Run, Rule: rule}
+		}
 	}
 	if allowedForConversation(call, history) {
 		return Decision{Verdict: Run, Reason: "allowed for this conversation earlier"}
 	}
+	if p := call.Prepared; p != nil && p.Escalated {
+		return Decision{Verdict: Ask, Reason: "Runs outside the sandbox: " + p.Justification}
+	}
 	if c.policy.requiresApproval(call.Annotations, call.Prepared) {
-		d := Decision{Verdict: Ask}
-
-		if p := call.Prepared; p != nil && p.Escalated {
-			d.Reason = "Runs outside the sandbox: " + p.Justification
-		}
-		return d
+		return Decision{Verdict: Ask}
 	}
 	return Decision{Verdict: Run}
 }

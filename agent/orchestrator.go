@@ -45,6 +45,11 @@ func newOrchestrator(a *Agent, ctx context.Context) *orchestrator {
 }
 
 func (s *orchestrator) start() {
+	context.AfterFunc(s.ctx, func() {
+		s.mu.Lock()
+		s.cond.Broadcast()
+		s.mu.Unlock()
+	})
 	for range workers {
 		s.workers.Add(1)
 		go s.workerLoop()
@@ -125,10 +130,9 @@ func (s *orchestrator) run(w work) {
 	if err := s.a.DB.AddUsage(w.threadID, turn.ID, usage); err != nil {
 		log.Printf("agent: thread %s: record usage of turn %s: %v", w.threadID, turn.ID, err)
 	}
-	interrupted := w.ctx.Err() != nil
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.afterStep(w.threadID, outcome, err, interrupted)
+	s.afterStep(w.threadID, outcome, err, w.ctx.Err() != nil)
 }
 
 func (s *orchestrator) release(threadID string) {

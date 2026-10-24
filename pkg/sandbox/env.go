@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -31,9 +32,11 @@ func Environ(host []string, passthrough []string, extra map[string]string) []str
 	return out
 }
 
+var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
 func ValidateEnvNames(names []string) error {
 	for _, k := range names {
-		if k == "" || strings.ContainsAny(k, "=\x00") {
+		if !envName.MatchString(k) {
 			return fmt.Errorf("sandbox: invalid environment variable name %q", k)
 		}
 	}

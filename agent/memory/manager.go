@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
+	masking "github.com/0xfakeSpike/ollupi/pkg/redact"
 	"github.com/0xfakeSpike/ollupi/repo"
 )
 
@@ -150,9 +151,10 @@ func (m *Manager) gatherEvidence() (batch, evidence *Batch, payload string, esti
 func (m *Manager) extract(ctx context.Context, evidence *Batch, payload string, report *repo.MemoryReport) ([]Operation, error) {
 	callCtx, cancel := context.WithTimeout(ctx, m.opts.Timeout)
 	defer cancel()
+	redactor := masking.New()
 	response, err := m.model.Chat(callCtx, llm.ChatRequest{
 		Model:      m.opts.Model,
-		Messages:   []llm.ChatMessage{{Role: llm.RoleSystem, Content: extractionInstructions}, {Role: llm.RoleUser, Content: payload}},
+		Messages:   []llm.ChatMessage{{Role: llm.RoleSystem, Content: extractionInstructions}, {Role: llm.RoleUser, Content: redactor.Mask(payload)}},
 		ToolChoice: llm.ToolChoiceNone,
 	}, nil)
 	if err != nil {
@@ -164,7 +166,7 @@ func (m *Manager) extract(ctx context.Context, evidence *Batch, payload string, 
 	if len(response.Message.ToolCalls) != 0 || (response.FinishReason != "" && response.FinishReason != "stop") {
 		return nil, errors.New("memory extraction did not produce a complete text response")
 	}
-	ops, err := parseOperations(response.Message.Content, evidence)
+	ops, err := parseOperations(response.Message.Content, evidence, redactor.Restore)
 	if err != nil {
 		return nil, err
 	}

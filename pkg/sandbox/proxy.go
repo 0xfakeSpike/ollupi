@@ -147,9 +147,12 @@ func (c compiledRules) decide(host string, port int) (allowed, literal bool) {
 	return allowed, literal
 }
 
+var sharedAddressSpace = netip.MustParsePrefix("100.64.0.0/10")
+
 func sensitiveAddr(a netip.Addr) bool {
 	a = a.Unmap()
-	return a.IsLoopback() || a.IsUnspecified() || a.IsLinkLocalUnicast() || a.IsLinkLocalMulticast()
+	return a.IsLoopback() || a.IsUnspecified() || a.IsPrivate() || sharedAddressSpace.Contains(a) ||
+		a.IsLinkLocalUnicast() || a.IsLinkLocalMulticast() || a.IsInterfaceLocalMulticast() || a.IsMulticast()
 }
 
 type proxy struct {
@@ -305,7 +308,7 @@ func (p *proxy) dial(ctx context.Context, host string, port int) (net.Conn, erro
 	var lastErr error = fmt.Errorf("no address for %s", host)
 	for _, a := range addrs {
 		if sensitiveAddr(a) && !literal {
-			p.block(target, "resolves to a local or link-local address; allow it by name or address to reach it")
+			p.block(target, "resolves to a local, private or link-local address; allow it by name or address to reach it")
 			lastErr = errBlocked
 			continue
 		}
