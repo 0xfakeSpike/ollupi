@@ -58,7 +58,7 @@ func extractionInput(batch *Batch, budget int) (string, int, error) {
 	return payload, used, nil
 }
 
-func parseOperations(content string, batch *Batch) ([]Operation, error) {
+func parseOperations(content string, batch *Batch, restore func(string) string) ([]Operation, error) {
 	content = strings.TrimSpace(content)
 	if strings.HasPrefix(content, "```json\n") && strings.HasSuffix(content, "```") {
 		content = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(content, "```json\n"), "```"))
@@ -96,7 +96,7 @@ func parseOperations(content string, batch *Batch) ([]Operation, error) {
 	accepted := make([]Operation, 0, len(result.Operations))
 	for i := range result.Operations {
 		op := &result.Operations[i]
-		op.Topic, op.Text = strings.TrimSpace(op.Topic), strings.TrimSpace(op.Text)
+		op.Topic, op.Text = strings.TrimSpace(restore(op.Topic)), strings.TrimSpace(restore(op.Text))
 		switch op.Action {
 		case "add":
 			if op.ID != "" {

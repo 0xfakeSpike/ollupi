@@ -54,7 +54,7 @@ func New() *Redactor {
 }
 
 func (r *Redactor) Mask(s string) string {
-	spans := r.spans(s)
+	spans := findSpans(s)
 	if len(spans) == 0 {
 		return s
 	}
@@ -113,7 +113,16 @@ func (s *Stream) Flush() string {
 	return out
 }
 
-func (r *Redactor) spans(s string) []span {
+func Spans(s string) [][2]int {
+	found := findSpans(s)
+	out := make([][2]int, len(found))
+	for i, sp := range found {
+		out[i] = [2]int{sp.start, sp.end}
+	}
+	return out
+}
+
+func findSpans(s string) []span {
 	var found []span
 	for _, d := range detectors {
 		for _, loc := range d.match.FindAllStringIndex(s, -1) {

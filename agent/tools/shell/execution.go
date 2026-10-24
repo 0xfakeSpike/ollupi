@@ -117,8 +117,8 @@ func commandEnvironment(raw any) (map[string]string, error) {
 		if !ok {
 			return nil, fmt.Errorf("shell: env value for %q must be string", k)
 		}
-		if k == "" || strings.ContainsAny(k, "=\x00") || strings.ContainsRune(value, 0) {
-			return nil, fmt.Errorf("shell: invalid environment variable %q", k)
+		if sandbox.ValidateEnvNames([]string{k}) != nil || strings.ContainsRune(value, 0) {
+			return nil, fmt.Errorf("shell: invalid environment variable %q; names are letters, digits and _, not starting with a digit", k)
 		}
 		out[k] = value
 	}

@@ -2,7 +2,6 @@ package agent
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/permission"
@@ -33,7 +32,7 @@ func (a *Agent) createThread(t repo.ThreadRow) (repo.ThreadRow, error) {
 }
 
 func (a *Agent) ReadThread(id string) (repo.ThreadView, error) {
-	v, err := a.DB.Thread(strings.TrimSpace(id))
+	v, err := a.DB.Thread(id)
 	if err != nil {
 		return repo.ThreadView{}, fmt.Errorf("agent: thread %s: %w", id, err)
 	}

@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/0xfakeSpike/ollupi/agent/tools"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
+	"github.com/0xfakeSpike/ollupi/pkg/redact"
 	"github.com/0xfakeSpike/ollupi/repo"
 )
 
@@ -102,9 +104,21 @@ func truncateRunes(s string, max int) string {
 	if len(runes) <= max {
 		return s
 	}
-	head := max / 3
-	tail := max - head
-	return string(runes[:head]) + fmt.Sprintf("\n[... %d characters omitted ...]\n", len(runes)-max) + string(runes[len(runes)-tail:])
+	head, tail := cutPoints(s, max/3, len(runes)-(max-max/3))
+	return string(runes[:head]) + fmt.Sprintf("\n[... %d characters omitted ...]\n", tail-head) + string(runes[tail:])
+}
+
+func cutPoints(s string, head, tail int) (int, int) {
+	for _, sp := range redact.Spans(s) {
+		start, end := utf8.RuneCountInString(s[:sp[0]]), utf8.RuneCountInString(s[:sp[1]])
+		if start < head && head < end {
+			head = start
+		}
+		if start < tail && tail < end {
+			tail = end
+		}
+	}
+	return head, tail
 }
 
 func callResult(it *repo.ItemRow, outputBudget int) (string, error) {
@@ -162,6 +176,6 @@ func clipText(s string, budget int) string {
 		}
 	}
 
-	head, tail := 2*lo/3, 2*lo-2*lo/3
-	return strings.TrimSpace(string(runes[:head])) + marker(len(runes)-head-tail) + strings.TrimSpace(string(runes[len(runes)-tail:]))
+	head, tail := cutPoints(s, 2*lo/3, len(runes)-(2*lo-2*lo/3))
+	return strings.TrimSpace(string(runes[:head])) + marker(tail-head) + strings.TrimSpace(string(runes[tail:]))
 }
