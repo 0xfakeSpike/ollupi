@@ -32,6 +32,25 @@ func (a *Agent) PendingRequests(threadID string) []Request {
 	return out
 }
 
+func (a *Agent) AllPendingRequests() []Request {
+	ids, err := a.DB.ActiveThreadIDs()
+	if err != nil {
+		return nil
+	}
+	var out []Request
+	for _, id := range ids {
+		v, err := a.ReadThread(id)
+		if err != nil {
+			continue
+		}
+		for _, it := range v.PendingRequests() {
+			out = append(out, Request{Thread: v.Thread, Item: it})
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return requestedAt(out[i].Item).Before(requestedAt(out[j].Item)) })
+	return out
+}
+
 func requestedAt(it repo.ItemRow) time.Time {
 	if it.Approval != nil {
 		return it.Approval.RequestedAt

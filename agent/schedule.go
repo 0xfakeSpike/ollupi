@@ -34,13 +34,24 @@ func (s *orchestrator) advance(threadID string) (bool, error) {
 			return false, err
 		}
 	}
-	if slices.ContainsFunc(view.AgentCalls(), func(c repo.ItemRow) bool { return c.Await.ThreadID == "" }) {
-		s.launchSubagents(threadID)
+	if s.needsLaunch(view) {
+		children, err := s.launchSubagents(threadID)
+		defer func() {
+			for _, child := range children {
+				s.settle(child)
+			}
+		}()
+		if err != nil {
+			return false, err
+		}
 		if view, err = s.a.ReadThread(threadID); err != nil {
 			return false, err
 		}
 	}
 	if _, waiting := view.PendingRequest(); waiting || len(view.AgentCalls()) > 0 {
+		return false, nil
+	}
+	if _, busy := s.slots[threadID]; busy {
 		return false, nil
 	}
 	s.enqueue(threadID, turn.ID)
@@ -52,6 +63,7 @@ func (s *orchestrator) halt(threadID string, cause error) {
 	log.Printf("agent: thread %s cannot advance: %v", threadID, cause)
 	turn, err := s.a.DB.ActiveTurn(threadID)
 	if err != nil {
+		s.a.fault(threadID, "", fmt.Errorf("the thread could not advance: %w", cause))
 		return
 	}
 	turn.Status, turn.Error = repo.TurnFailed, "the agent could not advance this turn: "+cause.Error()
@@ -61,7 +73,7 @@ func (s *orchestrator) halt(threadID string, cause error) {
 func (s *orchestrator) failTurn(turnID string, status repo.TurnStatus, reason string) {
 	turn, err := s.a.DB.Turn(turnID)
 	if err != nil {
-		log.Printf("agent: turn %s cannot be read to end it: %v", turnID, err)
+		s.a.fault("", turnID, fmt.Errorf("the turn could not be read to end it (%s): %w", reason, err))
 		return
 	}
 	if turn.Status != repo.TurnInProgress {

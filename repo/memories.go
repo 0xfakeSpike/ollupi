@@ -61,3 +61,15 @@ func (d *DB) RowExists(table, id string) (bool, error) {
 	err := d.gorm.Table(table).Where("id = ?", id).Count(&n).Error
 	return n > 0, err
 }
+
+func (d *DB) ActiveMemoriesWithMissingSources() ([]MemoryRow, error) {
+	var rows []MemoryRow
+	err := d.gorm.Where(`status = 'active' AND EXISTS (SELECT 1 FROM json_each(memories.sources) AS s WHERE NOT CASE json_extract(s.value, '$.table')
+		WHEN 'workspaces' THEN EXISTS (SELECT 1 FROM workspaces WHERE id = json_extract(s.value, '$.id'))
+		WHEN 'threads' THEN EXISTS (SELECT 1 FROM threads WHERE id = json_extract(s.value, '$.id'))
+		WHEN 'turns' THEN EXISTS (SELECT 1 FROM turns WHERE id = json_extract(s.value, '$.id'))
+		WHEN 'items' THEN EXISTS (SELECT 1 FROM items WHERE id = json_extract(s.value, '$.id'))
+		WHEN 'cron_jobs' THEN EXISTS (SELECT 1 FROM cron_jobs WHERE id = json_extract(s.value, '$.id'))
+		ELSE 1 END)`).Order("id").Find(&rows).Error
+	return rows, err
+}

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -13,8 +14,11 @@ func (a *Agent) StartThread(workspaceID string, settings permission.Settings) (r
 	if err := a.checkWorkspace(workspaceID); err != nil {
 		return repo.ThreadRow{}, err
 	}
-	base := a.environmentOf(repo.ThreadRow{WorkspaceID: repo.Ref(workspaceID)}).settings
-	if err := a.validateLayer(base, settings); err != nil {
+	env, err := a.environmentOf(repo.ThreadRow{WorkspaceID: repo.Ref(workspaceID)})
+	if err != nil {
+		return repo.ThreadRow{}, err
+	}
+	if err := a.validateLayer(env.settings, settings); err != nil {
 		return repo.ThreadRow{}, err
 	}
 	return a.createThread(repo.ThreadRow{Settings: settings, WorkspaceID: repo.Ref(workspaceID)})
@@ -28,8 +32,11 @@ func (a *Agent) UpdateThreadSettings(threadID string, settings permission.Settin
 	if t.ParentThreadID != "" {
 		return repo.ThreadRow{}, ErrSubagentThread
 	}
-	base := a.environmentOf(repo.ThreadRow{WorkspaceID: t.WorkspaceID}).settings
-	if err := a.validateLayer(base, settings); err != nil {
+	env, err := a.environmentOf(repo.ThreadRow{WorkspaceID: t.WorkspaceID})
+	if err != nil {
+		return repo.ThreadRow{}, err
+	}
+	if err := a.validateLayer(env.settings, settings); err != nil {
 		return repo.ThreadRow{}, err
 	}
 	t, err = a.DB.SetThreadSettings(threadID, settings)
@@ -76,11 +83,11 @@ func (a *Agent) ReadThreadPage(id string, before, limit int) (repo.ThreadView, b
 }
 
 func itemBytes(it repo.ItemRow) int {
-	n := 512 + len(it.Text) + len(it.Arguments) + len(it.Error)
-	if it.Result != nil {
-		n += len(it.Result.Output)
+	raw, err := json.Marshal(it)
+	if err != nil {
+		return pageBytes
 	}
-	return n
+	return len(raw)
 }
 
 func (a *Agent) ListThreads(f repo.ThreadFilter) ([]repo.ThreadSummary, error) {

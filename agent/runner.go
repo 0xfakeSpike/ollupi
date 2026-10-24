@@ -17,7 +17,11 @@ func (a *Agent) step(ctx context.Context, view repo.ThreadView, turn repo.TurnRo
 	if err != nil {
 		return runtime.Done, repo.Usage{}, err
 	}
-	checker, err := permission.New(a.environmentOf(view.Thread).settings, a.Tools, a.registry)
+	env, err := a.environmentOf(view.Thread)
+	if err != nil {
+		return runtime.Done, repo.Usage{}, err
+	}
+	checker, err := permission.New(env.settings, a.Tools, a.registry)
 	if err != nil {
 		return runtime.Done, repo.Usage{}, err
 	}
@@ -37,7 +41,7 @@ func (a *Agent) step(ctx context.Context, view repo.ThreadView, turn repo.TurnRo
 		Contexts:    contexts,
 		Memory:      a.Memory,
 		Turn:        turn,
-		Caller:      a.callerOf(view.Thread),
+		Caller:      env.caller(view.Thread),
 		Prompt:      systemprompt.AgentPrompt(a.Name, a.Prompt),
 		Tools:       descriptors,
 		Permissions: checker,

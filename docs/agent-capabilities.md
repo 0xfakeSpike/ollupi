@@ -150,14 +150,14 @@ Codex 和 Claude Code 两列来自公开文档和发布说明，两者更新很�
 | 6.4 | 子代理 | 主 agent 把子任务交给子 agent，独立上下文 | 有：`spawn_agent` | 有：Agent（原 Task）工具 | 有 | `Agent` 工具（Claude Code 前台方式，`tools/subagent`）：普通工具，结果是 `Await`（由另一个 agent 回答），agent 为每个调用新建子 thread；父 turn 暂停、不占 worker；子 turn 结束时同一个事务把最终回答写成那条调用的结果，全部到齐后父 turn 继续。派生的 turn 就是同一个 agent，只能派一层（deny 掉 `Agent`），父 turn 停止时连带停止 |
 | 6.5 | 并行子代理 | 多个子 agent 同时工作 | 有 | 有 | 有 | 一次回复里的多个 `Agent` 调用同时运行（受全局 4 个 worker 限制）；子代理的批准请求在父对话里排队，逐个处理 |
 | 6.6 | Agent 间交接（handoff） | 把对话交给另一个 agent | 无 | 无 | 无 | OpenAI Agents SDK 的概念 |
-| 6.7 | 多会话并发 | 多个会话同时运行 | 有 | 有 | 有 | 每个 thread 同时一个 turn；调度器把可运行的 turn 放进一个先进先出队列，最多 4 个 worker 同时运行，暂停中的 turn 不占 worker（`agent/queue.go`） |
+| 6.7 | 多会话并发 | 多个会话同时运行 | 有 | 有 | 有 | 每个 thread 同时一个进行中的 turn，忙时新消息排队成下一个 turn；一个事件循环把可运行的 turn 放进先进先出队列，4 个 worker 同时运行，等待中的 turn 不占 worker（`agent/loop.go`、`agent/schedule.go`） |
 
 ## 7. 护栏与安全
 
 | # | 能力 | 说明 | Codex | Claude Code | Ollupi | Ollupi 现状与位置 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 7.1 | 审批策略 | 哪些调用需要人批准 | 有：`untrusted`、`on-failure`、`on-request`、`never` | 有：default、acceptEdits、plan、bypassPermissions | 有 | `untrusted`、`on-request`、`never`（`agent/permission/policy.go`） |
-| 7.2 | 按会话覆盖审批策略 | 单个会话用不同策略 | 有 | 有 | 有 | thread 的 `approvalPolicy`；解析顺序是 会话 > 工作区 > agent 默认 |
+| 7.2 | 按会话覆盖审批策略 | 单个会话用不同策略 | 有 | 有 | 有 | 会话、工作区、agent 三层同一种 `permission.Settings`，`thread/updatePermissions` 修改会话这一层；策略取最具体的一层，规则逐层叠加，每一轮现算 |
 | 7.3 | 允许、拒绝规则 | 按工具和参数模式配置 | 部分：命令执行规则 | 有：`Bash(git:*)` 等 | 有 | agent 默认的 allow、ask、deny 和工作区的 `permissions` 字段，语法同 Claude Code：`工具名` 或 `run_command(git diff *)`；按 deny、ask、allow 顺序第一个匹配生效，deny 单写工具名时不提供该工具；规则写错启动即报错（`agent/permission/rules.go`；判断顺序见 `permission.Decide`）；解析出的规则随 turn 一起快照 |
 | 7.4 | "本次会话一直允许" | 批准一次，后续同类不再询问 | 有 | 有：不再询问 | 有 | Codex 的 `acceptForSession`：同一 thread 里相同命令（其他工具为同一工具）不再询问，记在审批 item 上，重启后仍有效；ask 规则拦下的调用不提供此选项 |
 | 7.5 | 系统级沙箱 | 隔离文件系统和网络 | 有：Seatbelt、Landlock、seccomp | 部分：可选沙箱 | 部分 | 只有 macOS Seatbelt 一套：按策略生成默认拒绝的 profile，基础规则取自 Codex；工作目录内拒读凭据、git 元数据只读、开网时关闭本机 Unix socket；非 macOS 上沙箱模式启动即报错，只能显式选 `full-access`（`pkg/sandbox`、`tools/shell`）。（haoagent 的 OpenCLI 曾经通过 `sandbox.RunHost` 在沙箱外运行；Ollupi 里没有使用方，这个入口已删除） |

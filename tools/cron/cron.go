@@ -60,7 +60,23 @@ func (j *Jobs) next(spec string, after time.Time) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, err
 	}
-	return s.Next(after.In(j.location)).UTC(), nil
+	local := after.In(j.location)
+	wall := time.Date(local.Year(), local.Month(), local.Day(), local.Hour(), local.Minute(), local.Second(), local.Nanosecond(), time.UTC)
+	for range 1000 {
+		wall = s.Next(wall)
+		if wall.IsZero() {
+			break
+		}
+		at := time.Date(wall.Year(), wall.Month(), wall.Day(), wall.Hour(), wall.Minute(), 0, 0, j.location)
+		got := at.In(j.location)
+		if shown := time.Date(got.Year(), got.Month(), got.Day(), got.Hour(), got.Minute(), 0, 0, time.UTC); !shown.Equal(wall) {
+			at = at.Add(wall.Sub(shown))
+		}
+		if at.After(after) {
+			return at.UTC(), nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("cron: spec %q has no next run", spec)
 }
 
 func (j *Jobs) Create(threadID, name, spec, prompt string) (repo.CronJobRow, error) {

@@ -19,6 +19,7 @@ const (
 	EventUserInputRequested  EventKind = "user_input_requested"
 	EventTurnCompleted       EventKind = "turn_completed"
 	EventThreadStatusChanged EventKind = "thread_status_changed"
+	EventError               EventKind = "error"
 )
 
 type Event struct {
@@ -28,6 +29,16 @@ type Event struct {
 	Item   *repo.ItemRow
 	Delta  string
 	Status repo.ThreadStatus
+	Error  string
+}
+
+func (a *Agent) fault(threadID, turnID string, err error) {
+	log.Printf("agent: thread %s turn %s: %v", threadID, turnID, err)
+	t, rerr := a.DB.ThreadRow(threadID)
+	if rerr != nil {
+		t = repo.ThreadRow{ID: threadID}
+	}
+	a.emit(Event{Kind: EventError, Thread: t, Turn: repo.TurnRow{ID: turnID, ThreadID: threadID}, Error: err.Error()})
 }
 
 func (a *Agent) emit(e Event) {

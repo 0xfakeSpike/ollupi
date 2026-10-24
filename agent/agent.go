@@ -106,14 +106,14 @@ func (a *Agent) CallTool(ctx context.Context, threadID, tool string, arguments m
 		if err != nil {
 			return tools.Result{}, fmt.Errorf("agent: thread %s: %w", threadID, err)
 		}
-		caller = a.callerOf(t)
+		env, err := a.environmentOf(t)
+		if err != nil {
+			return tools.Result{}, err
+		}
+		caller = env.caller(t)
 	}
 	if arguments == nil {
 		arguments = map[string]any{}
 	}
 	return a.registry.Call(ctx, caller, tool, arguments), nil
-}
-
-func (a *Agent) callerOf(t repo.ThreadRow) tools.Caller {
-	return tools.Caller{ThreadID: t.ID, WorkspaceID: string(t.WorkspaceID), Root: a.environmentOf(t).workspace.RootPath, Subagent: t.ParentThreadID != ""}
 }

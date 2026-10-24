@@ -11,24 +11,18 @@ import (
 )
 
 func commit(db *repo.DB, b *Batch, ops []Operation, report repo.MemoryReport) error {
-	if b == nil || len(b.Events) == 0 {
-		return errors.New("memory batch has no events")
+	if b == nil || b.Entries == 0 {
+		return errors.New("memory batch has no evidence")
 	}
 	return db.Tx(func(tx *repo.DB) error {
-		s, deleted, err := loadState(tx, b)
+		s, err := loadState(tx, b)
 		if err != nil {
 			return err
 		}
 		if err := s.apply(ops); err != nil {
 			return err
 		}
-		if err := s.retireDeletedSources(deleted); err != nil {
-			return err
-		}
-		if err := ackEvents(tx, b.Events); err != nil {
-			return err
-		}
-		return tx.SetMemorySuccess(s.now, report)
+		return tx.AdvanceMemory(b.Cursors, s.now, report)
 	})
 }
 
@@ -42,16 +36,10 @@ type applyState struct {
 	blocked map[string]bool
 }
 
-func loadState(tx *repo.DB, b *Batch) (*applyState, map[string]bool, error) {
-	deleted := map[string]bool{}
-	for _, ev := range b.Events {
-		if ev.Operation == "delete" {
-			deleted[ev.SourceTable+"/"+ev.SourceID] = true
-		}
-	}
+func loadState(tx *repo.DB, b *Batch) (*applyState, error) {
 	current, err := tx.Memories(b.WorkspaceID, false)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	s := &applyState{
 		tx: tx, scope: b.WorkspaceID, now: time.Now().UTC(),
@@ -75,7 +63,7 @@ func loadState(tx *repo.DB, b *Batch) (*applyState, map[string]bool, error) {
 	for _, f := range b.Facts {
 		s.allowed[f.Source.Table+"/"+f.Source.ID] = f.Source
 	}
-	return s, deleted, nil
+	return s, nil
 }
 
 func (s *applyState) apply(ops []Operation) error {
@@ -149,16 +137,12 @@ func (s *applyState) evidenceFor(op Operation) ([]repo.MemorySource, bool, error
 			blocked = true
 		}
 		if op.Action != "retire" {
-			if canonical.Operation == "delete" {
+			exists, err := s.tx.RowExists(canonical.Table, canonical.ID)
+			if err != nil {
+				return nil, false, err
+			}
+			if !exists {
 				blocked = true
-			} else {
-				exists, err := s.tx.RowExists(canonical.Table, canonical.ID)
-				if err != nil {
-					return nil, false, err
-				}
-				if !exists {
-					blocked = true
-				}
 			}
 		}
 		if !seen[key] {
@@ -180,11 +164,6 @@ func (s *applyState) assign(e *repo.MemoryRow, op Operation, sources []repo.Memo
 	if len(sources) == 0 {
 		return errors.New("memory requires evidence")
 	}
-	for _, src := range sources {
-		if src.Operation == "delete" {
-			return errors.New("deleted evidence cannot establish active memory")
-		}
-	}
 	e.Text = strings.TrimSpace(op.Text)
 	if e.Text == "" || len([]rune(e.Text)) > 8000 {
 		return errors.New("memory text must contain 1 to 8000 characters")
@@ -200,32 +179,24 @@ func (s *applyState) assign(e *repo.MemoryRow, op Operation, sources []repo.Memo
 	return nil
 }
 
-func (s *applyState) retireDeletedSources(deleted map[string]bool) error {
-	for _, e := range s.byID {
-		if e.Status != "active" || e.UserEdited {
-			continue
-		}
-		for _, src := range e.Sources {
-			if deleted[src.Table+"/"+src.ID] {
-				e.Status = "retired"
-				e.UpdatedAt = s.now
-				if err := s.tx.SaveMemory(e); err != nil {
-					return err
-				}
-				break
-			}
-		}
-	}
-	return nil
-}
-
-func ackEvents(tx *repo.DB, events []repo.MemoryEventRow) error {
-	for _, ev := range events {
-		if err := tx.AckEvent(ev.ID); err != nil {
+func retireMissingSources(db *repo.DB) error {
+	return db.Tx(func(tx *repo.DB) error {
+		entries, err := tx.ActiveMemoriesWithMissingSources()
+		if err != nil {
 			return err
 		}
-	}
-	return nil
+		now := time.Now().UTC()
+		for _, e := range entries {
+			if e.UserEdited {
+				continue
+			}
+			e.Status, e.UpdatedAt = "retired", now
+			if err := tx.SaveMemory(e); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func normalizeTopic(topic string) string {
@@ -233,23 +204,9 @@ func normalizeTopic(topic string) string {
 }
 
 func deferBatch(db *repo.DB, b *Batch, message string) error {
-	if b == nil {
-		return errors.New("memory batch is required")
+	if b == nil || b.Entries == 0 {
+		return errors.New("memory batch has no evidence")
 	}
-	message = clipMemory(message, 1000)
-	return db.Tx(func(tx *repo.DB) error {
-		changed := false
-		now := time.Now().UnixMilli()
-		for _, ev := range b.Events {
-			ok, err := tx.DeferEvent(ev.ID, message, now)
-			if err != nil {
-				return err
-			}
-			changed = changed || ok
-		}
-		if !changed {
-			return nil
-		}
-		return tx.SetMemoryError(message)
-	})
+	_, err := db.DeferMemory(b.Cursors, b.Entries, clipMemory(message, 1000), time.Now())
+	return err
 }

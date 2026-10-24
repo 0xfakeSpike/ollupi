@@ -12,10 +12,11 @@ type Fact struct {
 }
 
 type Batch struct {
-	WorkspaceID string                `json:"workspaceId"`
-	Events      []repo.MemoryEventRow `json:"-"`
-	Facts       []Fact                `json:"facts"`
-	Existing    []repo.MemoryRow      `json:"existing"`
+	WorkspaceID string             `json:"workspaceId"`
+	Cursors     repo.MemoryCursors `json:"-"`
+	Entries     int                `json:"-"`
+	Facts       []Fact             `json:"facts"`
+	Existing    []repo.MemoryRow   `json:"existing"`
 }
 
 type Operation struct {

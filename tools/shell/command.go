@@ -75,134 +75,130 @@ func contentOf(program string, args []string) tools.Content {
 }
 
 func line(words []string) string {
-	return strings.Join(append([]string{filepath.Base(words[0])}, words[1:]...), " ")
+	return strings.Join(append([]string{programName(words[0])}, words[1:]...), " ")
+}
+
+func programName(word string) string {
+	return strings.ToLower(filepath.Base(word))
+}
+
+var systemDirs = []string{"/bin", "/sbin", "/usr/bin", "/usr/sbin", "/usr/local/bin", "/opt/homebrew/bin", "/opt/homebrew/sbin"}
+
+func trustedProgram(word string) bool {
+	if !strings.Contains(word, "/") {
+		return true
+	}
+	dir := filepath.Dir(filepath.Clean(word))
+	for _, d := range systemDirs {
+		if strings.EqualFold(dir, d) {
+			return true
+		}
+	}
+	return false
 }
 
 func expand(words []string, depth int) ([]string, bool) {
 	if len(words) == 0 {
 		return nil, false
 	}
-	if depth > maxCommandDepth {
-		return []string{line(words)}, true
+	whole := []string{line(words)}
+	if depth > maxCommandDepth || !trustedProgram(words[0]) {
+		return whole, true
 	}
-	base := filepath.Base(words[0])
+	name := programName(words[0])
 	switch {
-	case isShell(base):
-		script, ok := shellScript(words[1:])
+	case isShell(name):
+		script, ok, opaque := shellScript(words[1:])
+		if opaque {
+			return whole, true
+		}
 		if !ok {
-			return []string{line(words)}, false
+			return whole, false
 		}
 		commands, opaque := splitScript(script)
 		var parts []string
 		for _, cmd := range commands {
-			for len(cmd) > 0 && assignment.MatchString(cmd[0]) {
-				cmd, opaque = cmd[1:], true
-			}
-			if len(cmd) == 0 {
-				continue
-			}
-			if strings.ContainsAny(cmd[0], "$*?[") {
+			if assignment.MatchString(cmd[0]) || reserved(cmd[0]) || strings.ContainsAny(cmd[0], "*?[]=") {
 				opaque = true
 			}
 			sub, subOpaque := expand(cmd, depth+1)
 			parts, opaque = append(parts, sub...), opaque || subOpaque
 		}
 		return parts, opaque
-	case isWrapper(base):
-		rest, opaque := unwrap(base, words[1:])
-		if len(rest) == 0 {
-			return []string{line(words)}, opaque
+	case isWrapper(name):
+		rest, ok := unwrap(name, words[1:])
+		if !ok || len(rest) == 0 {
+			return whole, true
 		}
-		parts, subOpaque := expand(rest, depth+1)
-		return parts, opaque || subOpaque
-	case base == "eval" || base == "source" || base == ".":
-		return []string{line(words)}, true
+		parts, opaque := expand(rest, depth+1)
+		return parts, opaque
+	case reserved(name):
+		return whole, true
 	}
-	return []string{line(words)}, false
+	return whole, false
 }
 
-func shellScript(args []string) (string, bool) {
+func shellScript(args []string) (string, bool, bool) {
 	takesC := false
-	for i := 0; i < len(args); i++ {
-		a := args[i]
+	for _, a := range args {
 		switch {
-		case a == "--":
-			continue
-		case a == "-o" || a == "+o" || a == "-O" || a == "+O":
-			i++
-		case strings.HasPrefix(a, "--"):
-		case strings.HasPrefix(a, "-") || strings.HasPrefix(a, "+"):
+		case len(a) > 1 && a[0] == '-' && a[1] != '-' && onlyLetters(a[1:]):
 			if strings.ContainsRune(a[1:], 'c') {
 				takesC = true
 			}
+		case strings.HasPrefix(a, "-") || strings.HasPrefix(a, "+"):
+			return "", false, true
 		default:
-			return a, takesC
+			return a, takesC, false
 		}
 	}
-	return "", false
+	return "", false, takesC
 }
 
-func isWrapper(base string) bool {
-	switch base {
-	case "env", "nohup", "time", "nice", "command", "exec", "xargs", "timeout", "caffeinate", "sudo", "doas":
+func onlyLetters(s string) bool {
+	for _, r := range s {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z') {
+			return false
+		}
+	}
+	return true
+}
+
+func isWrapper(name string) bool {
+	switch name {
+	case "env", "nohup", "nice", "timeout", "xargs", "sudo", "doas", "caffeinate", "time":
 		return true
 	}
 	return false
 }
 
-func unwrap(base string, args []string) ([]string, bool) {
-	valued := map[string]bool{}
-	switch base {
-	case "nice":
-		valued["-n"] = true
-	case "xargs":
-		for _, f := range []string{"-I", "-J", "-L", "-n", "-P", "-s", "-E", "-d", "-R", "-S"} {
-			valued[f] = true
-		}
-	case "sudo", "doas":
-		for _, f := range []string{"-u", "-g", "-C", "-h", "-p", "-U"} {
-			valued[f] = true
-		}
-	case "env":
-		for _, f := range []string{"-u", "-P", "-S", "-C"} {
-			valued[f] = true
-		}
-	case "timeout":
-		for _, f := range []string{"-s", "-k", "--signal", "--kill-after"} {
-			valued[f] = true
-		}
+func unwrap(name string, args []string) ([]string, bool) {
+	if len(args) > 0 && strings.HasPrefix(args[0], "-") {
+		return nil, false
 	}
-	opaque := base == "xargs" || base == "sudo" || base == "doas"
-	i := 0
-	for i < len(args) {
-		a := args[i]
-		switch {
-		case a == "--":
-			i++
-			return trimDuration(base, args[i:]), opaque
-		case strings.HasPrefix(a, "-") && len(a) > 1:
-			if valued[a] {
-				i++
-			}
-			if base == "env" && (a == "-S" || strings.HasPrefix(a, "--split-string")) {
-				opaque = true
-			}
-			i++
-		case base == "env" && assignment.MatchString(a):
-			opaque = true
-			i++
-		default:
-			return trimDuration(base, args[i:]), opaque
-		}
+	if name == "env" && len(args) > 0 && assignment.MatchString(args[0]) {
+		return nil, false
 	}
-	return nil, opaque
+	if name == "xargs" || name == "sudo" || name == "doas" {
+		return nil, false
+	}
+	if name == "timeout" {
+		if len(args) < 2 {
+			return nil, false
+		}
+		return args[1:], true
+	}
+	return args, true
 }
 
-func trimDuration(base string, args []string) []string {
-	if base == "timeout" && len(args) > 0 {
-		return args[1:]
+func reserved(word string) bool {
+	switch strings.ToLower(word) {
+	case "if", "then", "else", "elif", "fi", "for", "while", "until", "do", "done", "case", "esac", "select",
+		"function", "coproc", "time", "in", "{", "}", "!", "[[", "]]",
+		"eval", "source", ".", "exec", "command", "builtin", "alias", "trap", "declare", "typeset", "export", "local", "readonly", "set", "shopt", "enable", "unset":
+		return true
 	}
-	return args
+	return false
 }
 
 func splitScript(script string) ([][]string, bool) {
@@ -230,7 +226,6 @@ func splitScript(script string) ([][]string, bool) {
 	}
 	endCommand := func() {
 		endWord()
-		words = dropKeywords(words)
 		if len(words) > 0 {
 			commands = append(commands, words)
 		}
@@ -250,11 +245,17 @@ func splitScript(script string) ([][]string, bool) {
 			switch {
 			case r == '"':
 				double = false
-			case r == '`' || (r == '$' && i+1 < len(runes) && runes[i+1] == '('):
+			case r == '$' || r == '`':
 				opaque = true
 				word.WriteRune(r)
 			case r == '\\' && i+1 < len(runes):
 				i++
+				if runes[i] == '\n' {
+					opaque = true
+				}
+				if !strings.ContainsRune("$`\"\\", runes[i]) {
+					word.WriteRune('\\')
+				}
 				word.WriteRune(runes[i])
 			default:
 				word.WriteRune(r)
@@ -263,15 +264,13 @@ func splitScript(script string) ([][]string, bool) {
 			single, inWord = true, true
 		case r == '"':
 			double, inWord = true, true
-		case r == '\\' && i+1 < len(runes):
-			i++
-			if runes[i] != '\n' {
-				word.WriteRune(runes[i])
-				inWord = true
+		case r == '\\':
+			if i+1 >= len(runes) || runes[i+1] == '\n' {
+				opaque = true
+				continue
 			}
-		case r == '`' || (r == '$' && i+1 < len(runes) && runes[i+1] == '('):
-			opaque = true
-			word.WriteRune(r)
+			i++
+			word.WriteRune(runes[i])
 			inWord = true
 		case r == '<' || r == '>':
 			if inWord && isDigits(word.String()) {
@@ -286,34 +285,24 @@ func splitScript(script string) ([][]string, bool) {
 				i++
 			}
 			skipNext = true
-		case r == ';' || r == '&' || r == '|' || r == '\n' || r == '(' || r == ')':
+		case r == ';' || r == '&' || r == '|' || r == '\n':
 			endCommand()
 		case r == ' ' || r == '\t' || r == '\r':
 			endWord()
+		case r > 127 || strings.ContainsRune("$`(){}#!~", r):
+			opaque = true
+			word.WriteRune(r)
+			inWord = true
 		default:
 			word.WriteRune(r)
 			inWord = true
 		}
 	}
-	if single || double {
+	endCommand()
+	if single || double || skipNext {
 		opaque = true
 	}
-	endCommand()
 	return commands, opaque
-}
-
-func dropKeywords(words []string) []string {
-	for len(words) > 0 {
-		switch words[0] {
-		case "if", "then", "else", "elif", "while", "until", "do", "!", "{":
-			words = words[1:]
-		case "for", "select", "case", "function", "fi", "done", "esac", "in", "}":
-			return nil
-		default:
-			return words
-		}
-	}
-	return words
 }
 
 func isDigits(s string) bool {
@@ -339,7 +328,14 @@ func blacklisted(c tools.Content, blocked string) bool {
 			match := true
 			for j, w := range want {
 				got := words[i+j]
-				if got != w && (j > 0 || strings.Contains(w, "/") || filepath.Base(got) != w) {
+				if j == 0 {
+					if !strings.EqualFold(got, programName(w)) && (strings.Contains(w, "/") || !strings.EqualFold(programName(got), programName(w))) {
+						match = false
+						break
+					}
+					continue
+				}
+				if got != w {
 					match = false
 					break
 				}
@@ -352,9 +348,9 @@ func blacklisted(c tools.Content, blocked string) bool {
 	return false
 }
 
-func isShell(program string) bool {
-	switch strings.ToLower(filepath.Base(strings.TrimSpace(program))) {
-	case "sh", "bash", "zsh", "dash", "ash", "ksh", "fish":
+func isShell(name string) bool {
+	switch name {
+	case "sh", "bash", "zsh", "dash", "ash", "ksh", "fish", "csh", "tcsh":
 		return true
 	}
 	return false
