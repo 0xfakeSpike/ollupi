@@ -148,6 +148,15 @@ func (v ThreadView) FinalAnswer(turnID string) (string, bool) {
 	return "", false
 }
 
+func (v ThreadView) InputAfter(turnID string, seq int) bool {
+	for _, it := range v.Items {
+		if it.TurnID == turnID && it.Seq > seq && it.Type == ItemUserMessage {
+			return true
+		}
+	}
+	return false
+}
+
 func (v ThreadView) PendingRequest() (ItemRow, bool) {
 	if p := v.PendingRequests(); len(p) > 0 {
 		return p[0], true
