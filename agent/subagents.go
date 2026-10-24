@@ -15,76 +15,101 @@ type parentTurn struct {
 	Turn   repo.TurnRow
 }
 
-func (s *orchestrator) launchSubagents(threadID string) {
-	view, err := s.a.ReadThread(threadID)
-	if err != nil {
-		log.Printf("agent: thread %s cannot be read to launch subagents: %v", threadID, err)
-		return
-	}
-	turn, _ := view.ActiveTurn()
+func (s *orchestrator) needsLaunch(view repo.ThreadView) bool {
 	for _, call := range view.AgentCalls() {
-		if call.Await.ThreadID != "" {
-			continue
+		if call.Await.ThreadID == "" {
+			return true
 		}
-		if child, err := s.launchSubagent(view.Thread, turn, call); err != nil {
-			now := time.Now().UTC()
-			call.Status, call.Error, call.CompletedAt = repo.ItemFailed, fmt.Sprintf("the subagent could not be launched: %v", err), &now
-		} else {
-			call.Await.ThreadID = child.ID
+		if child, err := s.a.ReadThread(call.Await.ThreadID); err == nil && len(child.Turns) == 0 {
+			return true
 		}
-		stored, _, err := s.a.DB.RecordItem(threadID, call)
-		if err != nil {
-			log.Printf("agent: thread %s: record Agent call %s: %v", threadID, call.ID, err)
-			continue
-		}
-		s.a.emitItem(view.Thread, turn, stored, false)
 	}
+	return false
 }
 
-func (s *orchestrator) launchSubagent(parent repo.ThreadRow, parentTurn repo.TurnRow, call repo.ItemRow) (repo.ThreadRow, error) {
+func (s *orchestrator) launchSubagents(threadID string) ([]string, error) {
+	view, err := s.a.ReadThread(threadID)
+	if err != nil {
+		return nil, err
+	}
+	turn, _ := view.ActiveTurn()
+	var started []string
+	for _, call := range view.AgentCalls() {
+		child, err := s.launchSubagent(view.Thread, turn, &call)
+		if err != nil {
+			now := time.Now().UTC()
+			call.Status, call.Error, call.CompletedAt = repo.ItemFailed, fmt.Sprintf("the subagent could not be launched: %v", err), &now
+			stored, _, rerr := s.a.DB.RecordItem(threadID, call)
+			if rerr != nil {
+				return started, rerr
+			}
+			s.a.emitItem(view.Thread, turn, stored, false)
+			continue
+		}
+		if child != "" {
+			started = append(started, child)
+		}
+	}
+	return started, nil
+}
+
+func (s *orchestrator) launchSubagent(parent repo.ThreadRow, parentTurn repo.TurnRow, call *repo.ItemRow) (string, error) {
 	if parent.ParentThreadID != "" {
-		return repo.ThreadRow{}, fmt.Errorf("a subagent cannot launch subagents; do the task yourself with your tools")
+		return "", fmt.Errorf("a subagent cannot launch subagents; do the task yourself with your tools")
 	}
 	req, err := subagent.Decode(call.Await.Request)
 	if err != nil {
-		return repo.ThreadRow{}, err
+		return "", err
 	}
-	child, err := s.a.createThread(repo.ThreadRow{
-		ParentThreadID: repo.Ref(parent.ID), ParentItemID: repo.Ref(call.ID),
-		Settings: parent.Settings, WorkspaceID: parent.WorkspaceID,
-	})
+	childID := call.Await.ThreadID
+	if childID == "" {
+		child, err := s.a.createThread(repo.ThreadRow{
+			ParentThreadID: repo.Ref(parent.ID), ParentItemID: repo.Ref(call.ID),
+			WorkspaceID: parent.WorkspaceID,
+		})
+		if err != nil {
+			return "", err
+		}
+		s.a.emit(Event{Kind: EventThreadStarted, Thread: child})
+		call.Await.ThreadID = child.ID
+		stored, _, err := s.a.DB.RecordItem(parent.ID, *call)
+		if err != nil {
+			return "", err
+		}
+		s.a.emitItem(parent, parentTurn, stored, false)
+		childID = child.ID
+	}
+	view, err := s.a.ReadThread(childID)
 	if err != nil {
-		return repo.ThreadRow{}, err
+		return "", err
 	}
-	s.a.emit(Event{Kind: EventThreadStarted, Thread: child})
-	view, err := s.a.ReadThread(child.ID)
-	if err != nil {
-		return repo.ThreadRow{}, err
+	if len(view.Turns) > 0 {
+		return "", nil
 	}
-	if _, err := s.beginTurn(view, req.Prompt, "", parentTurn.Model); err != nil {
-		return repo.ThreadRow{}, err
+	if _, err := s.submit(view, req.Prompt, "", parentTurn.Model); err != nil {
+		return "", err
 	}
-	return child, nil
+	return childID, nil
 }
 
-func (s *orchestrator) subagentReport(child repo.ThreadView, ended repo.TurnRow) (repo.ItemRow, parentTurn, bool) {
+func (s *orchestrator) subagentReport(child repo.ThreadView, ended repo.TurnRow) (repo.ItemRow, parentTurn, bool, error) {
 	if child.Thread.ParentThreadID == "" {
-		return repo.ItemRow{}, parentTurn{}, false
+		return repo.ItemRow{}, parentTurn{}, false, nil
 	}
 	parent, err := s.a.ReadThread(string(child.Thread.ParentThreadID))
 	if err != nil {
-		return repo.ItemRow{}, parentTurn{}, false
+		return repo.ItemRow{}, parentTurn{}, false, err
 	}
 	turn, active := parent.ActiveTurn()
 	if !active {
-		return repo.ItemRow{}, parentTurn{}, false
+		return repo.ItemRow{}, parentTurn{}, false, nil
 	}
 	for _, call := range parent.AgentCalls() {
 		if call.ID == string(child.Thread.ParentItemID) {
-			return report(call, child, ended), parentTurn{Thread: parent.Thread, Turn: turn}, true
+			return report(call, child, ended), parentTurn{Thread: parent.Thread, Turn: turn}, true, nil
 		}
 	}
-	return repo.ItemRow{}, parentTurn{}, false
+	return repo.ItemRow{}, parentTurn{}, false, nil
 }
 
 func report(call repo.ItemRow, child repo.ThreadView, ended repo.TurnRow) repo.ItemRow {

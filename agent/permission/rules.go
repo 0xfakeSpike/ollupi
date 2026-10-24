@@ -19,6 +19,7 @@ const (
 	ruleDeny
 	ruleAsk
 	ruleAllow
+	ruleOpaque
 )
 
 type rule struct {
@@ -40,6 +41,14 @@ func parseRule(text string) (rule, error) {
 		case strings.TrimSpace(spec) == "":
 			return rule{}, fmt.Errorf("permission rule %q: empty specifier; write the tool name alone to match every call", text)
 		case spec != "*":
+			if first, rest, found := strings.Cut(spec, " "); found {
+				spec = strings.ToLower(first) + " " + rest
+			} else {
+				spec = strings.ToLower(spec)
+				if base, ok := strings.CutSuffix(spec, ":*"); ok {
+					spec = base + ":*"
+				}
+			}
 			r.pattern = specifierPattern(spec)
 		}
 	}
@@ -61,7 +70,7 @@ func specifierPattern(spec string) *regexp.Regexp {
 	for i, part := range parts {
 		parts[i] = regexp.QuoteMeta(part)
 	}
-	expr := "^" + strings.Join(parts, ".*")
+	expr := "(?s)^" + strings.Join(parts, ".*")
 	if optionalTail {
 		expr += "(?: .*)?"
 	}
@@ -126,6 +135,9 @@ func (s ruleSet) decide(tool string, content tools.Content, hasContent bool) (ru
 				}
 			}
 		}
+	}
+	if hasContent && content.Opaque && slices.ContainsFunc(append(slices.Clone(s.deny), s.ask...), func(r rule) bool { return r.tool == tool && r.pattern != nil }) {
+		return ruleOpaque, ""
 	}
 	for _, r := range s.allow {
 		if r.tool == tool && r.pattern == nil {

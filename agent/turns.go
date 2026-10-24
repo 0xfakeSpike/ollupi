@@ -2,7 +2,6 @@ package agent
 
 import (
 	"fmt"
-	"log"
 	"slices"
 	"strings"
 	"time"
@@ -70,8 +69,22 @@ func (s *orchestrator) startTurn(threadID string, in Input) (repo.TurnRow, error
 }
 
 func (s *orchestrator) beginTurn(view repo.ThreadView, text, cronJobID string, model llm.Model) (repo.TurnRow, error) {
+	turn, err := s.submit(view, text, cronJobID, model)
+	if err != nil {
+		return repo.TurnRow{}, err
+	}
+	if !s.settle(view.Thread.ID) {
+		s.a.emitStatus(view.Thread.ID)
+	}
+	return turn, nil
+}
+
+func (s *orchestrator) submit(view repo.ThreadView, text, cronJobID string, model llm.Model) (repo.TurnRow, error) {
 	threadID := view.Thread.ID
-	env := s.a.environmentOf(view.Thread)
+	env, err := s.a.environmentOf(view.Thread)
+	if err != nil {
+		return repo.TurnRow{}, err
+	}
 	if view.Thread.ParentThreadID == "" && view.Thread.WorkspaceID != "" {
 		if err := usable(string(view.Thread.WorkspaceID), env.workspace); err != nil {
 			return repo.TurnRow{}, err
@@ -90,9 +103,6 @@ func (s *orchestrator) beginTurn(view repo.ThreadView, text, cronJobID string, m
 		s.a.emitItem(view.Thread, turn, *message, true)
 	} else {
 		s.a.emit(Event{Kind: EventTurnQueued, Thread: view.Thread, Turn: turn})
-	}
-	if !s.settle(threadID) {
-		s.a.emitStatus(threadID)
 	}
 	return turn, nil
 }
@@ -175,35 +185,38 @@ func (s *orchestrator) stopThread(threadID string) {
 func (s *orchestrator) endTurn(turn repo.TurnRow) {
 	view, err := s.a.ReadThread(turn.ThreadID)
 	if err != nil {
-		log.Printf("agent: thread %s cannot be read to end turn %s: %v", turn.ThreadID, turn.ID, err)
+		s.a.fault(turn.ThreadID, turn.ID, fmt.Errorf("the turn could not be ended: %w", err))
+		return
+	}
+	report, parent, reports, err := s.subagentReport(view, turn)
+	if err != nil {
+		s.a.fault(turn.ThreadID, turn.ID, fmt.Errorf("the subagent's report could not be delivered: %w", err))
 		return
 	}
 	var closed []repo.ItemRow
-	report, parent, reports := s.subagentReport(view, turn)
 	if reports {
 		var stored repo.ItemRow
-		closed, stored, err = s.a.DB.EndSubagentTurn(turn.ThreadID, turn, report)
-		if err == nil {
+		if closed, stored, err = s.a.DB.EndSubagentTurn(turn.ThreadID, turn, report); err == nil {
 			s.a.emitItem(parent.Thread, parent.Turn, stored, false)
 		}
 	} else {
 		closed, err = s.a.DB.EndTurn(turn.ThreadID, turn)
 	}
 	if err != nil {
-		log.Printf("agent: thread %s: record end of turn %s: %v", turn.ThreadID, turn.ID, err)
-	}
-	view, err = s.a.ReadThread(turn.ThreadID)
-	if err != nil {
-		log.Printf("agent: thread %s cannot be read after turn %s ended: %v", turn.ThreadID, turn.ID, err)
+		s.a.fault(turn.ThreadID, turn.ID, fmt.Errorf("the end of the turn could not be recorded: %w", err))
 		return
 	}
-	for _, it := range closed {
-		s.a.emitItem(view.Thread, turn, it, false)
+	if view, err = s.a.ReadThread(turn.ThreadID); err != nil {
+		s.a.fault(turn.ThreadID, turn.ID, fmt.Errorf("the turn ended but could not be read back: %w", err))
+	} else {
+		for _, it := range closed {
+			s.a.emitItem(view.Thread, turn, it, false)
+		}
+		ended, _ := findTurn(view, turn.ID)
+		s.a.emit(Event{Kind: EventTurnCompleted, Thread: view.Thread, Turn: ended})
+		s.a.emitStatus(turn.ThreadID)
 	}
-	ended, _ := findTurn(view, turn.ID)
-	s.a.emit(Event{Kind: EventTurnCompleted, Thread: view.Thread, Turn: ended})
-	s.a.emitStatus(turn.ThreadID)
-	if reports && err == nil {
+	if reports {
 		s.settle(parent.Thread.ID)
 	}
 	s.settle(turn.ThreadID)

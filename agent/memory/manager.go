@@ -54,9 +54,6 @@ func New(db *repo.DB, model *llm.OpenAI, opts Options) (*Manager, error) {
 	if opts.BatchSize <= 0 {
 		opts.BatchSize = 24
 	}
-	if err := db.ReplaceTriggers("memory_", triggersSQL); err != nil {
-		return nil, fmt.Errorf("memory: %w", err)
-	}
 	m := &Manager{db: db, model: model, opts: opts, budget: opts.ExtractionTokens}
 	if opts.Generate {
 		limits, err := model.Limits(opts.Model.Name)
@@ -104,6 +101,16 @@ func (m *Manager) RunOnce(ctx context.Context) (err error) {
 			_ = m.db.SetMemoryError(clipMemory(err.Error(), 1000))
 		}
 	}()
+	if err = retireMissingSources(m.db); err != nil {
+		return fmt.Errorf("could not retire memories of deleted sources: %w", err)
+	}
+	state, err := m.db.MemoryState()
+	if err != nil {
+		return fmt.Errorf("could not read memory state: %w", err)
+	}
+	if state.NextAttempt != nil && time.Now().Before(*state.NextAttempt) {
+		return nil
+	}
 	var evidence *Batch
 	var payload string
 	var estimated int

@@ -35,6 +35,7 @@ const (
 	CodeInvalidRequest = -32600
 	CodeMethodNotFound = -32601
 	CodeInvalidParams  = -32602
+	CodeInternalError  = -32603
 	CodeServerError    = -32000
 )
 
@@ -162,7 +163,12 @@ func (c *Conn) reply(id json.RawMessage, result any, rerr *Error) {
 	}
 	m := Message{JSONRPC: "2.0", ID: id, Error: rerr}
 	if rerr == nil {
-		m.Result = encode(result)
+		raw, err := json.Marshal(result)
+		if err != nil {
+			log.Printf("jsonrpc: encode result: %v", err)
+			raw, m.Error = nil, Errorf(CodeInternalError, "the result cannot be encoded: %v", err)
+		}
+		m.Result = raw
 	}
 	c.send(m)
 }
@@ -239,7 +245,8 @@ func DecodeParams(params json.RawMessage, out any) *Error {
 func encode(v any) json.RawMessage {
 	b, err := json.Marshal(v)
 	if err != nil {
-		panic(fmt.Sprintf("jsonrpc: encode %T: %v", v, err))
+		log.Printf("jsonrpc: encode %T: %v", v, err)
+		return json.RawMessage("null")
 	}
 	return b
 }

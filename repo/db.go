@@ -75,24 +75,6 @@ func (d *DB) applySchema() error {
 	})
 }
 
-func (d *DB) ReplaceTriggers(prefix, sql string) error {
-	return d.gorm.Transaction(func(tx *gorm.DB) error {
-		var triggers []string
-		if err := tx.Raw(`SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE ?`, prefix+"%").Scan(&triggers).Error; err != nil {
-			return fmt.Errorf("storage: read %s triggers: %w", prefix, err)
-		}
-		for _, name := range triggers {
-			if err := tx.Exec(`DROP TRIGGER "` + name + `"`).Error; err != nil {
-				return fmt.Errorf("storage: drop trigger %s: %w", name, err)
-			}
-		}
-		if err := tx.Exec(sql).Error; err != nil {
-			return fmt.Errorf("storage: create %s triggers: %w", prefix, err)
-		}
-		return nil
-	})
-}
-
 func (d *DB) Tx(fn func(*DB) error) error {
 	return d.gorm.Transaction(func(tx *gorm.DB) error { return fn(&DB{gorm: tx}) })
 }
@@ -117,7 +99,7 @@ func checkOne(res *gorm.DB) error {
 
 var rowTypes = []any{
 	&WorkspaceRow{}, &ThreadRow{}, &TurnRow{}, &ItemRow{}, &CronJobRow{},
-	&MemoryRow{}, &MemoryEventRow{}, &MemoryStateRow{},
+	&MemoryRow{}, &MemoryStateRow{},
 }
 
 var ErrNotFound = errors.New("storage: not found")

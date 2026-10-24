@@ -86,6 +86,13 @@ func (r *Redactor) restore(s string, inJSON bool) string {
 	for placeholder, value := range r.reverse {
 		quoted, _ := json.Marshal(value)
 		escapedValue := string(quoted[1 : len(quoted)-1])
+		if strings.Contains(value, "\\") {
+			escapedValue = value
+			var plain string
+			if json.Unmarshal([]byte(`"`+value+`"`), &plain) == nil {
+				value = plain
+			}
+		}
 		if strings.Contains(s, placeholder) {
 			if inJSON {
 				s = strings.ReplaceAll(s, placeholder, escapedValue)
@@ -137,12 +144,27 @@ func Spans(s string) [][2]int {
 	return out
 }
 
+func escapeView(s string) string {
+	if !strings.Contains(s, "\\") {
+		return s
+	}
+	b := []byte(s)
+	for i := 0; i+1 < len(b); i++ {
+		if b[i] == '\\' && strings.IndexByte(`ntrbf"/\\`, b[i+1]) >= 0 {
+			b[i], b[i+1] = ' ', ' '
+			i++
+		}
+	}
+	return string(b)
+}
+
 func findSpans(s string) []span {
 	var found []span
+	view := escapeView(s)
 	for _, d := range detectors {
-		for _, loc := range d.match.FindAllStringIndex(s, -1) {
+		for _, loc := range d.match.FindAllStringIndex(view, -1) {
 			v := s[loc[0]:loc[1]]
-			if d.validate != nil && !d.validate(v) {
+			if d.validate != nil && !d.validate(view[loc[0]:loc[1]]) {
 				continue
 			}
 			found = append(found, span{start: loc[0], end: loc[1], priority: d.priority, category: d.category, value: v})

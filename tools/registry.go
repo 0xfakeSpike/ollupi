@@ -2,7 +2,11 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
+	"runtime/debug"
 	"slices"
 	"sort"
 )
@@ -83,10 +87,36 @@ func (r *Registry) Descriptors() []ToolDescriptor {
 	return slices.Clone(r.descriptors)
 }
 
+var (
+	ErrUnknownTool      = errors.New("unknown tool")
+	ErrInvalidArguments = errors.New("invalid arguments")
+)
+
+const MaxOutputBytes = 1 << 20
+
 func (r *Registry) Invoke(ctx context.Context, tool string, arguments map[string]any) Result {
-	result, err := r.dispatch(ctx, tool, arguments)
+	return guard(tool, func() (Result, error) { return r.dispatch(ctx, tool, arguments) })
+}
+
+func guard(tool string, run func() (Result, error)) (result Result) {
+	defer func() {
+		if p := recover(); p != nil {
+			log.Printf("tool registry: %s crashed: %v\n%s", tool, p, debug.Stack())
+			result = Result{Err: fmt.Errorf("the tool crashed: %v", p)}.For(tool)
+		}
+	}()
+	result, err := run()
 	if err != nil {
 		result.Err = err
+	}
+	if result.Err == nil && result.Output != nil {
+		raw, err := json.Marshal(result.Output)
+		switch {
+		case err != nil:
+			result = Result{Err: fmt.Errorf("the tool returned output that cannot be encoded as JSON: %v", err)}
+		case len(raw) > MaxOutputBytes:
+			result.Output = string(raw[:MaxOutputBytes]) + fmt.Sprintf("\n[output truncated: %d of %d bytes shown]", MaxOutputBytes, len(raw))
+		}
 	}
 	return result.For(tool)
 }
@@ -105,10 +135,10 @@ func (r *Registry) Call(ctx context.Context, caller Caller, tool string, argumen
 func (r *Registry) dispatch(ctx context.Context, tool string, arguments map[string]any) (Result, error) {
 	p, ok := r.owner[tool]
 	if !ok {
-		return Result{}, fmt.Errorf("tool registry: unknown tool %q", tool)
+		return Result{}, fmt.Errorf("tool registry: %w %q", ErrUnknownTool, tool)
 	}
 	if err := ValidateArguments(arguments, r.specs[tool].InputSchema); err != nil {
-		return Result{}, fmt.Errorf("tool registry: invalid arguments for %q: %w", tool, err)
+		return Result{}, fmt.Errorf("tool registry: %w for %q: %v", ErrInvalidArguments, tool, err)
 	}
 	return p.Invoke(ctx, tool, arguments)
 }
@@ -138,32 +168,35 @@ func (r *Registry) providerIDs() []string {
 	return ids
 }
 
-func (r *Registry) Prepare(ctx context.Context, tool string, arguments map[string]any) (*Prepared, error) {
+func (r *Registry) Prepare(ctx context.Context, tool string, arguments map[string]any) (prepared *Prepared, err error) {
 	if _, ok := r.owner[tool]; !ok {
-		return nil, fmt.Errorf("tool registry: unknown tool %q", tool)
+		return nil, fmt.Errorf("tool registry: %w %q", ErrUnknownTool, tool)
 	}
 	if err := ValidateArguments(arguments, r.specs[tool].InputSchema); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("tool registry: %w for %q: %v", ErrInvalidArguments, tool, err)
 	}
-	if local := r.specs[tool].Local; local != nil {
-		return local.Prepare(ctx, arguments)
+	local := r.specs[tool].Local
+	if local == nil {
+		return nil, nil
 	}
-	return nil, nil
+	defer func() {
+		if p := recover(); p != nil {
+			log.Printf("tool registry: %s crashed while preparing: %v\n%s", tool, p, debug.Stack())
+			prepared, err = nil, fmt.Errorf("the tool crashed while preparing: %v", p)
+		}
+	}()
+	return local.Prepare(ctx, arguments)
 }
 
 func (r *Registry) InvokePrepared(ctx context.Context, tool string, arguments map[string]any, prepared *Prepared) Result {
 	if _, ok := r.owner[tool]; !ok {
-		return Result{Err: fmt.Errorf("tool registry: unknown tool %q", tool)}.For(tool)
+		return Result{Err: fmt.Errorf("tool registry: %w %q", ErrUnknownTool, tool)}.For(tool)
 	}
 	if err := ValidateArguments(arguments, r.specs[tool].InputSchema); err != nil {
-		return Result{Err: err}.For(tool)
+		return Result{Err: fmt.Errorf("tool registry: %w for %q: %v", ErrInvalidArguments, tool, err)}.For(tool)
 	}
 	if local := r.specs[tool].Local; local != nil {
-		result, err := local.Run(ctx, arguments, prepared)
-		if err != nil {
-			result.Err = err
-		}
-		return result.For(tool)
+		return guard(tool, func() (Result, error) { return local.Run(ctx, arguments, prepared) })
 	}
 	if prepared != nil {
 		return Result{Err: fmt.Errorf("tool registry: tool %q no longer supports saved execution parameters", tool)}.For(tool)

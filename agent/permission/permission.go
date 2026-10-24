@@ -129,6 +129,11 @@ func (c *Checker) Decide(call Call, history []repo.ItemRow) Decision {
 		if p := call.Prepared; p == nil || !p.Escalated {
 			return Decision{Verdict: Run, Rule: rule}
 		}
+	case ruleOpaque:
+		if allowedForConversation(call, history) {
+			return Decision{Verdict: Run, Reason: "allowed for this conversation earlier"}
+		}
+		return Decision{Verdict: Ask, Reason: "This command cannot be fully checked against your permission rules for " + call.Tool + ", so it needs your approval."}
 	}
 	if allowedForConversation(call, history) {
 		return Decision{Verdict: Run, Reason: "allowed for this conversation earlier"}

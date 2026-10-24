@@ -53,6 +53,7 @@ const (
 	notifyReasoningDelta      = "item/reasoning/textDelta"
 	notifyTurnCompleted       = "turn/completed"
 	notifyThreadStatusChanged = "thread/status/changed"
+	notifyError               = "error"
 )
 
 const (
@@ -79,6 +80,13 @@ type initializeResult struct {
 type threadStartParams struct {
 	WorkspaceID string `json:"workspaceId,omitempty"`
 	repo.PermissionSettings
+}
+
+type errorNotification struct {
+	ThreadID string `json:"threadId,omitempty"`
+	TurnID   string `json:"turnId,omitempty"`
+	ItemID   string `json:"itemId,omitempty"`
+	Message  string `json:"message"`
 }
 
 type threadPageParams struct {

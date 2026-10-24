@@ -14,6 +14,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
 	"github.com/coder/websocket"
 )
@@ -29,9 +30,11 @@ const (
 type Server struct {
 	agent   *agent.Agent
 	token   string
+	hosts   []string
 	methods map[string]Method
 	origins []string
 	mu      sync.Mutex
+	deliver sync.Mutex
 	client  *conn
 	served  sync.WaitGroup
 }
@@ -39,6 +42,10 @@ type Server struct {
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.served.Add(1)
 	defer s.served.Done()
+	if status, why := s.admit(r); status != 0 {
+		http.Error(w, why, status)
+		return
+	}
 	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: s.origins})
 	if err != nil {
 		log.Printf("gateway: accept: %v", err)
@@ -74,6 +81,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) Deliver(e agent.Event) {
+	s.deliver.Lock()
+	defer s.deliver.Unlock()
 	if c := s.current(); c != nil {
 		c.event(e)
 	}
@@ -129,10 +138,15 @@ func (c *conn) Call(method string, params json.RawMessage) (any, func(), *jsonrp
 		if err := jsonrpc.DecodeParams(params, &p); err != nil {
 			return nil, nil, err
 		}
-		c.mu.Lock()
-		c.initialized = true
-		c.mu.Unlock()
-		return initializeResult{ServerInfo: serverInfo{Name: "ollupi", Version: version()}}, nil, nil
+		after := func() {
+			c.mu.Lock()
+			c.initialized = true
+			c.mu.Unlock()
+			for _, r := range c.s.agent.AllPendingRequests() {
+				c.request(r.Thread.ID, r.Item)
+			}
+		}
+		return initializeResult{ServerInfo: serverInfo{Name: "ollupi", Version: version()}}, after, nil
 	}
 	if !initialized {
 		return nil, nil, jsonrpc.Errorf(errNotInitialized, "call initialize first")
@@ -171,17 +185,19 @@ func (c *conn) Call(method string, params json.RawMessage) (any, func(), *jsonrp
 		if p.Limit < 1 || p.Limit > maxItems || p.BeforeSeq < 0 {
 			return nil, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "limit must be 1 to %d and beforeSeq not negative", maxItems)
 		}
+		c.s.deliver.Lock()
 		view, more, err := ag.ReadThreadPage(p.ThreadID, p.BeforeSeq, p.Limit)
 		if err != nil {
+			c.s.deliver.Unlock()
 			return nil, nil, serverError(err)
 		}
 		result := threadPageResult{ThreadView: view, HasMore: more}
-		if method == methodThreadRead {
-			return result, nil, nil
-		}
 		after := func() {
-			for _, r := range ag.PendingRequests(p.ThreadID) {
-				c.request(r.Thread.ID, r.Item)
+			c.s.deliver.Unlock()
+			if method == methodThreadResume {
+				for _, r := range ag.PendingRequests(p.ThreadID) {
+					c.request(r.Thread.ID, r.Item)
+				}
 			}
 		}
 		return result, after, nil
@@ -274,7 +290,10 @@ func (c *conn) Call(method string, params json.RawMessage) (any, func(), *jsonrp
 				return nil, serverError(err)
 			}
 			if result.Err != nil {
-				return nil, serverError(result.Err)
+				if errors.Is(result.Err, tools.ErrUnknownTool) || errors.Is(result.Err, tools.ErrInvalidArguments) {
+					return nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "%v", result.Err)
+				}
+				return nil, jsonrpc.Errorf(jsonrpc.CodeServerError, "%v", result.Err)
 			}
 			return toolCallResult{Output: result.Output}, nil
 		}), nil, nil
@@ -310,6 +329,8 @@ func (c *conn) event(e agent.Event) {
 		c.rpc.Notify(method, deltaNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, ItemID: e.Item.ID, Delta: e.Delta})
 	case agent.EventTurnCompleted:
 		c.rpc.Notify(notifyTurnCompleted, turnNotification{ThreadID: e.Thread.ID, Turn: e.Turn})
+	case agent.EventError:
+		c.rpc.Notify(notifyError, errorNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Message: e.Error})
 	case agent.EventThreadStatusChanged:
 		c.rpc.Notify(notifyThreadStatusChanged, threadStatusNotification{ThreadID: e.Thread.ID, Status: e.Status})
 	case agent.EventApprovalRequested, agent.EventUserInputRequested:
@@ -335,6 +356,10 @@ func (c *conn) request(threadID string, it repo.ItemRow) {
 		}
 		if err := c.resolve(threadID, it, result); err != nil {
 			log.Printf("gateway: response for item %s: %v", it.ID, err)
+			c.rpc.Notify(notifyError, errorNotification{ThreadID: threadID, TurnID: it.TurnID, ItemID: it.ID, Message: err.Error()})
+			if !errors.Is(err, agent.ErrNoSuchRequest) {
+				c.request(threadID, it)
+			}
 		}
 	}
 	if !it.WaitsForApproval() {
@@ -398,6 +423,8 @@ var errorCodes = []struct {
 	{agent.ErrInvalidDecision, jsonrpc.CodeInvalidParams},
 	{agent.ErrInvalidName, jsonrpc.CodeInvalidParams},
 	{permission.ErrInvalidSettings, jsonrpc.CodeInvalidParams},
+	{tools.ErrUnknownTool, jsonrpc.CodeInvalidParams},
+	{tools.ErrInvalidArguments, jsonrpc.CodeInvalidParams},
 }
 
 func serverError(err error) *jsonrpc.Error {
