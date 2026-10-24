@@ -5,9 +5,9 @@ import (
 	"slices"
 
 	"github.com/0xfakeSpike/ollupi/agent/permission"
-	"github.com/0xfakeSpike/ollupi/agent/tools"
-	"github.com/0xfakeSpike/ollupi/agent/tools/subagent"
 	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
 
 func (a *Agent) policyFor(t repo.ThreadRow) permission.Policy {

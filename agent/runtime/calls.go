@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/permission"
-	"github.com/0xfakeSpike/ollupi/agent/tools"
 	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/google/uuid"
 )
 

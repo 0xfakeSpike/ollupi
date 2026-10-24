@@ -6,8 +6,8 @@ import (
 	"math"
 	"strings"
 
-	"github.com/0xfakeSpike/ollupi/agent/tools"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
+	"github.com/0xfakeSpike/ollupi/tools"
 )
 
 const ToolName = "run_command"

@@ -3,9 +3,9 @@ package gateway
 import (
 	"encoding/json"
 
-	"github.com/0xfakeSpike/ollupi/agent/tools"
-	"github.com/0xfakeSpike/ollupi/agent/tools/userinput"
 	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/0xfakeSpike/ollupi/tools/userinput"
 )
 
 const errNotInitialized = -32002

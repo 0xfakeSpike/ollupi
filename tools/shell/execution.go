@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/tools"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
+	"github.com/0xfakeSpike/ollupi/tools"
 )
 
 func (r *Runner) Prepare(ctx context.Context, args map[string]any) (*tools.Prepared, error) {

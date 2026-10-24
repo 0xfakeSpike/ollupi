@@ -78,8 +78,8 @@ Codex 和 Claude Code 两列来自公开文档和发布说明，两者更新很�
 
 | # | 能力 | 说明 | Codex | Claude Code | Ollupi | Ollupi 现状与位置 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 3.1 | ReAct 循环 | 推理、调用工具、观察，循环到完成 | 有 | 有 | 有 | `agent/orchestrator.go`（推进循环）、`agent/runtime`（一次迭代） |
-| 3.2 | 计划工具 | 模型维护带状态的步骤清单 | 有：`update_plan` | 有：TodoWrite | 有 | `update_plan`（Codex 格式），普通工具（`agent/tools/plan`），计划就是调用参数 |
+| 3.1 | ReAct 循环 | 推理、调用工具、观察，循环到完成 | 有 | 有 | 有 | `agent/loop.go`（推进循环）、`agent/runtime`（一次迭代） |
+| 3.2 | 计划工具 | 模型维护带状态的步骤清单 | 有：`update_plan` | 有：TodoWrite | 有 | `update_plan`（Codex 格式），普通工具（`tools/plan`），计划就是调用参数 |
 | 3.3 | 计划模式 | 只调研规划、不执行，确认后再做 | ? | 有：plan mode | 无 | |
 | 3.4 | 停止条件 | 模型不再调用工具即完成 | 有 | 有 | 有 | |
 | 3.5 | 循环上限 | 限制模型调用次数、工具调用次数 | 有 | 有 | 有 | 每个 turn 模型调用 32 次、工具调用 16 次，超限后强制收尾 |
@@ -93,7 +93,7 @@ Codex 和 Claude Code 两列来自公开文档和发布说明，两者更新很�
 
 | # | 能力 | 说明 | Codex | Claude Code | Ollupi | Ollupi 现状与位置 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 4.1.1 | 执行命令 | 运行任意程序 | 有 | 有：Bash | 有 | `run_command`（`agent/tools/shell`） |
+| 4.1.1 | 执行命令 | 运行任意程序 | 有 | 有：Bash | 有 | `run_command`（`tools/shell`） |
 | 4.1.2 | 后台进程 | 长时间运行的命令，之后再读取输出 | 部分 | 有：后台 Bash、读取后台输出 | 无 | 命令有超时，必须同步结束 |
 | 4.1.3 | 读文件 | 专用读文件工具，支持分页 | 无：通过命令行 | 有：Read | 无 | 只能用 `run_command` |
 | 4.1.4 | 写文件、编辑文件 | 专用写入、精确替换、补丁 | 有：`apply_patch` | 有：Write、Edit、MultiEdit | 无 | |
@@ -103,7 +103,7 @@ Codex 和 Claude Code 两列来自公开文档和发布说明，两者更新很�
 | 4.1.8 | 查看图片 | 让模型看本地图片 | 有：`view_image` | 有：Read 支持图片 | 无 | |
 | 4.1.9 | Notebook 编辑 | Jupyter 单元格编辑 | 无 | 有：NotebookEdit | 无 | |
 | 4.1.10 | 网站自动化 | 浏览器或站点命令行操作网站 | 无 | 部分：通过 MCP | 有 | OpenCLI 工具集，按允许列表从命令帮助生成 schema（haoagent `tools/opencli`） |
-| 4.1.11 | 定时任务工具 | 让 agent 自己创建、删除、列出定时任务 | 无 | 无 | 有 | `create_scheduled_job` 等（`agent/tools/cron`），作用于当前会话；界面也通过 `tool/call` 直接调用它们来列出、暂停、删除 |
+| 4.1.11 | 定时任务工具 | 让 agent 自己创建、删除、列出定时任务 | 无 | 无 | 有 | `create_scheduled_job` 等（`tools/cron`），作用于当前会话；界面也通过 `tool/call` 直接调用它们来列出、暂停、删除 |
 | 4.1.12 | 工具自省 | 列出可用的工具提供方和工具 | 无 | 无 | 有 | `list_tool_providers`、`list_tools_for_provider` |
 
 ### 4.2 工具机制
@@ -120,7 +120,7 @@ Codex 和 Claude Code 两列来自公开文档和发布说明，两者更新很�
 
 | # | 能力 | 说明 | Codex | Claude Code | Ollupi | Ollupi 现状与位置 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 4.3.1 | MCP 客户端：工具 | 调用 MCP 服务器的工具 | 有 | 有 | 有 | `agent/tools/mcp` |
+| 4.3.1 | MCP 客户端：工具 | 调用 MCP 服务器的工具 | 有 | 有 | 有 | `tools/mcp` |
 | 4.3.2 | MCP 传输：本地进程（stdio） | 启动本地 MCP 进程 | 有 | 有 | 无 | |
 | 4.3.3 | MCP 传输：HTTP | Streamable HTTP、SSE | 有 | 有 | 部分 | 只支持 Streamable HTTP |
 | 4.3.4 | MCP 认证 | OAuth 等 | 部分 | 有 | 无 | |
@@ -147,7 +147,7 @@ Codex 和 Claude Code 两列来自公开文档和发布说明，两者更新很�
 | 6.1 | 单 agent 循环 | 一个 agent 处理整个任务 | 有 | 有 | 有 | |
 | 6.2 | 可配置的 agent 定义 | 名称、指令、模型、工具、审批策略 | 部分：profile | 有：subagent 定义 | 有 | 配置 `agent` 块（`agent/agent.go`） |
 | 6.3 | 多套 agent 定义 | 同时存在多个 agent 可选 | 部分：多个 profile | 有：`.claude/agents/` | 无（有意不做） | 只有一个 agent；派生的子任务也是它自己，用同样的 prompt、工具和模型 |
-| 6.4 | 子代理 | 主 agent 把子任务交给子 agent，独立上下文 | 有：`spawn_agent` | 有：Agent（原 Task）工具 | 有 | `Agent` 工具（Claude Code 前台方式，`agent/tools/subagent`）：普通工具，结果是 `Await`（由另一个 agent 回答），agent 为每个调用新建子 thread；父 turn 暂停、不占 worker；子 turn 结束时同一个事务把最终回答写成那条调用的结果，全部到齐后父 turn 继续。派生的 turn 就是同一个 agent，只能派一层（deny 掉 `Agent`），父 turn 停止时连带停止 |
+| 6.4 | 子代理 | 主 agent 把子任务交给子 agent，独立上下文 | 有：`spawn_agent` | 有：Agent（原 Task）工具 | 有 | `Agent` 工具（Claude Code 前台方式，`tools/subagent`）：普通工具，结果是 `Await`（由另一个 agent 回答），agent 为每个调用新建子 thread；父 turn 暂停、不占 worker；子 turn 结束时同一个事务把最终回答写成那条调用的结果，全部到齐后父 turn 继续。派生的 turn 就是同一个 agent，只能派一层（deny 掉 `Agent`），父 turn 停止时连带停止 |
 | 6.5 | 并行子代理 | 多个子 agent 同时工作 | 有 | 有 | 有 | 一次回复里的多个 `Agent` 调用同时运行（受全局 4 个 worker 限制）；子代理的批准请求在父对话里排队，逐个处理 |
 | 6.6 | Agent 间交接（handoff） | 把对话交给另一个 agent | 无 | 无 | 无 | OpenAI Agents SDK 的概念 |
 | 6.7 | 多会话并发 | 多个会话同时运行 | 有 | 有 | 有 | 每个 thread 同时一个 turn；调度器把可运行的 turn 放进一个先进先出队列，最多 4 个 worker 同时运行，暂停中的 turn 不占 worker（`agent/queue.go`） |
@@ -160,9 +160,9 @@ Codex 和 Claude Code 两列来自公开文档和发布说明，两者更新很�
 | 7.2 | 按会话覆盖审批策略 | 单个会话用不同策略 | 有 | 有 | 有 | thread 的 `approvalPolicy`；解析顺序是 会话 > 工作区 > agent 默认 |
 | 7.3 | 允许、拒绝规则 | 按工具和参数模式配置 | 部分：命令执行规则 | 有：`Bash(git:*)` 等 | 有 | agent 默认的 allow、ask、deny 和工作区的 `permissions` 字段，语法同 Claude Code：`工具名` 或 `run_command(git diff *)`；按 deny、ask、allow 顺序第一个匹配生效，deny 单写工具名时不提供该工具；规则写错启动即报错（`agent/permission/rules.go`；判断顺序见 `permission.Decide`）；解析出的规则随 turn 一起快照 |
 | 7.4 | "本次会话一直允许" | 批准一次，后续同类不再询问 | 有 | 有：不再询问 | 有 | Codex 的 `acceptForSession`：同一 thread 里相同命令（其他工具为同一工具）不再询问，记在审批 item 上，重启后仍有效；ask 规则拦下的调用不提供此选项 |
-| 7.5 | 系统级沙箱 | 隔离文件系统和网络 | 有：Seatbelt、Landlock、seccomp | 部分：可选沙箱 | 部分 | 只有 macOS Seatbelt 一套：按策略生成默认拒绝的 profile，基础规则取自 Codex；工作目录内拒读凭据、git 元数据只读、开网时关闭本机 Unix socket；非 macOS 上沙箱模式启动即报错，只能显式选 `full-access`（`pkg/sandbox`、`agent/tools/shell`）。（haoagent 的 OpenCLI 曾经通过 `sandbox.RunHost` 在沙箱外运行；Ollupi 里没有使用方，这个入口已删除） |
+| 7.5 | 系统级沙箱 | 隔离文件系统和网络 | 有：Seatbelt、Landlock、seccomp | 部分：可选沙箱 | 部分 | 只有 macOS Seatbelt 一套：按策略生成默认拒绝的 profile，基础规则取自 Codex；工作目录内拒读凭据、git 元数据只读、开网时关闭本机 Unix socket；非 macOS 上沙箱模式启动即报错，只能显式选 `full-access`（`pkg/sandbox`、`tools/shell`）。（haoagent 的 OpenCLI 曾经通过 `sandbox.RunHost` 在沙箱外运行；Ollupi 里没有使用方，这个入口已删除） |
 | 7.6 | 沙箱分级 | 只读、可写工作区、完全放开 | 有 | 部分 | 有 | `exec.sandbox_mode`：`read-only` / `workspace-write`（默认）/ `full-access`（不使用沙箱） |
-| 7.7 | 沙箱与审批联动 | 沙箱内放行，越界才申请 | 有：on-request 升级 | 部分 | 有 | on-request 下沙箱内命令免审批；`run_command` 带 `sandbox_permissions: "require_escalated"` 和 `justification` 申请在沙箱外执行，需审批；`never` 拒绝升级（`agent/permission`、`agent/tools/shell`） |
+| 7.7 | 沙箱与审批联动 | 沙箱内放行，越界才申请 | 有：on-request 升级 | 部分 | 有 | on-request 下沙箱内命令免审批；`run_command` 带 `sandbox_permissions: "require_escalated"` 和 `justification` 申请在沙箱外执行，需审批；`never` 拒绝升级（`agent/permission`、`tools/shell`） |
 | 7.8 | 网络访问控制 | 默认断网、按需开放 | 有 | 部分 | 有 | `exec.network` 开关（关闭时连 localhost 一并禁止），默认断网；`exec.allowed_domains` 按域名放行（每条命令一个本地 HTTP/SOCKS5 代理，Seatbelt 只放行代理端口，参照 sandbox-runtime 与 Codex）；开网时仍关闭本机 Unix socket（Docker、ssh-agent），只放行 `exec.unix_sockets` |
 | 7.9 | 工作目录限制 | 命令只能在指定目录运行 | 有 | 有 | 有 | `exec.workspace_dirs` |
 | 7.10 | 危险命令拦截 | 黑名单、已知安全命令 | 有：安全命令白名单 | 有：规则 | 部分 | `command_blacklist` 和 deny 规则；没有内置的已知安全命令清单 |
@@ -175,7 +175,7 @@ Codex 和 Claude Code 两列来自公开文档和发布说明，两者更新很�
 | # | 能力 | 说明 | Codex | Claude Code | Ollupi | Ollupi 现状与位置 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 8.1 | 工具调用审批 | 执行前请求批准，可拒绝 | 有 | 有 | 有 | `item/mcpToolCall/requestApproval`，带 `reason`、`availableDecisions`（accept、acceptForSession、decline） |
-| 8.2 | 向用户提问 | 结构化问题加选项 | ? | 有：AskUserQuestion | 有 | `request_user_input`（`agent/tools/userinput`）：1 到 3 个问题，可带选项；结果是 `Await` 给用户，回答成为调用结果。不挡同一回复里的其他调用（例如同时派出的子代理） |
+| 8.2 | 向用户提问 | 结构化问题加选项 | ? | 有：AskUserQuestion | 有 | `request_user_input`（`tools/userinput`）：1 到 3 个问题，可带选项；结果是 `Await` 给用户，回答成为调用结果。不挡同一回复里的其他调用（例如同时派出的子代理） |
 | 8.3 | 等待中的请求可跨重启 | 进程重启后审批、提问仍有效 | 无 | 无 | 有 | turn 保持进行中，`thread/resume` 重发请求（子代理的请求一并重发） |
 | 8.4 | 中断 | 停止当前 turn | 有 | 有 | 有 | `turn/interrupt` |
 | 8.5 | 插话、排队 | 运行中追加指示或排队下一条消息 | 有 | 有 | 有 | `turn/steer`：运行中发的消息在下一次模型调用前进入当前 turn，回答途中收到也会接着处理；桌面端 Tab 排队，当前 turn 完成后作为下一个 turn 发送，停止时退回输入框 |

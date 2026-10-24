@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
-	"github.com/0xfakeSpike/ollupi/agent/tools"
 	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/google/uuid"
 )
 

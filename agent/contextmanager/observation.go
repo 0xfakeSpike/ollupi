@@ -7,10 +7,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/0xfakeSpike/ollupi/agent/tools"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/redact"
 	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/tools"
 )
 
 const compactTextMaxRunes = 16000

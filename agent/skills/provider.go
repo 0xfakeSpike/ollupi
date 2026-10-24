@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/0xfakeSpike/ollupi/agent/tools"
+	"github.com/0xfakeSpike/ollupi/tools"
 )
 
 const (

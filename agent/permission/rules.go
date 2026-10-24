@@ -6,8 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/0xfakeSpike/ollupi/agent/tools"
 	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/tools"
 )
 
 type Rules = repo.PermissionRules

@@ -46,7 +46,7 @@ Ollupi 是一个 Go 写的 agent 运行时库：ReAct 循环、会话与调度�
 
 ## 其他能力
 
-- 内置工具由 agent 在 `Start` 时自己注册,应用不用管:`update_plan`(`agent/tools/plan`,计划与进度)、`request_user_input`(`agent/tools/userinput`,结构化提问)、`Agent`(`agent/tools/subagent`,派生子任务)、定时任务的四个工具(`agent/tools/cron`),以及给了 `SkillsDir` 时的技能工具(`agent/skills`)。它们和应用的工具一样受 `Agent.Tools` 允许列表和权限规则约束。
+- 内置工具由 agent 在 `Start` 时自己注册,应用不用管:`update_plan`(`tools/plan`,计划与进度)、`request_user_input`(`tools/userinput`,结构化提问)、`Agent`(`tools/subagent`,派生子任务)、定时任务的四个工具(`tools/cron`),以及给了 `SkillsDir` 时的技能工具(`agent/skills`)。它们和应用的工具一样受 `Agent.Tools` 允许列表和权限规则约束。
 - 工具注册表：应用实现 `tools.Provider` 接入自己的工具，工具的额外能力（权限匹配、本地执行、是否串行）声明在它的 `tools.Spec` 上；注册表负责参数校验、分发和注解（只读、破坏性、访问外部）。
 - 定时任务属于创建它的会话：到点时把任务的消息发到那个会话，作为一个普通 turn 运行，带着会话的历史、项目、模型和审批策略。计时由主调度器负责：每个任务存着下次运行时间，调度器每分钟、以及每个 turn 结束时检查一次；会话正忙就等它的 turn 结束再发。应用关着时错过的运行在启动后补一次。
 - 工具既能由 agent 在 loop 里调用，也能由用户通过接口直接调用（gateway 的 `tool/call`）：比如界面上列出、暂停、删除定时任务，调的就是同一组工具。直接调用的调用者是用户本人，所以不走审批和权限规则；需要 turn 执行环境的工具（`run_command`）和要等外部回答的工具不能直接调用。
@@ -67,20 +67,20 @@ go get github.com/0xfakeSpike/ollupi
 
 ```
 ollupi/
-  agent/                    agent 本身:定义、编排(turn 队列与 worker)、工作区、审批与提问、子代理、定时任务的发送、重启恢复、事件
+  agent/                    agent 本身:定义、编排(事件循环与 worker)、工作区、审批与提问、子代理、定时任务的发送、重启恢复、事件
     runtime/                ReAct 循环的一次迭代:调用处理、请求模型、压缩、流式输出
     permission/             授权:权限规则、审批策略、"本会话都允许",判断一次调用 执行/问/拒绝
     systemprompt/           拼 system message
     contextmanager/         拼一次请求、按预算截断和压缩
-    tools/                  工具契约与注册表
-      shell/  mcp/          具体工具:命令、远程 MCP
-      plan/  userinput/     update_plan、request_user_input
-      subagent/             Agent 工具:派生子任务
-      cron/                 定时任务工具与任务表
     skills/                 Agent Skills:技能目录、激活、读取资源
     memory/                 长期记忆:抽取、召回、编辑
   gateway/                  对外协议:WebSocket 上的 JSON-RPC 2.0
   repo/                     数据库(gorm)与会话状态机:每张表的行结构体、读写方法和不变量
+  tools/                    工具契约与注册表(最底层之一,repo 也依赖它)
+    shell/  mcp/            具体工具:命令、远程 MCP(应用按需装配)
+    plan/  userinput/       update_plan、request_user_input(agent 内置)
+    subagent/               Agent 工具:派生子任务(agent 内置)
+    cron/                   定时任务工具与任务表(agent 内置)
   pkg/                      通用组件,不知道 agent 的存在
     llm/  sandbox/  jsonrpc/  redact/
 ```
@@ -94,7 +94,7 @@ agent(系统:编排、工作区)
     ↓
 runtime(一次迭代)
     ↓
-systemprompt  contextmanager  permission  memory  tools/*  skills
+systemprompt  contextmanager  permission  memory  skills  tools/*(具体工具)
     ↓
 repo(数据库与会话状态机)
     ↓
@@ -110,8 +110,8 @@ tools(工具契约)    pkg/*
 
 设计上的三条规则:
 
-1. **只能往下 import,同层之间互不依赖。** 所以 memory 不知道 cron,shell 不知道 mcp。工具契约 `agent/tools` 虽然放在 agent 目录下,却是最底层之一:它不 import 任何内部包,repo 的 item 行直接存它的类型(`Prepared`、`Await`、`Annotations`、`ContextArtifact`)。所以 **`tools.Prepared` 的结构就是数据库里的存储格式**:给它加减字段会改变已存的冻结记录,而"本会话都允许"按整个 `Prepared` 相等来匹配,改了结构,旧的会话授权就不再生效。
-2. **runtime 只通过 `agent/tools` 使用工具**,不直接 import 任何具体工具。加一个工具或去掉一个工具都不用改 runtime。
+1. **只能往下 import,同层之间互不依赖。** 所以 memory 不知道 cron,shell 不知道 mcp。工具契约 `tools` 是最底层之一,所以放在顶层而不在 `agent/` 下:它不 import 任何内部包,repo 的 item 行直接存它的类型(`Prepared`、`Await`、`Annotations`、`ContextArtifact`)。所以 **`tools.Prepared` 的结构就是数据库里的存储格式**:给它加减字段会改变已存的冻结记录,而"本会话都允许"按整个 `Prepared` 相等来匹配,改了结构,旧的会话授权就不再生效。
+2. **runtime 只通过 `tools` 契约使用工具**,不直接 import 任何具体工具。加一个工具或去掉一个工具都不用改 runtime。
 3. **不随手加 interface。** 只有真的有多个实现时才用 interface。
 
 项目不带测试,代码里不写注释(只保留 `//go:build`、`//go:embed` 这类编译指令),设计说明都在这份 README 里。
@@ -133,17 +133,17 @@ tools(工具契约)    pkg/*
 
 **各包职责**:
 
-- `agent` — 整个系统:它自己的 prompt、模型、工具、审批策略、权限规则(审批策略、权限规则和模型在 turn 创建时存进 turn;派生出来的子会话额外禁止再派生),以及一条跨线程共享的 turn 队列和多个常驻消费者(`orchestrator.go`:调度状态、`settle` 与每分钟的 `reconcile`、队列与 worker、一次迭代结束后继续/等待/结束的判定、定时任务的发送、重启恢复;turn 的开始、追加、中断、子代理派生与报告在 `turnflow.go`)。队列元素只带 threadID 和 turnID,消费者按 ID 从 SQL 现查 thread、workspace 和 items,再用 turn 里记录的模型连接取 LLM 客户端;线程、工作区和业务数据之间没有别的传递通道,也没有内存缓存。会话、turn、item 的状态转换调用 repo(见上),agent 不存任何状态,每次读都查库;每次写入之后由 agent 推送事件、推进调度。工作区的业务也在 agent(`workspaces.go`):`AddWorkspace` 把路径规范成真实目录(`sandbox.CanonicalDirectory`,shell 判断命令目录用的也是这一个),同一个目录再加一次复用已有的工作区,已归档的顺便恢复;`RenameWorkspace`、`ArchiveWorkspace`、`UpdateWorkspacePermissions`;带审批策略和权限规则时先对照工具注册表校验;归档了的工作区不能开新会话、新 turn。所以不用 gateway、直接嵌入 agent 的应用拿到的是同一套工作区规则;项目根目录交给工具(`tools.Caller.Root`),目录能不能跑命令由 shell 在跑命令时判断。审批策略和权限规则按 会话覆盖 > 工作区设置 > agent 默认 解析(`policyFor` / `rulesFor`)。消费者把 turn 交给 runtime 跑一次迭代,按结果放回队列、等待或结束;用户的新消息、追加消息(`SteerTurn`)、批准、回答、中断、子代理的派生和报告、到期定时任务的发送、重启恢复都是它的方法。agent 有要告诉用户的事(流式文字、新的或完成的 item、等批准或回答、turn 开始和结束、会话状态),就调用应用给的 `OnEvent` 回调;它由事件循环或 worker 调用(流式文字和迭代中新记的 item 来自 worker),所以要能并发调用、必须很快返回,而且不能回调 agent 的方法:循环正在等它返回,回调会让循环等自己。
+- `agent` — 整个系统:它自己的 prompt、模型、工具、审批策略、权限规则(审批策略、权限规则和模型在 turn 创建时存进 turn;派生出来的子会话额外禁止再派生),以及一条跨线程共享的 turn 队列和多个常驻消费者。文件按概念分:`loop.go` 是事件循环本身(调度状态、`post`/`call`、派发给 worker)和 worker 侧(`worker`、`run`,只有这两个函数不在循环里跑);`schedule.go` 是调度决策(`settle`、每分钟的 `reconcile`、一次迭代结束后继续/等待/结束的判定、停止、重启恢复);`turns.go` 是对外的 turn 接口(开始、追加、中断、批准、回答)和它们在循环里的实现、结束 turn;`subagents.go` 是子代理的派生、报告和对账;`cron.go` 是到期定时任务的发送;`requests.go` 是只读的等待请求查询。队列元素只带 threadID 和 turnID,消费者按 ID 从 SQL 现查 thread、workspace 和 items,再用 turn 里记录的模型连接取 LLM 客户端;线程、工作区和业务数据之间没有别的传递通道,也没有内存缓存。会话、turn、item 的状态转换调用 repo(见上),agent 不存任何状态,每次读都查库;每次写入之后由 agent 推送事件、推进调度。工作区的业务也在 agent(`workspaces.go`):`AddWorkspace` 把路径规范成真实目录(`sandbox.CanonicalDirectory`,shell 判断命令目录用的也是这一个),同一个目录再加一次复用已有的工作区,已归档的顺便恢复;`RenameWorkspace`、`ArchiveWorkspace`、`UpdateWorkspacePermissions`;带审批策略和权限规则时先对照工具注册表校验;归档了的工作区不能开新会话、新 turn。所以不用 gateway、直接嵌入 agent 的应用拿到的是同一套工作区规则;项目根目录交给工具(`tools.Caller.Root`),目录能不能跑命令由 shell 在跑命令时判断。审批策略和权限规则按 会话覆盖 > 工作区设置 > agent 默认 解析(`policyFor` / `rulesFor`)。消费者把 turn 交给 runtime 跑一次迭代,按结果放回队列、等待或结束;用户的新消息、追加消息(`SteerTurn`)、批准、回答、中断、子代理的派生和报告、到期定时任务的发送、重启恢复都是它的方法。agent 有要告诉用户的事(流式文字、新的或完成的 item、等批准或回答、turn 开始和结束、会话状态),就调用应用给的 `OnEvent` 回调;它由事件循环或 worker 调用(流式文字和迭代中新记的 item 来自 worker),所以要能并发调用、必须很快返回,而且不能回调 agent 的方法:循环正在等它返回,回调会让循环等自己。
 - `agent/runtime` — ReAct 循环的一次迭代(`Runtime.Step`):先处理上次留下的调用,再请求一次模型并处理它的调用,返回 `Continue` / `Wait` / `Done`。`Runtime` 是一个 turn 的执行器,不是全局共享的对象:worker 每跑一次迭代就由 agent 新建一个,填上它用的部件(这个 turn 所在连接的模型客户端 `LLM`、工具注册表 `Registry`、技能目录、上下文管理、记忆)和这次要执行的东西:turn 本身(`Turn` 就是 `repo.TurnRow`,模型也从它上面取)、prompt、这个 turn 可用的工具(`Tools`)、权限检查器、调用者(会话、项目根目录)、写 item 的函数,以及这个 turn 已有的 item(`Items`)和之前各 turn 的 item(`History`,只用来拼上下文和查本会话的授权)。这次迭代里新产生的 item(模型的回答、工具调用和结果、进度、压缩)都由它记下并追加到 `Items`;迭代中的工作状态(system message、脱敏表、用量)是它的不导出字段,迭代结束就和它一起丢掉,迭代之间不保留状态。并行执行的工具只拿到注册表和调用者,碰不到执行器的状态。文件按内容分:`runtime.go`(Runtime 与一次迭代的流程)、`calls.go`(把每条调用判定成 run / 并行读 / 跳过 / 等待 / 停止的动作,不执行)、`execute.go`(按顺序执行动作,相邻只读并行、串行单独跑、停止后跳过)、`chat.go`(和模型的一次对话:拼请求、需要时先压缩、脱敏后发送再还原、检查回答、记下它请求的工具调用)、`stream.go`(流式文字)。每个响应的 token 统计挂在它的 agentMessage item 上;只有工具调用的响应挂在第一条 toolCall 上,contextmanager 用它校准预算。
 - `agent/permission` — 授权判断:权限规则(deny / ask / allow,Claude Code 语法)、审批策略(`untrusted` / `on-request` / `never`)、用户之前"本会话都允许"的回答。`New` 在启动时对照工具目录检查规则,`Decide` 对一次调用按固定顺序给出 执行 / 问用户 / 拒绝:越权提权(`never` 下)→ deny → ask → allow → 本会话已允许 → 提权要问 → 审批策略;allow 规则放行的提权命令仍要问。工具只声明事实(只读、访问外部、规则匹配的内容 `tools.Content`、命令怎么跑),判断都在这里。规则匹配的内容是结构化的:`Match` 是程序名(去掉路径)加参数,不含环境变量;`Parts` 是它实际会运行的各条简单命令(`sh -c` 脚本按 `;`、`&&`、`|` 等拆开,`env`、`nohup`、`timeout`、`xargs`、`sudo` 等包装命令剥掉外层);`Opaque` 表示内容没法完全看清(带环境变量、脚本里有 `$(...)`、反引号、`eval` 等)。deny 和 ask 只要 `Match` 或任何一条 `Parts` 命中就生效;带匹配串的 allow 只在不 `Opaque` 时生效,而且有 `Parts` 时每一条都要被 allow 规则覆盖;不带匹配串的 allow(只写工具名)放行这个工具的一切调用。它只管决策,配置存在 `repo.WorkspaceRow`(审批策略和规则都是工作区字段)和 turn 的快照里;规则只有一种类型,`permission.Rules` 就是 `repo.PermissionRules` 的别名,存储和判断之间不做转换。
 - `agent/contextmanager` — 把 system message 和对话拼成一次请求、按预算截断和压缩。预算是当前 turn 所用模型的输入上限(来自 `pkg/llm`);请求大小先按字符估算,再用同一模型上一次请求的真实 prompt tokens 校准,刚压缩完还没有新参照时按之前请求的"真实值 ÷ 估算值"放大(不低于 1)。同一次模型回复的工具结果共用一个预算池(输入上限的 25%,按调用数平分,单条最多 6000、至少 512 token);整个请求放不下时把每条结果的上限逐次减半(最低 256)直到放得下,所以请求不会超过模型上限。只有压缩真能腾出空间时(上次压缩后的对话至少占输入上限的 10%)才触发压缩;压缩请求本身也先截断结果,实在放不下才丢掉最早的整段对话。给出记忆、技能目录和已激活技能能占的预算(`MemoryBudget`、`SkillBudget`、`ArtifactBudget`)。
 - `agent/systemprompt` — system message 的全部组成都在这里,按顺序拼:agent 自己的 prompt(`Agent.Prompt`,留空用默认范本 `AgentPrompt`)、子代理说明(子代理才有)、循环规则、执行环境、技能目录(在预算内整条列出,放不下的说明省略了几个)。每个 turn 开始时拼一次,turn 内不变,便于前缀缓存。
-- `agent/tools` — 工具契约(`Provider`、`Spec`、`Result`、注解、本地命令的冻结记录 `Prepared`)与注册表;调用时通过 context 告诉工具进度回调和所属工作区。
-- `agent/tools/shell` — `run_command` 工具:命令能在哪些目录跑(由调用者的项目根目录和配置现算,`dirs.go`)、命令参数、提权申请(`require_escalated`)、超时与黑名单(按 `command.go` 拆出的每条简单命令检查;它只是辅助,安全边界是沙箱和权限规则),命令按模型给的 argv 原样执行,不做改写;环境变量名必须是合法标识符;命令经 `pkg/sandbox` 执行;`shell.Config` 是用户可配的 exec 设置(带 JSON 字段名,`Normalize` 是唯一一份校验规则),agent 自己的数据目录和 skills 由它固定保护,应用不必也不能关掉。
-- `agent/tools/mcp` — 远程 MCP 服务器的客户端,把它的工具接入注册表。
-- `agent/tools/plan`、`agent/tools/userinput` — `update_plan`(计划就是调用参数)和 `request_user_input`(结果是 `Await` 给用户,回答成为调用结果)。
-- `agent/tools/cron` — 定时任务的四个工具(创建、暂停/恢复、删除、列出),`*cron.Jobs` 本身就是工具提供者,读写 `repo` 的 cron_jobs 表:每个任务属于一个会话(`thread_id`,会话删除时一并删除),存着下次运行时间(`next_run_at`)。它只记录;到期的任务由 agent 的调度器发出(`agent/orchestrator.go`,直接查 `DB.DueCronJobs`)。
-- `agent/tools/subagent` — `Agent` 工具:模型用它派生子任务(简短说明 + 完整任务),结果是 `Await` 给另一个 turn;派生由 agent 完成。
+- `tools` — 工具契约(`Provider`、`Spec`、`Result`、注解、本地命令的冻结记录 `Prepared`)与注册表;调用时通过 context 告诉工具进度回调和所属工作区。
+- `tools/shell` — `run_command` 工具:命令能在哪些目录跑(由调用者的项目根目录和配置现算,`dirs.go`)、命令参数、提权申请(`require_escalated`)、超时与黑名单(按 `command.go` 拆出的每条简单命令检查;它只是辅助,安全边界是沙箱和权限规则),命令按模型给的 argv 原样执行,不做改写;环境变量名必须是合法标识符;命令经 `pkg/sandbox` 执行;`shell.Config` 是用户可配的 exec 设置(带 JSON 字段名,`Normalize` 是唯一一份校验规则),agent 自己的数据目录和 skills 由它固定保护,应用不必也不能关掉。
+- `tools/mcp` — 远程 MCP 服务器的客户端,把它的工具接入注册表。
+- `tools/plan`、`tools/userinput` — `update_plan`(计划就是调用参数)和 `request_user_input`(结果是 `Await` 给用户,回答成为调用结果)。
+- `tools/cron` — 定时任务的四个工具(创建、暂停/恢复、删除、列出),`*cron.Jobs` 本身就是工具提供者,读写 `repo` 的 cron_jobs 表:每个任务属于一个会话(`thread_id`,会话删除时一并删除),存着下次运行时间(`next_run_at`)。它只记录;到期的任务由 agent 的调度器发出(`agent/cron.go`,直接查 `DB.DueCronJobs`)。
+- `tools/subagent` — `Agent` 工具:模型用它派生子任务(简短说明 + 完整任务),结果是 `Await` 给另一个 turn;派生由 agent 完成。
 - `agent/skills` — Agent Skills:`skills.New(dir)` 扫描、校验技能目录,得到的 `*skills.Catalog` 既是 runtime 把技能列进 prompt 的来源,本身也是提供列出、激活、读取资源三个工具的提供者。
 - `agent/memory` — 长期记忆:后台抽取(只处理已完成/失败/中断的 turn 和工作区、会话、定时任务的变化)、列出(`List`)、用户编辑与遗忘(`Edit`、`Forget`,文字长度和凭据只在这里检查一次)、状态(`Status`);以及每个 turn 开始时给它的记忆(`Context`):在调用方给的 token 预算内挑选、排序并渲染成 `memoryContext` item。记忆事件由 SQLite 触发器写进事件队列,触发器的 SQL 也在这里(`triggers.go`),`memory.New` 时用 `DB.ReplaceTriggers` 重建;它只关注终态 turn 和少数字段,不追每次 item 写入。没有配置记忆的应用不会新装触发器。处理失败的事件按指数退避重试,第 10 次失败后停下(留在队列里,状态里计为失败,`lastError` 说明原因),不再无限重试。
 
