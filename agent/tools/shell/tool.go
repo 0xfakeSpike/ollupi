@@ -4,9 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/0xfakeSpike/ollupi/agent/tools"
@@ -81,35 +78,9 @@ func (r *Runner) tool() *tools.Spec {
 		InputSchema: r.inputSchema(),
 		Annotations: &tools.Annotations{DestructiveHint: tools.Hint(true), OpenWorldHint: tools.Hint(true)},
 
-		PermissionContent: commandLine,
+		PermissionContent: permissionContent,
 		Local:             &tools.Local{Prepare: r.Prepare, Run: r.Run},
 	}
-}
-
-func commandLine(arguments map[string]any) (string, error) {
-	program, ok := arguments["program"].(string)
-	if !ok || strings.TrimSpace(program) == "" {
-		return "", fmt.Errorf("shell: argument \"program\" must be non-empty string")
-	}
-	args, err := parseExecArgsSlice(arguments["args"])
-	if err != nil {
-		return "", err
-	}
-	env, err := commandEnvironment(arguments["env"])
-	if err != nil {
-		return "", err
-	}
-	keys := make([]string, 0, len(env))
-	for k := range env {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	words := make([]string, 0, len(keys)+1+len(args))
-	for _, k := range keys {
-		words = append(words, k+"="+env[k])
-	}
-	words = append(words, strings.TrimSpace(program))
-	return strings.Join(append(words, args...), " "), nil
 }
 
 func (r *Runner) Invoke(context.Context, string, map[string]any) (tools.Result, error) {
@@ -129,7 +100,7 @@ func ToolInputSchema() map[string]any {
 				"type":  "array",
 				"items": map[string]any{"type": "string"},
 				"description": "Argv after program. For sh/bash/zsh/dash: use [\"-c\", \"whole shell command\"] for one-liners; " +
-					"a single arg is treated as a script path (sh myscript.sh). For other programs use normal argv.",
+					"otherwise the first arg is a script path and the rest are its arguments (sh myscript.sh a b). For other programs use normal argv.",
 			},
 			"work_dir": map[string]any{
 				"type":        "string",
@@ -214,77 +185,4 @@ func parseTimeoutSec(v any, limit int) (int, error) {
 		return 0, fmt.Errorf("shell: argument \"timeout_sec\" must be at most %d", limit)
 	}
 	return sec, nil
-}
-
-func blacklisted(program string, argv []string, blocked string) bool {
-	want := strings.Fields(blocked)
-	if len(want) == 0 {
-		return false
-	}
-	words := []string{filepath.Base(program)}
-	for i, a := range argv {
-		words = append(words, a)
-		if a == "-c" && i+1 < len(argv) && isShell(program) {
-			words = append(words, strings.Fields(argv[i+1])...)
-		}
-	}
-	for i := 0; i+len(want) <= len(words); i++ {
-		match := true
-		for j, w := range want {
-			got := words[i+j]
-			if got != w && (j > 0 || strings.Contains(w, "/") || filepath.Base(got) != w) {
-				match = false
-				break
-			}
-		}
-		if match {
-			return true
-		}
-	}
-	return false
-}
-
-func isShell(program string) bool {
-	switch strings.ToLower(filepath.Base(strings.TrimSpace(program))) {
-	case "sh", "bash", "zsh", "dash", "ash", "ksh":
-		return true
-	}
-	return false
-}
-
-func normalizeShellArgv(tool, wd string, extra []string) []string {
-	tool = strings.TrimSpace(tool)
-	if tool == "" || len(extra) == 0 {
-		return extra
-	}
-	if !isShell(tool) {
-		return extra
-	}
-	if extra[0] == "-c" || extra[0] == "-s" {
-		return extra
-	}
-	if len(extra) == 1 {
-		return extra
-	}
-	first := extra[0]
-	if shellFirstArgIsScriptFile(first, wd) {
-		return extra
-	}
-	return []string{"-c", strings.Join(extra, " ")}
-}
-
-func shellFirstArgIsScriptFile(first, wd string) bool {
-	if strings.Contains(first, "/") || strings.HasPrefix(first, "./") {
-		return true
-	}
-	p := filepath.Join(wd, first)
-	if st, err := os.Stat(p); err == nil && !st.IsDir() {
-		return true
-	}
-	if filepath.IsAbs(first) {
-		if st, err := os.Stat(first); err == nil && !st.IsDir() {
-			return true
-		}
-	}
-	return false
 }

@@ -3,8 +3,10 @@ package permission
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
+	"github.com/0xfakeSpike/ollupi/agent/tools"
 	"github.com/0xfakeSpike/ollupi/repo"
 )
 
@@ -111,16 +113,40 @@ func (s ruleSet) removes(tool string) bool {
 	return false
 }
 
-func (s ruleSet) decide(tool, content string, hasContent bool) (ruleVerdict, string) {
+func (s ruleSet) decide(tool string, content tools.Content, hasContent bool) (ruleVerdict, string) {
+	entries := append([]string{content.Match}, content.Parts...)
 	for _, group := range []struct {
 		rules []rule
 		kind  ruleVerdict
-	}{{s.deny, ruleDeny}, {s.ask, ruleAsk}, {s.allow, ruleAllow}} {
+	}{{s.deny, ruleDeny}, {s.ask, ruleAsk}} {
 		for _, r := range group.rules {
-			if r.matches(tool, content, hasContent) {
-				return group.kind, r.text
+			for _, entry := range entries {
+				if r.matches(tool, entry, hasContent) {
+					return group.kind, r.text
+				}
 			}
 		}
 	}
-	return ruleNone, ""
+	for _, r := range s.allow {
+		if r.tool == tool && r.pattern == nil {
+			return ruleAllow, r.text
+		}
+	}
+	if !hasContent || content.Opaque {
+		return ruleNone, ""
+	}
+	if len(content.Parts) == 0 {
+		content.Parts = []string{content.Match}
+	}
+	var used []string
+	for _, part := range content.Parts {
+		i := slices.IndexFunc(s.allow, func(r rule) bool { return r.matches(tool, part, true) })
+		if i < 0 {
+			return ruleNone, ""
+		}
+		if !slices.Contains(used, s.allow[i].text) {
+			used = append(used, s.allow[i].text)
+		}
+	}
+	return ruleAllow, strings.Join(used, ", ")
 }

@@ -38,9 +38,9 @@ func (r *Runner) Prepare(ctx context.Context, args map[string]any) (*tools.Prepa
 	if err != nil {
 		return nil, err
 	}
-	argv = normalizeShellArgv(program, cwd, argv)
+	content := contentOf(program, argv)
 	for _, blocked := range r.blacklist {
-		if blacklisted(program, argv, blocked) {
+		if blacklisted(content, blocked) {
 			return nil, fmt.Errorf("shell: command is forbidden by the blacklist entry %q: %s", blocked, strings.Join(append([]string{program}, argv...), " "))
 		}
 	}

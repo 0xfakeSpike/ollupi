@@ -260,14 +260,15 @@ func (c *conn) Call(method string, params json.RawMessage) (any, func(), *jsonrp
 		if err := jsonrpc.DecodeParams(params, &p); err != nil {
 			return nil, nil, err
 		}
-		view, err := ag.ReadThread(p.ThreadID)
-		if err != nil {
+		if _, err := ag.ReadThread(p.ThreadID); err != nil {
 			return nil, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "thread %q not found", p.ThreadID)
 		}
-		if turn, active := view.ActiveTurn(); !active || turn.ID != p.TurnID {
-			return nil, nil, jsonrpc.Errorf(jsonrpc.CodeServerError, "turn %q is not in progress", p.TurnID)
+		if strings.TrimSpace(p.TurnID) == "" {
+			return nil, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "turnId is required")
 		}
-		if err := ag.InterruptTurn(p.ThreadID); err != nil {
+		if err := ag.InterruptTurn(p.ThreadID, p.TurnID); errors.Is(err, agent.ErrNoActiveTurn) || errors.Is(err, agent.ErrTurnMismatch) {
+			return nil, nil, jsonrpc.Errorf(jsonrpc.CodeServerError, "turn %q is not in progress", p.TurnID)
+		} else if err != nil {
 			return nil, nil, serverError(err)
 		}
 		return struct{}{}, nil, nil
@@ -277,17 +278,22 @@ func (c *conn) Call(method string, params json.RawMessage) (any, func(), *jsonrp
 		if err := jsonrpc.DecodeParams(params, &p); err != nil {
 			return nil, nil, err
 		}
-		result, err := ag.CallTool(context.Background(), p.ThreadID, p.Tool, p.Arguments)
-		if err != nil {
-			return nil, nil, serverError(err)
-		}
-		if result.Err != nil {
-			return nil, nil, serverError(result.Err)
-		}
-		return toolCallResult{Output: result.Output}, nil, nil
+		return jsonrpc.Async(func(ctx context.Context) (any, *jsonrpc.Error) {
+			result, err := ag.CallTool(ctx, p.ThreadID, p.Tool, p.Arguments)
+			if err != nil {
+				return nil, serverError(err)
+			}
+			if result.Err != nil {
+				return nil, serverError(result.Err)
+			}
+			return toolCallResult{Output: result.Output}, nil
+		}), nil, nil
 
 	default:
-		if m, ok := c.s.methods[method]; ok {
+		c.s.mu.Lock()
+		m, ok := c.s.methods[method]
+		c.s.mu.Unlock()
+		if ok {
 			return callMethod(m, params)
 		}
 		return nil, nil, jsonrpc.Errorf(jsonrpc.CodeMethodNotFound, "method %q not found", method)

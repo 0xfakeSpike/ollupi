@@ -1,6 +1,8 @@
 package redact
 
 import (
+	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -70,17 +72,30 @@ func (r *Redactor) Mask(s string) string {
 }
 
 func (r *Redactor) Restore(s string) string {
+	return r.restore(s, false)
+}
+
+func (r *Redactor) RestoreJSON(s string) string {
+	return r.restore(s, true)
+}
+
+func (r *Redactor) restore(s string, inJSON bool) string {
 	if len(r.reverse) == 0 || !strings.ContainsAny(s, "<\\") {
 		return s
 	}
 	for placeholder, value := range r.reverse {
+		quoted, _ := json.Marshal(value)
+		escapedValue := string(quoted[1 : len(quoted)-1])
 		if strings.Contains(s, placeholder) {
-			s = strings.ReplaceAll(s, placeholder, value)
+			if inJSON {
+				s = strings.ReplaceAll(s, placeholder, escapedValue)
+			} else {
+				s = strings.ReplaceAll(s, placeholder, value)
+			}
 		}
 		escaped := `\u003c` + placeholder[1:len(placeholder)-1] + `\u003e`
 		if strings.Contains(s, escaped) {
-			quoted, _ := json.Marshal(value)
-			s = strings.ReplaceAll(s, escaped, string(quoted[1:len(quoted)-1]))
+			s = strings.ReplaceAll(s, escaped, escapedValue)
 		}
 	}
 	return s
@@ -157,9 +172,18 @@ func findSpans(s string) []span {
 	return kept
 }
 
+var placeholderKey = func() []byte {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		panic(fmt.Sprintf("redact: random key: %v", err))
+	}
+	return key
+}()
+
 func (r *Redactor) placeholder(cat Category, value string) string {
-	sum := sha256.Sum256([]byte(value))
-	hexSum := hex.EncodeToString(sum[:])
+	mac := hmac.New(sha256.New, placeholderKey)
+	mac.Write([]byte(value))
+	hexSum := hex.EncodeToString(mac.Sum(nil))
 	for n := 8; ; n += 4 {
 		p := fmt.Sprintf("<%s:%s>", cat, hexSum[:n])
 		if existing, ok := r.reverse[p]; !ok || existing == value {

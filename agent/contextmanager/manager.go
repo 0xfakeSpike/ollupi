@@ -22,6 +22,9 @@ func New(model string, limits llm.Limits) *Manager {
 
 const (
 	autoCompactPercent = 80
+	compactMinPercent  = 10
+	responsePercent    = 25
+	minPooledTokens    = 512
 	fixedPercent       = 50
 	artifactPercent    = 15
 )
@@ -51,26 +54,50 @@ type Prompt struct {
 }
 
 func (m *Manager) Build(in Input) (Prompt, error) {
-	system := in.System
 	memory := turnMemory(in.Items, in.CurrentTurnID)
-	messages, err := m.transcript(in.Items, in.CurrentTurnID, memory)
+	compactable, natural := 0, 0
+	obs := newObservations()
+	p, err := m.fitted(func(limit int) (Prompt, error) {
+		messages, fixed, err := m.transcript(obs, in.Items, in.CurrentTurnID, memory, limit)
+		if err != nil {
+			return Prompt{}, err
+		}
+		p := Prompt{System: in.System, Messages: messages}
+		p.Stats = m.stats(in.System, messages, in.Tools)
+		if memory != "" {
+			p.Stats.MemoryTokens = llm.EstimateTokens(memory)
+		}
+		m.calibrate(&p.Stats, in.Items)
+		if limit == maxObservationTokens {
+			compactable, natural = scaled(p.Stats, p.Stats.MessagesTokens-fixed), p.Stats.CalibratedTokens
+		}
+		return p, nil
+	})
 	if err != nil {
 		return Prompt{}, err
 	}
-	p := Prompt{System: system, Messages: messages}
-	p.Stats = m.stats(system, messages, in.Tools)
-	if memory != "" {
-		p.Stats.MemoryTokens = llm.EstimateTokens(memory)
-	}
-	m.calibrate(&p.Stats, in.Items)
-	compactable := hasItemsAfterCompaction(in.Items)
-	switch {
-	case p.Stats.CalibratedTokens > m.inputTokens*autoCompactPercent/100 && compactable:
-		p.NeedsCompaction = true
-	case p.Stats.CalibratedTokens > m.inputTokens:
-		return Prompt{}, fmt.Errorf("context: the prompt needs %d tokens and nothing is left to compact; model %s allows %d", p.Stats.CalibratedTokens, m.model, m.inputTokens)
+	p.NeedsCompaction = natural > m.inputTokens*autoCompactPercent/100 &&
+		hasItemsAfterCompaction(in.Items) && compactable >= share(m.inputTokens, compactMinPercent)
+	if p.Stats.CalibratedTokens > m.inputTokens && !p.NeedsCompaction {
+		return Prompt{}, fmt.Errorf("context: the prompt needs %d tokens even with every tool result clipped and nothing is left to compact; model %s allows %d", p.Stats.CalibratedTokens, m.model, m.inputTokens)
 	}
 	return p, nil
+}
+
+func (m *Manager) fitted(build func(limit int) (Prompt, error)) (Prompt, error) {
+	for limit := maxObservationTokens; ; limit = max(minOutputTokens, limit/2) {
+		p, err := build(limit)
+		if err != nil || p.Stats.CalibratedTokens <= m.inputTokens || limit == minOutputTokens {
+			return p, err
+		}
+	}
+}
+
+func scaled(s repo.ContextStats, tokens int) int {
+	if s.EstimatedTokens > 0 && s.CalibratedTokens > s.EstimatedTokens {
+		return tokens * s.CalibratedTokens / s.EstimatedTokens
+	}
+	return tokens
 }
 
 func (m *Manager) stats(system string, messages []llm.ChatMessage, tools any) repo.ContextStats {
@@ -87,13 +114,18 @@ func (m *Manager) stats(system string, messages []llm.ChatMessage, tools any) re
 }
 
 func (m *Manager) calibrate(s *repo.ContextStats, items []repo.ItemRow) {
-	for i, from := len(items)-1, latestCompaction(items); i > from; i-- {
+	from := latestCompaction(items)
+	for i := len(items) - 1; i >= 0; i-- {
 		it := items[i]
 		ref, usage := it.ContextStats, it.Usage
-		if it.ResponseID == "" || it.Type == repo.ItemContextCompaction || ref == nil || usage == nil || usage.InputTokens <= 0 || ref.Model != m.model {
+		if it.ResponseID == "" || ref == nil || usage == nil || usage.InputTokens <= 0 || ref.EstimatedTokens <= 0 || ref.Model != m.model {
 			continue
 		}
-		s.CalibratedTokens = max(0, int(usage.InputTokens)+s.EstimatedTokens-ref.EstimatedTokens)
+		if i > from && it.Type != repo.ItemContextCompaction {
+			s.CalibratedTokens = max(0, int(usage.InputTokens)+s.EstimatedTokens-ref.EstimatedTokens)
+		} else {
+			s.CalibratedTokens = max(s.EstimatedTokens, int(int64(s.EstimatedTokens)*usage.InputTokens/int64(ref.EstimatedTokens)))
+		}
 		return
 	}
 }
@@ -129,11 +161,16 @@ func turnMemory(items []repo.ItemRow, turnID string) string {
 	return ""
 }
 
-func (m *Manager) transcript(items []repo.ItemRow, turnID string, memory string) ([]llm.ChatMessage, error) {
-	var out []llm.ChatMessage
+func (m *Manager) observationBudget(calls, limit int) int {
+	return min(limit, max(minPooledTokens, min(m.inputTokens/8, share(m.inputTokens, responsePercent)/max(1, calls))))
+}
+
+func (m *Manager) transcript(obs *observations, items []repo.ItemRow, turnID string, memory string, limit int) ([]llm.ChatMessage, int, error) {
+	var out, fixed []llm.ChatMessage
 	var pendingMemory *llm.ChatMessage
 	if memory != "" {
 		pendingMemory = &llm.ChatMessage{Role: llm.RoleUser, Content: memory}
+		fixed = append(fixed, *pendingMemory)
 	}
 	appendMemory := func() {
 		if pendingMemory != nil {
@@ -149,10 +186,11 @@ func (m *Manager) transcript(items []repo.ItemRow, turnID string, memory string)
 				break
 			}
 		}
-		out = append(out, llm.ChatMessage{Role: llm.RoleUser, Content: m.compactedHistory(items[:c], items[c].Text)})
+		history := llm.ChatMessage{Role: llm.RoleUser, Content: m.compactedHistory(items[:c], items[c].Text)}
+		out = append(out, history)
+		fixed = append(fixed, history)
 		start = c + 1
 	}
-	perObservation := min(maxObservationTokens, max(512, m.inputTokens/8))
 	for i := start; i < len(items); {
 		it := items[i]
 		if it.TurnID == turnID {
@@ -171,6 +209,13 @@ func (m *Manager) transcript(items []repo.ItemRow, turnID string, memory string)
 		case it.ResponseID != "":
 			assistant := llm.ChatMessage{Role: llm.RoleAssistant}
 			var calls []llm.ChatMessage
+			n := 0
+			for k := i; k < len(items) && items[k].ResponseID == it.ResponseID; k++ {
+				if items[k].IsCall() {
+					n++
+				}
+			}
+			perObservation := m.observationBudget(n, limit)
 			j := i
 			for ; j < len(items) && items[j].ResponseID == it.ResponseID; j++ {
 				part := items[j]
@@ -187,13 +232,13 @@ func (m *Manager) transcript(items []repo.ItemRow, turnID string, memory string)
 					}
 				case part.IsCall():
 					assistant.ToolCalls = append(assistant.ToolCalls, llm.ToolCall{ID: part.CallID, Name: part.Tool, Arguments: part.Arguments})
-					content, err := callResult(&items[j], perObservation)
+					content, err := obs.callResult(&items[j], perObservation)
 					if err != nil {
-						return nil, err
+						return nil, 0, err
 					}
 					calls = append(calls, llm.ChatMessage{Role: llm.RoleTool, ToolCallID: part.CallID, Content: content})
 				default:
-					return nil, fmt.Errorf("context: item %s (%s) cannot be part of a model response", part.ID, part.Type)
+					return nil, 0, fmt.Errorf("context: item %s (%s) cannot be part of a model response", part.ID, part.Type)
 				}
 			}
 
@@ -203,14 +248,18 @@ func (m *Manager) transcript(items []repo.ItemRow, turnID string, memory string)
 			}
 			i = j
 		default:
-			return nil, fmt.Errorf("context: item %s (%s) has no place in the transcript", it.ID, it.Type)
+			return nil, 0, fmt.Errorf("context: item %s (%s) has no place in the transcript", it.ID, it.Type)
 		}
 	}
 
 	if pendingMemory != nil {
 		out = append([]llm.ChatMessage{*pendingMemory}, out...)
 	}
-	return out, nil
+	fixedTokens := 0
+	if len(fixed) > 0 {
+		fixedTokens = llm.EstimateTokens(prettyJSON(fixed))
+	}
+	return out, fixedTokens, nil
 }
 
 func activeArtifacts(items []repo.ItemRow) []tools.ContextArtifact {

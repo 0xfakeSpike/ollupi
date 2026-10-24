@@ -114,6 +114,11 @@ func DefaultDenyRead(home string) []string {
 		".ssh", ".gnupg", ".aws", ".azure", ".kube", ".netrc", ".config/gcloud", ".docker/config.json",
 		".git-credentials", ".cargo/credentials", ".cargo/credentials.toml", ".pypirc", ".gem/credentials",
 		".vault-token", ".terraform.d/credentials.tfrc.json", ".password-store", ".config/op", ".codex/auth.json",
+		".config/gh", ".config/hub", ".config/glab-cli", ".config/git/credentials", ".config/github-copilot",
+		".npmrc", ".yarnrc", ".yarnrc.yml", ".config/configstore", ".composer/auth.json", ".config/composer/auth.json",
+		".m2/settings.xml", ".m2/settings-security.xml", ".gradle/gradle.properties", ".nuget/NuGet/NuGet.Config",
+		".pgpass", ".my.cnf", ".boto", ".s3cfg", ".databrickscfg", ".oci", ".config/doctl", ".config/hcloud",
+		".fly", ".kaggle", ".huggingface/token", ".cache/huggingface/token", ".config/stripe", ".claude/.credentials.json",
 
 		".zsh_history", ".bash_history", ".python_history", ".node_repl_history",
 
@@ -133,13 +138,7 @@ func DefaultWritableCaches(home string) []string {
 	if home == "" {
 		return nil
 	}
-	names := []string{
-		"Library/Caches/go-build", "go/pkg/mod",
-		".npm", "Library/Caches/Yarn", "Library/pnpm/store", "Library/Caches/node-gyp",
-		"Library/Caches/pip", "Library/Caches/pypoetry", ".cache/pip", ".cache/uv",
-		".cargo/registry", ".cargo/git", ".rustup/downloads", ".rustup/tmp",
-		"Library/Caches/Homebrew", "Library/Caches/CocoaPods",
-	}
+	names := []string{".npm/_cacache", ".npm/_logs"}
 	out := make([]string, len(names))
 	for i, name := range names {
 		out[i] = filepath.Join(home, name)

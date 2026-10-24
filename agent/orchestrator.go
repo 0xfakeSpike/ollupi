@@ -16,6 +16,7 @@ import (
 const workers = 4
 
 type slot struct {
+	turnID  string
 	cancel  context.CancelFunc
 	steered bool
 }
@@ -30,12 +31,11 @@ type orchestrator struct {
 	a   *Agent
 	ctx context.Context
 
-	mu         sync.Mutex
-	cond       *sync.Cond
-	slots      map[string]*slot
-	queue      []work
-	background sync.WaitGroup
-	workers    sync.WaitGroup
+	mu      sync.Mutex
+	cond    *sync.Cond
+	slots   map[string]*slot
+	queue   []work
+	workers sync.WaitGroup
 }
 
 func newOrchestrator(a *Agent, ctx context.Context) *orchestrator {
@@ -59,10 +59,7 @@ func (s *orchestrator) start() {
 }
 
 func (s *orchestrator) wait() {
-	s.background.Wait()
-	if s.ctx.Err() != nil {
-		s.workers.Wait()
-	}
+	s.workers.Wait()
 }
 
 func (s *orchestrator) enqueue(threadID, turnID string) {
@@ -70,7 +67,7 @@ func (s *orchestrator) enqueue(threadID, turnID string) {
 		return
 	}
 	ctx, cancel := context.WithCancel(s.ctx)
-	s.slots[threadID] = &slot{cancel: cancel}
+	s.slots[threadID] = &slot{turnID: turnID, cancel: cancel}
 	s.queue = append(s.queue, work{threadID: threadID, turnID: turnID, ctx: ctx})
 	s.cond.Signal()
 }
@@ -100,9 +97,7 @@ func (s *orchestrator) workerLoop() {
 		if !ok {
 			return
 		}
-		s.background.Add(1)
 		s.run(w)
-		s.background.Done()
 	}
 }
 
@@ -110,13 +105,10 @@ func (s *orchestrator) run(w work) {
 	view, err := s.a.ReadThread(w.threadID)
 	if err != nil {
 		log.Printf("agent: thread %s cannot be read while turn %s is queued: %v", w.threadID, w.turnID, err)
-		if turn, err := s.a.DB.Turn(w.turnID); err == nil {
-			turn.Status, turn.Error = repo.TurnFailed, "the thread could not be read from storage"
-			s.mu.Lock()
-			s.release(w.threadID)
-			s.endTurn(turn)
-			s.mu.Unlock()
-		}
+		s.mu.Lock()
+		s.release(w.threadID)
+		s.failTurn(w.turnID, repo.TurnFailed, "the thread could not be read from storage")
+		s.mu.Unlock()
 		return
 	}
 	turn, ok := findTurn(view, w.turnID)
@@ -132,7 +124,7 @@ func (s *orchestrator) run(w work) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.afterStep(w.threadID, outcome, err, w.ctx.Err() != nil)
+	s.afterStep(w.threadID, w.turnID, outcome, err, w.ctx.Err() != nil)
 }
 
 func (s *orchestrator) release(threadID string) {
@@ -142,7 +134,20 @@ func (s *orchestrator) release(threadID string) {
 	}
 }
 
-func (s *orchestrator) afterStep(threadID string, outcome runtime.Outcome, stepErr error, interrupted bool) {
+func (s *orchestrator) failTurn(turnID, status, reason string) {
+	turn, err := s.a.DB.Turn(turnID)
+	if err != nil {
+		log.Printf("agent: turn %s cannot be read to end it: %v", turnID, err)
+		return
+	}
+	if turn.Status != repo.TurnInProgress {
+		return
+	}
+	turn.Status, turn.Error = status, reason
+	s.endTurn(turn)
+}
+
+func (s *orchestrator) afterStep(threadID, turnID string, outcome runtime.Outcome, stepErr error, interrupted bool) {
 	sl, ok := s.slots[threadID]
 	if !ok {
 		return
@@ -151,6 +156,11 @@ func (s *orchestrator) afterStep(threadID string, outcome runtime.Outcome, stepE
 	view, err := s.a.ReadThread(threadID)
 	if err != nil {
 		log.Printf("agent: thread %s cannot be read after its step: %v", threadID, err)
+		if interrupted {
+			s.failTurn(turnID, repo.TurnInterrupted, "interrupted by the user")
+		} else {
+			s.failTurn(turnID, repo.TurnFailed, "the thread could not be read from storage after its step")
+		}
 		return
 	}
 	turn, ok := view.ActiveTurn()
@@ -364,8 +374,8 @@ func (a *Agent) SteerTurn(threadID, expectedTurnID, text string) (repo.TurnRow, 
 	return a.run.steer(threadID, expectedTurnID, text)
 }
 
-func (a *Agent) InterruptTurn(threadID string) error {
+func (a *Agent) InterruptTurn(threadID, expectedTurnID string) error {
 	a.run.mu.Lock()
 	defer a.run.mu.Unlock()
-	return a.run.interrupt(threadID)
+	return a.run.interrupt(threadID, expectedTurnID)
 }

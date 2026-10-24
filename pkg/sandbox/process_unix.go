@@ -10,17 +10,20 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func ownProcessGroup(cmd *exec.Cmd) {
+func ownProcessGroup(cmd *exec.Cmd, tag string) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		killRun(cmd, tag)
+		return nil
 	}
 }
 
-func killProcessGroup(cmd *exec.Cmd) {
-	if cmd.Process != nil {
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+func killRun(cmd *exec.Cmd, tag string) {
+	if cmd.Process == nil {
+		return
 	}
+	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	killTagged(tag, cmd.Process.Pid)
 }
 
 func exitSignal(ps *os.ProcessState) (int, string, bool) {

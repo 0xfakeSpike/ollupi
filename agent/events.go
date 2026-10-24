@@ -1,7 +1,7 @@
 package agent
 
 import (
-	"fmt"
+	"log"
 
 	"github.com/0xfakeSpike/ollupi/repo"
 )
@@ -38,7 +38,8 @@ func (a *Agent) emit(e Event) {
 func (a *Agent) emitStatus(threadID string) {
 	t, err := a.DB.ThreadRow(threadID)
 	if err != nil {
-		panic(fmt.Sprintf("agent: thread %s vanished: %v", threadID, err))
+		log.Printf("agent: thread %s: status not sent: %v", threadID, err)
+		return
 	}
 	if t.ParentThreadID != "" {
 		a.emitStatus(t.ParentThreadID)

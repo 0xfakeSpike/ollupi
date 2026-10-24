@@ -112,9 +112,7 @@ func (a *Agent) buildTools(ctx context.Context) error {
 
 func (a *Agent) Wait() {
 	a.run.wait()
-	if a.ctx.Err() != nil {
-		a.loops.Wait()
-	}
+	a.loops.Wait()
 }
 
 func (a *Agent) CallTool(ctx context.Context, threadID, tool string, arguments map[string]any) (tools.Result, error) {

@@ -3,6 +3,7 @@ package repo
 import (
 	"errors"
 	"fmt"
+	"math"
 
 	"gorm.io/gorm"
 )
@@ -47,9 +48,11 @@ func (d *DB) AckEvent(id int64) error {
 	return nil
 }
 
+const maxEventAttempts = 10
+
 func (d *DB) DeferEvent(id int64, message string, nowMillis int64) (bool, error) {
 	res := d.gorm.Model(&MemoryEventRow{}).Where("id = ?", id).Updates(map[string]any{
-		"next_attempt": gorm.Expr("? + MIN(60, 1 << MIN(attempts, 6)) * 60000", nowMillis),
+		"next_attempt": gorm.Expr("CASE WHEN attempts + 1 >= ? THEN ? ELSE ? + MIN(60, 1 << MIN(attempts, 6)) * 60000 END", maxEventAttempts, int64(math.MaxInt64), nowMillis),
 		"attempts":     gorm.Expr("attempts + 1"),
 		"last_error":   message,
 	})

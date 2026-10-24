@@ -31,6 +31,8 @@ func (s *Server) Register(name string, m Method) error {
 	case builtinMethods[name]:
 		return fmt.Errorf("gateway: method %q is part of the protocol", name)
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if _, dup := s.methods[name]; dup {
 		return fmt.Errorf("gateway: method %q is registered twice", name)
 	}

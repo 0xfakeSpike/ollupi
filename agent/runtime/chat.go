@@ -140,7 +140,7 @@ func (rt *Runtime) send(ctx context.Context, prompt contextmanager.Prompt, choic
 	resp.Message.Content = rt.redactor.Restore(resp.Message.Content)
 	resp.Message.ReasoningContent = rt.redactor.Restore(resp.Message.ReasoningContent)
 	for i := range resp.Message.ToolCalls {
-		resp.Message.ToolCalls[i].Arguments = rt.redactor.Restore(resp.Message.ToolCalls[i].Arguments)
+		resp.Message.ToolCalls[i].Arguments = rt.redactor.RestoreJSON(resp.Message.ToolCalls[i].Arguments)
 	}
 	if usage := responseUsage(resp); usage != nil {
 		rt.usage.Add(*usage)
