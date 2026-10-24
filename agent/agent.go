@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
@@ -15,7 +14,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
-	"github.com/0xfakeSpike/ollupi/tools/cron"
 	"github.com/0xfakeSpike/ollupi/tools/plan"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
@@ -26,7 +24,6 @@ const (
 )
 
 var (
-	errTurnActive     = errors.New("the thread already has a turn in progress")
 	ErrNoActiveTurn   = errors.New("the thread has no turn in progress")
 	ErrTurnMismatch   = errors.New("the expected turn is not the turn in progress")
 	errNoSuchRequest  = errors.New("the thread does not wait on this request")
@@ -45,14 +42,12 @@ type Agent struct {
 	Providers   []tools.Provider
 	SkillsDir   string
 	Memory      *memory.Manager
-	Location    *time.Location
 	DB          *repo.DB
 	OnEvent     func(Event)
 
 	ctx      context.Context
 	registry *tools.Registry
 	skills   *skills.Catalog
-	cron     *cron.Jobs
 	run      *orchestrator
 	loops    sync.WaitGroup
 }
@@ -90,12 +85,7 @@ func (a *Agent) Start(ctx context.Context) error {
 }
 
 func (a *Agent) buildTools(ctx context.Context) error {
-	location := a.Location
-	if location == nil {
-		location = time.Local
-	}
-	a.cron = cron.New(a.DB, location)
-	providers := append(slices.Clone(a.Providers), plan.New(), subagent.New(), userinput.New(), a.cron)
+	providers := append(slices.Clone(a.Providers), plan.New(), subagent.New(), userinput.New())
 	if a.SkillsDir != "" {
 		var err error
 		if a.skills, err = skills.New(a.SkillsDir); err != nil {

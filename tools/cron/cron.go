@@ -1,8 +1,10 @@
 package cron
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"log"
 	"regexp"
 	"strings"
 	"time"
@@ -116,4 +118,44 @@ func (j *Jobs) change(id, threadID string, fn func(repo.CronJobRow) (*repo.CronJ
 		return repo.CronJobRow{}, fmt.Errorf("cron: task %q not found", id)
 	}
 	return row, err
+}
+
+func (j *Jobs) Run(ctx context.Context, send func(threadID, text, jobID string) error) {
+	tick := time.NewTicker(time.Minute)
+	defer tick.Stop()
+	for {
+		j.sendDue(ctx, send)
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+	}
+}
+
+func (j *Jobs) sendDue(ctx context.Context, send func(threadID, text, jobID string) error) {
+	now := time.Now().UTC()
+	due, err := j.db.DueCronJobs(now)
+	if err != nil {
+		log.Printf("cron: due tasks: %v", err)
+		return
+	}
+	for _, job := range due {
+		if ctx.Err() != nil {
+			return
+		}
+		waiting, err := j.db.HasQueuedTurn(job.ThreadID, job.ID)
+		if err != nil {
+			log.Printf("cron: task %s: %v", job.ID, err)
+			continue
+		}
+		if !waiting {
+			if err := send(job.ThreadID, job.Prompt, job.ID); err != nil && ctx.Err() == nil {
+				log.Printf("cron: task %s could not start in thread %s: %v", job.ID, job.ThreadID, err)
+			}
+		}
+		if err := j.Sent(job, now); err != nil {
+			log.Printf("cron: task %s: record its run: %v", job.ID, err)
+		}
+	}
 }

@@ -224,7 +224,7 @@ func (c *conn) Call(method string, params json.RawMessage) (any, func(), *jsonrp
 		}
 
 		c.watch(p.ThreadID)
-		turn, err := ag.StartTurn(p.ThreadID, text, p.Connection)
+		turn, err := ag.StartTurn(p.ThreadID, agent.Input{Text: text, Connection: p.Connection})
 		if err != nil {
 			return nil, nil, serverError(err)
 		}
@@ -304,6 +304,8 @@ func (c *conn) event(e agent.Event) {
 	switch e.Kind {
 	case agent.EventThreadStarted:
 		c.rpc.Notify(notifyThreadStarted, threadResult{Thread: e.Thread})
+	case agent.EventTurnQueued:
+		c.rpc.Notify(notifyTurnQueued, turnNotification{ThreadID: e.Thread.ID, Turn: e.Turn})
 	case agent.EventTurnStarted:
 		c.rpc.Notify(notifyTurnStarted, turnNotification{ThreadID: e.Thread.ID, Turn: e.Turn})
 	case agent.EventItemStarted:

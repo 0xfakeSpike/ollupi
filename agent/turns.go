@@ -14,10 +14,16 @@ import (
 	"github.com/google/uuid"
 )
 
-func (a *Agent) StartTurn(threadID, text, connection string) (repo.TurnRow, error) {
+type Input struct {
+	Text       string
+	Connection string
+	CronJobID  string
+}
+
+func (a *Agent) StartTurn(threadID string, in Input) (repo.TurnRow, error) {
 	var turn repo.TurnRow
 	err := a.run.call(func() (err error) {
-		turn, err = a.run.startTurn(threadID, text, connection)
+		turn, err = a.run.startTurn(threadID, in)
 		return err
 	})
 	return turn, err
@@ -44,8 +50,8 @@ func (a *Agent) AnswerUserInput(threadID, itemID string, answers map[string]user
 	return a.run.call(func() error { return a.run.answerUserInput(threadID, itemID, answers) })
 }
 
-func (s *orchestrator) startTurn(threadID, text, connection string) (repo.TurnRow, error) {
-	text, err := checkMessage(text)
+func (s *orchestrator) startTurn(threadID string, in Input) (repo.TurnRow, error) {
+	text, err := checkMessage(in.Text)
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
@@ -56,18 +62,15 @@ func (s *orchestrator) startTurn(threadID, text, connection string) (repo.TurnRo
 	if view.Thread.ParentThreadID != "" {
 		return repo.TurnRow{}, errSubagentThread
 	}
-	model, err := s.a.conversationModel(view, connection)
+	model, err := s.a.conversationModel(view, in.Connection)
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
-	return s.beginTurn(view, repo.NewUserMessage(uuid.NewString(), "", text, time.Now().UTC()), model)
+	return s.beginTurn(view, text, in.CronJobID, model)
 }
 
-func (s *orchestrator) beginTurn(view repo.ThreadView, message repo.ItemRow, model llm.Model) (repo.TurnRow, error) {
+func (s *orchestrator) beginTurn(view repo.ThreadView, text, cronJobID string, model llm.Model) (repo.TurnRow, error) {
 	threadID := view.Thread.ID
-	if _, active := view.ActiveTurn(); active {
-		return repo.TurnRow{}, errTurnActive
-	}
 	if view.Thread.ParentThreadID == "" {
 		if err := s.a.checkWorkspace(view.Thread.WorkspaceID); err != nil {
 			return repo.TurnRow{}, err
@@ -75,16 +78,19 @@ func (s *orchestrator) beginTurn(view repo.ThreadView, message repo.ItemRow, mod
 	}
 	policy := s.a.policyFor(view.Thread)
 	turn := repo.TurnRow{
-		ID: uuid.NewString(), ThreadID: threadID, Status: repo.TurnInProgress,
-		Model: model.Clone(), ApprovalPolicy: string(policy), Permissions: s.a.rulesFor(view.Thread), StartedAt: time.Now().UTC(),
+		ID: uuid.NewString(), Model: model.Clone(), ApprovalPolicy: string(policy), Permissions: s.a.rulesFor(view.Thread),
+		Input: text, CronJobID: cronJobID, StartedAt: time.Now().UTC(),
 	}
-	message.TurnID = turn.ID
-	turn, err := s.a.DB.BeginTurn(threadID, turn, []repo.ItemRow{message})
+	turn, message, err := s.a.DB.SubmitTurn(threadID, turn)
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
-	s.a.emit(Event{Kind: EventTurnStarted, Thread: view.Thread, Turn: turn})
-	s.a.emitItem(view.Thread, turn, message, true)
+	if message != nil {
+		s.a.emit(Event{Kind: EventTurnStarted, Thread: view.Thread, Turn: turn})
+		s.a.emitItem(view.Thread, turn, *message, true)
+	} else {
+		s.a.emit(Event{Kind: EventTurnQueued, Thread: view.Thread, Turn: turn})
+	}
 	if !s.settle(threadID) {
 		s.a.emitStatus(threadID)
 	}

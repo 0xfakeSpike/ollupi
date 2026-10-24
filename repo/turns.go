@@ -2,9 +2,11 @@ package repo
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
+	"github.com/google/uuid"
 )
 
 type Usage struct {
@@ -30,6 +32,8 @@ type TurnRow struct {
 	Usage          Usage           `gorm:"embedded" json:"usage"`
 	Error          string          `gorm:"not null;default:''" json:"error,omitempty"`
 	Permissions    PermissionRules `gorm:"not null;default:'{}';serializer:json;check:turns_permissions,json_valid(permissions)" json:"permissions,omitempty"`
+	Input          string          `gorm:"not null;default:''" json:"input,omitempty"`
+	CronJobID      string          `gorm:"not null;default:''" json:"cronJobId,omitempty"`
 	StartedAt      time.Time       `gorm:"not null" json:"startedAt"`
 	CompletedAt    *time.Time      `json:"completedAt,omitempty"`
 }
@@ -37,6 +41,7 @@ type TurnRow struct {
 func (TurnRow) TableName() string { return "turns" }
 
 const (
+	TurnQueued      = "queued"
 	TurnInProgress  = "inProgress"
 	TurnCompleted   = "completed"
 	TurnInterrupted = "interrupted"
@@ -45,8 +50,14 @@ const (
 
 func (d *DB) ActiveThreadIDs() ([]string, error) {
 	var ids []string
-	err := d.gorm.Model(&TurnRow{}).Where("status = 'inProgress'").Order("started_at, id").Pluck("thread_id", &ids).Error
+	err := d.gorm.Model(&TurnRow{}).Where("status IN ('inProgress', 'queued')").Distinct("thread_id").Pluck("thread_id", &ids).Error
 	return ids, err
+}
+
+func (d *DB) HasQueuedTurn(threadID, cronJobID string) (bool, error) {
+	var n int64
+	err := d.gorm.Model(&TurnRow{}).Where("thread_id = ? AND status = 'queued' AND cron_job_id = ?", threadID, cronJobID).Count(&n).Error
+	return n > 0, err
 }
 
 func (d *DB) CreateTurn(row TurnRow) error {
@@ -77,41 +88,82 @@ func (d *DB) Turn(id string) (TurnRow, error) {
 
 func (d *DB) EndedTurn(id string) (TurnRow, error) {
 	var row TurnRow
-	return row, notFound(d.gorm.Where("id = ? AND status <> 'inProgress'", id).Take(&row).Error)
+	return row, notFound(d.gorm.Where("id = ? AND status IN ('completed', 'failed', 'interrupted')", id).Take(&row).Error)
 }
 
-func (d *DB) BeginTurn(threadID string, turn TurnRow, input []ItemRow) (TurnRow, error) {
+func (d *DB) SubmitTurn(threadID string, turn TurnRow) (TurnRow, *ItemRow, error) {
+	var message *ItemRow
 	err := d.Tx(func(tx *DB) error {
 		v, err := tx.Thread(threadID)
 		if err != nil {
 			return err
 		}
-		if active, ok := v.ActiveTurn(); ok {
-			return fmt.Errorf("thread %s already has turn %s in progress", threadID, active.ID)
+		if turn.ID == "" || strings.TrimSpace(turn.Input) == "" {
+			return fmt.Errorf("a new turn needs an id and an input")
 		}
-		if turn.ID == "" || turn.Status != TurnInProgress {
-			return fmt.Errorf("a new turn needs an id and status inProgress")
-		}
-		turn.ThreadID, turn.Seq = threadID, len(v.Turns)+1
+		turn.ThreadID, turn.Seq, turn.Status = threadID, len(v.Turns)+1, TurnQueued
 		if err := tx.CreateTurn(turn); err != nil {
 			return err
 		}
-		t := v.Thread
-		for _, it := range input {
-			if it.Type == ItemUserMessage && t.Preview == "" {
-				t.Preview = preview(it.Text)
-			}
-			if err := tx.saveItemOf(threadID, it); err != nil {
-				return err
-			}
+		if _, active := v.ActiveTurn(); active || len(v.QueuedTurns()) > 0 {
+			return nil
 		}
-		t.UpdatedAt = time.Now().UTC()
-		return tx.UpdateThread(t)
+		v.Turns = append(v.Turns, turn)
+		started, it, err := tx.startIn(v, turn)
+		turn, message = started, &it
+		return err
 	})
 	if err != nil {
-		return TurnRow{}, fmt.Errorf("storage: begin turn: %w", err)
+		return TurnRow{}, nil, fmt.Errorf("storage: submit turn: %w", err)
 	}
-	return turn, nil
+	return turn, message, nil
+}
+
+func (d *DB) StartQueuedTurn(threadID string) (TurnRow, ItemRow, bool, error) {
+	var turn TurnRow
+	var message ItemRow
+	started := false
+	err := d.Tx(func(tx *DB) error {
+		v, err := tx.Thread(threadID)
+		if err != nil {
+			return err
+		}
+		queued := v.QueuedTurns()
+		if _, active := v.ActiveTurn(); active || len(queued) == 0 {
+			return nil
+		}
+		turn, message, err = tx.startIn(v, queued[0])
+		started = err == nil
+		return err
+	})
+	if err != nil {
+		return TurnRow{}, ItemRow{}, false, fmt.Errorf("storage: start queued turn: %w", err)
+	}
+	return turn, message, started, nil
+}
+
+func (d *DB) startIn(v ThreadView, turn TurnRow) (TurnRow, ItemRow, error) {
+	now := time.Now().UTC()
+	res := d.gorm.Model(&TurnRow{}).Where("id = ? AND status = 'queued'", turn.ID).Updates(map[string]any{"status": TurnInProgress, "started_at": now})
+	if err := checkOne(res); err != nil {
+		return TurnRow{}, ItemRow{}, fmt.Errorf("turn %s: %w", turn.ID, err)
+	}
+	turn.Status, turn.StartedAt = TurnInProgress, now
+	message := NewUserMessage(uuid.NewString(), turn.ID, turn.Input, now)
+	message.CronJobID = turn.CronJobID
+	if err := d.saveItemOf(v.Thread.ID, message); err != nil {
+		return TurnRow{}, ItemRow{}, err
+	}
+	stored, err := d.Item(message.ID)
+	if err != nil {
+		return TurnRow{}, ItemRow{}, err
+	}
+	t := v.Thread
+	if t.Preview == "" {
+		t.Preview = preview(turn.Input)
+	}
+	t.UpdatedAt = now
+	return turn, stored, d.UpdateThread(t)
 }
 
 func (d *DB) AddUsage(threadID, turnID string, u Usage) error {
