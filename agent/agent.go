@@ -30,12 +30,11 @@ var (
 )
 
 type Agent struct {
-	Name           string
-	Prompt         string
-	Models         []llm.Model
-	Tools          []string
-	ApprovalPolicy permission.Policy
-	Permissions    permission.Rules
+	Name     string
+	Prompt   string
+	Models   []llm.Model
+	Tools    []string
+	Settings permission.Settings
 
 	Connections map[string]*llm.OpenAI
 	Providers   []tools.Provider
@@ -111,9 +110,5 @@ func (a *Agent) CallTool(ctx context.Context, threadID, tool string, arguments m
 }
 
 func (a *Agent) callerOf(t repo.ThreadRow) tools.Caller {
-	c := tools.Caller{ThreadID: t.ID, WorkspaceID: t.WorkspaceID, Subagent: t.ParentThreadID != ""}
-	if w, err := a.DB.Workspace(t.WorkspaceID); err == nil {
-		c.Root = w.RootPath
-	}
-	return c
+	return tools.Caller{ThreadID: t.ID, WorkspaceID: t.WorkspaceID, Root: a.environmentOf(t).workspace.RootPath, Subagent: t.ParentThreadID != ""}
 }

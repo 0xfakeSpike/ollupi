@@ -1,20 +1,21 @@
 package repo
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 )
 
 type ThreadRow struct {
-	ID             string    `gorm:"primaryKey" json:"id"`
-	WorkspaceID    string    `gorm:"not null;default:'';index:threads_workspace_updated,priority:1" json:"workspaceId,omitempty"`
-	Preview        string    `gorm:"not null" json:"preview"`
-	ApprovalPolicy string    `gorm:"not null;default:''" json:"approvalPolicy,omitempty"`
-	ParentThreadID string    `gorm:"not null;default:'';index" json:"parentThreadId,omitempty"`
-	ParentItemID   string    `gorm:"not null;default:''" json:"parentItemId,omitempty"`
-	CreatedAt      time.Time `gorm:"not null;autoCreateTime:false" json:"createdAt"`
-	UpdatedAt      time.Time `gorm:"not null;autoUpdateTime:false;index;index:threads_workspace_updated,priority:2,sort:desc" json:"updatedAt"`
+	ID             string             `gorm:"primaryKey" json:"id"`
+	WorkspaceID    string             `gorm:"not null;default:'';index:threads_workspace_updated,priority:1" json:"workspaceId,omitempty"`
+	Preview        string             `gorm:"not null" json:"preview"`
+	Settings       PermissionSettings `gorm:"not null;default:'{}';serializer:json;check:threads_settings,json_valid(settings)" json:"settings"`
+	ParentThreadID string             `gorm:"not null;default:'';index" json:"parentThreadId,omitempty"`
+	ParentItemID   string             `gorm:"not null;default:''" json:"parentItemId,omitempty"`
+	CreatedAt      time.Time          `gorm:"not null;autoCreateTime:false" json:"createdAt"`
+	UpdatedAt      time.Time          `gorm:"not null;autoUpdateTime:false;index;index:threads_workspace_updated,priority:2,sort:desc" json:"updatedAt"`
 }
 
 func (ThreadRow) TableName() string { return "threads" }
@@ -74,8 +75,12 @@ func (d *DB) CreateThread(row ThreadRow) error {
 }
 
 func (d *DB) UpdateThread(row ThreadRow) error {
+	settings, err := json.Marshal(row.Settings)
+	if err != nil {
+		return fmt.Errorf("thread %s: encode settings: %w", row.ID, err)
+	}
 	res := d.gorm.Model(&ThreadRow{}).Where("id = ?", row.ID).Updates(map[string]any{
-		"approval_policy": row.ApprovalPolicy, "preview": row.Preview, "updated_at": row.UpdatedAt.UTC(),
+		"settings": string(settings), "preview": row.Preview, "updated_at": row.UpdatedAt.UTC(),
 	})
 	if err := checkOne(res); err != nil {
 		return fmt.Errorf("thread %s: %w", row.ID, err)

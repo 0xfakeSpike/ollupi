@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
+	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/runtime"
 	"github.com/0xfakeSpike/ollupi/agent/skills"
 	"github.com/0xfakeSpike/ollupi/agent/systemprompt"
@@ -49,10 +50,11 @@ func (a *Agent) contextsFor(m llm.Model) (*contextmanager.Manager, error) {
 }
 
 func (a *Agent) checkBudgets() error {
-	descriptors, _, err := a.toolsFor(a.Tools, a.ApprovalPolicy, a.Permissions)
+	checker, err := permission.New(a.Settings, a.Tools, a.registry)
 	if err != nil {
 		return err
 	}
+	descriptors := checker.Tools()
 	var catalog []skills.Skill
 	if a.skills != nil {
 		catalog = a.skills.All()

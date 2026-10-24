@@ -71,14 +71,14 @@ func (s *orchestrator) startTurn(threadID string, in Input) (repo.TurnRow, error
 
 func (s *orchestrator) beginTurn(view repo.ThreadView, text, cronJobID string, model llm.Model) (repo.TurnRow, error) {
 	threadID := view.Thread.ID
-	if view.Thread.ParentThreadID == "" {
-		if err := s.a.checkWorkspace(view.Thread.WorkspaceID); err != nil {
+	env := s.a.environmentOf(view.Thread)
+	if view.Thread.ParentThreadID == "" && view.Thread.WorkspaceID != "" {
+		if err := usable(view.Thread.WorkspaceID, env.workspace); err != nil {
 			return repo.TurnRow{}, err
 		}
 	}
-	policy := s.a.policyFor(view.Thread)
 	turn := repo.TurnRow{
-		ID: uuid.NewString(), Model: model.Clone(), ApprovalPolicy: string(policy), Permissions: s.a.rulesFor(view.Thread),
+		ID: uuid.NewString(), Model: model.Clone(), Settings: env.settings,
 		Input: text, CronJobID: cronJobID, StartedAt: time.Now().UTC(),
 	}
 	turn, message, err := s.a.DB.SubmitTurn(threadID, turn)

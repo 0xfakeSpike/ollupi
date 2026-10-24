@@ -10,38 +10,83 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
+type Settings = repo.PermissionSettings
+
+func Resolve(layers ...Settings) Settings {
+	var out Settings
+	for _, l := range layers {
+		if l.ApprovalPolicy != "" {
+			out.ApprovalPolicy = l.ApprovalPolicy
+		}
+		out.Rules.Allow = appendNew(out.Rules.Allow, l.Rules.Allow)
+		out.Rules.Ask = appendNew(out.Rules.Ask, l.Rules.Ask)
+		out.Rules.Deny = appendNew(out.Rules.Deny, l.Rules.Deny)
+	}
+	return out
+}
+
+func appendNew(dst, src []string) []string {
+	for _, s := range src {
+		if !slices.Contains(dst, s) {
+			dst = append(dst, s)
+		}
+	}
+	return dst
+}
+
 type Checker struct {
 	policy Policy
 	rules  ruleSet
+	tools  []tools.ToolDescriptor
 }
 
-func New(policy Policy, rules Rules, registry *tools.Registry) (*Checker, error) {
+func New(settings Settings, allowlist []string, registry *tools.Registry) (*Checker, error) {
+	policy := Policy(settings.ApprovalPolicy)
 	if err := policy.Validate(); err != nil {
 		return nil, err
 	}
-	set, err := parseRules(rules)
+	set, err := parseRules(settings.Rules)
 	if err != nil {
 		return nil, err
 	}
 	catalog := registry.Descriptors()
+	offered := func(name string) bool {
+		return slices.ContainsFunc(catalog, func(d tools.ToolDescriptor) bool { return d.Name == name })
+	}
 	for _, r := range set.all() {
-		if !slices.ContainsFunc(catalog, func(d tools.ToolDescriptor) bool { return d.Name == r.tool }) {
+		if !offered(r.tool) {
 			return nil, fmt.Errorf("permission rule %q: tool %q is not in the tool registry", r.text, r.tool)
 		}
 		if r.pattern != nil && !registry.HasPermissionContent(r.tool) {
 			return nil, fmt.Errorf("permission rule %q: %s takes no specifier; write %q to match every call", r.text, r.tool, r.tool)
 		}
 	}
-	return &Checker{policy: policy, rules: set}, nil
+	for i, name := range allowlist {
+		if slices.Contains(allowlist[:i], name) {
+			return nil, fmt.Errorf("tool %q is listed twice", name)
+		}
+		if !offered(name) {
+			return nil, fmt.Errorf("tool %q is not in the tool registry", name)
+		}
+	}
+	visible := slices.DeleteFunc(slices.Clone(catalog), func(d tools.ToolDescriptor) bool {
+		return (allowlist != nil && !slices.Contains(allowlist, d.Name)) || set.removes(d.Name)
+	})
+	return &Checker{policy: policy, rules: set, tools: visible}, nil
 }
 
-func Validate(policy Policy, rules Rules, registry *tools.Registry) error {
-	_, err := New(policy, rules, registry)
+func ValidateLayer(base, layer Settings, registry *tools.Registry) error {
+	if layer.ApprovalPolicy != "" {
+		if err := Policy(layer.ApprovalPolicy).Validate(); err != nil {
+			return err
+		}
+	}
+	_, err := New(Resolve(base, layer), nil, registry)
 	return err
 }
 
-func (c *Checker) Offers(tool string) bool {
-	return !c.rules.removes(tool)
+func (c *Checker) Tools() []tools.ToolDescriptor {
+	return slices.Clone(c.tools)
 }
 
 type Call struct {

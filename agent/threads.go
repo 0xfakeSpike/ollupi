@@ -9,16 +9,15 @@ import (
 	"github.com/google/uuid"
 )
 
-func (a *Agent) StartThread(workspaceID, approvalPolicy string) (repo.ThreadRow, error) {
+func (a *Agent) StartThread(workspaceID string, settings permission.Settings) (repo.ThreadRow, error) {
 	if err := a.checkWorkspace(workspaceID); err != nil {
 		return repo.ThreadRow{}, err
 	}
-	if approvalPolicy != "" {
-		if err := permission.Policy(approvalPolicy).Validate(); err != nil {
-			return repo.ThreadRow{}, fmt.Errorf("agent: %w", err)
-		}
+	base := a.environmentOf(repo.ThreadRow{WorkspaceID: workspaceID}).settings
+	if err := a.validateLayer(base, settings); err != nil {
+		return repo.ThreadRow{}, err
 	}
-	return a.createThread(repo.ThreadRow{ApprovalPolicy: approvalPolicy, WorkspaceID: workspaceID})
+	return a.createThread(repo.ThreadRow{Settings: settings, WorkspaceID: workspaceID})
 }
 
 func (a *Agent) createThread(t repo.ThreadRow) (repo.ThreadRow, error) {
