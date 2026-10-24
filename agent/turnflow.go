@@ -56,8 +56,9 @@ func (s *orchestrator) beginTurn(view repo.ThreadView, message repo.ItemRow, mod
 	}
 	s.a.emit(Event{Kind: EventTurnStarted, Thread: view.Thread, Turn: turn})
 	s.a.emitItem(view.Thread, turn, message, true)
-	s.enqueue(threadID, turn.ID)
-	s.a.emitStatus(threadID)
+	if !s.settle(threadID) {
+		s.a.emitStatus(threadID)
+	}
 	return turn, nil
 }
 
@@ -85,9 +86,6 @@ func (s *orchestrator) steer(threadID, expectedTurnID, text string) (repo.TurnRo
 		return repo.TurnRow{}, err
 	}
 	s.a.emitItem(view.Thread, turn, stored, isNew)
-	if sl, ok := s.slots[threadID]; ok && !s.queued(threadID) {
-		sl.steered = true
-	}
 	return turn, nil
 }
 
@@ -171,9 +169,9 @@ func (s *orchestrator) endTurn(turn repo.TurnRow) {
 	s.a.emit(Event{Kind: EventTurnCompleted, Thread: view.Thread, Turn: ended})
 	s.a.emitStatus(turn.ThreadID)
 	if reports && err == nil {
-		s.resumeIfReady(parent.Thread.ID)
+		s.settle(parent.Thread.ID)
 	}
-	s.sendDue(turn.ThreadID)
+	s.settle(turn.ThreadID)
 }
 
 type parentTurn struct {
@@ -329,7 +327,7 @@ func (s *orchestrator) respond(threadID string, match func(repo.ItemRow) bool, a
 		return err
 	}
 	s.a.emitItem(view.Thread, activeTurn, stored, false)
-	if !s.resumeIfReady(threadID) {
+	if !s.settle(threadID) {
 		s.a.emitStatus(threadID)
 	}
 	return nil

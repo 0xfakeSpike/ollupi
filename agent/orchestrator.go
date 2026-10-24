@@ -15,16 +15,18 @@ import (
 
 const workers = 4
 
-type slot struct {
-	turnID  string
-	cancel  context.CancelFunc
-	steered bool
-}
+type phase int
 
-type work struct {
-	threadID string
-	turnID   string
-	ctx      context.Context
+const (
+	queued phase = iota
+	running
+)
+
+type slot struct {
+	turnID string
+	phase  phase
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 type orchestrator struct {
@@ -34,7 +36,7 @@ type orchestrator struct {
 	mu      sync.Mutex
 	cond    *sync.Cond
 	slots   map[string]*slot
-	queue   []work
+	queue   []string
 	workers sync.WaitGroup
 }
 
@@ -62,69 +64,109 @@ func (s *orchestrator) wait() {
 	s.workers.Wait()
 }
 
-func (s *orchestrator) enqueue(threadID, turnID string) {
-	if s.ctx.Err() != nil {
+func (s *orchestrator) settle(threadID string) bool {
+	if _, busy := s.slots[threadID]; busy || s.ctx.Err() != nil {
+		return false
+	}
+	view, err := s.a.ReadThread(threadID)
+	if err != nil {
+		log.Printf("agent: thread %s cannot be read to settle it: %v", threadID, err)
+		return false
+	}
+	turn, active := view.ActiveTurn()
+	if !active {
+		s.sendDue(threadID)
+		return false
+	}
+	unlaunched := slices.ContainsFunc(view.AgentCalls(), func(c repo.ItemRow) bool { return c.Await.ThreadID == "" })
+	if s.settleAgentCalls(view) || unlaunched {
+		s.launchSubagents(threadID)
+		if view, err = s.a.ReadThread(threadID); err != nil {
+			log.Printf("agent: thread %s cannot be read to settle it: %v", threadID, err)
+			return false
+		}
+	}
+	if _, waiting := view.PendingRequest(); waiting || len(view.AgentCalls()) > 0 {
+		return false
+	}
+	s.enqueue(threadID, turn.ID)
+	s.a.emitStatus(threadID)
+	return true
+}
+
+func (s *orchestrator) reconcile() {
+	active, err := s.a.DB.ActiveThreadIDs()
+	if err != nil {
+		log.Printf("agent: active threads: %v", err)
 		return
 	}
+	for _, id := range active {
+		s.settle(id)
+	}
+}
+
+func (s *orchestrator) enqueue(threadID, turnID string) {
 	ctx, cancel := context.WithCancel(s.ctx)
-	s.slots[threadID] = &slot{turnID: turnID, cancel: cancel}
-	s.queue = append(s.queue, work{threadID: threadID, turnID: turnID, ctx: ctx})
+	s.slots[threadID] = &slot{turnID: turnID, phase: queued, ctx: ctx, cancel: cancel}
+	s.queue = append(s.queue, threadID)
 	s.cond.Signal()
 }
 
-func (s *orchestrator) queued(threadID string) bool {
-	return slices.ContainsFunc(s.queue, func(w work) bool { return w.threadID == threadID })
-}
-
-func (s *orchestrator) nextWork() (work, bool) {
+func (s *orchestrator) nextWork() (string, *slot, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for len(s.queue) == 0 && s.ctx.Err() == nil {
-		s.cond.Wait()
+	for {
+		for len(s.queue) == 0 && s.ctx.Err() == nil {
+			s.cond.Wait()
+		}
+		if s.ctx.Err() != nil {
+			return "", nil, false
+		}
+		threadID := s.queue[0]
+		s.queue = s.queue[1:]
+		if sl, ok := s.slots[threadID]; ok && sl.phase == queued {
+			sl.phase = running
+			return threadID, sl, true
+		}
 	}
-	if s.ctx.Err() != nil {
-		return work{}, false
-	}
-	w := s.queue[0]
-	s.queue = s.queue[1:]
-	return w, true
 }
 
 func (s *orchestrator) workerLoop() {
 	defer s.workers.Done()
 	for {
-		w, ok := s.nextWork()
+		threadID, sl, ok := s.nextWork()
 		if !ok {
 			return
 		}
-		s.run(w)
+		s.run(threadID, sl)
 	}
 }
 
-func (s *orchestrator) run(w work) {
-	view, err := s.a.ReadThread(w.threadID)
+func (s *orchestrator) run(threadID string, sl *slot) {
+	view, err := s.a.ReadThread(threadID)
 	if err != nil {
-		log.Printf("agent: thread %s cannot be read while turn %s is queued: %v", w.threadID, w.turnID, err)
+		log.Printf("agent: thread %s cannot be read while turn %s is queued: %v", threadID, sl.turnID, err)
 		s.mu.Lock()
-		s.release(w.threadID)
-		s.failTurn(w.turnID, repo.TurnFailed, "the thread could not be read from storage")
+		s.release(threadID)
+		s.failTurn(sl.turnID, repo.TurnFailed, "the thread could not be read from storage")
 		s.mu.Unlock()
 		return
 	}
-	turn, ok := findTurn(view, w.turnID)
+	turn, ok := findTurn(view, sl.turnID)
 	if !ok || turn.Status != repo.TurnInProgress {
 		s.mu.Lock()
-		s.release(w.threadID)
+		s.release(threadID)
+		s.settle(threadID)
 		s.mu.Unlock()
 		return
 	}
-	outcome, usage, err := s.a.step(w.ctx, view, turn)
-	if err := s.a.DB.AddUsage(w.threadID, turn.ID, usage); err != nil {
-		log.Printf("agent: thread %s: record usage of turn %s: %v", w.threadID, turn.ID, err)
+	outcome, usage, err := s.a.step(sl.ctx, view, turn)
+	if err := s.a.DB.AddUsage(threadID, turn.ID, usage); err != nil {
+		log.Printf("agent: thread %s: record usage of turn %s: %v", threadID, turn.ID, err)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.afterStep(w.threadID, w.turnID, outcome, err, w.ctx.Err() != nil)
+	s.afterStep(threadID, sl, len(view.Items), outcome, err)
 }
 
 func (s *orchestrator) release(threadID string) {
@@ -147,24 +189,25 @@ func (s *orchestrator) failTurn(turnID, status, reason string) {
 	s.endTurn(turn)
 }
 
-func (s *orchestrator) afterStep(threadID, turnID string, outcome runtime.Outcome, stepErr error, interrupted bool) {
-	sl, ok := s.slots[threadID]
-	if !ok {
+func (s *orchestrator) afterStep(threadID string, sl *slot, seen int, outcome runtime.Outcome, stepErr error) {
+	if s.slots[threadID] != sl {
 		return
 	}
+	interrupted := sl.ctx.Err() != nil
 	s.release(threadID)
 	view, err := s.a.ReadThread(threadID)
 	if err != nil {
 		log.Printf("agent: thread %s cannot be read after its step: %v", threadID, err)
 		if interrupted {
-			s.failTurn(turnID, repo.TurnInterrupted, "interrupted by the user")
+			s.failTurn(sl.turnID, repo.TurnInterrupted, "interrupted by the user")
 		} else {
-			s.failTurn(turnID, repo.TurnFailed, "the thread could not be read from storage after its step")
+			s.failTurn(sl.turnID, repo.TurnFailed, "the thread could not be read from storage after its step")
 		}
 		return
 	}
 	turn, ok := view.ActiveTurn()
-	if !ok {
+	if !ok || turn.ID != sl.turnID {
+		s.settle(threadID)
 		return
 	}
 	switch {
@@ -177,51 +220,24 @@ func (s *orchestrator) afterStep(threadID, turnID string, outcome runtime.Outcom
 		turn.Status, turn.Error = repo.TurnFailed, stepErr.Error()
 		log.Printf("agent: thread %s turn %s failed: %v", threadID, turn.ID, stepErr)
 		s.endTurn(turn)
-	case outcome == runtime.Continue || (outcome == runtime.Done && sl.steered):
-		s.enqueue(threadID, turn.ID)
-	case outcome == runtime.Wait:
-		s.launchSubagents(threadID)
-		view, err = s.a.ReadThread(threadID)
-		if err != nil {
-			log.Printf("agent: thread %s cannot be read while waiting: %v", threadID, err)
-			return
-		}
-		s.a.emitRequests(view)
-		s.a.emitStatus(threadID)
-		s.resumeIfReady(threadID)
-	default:
+	case outcome == runtime.Done && !view.InputAfter(turn.ID, seen):
 		turn.Status = repo.TurnCompleted
 		s.endTurn(turn)
+	case !s.settle(threadID):
+		if view, err := s.a.ReadThread(threadID); err == nil {
+			s.a.emitRequests(view)
+		}
+		s.a.emitStatus(threadID)
 	}
-}
-
-func (s *orchestrator) resumeIfReady(threadID string) bool {
-	if _, queued := s.slots[threadID]; queued {
-		return false
-	}
-	view, err := s.a.ReadThread(threadID)
-	if err != nil {
-		return false
-	}
-	turn, active := view.ActiveTurn()
-	if !active {
-		return false
-	}
-	if _, waiting := view.PendingRequest(); waiting || len(view.AgentCalls()) > 0 {
-		return false
-	}
-	s.enqueue(threadID, turn.ID)
-	s.a.emitStatus(threadID)
-	return true
 }
 
 func (s *orchestrator) stop(threadID string, sl *slot) {
-	if !s.queued(threadID) {
+	if sl.phase == running {
 		sl.cancel()
 		return
 	}
-	s.queue = slices.DeleteFunc(s.queue, func(w work) bool { return w.threadID == threadID })
-	delete(s.slots, threadID)
+	s.queue = slices.DeleteFunc(s.queue, func(id string) bool { return id == threadID })
+	s.release(threadID)
 	view, err := s.a.ReadThread(threadID)
 	if err != nil {
 		log.Printf("agent: thread %s cannot be read to stop it: %v", threadID, err)
@@ -240,6 +256,7 @@ func (s *orchestrator) keepTime() {
 	for {
 		s.mu.Lock()
 		s.sendDue("")
+		s.reconcile()
 		s.mu.Unlock()
 		select {
 		case <-s.ctx.Done():
@@ -325,26 +342,37 @@ func (s *orchestrator) recover() error {
 				for _, call := range view.AgentCalls() {
 					s.stopThread(call.Await.ThreadID)
 				}
-				continue
 			}
 		}
-		for _, call := range view.AgentCalls() {
-			if settled, ok := s.settledCall(call); ok {
-				if _, _, err := s.a.DB.RecordItem(id, settled); err != nil {
-					return fmt.Errorf("agent: thread %s: settle Agent call %s: %w", id, call.ID, err)
-				}
-			}
-		}
-		s.launchSubagents(id)
 	}
-	for _, id := range active {
-		s.resumeIfReady(id)
-	}
+	s.reconcile()
 	return nil
+}
+
+func (s *orchestrator) settleAgentCalls(view repo.ThreadView) bool {
+	settled := false
+	for _, call := range view.AgentCalls() {
+		it, ok := s.settledCall(call)
+		if !ok {
+			continue
+		}
+		stored, _, err := s.a.DB.RecordItem(view.Thread.ID, it)
+		if err != nil {
+			log.Printf("agent: thread %s: settle Agent call %s: %v", view.Thread.ID, call.ID, err)
+			continue
+		}
+		turn, _ := view.ActiveTurn()
+		s.a.emitItem(view.Thread, turn, stored, false)
+		settled = true
+	}
+	return settled
 }
 
 func (s *orchestrator) settledCall(call repo.ItemRow) (repo.ItemRow, bool) {
 	if call.Await.ThreadID == "" {
+		return repo.ItemRow{}, false
+	}
+	if _, busy := s.slots[call.Await.ThreadID]; busy {
 		return repo.ItemRow{}, false
 	}
 	child, err := s.a.ReadThread(call.Await.ThreadID)
