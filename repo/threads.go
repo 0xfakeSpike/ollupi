@@ -119,10 +119,22 @@ func (v ThreadView) Status() ThreadStatus {
 }
 
 func (v ThreadView) ActiveTurn() (TurnRow, bool) {
-	if n := len(v.Turns); n > 0 && v.Turns[n-1].Status == TurnInProgress {
-		return v.Turns[n-1], true
+	for i := len(v.Turns) - 1; i >= 0; i-- {
+		if v.Turns[i].Status == TurnInProgress {
+			return v.Turns[i], true
+		}
 	}
 	return TurnRow{}, false
+}
+
+func (v ThreadView) QueuedTurns() []TurnRow {
+	var out []TurnRow
+	for _, t := range v.Turns {
+		if t.Status == TurnQueued {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 func (v ThreadView) AgentCalls() []ItemRow {

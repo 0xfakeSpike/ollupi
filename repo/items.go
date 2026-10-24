@@ -202,7 +202,7 @@ func (d *DB) SaveItem(row ItemRow) error {
 func (d *DB) EndedItem(id string) (ItemRow, error) {
 	var row ItemRow
 	err := d.gorm.Table("items AS i").Select("i.*").Joins("JOIN turns t ON t.id = i.turn_id").
-		Where("i.id = ? AND t.status <> 'inProgress' AND i.type NOT IN ('reasoning', 'contextCompaction', 'memoryContext')", id).Take(&row).Error
+		Where("i.id = ? AND t.status IN ('completed', 'failed', 'interrupted') AND i.type NOT IN ('reasoning', 'contextCompaction', 'memoryContext')", id).Take(&row).Error
 	return row, notFound(err)
 }
 

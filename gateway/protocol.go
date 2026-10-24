@@ -36,6 +36,7 @@ const (
 
 const (
 	notifyThreadStarted       = "thread/started"
+	notifyTurnQueued          = "turn/queued"
 	notifyTurnStarted         = "turn/started"
 	notifyItemStarted         = "item/started"
 	notifyItemCompleted       = "item/completed"

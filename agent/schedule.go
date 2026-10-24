@@ -20,8 +20,13 @@ func (s *orchestrator) settle(threadID string) bool {
 	}
 	turn, active := view.ActiveTurn()
 	if !active {
-		s.sendDue(threadID)
-		return false
+		if turn, active = s.startQueued(view.Thread); !active {
+			return false
+		}
+		if view, err = s.a.ReadThread(threadID); err != nil {
+			log.Printf("agent: thread %s cannot be read to settle it: %v", threadID, err)
+			return false
+		}
 	}
 	unlaunched := slices.ContainsFunc(view.AgentCalls(), func(c repo.ItemRow) bool { return c.Await.ThreadID == "" })
 	if s.settleAgentCalls(view) || unlaunched {
@@ -155,4 +160,18 @@ func (s *orchestrator) recover() error {
 	}
 	s.reconcile()
 	return nil
+}
+
+func (s *orchestrator) startQueued(t repo.ThreadRow) (repo.TurnRow, bool) {
+	turn, message, started, err := s.a.DB.StartQueuedTurn(t.ID)
+	if err != nil {
+		log.Printf("agent: thread %s: start its queued turn: %v", t.ID, err)
+		return repo.TurnRow{}, false
+	}
+	if !started {
+		return repo.TurnRow{}, false
+	}
+	s.a.emit(Event{Kind: EventTurnStarted, Thread: t, Turn: turn})
+	s.a.emitItem(t, turn, message, true)
+	return turn, true
 }

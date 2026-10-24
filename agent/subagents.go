@@ -8,7 +8,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
-	"github.com/google/uuid"
 )
 
 type parentTurn struct {
@@ -62,7 +61,7 @@ func (s *orchestrator) launchSubagent(parent repo.ThreadRow, parentTurn repo.Tur
 	if err != nil {
 		return repo.ThreadRow{}, err
 	}
-	if _, err := s.beginTurn(view, repo.NewUserMessage(uuid.NewString(), "", req.Prompt, time.Now().UTC()), parentTurn.Model); err != nil {
+	if _, err := s.beginTurn(view, req.Prompt, "", parentTurn.Model); err != nil {
 		return repo.ThreadRow{}, err
 	}
 	return child, nil
