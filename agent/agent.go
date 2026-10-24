@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"sync"
 
 	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
@@ -49,7 +48,6 @@ type Agent struct {
 	registry *tools.Registry
 	skills   *skills.Catalog
 	run      *orchestrator
-	loops    sync.WaitGroup
 }
 
 func (a *Agent) Start(ctx context.Context) error {
@@ -74,13 +72,6 @@ func (a *Agent) Start(ctx context.Context) error {
 		return err
 	}
 	a.run.start()
-	if a.Memory != nil {
-		a.loops.Add(1)
-		go func() {
-			defer a.loops.Done()
-			a.Memory.Run(ctx)
-		}()
-	}
 	return nil
 }
 
@@ -102,7 +93,6 @@ func (a *Agent) buildTools(ctx context.Context) error {
 
 func (a *Agent) Wait() {
 	a.run.wait()
-	a.loops.Wait()
 }
 
 func (a *Agent) CallTool(ctx context.Context, threadID, tool string, arguments map[string]any) (tools.Result, error) {
