@@ -51,7 +51,7 @@ func (s *orchestrator) launchSubagent(parent repo.ThreadRow, parentTurn repo.Tur
 	}
 	child, err := s.a.createThread(repo.ThreadRow{
 		ParentThreadID: parent.ID, ParentItemID: call.ID,
-		ApprovalPolicy: parent.ApprovalPolicy, WorkspaceID: parent.WorkspaceID,
+		Settings: parent.Settings, WorkspaceID: parent.WorkspaceID,
 	})
 	if err != nil {
 		return repo.ThreadRow{}, err

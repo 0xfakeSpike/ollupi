@@ -164,7 +164,7 @@ func (c *conn) Call(method string, params json.RawMessage) (any, func(), *jsonrp
 		if err := jsonrpc.DecodeParams(params, &p); err != nil {
 			return nil, nil, err
 		}
-		t, err := ag.StartThread(p.WorkspaceID, p.ApprovalPolicy)
+		t, err := ag.StartThread(p.WorkspaceID, p.PermissionSettings)
 		if err != nil {
 			return nil, nil, serverError(err)
 		}

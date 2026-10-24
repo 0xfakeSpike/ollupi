@@ -27,15 +27,13 @@ func (c *conn) workspaceRequest(method string, params json.RawMessage) (any, fun
 	switch method {
 	case methodWorkspaceAdd:
 		var p struct {
-			Path           string               `json:"path"`
-			Name           string               `json:"name,omitempty"`
-			ApprovalPolicy string               `json:"approvalPolicy,omitempty"`
-			Permissions    repo.PermissionRules `json:"permissions"`
+			Path string `json:"path"`
+			Name string `json:"name,omitempty"`
 		}
 		if err := jsonrpc.DecodeParams(params, &p); err != nil {
 			return nil, nil, err
 		}
-		result, err = manager.AddWorkspace(p.Path, p.Name, p.ApprovalPolicy, p.Permissions)
+		result, err = manager.AddWorkspace(p.Path, p.Name)
 	case methodWorkspaceRename:
 		var p struct {
 			WorkspaceID string `json:"workspaceId"`
@@ -59,9 +57,8 @@ func (c *conn) workspaceRequest(method string, params json.RawMessage) (any, fun
 		result, err = manager.ArchiveWorkspace(p.WorkspaceID, *p.Archived)
 	case methodWorkspacePermissions:
 		var p struct {
-			WorkspaceID    string               `json:"workspaceId"`
-			ApprovalPolicy string               `json:"approvalPolicy,omitempty"`
-			Permissions    repo.PermissionRules `json:"permissions"`
+			WorkspaceID string `json:"workspaceId"`
+			repo.PermissionSettings
 		}
 		if err := jsonrpc.DecodeParams(params, &p); err != nil {
 			return nil, nil, err
@@ -69,7 +66,7 @@ func (c *conn) workspaceRequest(method string, params json.RawMessage) (any, fun
 		if strings.TrimSpace(p.WorkspaceID) == "" {
 			return nil, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "workspaceId is required")
 		}
-		result, err = manager.UpdateWorkspacePermissions(p.WorkspaceID, p.ApprovalPolicy, p.Permissions)
+		result, err = manager.UpdateWorkspaceSettings(p.WorkspaceID, p.PermissionSettings)
 	}
 	if err != nil {
 		return nil, nil, serverError(err)

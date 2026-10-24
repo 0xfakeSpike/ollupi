@@ -68,8 +68,8 @@ type initializeResult struct {
 }
 
 type threadStartParams struct {
-	WorkspaceID    string `json:"workspaceId,omitempty"`
-	ApprovalPolicy string `json:"approvalPolicy,omitempty"`
+	WorkspaceID string `json:"workspaceId,omitempty"`
+	repo.PermissionSettings
 }
 
 type threadIDParams struct {

@@ -17,10 +17,11 @@ func (a *Agent) step(ctx context.Context, view repo.ThreadView, turn repo.TurnRo
 	if err != nil {
 		return runtime.Done, repo.Usage{}, err
 	}
-	descriptors, checker, err := a.toolsFor(a.Tools, permission.Policy(turn.ApprovalPolicy), turn.Permissions)
+	checker, err := permission.New(turn.Settings, a.Tools, a.registry)
 	if err != nil {
 		return runtime.Done, repo.Usage{}, err
 	}
+	descriptors := checker.Tools()
 	var history, items []repo.ItemRow
 	for _, it := range view.Items {
 		if it.TurnID == turn.ID {
