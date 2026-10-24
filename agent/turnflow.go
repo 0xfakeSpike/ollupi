@@ -303,8 +303,6 @@ func (s *orchestrator) answerUserInput(threadID, itemID string, answers map[stri
 }
 
 func (s *orchestrator) respond(threadID string, match func(repo.ItemRow) bool, apply func(repo.ItemRow) (repo.ItemRow, error)) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	view, err := s.a.ReadThread(threadID)
 	if err != nil {
 		return err
