@@ -8,7 +8,15 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
 )
 
-const errNotInitialized = -32002
+const (
+	errNotInitialized    = -32002
+	errNotFound          = -32004
+	errNoActiveTurn      = -32010
+	errTurnMismatch      = -32011
+	errNoSuchRequest     = -32012
+	errSubagentThread    = -32013
+	errWorkspaceArchived = -32014
+)
 
 const (
 	methodInitialize           = "initialize"
@@ -17,6 +25,7 @@ const (
 	methodThreadResume         = "thread/resume"
 	methodThreadList           = "thread/list"
 	methodThreadRead           = "thread/read"
+	methodThreadPermissions    = "thread/updatePermissions"
 	methodTurnStart            = "turn/start"
 	methodTurnSteer            = "turn/steer"
 	methodTurnInterrupt        = "turn/interrupt"
@@ -72,8 +81,15 @@ type threadStartParams struct {
 	repo.PermissionSettings
 }
 
-type threadIDParams struct {
-	ThreadID string `json:"threadId"`
+type threadPageParams struct {
+	ThreadID  string `json:"threadId"`
+	BeforeSeq int    `json:"beforeSeq,omitempty"`
+	Limit     int    `json:"limit,omitempty"`
+}
+
+type threadPageResult struct {
+	repo.ThreadView
+	HasMore bool `json:"hasMore"`
 }
 
 type threadResult struct {

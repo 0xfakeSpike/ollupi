@@ -22,19 +22,18 @@ func (u *Usage) Add(v Usage) {
 }
 
 type TurnRow struct {
-	ID          string             `gorm:"primaryKey" json:"id"`
-	ThreadID    string             `gorm:"not null;uniqueIndex:turns_thread_seq,priority:1;uniqueIndex:turns_one_active,where:status = 'inProgress';index:turns_open,where:status = 'inProgress' OR status = 'queued'" json:"threadId"`
-	Thread      *ThreadRow         `gorm:"constraint:OnDelete:CASCADE" json:"-"`
-	Seq         int                `gorm:"not null;uniqueIndex:turns_thread_seq,priority:2" json:"seq"`
-	Status      TurnStatus         `gorm:"not null;check:turns_status,status IN ('queued','inProgress','completed','failed','interrupted')" json:"status"`
-	Model       llm.Model          `gorm:"not null;serializer:json;check:turns_model,json_valid(model)" json:"model"`
-	Usage       Usage              `gorm:"embedded" json:"usage"`
-	Error       string             `gorm:"not null;default:''" json:"error,omitempty"`
-	Settings    PermissionSettings `gorm:"not null;default:'{}';serializer:json;check:turns_settings,json_valid(settings)" json:"settings"`
-	Input       string             `gorm:"not null;default:''" json:"input,omitempty"`
-	CronJobID   string             `gorm:"not null;default:''" json:"cronJobId,omitempty"`
-	StartedAt   time.Time          `gorm:"not null" json:"startedAt"`
-	CompletedAt *time.Time         `json:"completedAt,omitempty"`
+	ID          string     `gorm:"primaryKey" json:"id"`
+	ThreadID    string     `gorm:"not null;uniqueIndex:turns_thread_seq,priority:1;uniqueIndex:turns_one_active,where:status = 'inProgress';index:turns_open,where:status = 'inProgress' OR status = 'queued'" json:"threadId"`
+	Thread      *ThreadRow `gorm:"constraint:OnDelete:CASCADE" json:"-"`
+	Seq         int        `gorm:"not null;uniqueIndex:turns_thread_seq,priority:2" json:"seq"`
+	Status      TurnStatus `gorm:"not null;check:turns_status,status IN ('queued','inProgress','completed','failed','interrupted')" json:"status"`
+	Model       llm.Model  `gorm:"not null;serializer:json;check:turns_model,json_valid(model)" json:"model"`
+	Usage       Usage      `gorm:"embedded" json:"usage"`
+	Error       string     `gorm:"not null;default:''" json:"error,omitempty"`
+	Input       string     `gorm:"not null;default:''" json:"input,omitempty"`
+	CronJobID   string     `gorm:"not null;default:''" json:"cronJobId,omitempty"`
+	StartedAt   time.Time  `gorm:"not null" json:"startedAt"`
+	CompletedAt *time.Time `json:"completedAt,omitempty"`
 }
 
 func (TurnRow) TableName() string { return "turns" }

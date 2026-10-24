@@ -23,10 +23,15 @@ const (
 )
 
 var (
-	ErrNoActiveTurn   = errors.New("the thread has no turn in progress")
-	ErrTurnMismatch   = errors.New("the expected turn is not the turn in progress")
-	errNoSuchRequest  = errors.New("the thread does not wait on this request")
-	errSubagentThread = errors.New("a subagent thread takes no input; send it to its parent conversation")
+	ErrNoActiveTurn      = errors.New("the thread has no turn in progress")
+	ErrTurnMismatch      = errors.New("the expected turn is not the turn in progress")
+	ErrNoSuchRequest     = errors.New("the thread does not wait on this request")
+	ErrSubagentThread    = errors.New("a subagent thread takes no input; send it to its parent conversation")
+	ErrWorkspaceArchived = errors.New("the workspace is archived; restore it before starting new work")
+	ErrInvalidMessage    = errors.New("invalid message")
+	ErrInvalidAnswer     = errors.New("invalid answer")
+	ErrInvalidDecision   = errors.New("invalid decision")
+	ErrInvalidName       = errors.New("invalid name")
 )
 
 type Agent struct {

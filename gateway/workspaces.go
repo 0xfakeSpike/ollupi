@@ -74,5 +74,5 @@ func (c *conn) workspaceRequest(method string, params json.RawMessage) (any, fun
 	payload := struct {
 		Workspace repo.WorkspaceRow `json:"workspace"`
 	}{result}
-	return payload, func() { c.s.broadcast("workspace/changed", payload) }, nil
+	return payload, func() { c.s.notify("workspace/changed", payload) }, nil
 }

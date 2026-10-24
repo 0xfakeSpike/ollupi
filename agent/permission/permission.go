@@ -1,6 +1,7 @@
 package permission
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"slices"
@@ -75,14 +76,18 @@ func New(settings Settings, allowlist []string, registry *tools.Registry) (*Chec
 	return &Checker{policy: policy, rules: set, tools: visible}, nil
 }
 
+var ErrInvalidSettings = errors.New("invalid permission settings")
+
 func ValidateLayer(base, layer Settings, registry *tools.Registry) error {
 	if layer.ApprovalPolicy != "" {
 		if err := Policy(layer.ApprovalPolicy).Validate(); err != nil {
-			return err
+			return fmt.Errorf("%w: %v", ErrInvalidSettings, err)
 		}
 	}
-	_, err := New(Resolve(base, layer), nil, registry)
-	return err
+	if _, err := New(Resolve(base, layer), nil, registry); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidSettings, err)
+	}
+	return nil
 }
 
 func (c *Checker) Tools() []tools.ToolDescriptor {

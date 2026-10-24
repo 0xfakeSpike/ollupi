@@ -73,7 +73,7 @@ func (a *Agent) changeWorkspace(id string, change func(*repo.WorkspaceRow)) (rep
 		return w, nil
 	})
 	if repo.IsNotFound(err) {
-		return repo.WorkspaceRow{}, fmt.Errorf("agent: workspace %s not found", id)
+		return repo.WorkspaceRow{}, fmt.Errorf("agent: workspace %s: %w", id, repo.ErrNotFound)
 	}
 	return w, err
 }
@@ -94,17 +94,17 @@ func (a *Agent) checkWorkspace(id string) error {
 	}
 	w, err := a.DB.Workspace(id)
 	if err != nil {
-		return fmt.Errorf("agent: workspace %s not found", id)
+		return fmt.Errorf("agent: workspace %s: %w", id, repo.ErrNotFound)
 	}
 	return usable(id, w)
 }
 
 func usable(id string, w repo.WorkspaceRow) error {
 	if w.ID == "" {
-		return fmt.Errorf("agent: workspace %s not found", id)
+		return fmt.Errorf("agent: workspace %s: %w", id, repo.ErrNotFound)
 	}
 	if w.ArchivedAt != nil {
-		return fmt.Errorf("agent: workspace %s is archived; restore it before starting new work", w.Name)
+		return fmt.Errorf("agent: workspace %s: %w", w.Name, ErrWorkspaceArchived)
 	}
 	return nil
 }
@@ -112,7 +112,7 @@ func usable(id string, w repo.WorkspaceRow) error {
 func workspaceName(name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" || len([]rune(name)) > 120 {
-		return "", fmt.Errorf("agent: a workspace name must be 1 to 120 characters")
+		return "", fmt.Errorf("agent: %w: a workspace name must be 1 to 120 characters", ErrInvalidName)
 	}
 	return name, nil
 }

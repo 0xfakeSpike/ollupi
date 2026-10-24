@@ -3,6 +3,7 @@ package repo
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -44,6 +45,35 @@ func (d *DB) Thread(id string) (ThreadView, error) {
 	return out, nil
 }
 
+func (d *DB) ThreadPage(id string, before, limit int) (ThreadView, bool, error) {
+	var out ThreadView
+	more := false
+	err := d.Tx(func(tx *DB) error {
+		if err := notFound(tx.gorm.Where("id = ?", id).Take(&out.Thread).Error); err != nil {
+			return err
+		}
+		if err := tx.gorm.Where("thread_id = ?", id).Order("seq").Find(&out.Turns).Error; err != nil {
+			return err
+		}
+		q := tx.gorm.Where("thread_id = ?", id)
+		if before > 0 {
+			q = q.Where("seq < ?", before)
+		}
+		if err := q.Order("seq DESC").Limit(limit + 1).Find(&out.Items).Error; err != nil {
+			return err
+		}
+		if len(out.Items) > limit {
+			more, out.Items = true, out.Items[:limit]
+		}
+		slices.Reverse(out.Items)
+		return nil
+	})
+	if err != nil {
+		return ThreadView{}, false, err
+	}
+	return out, more, nil
+}
+
 func (d *DB) ThreadRow(id string) (ThreadRow, error) {
 	var row ThreadRow
 	return row, notFound(d.gorm.Where("id = ?", id).Take(&row).Error)
@@ -77,17 +107,33 @@ func (d *DB) CreateThread(row ThreadRow) error {
 }
 
 func (d *DB) UpdateThread(row ThreadRow) error {
-	settings, err := json.Marshal(row.Settings)
-	if err != nil {
-		return fmt.Errorf("thread %s: encode settings: %w", row.ID, err)
-	}
 	res := d.gorm.Model(&ThreadRow{}).Where("id = ?", row.ID).Updates(map[string]any{
-		"settings": string(settings), "preview": row.Preview, "updated_at": row.UpdatedAt.UTC(),
+		"preview": row.Preview, "updated_at": row.UpdatedAt.UTC(),
 	})
 	if err := checkOne(res); err != nil {
 		return fmt.Errorf("thread %s: %w", row.ID, err)
 	}
 	return nil
+}
+
+func (d *DB) SetThreadSettings(id string, settings PermissionSettings) (ThreadRow, error) {
+	raw, err := json.Marshal(settings)
+	if err != nil {
+		return ThreadRow{}, fmt.Errorf("thread %s: encode settings: %w", id, err)
+	}
+	var row ThreadRow
+	err = d.Tx(func(tx *DB) error {
+		res := tx.gorm.Model(&ThreadRow{}).Where("id = ?", id).Update("settings", string(raw))
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrNotFound
+		}
+		row, err = tx.ThreadRow(id)
+		return err
+	})
+	return row, err
 }
 
 type ThreadStatus string
