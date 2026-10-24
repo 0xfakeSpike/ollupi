@@ -70,7 +70,7 @@ func (s *Server) Deliver(e agent.Event) {
 		return
 	}
 	for _, c := range s.connections() {
-		if c.watches(e.Thread.ID) || (e.Thread.ParentThreadID != "" && c.watches(e.Thread.ParentThreadID)) {
+		if c.watches(e.Thread.ID) || (e.Thread.ParentThreadID != "" && c.watches(string(e.Thread.ParentThreadID))) {
 			c.event(e)
 		}
 	}

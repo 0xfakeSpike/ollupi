@@ -19,10 +19,9 @@ type ItemRow struct {
 	TurnID            string             `gorm:"not null;index" json:"turnId"`
 	Turn              *TurnRow           `gorm:"constraint:OnDelete:CASCADE" json:"-"`
 	Seq               int                `gorm:"not null;uniqueIndex:items_thread_seq,priority:2" json:"seq"`
-	Type              ItemType           `gorm:"not null" json:"type"`
-	Status            ItemStatus         `gorm:"not null" json:"status"`
+	Type              ItemType           `gorm:"not null;check:items_type,type IN ('userMessage','agentMessage','reasoning','toolCall','contextCompaction','memoryContext','toolProgress','error')" json:"type"`
+	Status            ItemStatus         `gorm:"not null;check:items_status,status IN ('inProgress','completed','failed','declined')" json:"status"`
 	Text              string             `gorm:"not null;default:''" json:"text,omitempty"`
-	CronJobID         string             `gorm:"not null;default:''" json:"cronJobId,omitempty"`
 	ResponseID        string             `gorm:"not null;default:''" json:"responseId,omitempty"`
 	ContextStats      *ContextStats      `gorm:"serializer:json" json:"contextStats,omitempty"`
 	Usage             *Usage             `gorm:"serializer:json" json:"usage,omitempty"`
@@ -179,16 +178,16 @@ func (d *DB) Item(id string) (ItemRow, error) {
 }
 
 func (d *DB) NextItemSeq(threadID string) (int, error) {
-	var n int64
-	err := d.gorm.Model(&ItemRow{}).Where("thread_id = ?", threadID).Count(&n).Error
-	return int(n) + 1, err
+	var last int
+	err := d.gorm.Model(&ItemRow{}).Where("thread_id = ?", threadID).Select("COALESCE(MAX(seq), 0)").Scan(&last).Error
+	return last + 1, err
 }
 
 func (d *DB) SaveItem(row ItemRow) error {
 	row.StartedAt, row.CompletedAt = row.StartedAt.UTC(), nullTime(row.CompletedAt)
 	res := d.gorm.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"status", "text", "cron_job_id", "response_id", "context_stats", "usage", "memory",
+		DoUpdates: clause.AssignmentColumns([]string{"status", "text", "response_id", "context_stats", "usage", "memory",
 			"call_id", "tool", "arguments", "server", "annotations", "approval", "prepared_execution", "await", "result", "error", "completed_at"}),
 		Where: where(`items.thread_id = excluded.thread_id AND items.turn_id = excluded.turn_id
 			AND items.seq = excluded.seq AND items.type = excluded.type`),

@@ -9,14 +9,14 @@ import (
 )
 
 type MemoryEventRow struct {
-	ID          int64  `gorm:"primaryKey;autoIncrement"`
-	WorkspaceID string `gorm:"not null;default:'';index:memory_events_scope"`
+	ID          int64  `gorm:"primaryKey;autoIncrement;index:memory_events_next,priority:2;index:memory_events_scope,priority:3"`
+	WorkspaceID string `gorm:"not null;default:'';index:memory_events_scope,priority:1"`
 	SourceTable string `gorm:"not null"`
 	SourceID    string `gorm:"not null"`
 	Operation   string `gorm:"not null;default:'upsert'"`
 	Metadata    string `gorm:"not null;default:'{}'"`
 	Attempts    int    `gorm:"not null;default:0"`
-	NextAttempt int64  `gorm:"not null;default:0"`
+	NextAttempt int64  `gorm:"not null;default:0;index:memory_events_next,priority:1;index:memory_events_scope,priority:2"`
 	LastError   string `gorm:"not null;default:''"`
 }
 

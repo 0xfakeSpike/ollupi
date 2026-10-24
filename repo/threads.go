@@ -9,11 +9,13 @@ import (
 
 type ThreadRow struct {
 	ID             string             `gorm:"primaryKey" json:"id"`
-	WorkspaceID    string             `gorm:"not null;default:'';index:threads_workspace_updated,priority:1" json:"workspaceId,omitempty"`
+	WorkspaceID    Ref                `gorm:"index:threads_workspace_updated,priority:1" json:"workspaceId,omitempty"`
+	Workspace      *WorkspaceRow      `gorm:"foreignKey:WorkspaceID;constraint:OnDelete:RESTRICT" json:"-"`
 	Preview        string             `gorm:"not null" json:"preview"`
 	Settings       PermissionSettings `gorm:"not null;default:'{}';serializer:json;check:threads_settings,json_valid(settings)" json:"settings"`
-	ParentThreadID string             `gorm:"not null;default:'';index" json:"parentThreadId,omitempty"`
-	ParentItemID   string             `gorm:"not null;default:''" json:"parentItemId,omitempty"`
+	ParentThreadID Ref                `gorm:"index" json:"parentThreadId,omitempty"`
+	Parent         *ThreadRow         `gorm:"foreignKey:ParentThreadID;constraint:OnDelete:CASCADE" json:"-"`
+	ParentItemID   Ref                `json:"parentItemId,omitempty"`
 	CreatedAt      time.Time          `gorm:"not null;autoCreateTime:false" json:"createdAt"`
 	UpdatedAt      time.Time          `gorm:"not null;autoUpdateTime:false;index;index:threads_workspace_updated,priority:2,sort:desc" json:"updatedAt"`
 }
@@ -56,12 +58,12 @@ func (d *DB) ThreadRows(f ThreadFilter) ([]ThreadRow, error) {
 	q := d.gorm.Order("updated_at DESC, created_at DESC")
 	if f.WorkspaceID != nil {
 		if *f.WorkspaceID == "" {
-			q = q.Where("workspace_id = ''")
+			q = q.Where("workspace_id IS NULL")
 		} else {
 			q = q.Where("workspace_id = ?", *f.WorkspaceID)
 		}
 	}
-	q = q.Where("parent_thread_id = ''")
+	q = q.Where("parent_thread_id IS NULL")
 	if f.Limit > 0 {
 		q = q.Limit(f.Limit)
 	}
