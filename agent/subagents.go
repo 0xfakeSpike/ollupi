@@ -50,7 +50,7 @@ func (s *orchestrator) launchSubagent(parent repo.ThreadRow, parentTurn repo.Tur
 		return repo.ThreadRow{}, err
 	}
 	child, err := s.a.createThread(repo.ThreadRow{
-		ParentThreadID: parent.ID, ParentItemID: call.ID,
+		ParentThreadID: repo.Ref(parent.ID), ParentItemID: repo.Ref(call.ID),
 		Settings: parent.Settings, WorkspaceID: parent.WorkspaceID,
 	})
 	if err != nil {
@@ -71,7 +71,7 @@ func (s *orchestrator) subagentReport(child repo.ThreadView, ended repo.TurnRow)
 	if child.Thread.ParentThreadID == "" {
 		return repo.ItemRow{}, parentTurn{}, false
 	}
-	parent, err := s.a.ReadThread(child.Thread.ParentThreadID)
+	parent, err := s.a.ReadThread(string(child.Thread.ParentThreadID))
 	if err != nil {
 		return repo.ItemRow{}, parentTurn{}, false
 	}
@@ -80,7 +80,7 @@ func (s *orchestrator) subagentReport(child repo.ThreadView, ended repo.TurnRow)
 		return repo.ItemRow{}, parentTurn{}, false
 	}
 	for _, call := range parent.AgentCalls() {
-		if call.ID == child.Thread.ParentItemID {
+		if call.ID == string(child.Thread.ParentItemID) {
 			return report(call, child, ended), parentTurn{Thread: parent.Thread, Turn: turn}, true
 		}
 	}

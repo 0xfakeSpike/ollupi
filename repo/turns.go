@@ -23,10 +23,10 @@ func (u *Usage) Add(v Usage) {
 
 type TurnRow struct {
 	ID          string             `gorm:"primaryKey" json:"id"`
-	ThreadID    string             `gorm:"not null;uniqueIndex:turns_thread_seq,priority:1" json:"threadId"`
+	ThreadID    string             `gorm:"not null;uniqueIndex:turns_thread_seq,priority:1;uniqueIndex:turns_one_active,where:status = 'inProgress';index:turns_open,where:status = 'inProgress' OR status = 'queued'" json:"threadId"`
 	Thread      *ThreadRow         `gorm:"constraint:OnDelete:CASCADE" json:"-"`
 	Seq         int                `gorm:"not null;uniqueIndex:turns_thread_seq,priority:2" json:"seq"`
-	Status      string             `gorm:"not null" json:"status"`
+	Status      TurnStatus         `gorm:"not null;check:turns_status,status IN ('queued','inProgress','completed','failed','interrupted')" json:"status"`
 	Model       llm.Model          `gorm:"not null;serializer:json;check:turns_model,json_valid(model)" json:"model"`
 	Usage       Usage              `gorm:"embedded" json:"usage"`
 	Error       string             `gorm:"not null;default:''" json:"error,omitempty"`
@@ -39,17 +39,19 @@ type TurnRow struct {
 
 func (TurnRow) TableName() string { return "turns" }
 
+type TurnStatus string
+
 const (
-	TurnQueued      = "queued"
-	TurnInProgress  = "inProgress"
-	TurnCompleted   = "completed"
-	TurnInterrupted = "interrupted"
-	TurnFailed      = "failed"
+	TurnQueued      TurnStatus = "queued"
+	TurnInProgress  TurnStatus = "inProgress"
+	TurnCompleted   TurnStatus = "completed"
+	TurnInterrupted TurnStatus = "interrupted"
+	TurnFailed      TurnStatus = "failed"
 )
 
 func (d *DB) ActiveThreadIDs() ([]string, error) {
 	var ids []string
-	err := d.gorm.Model(&TurnRow{}).Where("status IN ('inProgress', 'queued')").Distinct("thread_id").Pluck("thread_id", &ids).Error
+	err := d.gorm.Model(&TurnRow{}).Where("status = 'inProgress' OR status = 'queued'").Distinct("thread_id").Pluck("thread_id", &ids).Error
 	return ids, err
 }
 
@@ -149,7 +151,6 @@ func (d *DB) startIn(v ThreadView, turn TurnRow) (TurnRow, ItemRow, error) {
 	}
 	turn.Status, turn.StartedAt = TurnInProgress, now
 	message := NewUserMessage(uuid.NewString(), turn.ID, turn.Input, now)
-	message.CronJobID = turn.CronJobID
 	if err := d.saveItemOf(v.Thread.ID, message); err != nil {
 		return TurnRow{}, ItemRow{}, err
 	}
@@ -201,9 +202,9 @@ func (d *DB) EndSubagentTurn(threadID string, turn TurnRow, report ItemRow) (clo
 		if err != nil {
 			return err
 		}
-		parentID := child.Thread.ParentThreadID
+		parentID := string(child.Thread.ParentThreadID)
 		active, err := tx.ActiveTurn(parentID)
-		if IsNotFound(err) || (err == nil && (active.ID != report.TurnID || report.ID != child.Thread.ParentItemID)) {
+		if IsNotFound(err) || (err == nil && (active.ID != report.TurnID || report.ID != string(child.Thread.ParentItemID))) {
 			return fmt.Errorf("item %s is not the Agent call of thread %s's turn in progress", report.ID, parentID)
 		}
 		if err != nil {

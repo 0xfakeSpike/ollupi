@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"net/url"
@@ -132,4 +133,27 @@ func notFound(err error) error {
 
 func where(sql string) clause.Where {
 	return clause.Where{Exprs: []clause.Expression{clause.Expr{SQL: sql}}}
+}
+
+type Ref string
+
+func (r Ref) Value() (driver.Value, error) {
+	if r == "" {
+		return nil, nil
+	}
+	return string(r), nil
+}
+
+func (r *Ref) Scan(v any) error {
+	switch x := v.(type) {
+	case nil:
+		*r = ""
+	case string:
+		*r = Ref(x)
+	case []byte:
+		*r = Ref(x)
+	default:
+		return fmt.Errorf("storage: cannot read %T as an id", v)
+	}
+	return nil
 }

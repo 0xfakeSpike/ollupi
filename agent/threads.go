@@ -13,11 +13,11 @@ func (a *Agent) StartThread(workspaceID string, settings permission.Settings) (r
 	if err := a.checkWorkspace(workspaceID); err != nil {
 		return repo.ThreadRow{}, err
 	}
-	base := a.environmentOf(repo.ThreadRow{WorkspaceID: workspaceID}).settings
+	base := a.environmentOf(repo.ThreadRow{WorkspaceID: repo.Ref(workspaceID)}).settings
 	if err := a.validateLayer(base, settings); err != nil {
 		return repo.ThreadRow{}, err
 	}
-	return a.createThread(repo.ThreadRow{Settings: settings, WorkspaceID: workspaceID})
+	return a.createThread(repo.ThreadRow{Settings: settings, WorkspaceID: repo.Ref(workspaceID)})
 }
 
 func (a *Agent) createThread(t repo.ThreadRow) (repo.ThreadRow, error) {

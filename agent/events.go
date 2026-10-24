@@ -43,7 +43,7 @@ func (a *Agent) emitStatus(threadID string) {
 		return
 	}
 	if t.ParentThreadID != "" {
-		a.emitStatus(t.ParentThreadID)
+		a.emitStatus(string(t.ParentThreadID))
 		return
 	}
 	status := a.threadStatus(threadID)

@@ -14,7 +14,7 @@ type environment struct {
 func (a *Agent) environmentOf(t repo.ThreadRow) environment {
 	var env environment
 	if t.WorkspaceID != "" {
-		if w, err := a.DB.Workspace(t.WorkspaceID); err == nil {
+		if w, err := a.DB.Workspace(string(t.WorkspaceID)); err == nil {
 			env.workspace = w
 		}
 	}

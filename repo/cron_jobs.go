@@ -7,7 +7,8 @@ import (
 
 type CronJobRow struct {
 	ID        string     `gorm:"primaryKey" json:"id"`
-	ThreadID  string     `gorm:"not null;index" json:"threadId"`
+	ThreadID  string     `gorm:"not null;uniqueIndex:cron_jobs_thread_name,priority:1" json:"threadId"`
+	Name      string     `gorm:"not null;uniqueIndex:cron_jobs_thread_name,priority:2" json:"name"`
 	Thread    *ThreadRow `gorm:"constraint:OnDelete:CASCADE" json:"-"`
 	Spec      string     `gorm:"not null" json:"spec"`
 	Prompt    string     `gorm:"not null" json:"prompt"`
@@ -22,21 +23,21 @@ func (d *DB) CreateCronJob(job CronJobRow, max int) error {
 	job.NextRunAt, job.CreatedAt = job.NextRunAt.UTC(), job.CreatedAt.UTC()
 	return d.Tx(func(tx *DB) error {
 		var count int64
-		if err := tx.gorm.Model(&CronJobRow{}).Count(&count).Error; err != nil {
+		if err := tx.gorm.Model(&CronJobRow{}).Where("thread_id = ?", job.ThreadID).Count(&count).Error; err != nil {
 			return err
 		}
 		if count >= int64(max) {
-			return fmt.Errorf("cron: at most %d tasks are allowed", max)
+			return fmt.Errorf("cron: a conversation has at most %d tasks", max)
 		}
 		var taken int64
-		if err := tx.gorm.Model(&CronJobRow{}).Where("id = ?", job.ID).Count(&taken).Error; err != nil {
+		if err := tx.gorm.Model(&CronJobRow{}).Where("thread_id = ? AND name = ?", job.ThreadID, job.Name).Count(&taken).Error; err != nil {
 			return err
 		}
 		if taken > 0 {
-			return fmt.Errorf("cron: task %q already exists", job.ID)
+			return fmt.Errorf("cron: this conversation already has a task named %q", job.Name)
 		}
 		if err := tx.gorm.Create(&job).Error; err != nil {
-			return fmt.Errorf("cron: store task %q: %w", job.ID, err)
+			return fmt.Errorf("cron: store task %q: %w", job.Name, err)
 		}
 		return nil
 	})
@@ -44,7 +45,7 @@ func (d *DB) CreateCronJob(job CronJobRow, max int) error {
 
 func (d *DB) CronJobs(threadID string) ([]CronJobRow, error) {
 	var rows []CronJobRow
-	q := d.gorm.Order("id")
+	q := d.gorm.Order("thread_id, name")
 	if threadID != "" {
 		q = q.Where("thread_id = ?", threadID)
 	}
@@ -57,16 +58,14 @@ func (d *DB) DueCronJobs(now time.Time) ([]CronJobRow, error) {
 	return rows, err
 }
 
-func (d *DB) UpdateCronJob(id, threadID string, change func(CronJobRow) (*CronJobRow, error)) (CronJobRow, error) {
+func (d *DB) UpdateCronJob(threadID, name string, change func(CronJobRow) (*CronJobRow, error)) (CronJobRow, error) {
 	var out CronJobRow
 	err := d.Tx(func(tx *DB) error {
 		var row CronJobRow
-		if err := notFound(tx.gorm.Where("id = ?", id).Take(&row).Error); err != nil {
+		if err := notFound(tx.gorm.Where("thread_id = ? AND name = ?", threadID, name).Take(&row).Error); err != nil {
 			return err
 		}
-		if threadID != "" && row.ThreadID != threadID {
-			return ErrNotFound
-		}
+		id := row.ID
 		next, err := change(row)
 		if err != nil {
 			return err

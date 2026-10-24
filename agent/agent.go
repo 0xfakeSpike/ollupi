@@ -110,5 +110,5 @@ func (a *Agent) CallTool(ctx context.Context, threadID, tool string, arguments m
 }
 
 func (a *Agent) callerOf(t repo.ThreadRow) tools.Caller {
-	return tools.Caller{ThreadID: t.ID, WorkspaceID: t.WorkspaceID, Root: a.environmentOf(t).workspace.RootPath, Subagent: t.ParentThreadID != ""}
+	return tools.Caller{ThreadID: t.ID, WorkspaceID: string(t.WorkspaceID), Root: a.environmentOf(t).workspace.RootPath, Subagent: t.ParentThreadID != ""}
 }

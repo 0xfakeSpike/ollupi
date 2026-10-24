@@ -73,7 +73,7 @@ func (s *orchestrator) beginTurn(view repo.ThreadView, text, cronJobID string, m
 	threadID := view.Thread.ID
 	env := s.a.environmentOf(view.Thread)
 	if view.Thread.ParentThreadID == "" && view.Thread.WorkspaceID != "" {
-		if err := usable(view.Thread.WorkspaceID, env.workspace); err != nil {
+		if err := usable(string(view.Thread.WorkspaceID), env.workspace); err != nil {
 			return repo.TurnRow{}, err
 		}
 	}

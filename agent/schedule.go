@@ -13,49 +13,52 @@ func (s *orchestrator) settle(threadID string) bool {
 	if _, busy := s.slots[threadID]; busy || s.ctx.Err() != nil {
 		return false
 	}
+	enqueued, err := s.advance(threadID)
+	if err != nil {
+		s.halt(threadID, err)
+	}
+	return enqueued
+}
+
+func (s *orchestrator) advance(threadID string) (bool, error) {
 	view, err := s.a.ReadThread(threadID)
 	if err != nil {
-		log.Printf("agent: thread %s cannot be read to settle it: %v", threadID, err)
-		return false
+		return false, err
 	}
 	turn, active := view.ActiveTurn()
 	if !active {
-		if turn, active = s.startQueued(view.Thread); !active {
-			return false
+		if turn, active, err = s.startQueued(view.Thread); err != nil || !active {
+			return false, err
 		}
 		if view, err = s.a.ReadThread(threadID); err != nil {
-			log.Printf("agent: thread %s cannot be read to settle it: %v", threadID, err)
-			return false
+			return false, err
 		}
 	}
-	unlaunched := slices.ContainsFunc(view.AgentCalls(), func(c repo.ItemRow) bool { return c.Await.ThreadID == "" })
-	if s.settleAgentCalls(view) || unlaunched {
+	if slices.ContainsFunc(view.AgentCalls(), func(c repo.ItemRow) bool { return c.Await.ThreadID == "" }) {
 		s.launchSubagents(threadID)
 		if view, err = s.a.ReadThread(threadID); err != nil {
-			log.Printf("agent: thread %s cannot be read to settle it: %v", threadID, err)
-			return false
+			return false, err
 		}
 	}
 	if _, waiting := view.PendingRequest(); waiting || len(view.AgentCalls()) > 0 {
-		return false
+		return false, nil
 	}
 	s.enqueue(threadID, turn.ID)
 	s.a.emitStatus(threadID)
-	return true
+	return true, nil
 }
 
-func (s *orchestrator) reconcile() {
-	active, err := s.a.DB.ActiveThreadIDs()
+func (s *orchestrator) halt(threadID string, cause error) {
+	log.Printf("agent: thread %s cannot advance: %v", threadID, cause)
+	turn, err := s.a.DB.ActiveTurn(threadID)
 	if err != nil {
-		log.Printf("agent: active threads: %v", err)
 		return
 	}
-	for _, id := range active {
-		s.settle(id)
-	}
+	turn.Status, turn.Error = repo.TurnFailed, "the agent could not advance this turn: "+cause.Error()
+	s.endTurn(turn)
 }
 
-func (s *orchestrator) failTurn(turnID, status, reason string) {
+func (s *orchestrator) failTurn(turnID string, status repo.TurnStatus, reason string) {
 	turn, err := s.a.DB.Turn(turnID)
 	if err != nil {
 		log.Printf("agent: turn %s cannot be read to end it: %v", turnID, err)
@@ -158,20 +161,21 @@ func (s *orchestrator) recover() error {
 			}
 		}
 	}
-	s.reconcile()
+	for _, id := range active {
+		if view, err := s.a.ReadThread(id); err == nil {
+			s.settleAgentCalls(view)
+		}
+		s.settle(id)
+	}
 	return nil
 }
 
-func (s *orchestrator) startQueued(t repo.ThreadRow) (repo.TurnRow, bool) {
+func (s *orchestrator) startQueued(t repo.ThreadRow) (repo.TurnRow, bool, error) {
 	turn, message, started, err := s.a.DB.StartQueuedTurn(t.ID)
-	if err != nil {
-		log.Printf("agent: thread %s: start its queued turn: %v", t.ID, err)
-		return repo.TurnRow{}, false
-	}
-	if !started {
-		return repo.TurnRow{}, false
+	if err != nil || !started {
+		return repo.TurnRow{}, false, err
 	}
 	s.a.emit(Event{Kind: EventTurnStarted, Thread: t, Turn: turn})
 	s.a.emitItem(t, turn, message, true)
-	return turn, true
+	return turn, true, nil
 }

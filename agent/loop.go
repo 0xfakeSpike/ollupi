@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log"
 	"sync"
-	"time"
 
 	"github.com/0xfakeSpike/ollupi/repo"
 )
@@ -63,8 +62,6 @@ func (s *orchestrator) wait() {
 
 func (s *orchestrator) loop() {
 	defer s.done.Done()
-	tick := time.NewTicker(time.Minute)
-	defer tick.Stop()
 	for {
 		for len(s.queue) > 0 {
 			if sl, ok := s.slots[s.queue[0]]; ok && sl.phase == queued {
@@ -85,8 +82,6 @@ func (s *orchestrator) loop() {
 		case out <- next:
 			s.queue = s.queue[1:]
 			next.slot.phase = running
-		case <-tick.C:
-			s.reconcile()
 		}
 	}
 }
