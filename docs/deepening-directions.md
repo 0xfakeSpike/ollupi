@@ -44,7 +44,7 @@
 - 声明了幂等或可核对的工具，副作用最多发生一次；
 - 每个 turn 最后都处在明确的终态，不会卡在进行中。
 
-**规模。** 大。涉及 `repo`（状态和恢复）、`agent/runtime`（执行阶段）、`agent/tools`（新的声明）和 `agent`（恢复流程）。
+**规模。** 大。涉及 `repo`（状态和恢复）、`agent/runtime`（执行阶段）、`tools`（新的声明）和 `agent`（恢复流程）。
 
 ## 2. 确定性回放与回归评测
 
@@ -67,7 +67,7 @@
 
 **现状。**
 
-- `agent/orchestrator.go`：所有 thread 共用一条全局 FIFO 队列，并发上限写死成 `workers = 4`。
+- `agent/loop.go`：所有 thread 共用一条全局 FIFO 队列，并发上限写死成 `workers = 4`。
 - `pkg/llm/openai.go`：创建 openai 客户端时没有设置任何重试或退避选项，失败重试完全依赖 openai-go SDK 自带的默认行为，Ollupi 自己没有策略。
 - `agent/runtime`：每个 turn 的上限写死成模型调用 200 次、工具调用 400 次、连续失败 10 次。
 - 网关的每个连接的发送队列有 16 MiB 上限，超出就断开这个连接；这是背压的最后一道防线，不是限流。

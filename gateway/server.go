@@ -11,9 +11,9 @@ import (
 	"sync"
 
 	"github.com/0xfakeSpike/ollupi/agent"
-	"github.com/0xfakeSpike/ollupi/agent/tools/userinput"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/tools/userinput"
 	"github.com/coder/websocket"
 )
 

@@ -4,17 +4,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/tools/userinput"
 	"github.com/0xfakeSpike/ollupi/repo"
 )
-
-func (a *Agent) ResolveApproval(threadID, approvalID string, decision repo.Decision, decidedBy string) error {
-	return a.run.call(func() error { return a.run.resolveApproval(threadID, approvalID, decision, decidedBy) })
-}
-
-func (a *Agent) AnswerUserInput(threadID, itemID string, answers map[string]userinput.Answer) error {
-	return a.run.call(func() error { return a.run.answerUserInput(threadID, itemID, answers) })
-}
 
 type Request struct {
 	Thread repo.ThreadRow

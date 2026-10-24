@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/0xfakeSpike/ollupi/agent/tools"
+	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
