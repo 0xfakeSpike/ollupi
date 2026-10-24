@@ -47,9 +47,14 @@ type Handler interface {
 	Notify(method string, params json.RawMessage)
 }
 
+type Async func(ctx context.Context) (result any, err *Error)
+
 type ResponseFunc func(result json.RawMessage, err *Error)
 
-const writeTimeout = 10 * time.Second
+const (
+	writeTimeout   = 10 * time.Second
+	maxOutboxBytes = 16 << 20
+)
 
 type Conn struct {
 	ws *websocket.Conn
@@ -58,8 +63,10 @@ type Conn struct {
 	nextID  int
 	pending map[string]ResponseFunc
 	outbox  [][]byte
+	queued  int
 	closed  bool
 	ready   chan struct{}
+	calls   sync.WaitGroup
 }
 
 func NewConn(ws *websocket.Conn) *Conn {
@@ -67,12 +74,15 @@ func NewConn(ws *websocket.Conn) *Conn {
 }
 
 func (c *Conn) Serve(ctx context.Context, h Handler) error {
+	ctx, cancel := context.WithCancel(ctx)
 	written := make(chan struct{})
 	go func() {
 		defer close(written)
 		c.write()
 	}()
 	defer func() {
+		cancel()
+		c.calls.Wait()
 		c.mu.Lock()
 		c.closed = true
 		c.mu.Unlock()
@@ -98,6 +108,15 @@ func (c *Conn) Serve(ctx context.Context, h Handler) error {
 			c.reply(m.ID, nil, Errorf(CodeInvalidRequest, `jsonrpc must be "2.0"`))
 		case m.Method != "" && m.ID != nil:
 			result, after, rerr := h.Call(m.Method, m.Params)
+			if run, ok := result.(Async); ok && rerr == nil {
+				c.calls.Add(1)
+				go func(id json.RawMessage) {
+					defer c.calls.Done()
+					result, rerr := run(ctx)
+					c.reply(id, result, rerr)
+				}(m.ID)
+				continue
+			}
 			c.reply(m.ID, result, rerr)
 			if rerr == nil && after != nil {
 				after()
@@ -155,7 +174,16 @@ func (c *Conn) send(m Message) {
 		c.mu.Unlock()
 		return
 	}
+	if c.queued+len(data) > maxOutboxBytes {
+		c.closed, c.outbox, c.queued = true, nil, 0
+		c.mu.Unlock()
+		log.Printf("jsonrpc: the client fell %d bytes behind; closing the connection", maxOutboxBytes)
+		go c.ws.Close(websocket.StatusPolicyViolation, "client is not reading fast enough")
+		c.wake()
+		return
+	}
 	c.outbox = append(c.outbox, data)
+	c.queued += len(data)
 	c.mu.Unlock()
 	c.wake()
 }
@@ -177,11 +205,14 @@ func (c *Conn) write() {
 			ctx, cancel := context.WithTimeout(context.Background(), writeTimeout)
 			err := c.ws.Write(ctx, websocket.MessageText, data)
 			cancel()
+			c.mu.Lock()
+			c.queued = max(0, c.queued-len(data))
+			c.mu.Unlock()
 			if err != nil {
 				log.Printf("jsonrpc: write: %v", err)
 				c.ws.Close(websocket.StatusInternalError, "write failed")
 				c.mu.Lock()
-				c.closed, c.outbox = true, nil
+				c.closed, c.outbox, c.queued = true, nil, 0
 				c.mu.Unlock()
 				closed = true
 				break

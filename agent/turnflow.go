@@ -91,8 +91,11 @@ func (s *orchestrator) steer(threadID, expectedTurnID, text string) (repo.TurnRo
 	return turn, nil
 }
 
-func (s *orchestrator) interrupt(threadID string) error {
+func (s *orchestrator) interrupt(threadID, expectedTurnID string) error {
 	if sl, ok := s.slots[threadID]; ok {
+		if expectedTurnID != "" && sl.turnID != expectedTurnID {
+			return fmt.Errorf("%w (expected %s, in progress %s)", ErrTurnMismatch, expectedTurnID, sl.turnID)
+		}
 		s.stop(threadID, sl)
 		return nil
 	}
@@ -103,6 +106,9 @@ func (s *orchestrator) interrupt(threadID string) error {
 	turn, active := view.ActiveTurn()
 	if !active {
 		return ErrNoActiveTurn
+	}
+	if expectedTurnID != "" && turn.ID != expectedTurnID {
+		return fmt.Errorf("%w (expected %s, in progress %s)", ErrTurnMismatch, expectedTurnID, turn.ID)
 	}
 	calls := view.AgentCalls()
 	turn.Status = repo.TurnInterrupted

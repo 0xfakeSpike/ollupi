@@ -190,7 +190,7 @@ func SeatbeltProfile(p Policy, tempDirs []string) (string, [][2]string, error) {
 	b.WriteString("\n; denies (keep last)\n")
 	b.WriteString("(deny mach-lookup (xpc-service-name-prefix \"\"))\n")
 	if p.Mode == ModeWorkspaceWrite {
-		for _, root := range p.WritableRoots {
+		for _, root := range writable {
 			for _, name := range p.ProtectedNames {
 				b.WriteString(rootRule("file-write*", root, protectedNamePattern(name), false, msg) + "\n")
 			}
@@ -202,6 +202,7 @@ func SeatbeltProfile(p Policy, tempDirs []string) (string, [][2]string, error) {
 				b.WriteString(rootRule(rule.op, root, rule.pattern, fileOnly, msg) + "\n")
 			}
 		}
+		b.WriteString("(deny file-clone (vnode-type DIRECTORY)" + msg + ")\n")
 	}
 
 	for i, path := range p.DenyRead {

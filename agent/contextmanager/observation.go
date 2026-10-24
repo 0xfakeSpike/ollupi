@@ -104,12 +104,12 @@ func truncateRunes(s string, max int) string {
 	if len(runes) <= max {
 		return s
 	}
-	head, tail := cutPoints(s, max/3, len(runes)-(max-max/3))
+	head, tail := cutPoints(s, redact.Spans(s), max/3, len(runes)-(max-max/3))
 	return string(runes[:head]) + fmt.Sprintf("\n[... %d characters omitted ...]\n", tail-head) + string(runes[tail:])
 }
 
-func cutPoints(s string, head, tail int) (int, int) {
-	for _, sp := range redact.Spans(s) {
+func cutPoints(s string, spans [][2]int, head, tail int) (int, int) {
+	for _, sp := range spans {
 		start, end := utf8.RuneCountInString(s[:sp[0]]), utf8.RuneCountInString(s[:sp[1]])
 		if start < head && head < end {
 			head = start
@@ -121,12 +121,36 @@ func cutPoints(s string, head, tail int) (int, int) {
 	return head, tail
 }
 
-func callResult(it *repo.ItemRow, outputBudget int) (string, error) {
+type observations struct {
+	results  map[string]tools.Result
+	texts    map[string]string
+	spans    map[string][][2]int
+	rendered map[observationKey]string
+}
+
+type observationKey struct {
+	id     string
+	budget int
+}
+
+func newObservations() *observations {
+	return &observations{results: map[string]tools.Result{}, texts: map[string]string{}, spans: map[string][][2]int{}, rendered: map[observationKey]string{}}
+}
+
+func (o *observations) callResult(it *repo.ItemRow, outputBudget int) (string, error) {
 	switch {
 	case it.Result != nil:
-		return renderObservation(it, outputBudget)
+		key := observationKey{it.ID, outputBudget}
+		if text, ok := o.rendered[key]; ok {
+			return text, nil
+		}
+		text, err := o.render(it, outputBudget)
+		if err == nil {
+			o.rendered[key] = text
+		}
+		return text, err
 	case it.Status == repo.ItemFailed || it.Status == repo.ItemDeclined:
-		return "error: " + it.Error, nil
+		return "error: " + clipText(it.Error, outputBudget), nil
 	default:
 		return "error: the call did not finish", nil
 	}
@@ -137,20 +161,35 @@ const (
 	minOutputTokens      = 256
 )
 
-func renderObservation(it *repo.ItemRow, budget int) (string, error) {
-	result, err := it.LiveResult()
-	if err != nil {
-		return "", fmt.Errorf("context: %w", err)
+func (o *observations) render(it *repo.ItemRow, budget int) (string, error) {
+	result, ok := o.results[it.ID]
+	if !ok {
+		var err error
+		if result, err = it.LiveResult(); err != nil {
+			return "", fmt.Errorf("context: %w", err)
+		}
+		o.results[it.ID] = result
 	}
 	if result.Err != nil {
 		return "error: " + clipText(result.Err.Error(), budget), nil
 	}
 	artifacts := renderArtifacts(result.Artifacts)
-	text := strings.TrimSpace(compactText(result))
+	text, ok := o.texts[it.ID]
+	if !ok {
+		text = strings.TrimSpace(compactText(result))
+		o.texts[it.ID] = text
+	}
 	if text == "" {
 		text = "(no output)"
 	} else {
-		text = clipText(text, max(minOutputTokens, budget-llm.EstimateTokens(artifacts)))
+		text = clip(text, max(minOutputTokens, budget-llm.EstimateTokens(artifacts)), func(string) [][2]int {
+			spans, ok := o.spans[it.ID]
+			if !ok {
+				spans = redact.Spans(text)
+				o.spans[it.ID] = spans
+			}
+			return spans
+		})
 	}
 	if artifacts != "" {
 		text += "\n\n" + artifacts
@@ -159,6 +198,10 @@ func renderObservation(it *repo.ItemRow, budget int) (string, error) {
 }
 
 func clipText(s string, budget int) string {
+	return clip(s, budget, redact.Spans)
+}
+
+func clip(s string, budget int, spans func(string) [][2]int) string {
 	s = strings.TrimSpace(s)
 	if s == "" || budget <= 0 || llm.EstimateTokens(s) <= budget {
 		return s
@@ -176,6 +219,6 @@ func clipText(s string, budget int) string {
 		}
 	}
 
-	head, tail := cutPoints(s, 2*lo/3, len(runes)-(2*lo-2*lo/3))
+	head, tail := cutPoints(s, spans(s), 2*lo/3, len(runes)-(2*lo-2*lo/3))
 	return strings.TrimSpace(string(runes[:head])) + marker(tail-head) + strings.TrimSpace(string(runes[tail:]))
 }

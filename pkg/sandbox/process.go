@@ -2,6 +2,8 @@ package sandbox
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -16,7 +18,13 @@ const DefaultMaxOutputBytes = 1 << 20
 
 const drainDelay = 2 * time.Second
 
-func runProcess(ctx context.Context, cmd *exec.Cmd, program string, limit time.Duration, maxOutput int) (Result, error) {
+func runTag(marker string) string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return marker + "=" + hex.EncodeToString(b)
+}
+
+func runProcess(ctx context.Context, cmd *exec.Cmd, program string, limit time.Duration, maxOutput int, marker string) (Result, error) {
 	stdout := newCappedBuffer(maxOutput)
 	stderr := newCappedBuffer(maxOutput)
 
@@ -32,7 +40,12 @@ func runProcess(ctx context.Context, cmd *exec.Cmd, program string, limit time.D
 	}
 	defer errR.Close()
 	cmd.Stdout, cmd.Stderr = outW, errW
-	ownProcessGroup(cmd)
+	if cmd.Env == nil {
+		cmd.Env = os.Environ()
+	}
+	tag := runTag(marker)
+	cmd.Env = append(cmd.Env, tag)
+	ownProcessGroup(cmd, tag)
 	err = cmd.Start()
 
 	outW.Close()
@@ -52,7 +65,7 @@ func runProcess(ctx context.Context, cmd *exec.Cmd, program string, limit time.D
 		}()
 	}
 	err = cmd.Wait()
-	killProcessGroup(cmd)
+	killRun(cmd, tag)
 	drained := make(chan struct{})
 	go func() { copies.Wait(); close(drained) }()
 	select {

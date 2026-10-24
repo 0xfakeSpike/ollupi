@@ -47,7 +47,7 @@ func (c *Checker) Offers(tool string) bool {
 type Call struct {
 	Tool        string
 	Annotations tools.Annotations
-	Content     string
+	Content     tools.Content
 	HasContent  bool
 	Prepared    *tools.Prepared
 }
@@ -95,7 +95,7 @@ func (c *Checker) Decide(call Call, history []repo.ItemRow) Decision {
 func (d Decision) Approval(id string, call Call, at time.Time) *repo.Approval {
 	a := &repo.Approval{ID: id, RequestedAt: at, Reason: d.Reason, Rule: d.Rule}
 	if call.HasContent {
-		a.Content = call.Content
+		a.Content = call.Content.Text
 	}
 	return a
 }
@@ -108,7 +108,7 @@ func allowedForConversation(call Call, history []repo.ItemRow) bool {
 		if !reflect.DeepEqual(it.PreparedExecution, call.Prepared) {
 			continue
 		}
-		if !call.HasContent || it.Approval.Content == call.Content {
+		if !call.HasContent || it.Approval.Content == call.Content.Text {
 			return true
 		}
 	}

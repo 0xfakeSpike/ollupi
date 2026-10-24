@@ -195,6 +195,13 @@ func (s *Sandbox) Close() error {
 	return nil
 }
 
+func (s *Sandbox) runMarker() string {
+	if s.envMarker == "" {
+		return "SANDBOX_RUN_ID"
+	}
+	return s.envMarker + "_RUN_ID"
+}
+
 func (s *Sandbox) proxied() bool { return s.policy.Network && len(s.domains.Allowed) > 0 }
 
 func (s *Sandbox) Enforced() bool { return s.policy.Mode != ModeFullAccess }
@@ -219,9 +226,10 @@ func (s *Sandbox) Summary() string {
 	case ModeReadOnly:
 		fs = "Sandbox: files are read-only"
 	default:
-		fs = "Sandbox: writes are allowed only inside the command directories, temp dirs, and package/build caches; " +
-			"git config and hooks, and the settings files that other programs later run (" + protectedSummary(s.policy.ProtectedNames) + "), are read-only; " +
-			"credential files cannot be read"
+		fs = "Sandbox: writes are allowed only inside the command directories, temp dirs, and npm's download cache; " +
+			"Go, Cargo, pip, Yarn, pnpm and other module/build caches are read-only, so fetching dependencies that are not cached yet fails; " +
+			"git config and hooks, and the settings files that other programs later run (" + protectedSummary(s.policy.ProtectedNames) + "), cannot be created anywhere, temp dirs included, so git init and git clone fail; " +
+			"credential and token files (~/.ssh, ~/.aws and other cloud CLIs, ~/.netrc, ~/.npmrc, gh, git, Docker, Maven, Gradle, PostgreSQL credentials, ...) cannot be read"
 	}
 	switch {
 	case s.proxied():
@@ -278,7 +286,7 @@ func (s *Sandbox) Run(ctx context.Context, c Command) (Result, error) {
 		cmd := exec.CommandContext(ctx, c.Program, c.Args...)
 		cmd.Dir = c.Cwd
 		cmd.Env = Environ(os.Environ(), s.envPassthrough, c.Env)
-		return runProcess(ctx, cmd, c.Program, c.Timeout, s.maxOutputBytes)
+		return runProcess(ctx, cmd, c.Program, c.Timeout, s.maxOutputBytes, s.runMarker())
 	}
 	roots, err := s.commandRoots(c)
 	if err != nil {
@@ -330,7 +338,7 @@ func (s *Sandbox) Run(ctx context.Context, c Command) (Result, error) {
 	cmd := exec.CommandContext(ctx, SeatbeltExecutable, args...)
 	cmd.Dir = c.Cwd
 	cmd.Env = Environ(os.Environ(), s.envPassthrough, merged)
-	res, err := runProcess(ctx, cmd, c.Program, c.Timeout, s.maxOutputBytes)
+	res, err := runProcess(ctx, cmd, c.Program, c.Timeout, s.maxOutputBytes, s.runMarker())
 
 	failed := err != nil || res.ExitCode != 0
 	var denials []string

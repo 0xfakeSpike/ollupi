@@ -17,29 +17,45 @@ const compactionInstructions = `You are performing a CONTEXT CHECKPOINT COMPACTI
 Be concise and structured. Write in the user's language. Do not call tools.`
 
 func (m *Manager) CompactionPrompt(in Input) (Prompt, error) {
-	system := in.System
-
-	messages, err := m.transcript(in.Items, "", "")
-	if err != nil {
-		return Prompt{}, err
-	}
 	instructions := llm.ChatMessage{Role: llm.RoleUser, Content: compactionInstructions}
 	keep := 0
 	if latestCompaction(in.Items) >= 0 {
 		keep = 1
 	}
-	for {
-		p := Prompt{System: system, Messages: slices.Concat(messages, []llm.ChatMessage{instructions})}
-		p.Stats = m.stats(system, p.Messages, in.Tools)
-		m.calibrate(&p.Stats, in.Items)
+	obs := newObservations()
+	rendered := map[int][]llm.ChatMessage{}
+	render := func(limit int) ([]llm.ChatMessage, error) {
+		if messages, ok := rendered[limit]; ok {
+			return messages, nil
+		}
+		messages, _, err := m.transcript(obs, in.Items, "", "", limit)
+		rendered[limit] = messages
+		return messages, err
+	}
+	full, err := render(maxObservationTokens)
+	if err != nil {
+		return Prompt{}, err
+	}
+	for from := keep; ; {
+		p, err := m.fitted(func(limit int) (Prompt, error) {
+			messages, err := render(limit)
+			if err != nil {
+				return Prompt{}, err
+			}
+			p := Prompt{System: in.System, Messages: slices.Concat(messages[:keep], messages[from:], []llm.ChatMessage{instructions})}
+			p.Stats = m.stats(in.System, p.Messages, in.Tools)
+			m.calibrate(&p.Stats, in.Items)
+			return p, nil
+		})
+		if err != nil {
+			return Prompt{}, err
+		}
 		if p.Stats.CalibratedTokens <= m.inputTokens {
 			return p, nil
 		}
-		next := nextUserMessage(messages, keep)
-		if next < 0 {
-			return Prompt{}, fmt.Errorf("context: the compaction request needs %d tokens; model %s allows %d", p.Stats.CalibratedTokens, m.model, m.inputTokens)
+		if from = nextUserMessage(full, from); from < 0 {
+			return Prompt{}, fmt.Errorf("context: the compaction request needs %d tokens even with every tool result clipped; model %s allows %d", p.Stats.CalibratedTokens, m.model, m.inputTokens)
 		}
-		messages = slices.Concat(messages[:keep], messages[next:])
 	}
 }
 
@@ -119,8 +135,8 @@ func recentUserMessages(items []repo.ItemRow, budget int) []string {
 	return out
 }
 
-func nextUserMessage(messages []llm.ChatMessage, keep int) int {
-	for i := keep + 1; i < len(messages); i++ {
+func nextUserMessage(messages []llm.ChatMessage, from int) int {
+	for i := from + 1; i < len(messages); i++ {
 		if messages[i].Role == llm.RoleUser {
 			return i
 		}
