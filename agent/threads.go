@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func (a *Agent) StartThread(workspaceID string, settings permission.Settings) (repo.ThreadRow, error) {
+func (a *orchestrator) startThread(workspaceID string, settings permission.Settings) (repo.ThreadRow, error) {
 	if err := a.checkWorkspace(workspaceID); err != nil {
 		return repo.ThreadRow{}, err
 	}
@@ -24,7 +24,7 @@ func (a *Agent) StartThread(workspaceID string, settings permission.Settings) (r
 	return a.createThread(repo.ThreadRow{Settings: settings, WorkspaceID: repo.Ref(workspaceID)})
 }
 
-func (a *Agent) UpdateThreadSettings(threadID string, settings permission.Settings) (repo.ThreadRow, error) {
+func (a *orchestrator) updateThreadSettings(threadID string, settings permission.Settings) (repo.ThreadRow, error) {
 	t, err := a.DB.ThreadRow(threadID)
 	if err != nil {
 		return repo.ThreadRow{}, fmt.Errorf("agent: thread %s: %w", threadID, err)
@@ -46,7 +46,7 @@ func (a *Agent) UpdateThreadSettings(threadID string, settings permission.Settin
 	return t, nil
 }
 
-func (a *Agent) createThread(t repo.ThreadRow) (repo.ThreadRow, error) {
+func (a *orchestrator) createThread(t repo.ThreadRow) (repo.ThreadRow, error) {
 	now := time.Now().UTC()
 	t.ID = uuid.NewString()
 	t.CreatedAt, t.UpdatedAt = now, now
@@ -56,7 +56,7 @@ func (a *Agent) createThread(t repo.ThreadRow) (repo.ThreadRow, error) {
 	return t, nil
 }
 
-func (a *Agent) ReadThread(id string) (repo.ThreadView, error) {
+func (a *orchestrator) readThread(id string) (repo.ThreadView, error) {
 	v, err := a.DB.Thread(id)
 	if err != nil {
 		return repo.ThreadView{}, fmt.Errorf("agent: thread %s: %w", id, err)
@@ -66,7 +66,7 @@ func (a *Agent) ReadThread(id string) (repo.ThreadView, error) {
 
 const pageBytes = 4 << 20
 
-func (a *Agent) ReadThreadPage(id string, before, limit int) (repo.ThreadView, bool, error) {
+func (a *orchestrator) readThreadPage(id string, before, limit int) (repo.ThreadView, bool, error) {
 	v, more, err := a.DB.ThreadPage(id, before, limit)
 	if err != nil {
 		return repo.ThreadView{}, false, fmt.Errorf("agent: thread %s: %w", id, err)
@@ -90,7 +90,7 @@ func itemBytes(it repo.ItemRow) int {
 	return len(raw)
 }
 
-func (a *Agent) ListThreads(f repo.ThreadFilter) ([]repo.ThreadSummary, error) {
+func (a *orchestrator) listThreads(f repo.ThreadFilter) ([]repo.ThreadSummary, error) {
 	rows, err := a.DB.ThreadRows(f)
 	if err != nil {
 		return nil, err
@@ -103,8 +103,8 @@ func (a *Agent) ListThreads(f repo.ThreadFilter) ([]repo.ThreadSummary, error) {
 	return out, nil
 }
 
-func (a *Agent) threadStatus(id string) repo.ThreadStatus {
-	v, err := a.ReadThread(id)
+func (a *orchestrator) threadStatus(id string) repo.ThreadStatus {
+	v, err := a.readThread(id)
 	if err != nil {
 		return ""
 	}
@@ -113,7 +113,7 @@ func (a *Agent) threadStatus(id string) repo.ThreadStatus {
 		return status
 	}
 	for _, call := range v.AgentCalls() {
-		if child, err := a.ReadThread(call.Await.ThreadID); err == nil {
+		if child, err := a.readThread(call.Await.ThreadID); err == nil {
 			if cs := child.Status(); cs == repo.ThreadWaitingOnApproval || cs == repo.ThreadWaitingOnUserInput {
 				return cs
 			}

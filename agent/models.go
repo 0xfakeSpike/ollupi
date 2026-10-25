@@ -19,7 +19,7 @@ type ModelList struct {
 	Default string      `json:"default"`
 }
 
-func (a *Agent) checkModels() error {
+func (a *orchestrator) checkModels() error {
 	if len(a.Models) == 0 {
 		return fmt.Errorf("agent %s: at least one model is required", a.Name)
 	}
@@ -37,7 +37,7 @@ func (a *Agent) checkModels() error {
 	return nil
 }
 
-func (a *Agent) contextsFor(m llm.Model) (*contextmanager.Manager, error) {
+func (a *orchestrator) contextsFor(m llm.Model) (*contextmanager.Manager, error) {
 	conn := a.Connections[m.Connection]
 	if conn == nil {
 		return nil, fmt.Errorf("connection %q has no client", m.Connection)
@@ -49,7 +49,7 @@ func (a *Agent) contextsFor(m llm.Model) (*contextmanager.Manager, error) {
 	return contextmanager.New(m.Name, limits), nil
 }
 
-func (a *Agent) checkBudgets() error {
+func (a *orchestrator) checkBudgets() error {
 	checker, err := permission.New(a.Settings, a.Tools, a.registry)
 	if err != nil {
 		return err
@@ -72,7 +72,7 @@ func (a *Agent) checkBudgets() error {
 	return nil
 }
 
-func (a *Agent) ListModels() ModelList {
+func (a *orchestrator) listModels() ModelList {
 	data := make([]llm.Model, 0, len(a.Models))
 	for _, m := range a.Models {
 		data = append(data, m.Clone())
@@ -80,7 +80,7 @@ func (a *Agent) ListModels() ModelList {
 	return ModelList{Data: data, Default: a.Models[0].Connection}
 }
 
-func (a *Agent) modelOn(connection string) (llm.Model, error) {
+func (a *orchestrator) modelOn(connection string) (llm.Model, error) {
 	i := slices.IndexFunc(a.Models, func(m llm.Model) bool { return m.Connection == connection })
 	if i < 0 {
 		return llm.Model{}, fmt.Errorf("connection %q is unavailable; restore it in Settings or select another model for a new turn", connection)
@@ -88,7 +88,7 @@ func (a *Agent) modelOn(connection string) (llm.Model, error) {
 	return a.Models[i].Clone(), nil
 }
 
-func (a *Agent) conversationModel(view repo.ThreadView, requested string) (llm.Model, error) {
+func (a *orchestrator) conversationModel(view repo.ThreadView, requested string) (llm.Model, error) {
 	connection := strings.TrimSpace(requested)
 	if connection == "" && len(view.Turns) > 0 {
 		connection = view.Turns[len(view.Turns)-1].Model.Connection

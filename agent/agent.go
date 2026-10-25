@@ -7,11 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/0xfakeSpike/ollupi/agent/memory"
-	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/skills"
-	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/plan"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
@@ -34,27 +30,7 @@ var (
 	ErrInvalidName       = errors.New("invalid name")
 )
 
-type Agent struct {
-	Name     string
-	Prompt   string
-	Models   []llm.Model
-	Tools    []string
-	Settings permission.Settings
-
-	Connections map[string]*llm.OpenAI
-	Providers   []tools.Provider
-	SkillsDir   string
-	Memory      *memory.Manager
-	DB          *repo.DB
-	OnEvent     func(Event)
-
-	ctx      context.Context
-	registry *tools.Registry
-	skills   *skills.Catalog
-	run      *orchestrator
-}
-
-func (a *Agent) Start(ctx context.Context) error {
+func (a *orchestrator) boot(ctx context.Context) error {
 	if strings.TrimSpace(a.Name) == "" {
 		return fmt.Errorf("agent: name is required")
 	}
@@ -71,15 +47,15 @@ func (a *Agent) Start(ctx context.Context) error {
 	if err := a.checkBudgets(); err != nil {
 		return fmt.Errorf("agent %s: %w", a.Name, err)
 	}
-	a.run = newOrchestrator(a, ctx)
-	if err := a.run.recover(); err != nil {
+	a.events, a.work, a.slots = make(chan func()), make(chan work), map[string]*slot{}
+	if err := a.recover(); err != nil {
 		return err
 	}
-	a.run.start()
+	a.start()
 	return nil
 }
 
-func (a *Agent) buildTools(ctx context.Context) error {
+func (a *orchestrator) buildTools(ctx context.Context) error {
 	providers := append(slices.Clone(a.Providers), plan.New(), subagent.New(), userinput.New())
 	if a.SkillsDir != "" {
 		var err error
@@ -95,11 +71,7 @@ func (a *Agent) buildTools(ctx context.Context) error {
 	return nil
 }
 
-func (a *Agent) Wait() {
-	a.run.wait()
-}
-
-func (a *Agent) CallTool(ctx context.Context, threadID, tool string, arguments map[string]any) (tools.Result, error) {
+func (a *orchestrator) callTool(ctx context.Context, threadID, tool string, arguments map[string]any) (tools.Result, error) {
 	caller := tools.Caller{}
 	if threadID != "" {
 		t, err := a.DB.ThreadRow(threadID)

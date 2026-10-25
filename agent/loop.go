@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"errors"
+	"github.com/0xfakeSpike/ollupi/agent/skills"
+	"github.com/0xfakeSpike/ollupi/tools"
 	"log"
 	"sync"
 
@@ -33,18 +35,16 @@ type work struct {
 }
 
 type orchestrator struct {
-	a   *Agent
-	ctx context.Context
+	Config
+	ctx      context.Context
+	registry *tools.Registry
+	skills   *skills.Catalog
 
 	events chan func()
 	work   chan work
 	slots  map[string]*slot
 	queue  []string
 	done   sync.WaitGroup
-}
-
-func newOrchestrator(a *Agent, ctx context.Context) *orchestrator {
-	return &orchestrator{a: a, ctx: ctx, events: make(chan func()), work: make(chan work), slots: map[string]*slot{}}
 }
 
 func (s *orchestrator) start() {
@@ -127,7 +127,7 @@ func (s *orchestrator) worker() {
 }
 
 func (s *orchestrator) run(threadID string, sl *slot) {
-	view, err := s.a.ReadThread(threadID)
+	view, err := s.readThread(threadID)
 	if err != nil {
 		log.Printf("agent: thread %s cannot be read while turn %s is queued: %v", threadID, sl.turnID, err)
 		s.post(func() {
@@ -140,12 +140,13 @@ func (s *orchestrator) run(threadID string, sl *slot) {
 	if !ok || turn.Status != repo.TurnInProgress {
 		s.post(func() {
 			s.release(threadID)
-			s.settle(threadID)
+			s.promote(threadID)
+			s.schedule(threadID)
 		})
 		return
 	}
-	outcome, usage, err := s.a.step(sl.ctx, view, turn)
-	if err := s.a.DB.AddUsage(threadID, turn.ID, usage); err != nil {
+	outcome, usage, err := s.step(sl.ctx, view, turn)
+	if err := s.DB.AddUsage(threadID, turn.ID, usage); err != nil {
 		log.Printf("agent: thread %s: record usage of turn %s: %v", threadID, turn.ID, err)
 	}
 	seen := len(view.Items)
