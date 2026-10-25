@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/0xfakeSpike/ollupi/agent/runtime"
 	"github.com/0xfakeSpike/ollupi/repo"
 )
 
@@ -77,7 +76,7 @@ func (a *Agent) failTurn(turnID string, status repo.TurnStatus, reason string) {
 	a.endTurn(turn)
 }
 
-func (a *Agent) afterStep(threadID string, sl *slot, seen int, outcome runtime.Outcome, stepErr error) {
+func (a *Agent) afterStep(threadID string, sl *slot, seen int, final bool, stepErr error) {
 	if a.slots[threadID] != sl {
 		return
 	}
@@ -107,7 +106,7 @@ func (a *Agent) afterStep(threadID string, sl *slot, seen int, outcome runtime.O
 	case stepErr != nil:
 		turn.Status, turn.Error = repo.TurnFailed, stepErr.Error()
 		log.Printf("agent: thread %s turn %s failed: %v", threadID, turn.ID, stepErr)
-	case outcome == runtime.Done:
+	case final:
 		more, err := a.cfg.DB.InputAfter(threadID, turn.ID, seen)
 		if err != nil {
 			a.halt(threadID, err)

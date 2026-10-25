@@ -10,22 +10,22 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
-func (a *Agent) step(ctx context.Context, view repo.ThreadView, turn repo.TurnRow) (runtime.Outcome, repo.Usage, error) {
+func (a *Agent) step(ctx context.Context, view repo.ThreadView, turn repo.TurnRow) (bool, repo.Usage, error) {
 	contexts, err := a.contextsFor(turn.Model)
 	if err != nil {
-		return runtime.Done, repo.Usage{}, err
+		return false, repo.Usage{}, err
 	}
 	w, err := a.workspaceOf(view.Thread.WorkspaceID)
 	if err != nil {
-		return runtime.Done, repo.Usage{}, err
+		return false, repo.Usage{}, err
 	}
 	settings, err := a.threadSettings(view.Thread, w)
 	if err != nil {
-		return runtime.Done, repo.Usage{}, err
+		return false, repo.Usage{}, err
 	}
 	checker, err := permission.New(settings, a.cfg.Tools, a.registry)
 	if err != nil {
-		return runtime.Done, repo.Usage{}, err
+		return false, repo.Usage{}, err
 	}
 	descriptors := checker.Tools()
 	var history, items []repo.ItemRow
