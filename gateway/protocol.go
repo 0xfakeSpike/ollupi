@@ -154,8 +154,9 @@ type turnResult struct {
 }
 
 type turnNotification struct {
-	ThreadID string       `json:"threadId"`
-	Turn     repo.TurnRow `json:"turn"`
+	ThreadID string         `json:"threadId"`
+	Thread   repo.ThreadRow `json:"thread"`
+	Turn     repo.TurnRow   `json:"turn"`
 }
 
 type deltaNotification struct {

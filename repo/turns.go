@@ -91,11 +91,12 @@ func (d *DB) EndedTurn(id string) (TurnRow, error) {
 	return row, notFound(d.gorm.Where("id = ? AND status IN ('completed', 'failed', 'interrupted')", id).Take(&row).Error)
 }
 
-func (d *DB) SubmitTurn(threadID string, turn TurnRow) (TurnRow, *ItemRow, error) {
+func (d *DB) SubmitTurn(threadID string, turn TurnRow) (ThreadRow, TurnRow, *ItemRow, error) {
+	var thread ThreadRow
 	var message *ItemRow
 	err := d.Tx(func(tx *DB) error {
-		t, err := tx.ThreadRow(threadID)
-		if err != nil {
+		var err error
+		if thread, err = tx.ThreadRow(threadID); err != nil {
 			return err
 		}
 		if turn.ID == "" || strings.TrimSpace(turn.Input) == "" {
@@ -115,57 +116,62 @@ func (d *DB) SubmitTurn(threadID string, turn TurnRow) (TurnRow, *ItemRow, error
 		if open > 0 {
 			return nil
 		}
-		started, it, err := tx.startIn(t, turn)
-		turn, message = started, &it
+		var it ItemRow
+		thread, turn, it, err = tx.startIn(thread, turn)
+		message = &it
 		return err
 	})
 	if err != nil {
-		return TurnRow{}, nil, fmt.Errorf("storage: submit turn: %w", err)
+		return ThreadRow{}, TurnRow{}, nil, fmt.Errorf("storage: submit turn: %w", err)
 	}
-	return turn, message, nil
+	return thread, turn, message, nil
 }
 
-func (d *DB) StartQueuedTurn(threadID string) (TurnRow, ItemRow, error) {
+func (d *DB) StartQueuedTurn(threadID string) (ThreadRow, TurnRow, ItemRow, error) {
+	var thread ThreadRow
 	var turn TurnRow
 	var message ItemRow
 	err := d.Tx(func(tx *DB) error {
-		t, err := tx.ThreadRow(threadID)
-		if err != nil {
+		var err error
+		if thread, err = tx.ThreadRow(threadID); err != nil {
 			return err
 		}
 		var queued TurnRow
 		if err := notFound(tx.gorm.Where("thread_id = ? AND status = 'queued'", threadID).Order("seq").Take(&queued).Error); err != nil {
 			return err
 		}
-		turn, message, err = tx.startIn(t, queued)
+		thread, turn, message, err = tx.startIn(thread, queued)
 		return err
 	})
 	if err != nil {
-		return TurnRow{}, ItemRow{}, fmt.Errorf("storage: start queued turn: %w", err)
+		return ThreadRow{}, TurnRow{}, ItemRow{}, fmt.Errorf("storage: start queued turn: %w", err)
 	}
-	return turn, message, nil
+	return thread, turn, message, nil
 }
 
-func (d *DB) startIn(t ThreadRow, turn TurnRow) (TurnRow, ItemRow, error) {
+func (d *DB) startIn(t ThreadRow, turn TurnRow) (ThreadRow, TurnRow, ItemRow, error) {
 	now := time.Now().UTC()
 	res := d.gorm.Model(&TurnRow{}).Where("id = ? AND status = 'queued'", turn.ID).Updates(map[string]any{"status": TurnInProgress, "started_at": now})
 	if err := checkOne(res); err != nil {
-		return TurnRow{}, ItemRow{}, fmt.Errorf("turn %s: %w", turn.ID, err)
+		return ThreadRow{}, TurnRow{}, ItemRow{}, fmt.Errorf("turn %s: %w", turn.ID, err)
 	}
 	turn.Status, turn.StartedAt = TurnInProgress, now
 	message := NewUserMessage(uuid.NewString(), turn.ID, turn.Input, now)
 	if err := d.saveItemOf(t.ID, message); err != nil {
-		return TurnRow{}, ItemRow{}, err
+		return ThreadRow{}, TurnRow{}, ItemRow{}, err
 	}
 	stored, err := d.Item(message.ID)
 	if err != nil {
-		return TurnRow{}, ItemRow{}, err
+		return ThreadRow{}, TurnRow{}, ItemRow{}, err
 	}
 	if t.Preview == "" {
 		t.Preview = preview(turn.Input)
 	}
 	t.UpdatedAt = now
-	return turn, stored, d.UpdateThread(t)
+	if err := d.UpdateThread(t); err != nil {
+		return ThreadRow{}, TurnRow{}, ItemRow{}, err
+	}
+	return t, turn, stored, nil
 }
 
 func (d *DB) AddUsage(threadID, turnID string, u Usage) error {
@@ -185,7 +191,8 @@ func (d *DB) AddUsage(threadID, turnID string, u Usage) error {
 	})
 }
 
-func (d *DB) EndTurn(threadID string, turn TurnRow) (TurnRow, []ItemRow, error) {
+func (d *DB) EndTurn(threadID string, turn TurnRow) (ThreadRow, TurnRow, []ItemRow, error) {
+	var thread ThreadRow
 	var closed []ItemRow
 	err := d.Tx(func(tx *DB) error {
 		active, err := tx.ActiveTurn(threadID)
@@ -216,17 +223,16 @@ func (d *DB) EndTurn(threadID string, turn TurnRow) (TurnRow, []ItemRow, error) 
 			}
 			closed = append(closed, it)
 		}
-		t, err := tx.ThreadRow(threadID)
-		if err != nil {
+		if thread, err = tx.ThreadRow(threadID); err != nil {
 			return err
 		}
-		t.UpdatedAt = now
-		return tx.UpdateThread(t)
+		thread.UpdatedAt = now
+		return tx.UpdateThread(thread)
 	})
 	if err != nil {
-		return TurnRow{}, nil, fmt.Errorf("storage: end turn: %w", err)
+		return ThreadRow{}, TurnRow{}, nil, fmt.Errorf("storage: end turn: %w", err)
 	}
-	return turn, closed, nil
+	return thread, turn, closed, nil
 }
 
 func (d *DB) FinalAnswer(threadID, turnID string) (string, error) {
