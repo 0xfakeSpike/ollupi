@@ -140,8 +140,7 @@ func (a *Agent) run(threadID string, sl *slot) {
 	if !ok || turn.Status != repo.TurnInProgress {
 		a.post(func() {
 			a.release(threadID)
-			a.promote(threadID)
-			a.schedule(threadID)
+			a.reconcile(threadID)
 		})
 		return
 	}

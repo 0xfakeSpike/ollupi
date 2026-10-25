@@ -156,33 +156,44 @@ type ThreadView struct {
 	Items  []ItemRow `json:"items"`
 }
 
-func (v ThreadView) Status() ThreadStatus {
-	if _, active := v.ActiveTurn(); !active {
-		return ThreadIdle
-	}
-	it, waiting := v.PendingRequest()
-	switch {
-	case !waiting:
-		return ThreadActive
-	case !it.WaitsForApproval():
-		return ThreadWaitingOnUserInput
-	default:
-		return ThreadWaitingOnApproval
-	}
-}
-
 func (v ThreadView) ActiveTurn() (TurnRow, bool) {
-	for i := len(v.Turns) - 1; i >= 0; i-- {
-		if v.Turns[i].Status == TurnInProgress {
-			return v.Turns[i], true
-		}
-	}
-	return TurnRow{}, false
+	return activeTurn(v.Turns)
 }
 
-func (v ThreadView) QueuedTurns() []TurnRow {
+type ThreadState struct {
+	Thread    ThreadRow
+	Turns     []TurnRow
+	OpenCalls []ItemRow
+}
+
+func (d *DB) ThreadState(id string) (ThreadState, error) {
+	var out ThreadState
+	err := d.Tx(func(tx *DB) error {
+		if err := notFound(tx.gorm.Where("id = ?", id).Take(&out.Thread).Error); err != nil {
+			return err
+		}
+		if err := tx.gorm.Where("thread_id = ?", id).Order("seq").Find(&out.Turns).Error; err != nil {
+			return err
+		}
+		turn, active := out.ActiveTurn()
+		if !active {
+			return nil
+		}
+		return tx.gorm.Where("thread_id = ? AND turn_id = ? AND type = 'toolCall' AND status = 'inProgress'", id, turn.ID).Order("seq").Find(&out.OpenCalls).Error
+	})
+	if err != nil {
+		return ThreadState{}, err
+	}
+	return out, nil
+}
+
+func (s ThreadState) ActiveTurn() (TurnRow, bool) {
+	return activeTurn(s.Turns)
+}
+
+func (s ThreadState) QueuedTurns() []TurnRow {
 	var out []TurnRow
-	for _, t := range v.Turns {
+	for _, t := range s.Turns {
 		if t.Status == TurnQueued {
 			out = append(out, t)
 		}
@@ -190,57 +201,48 @@ func (v ThreadView) QueuedTurns() []TurnRow {
 	return out
 }
 
-func (v ThreadView) AgentCalls() []ItemRow {
-	turn, ok := v.ActiveTurn()
-	if !ok {
-		return nil
-	}
+func (s ThreadState) PendingRequests() []ItemRow {
 	var out []ItemRow
-	for _, it := range v.Items {
-		if it.TurnID == turn.ID && it.WaitsOnAgent() {
+	for _, it := range s.OpenCalls {
+		if it.IsPending() {
 			out = append(out, it)
 		}
 	}
 	return out
 }
 
-func (v ThreadView) FinalAnswer(turnID string) (string, bool) {
-	for i := len(v.Items) - 1; i >= 0; i-- {
-		if it := v.Items[i]; it.TurnID == turnID && it.Type == ItemAgentMessage && it.Status == ItemCompleted {
-			return it.Text, true
-		}
-	}
-	return "", false
-}
-
-func (v ThreadView) InputAfter(turnID string, seq int) bool {
-	for _, it := range v.Items {
-		if it.TurnID == turnID && it.Seq > seq && it.Type == ItemUserMessage {
-			return true
-		}
-	}
-	return false
-}
-
-func (v ThreadView) PendingRequest() (ItemRow, bool) {
-	if p := v.PendingRequests(); len(p) > 0 {
-		return p[0], true
-	}
-	return ItemRow{}, false
-}
-
-func (v ThreadView) PendingRequests() []ItemRow {
-	turn, ok := v.ActiveTurn()
-	if !ok {
-		return nil
-	}
+func (s ThreadState) AgentCalls() []ItemRow {
 	var out []ItemRow
-	for _, it := range v.Items {
-		if it.TurnID == turn.ID && it.IsPending() {
+	for _, it := range s.OpenCalls {
+		if it.WaitsOnAgent() {
 			out = append(out, it)
 		}
 	}
 	return out
+}
+
+func (s ThreadState) Status() ThreadStatus {
+	if _, active := s.ActiveTurn(); !active {
+		return ThreadIdle
+	}
+	pending := s.PendingRequests()
+	switch {
+	case len(pending) == 0:
+		return ThreadActive
+	case !pending[0].WaitsForApproval():
+		return ThreadWaitingOnUserInput
+	default:
+		return ThreadWaitingOnApproval
+	}
+}
+
+func activeTurn(turns []TurnRow) (TurnRow, bool) {
+	for i := len(turns) - 1; i >= 0; i-- {
+		if turns[i].Status == TurnInProgress {
+			return turns[i], true
+		}
+	}
+	return TurnRow{}, false
 }
 
 func preview(text string) string {

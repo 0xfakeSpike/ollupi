@@ -61,14 +61,14 @@ func (a *Agent) emitStatus(threadID string) {
 	a.emit(Event{Kind: EventThreadStatusChanged, Thread: t, Status: status})
 }
 
-func (a *Agent) emitRequests(view repo.ThreadView) {
-	turn, _ := view.ActiveTurn()
-	for _, it := range view.PendingRequests() {
+func (a *Agent) emitRequests(st repo.ThreadState) {
+	turn, _ := st.ActiveTurn()
+	for _, it := range st.PendingRequests() {
 		kind := EventApprovalRequested
 		if !it.WaitsForApproval() {
 			kind = EventUserInputRequested
 		}
-		a.emit(Event{Kind: kind, Thread: view.Thread, Turn: turn, Item: &it})
+		a.emit(Event{Kind: kind, Thread: st.Thread, Turn: turn, Item: &it})
 	}
 }
 

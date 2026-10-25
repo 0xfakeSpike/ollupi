@@ -94,22 +94,28 @@ func (d *DB) EndedTurn(id string) (TurnRow, error) {
 func (d *DB) SubmitTurn(threadID string, turn TurnRow) (TurnRow, *ItemRow, error) {
 	var message *ItemRow
 	err := d.Tx(func(tx *DB) error {
-		v, err := tx.Thread(threadID)
+		t, err := tx.ThreadRow(threadID)
 		if err != nil {
 			return err
 		}
 		if turn.ID == "" || strings.TrimSpace(turn.Input) == "" {
 			return fmt.Errorf("a new turn needs an id and an input")
 		}
-		turn.ThreadID, turn.Seq, turn.Status = threadID, len(v.Turns)+1, TurnQueued
+		var total, open int64
+		if err := tx.gorm.Model(&TurnRow{}).Where("thread_id = ?", threadID).Count(&total).Error; err != nil {
+			return err
+		}
+		if err := tx.gorm.Model(&TurnRow{}).Where("thread_id = ? AND (status = 'inProgress' OR status = 'queued')", threadID).Count(&open).Error; err != nil {
+			return err
+		}
+		turn.ThreadID, turn.Seq, turn.Status = threadID, int(total)+1, TurnQueued
 		if err := tx.CreateTurn(turn); err != nil {
 			return err
 		}
-		if _, active := v.ActiveTurn(); active || len(v.QueuedTurns()) > 0 {
+		if open > 0 {
 			return nil
 		}
-		v.Turns = append(v.Turns, turn)
-		started, it, err := tx.startIn(v, turn)
+		started, it, err := tx.startIn(t, turn)
 		turn, message = started, &it
 		return err
 	})
@@ -119,30 +125,28 @@ func (d *DB) SubmitTurn(threadID string, turn TurnRow) (TurnRow, *ItemRow, error
 	return turn, message, nil
 }
 
-func (d *DB) StartQueuedTurn(threadID string) (TurnRow, ItemRow, bool, error) {
+func (d *DB) StartQueuedTurn(threadID string) (TurnRow, ItemRow, error) {
 	var turn TurnRow
 	var message ItemRow
-	started := false
 	err := d.Tx(func(tx *DB) error {
-		v, err := tx.Thread(threadID)
+		t, err := tx.ThreadRow(threadID)
 		if err != nil {
 			return err
 		}
-		queued := v.QueuedTurns()
-		if _, active := v.ActiveTurn(); active || len(queued) == 0 {
-			return nil
+		var queued TurnRow
+		if err := notFound(tx.gorm.Where("thread_id = ? AND status = 'queued'", threadID).Order("seq").Take(&queued).Error); err != nil {
+			return err
 		}
-		turn, message, err = tx.startIn(v, queued[0])
-		started = err == nil
+		turn, message, err = tx.startIn(t, queued)
 		return err
 	})
 	if err != nil {
-		return TurnRow{}, ItemRow{}, false, fmt.Errorf("storage: start queued turn: %w", err)
+		return TurnRow{}, ItemRow{}, fmt.Errorf("storage: start queued turn: %w", err)
 	}
-	return turn, message, started, nil
+	return turn, message, nil
 }
 
-func (d *DB) startIn(v ThreadView, turn TurnRow) (TurnRow, ItemRow, error) {
+func (d *DB) startIn(t ThreadRow, turn TurnRow) (TurnRow, ItemRow, error) {
 	now := time.Now().UTC()
 	res := d.gorm.Model(&TurnRow{}).Where("id = ? AND status = 'queued'", turn.ID).Updates(map[string]any{"status": TurnInProgress, "started_at": now})
 	if err := checkOne(res); err != nil {
@@ -150,14 +154,13 @@ func (d *DB) startIn(v ThreadView, turn TurnRow) (TurnRow, ItemRow, error) {
 	}
 	turn.Status, turn.StartedAt = TurnInProgress, now
 	message := NewUserMessage(uuid.NewString(), turn.ID, turn.Input, now)
-	if err := d.saveItemOf(v.Thread.ID, message); err != nil {
+	if err := d.saveItemOf(t.ID, message); err != nil {
 		return TurnRow{}, ItemRow{}, err
 	}
 	stored, err := d.Item(message.ID)
 	if err != nil {
 		return TurnRow{}, ItemRow{}, err
 	}
-	t := v.Thread
 	if t.Preview == "" {
 		t.Preview = preview(turn.Input)
 	}
@@ -182,79 +185,58 @@ func (d *DB) AddUsage(threadID, turnID string, u Usage) error {
 	})
 }
 
-func (d *DB) EndTurn(threadID string, turn TurnRow) ([]ItemRow, error) {
+func (d *DB) EndTurn(threadID string, turn TurnRow) (TurnRow, []ItemRow, error) {
 	var closed []ItemRow
 	err := d.Tx(func(tx *DB) error {
-		var err error
-		closed, err = tx.endTurnIn(threadID, turn)
-		return err
-	})
-	if err != nil {
-		return nil, fmt.Errorf("storage: end turn: %w", err)
-	}
-	return closed, nil
-}
-
-func (d *DB) EndSubagentTurn(threadID string, turn TurnRow, report ItemRow) (closed []ItemRow, stored ItemRow, err error) {
-	err = d.Tx(func(tx *DB) error {
-		child, err := tx.Thread(threadID)
-		if err != nil {
-			return err
-		}
-		parentID := string(child.Thread.ParentThreadID)
-		active, err := tx.ActiveTurn(parentID)
-		if IsNotFound(err) || (err == nil && (active.ID != report.TurnID || report.ID != string(child.Thread.ParentItemID))) {
-			return fmt.Errorf("item %s is not the Agent call of thread %s's turn in progress", report.ID, parentID)
+		active, err := tx.ActiveTurn(threadID)
+		if IsNotFound(err) || (err == nil && active.ID != turn.ID) {
+			return fmt.Errorf("turn %s is not in progress", turn.ID)
 		}
 		if err != nil {
 			return err
 		}
-		if closed, err = tx.endTurnIn(threadID, turn); err != nil {
+		if turn.Status == TurnInProgress {
+			return fmt.Errorf("turn %s must end with a final status", turn.ID)
+		}
+		now := time.Now().UTC()
+		turn.ThreadID, turn.Seq, turn.CompletedAt = threadID, active.Seq, &now
+		if err := tx.UpdateTurn(turn); err != nil {
 			return err
 		}
-		if err := tx.saveItemOf(parentID, report); err != nil {
+		var open []ItemRow
+		if err := tx.gorm.Where("thread_id = ? AND turn_id = ? AND status = 'inProgress'", threadID, turn.ID).Order("seq").Find(&open).Error; err != nil {
 			return err
 		}
-		stored, err = tx.Item(report.ID)
-		return err
+		for _, it := range open {
+			it.Status = ItemFailed
+			it.Error = fmt.Sprintf("the turn ended (%s) before this item finished", turn.Status)
+			it.CompletedAt = &now
+			if err := tx.saveItemOf(threadID, it); err != nil {
+				return err
+			}
+			closed = append(closed, it)
+		}
+		t, err := tx.ThreadRow(threadID)
+		if err != nil {
+			return err
+		}
+		t.UpdatedAt = now
+		return tx.UpdateThread(t)
 	})
 	if err != nil {
-		return nil, ItemRow{}, fmt.Errorf("storage: end subagent turn: %w", err)
+		return TurnRow{}, nil, fmt.Errorf("storage: end turn: %w", err)
 	}
-	return closed, stored, nil
+	return turn, closed, nil
 }
 
-func (d *DB) endTurnIn(threadID string, turn TurnRow) ([]ItemRow, error) {
-	v, err := d.Thread(threadID)
-	if err != nil {
-		return nil, err
-	}
-	active, ok := v.ActiveTurn()
-	if !ok || active.ID != turn.ID {
-		return nil, fmt.Errorf("turn %s is not in progress", turn.ID)
-	}
-	if turn.Status == TurnInProgress {
-		return nil, fmt.Errorf("turn %s must end with a final status", turn.ID)
-	}
-	now := time.Now().UTC()
-	turn.ThreadID, turn.Seq, turn.CompletedAt = threadID, active.Seq, &now
-	if err := d.UpdateTurn(turn); err != nil {
-		return nil, err
-	}
-	var closed []ItemRow
-	for _, it := range v.Items {
-		if it.TurnID != turn.ID || it.Status != ItemInProgress {
-			continue
-		}
-		it.Status = ItemFailed
-		it.Error = fmt.Sprintf("the turn ended (%s) before this item finished", turn.Status)
-		it.CompletedAt = &now
-		if err := d.saveItemOf(threadID, it); err != nil {
-			return nil, err
-		}
-		closed = append(closed, it)
-	}
-	t := v.Thread
-	t.UpdatedAt = now
-	return closed, d.UpdateThread(t)
+func (d *DB) FinalAnswer(threadID, turnID string) (string, error) {
+	var row ItemRow
+	err := notFound(d.gorm.Where("thread_id = ? AND turn_id = ? AND type = 'agentMessage' AND status = 'completed'", threadID, turnID).Order("seq DESC").Take(&row).Error)
+	return row.Text, err
+}
+
+func (d *DB) InputAfter(threadID, turnID string, seq int) (bool, error) {
+	var n int64
+	err := d.gorm.Model(&ItemRow{}).Where("thread_id = ? AND turn_id = ? AND seq > ? AND type = 'userMessage'", threadID, turnID, seq).Count(&n).Error
+	return n > 0, err
 }

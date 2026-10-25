@@ -104,16 +104,16 @@ func (a *Agent) ListThreads(f repo.ThreadFilter) ([]repo.ThreadSummary, error) {
 }
 
 func (a *Agent) threadStatus(id string) repo.ThreadStatus {
-	v, err := a.ReadThread(id)
+	st, err := a.cfg.DB.ThreadState(id)
 	if err != nil {
 		return ""
 	}
-	status := v.Status()
+	status := st.Status()
 	if status != repo.ThreadActive {
 		return status
 	}
-	for _, call := range v.AgentCalls() {
-		if child, err := a.ReadThread(call.Await.ThreadID); err == nil {
+	for _, call := range st.AgentCalls() {
+		if child, err := a.cfg.DB.ThreadState(call.Await.ThreadID); err == nil {
 			if cs := child.Status(); cs == repo.ThreadWaitingOnApproval || cs == repo.ThreadWaitingOnUserInput {
 				return cs
 			}

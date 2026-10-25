@@ -11,9 +11,6 @@ import (
 )
 
 func (a *Agent) step(ctx context.Context, view repo.ThreadView, turn repo.TurnRow) (runtime.Outcome, repo.Usage, error) {
-	if _, err := a.modelOn(turn.Model.Connection); err != nil {
-		return runtime.Done, repo.Usage{}, err
-	}
 	contexts, err := a.contextsFor(turn.Model)
 	if err != nil {
 		return runtime.Done, repo.Usage{}, err
