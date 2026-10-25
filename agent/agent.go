@@ -4,6 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/0xfakeSpike/ollupi/agent/memory"
+	"github.com/0xfakeSpike/ollupi/agent/permission"
+	"github.com/0xfakeSpike/ollupi/pkg/llm"
+	"github.com/0xfakeSpike/ollupi/repo"
 	"slices"
 	"strings"
 
@@ -30,11 +34,32 @@ var (
 	ErrInvalidName       = errors.New("invalid name")
 )
 
-func (a *orchestrator) boot(ctx context.Context) error {
-	if strings.TrimSpace(a.Name) == "" {
+type Config struct {
+	Name     string
+	Prompt   string
+	Models   []llm.Model
+	Tools    []string
+	Settings permission.Settings
+
+	Connections map[string]*llm.OpenAI
+	Providers   []tools.Provider
+	SkillsDir   string
+	Memory      *memory.Manager
+	DB          *repo.DB
+	OnEvent     func(Event)
+}
+
+func New(cfg Config) *Agent {
+	return &Agent{cfg: cfg}
+}
+
+func (a *Agent) Memory() *memory.Manager { return a.cfg.Memory }
+
+func (a *Agent) Start(ctx context.Context) error {
+	if strings.TrimSpace(a.cfg.Name) == "" {
 		return fmt.Errorf("agent: name is required")
 	}
-	if a.DB == nil {
+	if a.cfg.DB == nil {
 		return fmt.Errorf("agent: a database is required")
 	}
 	a.ctx = ctx
@@ -45,7 +70,7 @@ func (a *orchestrator) boot(ctx context.Context) error {
 		return err
 	}
 	if err := a.checkBudgets(); err != nil {
-		return fmt.Errorf("agent %s: %w", a.Name, err)
+		return fmt.Errorf("agent %s: %w", a.cfg.Name, err)
 	}
 	a.events, a.work, a.slots = make(chan func()), make(chan work), map[string]*slot{}
 	if err := a.recover(); err != nil {
@@ -55,11 +80,11 @@ func (a *orchestrator) boot(ctx context.Context) error {
 	return nil
 }
 
-func (a *orchestrator) buildTools(ctx context.Context) error {
-	providers := append(slices.Clone(a.Providers), plan.New(), subagent.New(), userinput.New())
-	if a.SkillsDir != "" {
+func (a *Agent) buildTools(ctx context.Context) error {
+	providers := append(slices.Clone(a.cfg.Providers), plan.New(), subagent.New(), userinput.New())
+	if a.cfg.SkillsDir != "" {
 		var err error
-		if a.skills, err = skills.New(a.SkillsDir); err != nil {
+		if a.skills, err = skills.New(a.cfg.SkillsDir); err != nil {
 			return fmt.Errorf("agent: skills: %w", err)
 		}
 		providers = append(providers, a.skills)
@@ -71,10 +96,10 @@ func (a *orchestrator) buildTools(ctx context.Context) error {
 	return nil
 }
 
-func (a *orchestrator) callTool(ctx context.Context, threadID, tool string, arguments map[string]any) (tools.Result, error) {
+func (a *Agent) CallTool(ctx context.Context, threadID, tool string, arguments map[string]any) (tools.Result, error) {
 	caller := tools.Caller{}
 	if threadID != "" {
-		t, err := a.DB.ThreadRow(threadID)
+		t, err := a.cfg.DB.ThreadRow(threadID)
 		if err != nil {
 			return tools.Result{}, fmt.Errorf("agent: thread %s: %w", threadID, err)
 		}

@@ -19,26 +19,26 @@ type ModelList struct {
 	Default string      `json:"default"`
 }
 
-func (a *orchestrator) checkModels() error {
-	if len(a.Models) == 0 {
-		return fmt.Errorf("agent %s: at least one model is required", a.Name)
+func (a *Agent) checkModels() error {
+	if len(a.cfg.Models) == 0 {
+		return fmt.Errorf("agent %s: at least one model is required", a.cfg.Name)
 	}
-	for i, m := range a.Models {
+	for i, m := range a.cfg.Models {
 		if m.Connection == "" || strings.TrimSpace(m.Name) == "" {
 			return fmt.Errorf("agent: every model needs a connection and a name")
 		}
-		if slices.ContainsFunc(a.Models[:i], func(o llm.Model) bool { return o.Connection == m.Connection }) {
+		if slices.ContainsFunc(a.cfg.Models[:i], func(o llm.Model) bool { return o.Connection == m.Connection }) {
 			return fmt.Errorf("agent: connection %q is listed twice", m.Connection)
 		}
-		if a.Connections[m.Connection] == nil {
+		if a.cfg.Connections[m.Connection] == nil {
 			return fmt.Errorf("agent: connection %q has no client", m.Connection)
 		}
 	}
 	return nil
 }
 
-func (a *orchestrator) contextsFor(m llm.Model) (*contextmanager.Manager, error) {
-	conn := a.Connections[m.Connection]
+func (a *Agent) contextsFor(m llm.Model) (*contextmanager.Manager, error) {
+	conn := a.cfg.Connections[m.Connection]
 	if conn == nil {
 		return nil, fmt.Errorf("connection %q has no client", m.Connection)
 	}
@@ -49,8 +49,8 @@ func (a *orchestrator) contextsFor(m llm.Model) (*contextmanager.Manager, error)
 	return contextmanager.New(m.Name, limits), nil
 }
 
-func (a *orchestrator) checkBudgets() error {
-	checker, err := permission.New(a.Settings, a.Tools, a.registry)
+func (a *Agent) checkBudgets() error {
+	checker, err := permission.New(a.cfg.Settings, a.cfg.Tools, a.registry)
 	if err != nil {
 		return err
 	}
@@ -59,12 +59,12 @@ func (a *orchestrator) checkBudgets() error {
 	if a.skills != nil {
 		catalog = a.skills.All()
 	}
-	for _, m := range a.Models {
+	for _, m := range a.cfg.Models {
 		contexts, err := a.contextsFor(m)
 		if err != nil {
 			return err
 		}
-		system := systemprompt.Build(systemprompt.Input{Agent: systemprompt.AgentPrompt(a.Name, a.Prompt), Skills: catalog, SkillTokens: contexts.SkillBudget()})
+		system := systemprompt.Build(systemprompt.Input{Agent: systemprompt.AgentPrompt(a.cfg.Name, a.cfg.Prompt), Skills: catalog, SkillTokens: contexts.SkillBudget()})
 		if err := contexts.Fits(system, runtime.Specs(descriptors)); err != nil {
 			return err
 		}
@@ -72,29 +72,29 @@ func (a *orchestrator) checkBudgets() error {
 	return nil
 }
 
-func (a *orchestrator) listModels() ModelList {
-	data := make([]llm.Model, 0, len(a.Models))
-	for _, m := range a.Models {
+func (a *Agent) ListModels() ModelList {
+	data := make([]llm.Model, 0, len(a.cfg.Models))
+	for _, m := range a.cfg.Models {
 		data = append(data, m.Clone())
 	}
-	return ModelList{Data: data, Default: a.Models[0].Connection}
+	return ModelList{Data: data, Default: a.cfg.Models[0].Connection}
 }
 
-func (a *orchestrator) modelOn(connection string) (llm.Model, error) {
-	i := slices.IndexFunc(a.Models, func(m llm.Model) bool { return m.Connection == connection })
+func (a *Agent) modelOn(connection string) (llm.Model, error) {
+	i := slices.IndexFunc(a.cfg.Models, func(m llm.Model) bool { return m.Connection == connection })
 	if i < 0 {
 		return llm.Model{}, fmt.Errorf("connection %q is unavailable; restore it in Settings or select another model for a new turn", connection)
 	}
-	return a.Models[i].Clone(), nil
+	return a.cfg.Models[i].Clone(), nil
 }
 
-func (a *orchestrator) conversationModel(view repo.ThreadView, requested string) (llm.Model, error) {
+func (a *Agent) conversationModel(view repo.ThreadView, requested string) (llm.Model, error) {
 	connection := strings.TrimSpace(requested)
 	if connection == "" && len(view.Turns) > 0 {
 		connection = view.Turns[len(view.Turns)-1].Model.Connection
 	}
 	if connection == "" {
-		connection = a.Models[0].Connection
+		connection = a.cfg.Models[0].Connection
 	}
 	return a.modelOn(connection)
 }

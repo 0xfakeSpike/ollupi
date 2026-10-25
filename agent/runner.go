@@ -9,7 +9,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/repo"
 )
 
-func (a *orchestrator) step(ctx context.Context, view repo.ThreadView, turn repo.TurnRow) (runtime.Outcome, repo.Usage, error) {
+func (a *Agent) step(ctx context.Context, view repo.ThreadView, turn repo.TurnRow) (runtime.Outcome, repo.Usage, error) {
 	if _, err := a.modelOn(turn.Model.Connection); err != nil {
 		return runtime.Done, repo.Usage{}, err
 	}
@@ -21,7 +21,7 @@ func (a *orchestrator) step(ctx context.Context, view repo.ThreadView, turn repo
 	if err != nil {
 		return runtime.Done, repo.Usage{}, err
 	}
-	checker, err := permission.New(env.settings, a.Tools, a.registry)
+	checker, err := permission.New(env.settings, a.cfg.Tools, a.registry)
 	if err != nil {
 		return runtime.Done, repo.Usage{}, err
 	}
@@ -35,14 +35,14 @@ func (a *orchestrator) step(ctx context.Context, view repo.ThreadView, turn repo
 		}
 	}
 	rt := &runtime.Runtime{
-		LLM:         a.Connections[turn.Model.Connection],
+		LLM:         a.cfg.Connections[turn.Model.Connection],
 		Registry:    a.registry,
 		Skills:      a.skills,
 		Contexts:    contexts,
-		Memory:      a.Memory,
+		Memory:      a.cfg.Memory,
 		Turn:        turn,
 		Caller:      env.caller(view.Thread),
-		Prompt:      systemprompt.AgentPrompt(a.Name, a.Prompt),
+		Prompt:      systemprompt.AgentPrompt(a.cfg.Name, a.cfg.Prompt),
 		Tools:       descriptors,
 		Permissions: checker,
 		History:     history,
@@ -55,9 +55,9 @@ func (a *orchestrator) step(ctx context.Context, view repo.ThreadView, turn repo
 	return rt.Step(ctx)
 }
 
-func (a *orchestrator) recorder(t repo.ThreadRow, turn repo.TurnRow) func(repo.ItemRow) (repo.ItemRow, error) {
+func (a *Agent) recorder(t repo.ThreadRow, turn repo.TurnRow) func(repo.ItemRow) (repo.ItemRow, error) {
 	return func(it repo.ItemRow) (repo.ItemRow, error) {
-		stored, isNew, err := a.DB.RecordItem(t.ID, it)
+		stored, isNew, err := a.cfg.DB.RecordItem(t.ID, it)
 		if err != nil {
 			return repo.ItemRow{}, err
 		}
