@@ -204,7 +204,7 @@ func (d *DB) EndTurn(threadID string, turn TurnRow) (TurnRow, []ItemRow, error) 
 			return err
 		}
 		var open []ItemRow
-		if err := tx.gorm.Where("thread_id = ? AND turn_id = ? AND status = 'inProgress'", threadID, turn.ID).Order("seq").Find(&open).Error; err != nil {
+		if err := tx.gorm.Where("thread_id = ? AND turn_id = ? AND status IN ('pending', 'inProgress')", threadID, turn.ID).Order("seq").Find(&open).Error; err != nil {
 			return err
 		}
 		for _, it := range open {

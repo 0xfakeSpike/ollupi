@@ -20,7 +20,7 @@ type ItemRow struct {
 	Turn              *TurnRow           `gorm:"constraint:OnDelete:CASCADE" json:"-"`
 	Seq               int                `gorm:"not null;uniqueIndex:items_thread_seq,priority:2" json:"seq"`
 	Type              ItemType           `gorm:"not null;check:items_type,type IN ('userMessage','agentMessage','reasoning','toolCall','contextCompaction','memoryContext','toolProgress','error')" json:"type"`
-	Status            ItemStatus         `gorm:"not null;check:items_status,status IN ('inProgress','completed','failed','declined')" json:"status"`
+	Status            ItemStatus         `gorm:"not null;check:items_status,status IN ('pending','inProgress','completed','failed','declined')" json:"status"`
 	Text              string             `gorm:"not null;default:''" json:"text,omitempty"`
 	ResponseID        string             `gorm:"not null;default:''" json:"responseId,omitempty"`
 	ContextStats      *ContextStats      `gorm:"serializer:json" json:"contextStats,omitempty"`
@@ -58,6 +58,7 @@ const (
 type ItemStatus string
 
 const (
+	ItemPending    ItemStatus = "pending"
 	ItemInProgress ItemStatus = "inProgress"
 	ItemCompleted  ItemStatus = "completed"
 	ItemFailed     ItemStatus = "failed"
@@ -135,7 +136,7 @@ func (it ItemRow) IsPending() bool {
 }
 
 func (it ItemRow) WaitsForApproval() bool {
-	return it.Type == ItemToolCall && it.Status == ItemInProgress && it.Approval != nil && it.Approval.Decision == ""
+	return it.Type == ItemToolCall && it.Status == ItemPending && it.Approval != nil && it.Approval.Decision == ""
 }
 
 func (it ItemRow) LiveResult() (tools.Result, error) {
@@ -245,8 +246,6 @@ func (d *DB) RecoverItems(threadID string) ([]ItemRow, error) {
 			return nil
 		}
 		now := time.Now().UTC()
-
-		handling := true
 		for _, it := range v.Items {
 			if it.TurnID != active.ID || it.Status != ItemInProgress {
 				continue
@@ -254,16 +253,8 @@ func (d *DB) RecoverItems(threadID string) ([]ItemRow, error) {
 			switch {
 			case it.Type == ItemReasoning || it.Type == ItemAgentMessage || it.Type == ItemContextCompaction:
 				it.Error = "the app stopped before this finished"
-			case it.IsCall() && handling:
-				if it.Awaits() {
-					continue
-				}
-				handling = false
-				declined := it.Approval != nil && it.Approval.Decision == DecisionDecline
-				if it.IsPending() || declined {
-					continue
-				}
-				it.Error = "the app stopped while this call was being handled; it may or may not have taken effect, so check before repeating it"
+			case it.IsCall() && it.Await == nil:
+				it.Error = "the app stopped while this call was running; it may or may not have taken effect, so check before repeating it"
 			default:
 				continue
 			}

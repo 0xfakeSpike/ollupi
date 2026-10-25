@@ -23,7 +23,7 @@ func (rt *Runtime) planCalls(ctx context.Context) (callPlan, error) {
 	var plan callPlan
 	halt := ""
 	for _, it := range rt.Items {
-		if !it.IsCall() || it.Status != repo.ItemInProgress {
+		if !it.IsCall() || it.Status != repo.ItemPending {
 			continue
 		}
 		if halt != "" {
@@ -58,9 +58,6 @@ func (rt *Runtime) readOnly(tool string) bool {
 }
 
 func (rt *Runtime) handleCall(ctx context.Context, it repo.ItemRow) (string, *repo.ItemRow, *job, error) {
-	if it.Await != nil {
-		return "", nil, nil, nil
-	}
 	if it.Approval != nil {
 		return rt.decided(it)
 	}
@@ -164,7 +161,7 @@ func (rt *Runtime) toolCalls() int {
 		if !it.IsCall() {
 			continue
 		}
-		if it.Status == repo.ItemInProgress && it.Await == nil && it.Approval == nil {
+		if it.Status == repo.ItemPending && it.Approval == nil {
 			continue
 		}
 		n++
@@ -176,7 +173,7 @@ func (rt *Runtime) consecutiveFailures() int {
 	n := 0
 	items := rt.Items
 	for i := len(items) - 1; i >= 0; i-- {
-		if !items[i].IsCall() || items[i].Status == repo.ItemInProgress {
+		if !items[i].IsCall() || items[i].Status == repo.ItemPending || items[i].Status == repo.ItemInProgress {
 			continue
 		}
 		if items[i].Status != repo.ItemFailed && items[i].Status != repo.ItemDeclined {

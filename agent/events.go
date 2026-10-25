@@ -77,7 +77,7 @@ func (a *Agent) emitItem(t repo.ThreadRow, turn repo.TurnRow, it repo.ItemRow, i
 		started := it
 		a.emit(Event{Kind: EventItemStarted, Thread: t, Turn: turn, Item: &started})
 	}
-	if it.Status != repo.ItemInProgress {
+	if it.Status != repo.ItemPending && it.Status != repo.ItemInProgress {
 		a.emit(Event{Kind: EventItemCompleted, Thread: t, Turn: turn, Item: &it})
 	}
 }

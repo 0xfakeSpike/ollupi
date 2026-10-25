@@ -179,7 +179,7 @@ func (d *DB) ThreadState(id string) (ThreadState, error) {
 		if !active {
 			return nil
 		}
-		return tx.gorm.Where("thread_id = ? AND turn_id = ? AND type = 'toolCall' AND status = 'inProgress'", id, turn.ID).Order("seq").Find(&out.OpenCalls).Error
+		return tx.gorm.Where("thread_id = ? AND turn_id = ? AND type = 'toolCall' AND status IN ('pending', 'inProgress')", id, turn.ID).Order("seq").Find(&out.OpenCalls).Error
 	})
 	if err != nil {
 		return ThreadState{}, err
