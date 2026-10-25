@@ -44,7 +44,7 @@ type Server struct {
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.served.Add(1)
 	defer s.served.Done()
-	if status, why := s.admit(r); status != 0 {
+	if status, why := s.authorize(r); status != 0 {
 		http.Error(w, why, status)
 		return
 	}
