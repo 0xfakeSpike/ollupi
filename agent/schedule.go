@@ -112,7 +112,6 @@ func (a *Agent) afterStep(threadID string, sl *slot, seen int, final bool, stepE
 	}
 	turn, ok := st.ActiveTurn()
 	if !ok || turn.ID != sl.turnID {
-		a.reconcile(threadID)
 		return
 	}
 	switch {
