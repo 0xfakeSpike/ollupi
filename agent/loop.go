@@ -16,12 +16,6 @@ type slot struct {
 	cancel context.CancelFunc
 }
 
-type waiter struct {
-	threadID string
-	turnID   string
-	subagent bool
-}
-
 func (a *Agent) start() {
 	a.done.Add(1)
 	go a.loop()
@@ -78,7 +72,7 @@ func (a *Agent) enqueue(threadID, turnID string) {
 
 func (a *Agent) run(threadID string, sl *slot) {
 	if err := sl.ctx.Err(); err != nil {
-		a.post(func() { a.afterStep(threadID, sl, 0, false, err) })
+		a.post(func() { a.afterStep(threadID, sl, 0, false, err); a.admit() })
 		return
 	}
 	view, err := a.ReadThread(threadID)
@@ -87,6 +81,7 @@ func (a *Agent) run(threadID string, sl *slot) {
 		a.post(func() {
 			a.release(threadID)
 			a.failTurn(sl.turnID, repo.TurnFailed, "the thread could not be read from storage")
+			a.admit()
 		})
 		return
 	}
@@ -95,6 +90,7 @@ func (a *Agent) run(threadID string, sl *slot) {
 		a.post(func() {
 			a.release(threadID)
 			a.reconcile(threadID)
+			a.admit()
 		})
 		return
 	}
@@ -103,13 +99,12 @@ func (a *Agent) run(threadID string, sl *slot) {
 		log.Printf("agent: thread %s: record usage of turn %s: %v", threadID, turn.ID, err)
 	}
 	seen := len(view.Items)
-	a.post(func() { a.afterStep(threadID, sl, seen, final, err) })
+	a.post(func() { a.afterStep(threadID, sl, seen, final, err); a.admit() })
 }
 
 func (a *Agent) release(threadID string) {
 	if sl, exists := a.slotByThread[threadID]; exists {
 		sl.cancel()
 		delete(a.slotByThread, threadID)
-		a.admit()
 	}
 }
