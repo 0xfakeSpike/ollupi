@@ -15,14 +15,18 @@ import (
 	"github.com/openai/openai-go/shared"
 )
 
-const defaultChatTimeout = 180 * time.Second
+const (
+	defaultChatTimeout = 180 * time.Second
+	DefaultCalls       = 4
+)
 
 type OpenAI struct {
 	client openai.Client
 	limits map[string]Limits
+	calls  chan struct{}
 }
 
-func NewOpenAI(baseURL, apiKey string, limits map[string]Limits) *OpenAI {
+func NewOpenAI(baseURL, apiKey string, calls int, limits map[string]Limits) *OpenAI {
 	opts := []option.RequestOption{option.WithAPIKey(apiKey)}
 	if apiKey == "" {
 		opts = append(opts, option.WithHeaderDel("Authorization"))
@@ -30,7 +34,10 @@ func NewOpenAI(baseURL, apiKey string, limits map[string]Limits) *OpenAI {
 	if baseURL != "" {
 		opts = append(opts, option.WithBaseURL(baseURL))
 	}
-	return &OpenAI{client: openai.NewClient(opts...), limits: maps.Clone(limits)}
+	if calls <= 0 {
+		calls = DefaultCalls
+	}
+	return &OpenAI{client: openai.NewClient(opts...), limits: maps.Clone(limits), calls: make(chan struct{}, calls)}
 }
 
 func withDefaultTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
@@ -44,12 +51,18 @@ func (c *OpenAI) Chat(ctx context.Context, req ChatRequest, onDelta func(Delta))
 	if req.Model.Name == "" {
 		return ChatResponse{}, fmt.Errorf("llm.OpenAI: model required")
 	}
-	ctx, cancel := withDefaultTimeout(ctx, defaultChatTimeout)
-	defer cancel()
-
 	if req.ToolChoice != ToolChoiceAuto && req.ToolChoice != ToolChoiceNone {
 		return ChatResponse{}, fmt.Errorf("llm.OpenAI: unsupported tool choice %q", req.ToolChoice)
 	}
+	select {
+	case c.calls <- struct{}{}:
+	case <-ctx.Done():
+		return ChatResponse{}, ctx.Err()
+	}
+	defer func() { <-c.calls }()
+	ctx, cancel := withDefaultTimeout(ctx, defaultChatTimeout)
+	defer cancel()
+
 	params := openai.ChatCompletionNewParams{
 		Model:    shared.ChatModel(req.Model.Name),
 		Messages: make([]openai.ChatCompletionMessageParamUnion, 0, len(req.Messages)),

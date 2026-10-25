@@ -71,7 +71,7 @@ func (a *Agent) Start(ctx context.Context) error {
 	if err := a.checkBudgets(); err != nil {
 		return fmt.Errorf("agent %s: %w", a.cfg.Name, err)
 	}
-	a.events, a.work, a.slots = make(chan func()), make(chan work), map[string]*slot{}
+	a.events, a.slots = make(chan func()), map[string]*slot{}
 	if err := a.recover(); err != nil {
 		return err
 	}

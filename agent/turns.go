@@ -132,7 +132,7 @@ func (a *Agent) interrupt(threadID, expectedTurnID string) error {
 		if expectedTurnID != "" && sl.turnID != expectedTurnID {
 			return fmt.Errorf("%w (expected %s, in progress %s)", ErrTurnMismatch, expectedTurnID, sl.turnID)
 		}
-		a.stop(threadID, sl)
+		sl.cancel()
 		return nil
 	}
 	st, err := a.cfg.DB.ThreadState(threadID)
@@ -157,7 +157,7 @@ func (a *Agent) interrupt(threadID, expectedTurnID string) error {
 
 func (a *Agent) stopThread(threadID string) {
 	if sl, ok := a.slots[threadID]; ok {
-		a.stop(threadID, sl)
+		sl.cancel()
 		return
 	}
 	turn, err := a.cfg.DB.ActiveTurn(threadID)
