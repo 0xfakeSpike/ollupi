@@ -128,11 +128,11 @@ func (a *Agent) steer(threadID, expectedTurnID, text string) (repo.TurnRow, erro
 }
 
 func (a *Agent) interrupt(threadID, expectedTurnID string) error {
-	if sl, ok := a.slots[threadID]; ok {
-		if expectedTurnID != "" && sl.turnID != expectedTurnID {
-			return fmt.Errorf("%w (expected %s, in progress %s)", ErrTurnMismatch, expectedTurnID, sl.turnID)
+	if s, ok := a.stepByThread[threadID]; ok {
+		if expectedTurnID != "" && s.turnID != expectedTurnID {
+			return fmt.Errorf("%w (expected %s, in progress %s)", ErrTurnMismatch, expectedTurnID, s.turnID)
 		}
-		sl.cancel()
+		s.cancel()
 		return nil
 	}
 	st, err := a.cfg.DB.ThreadState(threadID)
@@ -156,8 +156,8 @@ func (a *Agent) interrupt(threadID, expectedTurnID string) error {
 }
 
 func (a *Agent) stopThread(threadID string) {
-	if sl, ok := a.slots[threadID]; ok {
-		sl.cancel()
+	if s, ok := a.stepByThread[threadID]; ok {
+		s.cancel()
 		return
 	}
 	turn, err := a.cfg.DB.ActiveTurn(threadID)
@@ -229,7 +229,7 @@ func (a *Agent) answerUserInput(threadID, itemID string, answers map[string]user
 }
 
 func (a *Agent) respond(threadID string, match func(repo.ItemRow) bool, apply func(repo.ItemRow) (repo.ItemRow, error)) error {
-	if _, scheduled := a.slots[threadID]; scheduled {
+	if _, scheduled := a.stepByThread[threadID]; scheduled {
 		return ErrNoSuchRequest
 	}
 	st, err := a.cfg.DB.ThreadState(threadID)

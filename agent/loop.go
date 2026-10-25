@@ -13,7 +13,7 @@ import (
 
 var errStopped = errors.New("agent: the agent is shutting down")
 
-type slot struct {
+type step struct {
 	turnID string
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -25,9 +25,9 @@ type Agent struct {
 	registry *tools.Registry
 	skills   *skills.Catalog
 
-	events chan func()
-	slots  map[string]*slot
-	done   sync.WaitGroup
+	events       chan func()
+	stepByThread map[string]*step
+	done         sync.WaitGroup
 }
 
 func (a *Agent) start() {
@@ -75,30 +75,30 @@ func (a *Agent) call(fn func() error) error {
 
 func (a *Agent) enqueue(threadID, turnID string) {
 	ctx, cancel := context.WithCancel(a.ctx)
-	sl := &slot{turnID: turnID, ctx: ctx, cancel: cancel}
-	a.slots[threadID] = sl
+	s := &step{turnID: turnID, ctx: ctx, cancel: cancel}
+	a.stepByThread[threadID] = s
 	a.done.Add(1)
 	go func() {
 		defer a.done.Done()
-		a.run(threadID, sl)
+		a.run(threadID, s)
 	}()
 }
 
-func (a *Agent) run(threadID string, sl *slot) {
-	if err := sl.ctx.Err(); err != nil {
-		a.post(func() { a.afterStep(threadID, sl, 0, false, err) })
+func (a *Agent) run(threadID string, s *step) {
+	if err := s.ctx.Err(); err != nil {
+		a.post(func() { a.afterStep(threadID, s, 0, false, err) })
 		return
 	}
 	view, err := a.ReadThread(threadID)
 	if err != nil {
-		log.Printf("agent: thread %s cannot be read while turn %s is queued: %v", threadID, sl.turnID, err)
+		log.Printf("agent: thread %s cannot be read while turn %s is queued: %v", threadID, s.turnID, err)
 		a.post(func() {
 			a.release(threadID)
-			a.failTurn(sl.turnID, repo.TurnFailed, "the thread could not be read from storage")
+			a.failTurn(s.turnID, repo.TurnFailed, "the thread could not be read from storage")
 		})
 		return
 	}
-	turn, ok := findTurn(view, sl.turnID)
+	turn, ok := findTurn(view, s.turnID)
 	if !ok || turn.Status != repo.TurnInProgress {
 		a.post(func() {
 			a.release(threadID)
@@ -106,17 +106,17 @@ func (a *Agent) run(threadID string, sl *slot) {
 		})
 		return
 	}
-	final, usage, err := a.step(sl.ctx, view, turn)
+	final, usage, err := a.runStep(s.ctx, view, turn)
 	if err := a.cfg.DB.AddUsage(threadID, turn.ID, usage); err != nil {
 		log.Printf("agent: thread %s: record usage of turn %s: %v", threadID, turn.ID, err)
 	}
 	seen := len(view.Items)
-	a.post(func() { a.afterStep(threadID, sl, seen, final, err) })
+	a.post(func() { a.afterStep(threadID, s, seen, final, err) })
 }
 
 func (a *Agent) release(threadID string) {
-	if sl, exists := a.slots[threadID]; exists {
-		sl.cancel()
-		delete(a.slots, threadID)
+	if s, exists := a.stepByThread[threadID]; exists {
+		s.cancel()
+		delete(a.stepByThread, threadID)
 	}
 }

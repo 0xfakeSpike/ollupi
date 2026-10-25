@@ -10,7 +10,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
-func (a *Agent) step(ctx context.Context, view repo.ThreadView, turn repo.TurnRow) (bool, repo.Usage, error) {
+func (a *Agent) runStep(ctx context.Context, view repo.ThreadView, turn repo.TurnRow) (bool, repo.Usage, error) {
 	contexts, err := a.contextsFor(turn.Model)
 	if err != nil {
 		return false, repo.Usage{}, err
