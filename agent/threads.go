@@ -18,7 +18,7 @@ func (a *Agent) StartThread(workspaceID string, settings permission.Settings) (r
 	if err != nil {
 		return repo.ThreadRow{}, err
 	}
-	if err := a.validateLayer(a.inheritedSettings(w), settings); err != nil {
+	if err := a.validateLayer(permission.Resolve(a.cfg.Settings, w.Settings), settings); err != nil {
 		return repo.ThreadRow{}, err
 	}
 	return a.createThread(repo.ThreadRow{Settings: settings, WorkspaceID: repo.Ref(workspaceID)})
@@ -36,7 +36,7 @@ func (a *Agent) UpdateThreadSettings(threadID string, settings permission.Settin
 	if err != nil {
 		return repo.ThreadRow{}, err
 	}
-	if err := a.validateLayer(a.inheritedSettings(w), settings); err != nil {
+	if err := a.validateLayer(permission.Resolve(a.cfg.Settings, w.Settings), settings); err != nil {
 		return repo.ThreadRow{}, err
 	}
 	t, err = a.cfg.DB.SetThreadSettings(threadID, settings)
