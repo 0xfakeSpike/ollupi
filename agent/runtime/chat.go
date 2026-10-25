@@ -167,7 +167,7 @@ func (rt *Runtime) modelCalls() int {
 
 func (rt *Runtime) callItem(responseID string, call llm.ToolCall) repo.ItemRow {
 	it := repo.ItemRow{
-		ID: uuid.NewString(), TurnID: rt.Turn.ID, Type: repo.ItemToolCall, Status: repo.ItemInProgress,
+		ID: uuid.NewString(), TurnID: rt.Turn.ID, Type: repo.ItemToolCall, Status: repo.ItemPending,
 		ResponseID: responseID, CallID: call.ID, Tool: call.Name, Arguments: call.Arguments, StartedAt: time.Now().UTC(),
 	}
 	if d, ok := rt.tool(call.Name); ok {

@@ -23,13 +23,13 @@
 
 这是最值得做深的一项，因为它本质上是一个分布式系统问题，而且 Ollupi 已经有了大部分基础：每一步先落库，再执行。
 
-**现状。** 进程在工具执行中途崩溃，重启后 `repo.RecoverItems`（`repo/items.go`）会把这次调用标成失败，错误写的是"the app stopped while this call was being handled; it may or may not have taken effect, so check before repeating it"。这个处理是诚实的，但等于把"到底执行了没有"这个问题交给了模型和用户。对拨电话、写 Excel、发消息这类有副作用的工具，模型很可能直接重试，造成重复执行。
+**现状。** 工具调用记下时是 `pending`，开始执行前写成 `inProgress`，所以重启后能分清"没执行过"和"执行到一半"：前者照常执行，后者由 `repo.RecoverItems`（`repo/items.go`）标成失败，错误写的是"the app stopped while this call was running; it may or may not have taken effect, so check before repeating it"。这个处理是诚实的，但对执行到一半的调用，等于把"到底生效了没有"这个问题交给了模型和用户。对拨电话、写 Excel、发消息这类有副作用的工具，模型很可能直接重试，造成重复执行。
 
 另外，`tools.Annotations` 已经有 `IdempotentHint` 字段，但运行时没有任何地方读它。
 
 **做法。**
 
-先把每次工具调用拆成明确的阶段：已批准、已开始（意图已落库）、已完成或已失败。"已开始"这条记录要带一个幂等键，由 thread、turn 和 item id 派生，在批准时就固定下来，重启后不变。
+调用的阶段已经拆开了（`pending`、`inProgress`、完成或失败），还缺幂等键：由 thread、turn 和 item id 派生，在批准时就固定下来，重启后不变，开始执行时交给工具。
 
 工具按副作用分三类，由工具自己在 `tools.Spec` 上声明：
 

@@ -44,7 +44,10 @@ func (rt *Runtime) executePlan(ctx context.Context, plan callPlan) (bool, error)
 			return "", nil
 		}
 		var h string
-		results := rt.runJobs(ctx, batch)
+		results, err := rt.runJobs(ctx, batch)
+		if err != nil {
+			return "", err
+		}
 		for i, j := range batch {
 			next, err := rt.finishTool(j, results[i])
 			if err != nil {
@@ -58,8 +61,12 @@ func (rt *Runtime) executePlan(ctx context.Context, plan callPlan) (bool, error)
 		return h, ctx.Err()
 	}
 	runOne := func(j job) (string, error) {
-		results := rt.runJobs(ctx, []job{j})
-		h, err := rt.finishTool(j, results[0])
+		jobs := []job{j}
+		results, err := rt.runJobs(ctx, jobs)
+		if err != nil {
+			return "", err
+		}
+		h, err := rt.finishTool(jobs[0], results[0])
 		return h, errors.Join(err, ctx.Err())
 	}
 	for _, a := range plan.actions {
@@ -131,7 +138,15 @@ func (rt *Runtime) executePlan(ctx context.Context, plan callPlan) (bool, error)
 	return false, nil
 }
 
-func (rt *Runtime) runJobs(ctx context.Context, jobs []job) []tools.Result {
+func (rt *Runtime) runJobs(ctx context.Context, jobs []job) ([]tools.Result, error) {
+	for i := range jobs {
+		jobs[i].it.Status = repo.ItemInProgress
+		stored, err := rt.record(jobs[i].it)
+		if err != nil {
+			return nil, err
+		}
+		jobs[i].it = stored
+	}
 	results := make([]tools.Result, len(jobs))
 	progress := make(chan string, 64)
 	var wg sync.WaitGroup
@@ -155,7 +170,7 @@ func (rt *Runtime) runJobs(ctx context.Context, jobs []job) []tools.Result {
 	for text := range progress {
 		rt.recordProgress(text)
 	}
-	return results
+	return results, nil
 }
 
 func execute(ctx context.Context, registry *tools.Registry, contexts *contextmanager.Manager, caller tools.Caller, j job, emit tools.ProgressEmitter) tools.Result {
