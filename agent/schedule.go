@@ -3,7 +3,6 @@ package agent
 import (
 	"fmt"
 	"log"
-	"slices"
 
 	"github.com/0xfakeSpike/ollupi/agent/runtime"
 	"github.com/0xfakeSpike/ollupi/repo"
@@ -125,22 +124,6 @@ func (a *Agent) afterStep(threadID string, sl *slot, seen int, outcome runtime.O
 	if !a.reconcile(threadID) {
 		a.emitRequests(st)
 	}
-}
-
-func (a *Agent) stop(threadID string, sl *slot) {
-	if sl.phase == running {
-		sl.cancel()
-		return
-	}
-	a.queue = slices.DeleteFunc(a.queue, func(id string) bool { return id == threadID })
-	a.release(threadID)
-	turn, err := a.cfg.DB.ActiveTurn(threadID)
-	if err != nil {
-		log.Printf("agent: thread %s cannot be read to stop it: %v", threadID, err)
-		return
-	}
-	turn.Status, turn.Error = repo.TurnInterrupted, "interrupted before it ran again"
-	a.endTurn(turn)
 }
 
 func (a *Agent) recover() error {
