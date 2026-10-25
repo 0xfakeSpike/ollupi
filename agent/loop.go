@@ -6,7 +6,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/skills"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"log"
-	"slices"
 	"sync"
 
 	"github.com/0xfakeSpike/ollupi/repo"
@@ -80,15 +79,6 @@ func (a *Agent) call(fn func() error) error {
 		return err
 	case <-a.ctx.Done():
 		return errStopped
-	}
-}
-
-func (a *Agent) admit() {
-	for len(a.slotByThread) < a.cfg.Slots && len(a.waiting) > 0 {
-		i := max(0, slices.IndexFunc(a.waiting, func(w waiter) bool { return !w.subagent }))
-		w := a.waiting[i]
-		a.waiting = slices.Delete(a.waiting, i, i+1)
-		a.enqueue(w.threadID, w.turnID)
 	}
 }
 
