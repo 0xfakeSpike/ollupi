@@ -94,6 +94,7 @@ func (a *Agent) submit(t repo.ThreadRow, text, cronJobID string, model llm.Model
 	if message != nil {
 		a.emit(Event{Kind: EventTurnStarted, Thread: t, Turn: turn})
 		a.emitItem(t, turn, *message, true)
+		a.emitStatus(t.ID)
 	} else {
 		a.emit(Event{Kind: EventTurnQueued, Thread: t, Turn: turn})
 	}
@@ -252,6 +253,7 @@ func (a *Agent) respond(threadID string, match func(repo.ItemRow) bool, apply fu
 	}
 	a.emitItem(st.Thread, activeTurn, stored, false)
 	a.reconcile(threadID)
+	a.emitStatus(threadID)
 	return nil
 }
 

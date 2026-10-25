@@ -33,6 +33,7 @@ func (a *Agent) loop() {
 			return
 		case fn := <-a.events:
 			fn()
+			a.admit()
 		}
 	}
 }
@@ -72,7 +73,7 @@ func (a *Agent) enqueue(threadID, turnID string) {
 
 func (a *Agent) run(threadID string, sl *slot) {
 	if err := sl.ctx.Err(); err != nil {
-		a.post(func() { a.afterStep(threadID, sl, 0, false, err); a.admit() })
+		a.post(func() { a.afterStep(threadID, sl, 0, false, err) })
 		return
 	}
 	view, err := a.ReadThread(threadID)
@@ -81,7 +82,6 @@ func (a *Agent) run(threadID string, sl *slot) {
 		a.post(func() {
 			a.release(threadID)
 			a.failTurn(sl.turnID, repo.TurnFailed, "the thread could not be read from storage")
-			a.admit()
 		})
 		return
 	}
@@ -90,7 +90,6 @@ func (a *Agent) run(threadID string, sl *slot) {
 		a.post(func() {
 			a.release(threadID)
 			a.reconcile(threadID)
-			a.admit()
 		})
 		return
 	}
@@ -99,7 +98,7 @@ func (a *Agent) run(threadID string, sl *slot) {
 		log.Printf("agent: thread %s: record usage of turn %s: %v", threadID, turn.ID, err)
 	}
 	seen := len(view.Items)
-	a.post(func() { a.afterStep(threadID, sl, seen, final, err); a.admit() })
+	a.post(func() { a.afterStep(threadID, sl, seen, final, err) })
 }
 
 func (a *Agent) release(threadID string) {
