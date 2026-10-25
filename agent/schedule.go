@@ -9,52 +9,49 @@ import (
 	"github.com/0xfakeSpike/ollupi/repo"
 )
 
-func (a *Agent) schedule(threadID string) bool {
+func (a *Agent) reconcile(threadID string) bool {
 	if _, busy := a.slots[threadID]; busy || a.ctx.Err() != nil {
 		return false
 	}
-	view, err := a.ReadThread(threadID)
+	st, err := a.cfg.DB.ThreadState(threadID)
 	if err != nil {
 		a.halt(threadID, err)
 		return false
 	}
-	turn, active := view.ActiveTurn()
+	turn, active := st.ActiveTurn()
 	if !active {
+		if len(st.QueuedTurns()) == 0 {
+			return false
+		}
+		var message repo.ItemRow
+		if turn, message, err = a.cfg.DB.StartQueuedTurn(threadID); err != nil {
+			a.halt(threadID, err)
+			return false
+		}
+		a.emit(Event{Kind: EventTurnStarted, Thread: st.Thread, Turn: turn})
+		a.emitItem(st.Thread, turn, message, true)
+	}
+	if _, err := a.modelOn(turn.Model.Connection); err != nil {
+		turn.Status, turn.Error = repo.TurnFailed, err.Error()
+		a.endTurn(turn)
 		return false
 	}
-	if _, waiting := view.PendingRequest(); waiting || len(view.AgentCalls()) > 0 {
+	waiting := len(st.PendingRequests()) > 0
+	for _, call := range st.AgentCalls() {
+		settled, err := a.settle(st.Thread, turn, call)
+		if err != nil {
+			a.halt(threadID, err)
+			return false
+		}
+		waiting = waiting || !settled
+	}
+	if waiting {
+		a.emitStatus(threadID)
 		return false
 	}
 	a.enqueue(threadID, turn.ID)
 	a.emitStatus(threadID)
 	return true
-}
-
-func (a *Agent) promote(threadID string) {
-	t, err := a.cfg.DB.ThreadRow(threadID)
-	if err != nil {
-		a.halt(threadID, err)
-		return
-	}
-	turn, message, started, err := a.cfg.DB.StartQueuedTurn(threadID)
-	if err != nil {
-		a.halt(threadID, err)
-		return
-	}
-	if started {
-		a.emit(Event{Kind: EventTurnStarted, Thread: t, Turn: turn})
-		a.emitItem(t, turn, message, true)
-	}
-}
-
-func (a *Agent) launch(threadID string) {
-	children, err := a.launchSubagents(threadID)
-	for _, child := range children {
-		a.schedule(child)
-	}
-	if err != nil {
-		a.halt(threadID, err)
-	}
 }
 
 func (a *Agent) halt(threadID string, cause error) {
@@ -87,7 +84,7 @@ func (a *Agent) afterStep(threadID string, sl *slot, seen int, outcome runtime.O
 	}
 	interrupted := sl.ctx.Err() != nil
 	a.release(threadID)
-	view, err := a.ReadThread(threadID)
+	st, err := a.cfg.DB.ThreadState(threadID)
 	if err != nil {
 		log.Printf("agent: thread %s cannot be read after its step: %v", threadID, err)
 		if interrupted {
@@ -97,35 +94,36 @@ func (a *Agent) afterStep(threadID string, sl *slot, seen int, outcome runtime.O
 		}
 		return
 	}
-	turn, ok := view.ActiveTurn()
+	turn, ok := st.ActiveTurn()
 	if !ok || turn.ID != sl.turnID {
-		a.promote(threadID)
-		a.schedule(threadID)
+		a.reconcile(threadID)
 		return
 	}
 	switch {
 	case a.ctx.Err() != nil && (stepErr != nil || interrupted):
 		log.Printf("agent: thread %s turn %s left in progress at shutdown: %v", threadID, turn.ID, stepErr)
+		return
 	case interrupted:
 		turn.Status, turn.Error = repo.TurnInterrupted, "interrupted by the user"
-		a.endTurn(turn)
 	case stepErr != nil:
 		turn.Status, turn.Error = repo.TurnFailed, stepErr.Error()
 		log.Printf("agent: thread %s turn %s failed: %v", threadID, turn.ID, stepErr)
-		a.endTurn(turn)
-	case outcome == runtime.Done && !view.InputAfter(turn.ID, seen):
-		turn.Status = repo.TurnCompleted
-		a.endTurn(turn)
-	default:
-		if outcome == runtime.Wait {
-			a.launch(threadID)
+	case outcome == runtime.Done:
+		more, err := a.cfg.DB.InputAfter(threadID, turn.ID, seen)
+		if err != nil {
+			a.halt(threadID, err)
+			return
 		}
-		if !a.schedule(threadID) {
-			if view, err := a.ReadThread(threadID); err == nil {
-				a.emitRequests(view)
-			}
-			a.emitStatus(threadID)
+		if !more {
+			turn.Status = repo.TurnCompleted
 		}
+	}
+	if turn.Status != repo.TurnInProgress {
+		a.endTurn(turn)
+		return
+	}
+	if !a.reconcile(threadID) {
+		a.emitRequests(st)
 	}
 }
 
@@ -136,15 +134,13 @@ func (a *Agent) stop(threadID string, sl *slot) {
 	}
 	a.queue = slices.DeleteFunc(a.queue, func(id string) bool { return id == threadID })
 	a.release(threadID)
-	view, err := a.ReadThread(threadID)
+	turn, err := a.cfg.DB.ActiveTurn(threadID)
 	if err != nil {
 		log.Printf("agent: thread %s cannot be read to stop it: %v", threadID, err)
 		return
 	}
-	if turn, ok := view.ActiveTurn(); ok {
-		turn.Status, turn.Error = repo.TurnInterrupted, "interrupted before it ran again"
-		a.endTurn(turn)
-	}
+	turn.Status, turn.Error = repo.TurnInterrupted, "interrupted before it ran again"
+	a.endTurn(turn)
 }
 
 func (a *Agent) recover() error {
@@ -162,28 +158,7 @@ func (a *Agent) recover() error {
 		}
 	}
 	for _, id := range active {
-		view, err := a.ReadThread(id)
-		if err != nil {
-			log.Printf("agent: thread %s cannot be read during recovery: %v", id, err)
-			continue
-		}
-		if turn, running := view.ActiveTurn(); running {
-			if _, err := a.modelOn(turn.Model.Connection); err != nil {
-				turn.Status, turn.Error = repo.TurnFailed, err.Error()
-				a.endTurn(turn)
-				for _, call := range view.AgentCalls() {
-					a.stopThread(call.Await.ThreadID)
-				}
-			}
-		}
-	}
-	for _, id := range active {
-		if view, err := a.ReadThread(id); err == nil {
-			a.settleAgentCalls(view)
-		}
-		a.promote(id)
-		a.launch(id)
-		a.schedule(id)
+		a.reconcile(id)
 	}
 	return nil
 }

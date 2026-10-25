@@ -13,16 +13,16 @@ type Request struct {
 }
 
 func (a *Agent) PendingRequests(threadID string) []Request {
-	view, err := a.ReadThread(threadID)
+	st, err := a.cfg.DB.ThreadState(threadID)
 	if err != nil {
 		return nil
 	}
 	var out []Request
-	for _, it := range view.PendingRequests() {
-		out = append(out, Request{Thread: view.Thread, Item: it})
+	for _, it := range st.PendingRequests() {
+		out = append(out, Request{Thread: st.Thread, Item: it})
 	}
-	for _, call := range view.AgentCalls() {
-		if child, err := a.ReadThread(call.Await.ThreadID); err == nil {
+	for _, call := range st.AgentCalls() {
+		if child, err := a.cfg.DB.ThreadState(call.Await.ThreadID); err == nil {
 			for _, it := range child.PendingRequests() {
 				out = append(out, Request{Thread: child.Thread, Item: it})
 			}
@@ -39,12 +39,12 @@ func (a *Agent) AllPendingRequests() []Request {
 	}
 	var out []Request
 	for _, id := range ids {
-		v, err := a.ReadThread(id)
+		st, err := a.cfg.DB.ThreadState(id)
 		if err != nil {
 			continue
 		}
-		for _, it := range v.PendingRequests() {
-			out = append(out, Request{Thread: v.Thread, Item: it})
+		for _, it := range st.PendingRequests() {
+			out = append(out, Request{Thread: st.Thread, Item: it})
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return requestedAt(out[i].Item).Before(requestedAt(out[j].Item)) })

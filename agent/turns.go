@@ -54,39 +54,32 @@ func (a *Agent) startTurn(threadID string, in Input) (repo.TurnRow, error) {
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
-	view, err := a.ReadThread(threadID)
+	st, err := a.cfg.DB.ThreadState(threadID)
 	if err != nil {
-		return repo.TurnRow{}, err
+		return repo.TurnRow{}, fmt.Errorf("agent: thread %s: %w", threadID, err)
 	}
-	if view.Thread.ParentThreadID != "" {
+	if st.Thread.ParentThreadID != "" {
 		return repo.TurnRow{}, ErrSubagentThread
 	}
-	model, err := a.conversationModel(view, in.Connection)
+	model, err := a.conversationModel(st.Turns, in.Connection)
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
-	return a.beginTurn(view, text, in.CronJobID, model)
-}
-
-func (a *Agent) beginTurn(view repo.ThreadView, text, cronJobID string, model llm.Model) (repo.TurnRow, error) {
-	turn, err := a.submit(view, text, cronJobID, model)
+	turn, err := a.submit(st.Thread, text, in.CronJobID, model)
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
-	if !a.schedule(view.Thread.ID) {
-		a.emitStatus(view.Thread.ID)
-	}
+	a.reconcile(threadID)
 	return turn, nil
 }
 
-func (a *Agent) submit(view repo.ThreadView, text, cronJobID string, model llm.Model) (repo.TurnRow, error) {
-	threadID := view.Thread.ID
-	if view.Thread.ParentThreadID == "" && view.Thread.WorkspaceID != "" {
-		w, err := a.workspaceOf(view.Thread.WorkspaceID)
+func (a *Agent) submit(t repo.ThreadRow, text, cronJobID string, model llm.Model) (repo.TurnRow, error) {
+	if t.ParentThreadID == "" && t.WorkspaceID != "" {
+		w, err := a.workspaceOf(t.WorkspaceID)
 		if err != nil {
 			return repo.TurnRow{}, err
 		}
-		if err := usable(string(view.Thread.WorkspaceID), w); err != nil {
+		if err := usable(string(t.WorkspaceID), w); err != nil {
 			return repo.TurnRow{}, err
 		}
 	}
@@ -94,15 +87,15 @@ func (a *Agent) submit(view repo.ThreadView, text, cronJobID string, model llm.M
 		ID: uuid.NewString(), Model: model.Clone(),
 		Input: text, CronJobID: cronJobID, StartedAt: time.Now().UTC(),
 	}
-	turn, message, err := a.cfg.DB.SubmitTurn(threadID, turn)
+	turn, message, err := a.cfg.DB.SubmitTurn(t.ID, turn)
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
 	if message != nil {
-		a.emit(Event{Kind: EventTurnStarted, Thread: view.Thread, Turn: turn})
-		a.emitItem(view.Thread, turn, *message, true)
+		a.emit(Event{Kind: EventTurnStarted, Thread: t, Turn: turn})
+		a.emitItem(t, turn, *message, true)
 	} else {
-		a.emit(Event{Kind: EventTurnQueued, Thread: view.Thread, Turn: turn})
+		a.emit(Event{Kind: EventTurnQueued, Thread: t, Turn: turn})
 	}
 	return turn, nil
 }
@@ -112,14 +105,14 @@ func (a *Agent) steer(threadID, expectedTurnID, text string) (repo.TurnRow, erro
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
-	view, err := a.ReadThread(threadID)
+	st, err := a.cfg.DB.ThreadState(threadID)
 	if err != nil {
-		return repo.TurnRow{}, err
+		return repo.TurnRow{}, fmt.Errorf("agent: thread %s: %w", threadID, err)
 	}
-	if view.Thread.ParentThreadID != "" {
+	if st.Thread.ParentThreadID != "" {
 		return repo.TurnRow{}, ErrSubagentThread
 	}
-	turn, active := view.ActiveTurn()
+	turn, active := st.ActiveTurn()
 	if !active {
 		return repo.TurnRow{}, ErrNoActiveTurn
 	}
@@ -130,7 +123,7 @@ func (a *Agent) steer(threadID, expectedTurnID, text string) (repo.TurnRow, erro
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
-	a.emitItem(view.Thread, turn, stored, isNew)
+	a.emitItem(st.Thread, turn, stored, isNew)
 	return turn, nil
 }
 
@@ -142,27 +135,23 @@ func (a *Agent) interrupt(threadID, expectedTurnID string) error {
 		a.stop(threadID, sl)
 		return nil
 	}
-	view, err := a.ReadThread(threadID)
+	st, err := a.cfg.DB.ThreadState(threadID)
 	if err != nil {
-		return err
+		return fmt.Errorf("agent: thread %s: %w", threadID, err)
 	}
-	turn, active := view.ActiveTurn()
+	turn, active := st.ActiveTurn()
 	if !active {
 		return ErrNoActiveTurn
 	}
 	if expectedTurnID != "" && turn.ID != expectedTurnID {
 		return fmt.Errorf("%w (expected %s, in progress %s)", ErrTurnMismatch, expectedTurnID, turn.ID)
 	}
-	calls := view.AgentCalls()
 	turn.Status = repo.TurnInterrupted
 	turn.Error = "interrupted while waiting for the user"
-	if len(calls) > 0 {
+	if len(st.AgentCalls()) > 0 {
 		turn.Error = "interrupted while waiting for subagents"
 	}
 	a.endTurn(turn)
-	for _, call := range calls {
-		a.stopThread(call.Await.ThreadID)
-	}
 	return nil
 }
 
@@ -171,56 +160,42 @@ func (a *Agent) stopThread(threadID string) {
 		a.stop(threadID, sl)
 		return
 	}
-	view, err := a.ReadThread(threadID)
-	if err != nil {
+	turn, err := a.cfg.DB.ActiveTurn(threadID)
+	if repo.IsNotFound(err) {
 		return
 	}
-	if turn, active := view.ActiveTurn(); active {
-		turn.Status = repo.TurnInterrupted
-		turn.Error = "stopped with the turn that launched it"
-		a.endTurn(turn)
+	if err != nil {
+		a.fault(threadID, "", fmt.Errorf("the subagent could not be stopped: %w", err))
+		return
 	}
+	turn.Status = repo.TurnInterrupted
+	turn.Error = "stopped with the turn that launched it"
+	a.endTurn(turn)
 }
 
 func (a *Agent) endTurn(turn repo.TurnRow) {
-	view, err := a.ReadThread(turn.ThreadID)
+	st, err := a.cfg.DB.ThreadState(turn.ThreadID)
 	if err != nil {
 		a.fault(turn.ThreadID, turn.ID, fmt.Errorf("the turn could not be ended: %w", err))
 		return
 	}
-	report, parent, reports, err := a.subagentReport(view, turn)
-	if err != nil {
-		a.fault(turn.ThreadID, turn.ID, fmt.Errorf("the subagent's report could not be delivered: %w", err))
-		return
-	}
-	var closed []repo.ItemRow
-	if reports {
-		var stored repo.ItemRow
-		if closed, stored, err = a.cfg.DB.EndSubagentTurn(turn.ThreadID, turn, report); err == nil {
-			a.emitItem(parent.Thread, parent.Turn, stored, false)
-		}
-	} else {
-		closed, err = a.cfg.DB.EndTurn(turn.ThreadID, turn)
-	}
+	ended, closed, err := a.cfg.DB.EndTurn(turn.ThreadID, turn)
 	if err != nil {
 		a.fault(turn.ThreadID, turn.ID, fmt.Errorf("the end of the turn could not be recorded: %w", err))
 		return
 	}
-	if view, err = a.ReadThread(turn.ThreadID); err != nil {
-		a.fault(turn.ThreadID, turn.ID, fmt.Errorf("the turn ended but could not be read back: %w", err))
-	} else {
-		for _, it := range closed {
-			a.emitItem(view.Thread, turn, it, false)
-		}
-		ended, _ := findTurn(view, turn.ID)
-		a.emit(Event{Kind: EventTurnCompleted, Thread: view.Thread, Turn: ended})
-		a.emitStatus(turn.ThreadID)
+	for _, it := range closed {
+		a.emitItem(st.Thread, ended, it, false)
 	}
-	if reports {
-		a.schedule(parent.Thread.ID)
+	a.emit(Event{Kind: EventTurnCompleted, Thread: st.Thread, Turn: ended})
+	a.emitStatus(turn.ThreadID)
+	for _, call := range st.AgentCalls() {
+		a.stopThread(call.Await.ThreadID)
 	}
-	a.promote(turn.ThreadID)
-	a.schedule(turn.ThreadID)
+	a.reconcile(turn.ThreadID)
+	if st.Thread.ParentThreadID != "" {
+		a.reconcile(string(st.Thread.ParentThreadID))
+	}
 }
 
 func (a *Agent) resolveApproval(threadID, approvalID string, decision repo.Decision, decidedBy string) error {
@@ -254,20 +229,20 @@ func (a *Agent) answerUserInput(threadID, itemID string, answers map[string]user
 }
 
 func (a *Agent) respond(threadID string, match func(repo.ItemRow) bool, apply func(repo.ItemRow) (repo.ItemRow, error)) error {
-	view, err := a.ReadThread(threadID)
-	if err != nil {
-		return err
-	}
 	if _, scheduled := a.slots[threadID]; scheduled {
 		return ErrNoSuchRequest
 	}
-	i := slices.IndexFunc(view.PendingRequests(), match)
+	st, err := a.cfg.DB.ThreadState(threadID)
+	if err != nil {
+		return fmt.Errorf("agent: thread %s: %w", threadID, err)
+	}
+	pending := st.PendingRequests()
+	i := slices.IndexFunc(pending, match)
 	if i < 0 {
 		return ErrNoSuchRequest
 	}
-	pending := view.PendingRequests()[i]
-	activeTurn, _ := view.ActiveTurn()
-	answered, err := apply(pending)
+	activeTurn, _ := st.ActiveTurn()
+	answered, err := apply(pending[i])
 	if err != nil {
 		return err
 	}
@@ -275,10 +250,8 @@ func (a *Agent) respond(threadID string, match func(repo.ItemRow) bool, apply fu
 	if err != nil {
 		return err
 	}
-	a.emitItem(view.Thread, activeTurn, stored, false)
-	if !a.schedule(threadID) {
-		a.emitStatus(threadID)
-	}
+	a.emitItem(st.Thread, activeTurn, stored, false)
+	a.reconcile(threadID)
 	return nil
 }
 

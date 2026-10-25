@@ -88,10 +88,10 @@ func (a *Agent) modelOn(connection string) (llm.Model, error) {
 	return a.cfg.Models[i].Clone(), nil
 }
 
-func (a *Agent) conversationModel(view repo.ThreadView, requested string) (llm.Model, error) {
+func (a *Agent) conversationModel(turns []repo.TurnRow, requested string) (llm.Model, error) {
 	connection := strings.TrimSpace(requested)
-	if connection == "" && len(view.Turns) > 0 {
-		connection = view.Turns[len(view.Turns)-1].Model.Connection
+	if connection == "" && len(turns) > 0 {
+		connection = turns[len(turns)-1].Model.Connection
 	}
 	if connection == "" {
 		connection = a.cfg.Models[0].Connection
