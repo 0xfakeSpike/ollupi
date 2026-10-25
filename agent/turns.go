@@ -87,7 +87,7 @@ func (a *Agent) submit(t repo.ThreadRow, text, cronJobID string, model llm.Model
 		ID: uuid.NewString(), Model: model.Clone(),
 		Input: text, CronJobID: cronJobID, StartedAt: time.Now().UTC(),
 	}
-	turn, message, err := a.cfg.DB.SubmitTurn(t.ID, turn)
+	t, turn, message, err := a.cfg.DB.SubmitTurn(t.ID, turn)
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
@@ -179,15 +179,15 @@ func (a *Agent) endTurn(turn repo.TurnRow) {
 		a.fault(turn.ThreadID, turn.ID, fmt.Errorf("the turn could not be ended: %w", err))
 		return
 	}
-	ended, closed, err := a.cfg.DB.EndTurn(turn.ThreadID, turn)
+	thread, ended, closed, err := a.cfg.DB.EndTurn(turn.ThreadID, turn)
 	if err != nil {
 		a.fault(turn.ThreadID, turn.ID, fmt.Errorf("the end of the turn could not be recorded: %w", err))
 		return
 	}
 	for _, it := range closed {
-		a.emitItem(st.Thread, ended, it, false)
+		a.emitItem(thread, ended, it, false)
 	}
-	a.emit(Event{Kind: EventTurnCompleted, Thread: st.Thread, Turn: ended})
+	a.emit(Event{Kind: EventTurnCompleted, Thread: thread, Turn: ended})
 	a.emitStatus(turn.ThreadID)
 	for _, call := range st.AgentCalls() {
 		a.stopThread(call.Await.ThreadID)

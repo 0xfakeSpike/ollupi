@@ -316,9 +316,9 @@ func (c *conn) event(e agent.Event) {
 	case agent.EventThreadStarted:
 		c.rpc.Notify(notifyThreadStarted, threadResult{Thread: e.Thread})
 	case agent.EventTurnQueued:
-		c.rpc.Notify(notifyTurnQueued, turnNotification{ThreadID: e.Thread.ID, Turn: e.Turn})
+		c.rpc.Notify(notifyTurnQueued, turnNotification{ThreadID: e.Thread.ID, Thread: e.Thread, Turn: e.Turn})
 	case agent.EventTurnStarted:
-		c.rpc.Notify(notifyTurnStarted, turnNotification{ThreadID: e.Thread.ID, Turn: e.Turn})
+		c.rpc.Notify(notifyTurnStarted, turnNotification{ThreadID: e.Thread.ID, Thread: e.Thread, Turn: e.Turn})
 	case agent.EventItemStarted:
 		c.rpc.Notify(notifyItemStarted, itemNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Item: *e.Item})
 	case agent.EventItemCompleted:
@@ -330,7 +330,7 @@ func (c *conn) event(e agent.Event) {
 		}
 		c.rpc.Notify(method, deltaNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, ItemID: e.Item.ID, Delta: e.Delta})
 	case agent.EventTurnCompleted:
-		c.rpc.Notify(notifyTurnCompleted, turnNotification{ThreadID: e.Thread.ID, Turn: e.Turn})
+		c.rpc.Notify(notifyTurnCompleted, turnNotification{ThreadID: e.Thread.ID, Thread: e.Thread, Turn: e.Turn})
 	case agent.EventError:
 		c.rpc.Notify(notifyError, errorNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Message: e.Error})
 	case agent.EventThreadStatusChanged:

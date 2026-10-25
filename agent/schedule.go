@@ -22,7 +22,7 @@ func (a *Agent) reconcile(threadID string) bool {
 			return false
 		}
 		var message repo.ItemRow
-		if turn, message, err = a.cfg.DB.StartQueuedTurn(threadID); err != nil {
+		if st.Thread, turn, message, err = a.cfg.DB.StartQueuedTurn(threadID); err != nil {
 			a.halt(threadID, err)
 			return false
 		}
