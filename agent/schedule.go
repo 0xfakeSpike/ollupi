@@ -8,7 +8,7 @@ import (
 )
 
 func (a *Agent) reconcile(threadID string) bool {
-	if _, busy := a.stepByThread[threadID]; busy || a.ctx.Err() != nil {
+	if _, busy := a.slotByThread[threadID]; busy || a.ctx.Err() != nil {
 		return false
 	}
 	st, err := a.cfg.DB.ThreadState(threadID)
@@ -76,24 +76,24 @@ func (a *Agent) failTurn(turnID string, status repo.TurnStatus, reason string) {
 	a.endTurn(turn)
 }
 
-func (a *Agent) afterStep(threadID string, s *step, seen int, final bool, stepErr error) {
-	if a.stepByThread[threadID] != s {
+func (a *Agent) afterStep(threadID string, sl *slot, seen int, final bool, stepErr error) {
+	if a.slotByThread[threadID] != sl {
 		return
 	}
-	interrupted := s.ctx.Err() != nil
+	interrupted := sl.ctx.Err() != nil
 	a.release(threadID)
 	st, err := a.cfg.DB.ThreadState(threadID)
 	if err != nil {
 		log.Printf("agent: thread %s cannot be read after its step: %v", threadID, err)
 		if interrupted {
-			a.failTurn(s.turnID, repo.TurnInterrupted, "interrupted by the user")
+			a.failTurn(sl.turnID, repo.TurnInterrupted, "interrupted by the user")
 		} else {
-			a.failTurn(s.turnID, repo.TurnFailed, "the thread could not be read from storage after its step")
+			a.failTurn(sl.turnID, repo.TurnFailed, "the thread could not be read from storage after its step")
 		}
 		return
 	}
 	turn, ok := st.ActiveTurn()
-	if !ok || turn.ID != s.turnID {
+	if !ok || turn.ID != sl.turnID {
 		a.reconcile(threadID)
 		return
 	}
