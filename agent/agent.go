@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
@@ -79,7 +80,7 @@ func (a *Agent) Start(ctx context.Context) error {
 }
 
 func (a *Agent) buildTools(ctx context.Context) error {
-	providers := append(slices.Clone(a.cfg.Providers), plan.New(), subagent.New(), userinput.New())
+	providers := append(slices.Clone(a.cfg.Providers), plan.New(), subagent.New(), userinput.New(), contextmanager.NewOutputs(a.cfg.DB))
 	if a.cfg.SkillsDir != "" {
 		var err error
 		if a.skills, err = skills.New(a.cfg.SkillsDir); err != nil {
