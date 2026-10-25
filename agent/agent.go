@@ -61,7 +61,6 @@ type Agent struct {
 
 	events       chan func()
 	slotByThread map[string]*slot
-	waiting      []waiter
 	done         sync.WaitGroup
 }
 

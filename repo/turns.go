@@ -54,6 +54,17 @@ func (d *DB) ActiveThreadIDs() ([]string, error) {
 	return ids, err
 }
 
+func (d *DB) OpenThreads(exclude []string) ([]string, error) {
+	q := d.gorm.Table("turns").Joins("JOIN threads ON threads.id = turns.thread_id").
+		Where("(turns.status = 'inProgress' OR turns.status = 'queued')")
+	if len(exclude) > 0 {
+		q = q.Where("turns.thread_id NOT IN ?", exclude)
+	}
+	var ids []string
+	err := q.Group("turns.thread_id").Order("threads.parent_thread_id IS NOT NULL, MIN(turns.started_at), turns.thread_id").Pluck("turns.thread_id", &ids).Error
+	return ids, err
+}
+
 func (d *DB) HasQueuedTurn(threadID, cronJobID string) (bool, error) {
 	var n int64
 	err := d.gorm.Model(&TurnRow{}).Where("thread_id = ? AND status = 'queued' AND cron_job_id = ?", threadID, cronJobID).Count(&n).Error

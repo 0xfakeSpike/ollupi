@@ -3,14 +3,14 @@ package agent
 import (
 	"fmt"
 	"log"
+	"maps"
 	"slices"
 
 	"github.com/0xfakeSpike/ollupi/repo"
 )
 
 func (a *Agent) reconcile(threadID string) bool {
-	_, busy := a.slotByThread[threadID]
-	if busy || slices.ContainsFunc(a.waiting, func(w waiter) bool { return w.threadID == threadID }) || a.ctx.Err() != nil {
+	if _, busy := a.slotByThread[threadID]; busy || a.ctx.Err() != nil {
 		return false
 	}
 	st, err := a.cfg.DB.ThreadState(threadID)
@@ -49,18 +49,37 @@ func (a *Agent) reconcile(threadID string) bool {
 		a.emitStatus(threadID)
 		return false
 	}
-	a.waiting = append(a.waiting, waiter{threadID: threadID, turnID: turn.ID, subagent: st.Thread.ParentThreadID != ""})
-	a.admit()
+	if len(a.slotByThread) >= a.cfg.Slots {
+		a.emitStatus(threadID)
+		return false
+	}
+	a.enqueue(threadID, turn.ID)
 	a.emitStatus(threadID)
 	return true
 }
 
 func (a *Agent) admit() {
-	for len(a.slotByThread) < a.cfg.Slots && len(a.waiting) > 0 {
-		i := max(0, slices.IndexFunc(a.waiting, func(w waiter) bool { return !w.subagent }))
-		w := a.waiting[i]
-		a.waiting = slices.Delete(a.waiting, i, i+1)
-		a.enqueue(w.threadID, w.turnID)
+	if len(a.slotByThread) >= a.cfg.Slots || a.ctx.Err() != nil {
+		return
+	}
+	ids, err := a.cfg.DB.OpenThreads(slices.Collect(maps.Keys(a.slotByThread)))
+	if err != nil {
+		a.fault("", "", fmt.Errorf("threads waiting for a slot could not be listed: %w", err))
+		return
+	}
+	for _, id := range ids {
+		if len(a.slotByThread) >= a.cfg.Slots {
+			return
+		}
+		st, err := a.cfg.DB.ThreadState(id)
+		if err != nil {
+			a.halt(id, err)
+			continue
+		}
+		if len(st.PendingRequests()) > 0 || len(st.AgentCalls()) > 0 {
+			continue
+		}
+		a.reconcile(id)
 	}
 }
 
@@ -151,7 +170,11 @@ func (a *Agent) recover() error {
 			log.Printf("agent: thread %s: closed %d items cut off by the restart", id, len(closed))
 		}
 	}
-	for _, id := range active {
+	ordered, err := a.cfg.DB.OpenThreads(nil)
+	if err != nil {
+		return fmt.Errorf("agent: open threads: %w", err)
+	}
+	for _, id := range ordered {
 		a.reconcile(id)
 	}
 	return nil
