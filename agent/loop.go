@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"errors"
-	"github.com/0xfakeSpike/ollupi/agent/runtime"
 	"github.com/0xfakeSpike/ollupi/agent/skills"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"log"
@@ -87,7 +86,7 @@ func (a *Agent) enqueue(threadID, turnID string) {
 
 func (a *Agent) run(threadID string, sl *slot) {
 	if err := sl.ctx.Err(); err != nil {
-		a.post(func() { a.afterStep(threadID, sl, 0, runtime.Done, err) })
+		a.post(func() { a.afterStep(threadID, sl, 0, false, err) })
 		return
 	}
 	view, err := a.ReadThread(threadID)
@@ -107,12 +106,12 @@ func (a *Agent) run(threadID string, sl *slot) {
 		})
 		return
 	}
-	outcome, usage, err := a.step(sl.ctx, view, turn)
+	final, usage, err := a.step(sl.ctx, view, turn)
 	if err := a.cfg.DB.AddUsage(threadID, turn.ID, usage); err != nil {
 		log.Printf("agent: thread %s: record usage of turn %s: %v", threadID, turn.ID, err)
 	}
 	seen := len(view.Items)
-	a.post(func() { a.afterStep(threadID, sl, seen, outcome, err) })
+	a.post(func() { a.afterStep(threadID, sl, seen, final, err) })
 }
 
 func (a *Agent) release(threadID string) {

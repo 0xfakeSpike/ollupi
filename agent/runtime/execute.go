@@ -36,7 +36,7 @@ type callPlan struct {
 	actions []callAction
 }
 
-func (rt *Runtime) executePlan(ctx context.Context, plan callPlan) (Outcome, bool, error) {
+func (rt *Runtime) executePlan(ctx context.Context, plan callPlan) (bool, error) {
 	var batch []job
 	halt := ""
 	flush := func() (string, error) {
@@ -64,13 +64,13 @@ func (rt *Runtime) executePlan(ctx context.Context, plan callPlan) (Outcome, boo
 	}
 	for _, a := range plan.actions {
 		if err := ctx.Err(); err != nil {
-			return Done, true, err
+			return false, err
 		}
 		switch a.kind {
 		case actionRunReadOnly:
 			if halt != "" {
 				if err := rt.fail(a.item, "skipped: the turn stopped before this call was executed"); err != nil {
-					return Done, true, err
+					return false, err
 				}
 				continue
 			}
@@ -78,57 +78,57 @@ func (rt *Runtime) executePlan(ctx context.Context, plan callPlan) (Outcome, boo
 		case actionRun:
 			h, err := flush()
 			if err != nil {
-				return Done, true, err
+				return false, err
 			}
 			if halt == "" {
 				halt = h
 			}
 			if halt != "" {
 				if err := rt.fail(a.item, "skipped: the turn stopped before this call was executed"); err != nil {
-					return Done, true, err
+					return false, err
 				}
 				continue
 			}
 			h, err = runOne(*a.job)
 			if err != nil {
-				return Done, true, err
+				return false, err
 			}
 			if halt == "" {
 				halt = h
 			}
 		case actionSkip:
 			if _, err := flush(); err != nil {
-				return Done, true, err
+				return false, err
 			}
 			if err := rt.fail(a.item, a.reason); err != nil {
-				return Done, true, err
+				return false, err
 			}
 		case actionWait:
 			if _, err := flush(); err != nil {
-				return Done, true, err
+				return false, err
 			}
-			return Wait, true, nil
+			return false, nil
 		case actionHalt:
 			if _, err := flush(); err != nil {
-				return Done, true, err
+				return false, err
 			}
 			halt = a.reason
 		}
 	}
 	h, err := flush()
 	if err != nil {
-		return Done, true, err
+		return false, err
 	}
 	if halt == "" {
 		halt = h
 	}
-	if rt.awaiting() {
-		return Wait, true, nil
+	if rt.waiting() {
+		return false, nil
 	}
 	if halt != "" {
-		return Done, true, rt.finish(ctx, halt)
+		return true, rt.finish(ctx, halt)
 	}
-	return Continue, false, nil
+	return false, nil
 }
 
 func (rt *Runtime) runJobs(ctx context.Context, jobs []job) []tools.Result {

@@ -48,28 +48,18 @@ type Runtime struct {
 	usage    repo.Usage
 }
 
-type Outcome int
-
-const (
-	Continue Outcome = iota
-	Wait
-	Done
-)
-
-func (rt *Runtime) Step(ctx context.Context) (Outcome, repo.Usage, error) {
+func (rt *Runtime) Step(ctx context.Context) (bool, repo.Usage, error) {
 	ctx = tools.WithCaller(ctx, rt.Caller)
 	if err := rt.start(); err != nil {
-		return Done, repo.Usage{}, err
+		return false, repo.Usage{}, err
 	}
-	outcome, err := rt.step(ctx)
-	return outcome, rt.usage, err
+	final, err := rt.step(ctx)
+	return final, rt.usage, err
 }
 
 func (rt *Runtime) start() error {
-	for _, it := range rt.Items {
-		if it.IsPending() || it.Awaits() {
-			return fmt.Errorf("runtime: item %s still waits for its answer", it.ID)
-		}
+	if rt.waiting() {
+		return fmt.Errorf("runtime: turn %s still waits for an answer", rt.Turn.ID)
 	}
 	rt.redactor = redact.New()
 	var catalog []skills.Skill
@@ -127,39 +117,27 @@ func Specs(descriptors []tools.ToolDescriptor) []llm.ToolSpec {
 	return specs
 }
 
-func (rt *Runtime) step(ctx context.Context) (Outcome, error) {
-	if outcome, done, err := rt.resume(ctx); done {
-		return outcome, err
+func (rt *Runtime) step(ctx context.Context) (bool, error) {
+	if final, err := rt.runCalls(ctx); final || err != nil || rt.waiting() {
+		return final, err
 	}
 	if rt.modelCalls() >= maxModelCalls {
-		return Done, rt.finish(ctx, fmt.Sprintf("reached the model call limit (%d)", maxModelCalls))
+		return true, rt.finish(ctx, fmt.Sprintf("reached the model call limit (%d)", maxModelCalls))
 	}
 	resp, err := rt.respond(ctx, llm.ToolChoiceAuto)
 	if err != nil {
-		return Done, err
+		return false, err
 	}
 	if len(resp.Message.ToolCalls) == 0 {
-		return Done, nil
+		return true, nil
 	}
-	outcome, done, err := rt.drain(ctx)
-	if done {
-		return outcome, err
-	}
-	return Continue, nil
+	return rt.runCalls(ctx)
 }
 
-func (rt *Runtime) resume(ctx context.Context) (Outcome, bool, error) {
+func (rt *Runtime) runCalls(ctx context.Context) (bool, error) {
 	plan, err := rt.planCalls(ctx)
 	if err != nil {
-		return Done, true, err
-	}
-	return rt.executePlan(ctx, plan)
-}
-
-func (rt *Runtime) drain(ctx context.Context) (Outcome, bool, error) {
-	plan, err := rt.planCalls(ctx)
-	if err != nil {
-		return Done, true, err
+		return false, err
 	}
 	return rt.executePlan(ctx, plan)
 }
@@ -208,6 +186,6 @@ func withError(it repo.ItemRow, text string) repo.ItemRow {
 	return it
 }
 
-func (rt *Runtime) awaiting() bool {
-	return slices.ContainsFunc(rt.Items, repo.ItemRow.Awaits)
+func (rt *Runtime) waiting() bool {
+	return slices.ContainsFunc(rt.Items, func(it repo.ItemRow) bool { return it.IsPending() || it.Awaits() })
 }
