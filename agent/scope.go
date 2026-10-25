@@ -5,7 +5,6 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/repo"
-	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
 
@@ -30,8 +29,4 @@ func (a *Agent) threadSettings(t repo.ThreadRow, w repo.WorkspaceRow) (permissio
 	}
 	noSubagents := permission.Settings{Rules: permission.Rules{Deny: []string{subagent.Tool}}}
 	return permission.Resolve(a.cfg.Settings, w.Settings, parent.Settings, noSubagents), nil
-}
-
-func callerOf(t repo.ThreadRow, w repo.WorkspaceRow) tools.Caller {
-	return tools.Caller{ThreadID: t.ID, WorkspaceID: string(t.WorkspaceID), Root: w.RootPath, Subagent: t.ParentThreadID != ""}
 }
