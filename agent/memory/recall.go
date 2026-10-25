@@ -22,18 +22,19 @@ func (m *Manager) Context(workspaceID, query string, budget int) (Context, error
 	if err != nil {
 		return Context{}, err
 	}
-	eligible := make([]repo.MemoryRow, 0, len(entries))
-	for _, e := range entries {
-		if e.Status == "active" && (e.WorkspaceID == "" || e.WorkspaceID == workspaceID) {
-			eligible = append(eligible, e)
-		}
-	}
+	terms := searchTerms(query)
 	var chosen []repo.MemoryReference
 	text := ""
-	for _, e := range rankEntries(eligible, query, true) {
-		if strings.TrimSpace(e.Text) == "" {
-			continue
+	for _, r := range rank(entries, func(e repo.MemoryRow) int {
+		if e.Status != "active" {
+			return 0
 		}
+		return termScore(e, terms) + kindPriority(e)
+	}) {
+		if r.score == 0 {
+			break
+		}
+		e := r.entry
 		next := append(slices.Clone(chosen), repo.MemoryReference{ID: e.ID, WorkspaceID: e.WorkspaceID, Topic: e.Topic, Text: e.Text})
 		rendered := renderContext(next)
 		if llm.EstimateTokens(rendered) > budget {
@@ -57,56 +58,47 @@ func renderContext(entries []repo.MemoryReference) string {
 		string(b)
 }
 
-func rankEntries(entries []repo.MemoryRow, query string, recall bool) []repo.MemoryRow {
-	terms := searchTerms(query)
-	type ranked struct {
-		entry repo.MemoryRow
-		score int
-	}
-	matches := make([]ranked, 0, len(entries))
+type scored struct {
+	entry repo.MemoryRow
+	score int
+}
+
+func rank(entries []repo.MemoryRow, score func(repo.MemoryRow) int) []scored {
+	out := make([]scored, 0, len(entries))
 	for _, e := range entries {
-		text := strings.ToLower(e.Topic + " " + e.Text)
-		score := 0
-		for _, term := range terms {
-			if strings.Contains(text, term) {
-				score += 1 + min(8, len([]rune(term)))
-			}
-		}
-		if e.Kind == "preference" {
-			score += 12
-		}
-		if e.Kind == "decision" {
-			score += 6
-		}
-		if !recall {
-			for _, s := range e.Sources {
-				if s.ID != "" && strings.Contains(query, s.ID) {
-					score += 100
-				}
-			}
-			if e.Status == "forgotten" {
-				score += 20
-			}
-		}
-		if recall && score == 0 {
-			continue
-		}
-		matches = append(matches, ranked{e, score})
+		out = append(out, scored{e, score(e)})
 	}
-	sort.SliceStable(matches, func(i, j int) bool {
-		if matches[i].score != matches[j].score {
-			return matches[i].score > matches[j].score
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].score != out[j].score {
+			return out[i].score > out[j].score
 		}
-		if !matches[i].entry.UpdatedAt.Equal(matches[j].entry.UpdatedAt) {
-			return matches[i].entry.UpdatedAt.After(matches[j].entry.UpdatedAt)
+		if !out[i].entry.UpdatedAt.Equal(out[j].entry.UpdatedAt) {
+			return out[i].entry.UpdatedAt.After(out[j].entry.UpdatedAt)
 		}
-		return matches[i].entry.ID < matches[j].entry.ID
+		return out[i].entry.ID < out[j].entry.ID
 	})
-	out := make([]repo.MemoryRow, 0, len(matches))
-	for _, r := range matches {
-		out = append(out, r.entry)
-	}
 	return out
+}
+
+func termScore(e repo.MemoryRow, terms []string) int {
+	text := strings.ToLower(e.Topic + " " + e.Text)
+	score := 0
+	for _, term := range terms {
+		if strings.Contains(text, term) {
+			score += 1 + min(8, len([]rune(term)))
+		}
+	}
+	return score
+}
+
+func kindPriority(e repo.MemoryRow) int {
+	switch e.Kind {
+	case "preference":
+		return 12
+	case "decision":
+		return 6
+	}
+	return 0
 }
 
 func searchTerms(text string) []string {

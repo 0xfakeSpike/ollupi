@@ -29,15 +29,9 @@ func (c MemoryCursor) at() time.Time {
 	return c.At.UTC()
 }
 
-type MemoryCursors struct {
-	Turns      MemoryCursor `gorm:"embedded;embeddedPrefix:turns_"`
-	Workspaces MemoryCursor `gorm:"embedded;embeddedPrefix:workspaces_"`
-	CronJobs   MemoryCursor `gorm:"embedded;embeddedPrefix:cron_jobs_"`
-}
-
 type MemoryStateRow struct {
 	ID          int           `gorm:"primaryKey;autoIncrement:false;check:memory_state_one,id = 1" json:"-"`
-	Cursors     MemoryCursors `gorm:"embedded;embeddedPrefix:cursor_" json:"-"`
+	Cursor      MemoryCursor  `gorm:"embedded;embeddedPrefix:cursor_" json:"-"`
 	Attempts    int           `gorm:"not null;default:0" json:"attempts,omitempty"`
 	NextAttempt *time.Time    `json:"nextAttempt,omitempty"`
 	Skipped     int64         `gorm:"not null;default:0" json:"-"`
@@ -66,34 +60,24 @@ func (d *DB) MemoryState() (MemoryStateRow, error) {
 
 func (d *DB) MemoryStatus() (MemoryStatus, error) {
 	var s MemoryStatus
-	g := d.gorm
-	if err := g.Where("id = 1").Take(&s.MemoryStateRow).Error; err != nil {
+	if err := d.gorm.Where("id = 1").Take(&s.MemoryStateRow).Error; err != nil {
 		return s, err
 	}
-	c := s.Cursors
-	for _, q := range []*gorm.DB{
-		g.Model(&TurnRow{}).Where(endedTurn+" AND (completed_at, id) > (?, ?)", c.Turns.at(), c.Turns.ID),
-		g.Model(&WorkspaceRow{}).Where("(updated_at, id) > (?, ?)", c.Workspaces.at(), c.Workspaces.ID),
-		g.Model(&CronJobRow{}).Where("(created_at, id) > (?, ?)", c.CronJobs.at(), c.CronJobs.ID),
-	} {
-		var n int64
-		if err := q.Count(&n).Error; err != nil {
-			return s, err
-		}
-		s.Pending += n
+	c := s.Cursor
+	if err := d.gorm.Model(&TurnRow{}).Where(endedTurn+" AND (completed_at, id) > (?, ?)", c.at(), c.ID).Count(&s.Pending).Error; err != nil {
+		return s, err
 	}
-	if err := g.Model(&MemoryRow{}).Where("status = 'active'").Count(&s.Active).Error; err != nil {
+	if err := d.gorm.Model(&MemoryRow{}).Where("status = 'active'").Count(&s.Active).Error; err != nil {
 		return s, err
 	}
 	s.Failed = s.Skipped
 	return s, nil
 }
 
-func (d *DB) EndedTurnsAfter(c MemoryCursor, before time.Time, limit int) ([]TurnRow, error) {
-	var rows []TurnRow
-	err := d.gorm.Where(endedTurn+" AND (completed_at, id) > (?, ?) AND completed_at <= ?", c.at(), c.ID, before.UTC()).
-		Order("completed_at, id").Limit(limit).Find(&rows).Error
-	return rows, err
+func (d *DB) NextEndedTurn(c MemoryCursor) (TurnRow, error) {
+	var row TurnRow
+	err := d.gorm.Where(endedTurn+" AND (completed_at, id) > (?, ?)", c.at(), c.ID).Order("completed_at, id").Take(&row).Error
+	return row, notFound(err)
 }
 
 func (d *DB) TurnItemsAfter(turnID string, seq int, types []ItemType, statuses []ItemStatus, limit int) ([]ItemRow, error) {
@@ -103,33 +87,15 @@ func (d *DB) TurnItemsAfter(turnID string, seq int, types []ItemType, statuses [
 	return rows, err
 }
 
-func (d *DB) WorkspacesChangedAfter(c MemoryCursor, before time.Time, limit int) ([]WorkspaceRow, error) {
-	var rows []WorkspaceRow
-	err := d.gorm.Where("(updated_at, id) > (?, ?) AND updated_at <= ?", c.at(), c.ID, before.UTC()).
-		Order("updated_at, id").Limit(limit).Find(&rows).Error
-	return rows, err
-}
-
-func (d *DB) CronJobsCreatedAfter(c MemoryCursor, before time.Time, limit int) ([]CronJobRow, error) {
-	var rows []CronJobRow
-	err := d.gorm.Where("(created_at, id) > (?, ?) AND created_at <= ?", c.at(), c.ID, before.UTC()).
-		Order("created_at, id").Limit(limit).Find(&rows).Error
-	return rows, err
-}
-
 func (d *DB) SetMemoryError(message string) error {
 	return d.gorm.Model(&MemoryStateRow{}).Where("id = 1").Update("last_error", message).Error
 }
 
-func cursorColumns(c MemoryCursors) map[string]any {
-	out := map[string]any{}
-	for prefix, cur := range map[string]MemoryCursor{"cursor_turns_": c.Turns, "cursor_workspaces_": c.Workspaces, "cursor_cron_jobs_": c.CronJobs} {
-		out[prefix+"at"], out[prefix+"id"], out[prefix+"seq"] = nullTime(cur.At), cur.ID, cur.Seq
-	}
-	return out
+func cursorColumns(c MemoryCursor) map[string]any {
+	return map[string]any{"cursor_at": nullTime(c.At), "cursor_id": c.ID, "cursor_seq": c.Seq}
 }
 
-func (d *DB) AdvanceMemory(c MemoryCursors, now time.Time, report MemoryReport) error {
+func (d *DB) AdvanceMemory(c MemoryCursor, now time.Time, report MemoryReport) error {
 	raw, err := json.Marshal(report)
 	if err != nil {
 		return err
@@ -144,7 +110,7 @@ func (d *DB) AdvanceMemory(c MemoryCursors, now time.Time, report MemoryReport) 
 
 const maxMemoryAttempts = 10
 
-func (d *DB) DeferMemory(skipTo MemoryCursors, entries int, message string, now time.Time) (skipped bool, err error) {
+func (d *DB) DeferMemory(skipTo MemoryCursor, entries int, message string, now time.Time) (skipped bool, err error) {
 	err = d.Tx(func(tx *DB) error {
 		s, err := tx.MemoryState()
 		if err != nil {

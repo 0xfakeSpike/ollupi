@@ -1,7 +1,6 @@
 package repo
 
 import (
-	"fmt"
 	"time"
 
 	"gorm.io/gorm/clause"
@@ -49,27 +48,4 @@ func (d *DB) SaveMemory(m MemoryRow) error {
 		Columns:   []clause.Column{{Name: "id"}},
 		DoUpdates: clause.AssignmentColumns([]string{"topic", "kind", "text", "status", "sources", "updated_at", "user_edited"}),
 	}).Create(&m).Error
-}
-
-func (d *DB) RowExists(table, id string) (bool, error) {
-	switch table {
-	case "workspaces", "threads", "turns", "items", "cron_jobs":
-	default:
-		return false, fmt.Errorf("unsupported memory source table %q", table)
-	}
-	var n int64
-	err := d.gorm.Table(table).Where("id = ?", id).Count(&n).Error
-	return n > 0, err
-}
-
-func (d *DB) ActiveMemoriesWithMissingSources() ([]MemoryRow, error) {
-	var rows []MemoryRow
-	err := d.gorm.Where(`status = 'active' AND EXISTS (SELECT 1 FROM json_each(memories.sources) AS s WHERE NOT CASE json_extract(s.value, '$.table')
-		WHEN 'workspaces' THEN EXISTS (SELECT 1 FROM workspaces WHERE id = json_extract(s.value, '$.id'))
-		WHEN 'threads' THEN EXISTS (SELECT 1 FROM threads WHERE id = json_extract(s.value, '$.id'))
-		WHEN 'turns' THEN EXISTS (SELECT 1 FROM turns WHERE id = json_extract(s.value, '$.id'))
-		WHEN 'items' THEN EXISTS (SELECT 1 FROM items WHERE id = json_extract(s.value, '$.id'))
-		WHEN 'cron_jobs' THEN EXISTS (SELECT 1 FROM cron_jobs WHERE id = json_extract(s.value, '$.id'))
-		ELSE 1 END)`).Order("id").Find(&rows).Error
-	return rows, err
 }

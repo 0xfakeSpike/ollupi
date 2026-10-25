@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -25,14 +24,16 @@ type Options struct {
 	BatchSize        int
 }
 
-const defaultExtractionTokens = 12000
+const (
+	defaultExtractionTokens = 12000
+	minExtractionTokens     = 8192
+)
 
 type Manager struct {
 	db     *repo.DB
 	model  *llm.OpenAI
 	opts   Options
 	budget int
-	runMu  sync.Mutex
 }
 
 func New(db *repo.DB, model *llm.OpenAI, opts Options) (*Manager, error) {
@@ -61,8 +62,8 @@ func New(db *repo.DB, model *llm.OpenAI, opts Options) (*Manager, error) {
 			return nil, fmt.Errorf("memory: extraction model: %w", err)
 		}
 		m.budget = min(m.budget, limits.Input())
-		if m.budget < 2048 {
-			return nil, fmt.Errorf("memory: the extraction budget is %d tokens; it must be at least 2048", m.budget)
+		if m.budget < minExtractionTokens {
+			return nil, fmt.Errorf("memory: the extraction budget is %d tokens; it must be at least %d so that one piece of evidence always fits", m.budget, minExtractionTokens)
 		}
 	}
 	return m, nil
@@ -79,30 +80,21 @@ func (m *Manager) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
-			if err := m.RunOnce(ctx); err != nil && ctx.Err() == nil {
-				log.Printf("memory: %v", err)
+			err := m.RunOnce(ctx)
+			if err == nil || ctx.Err() != nil {
+				continue
+			}
+			log.Printf("memory: %v", err)
+			if rerr := m.db.SetMemoryError(clipMemory(err.Error(), 1000)); rerr != nil {
+				log.Printf("memory: the error could not be recorded: %v", rerr)
 			}
 		}
 	}
 }
 
-func (m *Manager) RunOnce(ctx context.Context) (err error) {
+func (m *Manager) RunOnce(ctx context.Context) error {
 	if !m.opts.Generate {
 		return nil
-	}
-	m.runMu.Lock()
-	defer m.runMu.Unlock()
-	var batch *Batch
-	defer func() {
-		if err != nil && ctx.Err() == nil {
-			if batch != nil {
-				_ = deferBatch(m.db, batch, err.Error())
-			}
-			_ = m.db.SetMemoryError(clipMemory(err.Error(), 1000))
-		}
-	}()
-	if err = retireMissingSources(m.db); err != nil {
-		return fmt.Errorf("could not retire memories of deleted sources: %w", err)
 	}
 	state, err := m.db.MemoryState()
 	if err != nil {
@@ -111,51 +103,49 @@ func (m *Manager) RunOnce(ctx context.Context) (err error) {
 	if state.NextAttempt != nil && time.Now().Before(*state.NextAttempt) {
 		return nil
 	}
-	var evidence *Batch
-	var payload string
-	var estimated int
-	batch, evidence, payload, estimated, err = m.gatherEvidence()
+	batch, payload, estimated, err := m.gatherEvidence()
 	if err != nil {
 		return err
 	}
 	if batch == nil {
 		return nil
 	}
-
 	report := repo.MemoryReport{Model: m.opts.Model.Clone(), EstimatedInputTokens: estimated}
-	if len(evidence.Facts) == 0 {
-		return commit(m.db, batch, nil, report)
+	var ops []Operation
+	if len(batch.Facts) > 0 {
+		if ops, err = m.extract(ctx, batch, payload, &report); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return m.deferBatch(batch, err)
+		}
 	}
-	ops, err := m.extract(ctx, evidence, payload, &report)
-	if err != nil {
-		return err
+	if err := commit(m.db, batch, ops, report); err != nil {
+		return fmt.Errorf("could not commit the memory batch of turn %s: %w", batch.TurnID, err)
 	}
-	return commit(m.db, batch, ops, report)
+	return nil
 }
 
-func (m *Manager) gatherEvidence() (batch, evidence *Batch, payload string, estimated int, err error) {
-	limit := m.opts.BatchSize
-	for {
-		batch, err = nextBatch(m.db, limit)
+func (m *Manager) gatherEvidence() (*Batch, string, int, error) {
+	for limit := m.opts.BatchSize; ; limit = max(1, limit/2) {
+		batch, err := nextBatch(m.db, limit)
 		if err != nil {
-			return nil, nil, "", 0, fmt.Errorf("could not read pending memory evidence: %w", err)
+			return nil, "", 0, fmt.Errorf("could not read pending memory evidence: %w", err)
 		}
 		if batch == nil {
-			return nil, nil, "", 0, nil
+			return nil, "", 0, nil
 		}
-		evidence = visibleEvidence(batch)
-		payload, estimated, err = extractionInput(evidence, m.budget)
+		payload, estimated, err := extractionInput(batch, m.budget)
 		if err == nil {
-			return batch, evidence, payload, estimated, nil
+			return batch, payload, estimated, nil
 		}
-		if limit <= 1 {
-			return batch, evidence, "", 0, err
+		if limit == 1 {
+			return nil, "", 0, err
 		}
-		limit = max(1, limit/2)
 	}
 }
 
-func (m *Manager) extract(ctx context.Context, evidence *Batch, payload string, report *repo.MemoryReport) ([]Operation, error) {
+func (m *Manager) extract(ctx context.Context, batch *Batch, payload string, report *repo.MemoryReport) ([]Operation, error) {
 	callCtx, cancel := context.WithTimeout(ctx, m.opts.Timeout)
 	defer cancel()
 	redactor := masking.New()
@@ -165,21 +155,31 @@ func (m *Manager) extract(ctx context.Context, evidence *Batch, payload string, 
 		ToolChoice: llm.ToolChoiceNone,
 	}, nil)
 	if err != nil {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
 		return nil, fmt.Errorf("memory extraction model request failed: %w", err)
 	}
 	if len(response.Message.ToolCalls) != 0 || (response.FinishReason != "" && response.FinishReason != "stop") {
 		return nil, errors.New("memory extraction did not produce a complete text response")
 	}
-	ops, err := parseOperations(response.Message.Content, evidence, redactor.Restore)
+	ops, err := parseOperations(response.Message.Content, batch, redactor.Restore)
 	if err != nil {
 		return nil, err
 	}
 	report.InputTokens, report.OutputTokens = response.Usage.PromptTokens, response.Usage.CompletionTokens
 	report.UsageReported = response.UsageReported
 	return ops, nil
+}
+
+func (m *Manager) deferBatch(b *Batch, cause error) error {
+	skipped, err := m.db.DeferMemory(b.Cursor, b.Entries, clipMemory(cause.Error(), 1000), time.Now())
+	if err != nil {
+		return fmt.Errorf("could not defer the memory batch of turn %s (%v): %w", b.TurnID, cause, err)
+	}
+	if skipped {
+		log.Printf("memory: turn %s skipped up to item %d after repeated failures: %v", b.TurnID, b.Cursor.Seq, cause)
+	} else {
+		log.Printf("memory: turn %s deferred: %v", b.TurnID, cause)
+	}
+	return nil
 }
 
 func (m *Manager) List(workspaceID string, includeGlobal bool) ([]repo.MemoryRow, error) {
@@ -198,8 +198,8 @@ func (m *Manager) Status() (repo.MemoryStatus, error) {
 
 func (m *Manager) Edit(id, text string) (repo.MemoryRow, error) {
 	text = strings.TrimSpace(text)
-	if text == "" || utf8.RuneCountInString(text) > 4000 {
-		return repo.MemoryRow{}, errors.New("memory text must contain 1 to 4000 characters")
+	if text == "" || utf8.RuneCountInString(text) > maxTextRunes {
+		return repo.MemoryRow{}, fmt.Errorf("memory text must contain 1 to %d characters", maxTextRunes)
 	}
 	if redact(text) != text {
 		return repo.MemoryRow{}, errors.New("remove credentials from memory text before saving")
