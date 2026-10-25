@@ -87,10 +87,7 @@ func (a *Agent) run(threadID string, sl *slot) {
 	}
 	turn, ok := findTurn(view, sl.turnID)
 	if !ok || turn.Status != repo.TurnInProgress {
-		a.post(func() {
-			a.release(threadID)
-			a.reconcile(threadID)
-		})
+		a.post(func() { a.release(threadID) })
 		return
 	}
 	final, usage, err := a.runStep(sl.ctx, view, turn)
