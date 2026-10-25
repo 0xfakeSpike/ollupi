@@ -3,34 +3,17 @@ package agent
 import (
 	"context"
 	"errors"
-	"github.com/0xfakeSpike/ollupi/agent/skills"
-	"github.com/0xfakeSpike/ollupi/tools"
 	"log"
-	"sync"
 
 	"github.com/0xfakeSpike/ollupi/repo"
 )
 
 var errStopped = errors.New("agent: the agent is shutting down")
 
-const defaultSlots = 32
-
 type slot struct {
 	turnID string
 	ctx    context.Context
 	cancel context.CancelFunc
-}
-
-type Agent struct {
-	cfg      Config
-	ctx      context.Context
-	registry *tools.Registry
-	skills   *skills.Catalog
-
-	events       chan func()
-	slotByThread map[string]*slot
-	waiting      []waiter
-	done         sync.WaitGroup
 }
 
 type waiter struct {

@@ -11,6 +11,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/repo"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/0xfakeSpike/ollupi/agent/skills"
 	"github.com/0xfakeSpike/ollupi/tools"
@@ -21,6 +22,7 @@ import (
 
 const (
 	maxInputRunes = 4000
+	defaultSlots  = 32
 )
 
 var (
@@ -49,6 +51,18 @@ type Config struct {
 	Memory      *memory.Manager
 	DB          *repo.DB
 	OnEvent     func(Event)
+}
+
+type Agent struct {
+	cfg      Config
+	ctx      context.Context
+	registry *tools.Registry
+	skills   *skills.Catalog
+
+	events       chan func()
+	slotByThread map[string]*slot
+	waiting      []waiter
+	done         sync.WaitGroup
 }
 
 func New(cfg Config) *Agent {
