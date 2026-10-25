@@ -53,8 +53,6 @@ func New(cfg Config) *Agent {
 	return &Agent{cfg: cfg}
 }
 
-func (a *Agent) Memory() *memory.Manager { return a.cfg.Memory }
-
 func (a *Agent) Start(ctx context.Context) error {
 	if strings.TrimSpace(a.cfg.Name) == "" {
 		return fmt.Errorf("agent: name is required")
