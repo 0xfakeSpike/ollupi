@@ -55,6 +55,15 @@ func (a *Agent) reconcile(threadID string) bool {
 	return true
 }
 
+func (a *Agent) admit() {
+	for len(a.slotByThread) < a.cfg.Slots && len(a.waiting) > 0 {
+		i := max(0, slices.IndexFunc(a.waiting, func(w waiter) bool { return !w.subagent }))
+		w := a.waiting[i]
+		a.waiting = slices.Delete(a.waiting, i, i+1)
+		a.enqueue(w.threadID, w.turnID)
+	}
+}
+
 func (a *Agent) halt(threadID string, cause error) {
 	log.Printf("agent: thread %s cannot advance: %v", threadID, cause)
 	turn, err := a.cfg.DB.ActiveTurn(threadID)
