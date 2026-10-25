@@ -106,7 +106,7 @@ func (a *Agent) CallTool(ctx context.Context, threadID, tool string, arguments m
 		if err != nil {
 			return tools.Result{}, err
 		}
-		caller = callerOf(t, w)
+		caller = tools.Caller{ThreadID: t.ID, WorkspaceID: string(t.WorkspaceID), Root: w.RootPath, Subagent: t.ParentThreadID != ""}
 	}
 	if arguments == nil {
 		arguments = map[string]any{}

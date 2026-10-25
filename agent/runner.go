@@ -7,6 +7,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/runtime"
 	"github.com/0xfakeSpike/ollupi/agent/systemprompt"
 	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/tools"
 )
 
 func (a *Agent) step(ctx context.Context, view repo.ThreadView, turn repo.TurnRow) (runtime.Outcome, repo.Usage, error) {
@@ -45,7 +46,7 @@ func (a *Agent) step(ctx context.Context, view repo.ThreadView, turn repo.TurnRo
 		Contexts:    contexts,
 		Memory:      a.cfg.Memory,
 		Turn:        turn,
-		Caller:      callerOf(view.Thread, w),
+		Caller:      tools.Caller{ThreadID: view.Thread.ID, WorkspaceID: string(view.Thread.WorkspaceID), Root: w.RootPath, Subagent: view.Thread.ParentThreadID != ""},
 		Prompt:      systemprompt.AgentPrompt(a.cfg.Name, a.cfg.Prompt),
 		Tools:       descriptors,
 		Permissions: checker,
