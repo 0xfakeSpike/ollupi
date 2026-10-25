@@ -174,6 +174,7 @@ func (a *Agent) stopThread(threadID string) {
 }
 
 func (a *Agent) endTurn(turn repo.TurnRow) {
+	a.waiting = slices.DeleteFunc(a.waiting, func(w waiter) bool { return w.threadID == turn.ThreadID })
 	st, err := a.cfg.DB.ThreadState(turn.ThreadID)
 	if err != nil {
 		a.fault(turn.ThreadID, turn.ID, fmt.Errorf("the turn could not be ended: %w", err))

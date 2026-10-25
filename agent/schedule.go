@@ -3,12 +3,14 @@ package agent
 import (
 	"fmt"
 	"log"
+	"slices"
 
 	"github.com/0xfakeSpike/ollupi/repo"
 )
 
 func (a *Agent) reconcile(threadID string) bool {
-	if _, busy := a.slotByThread[threadID]; busy || a.ctx.Err() != nil {
+	_, busy := a.slotByThread[threadID]
+	if busy || slices.ContainsFunc(a.waiting, func(w waiter) bool { return w.threadID == threadID }) || a.ctx.Err() != nil {
 		return false
 	}
 	st, err := a.cfg.DB.ThreadState(threadID)
@@ -47,7 +49,8 @@ func (a *Agent) reconcile(threadID string) bool {
 		a.emitStatus(threadID)
 		return false
 	}
-	a.enqueue(threadID, turn.ID)
+	a.waiting = append(a.waiting, waiter{threadID: threadID, turnID: turn.ID, subagent: st.Thread.ParentThreadID != ""})
+	a.admit()
 	a.emitStatus(threadID)
 	return true
 }
