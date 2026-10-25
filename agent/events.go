@@ -32,7 +32,7 @@ type Event struct {
 	Error  string
 }
 
-func (a *Agent) fault(threadID, turnID string, err error) {
+func (a *orchestrator) fault(threadID, turnID string, err error) {
 	log.Printf("agent: thread %s turn %s: %v", threadID, turnID, err)
 	t, rerr := a.DB.ThreadRow(threadID)
 	if rerr != nil {
@@ -41,13 +41,13 @@ func (a *Agent) fault(threadID, turnID string, err error) {
 	a.emit(Event{Kind: EventError, Thread: t, Turn: repo.TurnRow{ID: turnID, ThreadID: threadID}, Error: err.Error()})
 }
 
-func (a *Agent) emit(e Event) {
+func (a *orchestrator) emit(e Event) {
 	if a.OnEvent != nil {
 		a.OnEvent(e)
 	}
 }
 
-func (a *Agent) emitStatus(threadID string) {
+func (a *orchestrator) emitStatus(threadID string) {
 	t, err := a.DB.ThreadRow(threadID)
 	if err != nil {
 		log.Printf("agent: thread %s: status not sent: %v", threadID, err)
@@ -61,7 +61,7 @@ func (a *Agent) emitStatus(threadID string) {
 	a.emit(Event{Kind: EventThreadStatusChanged, Thread: t, Status: status})
 }
 
-func (a *Agent) emitRequests(view repo.ThreadView) {
+func (a *orchestrator) emitRequests(view repo.ThreadView) {
 	turn, _ := view.ActiveTurn()
 	for _, it := range view.PendingRequests() {
 		kind := EventApprovalRequested
@@ -72,7 +72,7 @@ func (a *Agent) emitRequests(view repo.ThreadView) {
 	}
 }
 
-func (a *Agent) emitItem(t repo.ThreadRow, turn repo.TurnRow, it repo.ItemRow, isNew bool) {
+func (a *orchestrator) emitItem(t repo.ThreadRow, turn repo.TurnRow, it repo.ItemRow, isNew bool) {
 	if isNew {
 		started := it
 		a.emit(Event{Kind: EventItemStarted, Thread: t, Turn: turn, Item: &started})

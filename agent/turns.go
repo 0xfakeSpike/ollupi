@@ -19,49 +19,19 @@ type Input struct {
 	CronJobID  string
 }
 
-func (a *Agent) StartTurn(threadID string, in Input) (repo.TurnRow, error) {
-	var turn repo.TurnRow
-	err := a.run.call(func() (err error) {
-		turn, err = a.run.startTurn(threadID, in)
-		return err
-	})
-	return turn, err
-}
-
-func (a *Agent) SteerTurn(threadID, expectedTurnID, text string) (repo.TurnRow, error) {
-	var turn repo.TurnRow
-	err := a.run.call(func() (err error) {
-		turn, err = a.run.steer(threadID, expectedTurnID, text)
-		return err
-	})
-	return turn, err
-}
-
-func (a *Agent) InterruptTurn(threadID, expectedTurnID string) error {
-	return a.run.call(func() error { return a.run.interrupt(threadID, expectedTurnID) })
-}
-
-func (a *Agent) ResolveApproval(threadID, approvalID string, decision repo.Decision, decidedBy string) error {
-	return a.run.call(func() error { return a.run.resolveApproval(threadID, approvalID, decision, decidedBy) })
-}
-
-func (a *Agent) AnswerUserInput(threadID, itemID string, answers map[string]userinput.Answer) error {
-	return a.run.call(func() error { return a.run.answerUserInput(threadID, itemID, answers) })
-}
-
 func (s *orchestrator) startTurn(threadID string, in Input) (repo.TurnRow, error) {
 	text, err := checkMessage(in.Text)
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
-	view, err := s.a.ReadThread(threadID)
+	view, err := s.readThread(threadID)
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
 	if view.Thread.ParentThreadID != "" {
 		return repo.TurnRow{}, ErrSubagentThread
 	}
-	model, err := s.a.conversationModel(view, in.Connection)
+	model, err := s.conversationModel(view, in.Connection)
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
@@ -73,15 +43,15 @@ func (s *orchestrator) beginTurn(view repo.ThreadView, text, cronJobID string, m
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
-	if !s.settle(view.Thread.ID) {
-		s.a.emitStatus(view.Thread.ID)
+	if !s.schedule(view.Thread.ID) {
+		s.emitStatus(view.Thread.ID)
 	}
 	return turn, nil
 }
 
 func (s *orchestrator) submit(view repo.ThreadView, text, cronJobID string, model llm.Model) (repo.TurnRow, error) {
 	threadID := view.Thread.ID
-	env, err := s.a.environmentOf(view.Thread)
+	env, err := s.environmentOf(view.Thread)
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
@@ -94,15 +64,15 @@ func (s *orchestrator) submit(view repo.ThreadView, text, cronJobID string, mode
 		ID: uuid.NewString(), Model: model.Clone(),
 		Input: text, CronJobID: cronJobID, StartedAt: time.Now().UTC(),
 	}
-	turn, message, err := s.a.DB.SubmitTurn(threadID, turn)
+	turn, message, err := s.DB.SubmitTurn(threadID, turn)
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
 	if message != nil {
-		s.a.emit(Event{Kind: EventTurnStarted, Thread: view.Thread, Turn: turn})
-		s.a.emitItem(view.Thread, turn, *message, true)
+		s.emit(Event{Kind: EventTurnStarted, Thread: view.Thread, Turn: turn})
+		s.emitItem(view.Thread, turn, *message, true)
 	} else {
-		s.a.emit(Event{Kind: EventTurnQueued, Thread: view.Thread, Turn: turn})
+		s.emit(Event{Kind: EventTurnQueued, Thread: view.Thread, Turn: turn})
 	}
 	return turn, nil
 }
@@ -112,7 +82,7 @@ func (s *orchestrator) steer(threadID, expectedTurnID, text string) (repo.TurnRo
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
-	view, err := s.a.ReadThread(threadID)
+	view, err := s.readThread(threadID)
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
@@ -126,11 +96,11 @@ func (s *orchestrator) steer(threadID, expectedTurnID, text string) (repo.TurnRo
 	if turn.ID != expectedTurnID {
 		return repo.TurnRow{}, fmt.Errorf("%w (expected %s, in progress %s)", ErrTurnMismatch, expectedTurnID, turn.ID)
 	}
-	stored, isNew, err := s.a.DB.RecordItem(threadID, repo.NewUserMessage(uuid.NewString(), turn.ID, text, time.Now().UTC()))
+	stored, isNew, err := s.DB.RecordItem(threadID, repo.NewUserMessage(uuid.NewString(), turn.ID, text, time.Now().UTC()))
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
-	s.a.emitItem(view.Thread, turn, stored, isNew)
+	s.emitItem(view.Thread, turn, stored, isNew)
 	return turn, nil
 }
 
@@ -142,7 +112,7 @@ func (s *orchestrator) interrupt(threadID, expectedTurnID string) error {
 		s.stop(threadID, sl)
 		return nil
 	}
-	view, err := s.a.ReadThread(threadID)
+	view, err := s.readThread(threadID)
 	if err != nil {
 		return err
 	}
@@ -171,7 +141,7 @@ func (s *orchestrator) stopThread(threadID string) {
 		s.stop(threadID, sl)
 		return
 	}
-	view, err := s.a.ReadThread(threadID)
+	view, err := s.readThread(threadID)
 	if err != nil {
 		return
 	}
@@ -183,43 +153,44 @@ func (s *orchestrator) stopThread(threadID string) {
 }
 
 func (s *orchestrator) endTurn(turn repo.TurnRow) {
-	view, err := s.a.ReadThread(turn.ThreadID)
+	view, err := s.readThread(turn.ThreadID)
 	if err != nil {
-		s.a.fault(turn.ThreadID, turn.ID, fmt.Errorf("the turn could not be ended: %w", err))
+		s.fault(turn.ThreadID, turn.ID, fmt.Errorf("the turn could not be ended: %w", err))
 		return
 	}
 	report, parent, reports, err := s.subagentReport(view, turn)
 	if err != nil {
-		s.a.fault(turn.ThreadID, turn.ID, fmt.Errorf("the subagent's report could not be delivered: %w", err))
+		s.fault(turn.ThreadID, turn.ID, fmt.Errorf("the subagent's report could not be delivered: %w", err))
 		return
 	}
 	var closed []repo.ItemRow
 	if reports {
 		var stored repo.ItemRow
-		if closed, stored, err = s.a.DB.EndSubagentTurn(turn.ThreadID, turn, report); err == nil {
-			s.a.emitItem(parent.Thread, parent.Turn, stored, false)
+		if closed, stored, err = s.DB.EndSubagentTurn(turn.ThreadID, turn, report); err == nil {
+			s.emitItem(parent.Thread, parent.Turn, stored, false)
 		}
 	} else {
-		closed, err = s.a.DB.EndTurn(turn.ThreadID, turn)
+		closed, err = s.DB.EndTurn(turn.ThreadID, turn)
 	}
 	if err != nil {
-		s.a.fault(turn.ThreadID, turn.ID, fmt.Errorf("the end of the turn could not be recorded: %w", err))
+		s.fault(turn.ThreadID, turn.ID, fmt.Errorf("the end of the turn could not be recorded: %w", err))
 		return
 	}
-	if view, err = s.a.ReadThread(turn.ThreadID); err != nil {
-		s.a.fault(turn.ThreadID, turn.ID, fmt.Errorf("the turn ended but could not be read back: %w", err))
+	if view, err = s.readThread(turn.ThreadID); err != nil {
+		s.fault(turn.ThreadID, turn.ID, fmt.Errorf("the turn ended but could not be read back: %w", err))
 	} else {
 		for _, it := range closed {
-			s.a.emitItem(view.Thread, turn, it, false)
+			s.emitItem(view.Thread, turn, it, false)
 		}
 		ended, _ := findTurn(view, turn.ID)
-		s.a.emit(Event{Kind: EventTurnCompleted, Thread: view.Thread, Turn: ended})
-		s.a.emitStatus(turn.ThreadID)
+		s.emit(Event{Kind: EventTurnCompleted, Thread: view.Thread, Turn: ended})
+		s.emitStatus(turn.ThreadID)
 	}
 	if reports {
-		s.settle(parent.Thread.ID)
+		s.schedule(parent.Thread.ID)
 	}
-	s.settle(turn.ThreadID)
+	s.promote(turn.ThreadID)
+	s.schedule(turn.ThreadID)
 }
 
 func (s *orchestrator) resolveApproval(threadID, approvalID string, decision repo.Decision, decidedBy string) error {
@@ -253,7 +224,7 @@ func (s *orchestrator) answerUserInput(threadID, itemID string, answers map[stri
 }
 
 func (s *orchestrator) respond(threadID string, match func(repo.ItemRow) bool, apply func(repo.ItemRow) (repo.ItemRow, error)) error {
-	view, err := s.a.ReadThread(threadID)
+	view, err := s.readThread(threadID)
 	if err != nil {
 		return err
 	}
@@ -270,13 +241,13 @@ func (s *orchestrator) respond(threadID string, match func(repo.ItemRow) bool, a
 	if err != nil {
 		return err
 	}
-	stored, _, err := s.a.DB.RecordItem(threadID, answered)
+	stored, _, err := s.DB.RecordItem(threadID, answered)
 	if err != nil {
 		return err
 	}
-	s.a.emitItem(view.Thread, activeTurn, stored, false)
-	if !s.settle(threadID) {
-		s.a.emitStatus(threadID)
+	s.emitItem(view.Thread, activeTurn, stored, false)
+	if !s.schedule(threadID) {
+		s.emitStatus(threadID)
 	}
 	return nil
 }

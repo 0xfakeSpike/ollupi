@@ -9,7 +9,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/repo"
 )
 
-func (a *Agent) step(ctx context.Context, view repo.ThreadView, turn repo.TurnRow) (runtime.Outcome, repo.Usage, error) {
+func (a *orchestrator) step(ctx context.Context, view repo.ThreadView, turn repo.TurnRow) (runtime.Outcome, repo.Usage, error) {
 	if _, err := a.modelOn(turn.Model.Connection); err != nil {
 		return runtime.Done, repo.Usage{}, err
 	}
@@ -55,7 +55,7 @@ func (a *Agent) step(ctx context.Context, view repo.ThreadView, turn repo.TurnRo
 	return rt.Step(ctx)
 }
 
-func (a *Agent) recorder(t repo.ThreadRow, turn repo.TurnRow) func(repo.ItemRow) (repo.ItemRow, error) {
+func (a *orchestrator) recorder(t repo.ThreadRow, turn repo.TurnRow) func(repo.ItemRow) (repo.ItemRow, error) {
 	return func(it repo.ItemRow) (repo.ItemRow, error) {
 		stored, isNew, err := a.DB.RecordItem(t.ID, it)
 		if err != nil {

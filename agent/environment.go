@@ -14,7 +14,7 @@ type environment struct {
 	settings  permission.Settings
 }
 
-func (a *Agent) environmentOf(t repo.ThreadRow) (environment, error) {
+func (a *orchestrator) environmentOf(t repo.ThreadRow) (environment, error) {
 	var env environment
 	if t.WorkspaceID != "" {
 		w, err := a.DB.Workspace(string(t.WorkspaceID))

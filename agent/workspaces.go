@@ -13,11 +13,11 @@ import (
 	"github.com/google/uuid"
 )
 
-func (a *Agent) ListWorkspaces() ([]repo.WorkspaceRow, error) {
+func (a *orchestrator) listWorkspaces() ([]repo.WorkspaceRow, error) {
 	return a.DB.Workspaces()
 }
 
-func (a *Agent) AddWorkspace(path, name string) (repo.WorkspaceRow, error) {
+func (a *orchestrator) addWorkspace(path, name string) (repo.WorkspaceRow, error) {
 	root, err := sandbox.CanonicalDirectory(path)
 	if err != nil {
 		return repo.WorkspaceRow{}, fmt.Errorf("agent: %w", err)
@@ -41,7 +41,7 @@ func (a *Agent) AddWorkspace(path, name string) (repo.WorkspaceRow, error) {
 		})
 }
 
-func (a *Agent) RenameWorkspace(id, name string) (repo.WorkspaceRow, error) {
+func (a *orchestrator) renameWorkspace(id, name string) (repo.WorkspaceRow, error) {
 	name, err := workspaceName(name)
 	if err != nil {
 		return repo.WorkspaceRow{}, err
@@ -49,7 +49,7 @@ func (a *Agent) RenameWorkspace(id, name string) (repo.WorkspaceRow, error) {
 	return a.changeWorkspace(id, func(w *repo.WorkspaceRow) { w.Name = name })
 }
 
-func (a *Agent) ArchiveWorkspace(id string, archived bool) (repo.WorkspaceRow, error) {
+func (a *orchestrator) archiveWorkspace(id string, archived bool) (repo.WorkspaceRow, error) {
 	return a.changeWorkspace(id, func(w *repo.WorkspaceRow) {
 		w.ArchivedAt = nil
 		if archived {
@@ -59,14 +59,14 @@ func (a *Agent) ArchiveWorkspace(id string, archived bool) (repo.WorkspaceRow, e
 	})
 }
 
-func (a *Agent) UpdateWorkspaceSettings(id string, settings permission.Settings) (repo.WorkspaceRow, error) {
+func (a *orchestrator) updateWorkspaceSettings(id string, settings permission.Settings) (repo.WorkspaceRow, error) {
 	if err := a.validateLayer(a.Settings, settings); err != nil {
 		return repo.WorkspaceRow{}, err
 	}
 	return a.changeWorkspace(id, func(w *repo.WorkspaceRow) { w.Settings = settings })
 }
 
-func (a *Agent) changeWorkspace(id string, change func(*repo.WorkspaceRow)) (repo.WorkspaceRow, error) {
+func (a *orchestrator) changeWorkspace(id string, change func(*repo.WorkspaceRow)) (repo.WorkspaceRow, error) {
 	w, err := a.DB.UpdateWorkspace(id, func(w repo.WorkspaceRow) (repo.WorkspaceRow, error) {
 		w.UpdatedAt = time.Now().UTC()
 		change(&w)
@@ -78,7 +78,7 @@ func (a *Agent) changeWorkspace(id string, change func(*repo.WorkspaceRow)) (rep
 	return w, err
 }
 
-func (a *Agent) validateLayer(base, layer permission.Settings) error {
+func (a *orchestrator) validateLayer(base, layer permission.Settings) error {
 	if a.registry == nil {
 		return fmt.Errorf("agent: the tool registry is not ready")
 	}
@@ -88,7 +88,7 @@ func (a *Agent) validateLayer(base, layer permission.Settings) error {
 	return nil
 }
 
-func (a *Agent) checkWorkspace(id string) error {
+func (a *orchestrator) checkWorkspace(id string) error {
 	if id == "" {
 		return nil
 	}
