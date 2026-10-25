@@ -67,7 +67,7 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 	return nil
 }
 
-func (s *Server) admit(r *http.Request) (int, string) {
+func (s *Server) authorize(r *http.Request) (int, string) {
 	host := r.Host
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
