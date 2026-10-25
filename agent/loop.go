@@ -34,8 +34,8 @@ type work struct {
 	slot     *slot
 }
 
-type orchestrator struct {
-	Config
+type Agent struct {
+	cfg      Config
 	ctx      context.Context
 	registry *tools.Registry
 	skills   *skills.Catalog
@@ -47,115 +47,115 @@ type orchestrator struct {
 	done   sync.WaitGroup
 }
 
-func (s *orchestrator) start() {
+func (a *Agent) start() {
 	for range workers {
-		s.done.Add(1)
-		go s.worker()
+		a.done.Add(1)
+		go a.worker()
 	}
-	s.done.Add(1)
-	go s.loop()
+	a.done.Add(1)
+	go a.loop()
 }
 
-func (s *orchestrator) wait() {
-	s.done.Wait()
+func (a *Agent) Wait() {
+	a.done.Wait()
 }
 
-func (s *orchestrator) loop() {
-	defer s.done.Done()
+func (a *Agent) loop() {
+	defer a.done.Done()
 	for {
-		for len(s.queue) > 0 {
-			if sl, ok := s.slots[s.queue[0]]; ok && sl.phase == queued {
+		for len(a.queue) > 0 {
+			if sl, ok := a.slots[a.queue[0]]; ok && sl.phase == queued {
 				break
 			}
-			s.queue = s.queue[1:]
+			a.queue = a.queue[1:]
 		}
 		var out chan work
 		var next work
-		if len(s.queue) > 0 {
-			out, next = s.work, work{threadID: s.queue[0], slot: s.slots[s.queue[0]]}
+		if len(a.queue) > 0 {
+			out, next = a.work, work{threadID: a.queue[0], slot: a.slots[a.queue[0]]}
 		}
 		select {
-		case <-s.ctx.Done():
+		case <-a.ctx.Done():
 			return
-		case fn := <-s.events:
+		case fn := <-a.events:
 			fn()
 		case out <- next:
-			s.queue = s.queue[1:]
+			a.queue = a.queue[1:]
 			next.slot.phase = running
 		}
 	}
 }
 
-func (s *orchestrator) post(fn func()) bool {
+func (a *Agent) post(fn func()) bool {
 	select {
-	case s.events <- fn:
+	case a.events <- fn:
 		return true
-	case <-s.ctx.Done():
+	case <-a.ctx.Done():
 		return false
 	}
 }
 
-func (s *orchestrator) call(fn func() error) error {
+func (a *Agent) call(fn func() error) error {
 	done := make(chan error, 1)
-	if !s.post(func() { done <- fn() }) {
+	if !a.post(func() { done <- fn() }) {
 		return errStopped
 	}
 	select {
 	case err := <-done:
 		return err
-	case <-s.ctx.Done():
+	case <-a.ctx.Done():
 		return errStopped
 	}
 }
 
-func (s *orchestrator) enqueue(threadID, turnID string) {
-	ctx, cancel := context.WithCancel(s.ctx)
-	s.slots[threadID] = &slot{turnID: turnID, phase: queued, ctx: ctx, cancel: cancel}
-	s.queue = append(s.queue, threadID)
+func (a *Agent) enqueue(threadID, turnID string) {
+	ctx, cancel := context.WithCancel(a.ctx)
+	a.slots[threadID] = &slot{turnID: turnID, phase: queued, ctx: ctx, cancel: cancel}
+	a.queue = append(a.queue, threadID)
 }
 
-func (s *orchestrator) worker() {
-	defer s.done.Done()
+func (a *Agent) worker() {
+	defer a.done.Done()
 	for {
 		select {
-		case <-s.ctx.Done():
+		case <-a.ctx.Done():
 			return
-		case w := <-s.work:
-			s.run(w.threadID, w.slot)
+		case w := <-a.work:
+			a.run(w.threadID, w.slot)
 		}
 	}
 }
 
-func (s *orchestrator) run(threadID string, sl *slot) {
-	view, err := s.readThread(threadID)
+func (a *Agent) run(threadID string, sl *slot) {
+	view, err := a.ReadThread(threadID)
 	if err != nil {
 		log.Printf("agent: thread %s cannot be read while turn %s is queued: %v", threadID, sl.turnID, err)
-		s.post(func() {
-			s.release(threadID)
-			s.failTurn(sl.turnID, repo.TurnFailed, "the thread could not be read from storage")
+		a.post(func() {
+			a.release(threadID)
+			a.failTurn(sl.turnID, repo.TurnFailed, "the thread could not be read from storage")
 		})
 		return
 	}
 	turn, ok := findTurn(view, sl.turnID)
 	if !ok || turn.Status != repo.TurnInProgress {
-		s.post(func() {
-			s.release(threadID)
-			s.promote(threadID)
-			s.schedule(threadID)
+		a.post(func() {
+			a.release(threadID)
+			a.promote(threadID)
+			a.schedule(threadID)
 		})
 		return
 	}
-	outcome, usage, err := s.step(sl.ctx, view, turn)
-	if err := s.DB.AddUsage(threadID, turn.ID, usage); err != nil {
+	outcome, usage, err := a.step(sl.ctx, view, turn)
+	if err := a.cfg.DB.AddUsage(threadID, turn.ID, usage); err != nil {
 		log.Printf("agent: thread %s: record usage of turn %s: %v", threadID, turn.ID, err)
 	}
 	seen := len(view.Items)
-	s.post(func() { s.afterStep(threadID, sl, seen, outcome, err) })
+	a.post(func() { a.afterStep(threadID, sl, seen, outcome, err) })
 }
 
-func (s *orchestrator) release(threadID string) {
-	if sl, exists := s.slots[threadID]; exists {
+func (a *Agent) release(threadID string) {
+	if sl, exists := a.slots[threadID]; exists {
 		sl.cancel()
-		delete(s.slots, threadID)
+		delete(a.slots, threadID)
 	}
 }

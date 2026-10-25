@@ -12,8 +12,8 @@ type Request struct {
 	Item   repo.ItemRow
 }
 
-func (a *orchestrator) pendingRequests(threadID string) []Request {
-	view, err := a.readThread(threadID)
+func (a *Agent) PendingRequests(threadID string) []Request {
+	view, err := a.ReadThread(threadID)
 	if err != nil {
 		return nil
 	}
@@ -22,7 +22,7 @@ func (a *orchestrator) pendingRequests(threadID string) []Request {
 		out = append(out, Request{Thread: view.Thread, Item: it})
 	}
 	for _, call := range view.AgentCalls() {
-		if child, err := a.readThread(call.Await.ThreadID); err == nil {
+		if child, err := a.ReadThread(call.Await.ThreadID); err == nil {
 			for _, it := range child.PendingRequests() {
 				out = append(out, Request{Thread: child.Thread, Item: it})
 			}
@@ -32,14 +32,14 @@ func (a *orchestrator) pendingRequests(threadID string) []Request {
 	return out
 }
 
-func (a *orchestrator) allPendingRequests() []Request {
-	ids, err := a.DB.ActiveThreadIDs()
+func (a *Agent) AllPendingRequests() []Request {
+	ids, err := a.cfg.DB.ActiveThreadIDs()
 	if err != nil {
 		return nil
 	}
 	var out []Request
 	for _, id := range ids {
-		v, err := a.readThread(id)
+		v, err := a.ReadThread(id)
 		if err != nil {
 			continue
 		}

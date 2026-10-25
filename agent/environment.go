@@ -14,10 +14,10 @@ type environment struct {
 	settings  permission.Settings
 }
 
-func (a *orchestrator) environmentOf(t repo.ThreadRow) (environment, error) {
+func (a *Agent) environmentOf(t repo.ThreadRow) (environment, error) {
 	var env environment
 	if t.WorkspaceID != "" {
-		w, err := a.DB.Workspace(string(t.WorkspaceID))
+		w, err := a.cfg.DB.Workspace(string(t.WorkspaceID))
 		if err != nil {
 			return environment{}, fmt.Errorf("agent: workspace %s: %w", t.WorkspaceID, err)
 		}
@@ -25,13 +25,13 @@ func (a *orchestrator) environmentOf(t repo.ThreadRow) (environment, error) {
 	}
 	own := t.Settings
 	if t.ParentThreadID != "" {
-		parent, err := a.DB.ThreadRow(string(t.ParentThreadID))
+		parent, err := a.cfg.DB.ThreadRow(string(t.ParentThreadID))
 		if err != nil {
 			return environment{}, fmt.Errorf("agent: parent thread %s: %w", t.ParentThreadID, err)
 		}
 		own = parent.Settings
 	}
-	layers := []permission.Settings{a.Settings, env.workspace.Settings, own}
+	layers := []permission.Settings{a.cfg.Settings, env.workspace.Settings, own}
 	if t.ParentThreadID != "" {
 		layers = append(layers, permission.Settings{Rules: permission.Rules{Deny: []string{subagent.Tool}}})
 	}
