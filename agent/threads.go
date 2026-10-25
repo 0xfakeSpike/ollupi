@@ -14,11 +14,11 @@ func (a *Agent) StartThread(workspaceID string, settings permission.Settings) (r
 	if err := a.checkWorkspace(workspaceID); err != nil {
 		return repo.ThreadRow{}, err
 	}
-	env, err := a.environmentOf(repo.ThreadRow{WorkspaceID: repo.Ref(workspaceID)})
+	w, err := a.workspaceOf(repo.Ref(workspaceID))
 	if err != nil {
 		return repo.ThreadRow{}, err
 	}
-	if err := a.validateLayer(env.settings, settings); err != nil {
+	if err := a.validateLayer(a.inheritedSettings(w), settings); err != nil {
 		return repo.ThreadRow{}, err
 	}
 	return a.createThread(repo.ThreadRow{Settings: settings, WorkspaceID: repo.Ref(workspaceID)})
@@ -32,11 +32,11 @@ func (a *Agent) UpdateThreadSettings(threadID string, settings permission.Settin
 	if t.ParentThreadID != "" {
 		return repo.ThreadRow{}, ErrSubagentThread
 	}
-	env, err := a.environmentOf(repo.ThreadRow{WorkspaceID: t.WorkspaceID})
+	w, err := a.workspaceOf(t.WorkspaceID)
 	if err != nil {
 		return repo.ThreadRow{}, err
 	}
-	if err := a.validateLayer(env.settings, settings); err != nil {
+	if err := a.validateLayer(a.inheritedSettings(w), settings); err != nil {
 		return repo.ThreadRow{}, err
 	}
 	t, err = a.cfg.DB.SetThreadSettings(threadID, settings)

@@ -102,11 +102,11 @@ func (a *Agent) CallTool(ctx context.Context, threadID, tool string, arguments m
 		if err != nil {
 			return tools.Result{}, fmt.Errorf("agent: thread %s: %w", threadID, err)
 		}
-		env, err := a.environmentOf(t)
+		w, err := a.workspaceOf(t.WorkspaceID)
 		if err != nil {
 			return tools.Result{}, err
 		}
-		caller = env.caller(t)
+		caller = callerOf(t, w)
 	}
 	if arguments == nil {
 		arguments = map[string]any{}

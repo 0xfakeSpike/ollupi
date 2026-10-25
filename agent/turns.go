@@ -81,12 +81,12 @@ func (a *Agent) beginTurn(view repo.ThreadView, text, cronJobID string, model ll
 
 func (a *Agent) submit(view repo.ThreadView, text, cronJobID string, model llm.Model) (repo.TurnRow, error) {
 	threadID := view.Thread.ID
-	env, err := a.environmentOf(view.Thread)
-	if err != nil {
-		return repo.TurnRow{}, err
-	}
 	if view.Thread.ParentThreadID == "" && view.Thread.WorkspaceID != "" {
-		if err := usable(string(view.Thread.WorkspaceID), env.workspace); err != nil {
+		w, err := a.workspaceOf(view.Thread.WorkspaceID)
+		if err != nil {
+			return repo.TurnRow{}, err
+		}
+		if err := usable(string(view.Thread.WorkspaceID), w); err != nil {
 			return repo.TurnRow{}, err
 		}
 	}
