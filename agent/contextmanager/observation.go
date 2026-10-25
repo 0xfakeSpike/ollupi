@@ -13,22 +13,20 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
-const compactTextMaxRunes = 16000
-
-func compactText(r tools.Result) string {
+func observationText(r tools.Result) string {
 	if r.Err != nil {
-		return truncateRunes(r.Err.Error(), compactTextMaxRunes)
+		return strings.TrimSpace(r.Err.Error())
 	}
 	v := compactStructured(r.Output)
 	if s, ok := v.(string); ok {
-		return truncateRunes(s, compactTextMaxRunes)
+		return strings.TrimSpace(s)
 	}
 
 	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		panic(fmt.Sprintf("contextmanager: render output of %s: %v", r.Tool, err))
 	}
-	return truncateRunes(string(b), compactTextMaxRunes)
+	return strings.TrimSpace(string(b))
 }
 
 func compactStructured(v any) any {
@@ -96,18 +94,6 @@ func isDecorativeLine(line string) bool {
 	return runes >= 3 && nonSpace >= 3 && border*100 >= 90*nonSpace
 }
 
-func truncateRunes(s string, max int) string {
-	if max <= 0 {
-		return ""
-	}
-	runes := []rune(s)
-	if len(runes) <= max {
-		return s
-	}
-	head, tail := cutPoints(s, redact.Spans(s), max/3, len(runes)-(max-max/3))
-	return string(runes[:head]) + fmt.Sprintf("\n[... %d characters omitted ...]\n", tail-head) + string(runes[tail:])
-}
-
 func cutPoints(s string, spans [][2]int, head, tail int) (int, int) {
 	for _, sp := range spans {
 		start, end := utf8.RuneCountInString(s[:sp[0]]), utf8.RuneCountInString(s[:sp[1]])
@@ -170,26 +156,27 @@ func (o *observations) render(it *repo.ItemRow, budget int) (string, error) {
 		}
 		o.results[it.ID] = result
 	}
-	if result.Err != nil {
-		return "error: " + clipText(result.Err.Error(), budget), nil
-	}
-	artifacts := renderArtifacts(result.Artifacts)
 	text, ok := o.texts[it.ID]
 	if !ok {
-		text = strings.TrimSpace(compactText(result))
+		text = observationText(result)
 		o.texts[it.ID] = text
 	}
+	spans := func(string) [][2]int {
+		spans, ok := o.spans[it.ID]
+		if !ok {
+			spans = redact.Spans(text)
+			o.spans[it.ID] = spans
+		}
+		return spans
+	}
+	if result.Err != nil {
+		return "error: " + clip(text, budget, spans, readable(it.ID)), nil
+	}
+	artifacts := renderArtifacts(result.Artifacts)
 	if text == "" {
 		text = "(no output)"
 	} else {
-		text = clip(text, max(minOutputTokens, budget-llm.EstimateTokens(artifacts)), func(string) [][2]int {
-			spans, ok := o.spans[it.ID]
-			if !ok {
-				spans = redact.Spans(text)
-				o.spans[it.ID] = spans
-			}
-			return spans
-		})
+		text = clip(text, max(minOutputTokens, budget-llm.EstimateTokens(artifacts)), spans, readable(it.ID))
 	}
 	if artifacts != "" {
 		text += "\n\n" + artifacts
@@ -198,21 +185,30 @@ func (o *observations) render(it *repo.ItemRow, budget int) (string, error) {
 }
 
 func clipText(s string, budget int) string {
-	return clip(s, budget, redact.Spans)
+	return clip(s, budget, redact.Spans, omitted)
 }
 
-func clip(s string, budget int, spans func(string) [][2]int) string {
+func omitted(from, to int) string {
+	return fmt.Sprintf("\n[... %d characters omitted ...]\n", to-from)
+}
+
+func readable(id string) func(from, to int) string {
+	return func(from, to int) string {
+		return fmt.Sprintf("\n[... characters %d-%d of this output omitted; call %s with output_id %q and offset %d to read them ...]\n", from, to, ToolReadOutput, id, from)
+	}
+}
+
+func clip(s string, budget int, spans func(string) [][2]int, marker func(from, to int) string) string {
 	s = strings.TrimSpace(s)
 	if s == "" || budget <= 0 || llm.EstimateTokens(s) <= budget {
 		return s
 	}
 	runes := []rune(s)
-	marker := func(n int) string { return fmt.Sprintf("\n[... %d characters omitted ...]\n", n) }
 
 	lo, hi := 0, len(runes)/2
 	for lo < hi {
 		mid := (lo + hi + 1) / 2
-		if llm.EstimateTokens(string(runes[:mid])+marker(len(runes)-2*mid)+string(runes[len(runes)-mid:])) <= budget {
+		if llm.EstimateTokens(string(runes[:mid])+marker(mid, len(runes)-mid)+string(runes[len(runes)-mid:])) <= budget {
 			lo = mid
 		} else {
 			hi = mid - 1
@@ -220,5 +216,5 @@ func clip(s string, budget int, spans func(string) [][2]int) string {
 	}
 
 	head, tail := cutPoints(s, spans(s), 2*lo/3, len(runes)-(2*lo-2*lo/3))
-	return strings.TrimSpace(string(runes[:head])) + marker(tail-head) + strings.TrimSpace(string(runes[tail:]))
+	return strings.TrimSpace(string(runes[:head])) + marker(head, tail) + strings.TrimSpace(string(runes[tail:]))
 }
