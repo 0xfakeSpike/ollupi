@@ -9,7 +9,7 @@ import (
 )
 
 func (c *conn) memoryRequest(method string, params json.RawMessage) (any, func(), *jsonrpc.Error) {
-	store := c.s.agent.Memory()
+	store := c.s.memory
 	if store == nil {
 		return nil, nil, jsonrpc.Errorf(jsonrpc.CodeServerError, "long-term memory is unavailable")
 	}

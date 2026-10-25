@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/agent/memory"
 )
 
 type Options struct {
@@ -20,6 +21,7 @@ type Options struct {
 	Token          string
 	AllowedOrigins []string
 	AllowedHosts   []string
+	Memory         *memory.Manager
 }
 
 func NewServer(a *agent.Agent, opts Options) (*Server, error) {
@@ -28,6 +30,7 @@ func NewServer(a *agent.Agent, opts Options) (*Server, error) {
 	}
 	s := &Server{
 		agent:   a,
+		memory:  opts.Memory,
 		token:   opts.Token,
 		hosts:   append([]string{"localhost", "127.0.0.1", "::1"}, opts.AllowedHosts...),
 		origins: append([]string{"localhost:*", "127.0.0.1:*", "[::1]:*"}, opts.AllowedOrigins...),

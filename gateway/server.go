@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/repo"
@@ -29,6 +30,7 @@ const (
 
 type Server struct {
 	agent   *agent.Agent
+	memory  *memory.Manager
 	token   string
 	hosts   []string
 	methods map[string]Method
