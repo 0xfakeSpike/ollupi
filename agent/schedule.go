@@ -30,6 +30,7 @@ func (a *Agent) reconcile(threadID string) bool {
 		}
 		a.emit(Event{Kind: EventTurnStarted, Thread: st.Thread, Turn: turn})
 		a.emitItem(st.Thread, turn, message, true)
+		a.emitStatus(threadID)
 	}
 	if _, err := a.modelOn(turn.Model.Connection); err != nil {
 		turn.Status, turn.Error = repo.TurnFailed, err.Error()
@@ -45,16 +46,10 @@ func (a *Agent) reconcile(threadID string) bool {
 		}
 		waiting = waiting || !settled
 	}
-	if waiting {
-		a.emitStatus(threadID)
-		return false
-	}
-	if len(a.slotByThread) >= a.cfg.Slots {
-		a.emitStatus(threadID)
+	if waiting || len(a.slotByThread) >= a.cfg.Slots {
 		return false
 	}
 	a.enqueue(threadID, turn.ID)
-	a.emitStatus(threadID)
 	return true
 }
 
@@ -70,14 +65,6 @@ func (a *Agent) admit() {
 	for _, id := range ids {
 		if len(a.slotByThread) >= a.cfg.Slots {
 			return
-		}
-		st, err := a.cfg.DB.ThreadState(id)
-		if err != nil {
-			a.halt(id, err)
-			continue
-		}
-		if len(st.PendingRequests()) > 0 || len(st.AgentCalls()) > 0 {
-			continue
 		}
 		a.reconcile(id)
 	}
@@ -151,8 +138,10 @@ func (a *Agent) afterStep(threadID string, sl *slot, seen int, final bool, stepE
 		a.endTurn(turn)
 		return
 	}
-	if !a.reconcile(threadID) {
+	a.reconcile(threadID)
+	if len(st.PendingRequests()) > 0 {
 		a.emitRequests(st)
+		a.emitStatus(threadID)
 	}
 }
 
@@ -170,12 +159,6 @@ func (a *Agent) recover() error {
 			log.Printf("agent: thread %s: closed %d items cut off by the restart", id, len(closed))
 		}
 	}
-	ordered, err := a.cfg.DB.OpenThreads(nil)
-	if err != nil {
-		return fmt.Errorf("agent: open threads: %w", err)
-	}
-	for _, id := range ordered {
-		a.reconcile(id)
-	}
+	a.admit()
 	return nil
 }
