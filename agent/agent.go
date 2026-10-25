@@ -41,6 +41,7 @@ type Config struct {
 	Models   []llm.Model
 	Tools    []string
 	Settings permission.Settings
+	Slots    int
 
 	Connections map[string]*llm.OpenAI
 	Providers   []tools.Provider
@@ -70,6 +71,9 @@ func (a *Agent) Start(ctx context.Context) error {
 	}
 	if err := a.checkBudgets(); err != nil {
 		return fmt.Errorf("agent %s: %w", a.cfg.Name, err)
+	}
+	if a.cfg.Slots <= 0 {
+		a.cfg.Slots = defaultSlots
 	}
 	a.events, a.slotByThread = make(chan func()), map[string]*slot{}
 	if err := a.recover(); err != nil {
