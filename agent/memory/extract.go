@@ -77,7 +77,7 @@ func extractionScore(e repo.MemoryRow, terms []string, payload string) int {
 			score += 100
 		}
 	}
-	if e.Status == "forgotten" {
+	if e.Status == repo.MemoryForgotten {
 		score += 20
 	}
 	return score
@@ -128,7 +128,7 @@ func parseOperations(content string, batch *Batch, restore func(string) string) 
 			op.Topic = normalizeTopic(op.Topic)
 		case "update", "retire":
 			e, ok := existing[op.ID]
-			if !ok || e.Status == "forgotten" || touched[op.ID] {
+			if !ok || e.Status == repo.MemoryForgotten || touched[op.ID] {
 				return nil, errors.New("memory extraction targeted an unavailable record")
 			}
 			if op.Topic != "" && normalizeTopic(op.Topic) != e.Topic {

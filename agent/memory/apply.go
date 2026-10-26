@@ -48,9 +48,9 @@ func (s *applyState) apply(ops []Operation) error {
 			continue
 		}
 		if op.Action == "retire" {
-			e.Status = "retired"
+			e.Status = repo.MemoryRetired
 		} else {
-			e.Text, e.Kind, e.Status = op.Text, op.Kind, "active"
+			e.Text, e.Kind, e.Status = op.Text, op.Kind, repo.MemoryActive
 		}
 		e.Sources, e.UpdatedAt = op.Sources, s.now
 		if err := s.tx.SaveMemory(e); err != nil {
@@ -76,7 +76,7 @@ func (s *applyState) target(op Operation) (repo.MemoryRow, bool, error) {
 			return repo.MemoryRow{}, false, fmt.Errorf("memory %s disappeared while the batch was being extracted", op.ID)
 		}
 	}
-	if e.Status == "forgotten" || e.UserEdited {
+	if e.Status == repo.MemoryForgotten || e.UserEdited {
 		return repo.MemoryRow{}, false, nil
 	}
 	return e, true, nil

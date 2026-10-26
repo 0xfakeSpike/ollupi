@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"database/sql/driver"
 	"time"
 
 	"gorm.io/gorm/clause"
@@ -14,19 +15,31 @@ type MemorySource struct {
 }
 
 type MemoryRow struct {
-	ID          string         `gorm:"primaryKey" json:"id"`
-	WorkspaceID string         `gorm:"not null;default:'';uniqueIndex:memories_scope_topic,priority:1;index:memories_scope_status,priority:1" json:"workspaceId,omitempty"`
-	Topic       string         `gorm:"not null;uniqueIndex:memories_scope_topic,priority:2" json:"topic"`
-	Kind        string         `gorm:"not null" json:"kind"`
-	Text        string         `gorm:"not null" json:"text"`
-	Status      string         `gorm:"not null;check:memories_status,status IN ('active','retired','forgotten');index:memories_scope_status,priority:2" json:"status"`
-	UserEdited  bool           `gorm:"not null" json:"userEdited,omitempty"`
-	Sources     []MemorySource `gorm:"not null;serializer:json;check:memories_sources,json_valid(sources)" json:"sources"`
-	CreatedAt   time.Time      `gorm:"not null;autoCreateTime:false" json:"createdAt"`
-	UpdatedAt   time.Time      `gorm:"not null;autoUpdateTime:false" json:"updatedAt"`
+	ID          string          `gorm:"primaryKey" json:"id"`
+	WorkspaceID string          `gorm:"not null;default:'';uniqueIndex:memories_scope_topic,priority:1;index:memories_scope_status,priority:1" json:"workspaceId,omitempty"`
+	Topic       string          `gorm:"not null;uniqueIndex:memories_scope_topic,priority:2" json:"topic"`
+	Kind        string          `gorm:"not null" json:"kind"`
+	Text        string          `gorm:"not null" json:"text"`
+	Status      MemoryRowStatus `gorm:"not null;index:memories_scope_status,priority:2" json:"status"`
+	UserEdited  bool            `gorm:"not null" json:"userEdited,omitempty"`
+	Sources     []MemorySource  `gorm:"not null;serializer:json;check:memories_sources,json_valid(sources)" json:"sources"`
+	CreatedAt   time.Time       `gorm:"not null;autoCreateTime:false" json:"createdAt"`
+	UpdatedAt   time.Time       `gorm:"not null;autoUpdateTime:false" json:"updatedAt"`
 }
 
 func (MemoryRow) TableName() string { return "memories" }
+
+type MemoryRowStatus string
+
+const (
+	MemoryActive    MemoryRowStatus = "active"
+	MemoryRetired   MemoryRowStatus = "retired"
+	MemoryForgotten MemoryRowStatus = "forgotten"
+)
+
+var MemoryRowStatusValues = []MemoryRowStatus{MemoryActive, MemoryRetired, MemoryForgotten}
+
+func (s MemoryRowStatus) Value() (driver.Value, error) { return enumValue(s, MemoryRowStatusValues) }
 
 func (d *DB) Memories(scope string, includeGlobal bool) ([]MemoryRow, error) {
 	var rows []MemoryRow

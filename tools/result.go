@@ -13,18 +13,22 @@ type Result struct {
 	Await     *Await
 }
 
+type AwaitBy string
+
 const (
-	AwaitUser  = "user"
-	AwaitAgent = "agent"
+	AwaitUser  AwaitBy = "user"
+	AwaitAgent AwaitBy = "agent"
 )
 
+var AwaitByValues = []AwaitBy{AwaitUser, AwaitAgent}
+
 type Await struct {
-	By       string          `json:"by"`
+	By       AwaitBy         `json:"by"`
 	Request  json.RawMessage `json:"request"`
 	ThreadID string          `json:"threadId,omitempty"`
 }
 
-func Awaiting(by string, request any) (Result, error) {
+func Awaiting(by AwaitBy, request any) (Result, error) {
 	raw, err := json.Marshal(request)
 	if err != nil {
 		return Result{}, err

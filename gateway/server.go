@@ -125,7 +125,7 @@ func (c *conn) isInitialized() bool {
 }
 
 func (c *conn) Notify(method string, _ json.RawMessage) {
-	if method != methodInitialized {
+	if _, ok := protocol.clientNotifications[method]; !ok {
 		log.Printf("gateway: ignored client notification %q", method)
 	}
 }
@@ -134,206 +134,69 @@ func (c *conn) Call(method string, params json.RawMessage) (any, func(), *jsonrp
 	c.mu.Lock()
 	initialized := c.initialized
 	c.mu.Unlock()
-	if method == methodInitialize {
-		if initialized {
-			return nil, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidRequest, "already initialized")
-		}
-		var p initializeParams
-		if err := jsonrpc.DecodeParams(params, &p); err != nil {
-			return nil, nil, err
-		}
-		after := func() {
-			c.mu.Lock()
-			c.initialized = true
-			c.mu.Unlock()
-			for _, r := range c.s.agent.AllPendingRequests() {
-				c.request(r.Thread.ID, r.Item)
-			}
-		}
-		return initializeResult{ServerInfo: serverInfo{Name: "ollupi", Version: version()}}, after, nil
-	}
-	if !initialized {
+	switch {
+	case method == methodInitialize && initialized:
+		return nil, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidRequest, "already initialized")
+	case method != methodInitialize && !initialized:
 		return nil, nil, jsonrpc.Errorf(errNotInitialized, "call initialize first")
 	}
-	ag := c.s.agent
-	switch method {
-	case methodMemoryList, methodMemoryStatus, methodMemoryUpdate, methodMemoryForget:
-		return c.memoryRequest(method, params)
-	case methodWorkspaceList, methodWorkspaceAdd, methodWorkspaceRename, methodWorkspaceArchive, methodWorkspacePermissions:
-		return c.workspaceRequest(method, params)
-	case methodCronList, methodCronCreate, methodCronPause, methodCronDelete:
-		return c.cronRequest(method, params)
-	case methodToolList:
-		if err := jsonrpc.DecodeParams(params, &struct{}{}); err != nil {
-			return nil, nil, err
-		}
-		return toolListResult{Data: ag.ListTools()}, nil, nil
-	case methodModelList:
-		if err := jsonrpc.DecodeParams(params, &struct{}{}); err != nil {
-			return nil, nil, err
-		}
-		models, fallback := ag.ListModels()
-		return modelListResult{Data: models, Default: fallback}, nil, nil
-	case methodThreadStart:
-		var p threadStartParams
-		if err := jsonrpc.DecodeParams(params, &p); err != nil {
-			return nil, nil, err
-		}
-		t, err := ag.StartThread(p.WorkspaceID, p.PermissionSettings)
-		if err != nil {
-			return nil, nil, serverError(err)
-		}
-		result := threadResult{Thread: t}
-		return result, func() { c.rpc.Notify(notifyThreadStarted, result) }, nil
-
-	case methodThreadResume, methodThreadRead:
-		var p threadPageParams
-		if err := jsonrpc.DecodeParams(params, &p); err != nil {
-			return nil, nil, err
-		}
-		if p.Limit == 0 {
-			p.Limit = defaultItems
-		}
-		if p.Limit < 1 || p.Limit > maxItems || p.BeforeSeq < 0 {
-			return nil, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "limit must be 1 to %d and beforeSeq not negative", maxItems)
-		}
-		c.s.deliver.Lock()
-		view, more, err := ag.ReadThreadPage(p.ThreadID, p.BeforeSeq, p.Limit)
-		if err != nil {
-			c.s.deliver.Unlock()
-			return nil, nil, serverError(err)
-		}
-		size := 0
-		for i := len(view.Items) - 1; i >= 0; i-- {
-			size += itemBytes(view.Items[i])
-			if size > pageBytes && i < len(view.Items)-1 {
-				view.Items, more = view.Items[i+1:], true
-				break
-			}
-		}
-		result := threadPageResult{ThreadView: view, HasMore: more}
-		after := func() {
-			c.s.deliver.Unlock()
-			if method == methodThreadResume {
-				for _, r := range ag.PendingRequests(p.ThreadID) {
-					c.request(r.Thread.ID, r.Item)
-				}
-			}
-		}
-		return result, after, nil
-
-	case methodThreadPermissions:
-		var p struct {
-			ThreadID string `json:"threadId"`
-			repo.PermissionSettings
-		}
-		if err := jsonrpc.DecodeParams(params, &p); err != nil {
-			return nil, nil, err
-		}
-		t, err := ag.UpdateThreadSettings(p.ThreadID, p.PermissionSettings)
-		if err != nil {
-			return nil, nil, serverError(err)
-		}
-		return threadResult{Thread: t}, nil, nil
-
-	case methodThreadList:
-		var p repo.ThreadFilter
-		if err := jsonrpc.DecodeParams(params, &p); err != nil {
-			return nil, nil, err
-		}
-		if p.Limit == 0 {
-			p.Limit = defaultLimit
-		}
-		if p.Limit < 1 || p.Limit > maxLimit {
-			return nil, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "limit must be 1 to %d", maxLimit)
-		}
-		threads, err := ag.ListThreads(p)
-		if err != nil {
-			return nil, nil, serverError(err)
-		}
-		return threadListResult{Data: threads}, nil, nil
-
-	case methodTurnStart:
-		var p turnStartParams
-		if err := jsonrpc.DecodeParams(params, &p); err != nil {
-			return nil, nil, err
-		}
-		text, rpcErr := inputText(p.Input)
-		if rpcErr != nil {
-			return nil, nil, rpcErr
-		}
-		turn, err := ag.StartTurn(p.ThreadID, agent.Input{Text: text, Connection: p.Connection})
-		if err != nil {
-			return nil, nil, serverError(err)
-		}
-		return turnResult{Turn: turn}, nil, nil
-
-	case methodTurnSteer:
-		var p turnSteerParams
-		if err := jsonrpc.DecodeParams(params, &p); err != nil {
-			return nil, nil, err
-		}
-		if p.ExpectedTurnID == "" {
-			return nil, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "expectedTurnId is required")
-		}
-		text, rpcErr := inputText(p.Input)
-		if rpcErr != nil {
-			return nil, nil, rpcErr
-		}
-		turn, err := ag.SteerTurn(p.ThreadID, p.ExpectedTurnID, text)
-		if err != nil {
-			return nil, nil, serverError(err)
-		}
-		return turnSteerResult{TurnID: turn.ID}, nil, nil
-
-	case methodTurnInterrupt:
-		var p turnInterruptParams
-		if err := jsonrpc.DecodeParams(params, &p); err != nil {
-			return nil, nil, err
-		}
-		if strings.TrimSpace(p.TurnID) == "" {
-			return nil, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "turnId is required")
-		}
-		if err := ag.InterruptTurn(p.ThreadID, p.TurnID); err != nil {
-			return nil, nil, serverError(err)
-		}
-		return struct{}{}, nil, nil
-
-	default:
-		c.s.mu.Lock()
-		m, ok := c.s.methods[method]
-		c.s.mu.Unlock()
-		if ok {
-			return callMethod(m, params)
-		}
+	if m, ok := protocol.methods[method]; ok {
+		return m.call(c, params)
+	}
+	c.s.mu.Lock()
+	m, ok := c.s.methods[method]
+	c.s.mu.Unlock()
+	if !ok {
 		return nil, nil, jsonrpc.Errorf(jsonrpc.CodeMethodNotFound, "method %q not found", method)
 	}
+	return callMethod(m, params)
+}
+
+func (c *conn) initialize(InitializeParams) (InitializeResult, func(), error) {
+	after := func() {
+		c.mu.Lock()
+		c.initialized = true
+		c.mu.Unlock()
+		for _, r := range c.s.agent.AllPendingRequests() {
+			c.request(r.Thread.ID, r.Item)
+		}
+	}
+	return InitializeResult{ServerInfo: ServerInfo{Name: "ollupi", Version: version()}, ProtocolSHA256: protocolSHA256}, after, nil
+}
+
+func (c *conn) modelList(Empty) (ModelListResult, func(), error) {
+	models, fallback := c.s.agent.ListModels()
+	return ModelListResult{Data: nonNil(models), Default: fallback}, nil, nil
+}
+
+func (c *conn) toolList(Empty) (ToolListResult, func(), error) {
+	return ToolListResult{Data: nonNil(c.s.agent.ListTools())}, nil, nil
 }
 
 func (c *conn) event(e agent.Event) {
 	switch e.Kind {
 	case agent.EventThreadStarted:
-		c.rpc.Notify(notifyThreadStarted, threadResult{Thread: e.Thread})
+		c.rpc.Notify(notifyThreadStarted, ThreadResult{Thread: e.Thread})
 	case agent.EventTurnQueued:
-		c.rpc.Notify(notifyTurnQueued, turnNotification{ThreadID: e.Thread.ID, Thread: e.Thread, Turn: e.Turn})
+		c.rpc.Notify(notifyTurnQueued, TurnNotification{ThreadID: e.Thread.ID, Thread: e.Thread, Turn: e.Turn})
 	case agent.EventTurnStarted:
-		c.rpc.Notify(notifyTurnStarted, turnNotification{ThreadID: e.Thread.ID, Thread: e.Thread, Turn: e.Turn})
+		c.rpc.Notify(notifyTurnStarted, TurnNotification{ThreadID: e.Thread.ID, Thread: e.Thread, Turn: e.Turn})
 	case agent.EventItemStarted:
-		c.rpc.Notify(notifyItemStarted, itemNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Item: *e.Item})
+		c.rpc.Notify(notifyItemStarted, ItemNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Item: *e.Item})
 	case agent.EventItemCompleted:
-		c.rpc.Notify(notifyItemCompleted, itemNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Item: *e.Item})
+		c.rpc.Notify(notifyItemCompleted, ItemNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Item: *e.Item})
 	case agent.EventItemDelta:
 		method := notifyAgentMessageDelta
 		if e.Item.Type == repo.ItemReasoning {
 			method = notifyReasoningDelta
 		}
-		c.rpc.Notify(method, deltaNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, ItemID: e.Item.ID, Delta: e.Delta})
+		c.rpc.Notify(method, DeltaNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, ItemID: e.Item.ID, Delta: e.Delta})
 	case agent.EventTurnCompleted:
-		c.rpc.Notify(notifyTurnCompleted, turnNotification{ThreadID: e.Thread.ID, Thread: e.Thread, Turn: e.Turn})
+		c.rpc.Notify(notifyTurnCompleted, TurnNotification{ThreadID: e.Thread.ID, Thread: e.Thread, Turn: e.Turn})
 	case agent.EventError:
-		c.rpc.Notify(notifyError, errorNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Message: e.Error})
+		c.rpc.Notify(notifyError, ErrorNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Message: e.Error})
 	case agent.EventThreadStatusChanged:
-		c.rpc.Notify(notifyThreadStatusChanged, threadStatusNotification{ThreadID: e.Thread.ID, Status: e.Status})
+		c.rpc.Notify(notifyThreadStatusChanged, ThreadStatusNotification{ThreadID: e.Thread.ID, Status: e.Status})
 	case agent.EventApprovalRequested, agent.EventUserInputRequested:
 		c.request(e.Thread.ID, *e.Item)
 	}
@@ -357,7 +220,7 @@ func (c *conn) request(threadID string, it repo.ItemRow) {
 		}
 		if err := c.resolve(threadID, it, result); err != nil {
 			log.Printf("gateway: response for item %s: %v", it.ID, err)
-			c.rpc.Notify(notifyError, errorNotification{ThreadID: threadID, TurnID: it.TurnID, ItemID: it.ID, Message: err.Error()})
+			c.rpc.Notify(notifyError, ErrorNotification{ThreadID: threadID, TurnID: it.TurnID, ItemID: it.ID, Message: err.Error()})
 			if !errors.Is(err, agent.ErrNoSuchRequest) {
 				c.request(threadID, it)
 			}
@@ -369,14 +232,14 @@ func (c *conn) request(threadID string, it repo.ItemRow) {
 			log.Printf("gateway: item %s: %v", it.ID, err)
 			return
 		}
-		c.rpc.Request(requestUserInput, userInputRequestParams{ThreadID: threadID, TurnID: it.TurnID, ItemID: it.ID, Questions: req.Questions}, answered)
+		c.rpc.Request(requestUserInput, UserInputRequestParams{ThreadID: threadID, TurnID: it.TurnID, ItemID: it.ID, Questions: nonNil(req.Questions)}, answered)
 		return
 	}
 	args := json.RawMessage(it.Arguments)
 	if strings.TrimSpace(it.Arguments) == "" {
 		args = json.RawMessage("{}")
 	}
-	c.rpc.Request(requestApproval, approvalRequestParams{
+	c.rpc.Request(requestApproval, ApprovalRequestParams{
 		ThreadID: threadID, TurnID: it.TurnID, ItemID: it.ID, ApprovalID: it.Approval.ID,
 		Server: it.Server, Tool: it.Tool, Arguments: args, PreparedExecution: it.PreparedExecution,
 		Reason: it.Approval.Reason, AvailableDecisions: it.Approval.AvailableDecisions(),
@@ -385,13 +248,13 @@ func (c *conn) request(threadID string, it repo.ItemRow) {
 
 func (c *conn) resolve(threadID string, it repo.ItemRow, result json.RawMessage) error {
 	if !it.WaitsForApproval() {
-		var r userInputResponse
+		var r UserInputResponse
 		if err := json.Unmarshal(result, &r); err != nil {
 			return err
 		}
 		return c.s.agent.AnswerUserInput(threadID, it.ID, r.Answers)
 	}
-	var r approvalResponse
+	var r ApprovalResponse
 	if err := json.Unmarshal(result, &r); err != nil {
 		return err
 	}
@@ -408,7 +271,7 @@ func itemBytes(it repo.ItemRow) int {
 	return len(raw)
 }
 
-func inputText(input []userInput) (string, *jsonrpc.Error) {
+func inputText(input []UserInput) (string, error) {
 	texts := make([]string, 0, len(input))
 	for _, in := range input {
 		if in.Type != "text" {
@@ -417,6 +280,15 @@ func inputText(input []userInput) (string, *jsonrpc.Error) {
 		texts = append(texts, in.Text)
 	}
 	return strings.Join(texts, "\n"), nil
+}
+
+// nonNil returns s, or an empty slice for nil: the lists protocol.schema.json
+// declares as arrays are never sent as null.
+func nonNil[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+	return s
 }
 
 var errorCodes = []struct {
@@ -439,6 +311,10 @@ var errorCodes = []struct {
 }
 
 func serverError(err error) *jsonrpc.Error {
+	var rpcErr *jsonrpc.Error
+	if errors.As(err, &rpcErr) && rpcErr != nil {
+		return rpcErr
+	}
 	for _, e := range errorCodes {
 		if errors.Is(err, e.err) {
 			return jsonrpc.Errorf(e.code, "%v", err)

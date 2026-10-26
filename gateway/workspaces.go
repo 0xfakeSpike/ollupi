@@ -1,78 +1,46 @@
 package gateway
 
 import (
-	"encoding/json"
 	"strings"
 
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/repo"
 )
 
-func (c *conn) workspaceRequest(method string, params json.RawMessage) (any, func(), *jsonrpc.Error) {
-	manager := c.s.agent
-	if method == methodWorkspaceList {
-		if err := jsonrpc.DecodeParams(params, &struct{}{}); err != nil {
-			return nil, nil, err
-		}
-		rows, err := manager.ListWorkspaces()
-		if err != nil {
-			return nil, nil, serverError(err)
-		}
-		return struct {
-			Data []repo.WorkspaceRow `json:"data"`
-		}{rows}, nil, nil
-	}
-	var result repo.WorkspaceRow
-	var err error
-	switch method {
-	case methodWorkspaceAdd:
-		var p struct {
-			Path string `json:"path"`
-			Name string `json:"name,omitempty"`
-		}
-		if err := jsonrpc.DecodeParams(params, &p); err != nil {
-			return nil, nil, err
-		}
-		result, err = manager.AddWorkspace(p.Path, p.Name)
-	case methodWorkspaceRename:
-		var p struct {
-			WorkspaceID string `json:"workspaceId"`
-			Name        string `json:"name"`
-		}
-		if err := jsonrpc.DecodeParams(params, &p); err != nil {
-			return nil, nil, err
-		}
-		result, err = manager.RenameWorkspace(p.WorkspaceID, p.Name)
-	case methodWorkspaceArchive:
-		var p struct {
-			WorkspaceID string `json:"workspaceId"`
-			Archived    *bool  `json:"archived"`
-		}
-		if err := jsonrpc.DecodeParams(params, &p); err != nil {
-			return nil, nil, err
-		}
-		if p.Archived == nil {
-			return nil, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "archived is required")
-		}
-		result, err = manager.ArchiveWorkspace(p.WorkspaceID, *p.Archived)
-	case methodWorkspacePermissions:
-		var p struct {
-			WorkspaceID string `json:"workspaceId"`
-			repo.PermissionSettings
-		}
-		if err := jsonrpc.DecodeParams(params, &p); err != nil {
-			return nil, nil, err
-		}
-		if strings.TrimSpace(p.WorkspaceID) == "" {
-			return nil, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "workspaceId is required")
-		}
-		result, err = manager.UpdateWorkspaceSettings(p.WorkspaceID, p.PermissionSettings)
-	}
+func (c *conn) workspaceList(Empty) (WorkspaceListResult, func(), error) {
+	rows, err := c.s.agent.ListWorkspaces()
 	if err != nil {
-		return nil, nil, serverError(err)
+		return WorkspaceListResult{}, nil, err
 	}
-	payload := struct {
-		Workspace repo.WorkspaceRow `json:"workspace"`
-	}{result}
-	return payload, func() { c.s.notify("workspace/changed", payload) }, nil
+	return WorkspaceListResult{Data: nonNil(rows)}, nil, nil
+}
+
+func (c *conn) workspaceAdd(p WorkspaceAddParams) (WorkspaceResult, func(), error) {
+	return c.workspaceChanged(c.s.agent.AddWorkspace(p.Path, p.Name))
+}
+
+func (c *conn) workspaceRename(p WorkspaceRenameParams) (WorkspaceResult, func(), error) {
+	return c.workspaceChanged(c.s.agent.RenameWorkspace(p.WorkspaceID, p.Name))
+}
+
+func (c *conn) workspaceArchive(p WorkspaceArchiveParams) (WorkspaceResult, func(), error) {
+	if p.Archived == nil {
+		return WorkspaceResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "archived is required")
+	}
+	return c.workspaceChanged(c.s.agent.ArchiveWorkspace(p.WorkspaceID, *p.Archived))
+}
+
+func (c *conn) workspacePermissions(p WorkspacePermissionsParams) (WorkspaceResult, func(), error) {
+	if strings.TrimSpace(p.WorkspaceID) == "" {
+		return WorkspaceResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "workspaceId is required")
+	}
+	return c.workspaceChanged(c.s.agent.UpdateWorkspaceSettings(p.WorkspaceID, p.PermissionSettings))
+}
+
+func (c *conn) workspaceChanged(w repo.WorkspaceRow, err error) (WorkspaceResult, func(), error) {
+	if err != nil {
+		return WorkspaceResult{}, nil, err
+	}
+	result := WorkspaceResult{Workspace: w}
+	return result, func() { c.s.notify(notifyWorkspaceChanged, result) }, nil
 }

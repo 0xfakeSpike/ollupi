@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/0xfakeSpike/ollupi/tools"
@@ -18,6 +19,8 @@ const (
 	InProgress Status = "in_progress"
 	Completed  Status = "completed"
 )
+
+var StatusValues = []Status{Pending, InProgress, Completed}
 
 const maxSteps = 12
 
@@ -40,12 +43,11 @@ func (p Plan) Validate() error {
 		if strings.TrimSpace(step.Step) == "" {
 			return fmt.Errorf("plan step %d is empty", i+1)
 		}
-		switch step.Status {
-		case Pending, Completed:
-		case InProgress:
-			inProgress++
-		default:
+		if !slices.Contains(StatusValues, step.Status) {
 			return fmt.Errorf("plan step %d has invalid status %q", i+1, step.Status)
+		}
+		if step.Status == InProgress {
+			inProgress++
 		}
 	}
 	if inProgress > 1 {
@@ -66,7 +68,7 @@ var schema = map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"step":   map[string]any{"type": "string", "minLength": 1, "maxLength": 200},
-					"status": map[string]any{"type": "string", "enum": []any{string(Pending), string(InProgress), string(Completed)}},
+					"status": map[string]any{"type": "string", "enum": StatusValues},
 				},
 				"required":             []any{"step", "status"},
 				"additionalProperties": false,

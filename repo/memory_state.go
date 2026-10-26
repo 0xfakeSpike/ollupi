@@ -67,7 +67,7 @@ func (d *DB) MemoryStatus() (MemoryStatus, error) {
 	if err := d.gorm.Model(&TurnRow{}).Where(endedTurn+" AND (completed_at, id) > (?, ?)", c.at(), c.ID).Count(&s.Pending).Error; err != nil {
 		return s, err
 	}
-	if err := d.gorm.Model(&MemoryRow{}).Where("status = 'active'").Count(&s.Active).Error; err != nil {
+	if err := d.gorm.Model(&MemoryRow{}).Where("status = ?", MemoryActive).Count(&s.Active).Error; err != nil {
 		return s, err
 	}
 	s.Failed = s.Skipped

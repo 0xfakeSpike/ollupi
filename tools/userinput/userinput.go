@@ -27,6 +27,8 @@ type Answer struct {
 	Answers []string `json:"answers"`
 }
 
+type Answers map[string]Answer
+
 type Request struct {
 	Questions []Question `json:"questions"`
 }
@@ -58,7 +60,7 @@ func (r Request) validate() error {
 	return nil
 }
 
-func (r Request) Check(answers map[string]Answer, maxRunes int) error {
+func (r Request) Check(answers Answers, maxRunes int) error {
 	total := 0
 	for _, q := range r.Questions {
 		answer, ok := answers[q.ID]

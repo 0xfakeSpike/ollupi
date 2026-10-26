@@ -1,0 +1,2227 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Annotations": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "readOnlyHint": {
+          "type": "boolean"
+        },
+        "destructiveHint": {
+          "type": [
+            "null",
+            "boolean"
+          ]
+        },
+        "idempotentHint": {
+          "type": "boolean"
+        },
+        "openWorldHint": {
+          "type": [
+            "null",
+            "boolean"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "Approval": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "requestedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "rule": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "decision": {
+          "$ref": "#/$defs/Decision"
+        },
+        "decidedBy": {
+          "type": "string"
+        },
+        "decidedAt": {
+          "type": [
+            "null",
+            "string"
+          ],
+          "format": "date-time"
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "requestedAt"
+      ],
+      "additionalProperties": false
+    },
+    "ApprovalPolicy": {
+      "type": "string",
+      "enum": [
+        "untrusted",
+        "on-request",
+        "never"
+      ]
+    },
+    "ApprovalRequestParams": {
+      "type": "object",
+      "properties": {
+        "preparedExecution": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/Prepared"
+            }
+          ]
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": "string"
+        },
+        "itemId": {
+          "type": "string"
+        },
+        "approvalId": {
+          "type": "string"
+        },
+        "server": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        },
+        "arguments": true,
+        "reason": {
+          "type": "string"
+        },
+        "availableDecisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Decision"
+          }
+        }
+      },
+      "required": [
+        "threadId",
+        "turnId",
+        "itemId",
+        "approvalId",
+        "server",
+        "tool",
+        "arguments",
+        "availableDecisions"
+      ],
+      "additionalProperties": false
+    },
+    "ApprovalResponse": {
+      "type": "object",
+      "properties": {
+        "decision": {
+          "$ref": "#/$defs/Decision"
+        }
+      },
+      "required": [
+        "decision"
+      ],
+      "additionalProperties": false
+    },
+    "Await": {
+      "type": "object",
+      "properties": {
+        "by": {
+          "$ref": "#/$defs/AwaitBy"
+        },
+        "request": true,
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "by",
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "AwaitBy": {
+      "type": "string",
+      "enum": [
+        "user",
+        "agent"
+      ]
+    },
+    "ClientInfo": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "additionalProperties": false
+    },
+    "CommandOutput": {
+      "type": "object",
+      "properties": {
+        "stdout": {
+          "type": "string"
+        },
+        "stderr": {
+          "type": "string"
+        },
+        "exit_code": {
+          "type": "integer"
+        },
+        "work_dir": {
+          "type": "string"
+        },
+        "signal": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "sandbox_denials": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "sandbox": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "stdout",
+        "stderr",
+        "exit_code",
+        "work_dir"
+      ],
+      "additionalProperties": false
+    },
+    "ContextArtifact": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "digest": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "name",
+        "content"
+      ],
+      "additionalProperties": false
+    },
+    "ContextStats": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "type": "string"
+        },
+        "budgetTokens": {
+          "type": "integer"
+        },
+        "systemTokens": {
+          "type": "integer"
+        },
+        "messagesTokens": {
+          "type": "integer"
+        },
+        "memoryTokens": {
+          "type": "integer"
+        },
+        "toolsTokens": {
+          "type": "integer"
+        },
+        "estimatedTokens": {
+          "type": "integer"
+        },
+        "calibratedTokens": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "budgetTokens",
+        "systemTokens",
+        "messagesTokens",
+        "toolsTokens",
+        "estimatedTokens"
+      ],
+      "additionalProperties": false
+    },
+    "CronCreateParams": {
+      "type": "object",
+      "properties": {
+        "threadId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "spec": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId",
+        "name",
+        "spec",
+        "prompt"
+      ],
+      "additionalProperties": false
+    },
+    "CronDeleteParams": {
+      "type": "object",
+      "properties": {
+        "threadId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "CronJobRow": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "spec": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "paused": {
+          "type": "boolean"
+        },
+        "nextRunAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "threadId",
+        "name",
+        "spec",
+        "prompt",
+        "paused",
+        "nextRunAt",
+        "createdAt"
+      ],
+      "additionalProperties": false
+    },
+    "CronListParams": {
+      "type": "object",
+      "properties": {
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "additionalProperties": false
+    },
+    "CronListResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CronJobRow"
+          }
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "CronPauseParams": {
+      "type": "object",
+      "properties": {
+        "threadId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "paused": {
+          "type": [
+            "null",
+            "boolean"
+          ]
+        }
+      },
+      "required": [
+        "threadId",
+        "name",
+        "paused"
+      ],
+      "additionalProperties": false
+    },
+    "Decision": {
+      "type": "string",
+      "enum": [
+        "accept",
+        "acceptForSession",
+        "decline"
+      ]
+    },
+    "DeltaNotification": {
+      "type": "object",
+      "properties": {
+        "threadId": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": "string"
+        },
+        "itemId": {
+          "type": "string"
+        },
+        "delta": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId",
+        "turnId",
+        "itemId",
+        "delta"
+      ],
+      "additionalProperties": false
+    },
+    "Empty": {
+      "type": "object",
+      "additionalProperties": false
+    },
+    "ErrorNotification": {
+      "type": "object",
+      "properties": {
+        "threadId": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": "string"
+        },
+        "itemId": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "InitializeParams": {
+      "type": "object",
+      "properties": {
+        "clientInfo": {
+          "$ref": "#/$defs/ClientInfo"
+        }
+      },
+      "required": [
+        "clientInfo"
+      ],
+      "additionalProperties": false
+    },
+    "InitializeResult": {
+      "type": "object",
+      "properties": {
+        "serverInfo": {
+          "$ref": "#/$defs/ServerInfo"
+        },
+        "protocolSha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "serverInfo",
+        "protocolSha256"
+      ],
+      "additionalProperties": false
+    },
+    "ItemNotification": {
+      "type": "object",
+      "properties": {
+        "threadId": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": "string"
+        },
+        "item": {
+          "$ref": "#/$defs/ItemRow"
+        }
+      },
+      "required": [
+        "threadId",
+        "turnId",
+        "item"
+      ],
+      "additionalProperties": false
+    },
+    "ItemRow": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": "string"
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "type": {
+          "$ref": "#/$defs/ItemType"
+        },
+        "status": {
+          "$ref": "#/$defs/ItemStatus"
+        },
+        "text": {
+          "type": "string"
+        },
+        "responseId": {
+          "type": "string"
+        },
+        "contextStats": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/ContextStats"
+            }
+          ]
+        },
+        "usage": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/Usage"
+            }
+          ]
+        },
+        "memory": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "$ref": "#/$defs/MemoryReference"
+          }
+        },
+        "callId": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        },
+        "arguments": {
+          "type": "string"
+        },
+        "server": {
+          "type": "string"
+        },
+        "annotations": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/Annotations"
+            }
+          ]
+        },
+        "approval": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/Approval"
+            }
+          ]
+        },
+        "preparedExecution": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/Prepared"
+            }
+          ]
+        },
+        "await": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/Await"
+            }
+          ]
+        },
+        "result": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/ToolResult"
+            }
+          ]
+        },
+        "error": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "completedAt": {
+          "type": [
+            "null",
+            "string"
+          ],
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "turnId",
+        "seq",
+        "type",
+        "status",
+        "startedAt"
+      ],
+      "additionalProperties": false
+    },
+    "ItemStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "inProgress",
+        "completed",
+        "failed",
+        "declined"
+      ]
+    },
+    "ItemType": {
+      "type": "string",
+      "enum": [
+        "userMessage",
+        "agentMessage",
+        "reasoning",
+        "toolCall",
+        "contextCompaction",
+        "memoryContext",
+        "toolProgress",
+        "error"
+      ]
+    },
+    "MemoryForgetParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "MemoryListParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "includeGlobal": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "MemoryListResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MemoryRow"
+          }
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "MemoryReference": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "topic": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "MemoryReport": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "$ref": "#/$defs/Model"
+        },
+        "estimatedInputTokens": {
+          "type": "integer"
+        },
+        "inputTokens": {
+          "type": "integer"
+        },
+        "outputTokens": {
+          "type": "integer"
+        },
+        "usageReported": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "model",
+        "estimatedInputTokens",
+        "inputTokens",
+        "outputTokens",
+        "usageReported"
+      ],
+      "additionalProperties": false
+    },
+    "MemoryResult": {
+      "type": "object",
+      "properties": {
+        "memory": {
+          "$ref": "#/$defs/MemoryRow"
+        }
+      },
+      "required": [
+        "memory"
+      ],
+      "additionalProperties": false
+    },
+    "MemoryRow": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "topic": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/MemoryRowStatus"
+        },
+        "userEdited": {
+          "type": "boolean"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MemorySource"
+          }
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "topic",
+        "kind",
+        "text",
+        "status",
+        "sources",
+        "createdAt",
+        "updatedAt"
+      ],
+      "additionalProperties": false
+    },
+    "MemoryRowStatus": {
+      "type": "string",
+      "enum": [
+        "active",
+        "retired",
+        "forgotten"
+      ]
+    },
+    "MemorySource": {
+      "type": "object",
+      "properties": {
+        "table": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "occurredAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "table",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "MemoryStatus": {
+      "type": "object",
+      "properties": {
+        "generationEnabled": {
+          "type": "boolean"
+        },
+        "useEnabled": {
+          "type": "boolean"
+        },
+        "pending": {
+          "type": "integer"
+        },
+        "failed": {
+          "type": "integer"
+        },
+        "active": {
+          "type": "integer"
+        },
+        "attempts": {
+          "type": "integer"
+        },
+        "nextAttempt": {
+          "type": [
+            "null",
+            "string"
+          ],
+          "format": "date-time"
+        },
+        "lastSuccess": {
+          "type": [
+            "null",
+            "string"
+          ],
+          "format": "date-time"
+        },
+        "lastError": {
+          "type": "string"
+        },
+        "lastReport": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/MemoryReport"
+            }
+          ]
+        }
+      },
+      "required": [
+        "generationEnabled",
+        "useEnabled",
+        "pending",
+        "failed",
+        "active"
+      ],
+      "additionalProperties": false
+    },
+    "MemoryUpdateParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "Model": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "connection": {
+          "type": "string"
+        },
+        "thinking": {
+          "type": [
+            "null",
+            "boolean"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "connection"
+      ],
+      "additionalProperties": false
+    },
+    "ModelListResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Model"
+          }
+        },
+        "default": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "data",
+        "default"
+      ],
+      "additionalProperties": false
+    },
+    "PermissionRules": {
+      "type": "object",
+      "properties": {
+        "allow": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "ask": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "deny": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "PermissionSettings": {
+      "type": "object",
+      "properties": {
+        "approvalPolicy": {
+          "$ref": "#/$defs/ApprovalPolicy"
+        },
+        "permissions": {
+          "$ref": "#/$defs/PermissionRules"
+        }
+      },
+      "required": [
+        "permissions"
+      ],
+      "additionalProperties": false
+    },
+    "Plan": {
+      "type": "object",
+      "properties": {
+        "explanation": {
+          "type": "string"
+        },
+        "plan": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "$ref": "#/$defs/PlanStep"
+          }
+        }
+      },
+      "required": [
+        "plan"
+      ],
+      "additionalProperties": false
+    },
+    "PlanStep": {
+      "type": "object",
+      "properties": {
+        "step": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/PlanStepStatus"
+        }
+      },
+      "required": [
+        "step",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "PlanStepStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "in_progress",
+        "completed"
+      ]
+    },
+    "Prepared": {
+      "type": "object",
+      "properties": {
+        "cwd": {
+          "type": "string"
+        },
+        "settingsDigest": {
+          "type": "string"
+        },
+        "argumentsDigest": {
+          "type": "string"
+        },
+        "program": {
+          "type": "string"
+        },
+        "args": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "timeoutSec": {
+          "type": "integer"
+        },
+        "sandboxed": {
+          "type": "boolean"
+        },
+        "escalated": {
+          "type": "boolean"
+        },
+        "justification": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "cwd",
+        "settingsDigest",
+        "argumentsDigest"
+      ],
+      "additionalProperties": false
+    },
+    "ServerInfo": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "additionalProperties": false
+    },
+    "SubagentCall": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "description",
+        "prompt"
+      ],
+      "additionalProperties": false
+    },
+    "ThreadFilter": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": [
+            "null",
+            "string"
+          ]
+        },
+        "limit": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ThreadListResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ThreadSummary"
+          }
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "ThreadPageParams": {
+      "type": "object",
+      "properties": {
+        "threadId": {
+          "type": "string"
+        },
+        "beforeSeq": {
+          "type": "integer"
+        },
+        "limit": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "additionalProperties": false
+    },
+    "ThreadPageResult": {
+      "type": "object",
+      "properties": {
+        "thread": {
+          "$ref": "#/$defs/ThreadRow"
+        },
+        "turns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TurnRow"
+          }
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ItemRow"
+          }
+        },
+        "hasMore": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "thread",
+        "turns",
+        "items",
+        "hasMore"
+      ],
+      "additionalProperties": false
+    },
+    "ThreadPermissionsParams": {
+      "type": "object",
+      "properties": {
+        "threadId": {
+          "type": "string"
+        },
+        "approvalPolicy": {
+          "$ref": "#/$defs/ApprovalPolicy"
+        },
+        "permissions": {
+          "$ref": "#/$defs/PermissionRules"
+        }
+      },
+      "required": [
+        "threadId",
+        "permissions"
+      ],
+      "additionalProperties": false
+    },
+    "ThreadResult": {
+      "type": "object",
+      "properties": {
+        "thread": {
+          "$ref": "#/$defs/ThreadRow"
+        }
+      },
+      "required": [
+        "thread"
+      ],
+      "additionalProperties": false
+    },
+    "ThreadRow": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "preview": {
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/PermissionSettings"
+        },
+        "parentThreadId": {
+          "type": "string"
+        },
+        "parentItemId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "preview",
+        "settings",
+        "createdAt",
+        "updatedAt"
+      ],
+      "additionalProperties": false
+    },
+    "ThreadStartParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "approvalPolicy": {
+          "$ref": "#/$defs/ApprovalPolicy"
+        },
+        "permissions": {
+          "$ref": "#/$defs/PermissionRules"
+        }
+      },
+      "required": [
+        "permissions"
+      ],
+      "additionalProperties": false
+    },
+    "ThreadStatus": {
+      "type": "string",
+      "enum": [
+        "idle",
+        "active",
+        "waitingOnApproval",
+        "waitingOnUserInput"
+      ]
+    },
+    "ThreadStatusNotification": {
+      "type": "object",
+      "properties": {
+        "threadId": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ThreadStatus"
+        }
+      },
+      "required": [
+        "threadId",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "ThreadSummary": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "preview": {
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/PermissionSettings"
+        },
+        "parentThreadId": {
+          "type": "string"
+        },
+        "parentItemId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "status": {
+          "$ref": "#/$defs/ThreadStatus"
+        }
+      },
+      "required": [
+        "id",
+        "preview",
+        "settings",
+        "createdAt",
+        "updatedAt",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "ToolDescriptor": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "annotations": {
+          "$ref": "#/$defs/Annotations"
+        },
+        "input_schema": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "provider",
+        "name",
+        "description",
+        "annotations",
+        "input_schema"
+      ],
+      "additionalProperties": false
+    },
+    "ToolListResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ToolDescriptor"
+          }
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "ToolResult": {
+      "type": "object",
+      "properties": {
+        "output": true,
+        "artifacts": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "$ref": "#/$defs/ContextArtifact"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "TurnInterruptParams": {
+      "type": "object",
+      "properties": {
+        "threadId": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId",
+        "turnId"
+      ],
+      "additionalProperties": false
+    },
+    "TurnNotification": {
+      "type": "object",
+      "properties": {
+        "threadId": {
+          "type": "string"
+        },
+        "thread": {
+          "$ref": "#/$defs/ThreadRow"
+        },
+        "turn": {
+          "$ref": "#/$defs/TurnRow"
+        }
+      },
+      "required": [
+        "threadId",
+        "thread",
+        "turn"
+      ],
+      "additionalProperties": false
+    },
+    "TurnResult": {
+      "type": "object",
+      "properties": {
+        "turn": {
+          "$ref": "#/$defs/TurnRow"
+        }
+      },
+      "required": [
+        "turn"
+      ],
+      "additionalProperties": false
+    },
+    "TurnRow": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "status": {
+          "$ref": "#/$defs/TurnStatus"
+        },
+        "model": {
+          "$ref": "#/$defs/Model"
+        },
+        "usage": {
+          "$ref": "#/$defs/Usage"
+        },
+        "error": {
+          "type": "string"
+        },
+        "input": {
+          "type": "string"
+        },
+        "cronJobId": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "completedAt": {
+          "type": [
+            "null",
+            "string"
+          ],
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "threadId",
+        "seq",
+        "status",
+        "model",
+        "usage",
+        "startedAt"
+      ],
+      "additionalProperties": false
+    },
+    "TurnStartParams": {
+      "type": "object",
+      "properties": {
+        "threadId": {
+          "type": "string"
+        },
+        "input": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "$ref": "#/$defs/UserInput"
+          }
+        },
+        "connection": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId",
+        "input"
+      ],
+      "additionalProperties": false
+    },
+    "TurnStatus": {
+      "type": "string",
+      "enum": [
+        "queued",
+        "inProgress",
+        "completed",
+        "interrupted",
+        "failed"
+      ]
+    },
+    "TurnSteerParams": {
+      "type": "object",
+      "properties": {
+        "threadId": {
+          "type": "string"
+        },
+        "input": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "$ref": "#/$defs/UserInput"
+          }
+        },
+        "expectedTurnId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId",
+        "input",
+        "expectedTurnId"
+      ],
+      "additionalProperties": false
+    },
+    "TurnSteerResult": {
+      "type": "object",
+      "properties": {
+        "turnId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "turnId"
+      ],
+      "additionalProperties": false
+    },
+    "Usage": {
+      "type": "object",
+      "properties": {
+        "inputTokens": {
+          "type": "integer"
+        },
+        "cachedInputTokens": {
+          "type": "integer"
+        },
+        "outputTokens": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "inputTokens",
+        "cachedInputTokens",
+        "outputTokens"
+      ],
+      "additionalProperties": false
+    },
+    "UserInput": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "UserInputAnswer": {
+      "type": "object",
+      "properties": {
+        "answers": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "answers"
+      ],
+      "additionalProperties": false
+    },
+    "UserInputAnswers": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/UserInputAnswer"
+      }
+    },
+    "UserInputOption": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label"
+      ],
+      "additionalProperties": false
+    },
+    "UserInputQuestion": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "header": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string"
+        },
+        "options": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "$ref": "#/$defs/UserInputOption"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "header",
+        "question"
+      ],
+      "additionalProperties": false
+    },
+    "UserInputRequest": {
+      "type": "object",
+      "properties": {
+        "questions": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "$ref": "#/$defs/UserInputQuestion"
+          }
+        }
+      },
+      "required": [
+        "questions"
+      ],
+      "additionalProperties": false
+    },
+    "UserInputRequestParams": {
+      "type": "object",
+      "properties": {
+        "threadId": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": "string"
+        },
+        "itemId": {
+          "type": "string"
+        },
+        "questions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/UserInputQuestion"
+          }
+        }
+      },
+      "required": [
+        "threadId",
+        "turnId",
+        "itemId",
+        "questions"
+      ],
+      "additionalProperties": false
+    },
+    "UserInputResponse": {
+      "type": "object",
+      "properties": {
+        "answers": {
+          "$ref": "#/$defs/UserInputAnswers"
+        }
+      },
+      "required": [
+        "answers"
+      ],
+      "additionalProperties": false
+    },
+    "WorkspaceAddParams": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "WorkspaceArchiveParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "archived": {
+          "type": [
+            "null",
+            "boolean"
+          ]
+        }
+      },
+      "required": [
+        "workspaceId",
+        "archived"
+      ],
+      "additionalProperties": false
+    },
+    "WorkspaceListResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WorkspaceRow"
+          }
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "WorkspacePermissionsParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "approvalPolicy": {
+          "$ref": "#/$defs/ApprovalPolicy"
+        },
+        "permissions": {
+          "$ref": "#/$defs/PermissionRules"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "permissions"
+      ],
+      "additionalProperties": false
+    },
+    "WorkspaceRenameParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "WorkspaceResult": {
+      "type": "object",
+      "properties": {
+        "workspace": {
+          "$ref": "#/$defs/WorkspaceRow"
+        }
+      },
+      "required": [
+        "workspace"
+      ],
+      "additionalProperties": false
+    },
+    "WorkspaceRow": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rootPath": {
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/PermissionSettings"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "archivedAt": {
+          "type": [
+            "null",
+            "string"
+          ],
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "rootPath",
+        "settings",
+        "createdAt",
+        "updatedAt"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "methods": {
+    "cron/create": {
+      "params": {
+        "$ref": "#/$defs/CronCreateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/CronJobRow"
+      }
+    },
+    "cron/delete": {
+      "params": {
+        "$ref": "#/$defs/CronDeleteParams"
+      },
+      "result": {
+        "$ref": "#/$defs/Empty"
+      }
+    },
+    "cron/list": {
+      "params": {
+        "$ref": "#/$defs/CronListParams"
+      },
+      "result": {
+        "$ref": "#/$defs/CronListResult"
+      }
+    },
+    "cron/pause": {
+      "params": {
+        "$ref": "#/$defs/CronPauseParams"
+      },
+      "result": {
+        "$ref": "#/$defs/CronJobRow"
+      }
+    },
+    "initialize": {
+      "params": {
+        "$ref": "#/$defs/InitializeParams"
+      },
+      "result": {
+        "$ref": "#/$defs/InitializeResult"
+      }
+    },
+    "memory/forget": {
+      "params": {
+        "$ref": "#/$defs/MemoryForgetParams"
+      },
+      "result": {
+        "$ref": "#/$defs/Empty"
+      }
+    },
+    "memory/list": {
+      "params": {
+        "$ref": "#/$defs/MemoryListParams"
+      },
+      "result": {
+        "$ref": "#/$defs/MemoryListResult"
+      }
+    },
+    "memory/status": {
+      "params": {
+        "$ref": "#/$defs/Empty"
+      },
+      "result": {
+        "$ref": "#/$defs/MemoryStatus"
+      }
+    },
+    "memory/update": {
+      "params": {
+        "$ref": "#/$defs/MemoryUpdateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/MemoryResult"
+      }
+    },
+    "model/list": {
+      "params": {
+        "$ref": "#/$defs/Empty"
+      },
+      "result": {
+        "$ref": "#/$defs/ModelListResult"
+      }
+    },
+    "thread/list": {
+      "params": {
+        "$ref": "#/$defs/ThreadFilter"
+      },
+      "result": {
+        "$ref": "#/$defs/ThreadListResult"
+      }
+    },
+    "thread/read": {
+      "params": {
+        "$ref": "#/$defs/ThreadPageParams"
+      },
+      "result": {
+        "$ref": "#/$defs/ThreadPageResult"
+      }
+    },
+    "thread/resume": {
+      "params": {
+        "$ref": "#/$defs/ThreadPageParams"
+      },
+      "result": {
+        "$ref": "#/$defs/ThreadPageResult"
+      }
+    },
+    "thread/start": {
+      "params": {
+        "$ref": "#/$defs/ThreadStartParams"
+      },
+      "result": {
+        "$ref": "#/$defs/ThreadResult"
+      }
+    },
+    "thread/updatePermissions": {
+      "params": {
+        "$ref": "#/$defs/ThreadPermissionsParams"
+      },
+      "result": {
+        "$ref": "#/$defs/ThreadResult"
+      }
+    },
+    "tool/list": {
+      "params": {
+        "$ref": "#/$defs/Empty"
+      },
+      "result": {
+        "$ref": "#/$defs/ToolListResult"
+      }
+    },
+    "turn/interrupt": {
+      "params": {
+        "$ref": "#/$defs/TurnInterruptParams"
+      },
+      "result": {
+        "$ref": "#/$defs/Empty"
+      }
+    },
+    "turn/start": {
+      "params": {
+        "$ref": "#/$defs/TurnStartParams"
+      },
+      "result": {
+        "$ref": "#/$defs/TurnResult"
+      }
+    },
+    "turn/steer": {
+      "params": {
+        "$ref": "#/$defs/TurnSteerParams"
+      },
+      "result": {
+        "$ref": "#/$defs/TurnSteerResult"
+      }
+    },
+    "workspace/add": {
+      "params": {
+        "$ref": "#/$defs/WorkspaceAddParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WorkspaceResult"
+      }
+    },
+    "workspace/archive": {
+      "params": {
+        "$ref": "#/$defs/WorkspaceArchiveParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WorkspaceResult"
+      }
+    },
+    "workspace/list": {
+      "params": {
+        "$ref": "#/$defs/Empty"
+      },
+      "result": {
+        "$ref": "#/$defs/WorkspaceListResult"
+      }
+    },
+    "workspace/rename": {
+      "params": {
+        "$ref": "#/$defs/WorkspaceRenameParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WorkspaceResult"
+      }
+    },
+    "workspace/updatePermissions": {
+      "params": {
+        "$ref": "#/$defs/WorkspacePermissionsParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WorkspaceResult"
+      }
+    }
+  },
+  "notifications": {
+    "error": {
+      "$ref": "#/$defs/ErrorNotification"
+    },
+    "item/agentMessage/delta": {
+      "$ref": "#/$defs/DeltaNotification"
+    },
+    "item/completed": {
+      "$ref": "#/$defs/ItemNotification"
+    },
+    "item/reasoning/textDelta": {
+      "$ref": "#/$defs/DeltaNotification"
+    },
+    "item/started": {
+      "$ref": "#/$defs/ItemNotification"
+    },
+    "thread/started": {
+      "$ref": "#/$defs/ThreadResult"
+    },
+    "thread/status/changed": {
+      "$ref": "#/$defs/ThreadStatusNotification"
+    },
+    "turn/completed": {
+      "$ref": "#/$defs/TurnNotification"
+    },
+    "turn/queued": {
+      "$ref": "#/$defs/TurnNotification"
+    },
+    "turn/started": {
+      "$ref": "#/$defs/TurnNotification"
+    },
+    "workspace/changed": {
+      "$ref": "#/$defs/WorkspaceResult"
+    }
+  },
+  "serverRequests": {
+    "item/tool/requestUserInput": {
+      "params": {
+        "$ref": "#/$defs/UserInputRequestParams"
+      },
+      "result": {
+        "$ref": "#/$defs/UserInputResponse"
+      }
+    },
+    "item/toolCall/requestApproval": {
+      "params": {
+        "$ref": "#/$defs/ApprovalRequestParams"
+      },
+      "result": {
+        "$ref": "#/$defs/ApprovalResponse"
+      }
+    }
+  },
+  "clientNotifications": {
+    "initialized": {
+      "$ref": "#/$defs/Empty"
+    }
+  },
+  "errors": {
+    "-32000": "serverError",
+    "-32002": "notInitialized",
+    "-32004": "notFound",
+    "-32010": "noActiveTurn",
+    "-32011": "turnMismatch",
+    "-32012": "noSuchRequest",
+    "-32013": "subagentThread",
+    "-32014": "workspaceArchived",
+    "-32600": "invalidRequest",
+    "-32601": "methodNotFound",
+    "-32602": "invalidParams",
+    "-32603": "internalError",
+    "-32700": "parseError"
+  },
+  "builtinTools": {
+    "Agent": {
+      "arguments": {
+        "$ref": "#/$defs/SubagentCall"
+      }
+    },
+    "request_user_input": {
+      "arguments": {
+        "$ref": "#/$defs/UserInputRequest"
+      },
+      "output": {
+        "$ref": "#/$defs/UserInputAnswers"
+      }
+    },
+    "run_command": {
+      "output": {
+        "$ref": "#/$defs/CommandOutput"
+      }
+    },
+    "update_plan": {
+      "arguments": {
+        "$ref": "#/$defs/Plan"
+      }
+    }
+  },
+  "providers": [
+    "cron",
+    "skills"
+  ]
+}

@@ -1,8 +1,15 @@
 package gateway
 
-import (
-	"encoding/json"
+//go:generate go test -run ^TestProtocolSchema$ . -update
 
+import (
+	"crypto/sha256"
+	_ "embed"
+	"encoding/hex"
+	"encoding/json"
+	"reflect"
+
+	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
@@ -20,32 +27,8 @@ const (
 )
 
 const (
-	methodInitialize           = "initialize"
-	methodInitialized          = "initialized"
-	methodThreadStart          = "thread/start"
-	methodThreadResume         = "thread/resume"
-	methodThreadList           = "thread/list"
-	methodThreadRead           = "thread/read"
-	methodThreadPermissions    = "thread/updatePermissions"
-	methodTurnStart            = "turn/start"
-	methodTurnSteer            = "turn/steer"
-	methodTurnInterrupt        = "turn/interrupt"
-	methodModelList            = "model/list"
-	methodWorkspaceList        = "workspace/list"
-	methodWorkspaceAdd         = "workspace/add"
-	methodWorkspaceRename      = "workspace/rename"
-	methodWorkspaceArchive     = "workspace/archive"
-	methodWorkspacePermissions = "workspace/updatePermissions"
-
-	methodToolList     = "tool/list"
-	methodCronList     = "cron/list"
-	methodCronCreate   = "cron/create"
-	methodCronPause    = "cron/pause"
-	methodCronDelete   = "cron/delete"
-	methodMemoryList   = "memory/list"
-	methodMemoryStatus = "memory/status"
-	methodMemoryUpdate = "memory/update"
-	methodMemoryForget = "memory/forget"
+	methodInitialize  = "initialize"
+	methodInitialized = "initialized"
 )
 
 const (
@@ -58,6 +41,7 @@ const (
 	notifyReasoningDelta      = "item/reasoning/textDelta"
 	notifyTurnCompleted       = "turn/completed"
 	notifyThreadStatusChanged = "thread/status/changed"
+	notifyWorkspaceChanged    = "workspace/changed"
 	notifyError               = "error"
 )
 
@@ -66,125 +50,314 @@ const (
 	requestUserInput = "item/tool/requestUserInput"
 )
 
-type initializeParams struct {
-	ClientInfo struct {
-		Name    string `json:"name"`
-		Version string `json:"version"`
-	} `json:"clientInfo"`
+// protocol declares every message of the gateway. Call dispatches client
+// methods from it, and protocol.schema.json is generated from it, so the
+// contract the UI builds against is the one the gateway serves.
+var protocol = struct {
+	methods             map[string]method
+	notifications       map[string]reflect.Type
+	serverRequests      map[string]serverRequest
+	clientNotifications map[string]reflect.Type
+	errors              map[int]string
+}{
+	methods: map[string]method{
+		methodInitialize:              handle((*conn).initialize),
+		"thread/start":                handle((*conn).threadStart),
+		"thread/resume":               handle(threadPage(true)),
+		"thread/read":                 handle(threadPage(false)),
+		"thread/list":                 handle((*conn).threadList),
+		"thread/updatePermissions":    handle((*conn).threadPermissions),
+		"turn/start":                  handle((*conn).turnStart),
+		"turn/steer":                  handle((*conn).turnSteer),
+		"turn/interrupt":              handle((*conn).turnInterrupt),
+		"model/list":                  handle((*conn).modelList),
+		"tool/list":                   handle((*conn).toolList),
+		"workspace/list":              handle((*conn).workspaceList),
+		"workspace/add":               handle((*conn).workspaceAdd),
+		"workspace/rename":            handle((*conn).workspaceRename),
+		"workspace/archive":           handle((*conn).workspaceArchive),
+		"workspace/updatePermissions": handle((*conn).workspacePermissions),
+		"cron/list":                   handle((*conn).cronList),
+		"cron/create":                 handle((*conn).cronCreate),
+		"cron/pause":                  handle((*conn).cronPause),
+		"cron/delete":                 handle((*conn).cronDelete),
+		"memory/list":                 handle((*conn).memoryList),
+		"memory/status":               handle((*conn).memoryStatus),
+		"memory/update":               handle((*conn).memoryUpdate),
+		"memory/forget":               handle((*conn).memoryForget),
+	},
+	notifications: map[string]reflect.Type{
+		notifyThreadStarted:       reflect.TypeFor[ThreadResult](),
+		notifyTurnQueued:          reflect.TypeFor[TurnNotification](),
+		notifyTurnStarted:         reflect.TypeFor[TurnNotification](),
+		notifyItemStarted:         reflect.TypeFor[ItemNotification](),
+		notifyItemCompleted:       reflect.TypeFor[ItemNotification](),
+		notifyAgentMessageDelta:   reflect.TypeFor[DeltaNotification](),
+		notifyReasoningDelta:      reflect.TypeFor[DeltaNotification](),
+		notifyTurnCompleted:       reflect.TypeFor[TurnNotification](),
+		notifyThreadStatusChanged: reflect.TypeFor[ThreadStatusNotification](),
+		notifyWorkspaceChanged:    reflect.TypeFor[WorkspaceResult](),
+		notifyError:               reflect.TypeFor[ErrorNotification](),
+	},
+	serverRequests: map[string]serverRequest{
+		requestApproval:  {reflect.TypeFor[ApprovalRequestParams](), reflect.TypeFor[ApprovalResponse]()},
+		requestUserInput: {reflect.TypeFor[UserInputRequestParams](), reflect.TypeFor[UserInputResponse]()},
+	},
+	clientNotifications: map[string]reflect.Type{
+		methodInitialized: reflect.TypeFor[Empty](),
+	},
+	errors: map[int]string{
+		jsonrpc.CodeParseError:     "parseError",
+		jsonrpc.CodeInvalidRequest: "invalidRequest",
+		jsonrpc.CodeMethodNotFound: "methodNotFound",
+		jsonrpc.CodeInvalidParams:  "invalidParams",
+		jsonrpc.CodeInternalError:  "internalError",
+		jsonrpc.CodeServerError:    "serverError",
+		errNotInitialized:          "notInitialized",
+		errNotFound:                "notFound",
+		errNoActiveTurn:            "noActiveTurn",
+		errTurnMismatch:            "turnMismatch",
+		errNoSuchRequest:           "noSuchRequest",
+		errSubagentThread:          "subagentThread",
+		errWorkspaceArchived:       "workspaceArchived",
+	},
 }
 
-type serverInfo struct {
+type method struct {
+	params, result reflect.Type
+	call           func(c *conn, params json.RawMessage) (any, func(), *jsonrpc.Error)
+}
+
+type serverRequest struct {
+	params, result reflect.Type
+}
+
+func handle[P, R any](h func(*conn, P) (R, func(), error)) method {
+	return method{
+		params: reflect.TypeFor[P](),
+		result: reflect.TypeFor[R](),
+		call: func(c *conn, raw json.RawMessage) (any, func(), *jsonrpc.Error) {
+			var p P
+			if err := jsonrpc.DecodeParams(raw, &p); err != nil {
+				return nil, nil, err
+			}
+			result, after, err := h(c, p)
+			if err != nil {
+				return nil, nil, serverError(err)
+			}
+			return result, after, nil
+		},
+	}
+}
+
+//go:embed protocol.schema.json
+var protocolSchema []byte
+
+var protocolSHA256 = func() string {
+	sum := sha256.Sum256(protocolSchema)
+	return hex.EncodeToString(sum[:])
+}()
+
+// Empty is the params or result of a message that carries nothing.
+type Empty struct{}
+
+type ClientInfo struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
 }
 
-type initializeResult struct {
-	ServerInfo serverInfo `json:"serverInfo"`
+type InitializeParams struct {
+	ClientInfo ClientInfo `json:"clientInfo"`
 }
 
-type threadStartParams struct {
+type ServerInfo struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+}
+
+type InitializeResult struct {
+	ServerInfo ServerInfo `json:"serverInfo"`
+	// ProtocolSHA256 is the sha256 of the protocol.schema.json this server
+	// was built with; a client built from another contract can tell.
+	ProtocolSHA256 string `json:"protocolSha256"`
+}
+
+type ThreadStartParams struct {
 	WorkspaceID string `json:"workspaceId,omitempty"`
 	repo.PermissionSettings
 }
 
-type errorNotification struct {
-	ThreadID string `json:"threadId,omitempty"`
-	TurnID   string `json:"turnId,omitempty"`
-	ItemID   string `json:"itemId,omitempty"`
-	Message  string `json:"message"`
+type ThreadPermissionsParams struct {
+	ThreadID string `json:"threadId"`
+	repo.PermissionSettings
 }
 
-type modelListResult struct {
-	Data    []llm.Model `json:"data"`
-	Default string      `json:"default"`
-}
-
-type threadPageParams struct {
+type ThreadPageParams struct {
 	ThreadID  string `json:"threadId"`
 	BeforeSeq int    `json:"beforeSeq,omitempty"`
 	Limit     int    `json:"limit,omitempty"`
 }
 
-type threadPageResult struct {
+type ThreadPageResult struct {
 	repo.ThreadView
 	HasMore bool `json:"hasMore"`
 }
 
-type threadResult struct {
+type ThreadResult struct {
 	Thread repo.ThreadRow `json:"thread"`
 }
 
-type threadListResult struct {
+type ThreadListResult struct {
 	Data []repo.ThreadSummary `json:"data"`
 }
 
-type threadStatusNotification struct {
+type ThreadStatusNotification struct {
 	ThreadID string            `json:"threadId"`
 	Status   repo.ThreadStatus `json:"status"`
 }
 
-type toolListResult struct {
+type ModelListResult struct {
+	Data    []llm.Model `json:"data"`
+	Default string      `json:"default"`
+}
+
+type ToolListResult struct {
 	Data []tools.ToolDescriptor `json:"data"`
 }
 
-type cronJobParams struct {
-	ThreadID string `json:"threadId"`
-	Name     string `json:"name,omitempty"`
-	Spec     string `json:"spec,omitempty"`
-	Prompt   string `json:"prompt,omitempty"`
-	Paused   *bool  `json:"paused,omitempty"`
-}
-
-type userInput struct {
+type UserInput struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
 }
 
-type turnStartParams struct {
+type TurnStartParams struct {
 	ThreadID   string      `json:"threadId"`
-	Input      []userInput `json:"input"`
+	Input      []UserInput `json:"input"`
 	Connection string      `json:"connection,omitempty"`
 }
 
-type turnSteerParams struct {
+type TurnSteerParams struct {
 	ThreadID       string      `json:"threadId"`
-	Input          []userInput `json:"input"`
+	Input          []UserInput `json:"input"`
 	ExpectedTurnID string      `json:"expectedTurnId"`
 }
 
-type turnSteerResult struct {
+type TurnSteerResult struct {
 	TurnID string `json:"turnId"`
 }
 
-type turnInterruptParams struct {
+type TurnInterruptParams struct {
 	ThreadID string `json:"threadId"`
 	TurnID   string `json:"turnId"`
 }
 
-type turnResult struct {
+type TurnResult struct {
 	Turn repo.TurnRow `json:"turn"`
 }
 
-type turnNotification struct {
+type TurnNotification struct {
 	ThreadID string         `json:"threadId"`
 	Thread   repo.ThreadRow `json:"thread"`
 	Turn     repo.TurnRow   `json:"turn"`
 }
 
-type deltaNotification struct {
+type DeltaNotification struct {
 	ThreadID string `json:"threadId"`
 	TurnID   string `json:"turnId"`
 	ItemID   string `json:"itemId"`
 	Delta    string `json:"delta"`
 }
 
-type itemNotification struct {
+type ItemNotification struct {
 	ThreadID string       `json:"threadId"`
 	TurnID   string       `json:"turnId"`
 	Item     repo.ItemRow `json:"item"`
 }
 
-type approvalRequestParams struct {
+type ErrorNotification struct {
+	ThreadID string `json:"threadId,omitempty"`
+	TurnID   string `json:"turnId,omitempty"`
+	ItemID   string `json:"itemId,omitempty"`
+	Message  string `json:"message"`
+}
+
+type WorkspaceListResult struct {
+	Data []repo.WorkspaceRow `json:"data"`
+}
+
+type WorkspaceAddParams struct {
+	Path string `json:"path"`
+	Name string `json:"name,omitempty"`
+}
+
+type WorkspaceRenameParams struct {
+	WorkspaceID string `json:"workspaceId"`
+	Name        string `json:"name"`
+}
+
+type WorkspaceArchiveParams struct {
+	WorkspaceID string `json:"workspaceId"`
+	Archived    *bool  `json:"archived"`
+}
+
+type WorkspacePermissionsParams struct {
+	WorkspaceID string `json:"workspaceId"`
+	repo.PermissionSettings
+}
+
+type WorkspaceResult struct {
+	Workspace repo.WorkspaceRow `json:"workspace"`
+}
+
+type CronListParams struct {
+	ThreadID string `json:"threadId"`
+}
+
+type CronListResult struct {
+	Data []repo.CronJobRow `json:"data"`
+}
+
+type CronCreateParams struct {
+	ThreadID string `json:"threadId"`
+	Name     string `json:"name"`
+	Spec     string `json:"spec"`
+	Prompt   string `json:"prompt"`
+}
+
+type CronPauseParams struct {
+	ThreadID string `json:"threadId"`
+	Name     string `json:"name"`
+	Paused   *bool  `json:"paused"`
+}
+
+type CronDeleteParams struct {
+	ThreadID string `json:"threadId"`
+	Name     string `json:"name"`
+}
+
+type MemoryListParams struct {
+	WorkspaceID   string `json:"workspaceId,omitempty"`
+	IncludeGlobal bool   `json:"includeGlobal,omitempty"`
+}
+
+type MemoryListResult struct {
+	Data []repo.MemoryRow `json:"data"`
+}
+
+type MemoryUpdateParams struct {
+	ID   string `json:"id"`
+	Text string `json:"text"`
+}
+
+type MemoryForgetParams struct {
+	ID string `json:"id"`
+}
+
+type MemoryResult struct {
+	Memory repo.MemoryRow `json:"memory"`
+}
+
+type ApprovalRequestParams struct {
 	PreparedExecution  *tools.Prepared `json:"preparedExecution,omitempty"`
 	ThreadID           string          `json:"threadId"`
 	TurnID             string          `json:"turnId"`
@@ -197,17 +370,17 @@ type approvalRequestParams struct {
 	AvailableDecisions []repo.Decision `json:"availableDecisions"`
 }
 
-type approvalResponse struct {
+type ApprovalResponse struct {
 	Decision repo.Decision `json:"decision"`
 }
 
-type userInputRequestParams struct {
+type UserInputRequestParams struct {
 	ThreadID  string               `json:"threadId"`
 	TurnID    string               `json:"turnId"`
 	ItemID    string               `json:"itemId"`
 	Questions []userinput.Question `json:"questions"`
 }
 
-type userInputResponse struct {
-	Answers map[string]userinput.Answer `json:"answers"`
+type UserInputResponse struct {
+	Answers userinput.Answers `json:"answers"`
 }

@@ -75,7 +75,7 @@ func nextBatch(db *repo.DB, limit int) (*Batch, error) {
 func forgottenSources(entries []repo.MemoryRow) map[string]bool {
 	blocked := map[string]bool{}
 	for _, e := range entries {
-		if e.Status != "forgotten" {
+		if e.Status != repo.MemoryForgotten {
 			continue
 		}
 		for _, s := range e.Sources {

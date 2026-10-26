@@ -210,10 +210,10 @@ func (m *Manager) Edit(id, text string) (repo.MemoryRow, error) {
 		if err != nil {
 			return err
 		}
-		if e.Status == "forgotten" {
+		if e.Status == repo.MemoryForgotten {
 			return errors.New("a forgotten memory cannot be edited")
 		}
-		e.Text, e.UserEdited, e.Status = text, true, "active"
+		e.Text, e.UserEdited, e.Status = text, true, repo.MemoryActive
 		e.UpdatedAt = time.Now().UTC()
 		out = e
 		return tx.SaveMemory(e)
@@ -227,10 +227,10 @@ func (m *Manager) Forget(id string) error {
 		if err != nil {
 			return err
 		}
-		if e.Status == "forgotten" {
+		if e.Status == repo.MemoryForgotten {
 			return nil
 		}
-		e.Status, e.Text = "forgotten", ""
+		e.Status, e.Text = repo.MemoryForgotten, ""
 		e.UpdatedAt = time.Now().UTC()
 		return tx.SaveMemory(e)
 	})
