@@ -252,8 +252,14 @@ func (d *DB) FinalAnswer(threadID, turnID string) (string, error) {
 	return row.Text, err
 }
 
-func (d *DB) InputAfter(threadID, turnID string, seq int) (bool, error) {
+func (d *DB) TurnItems(threadID, turnID string) ([]ItemRow, error) {
+	var rows []ItemRow
+	err := d.gorm.Where("thread_id = ? AND turn_id = ?", threadID, turnID).Order("seq").Find(&rows).Error
+	return rows, err
+}
+
+func (d *DB) InputAfterAnswer(threadID, turnID string) (bool, error) {
 	var n int64
-	err := d.gorm.Model(&ItemRow{}).Where("thread_id = ? AND turn_id = ? AND seq > ? AND type = 'userMessage'", threadID, turnID, seq).Count(&n).Error
+	err := d.gorm.Model(&ItemRow{}).Where("thread_id = ? AND turn_id = ? AND type = 'userMessage' AND seq > (SELECT COALESCE(MAX(seq), 0) FROM items WHERE thread_id = ? AND turn_id = ? AND type = 'agentMessage' AND status = 'completed')", threadID, turnID, threadID, turnID).Count(&n).Error
 	return n > 0, err
 }
