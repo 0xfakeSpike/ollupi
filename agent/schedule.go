@@ -70,30 +70,6 @@ func (a *Agent) admit() {
 	}
 }
 
-func (a *Agent) halt(threadID string, cause error) {
-	log.Printf("agent: thread %s cannot advance: %v", threadID, cause)
-	turn, err := a.cfg.DB.ActiveTurn(threadID)
-	if err != nil {
-		a.fault(threadID, "", fmt.Errorf("the thread could not advance: %w", cause))
-		return
-	}
-	turn.Status, turn.Error = repo.TurnFailed, "the agent could not advance this turn: "+cause.Error()
-	a.endTurn(turn)
-}
-
-func (a *Agent) failTurn(turnID string, status repo.TurnStatus, reason string) {
-	turn, err := a.cfg.DB.Turn(turnID)
-	if err != nil {
-		a.fault("", turnID, fmt.Errorf("the turn could not be read to end it (%s): %w", reason, err))
-		return
-	}
-	if turn.Status != repo.TurnInProgress {
-		return
-	}
-	turn.Status, turn.Error = status, reason
-	a.endTurn(turn)
-}
-
 func (a *Agent) afterStep(threadID string, sl *slot, seen int, final bool, stepErr error) {
 	if a.slotByThread[threadID] != sl {
 		return

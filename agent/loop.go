@@ -104,3 +104,12 @@ func (a *Agent) release(threadID string) {
 		delete(a.slotByThread, threadID)
 	}
 }
+
+func findTurn(view repo.ThreadView, turnID string) (repo.TurnRow, bool) {
+	for _, t := range view.Turns {
+		if t.ID == turnID {
+			return t, true
+		}
+	}
+	return repo.TurnRow{}, false
+}
