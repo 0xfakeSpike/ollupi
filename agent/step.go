@@ -67,12 +67,3 @@ func (a *Agent) recorder(t repo.ThreadRow, turn repo.TurnRow) func(repo.ItemRow)
 		return stored, nil
 	}
 }
-
-func findTurn(view repo.ThreadView, turnID string) (repo.TurnRow, bool) {
-	for _, t := range view.Turns {
-		if t.ID == turnID {
-			return t, true
-		}
-	}
-	return repo.TurnRow{}, false
-}
