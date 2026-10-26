@@ -17,7 +17,7 @@ func (a *Agent) run(threadID string, sl *slot) {
 		a.post(func() { a.afterRun(threadID, sl, false, err) })
 		return
 	}
-	view, err := a.ReadThread(threadID)
+	view, err := a.cfg.DB.Thread(threadID)
 	if err != nil {
 		log.Printf("agent: thread %s cannot be read while turn %s is queued: %v", threadID, sl.turnID, err)
 		a.post(func() {

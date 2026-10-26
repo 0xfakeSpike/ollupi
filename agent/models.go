@@ -14,11 +14,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/repo"
 )
 
-type ModelList struct {
-	Data    []llm.Model `json:"data"`
-	Default string      `json:"default"`
-}
-
 func (a *Agent) checkModels() error {
 	if len(a.cfg.Models) == 0 {
 		return fmt.Errorf("agent %s: at least one model is required", a.cfg.Name)
@@ -72,12 +67,12 @@ func (a *Agent) checkBudgets() error {
 	return nil
 }
 
-func (a *Agent) ListModels() ModelList {
-	data := make([]llm.Model, 0, len(a.cfg.Models))
+func (a *Agent) ListModels() ([]llm.Model, string) {
+	models := make([]llm.Model, 0, len(a.cfg.Models))
 	for _, m := range a.cfg.Models {
-		data = append(data, m.Clone())
+		models = append(models, m.Clone())
 	}
-	return ModelList{Data: data, Default: a.cfg.Models[0].Connection}
+	return models, a.cfg.Models[0].Connection
 }
 
 func (a *Agent) modelOn(connection string) (llm.Model, error) {

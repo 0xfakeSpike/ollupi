@@ -163,7 +163,8 @@ func (c *conn) Call(method string, params json.RawMessage) (any, func(), *jsonrp
 		if err := jsonrpc.DecodeParams(params, &struct{}{}); err != nil {
 			return nil, nil, err
 		}
-		return ag.ListModels(), nil, nil
+		models, fallback := ag.ListModels()
+		return modelListResult{Data: models, Default: fallback}, nil, nil
 	case methodThreadStart:
 		var p threadStartParams
 		if err := jsonrpc.DecodeParams(params, &p); err != nil {
@@ -192,6 +193,14 @@ func (c *conn) Call(method string, params json.RawMessage) (any, func(), *jsonrp
 		if err != nil {
 			c.s.deliver.Unlock()
 			return nil, nil, serverError(err)
+		}
+		size := 0
+		for i := len(view.Items) - 1; i >= 0; i-- {
+			size += itemBytes(view.Items[i])
+			if size > pageBytes && i < len(view.Items)-1 {
+				view.Items, more = view.Items[i+1:], true
+				break
+			}
 		}
 		result := threadPageResult{ThreadView: view, HasMore: more}
 		after := func() {
@@ -397,6 +406,16 @@ func (c *conn) resolve(threadID string, it repo.ItemRow, result json.RawMessage)
 		return err
 	}
 	return c.s.agent.ResolveApproval(threadID, it.Approval.ID, r.Decision, "gateway")
+}
+
+const pageBytes = 4 << 20
+
+func itemBytes(it repo.ItemRow) int {
+	raw, err := json.Marshal(it)
+	if err != nil {
+		return pageBytes
+	}
+	return len(raw)
 }
 
 func inputText(input []userInput) (string, *jsonrpc.Error) {

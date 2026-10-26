@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -56,38 +55,12 @@ func (a *Agent) createThread(t repo.ThreadRow) (repo.ThreadRow, error) {
 	return t, nil
 }
 
-func (a *Agent) ReadThread(id string) (repo.ThreadView, error) {
-	v, err := a.cfg.DB.Thread(id)
-	if err != nil {
-		return repo.ThreadView{}, fmt.Errorf("agent: thread %s: %w", id, err)
-	}
-	return v, nil
-}
-
-const pageBytes = 4 << 20
-
 func (a *Agent) ReadThreadPage(id string, before, limit int) (repo.ThreadView, bool, error) {
 	v, more, err := a.cfg.DB.ThreadPage(id, before, limit)
 	if err != nil {
 		return repo.ThreadView{}, false, fmt.Errorf("agent: thread %s: %w", id, err)
 	}
-	size := 0
-	for i := len(v.Items) - 1; i >= 0; i-- {
-		size += itemBytes(v.Items[i])
-		if size > pageBytes && i < len(v.Items)-1 {
-			v.Items, more = v.Items[i+1:], true
-			break
-		}
-	}
 	return v, more, nil
-}
-
-func itemBytes(it repo.ItemRow) int {
-	raw, err := json.Marshal(it)
-	if err != nil {
-		return pageBytes
-	}
-	return len(raw)
 }
 
 func (a *Agent) ListThreads(f repo.ThreadFilter) ([]repo.ThreadSummary, error) {

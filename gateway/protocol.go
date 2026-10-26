@@ -3,6 +3,7 @@ package gateway
 import (
 	"encoding/json"
 
+	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
@@ -87,6 +88,11 @@ type errorNotification struct {
 	TurnID   string `json:"turnId,omitempty"`
 	ItemID   string `json:"itemId,omitempty"`
 	Message  string `json:"message"`
+}
+
+type modelListResult struct {
+	Data    []llm.Model `json:"data"`
+	Default string      `json:"default"`
 }
 
 type threadPageParams struct {
