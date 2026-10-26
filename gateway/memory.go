@@ -1,63 +1,60 @@
 package gateway
 
 import (
-	"encoding/json"
 	"strings"
 
+	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/repo"
 )
 
-func (c *conn) memoryRequest(method string, params json.RawMessage) (any, func(), *jsonrpc.Error) {
-	store := c.s.memory
-	if store == nil {
-		return nil, nil, jsonrpc.Errorf(jsonrpc.CodeServerError, "long-term memory is unavailable")
+func (c *conn) memoryStore() (*memory.Manager, error) {
+	if c.s.memory == nil {
+		return nil, jsonrpc.Errorf(jsonrpc.CodeServerError, "long-term memory is unavailable")
 	}
-	var result any
-	var err error
-	switch method {
-	case methodMemoryList:
-		var p struct {
-			WorkspaceID   string `json:"workspaceId,omitempty"`
-			IncludeGlobal bool   `json:"includeGlobal,omitempty"`
-		}
-		if rpcErr := jsonrpc.DecodeParams(params, &p); rpcErr != nil {
-			return nil, nil, rpcErr
-		}
-		var entries []repo.MemoryRow
-		entries, err = store.List(p.WorkspaceID, p.IncludeGlobal)
-		result = struct {
-			Data []repo.MemoryRow `json:"data"`
-		}{entries}
-	case methodMemoryStatus:
-		if rpcErr := jsonrpc.DecodeParams(params, &struct{}{}); rpcErr != nil {
-			return nil, nil, rpcErr
-		}
-		result, err = store.Status()
-	case methodMemoryUpdate, methodMemoryForget:
-		var p struct {
-			ID   string `json:"id"`
-			Text string `json:"text,omitempty"`
-		}
-		if rpcErr := jsonrpc.DecodeParams(params, &p); rpcErr != nil {
-			return nil, nil, rpcErr
-		}
-		if strings.TrimSpace(p.ID) == "" {
-			return nil, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "id is required")
-		}
-		if method == methodMemoryUpdate {
-			var entry repo.MemoryRow
-			entry, err = store.Edit(p.ID, p.Text)
-			result = struct {
-				Memory repo.MemoryRow `json:"memory"`
-			}{entry}
-		} else {
-			err = store.Forget(p.ID)
-			result = struct{}{}
-		}
-	}
+	return c.s.memory, nil
+}
+
+func (c *conn) memoryList(p MemoryListParams) (MemoryListResult, func(), error) {
+	store, err := c.memoryStore()
 	if err != nil {
-		return nil, nil, serverError(err)
+		return MemoryListResult{}, nil, err
 	}
-	return result, nil, nil
+	entries, err := store.List(p.WorkspaceID, p.IncludeGlobal)
+	if err != nil {
+		return MemoryListResult{}, nil, err
+	}
+	return MemoryListResult{Data: nonNil(entries)}, nil, nil
+}
+
+func (c *conn) memoryStatus(Empty) (repo.MemoryStatus, func(), error) {
+	store, err := c.memoryStore()
+	if err != nil {
+		return repo.MemoryStatus{}, nil, err
+	}
+	status, err := store.Status()
+	return status, nil, err
+}
+
+func (c *conn) memoryUpdate(p MemoryUpdateParams) (MemoryResult, func(), error) {
+	store, err := c.memoryStore()
+	if err != nil {
+		return MemoryResult{}, nil, err
+	}
+	if strings.TrimSpace(p.ID) == "" {
+		return MemoryResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "id is required")
+	}
+	entry, err := store.Edit(p.ID, p.Text)
+	return MemoryResult{Memory: entry}, nil, err
+}
+
+func (c *conn) memoryForget(p MemoryForgetParams) (Empty, func(), error) {
+	store, err := c.memoryStore()
+	if err != nil {
+		return Empty{}, nil, err
+	}
+	if strings.TrimSpace(p.ID) == "" {
+		return Empty{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "id is required")
+	}
+	return Empty{}, nil, store.Forget(p.ID)
 }

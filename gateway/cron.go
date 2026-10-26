@@ -1,53 +1,61 @@
 package gateway
 
 import (
-	"encoding/json"
 	"strings"
 
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/tools/cron"
 )
 
-func (c *conn) cronRequest(method string, params json.RawMessage) (any, func(), *jsonrpc.Error) {
-	jobs := c.s.jobs
-	if jobs == nil {
-		return nil, nil, jsonrpc.Errorf(jsonrpc.CodeServerError, "scheduled tasks are unavailable")
+// cronJobs checks the thread, and the job's name unless it lists, and returns the scheduler.
+func (c *conn) cronJobs(threadID, name string, named bool) (*cron.Jobs, error) {
+	if c.s.jobs == nil {
+		return nil, jsonrpc.Errorf(jsonrpc.CodeServerError, "scheduled tasks are unavailable")
 	}
-	var p cronJobParams
-	if rpcErr := jsonrpc.DecodeParams(params, &p); rpcErr != nil {
-		return nil, nil, rpcErr
+	if strings.TrimSpace(threadID) == "" {
+		return nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "threadId is required")
 	}
-	if strings.TrimSpace(p.ThreadID) == "" {
-		return nil, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "threadId is required")
+	if named && strings.TrimSpace(name) == "" {
+		return nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "name is required")
 	}
-	if method != methodCronList && strings.TrimSpace(p.Name) == "" {
-		return nil, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "name is required")
-	}
-	var result any
-	var err error
-	switch method {
-	case methodCronList:
-		var rows []repo.CronJobRow
-		rows, err = jobs.List(p.ThreadID)
-		if rows == nil {
-			rows = []repo.CronJobRow{}
-		}
-		result = struct {
-			Data []repo.CronJobRow `json:"data"`
-		}{rows}
-	case methodCronCreate:
-		result, err = jobs.Create(p.ThreadID, p.Name, p.Spec, p.Prompt)
-	case methodCronPause:
-		if p.Paused == nil {
-			return nil, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "paused is required")
-		}
-		result, err = jobs.SetPaused(p.ThreadID, p.Name, *p.Paused)
-	case methodCronDelete:
-		err = jobs.Delete(p.ThreadID, p.Name)
-		result = struct{}{}
-	}
+	return c.s.jobs, nil
+}
+
+func (c *conn) cronList(p CronListParams) (CronListResult, func(), error) {
+	jobs, err := c.cronJobs(p.ThreadID, "", false)
 	if err != nil {
-		return nil, nil, serverError(err)
+		return CronListResult{}, nil, err
 	}
-	return result, nil, nil
+	rows, err := jobs.List(p.ThreadID)
+	return CronListResult{Data: nonNil(rows)}, nil, err
+}
+
+func (c *conn) cronCreate(p CronCreateParams) (repo.CronJobRow, func(), error) {
+	jobs, err := c.cronJobs(p.ThreadID, p.Name, true)
+	if err != nil {
+		return repo.CronJobRow{}, nil, err
+	}
+	row, err := jobs.Create(p.ThreadID, p.Name, p.Spec, p.Prompt)
+	return row, nil, err
+}
+
+func (c *conn) cronPause(p CronPauseParams) (repo.CronJobRow, func(), error) {
+	jobs, err := c.cronJobs(p.ThreadID, p.Name, true)
+	if err != nil {
+		return repo.CronJobRow{}, nil, err
+	}
+	if p.Paused == nil {
+		return repo.CronJobRow{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "paused is required")
+	}
+	row, err := jobs.SetPaused(p.ThreadID, p.Name, *p.Paused)
+	return row, nil, err
+}
+
+func (c *conn) cronDelete(p CronDeleteParams) (Empty, func(), error) {
+	jobs, err := c.cronJobs(p.ThreadID, p.Name, true)
+	if err != nil {
+		return Empty{}, nil, err
+	}
+	return Empty{}, nil, jobs.Delete(p.ThreadID, p.Name)
 }

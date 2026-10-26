@@ -2,6 +2,7 @@ package permission
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/0xfakeSpike/ollupi/tools"
 )
@@ -14,13 +15,13 @@ const (
 	Never     Policy = "never"
 )
 
+var PolicyValues = []Policy{Untrusted, OnRequest, Never}
+
 func (p Policy) Validate() error {
-	switch p {
-	case Untrusted, OnRequest, Never:
-		return nil
-	default:
-		return fmt.Errorf("approval policy %q must be %q, %q, or %q", p, Untrusted, OnRequest, Never)
+	if !slices.Contains(PolicyValues, p) {
+		return fmt.Errorf("approval policy %q must be one of %q", p, PolicyValues)
 	}
+	return nil
 }
 
 func (p Policy) requiresApproval(a tools.Annotations, prepared *tools.Prepared) bool {

@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"database/sql/driver"
 	"fmt"
 	"strings"
 	"time"
@@ -26,7 +27,7 @@ type TurnRow struct {
 	ThreadID    string     `gorm:"not null;uniqueIndex:turns_thread_seq,priority:1;uniqueIndex:turns_one_active,where:status = 'inProgress';index:turns_open,where:status = 'inProgress' OR status = 'queued'" json:"threadId"`
 	Thread      *ThreadRow `gorm:"constraint:OnDelete:CASCADE" json:"-"`
 	Seq         int        `gorm:"not null;uniqueIndex:turns_thread_seq,priority:2" json:"seq"`
-	Status      TurnStatus `gorm:"not null;check:turns_status,status IN ('queued','inProgress','completed','failed','interrupted')" json:"status"`
+	Status      TurnStatus `gorm:"not null" json:"status"`
 	Model       llm.Model  `gorm:"not null;serializer:json;check:turns_model,json_valid(model)" json:"model"`
 	Usage       Usage      `gorm:"embedded" json:"usage"`
 	Error       string     `gorm:"not null;default:''" json:"error,omitempty"`
@@ -47,6 +48,10 @@ const (
 	TurnInterrupted TurnStatus = "interrupted"
 	TurnFailed      TurnStatus = "failed"
 )
+
+var TurnStatusValues = []TurnStatus{TurnQueued, TurnInProgress, TurnCompleted, TurnInterrupted, TurnFailed}
+
+func (s TurnStatus) Value() (driver.Value, error) { return enumValue(s, TurnStatusValues) }
 
 func (d *DB) ActiveThreadIDs() ([]string, error) {
 	var ids []string

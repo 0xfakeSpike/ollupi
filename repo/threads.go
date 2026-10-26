@@ -145,6 +145,8 @@ const (
 	ThreadWaitingOnUserInput ThreadStatus = "waitingOnUserInput"
 )
 
+var ThreadStatusValues = []ThreadStatus{ThreadIdle, ThreadActive, ThreadWaitingOnApproval, ThreadWaitingOnUserInput}
+
 type ThreadSummary struct {
 	ThreadRow
 	Status ThreadStatus `json:"status"`

@@ -157,6 +157,17 @@ func resolveExecutable(program, cwd string) (string, error) {
 	return resolved, nil
 }
 
+type CommandOutput struct {
+	Stdout         string   `json:"stdout"`
+	Stderr         string   `json:"stderr"`
+	ExitCode       int      `json:"exit_code"`
+	WorkDir        string   `json:"work_dir"`
+	Signal         string   `json:"signal,omitempty"`
+	Truncated      bool     `json:"truncated,omitempty"`
+	SandboxDenials []string `json:"sandbox_denials,omitempty"`
+	Sandbox        string   `json:"sandbox,omitempty"`
+}
+
 func (r *Runner) Run(ctx context.Context, args map[string]any, p *tools.Prepared) (tools.Result, error) {
 	fail := func(err error) (tools.Result, error) { return tools.Result{Err: err}, err }
 	d, err := r.dirs(tools.CallerOf(ctx))
@@ -187,18 +198,10 @@ func (r *Runner) Run(ctx context.Context, args map[string]any, p *tools.Prepared
 	if err != nil {
 		return fail(err)
 	}
-	out := map[string]any{"stdout": res.Stdout, "stderr": res.Stderr, "exit_code": res.ExitCode, "work_dir": p.Cwd}
-	if res.Signal != "" {
-		out["signal"] = res.Signal
-	}
-	if res.Truncated {
-		out["truncated"] = true
-	}
-	if len(res.Denials) > 0 {
-		out["sandbox_denials"] = res.Denials
-	}
+	out := CommandOutput{Stdout: res.Stdout, Stderr: res.Stderr, ExitCode: res.ExitCode, WorkDir: p.Cwd,
+		Signal: res.Signal, Truncated: res.Truncated, SandboxDenials: res.Denials}
 	if p.Escalated {
-		out["sandbox"] = "escalated: ran on the host without the sandbox"
+		out.Sandbox = "escalated: ran on the host without the sandbox"
 	}
 	return tools.Result{Output: out}, nil
 }

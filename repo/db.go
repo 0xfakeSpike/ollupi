@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"gorm.io/driver/sqlite"
@@ -115,6 +116,13 @@ func notFound(err error) error {
 
 func where(sql string) clause.Where {
 	return clause.Where{Exprs: []clause.Expression{clause.Expr{SQL: sql}}}
+}
+
+func enumValue[T ~string](v T, values []T) (driver.Value, error) {
+	if !slices.Contains(values, v) {
+		return nil, fmt.Errorf("storage: %T %q is not one of %q", v, v, values)
+	}
+	return string(v), nil
 }
 
 type Ref string

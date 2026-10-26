@@ -26,7 +26,7 @@ func (m *Manager) Context(workspaceID, query string, budget int) (Context, error
 	var chosen []repo.MemoryReference
 	text := ""
 	for _, r := range rank(entries, func(e repo.MemoryRow) int {
-		if e.Status != "active" {
+		if e.Status != repo.MemoryActive {
 			return 0
 		}
 		return termScore(e, terms) + kindPriority(e)

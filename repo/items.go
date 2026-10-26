@@ -2,10 +2,12 @@ package repo
 
 import (
 	"bytes"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/tools"
@@ -19,8 +21,8 @@ type ItemRow struct {
 	TurnID            string             `gorm:"not null;index" json:"turnId"`
 	Turn              *TurnRow           `gorm:"constraint:OnDelete:CASCADE" json:"-"`
 	Seq               int                `gorm:"not null;uniqueIndex:items_thread_seq,priority:2" json:"seq"`
-	Type              ItemType           `gorm:"not null;check:items_type,type IN ('userMessage','agentMessage','reasoning','toolCall','contextCompaction','memoryContext','toolProgress','error')" json:"type"`
-	Status            ItemStatus         `gorm:"not null;check:items_status,status IN ('pending','inProgress','completed','failed','declined')" json:"status"`
+	Type              ItemType           `gorm:"not null" json:"type"`
+	Status            ItemStatus         `gorm:"not null" json:"status"`
 	Text              string             `gorm:"not null;default:''" json:"text,omitempty"`
 	ResponseID        string             `gorm:"not null;default:''" json:"responseId,omitempty"`
 	ContextStats      *ContextStats      `gorm:"serializer:json" json:"contextStats,omitempty"`
@@ -55,6 +57,10 @@ const (
 	ItemError             ItemType = "error"
 )
 
+var ItemTypeValues = []ItemType{ItemUserMessage, ItemAgentMessage, ItemReasoning, ItemToolCall, ItemContextCompaction, ItemMemoryContext, ItemToolProgress, ItemError}
+
+func (t ItemType) Value() (driver.Value, error) { return enumValue(t, ItemTypeValues) }
+
 type ItemStatus string
 
 const (
@@ -64,6 +70,10 @@ const (
 	ItemFailed     ItemStatus = "failed"
 	ItemDeclined   ItemStatus = "declined"
 )
+
+var ItemStatusValues = []ItemStatus{ItemPending, ItemInProgress, ItemCompleted, ItemFailed, ItemDeclined}
+
+func (s ItemStatus) Value() (driver.Value, error) { return enumValue(s, ItemStatusValues) }
 
 type ContextStats struct {
 	Model            string `json:"model,omitempty"`
@@ -103,11 +113,13 @@ const (
 	DecisionDecline          Decision = "decline"
 )
 
+var DecisionValues = []Decision{DecisionAccept, DecisionAcceptForSession, DecisionDecline}
+
 func (a Approval) AvailableDecisions() []Decision {
 	if a.Rule != "" {
 		return []Decision{DecisionAccept, DecisionDecline}
 	}
-	return []Decision{DecisionAccept, DecisionAcceptForSession, DecisionDecline}
+	return slices.Clone(DecisionValues)
 }
 
 type ToolResult struct {
@@ -185,6 +197,9 @@ func (d *DB) NextItemSeq(threadID string) (int, error) {
 }
 
 func (d *DB) SaveItem(row ItemRow) error {
+	if row.Await != nil && !slices.Contains(tools.AwaitByValues, row.Await.By) {
+		return fmt.Errorf("item %s: awaits %q, which is not one of %q", row.ID, row.Await.By, tools.AwaitByValues)
+	}
 	row.StartedAt, row.CompletedAt = row.StartedAt.UTC(), nullTime(row.CompletedAt)
 	res := d.gorm.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "id"}},

@@ -45,7 +45,7 @@ func (a *Agent) ResolveApproval(threadID, approvalID string, decision repo.Decis
 	return a.call(func() error { return a.resolveApproval(threadID, approvalID, decision, decidedBy) })
 }
 
-func (a *Agent) AnswerUserInput(threadID, itemID string, answers map[string]userinput.Answer) error {
+func (a *Agent) AnswerUserInput(threadID, itemID string, answers userinput.Answers) error {
 	return a.call(func() error { return a.answerUserInput(threadID, itemID, answers) })
 }
 
@@ -162,7 +162,7 @@ func (a *Agent) resolveApproval(threadID, approvalID string, decision repo.Decis
 	})
 }
 
-func (a *Agent) answerUserInput(threadID, itemID string, answers map[string]userinput.Answer) error {
+func (a *Agent) answerUserInput(threadID, itemID string, answers userinput.Answers) error {
 	return a.respond(threadID, func(it repo.ItemRow) bool { return it.ID == itemID && !it.WaitsForApproval() }, func(it repo.ItemRow) (repo.ItemRow, error) {
 		req, err := userinput.Decode(it.Await.Request)
 		if err != nil {
