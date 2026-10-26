@@ -3,9 +3,6 @@ package agent
 import (
 	"context"
 	"errors"
-	"log"
-
-	"github.com/0xfakeSpike/ollupi/repo"
 )
 
 var errStopped = errors.New("agent: the agent is shutting down")
@@ -71,44 +68,9 @@ func (a *Agent) enqueue(threadID, turnID string) {
 	}()
 }
 
-func (a *Agent) run(threadID string, sl *slot) {
-	if err := sl.ctx.Err(); err != nil {
-		a.post(func() { a.afterRun(threadID, sl, false, err) })
-		return
-	}
-	view, err := a.ReadThread(threadID)
-	if err != nil {
-		log.Printf("agent: thread %s cannot be read while turn %s is queued: %v", threadID, sl.turnID, err)
-		a.post(func() {
-			a.release(threadID)
-			a.failTurn(sl.turnID, repo.TurnFailed, "the thread could not be read from storage")
-		})
-		return
-	}
-	turn, ok := findTurn(view, sl.turnID)
-	if !ok || turn.Status != repo.TurnInProgress {
-		a.post(func() { a.release(threadID) })
-		return
-	}
-	final, usage, err := a.runTurn(sl.ctx, view, turn)
-	if err := a.cfg.DB.AddUsage(threadID, turn.ID, usage); err != nil {
-		log.Printf("agent: thread %s: record usage of turn %s: %v", threadID, turn.ID, err)
-	}
-	a.post(func() { a.afterRun(threadID, sl, final, err) })
-}
-
 func (a *Agent) release(threadID string) {
 	if sl, exists := a.slotByThread[threadID]; exists {
 		sl.cancel()
 		delete(a.slotByThread, threadID)
 	}
-}
-
-func findTurn(view repo.ThreadView, turnID string) (repo.TurnRow, bool) {
-	for _, t := range view.Turns {
-		if t.ID == turnID {
-			return t, true
-		}
-	}
-	return repo.TurnRow{}, false
 }
