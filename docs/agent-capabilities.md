@@ -78,7 +78,7 @@ Codex 和 Claude Code 两列来自公开文档和发布说明，两者更新很�
 
 | # | 能力 | 说明 | Codex | Claude Code | Ollupi | Ollupi 现状与位置 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 3.1 | ReAct 循环 | 推理、调用工具、观察，循环到完成 | 有 | 有 | 有 | `agent/loop.go`（推进循环）、`agent/runtime`（一次迭代） |
+| 3.1 | ReAct 循环 | 推理、调用工具、观察，循环到完成 | 有 | 有 | 有 | `agent/runtime`（循环本身）、`agent/schedule.go`（等待与恢复） |
 | 3.2 | 计划工具 | 模型维护带状态的步骤清单 | 有：`update_plan` | 有：TodoWrite | 有 | `update_plan`（Codex 格式），普通工具（`tools/plan`），计划就是调用参数 |
 | 3.3 | 计划模式 | 只调研规划、不执行，确认后再做 | ? | 有：plan mode | 无 | |
 | 3.4 | 停止条件 | 模型不再调用工具即完成 | 有 | 有 | 有 | |
@@ -150,7 +150,7 @@ Codex 和 Claude Code 两列来自公开文档和发布说明，两者更新很�
 | 6.4 | 子代理 | 主 agent 把子任务交给子 agent，独立上下文 | 有：`spawn_agent` | 有：Agent（原 Task）工具 | 有 | `Agent` 工具（Claude Code 前台方式，`tools/subagent`）：普通工具，结果是 `Await`（由另一个 agent 回答），agent 为每个调用新建子 thread；父 turn 暂停、不占模型调用的名额；子 turn 结束后父会话的 `reconcile` 把它的最终回答写成那条调用的结果，全部到齐后父 turn 继续。派生的 turn 就是同一个 agent，只能派一层（deny 掉 `Agent`），父 turn 停止时连带停止 |
 | 6.5 | 并行子代理 | 多个子 agent 同时工作 | 有 | 有 | 有 | 一次回复里的多个 `Agent` 调用同时运行（受全局槽位上限限制，默认 32，子代理排在普通会话后面，先派出的先跑；模型调用受每个连接的并发上限限制，默认 4）；子代理的批准请求在父对话里排队，逐个处理 |
 | 6.6 | Agent 间交接（handoff） | 把对话交给另一个 agent | 无 | 无 | 无 | OpenAI Agents SDK 的概念 |
-| 6.7 | 多会话并发 | 多个会话同时运行 | 有 | 有 | 有 | 每个 thread 同时一个进行中的 turn，忙时新消息排队成下一个 turn；一个事件循环给可前进的 turn 分配槽位（全局默认 32 个，满了就等，有槽位空出来时从库里按"普通会话优先、同类先开始的先走"取），拿到槽位就起一个 goroutine 执行一步；模型调用受每个连接的并发上限限制（默认 4），等待中的 turn 不占槽位也不占名额（`agent/loop.go`、`agent/schedule.go`） |
+| 6.7 | 多会话并发 | 多个会话同时运行 | 有 | 有 | 有 | 每个 thread 同时一个进行中的 turn，忙时新消息排队成下一个 turn；一个事件循环给可前进的 turn 分配槽位（全局默认 32 个，满了就等，有槽位空出来时从库里按"普通会话优先、同类先开始的先走"取），拿到槽位就起一个 goroutine 一直跑到要等待或 turn 结束；模型调用受每个连接的并发上限限制（默认 4），等待中的 turn 不占槽位也不占名额（`agent/loop.go`、`agent/schedule.go`） |
 
 ## 7. 护栏与安全
 

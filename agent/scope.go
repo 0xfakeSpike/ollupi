@@ -19,6 +19,22 @@ func (a *Agent) workspaceOf(id repo.Ref) (repo.WorkspaceRow, error) {
 	return w, nil
 }
 
+func (a *Agent) permissions(t repo.ThreadRow) (*permission.Checker, repo.WorkspaceRow, error) {
+	w, err := a.workspaceOf(t.WorkspaceID)
+	if err != nil {
+		return nil, repo.WorkspaceRow{}, err
+	}
+	settings, err := a.threadSettings(t, w)
+	if err != nil {
+		return nil, repo.WorkspaceRow{}, err
+	}
+	checker, err := permission.New(settings, a.cfg.Tools, a.registry)
+	if err != nil {
+		return nil, repo.WorkspaceRow{}, err
+	}
+	return checker, w, nil
+}
+
 func (a *Agent) threadSettings(t repo.ThreadRow, w repo.WorkspaceRow) (permission.Settings, error) {
 	if t.ParentThreadID == "" {
 		return permission.Resolve(a.cfg.Settings, w.Settings, t.Settings), nil

@@ -42,18 +42,19 @@ type Runtime struct {
 	Items       []repo.ItemRow
 	Record      func(repo.ItemRow) (repo.ItemRow, error)
 	Delta       func(repo.ItemRow, string)
+	Reload      func() ([]repo.ItemRow, *permission.Checker, error)
 
 	system   string
 	redactor *redact.Redactor
 	usage    repo.Usage
 }
 
-func (rt *Runtime) Step(ctx context.Context) (bool, repo.Usage, error) {
+func (rt *Runtime) Run(ctx context.Context) (bool, repo.Usage, error) {
 	ctx = tools.WithCaller(ctx, rt.Caller)
 	if err := rt.start(); err != nil {
 		return false, repo.Usage{}, err
 	}
-	final, err := rt.step(ctx)
+	final, err := rt.run(ctx)
 	return final, rt.usage, err
 }
 
@@ -117,21 +118,31 @@ func Specs(descriptors []tools.ToolDescriptor) []llm.ToolSpec {
 	return specs
 }
 
-func (rt *Runtime) step(ctx context.Context) (bool, error) {
-	if final, err := rt.runCalls(ctx); final || err != nil || rt.waiting() {
-		return final, err
+func (rt *Runtime) run(ctx context.Context) (bool, error) {
+	for {
+		if final, err := rt.runCalls(ctx); final || err != nil || rt.waiting() {
+			return final, err
+		}
+		if rt.modelCalls() >= maxModelCalls {
+			return true, rt.finish(ctx, fmt.Sprintf("reached the model call limit (%d)", maxModelCalls))
+		}
+		seen := 0
+		if n := len(rt.Items); n > 0 {
+			seen = rt.Items[n-1].Seq
+		}
+		resp, err := rt.respond(ctx, llm.ToolChoiceAuto)
+		if err != nil {
+			return false, err
+		}
+		items, permissions, err := rt.Reload()
+		if err != nil {
+			return false, fmt.Errorf("runtime: reload the turn: %w", err)
+		}
+		rt.Items, rt.Permissions, rt.Tools = items, permissions, permissions.Tools()
+		if len(resp.Message.ToolCalls) == 0 && !slices.ContainsFunc(rt.Items, func(it repo.ItemRow) bool { return it.Type == repo.ItemUserMessage && it.Seq > seen }) {
+			return true, nil
+		}
 	}
-	if rt.modelCalls() >= maxModelCalls {
-		return true, rt.finish(ctx, fmt.Sprintf("reached the model call limit (%d)", maxModelCalls))
-	}
-	resp, err := rt.respond(ctx, llm.ToolChoiceAuto)
-	if err != nil {
-		return false, err
-	}
-	if len(resp.Message.ToolCalls) == 0 {
-		return true, nil
-	}
-	return rt.runCalls(ctx)
 }
 
 func (rt *Runtime) runCalls(ctx context.Context) (bool, error) {
