@@ -102,6 +102,10 @@ func (j *Jobs) Create(threadID, name, spec, prompt string) (repo.CronJobRow, err
 	return job, nil
 }
 
+func (j *Jobs) List(threadID string) ([]repo.CronJobRow, error) {
+	return j.db.CronJobs(threadID)
+}
+
 func (j *Jobs) Delete(threadID, name string) error {
 	_, err := j.change(threadID, name, func(repo.CronJobRow) (*repo.CronJobRow, error) { return nil, nil })
 	return err
@@ -135,7 +139,7 @@ func (j *Jobs) change(threadID, name string, fn func(repo.CronJobRow) (*repo.Cro
 	}
 	row, err := j.db.UpdateCronJob(threadID, strings.TrimSpace(name), fn)
 	if errors.Is(err, repo.ErrNotFound) {
-		return repo.CronJobRow{}, fmt.Errorf("cron: this conversation has no task named %q", name)
+		return repo.CronJobRow{}, fmt.Errorf("cron: this conversation has no task named %q: %w", name, repo.ErrNotFound)
 	}
 	return row, err
 }

@@ -121,17 +121,6 @@ func guard(tool string, run func() (Result, error)) (result Result) {
 	return result.For(tool)
 }
 
-func (r *Registry) Call(ctx context.Context, caller Caller, tool string, arguments map[string]any) Result {
-	if spec, ok := r.specs[tool]; ok && spec.Local != nil {
-		return Result{Err: fmt.Errorf("tool registry: %s runs only in a turn", tool)}.For(tool)
-	}
-	result := r.Invoke(WithCaller(ctx, caller), tool, arguments)
-	if result.Err == nil && result.Await != nil {
-		return Result{Err: fmt.Errorf("tool registry: %s is answered only in a turn", tool)}.For(tool)
-	}
-	return result
-}
-
 func (r *Registry) dispatch(ctx context.Context, tool string, arguments map[string]any) (Result, error) {
 	p, ok := r.owner[tool]
 	if !ok {

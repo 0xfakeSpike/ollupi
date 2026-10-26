@@ -103,7 +103,7 @@ Codex 和 Claude Code 两列来自公开文档和发布说明，两者更新很�
 | 4.1.8 | 查看图片 | 让模型看本地图片 | 有：`view_image` | 有：Read 支持图片 | 无 | |
 | 4.1.9 | Notebook 编辑 | Jupyter 单元格编辑 | 无 | 有：NotebookEdit | 无 | |
 | 4.1.10 | 网站自动化 | 浏览器或站点命令行操作网站 | 无 | 部分：通过 MCP | 有 | OpenCLI 工具集，按允许列表从命令帮助生成 schema（haoagent `tools/opencli`） |
-| 4.1.11 | 定时任务工具 | 让 agent 自己创建、删除、列出定时任务 | 无 | 无 | 有 | `create_scheduled_job` 等（`tools/cron`），作用于当前会话；界面也通过 `tool/call` 直接调用它们来列出、暂停、删除 |
+| 4.1.11 | 定时任务工具 | 让 agent 自己创建、删除、列出定时任务 | 无 | 无 | 有 | `create_scheduled_job` 等（`tools/cron`），作用于当前会话；界面走 gateway 的 `cron/*` 方法，调用同一个组件的 Go 方法 |
 | 4.1.12 | 工具自省 | 列出可用的工具提供方和工具 | 无 | 无 | 有 | `list_tool_providers`、`list_tools_for_provider` |
 
 ### 4.2 工具机制
