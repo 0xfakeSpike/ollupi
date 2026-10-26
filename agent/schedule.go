@@ -70,56 +70,6 @@ func (a *Agent) admit() {
 	}
 }
 
-func (a *Agent) afterRun(threadID string, sl *slot, final bool, runErr error) {
-	if a.slotByThread[threadID] != sl {
-		return
-	}
-	interrupted := sl.ctx.Err() != nil
-	a.release(threadID)
-	st, err := a.cfg.DB.ThreadState(threadID)
-	if err != nil {
-		log.Printf("agent: thread %s cannot be read after its run: %v", threadID, err)
-		if interrupted {
-			a.failTurn(sl.turnID, repo.TurnInterrupted, "interrupted by the user")
-		} else {
-			a.failTurn(sl.turnID, repo.TurnFailed, "the thread could not be read from storage after its run")
-		}
-		return
-	}
-	turn, ok := st.ActiveTurn()
-	if !ok || turn.ID != sl.turnID {
-		return
-	}
-	switch {
-	case a.ctx.Err() != nil && (runErr != nil || interrupted):
-		log.Printf("agent: thread %s turn %s left in progress at shutdown: %v", threadID, turn.ID, runErr)
-		return
-	case interrupted:
-		turn.Status, turn.Error = repo.TurnInterrupted, "interrupted by the user"
-	case runErr != nil:
-		turn.Status, turn.Error = repo.TurnFailed, runErr.Error()
-		log.Printf("agent: thread %s turn %s failed: %v", threadID, turn.ID, runErr)
-	case final:
-		more, err := a.cfg.DB.InputAfterAnswer(threadID, turn.ID)
-		if err != nil {
-			a.halt(threadID, err)
-			return
-		}
-		if !more {
-			turn.Status = repo.TurnCompleted
-		}
-	}
-	if turn.Status != repo.TurnInProgress {
-		a.endTurn(turn)
-		return
-	}
-	a.reconcile(threadID)
-	if len(st.PendingRequests()) > 0 {
-		a.emitRequests(st)
-		a.emitStatus(threadID)
-	}
-}
-
 func (a *Agent) recover() error {
 	active, err := a.cfg.DB.ActiveThreadIDs()
 	if err != nil {
