@@ -65,12 +65,7 @@ func (a *Agent) startTurn(threadID string, in Input) (repo.TurnRow, error) {
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
-	turn, err := a.submit(st.Thread, text, in.CronJobID, model)
-	if err != nil {
-		return repo.TurnRow{}, err
-	}
-	a.reconcile(threadID)
-	return turn, nil
+	return a.submit(st.Thread, text, in.CronJobID, model)
 }
 
 func (a *Agent) submit(t repo.ThreadRow, text, cronJobID string, model llm.Model) (repo.TurnRow, error) {
@@ -252,7 +247,6 @@ func (a *Agent) respond(threadID string, match func(repo.ItemRow) bool, apply fu
 		return err
 	}
 	a.emitItem(st.Thread, activeTurn, stored, false)
-	a.reconcile(threadID)
 	a.emitStatus(threadID)
 	return nil
 }
