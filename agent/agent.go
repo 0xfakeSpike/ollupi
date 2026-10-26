@@ -64,6 +64,10 @@ type Agent struct {
 	done         sync.WaitGroup
 }
 
+func (a *Agent) ListTools() []tools.ToolDescriptor {
+	return a.registry.Descriptors()
+}
+
 func New(cfg Config) *Agent {
 	return &Agent{cfg: cfg}
 }
@@ -110,23 +114,4 @@ func (a *Agent) buildTools(ctx context.Context) error {
 		return fmt.Errorf("agent: %w", err)
 	}
 	return nil
-}
-
-func (a *Agent) CallTool(ctx context.Context, threadID, tool string, arguments map[string]any) (tools.Result, error) {
-	caller := tools.Caller{}
-	if threadID != "" {
-		t, err := a.cfg.DB.ThreadRow(threadID)
-		if err != nil {
-			return tools.Result{}, fmt.Errorf("agent: thread %s: %w", threadID, err)
-		}
-		w, err := a.workspaceOf(t.WorkspaceID)
-		if err != nil {
-			return tools.Result{}, err
-		}
-		caller = tools.Caller{ThreadID: t.ID, WorkspaceID: string(t.WorkspaceID), Root: w.RootPath, Subagent: t.ParentThreadID != ""}
-	}
-	if arguments == nil {
-		arguments = map[string]any{}
-	}
-	return a.registry.Call(ctx, caller, tool, arguments), nil
 }

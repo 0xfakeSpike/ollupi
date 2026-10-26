@@ -37,7 +37,11 @@ const (
 	methodWorkspaceArchive     = "workspace/archive"
 	methodWorkspacePermissions = "workspace/updatePermissions"
 
-	methodToolCall     = "tool/call"
+	methodToolList     = "tool/list"
+	methodCronList     = "cron/list"
+	methodCronCreate   = "cron/create"
+	methodCronPause    = "cron/pause"
+	methodCronDelete   = "cron/delete"
 	methodMemoryList   = "memory/list"
 	methodMemoryStatus = "memory/status"
 	methodMemoryUpdate = "memory/update"
@@ -119,14 +123,16 @@ type threadStatusNotification struct {
 	Status   repo.ThreadStatus `json:"status"`
 }
 
-type toolCallParams struct {
-	ThreadID  string         `json:"threadId,omitempty"`
-	Tool      string         `json:"tool"`
-	Arguments map[string]any `json:"arguments,omitempty"`
+type toolListResult struct {
+	Data []tools.ToolDescriptor `json:"data"`
 }
 
-type toolCallResult struct {
-	Output any `json:"output"`
+type cronJobParams struct {
+	ThreadID string `json:"threadId"`
+	Name     string `json:"name,omitempty"`
+	Spec     string `json:"spec,omitempty"`
+	Prompt   string `json:"prompt,omitempty"`
+	Paused   *bool  `json:"paused,omitempty"`
 }
 
 type userInput struct {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/agent/memory"
+	"github.com/0xfakeSpike/ollupi/tools/cron"
 )
 
 type Options struct {
@@ -22,6 +23,7 @@ type Options struct {
 	AllowedOrigins []string
 	AllowedHosts   []string
 	Memory         *memory.Manager
+	Jobs           *cron.Jobs
 }
 
 func NewServer(a *agent.Agent, opts Options) (*Server, error) {
@@ -31,6 +33,7 @@ func NewServer(a *agent.Agent, opts Options) (*Server, error) {
 	s := &Server{
 		agent:   a,
 		memory:  opts.Memory,
+		jobs:    opts.Jobs,
 		token:   opts.Token,
 		hosts:   append([]string{"localhost", "127.0.0.1", "::1"}, opts.AllowedHosts...),
 		origins: append([]string{"localhost:*", "127.0.0.1:*", "[::1]:*"}, opts.AllowedOrigins...),

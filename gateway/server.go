@@ -16,6 +16,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/0xfakeSpike/ollupi/tools/cron"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
 	"github.com/coder/websocket"
 )
@@ -31,6 +32,7 @@ const (
 type Server struct {
 	agent   *agent.Agent
 	memory  *memory.Manager
+	jobs    *cron.Jobs
 	token   string
 	hosts   []string
 	methods map[string]Method
@@ -159,6 +161,13 @@ func (c *conn) Call(method string, params json.RawMessage) (any, func(), *jsonrp
 		return c.memoryRequest(method, params)
 	case methodWorkspaceList, methodWorkspaceAdd, methodWorkspaceRename, methodWorkspaceArchive, methodWorkspacePermissions:
 		return c.workspaceRequest(method, params)
+	case methodCronList, methodCronCreate, methodCronPause, methodCronDelete:
+		return c.cronRequest(method, params)
+	case methodToolList:
+		if err := jsonrpc.DecodeParams(params, &struct{}{}); err != nil {
+			return nil, nil, err
+		}
+		return toolListResult{Data: ag.ListTools()}, nil, nil
 	case methodModelList:
 		if err := jsonrpc.DecodeParams(params, &struct{}{}); err != nil {
 			return nil, nil, err
@@ -289,25 +298,6 @@ func (c *conn) Call(method string, params json.RawMessage) (any, func(), *jsonrp
 			return nil, nil, serverError(err)
 		}
 		return struct{}{}, nil, nil
-
-	case methodToolCall:
-		var p toolCallParams
-		if err := jsonrpc.DecodeParams(params, &p); err != nil {
-			return nil, nil, err
-		}
-		return jsonrpc.Async(func(ctx context.Context) (any, *jsonrpc.Error) {
-			result, err := ag.CallTool(ctx, p.ThreadID, p.Tool, p.Arguments)
-			if err != nil {
-				return nil, serverError(err)
-			}
-			if result.Err != nil {
-				if errors.Is(result.Err, tools.ErrUnknownTool) || errors.Is(result.Err, tools.ErrInvalidArguments) {
-					return nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "%v", result.Err)
-				}
-				return nil, jsonrpc.Errorf(jsonrpc.CodeServerError, "%v", result.Err)
-			}
-			return toolCallResult{Output: result.Output}, nil
-		}), nil, nil
 
 	default:
 		c.s.mu.Lock()

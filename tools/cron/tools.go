@@ -106,7 +106,7 @@ func (j *Jobs) Invoke(ctx context.Context, tool string, args map[string]any) (to
 		}
 		return tools.Result{Output: map[string]any{"deleted": name}}, nil
 	case ToolListJobs:
-		jobs, err := j.db.CronJobs(caller.ThreadID)
+		jobs, err := j.List(caller.ThreadID)
 		if err != nil {
 			return tools.Result{}, err
 		}
