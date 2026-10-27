@@ -76,7 +76,7 @@ func (m *Manager) Build(in Input) (Prompt, error) {
 	if err != nil {
 		return Prompt{}, err
 	}
-	p.NeedsCompaction = natural > m.inputTokens*autoCompactPercent/100 &&
+	p.NeedsCompaction = natural > p.Stats.CompactAtTokens &&
 		hasItemsAfterCompaction(in.Items) && compactable >= share(m.inputTokens, compactMinPercent)
 	if p.Stats.CalibratedTokens > m.inputTokens && !p.NeedsCompaction {
 		return Prompt{}, fmt.Errorf("context: the prompt needs %d tokens even with the latest tool results clipped and nothing is left to compact; model %s allows %d", p.Stats.CalibratedTokens, m.model, m.inputTokens)
@@ -102,11 +102,12 @@ func scaled(s repo.ContextStats, tokens int) int {
 
 func (m *Manager) stats(system string, messages []llm.ChatMessage, tools any) repo.ContextStats {
 	s := repo.ContextStats{
-		Model:          m.model,
-		BudgetTokens:   m.inputTokens,
-		SystemTokens:   llm.EstimateTokens(system),
-		MessagesTokens: llm.EstimateTokens(prettyJSON(messages)),
-		ToolsTokens:    llm.EstimateTokens(prettyJSON(tools)),
+		Model:           m.model,
+		BudgetTokens:    m.inputTokens,
+		CompactAtTokens: m.inputTokens * autoCompactPercent / 100,
+		SystemTokens:    llm.EstimateTokens(system),
+		MessagesTokens:  llm.EstimateTokens(prettyJSON(messages)),
+		ToolsTokens:     llm.EstimateTokens(prettyJSON(tools)),
 	}
 	s.EstimatedTokens = s.SystemTokens + s.MessagesTokens + s.ToolsTokens
 	s.CalibratedTokens = s.EstimatedTokens

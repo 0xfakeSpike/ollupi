@@ -78,6 +78,7 @@ func (s ItemStatus) Value() (driver.Value, error) { return enumValue(s, ItemStat
 type ContextStats struct {
 	Model            string `json:"model,omitempty"`
 	BudgetTokens     int    `json:"budgetTokens"`
+	CompactAtTokens  int    `json:"compactAtTokens"`
 	SystemTokens     int    `json:"systemTokens"`
 	MessagesTokens   int    `json:"messagesTokens"`
 	MemoryTokens     int    `json:"memoryTokens,omitempty"`
