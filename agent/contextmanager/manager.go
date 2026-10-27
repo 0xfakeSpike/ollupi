@@ -154,9 +154,9 @@ func (m *Manager) CheckArtifacts(artifacts []tools.ContextArtifact) error {
 	return nil
 }
 
-// snapshot is the memory the prompt starts with: the snapshot recorded when
-// the thread started or after its latest compaction. A thread from before
-// snapshots carries the memory its latest turn recalled.
+// snapshot is the memory the prompt starts with: the latest snapshot,
+// recorded when the thread started or after a compaction. If reloading
+// after a compaction failed, the one before it stays until a turn reloads.
 func snapshot(items []repo.ItemRow) *repo.ItemRow {
 	for i := len(items) - 1; i >= 0; i-- {
 		if it := &items[i]; it.Type == repo.ItemMemoryContext && it.Status == repo.ItemCompleted {
