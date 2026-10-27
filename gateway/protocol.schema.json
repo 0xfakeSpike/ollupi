@@ -693,6 +693,21 @@
         "error"
       ]
     },
+    "MCPServerListResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ServerStatus"
+          }
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "additionalProperties": false
+    },
     "MemoryForgetParams": {
       "type": "object",
       "properties": {
@@ -1146,6 +1161,38 @@
       "required": [
         "name",
         "version"
+      ],
+      "additionalProperties": false
+    },
+    "ServerStatus": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "connected": {
+          "type": "boolean"
+        },
+        "tools": {
+          "type": "integer"
+        },
+        "skippedTools": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "connected",
+        "tools"
       ],
       "additionalProperties": false
     },
@@ -1971,6 +2018,14 @@
       },
       "result": {
         "$ref": "#/$defs/InitializeResult"
+      }
+    },
+    "mcpServer/list": {
+      "params": {
+        "$ref": "#/$defs/Empty"
+      },
+      "result": {
+        "$ref": "#/$defs/MCPServerListResult"
       }
     },
     "memory/forget": {

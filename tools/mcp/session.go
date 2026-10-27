@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"os/exec"
 	"strings"
 	"sync"
 
@@ -11,82 +13,97 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-type RemoteSession struct {
-	name     string
-	endpoint string
-	mu       sync.RWMutex
-	sess     *mcp.ClientSession
-	Tools    map[string]*mcp.Tool
+// Session is one connected MCP server. Its tools are registered as
+// "<server>__<tool>", so a tool a server adds can never collide with
+// another server's or with a built-in tool, and names stay the same
+// whatever else is configured.
+type Session struct {
+	name    string
+	title   string
+	sess    *mcp.ClientSession
+	tools   map[string]*mcp.Tool
+	specs   []*tools.Spec
+	skipped []string
+	stderr  *tail
+
+	mu   sync.Mutex
+	down error
 }
 
-type Client struct {
-	Name    string
-	Version string
-}
+const separator = "__"
 
-func NewRemoteSession(ctx context.Context, client Client, endpoint string) (*RemoteSession, error) {
-	if endpoint == "" {
-		return nil, fmt.Errorf("mcp: endpoint is required")
+func connect(ctx context.Context, client *mcp.Client, s Server) (*Session, error) {
+	out := &Session{name: s.Name, tools: map[string]*mcp.Tool{}}
+	var transport mcp.Transport
+	if s.Command != "" {
+		cmd := exec.Command(s.Command, s.Args...)
+		cmd.Env = cmd.Environ()
+		for k, v := range s.Env {
+			cmd.Env = append(cmd.Env, k+"="+v)
+		}
+		out.stderr = &tail{}
+		cmd.Stderr = out.stderr
+		transport = &mcp.CommandTransport{Command: cmd}
+	} else {
+		httpClient := http.DefaultClient
+		if len(s.Headers) > 0 {
+			httpClient = &http.Client{Transport: headers{base: http.DefaultTransport, values: s.Headers}}
+		}
+		transport = &mcp.StreamableClientTransport{Endpoint: s.URL, HTTPClient: httpClient}
 	}
-	s := &RemoteSession{
-		Tools:    make(map[string]*mcp.Tool),
-		endpoint: endpoint,
-	}
-	if client.Name == "" {
-		client.Name = "ollupi"
-	}
-	if client.Version == "" {
-		client.Version = "0.1"
-	}
-	mc := mcp.NewClient(&mcp.Implementation{Name: client.Name, Version: client.Version}, nil)
-	sess, err := mc.Connect(
-		ctx,
-		&mcp.StreamableClientTransport{Endpoint: endpoint},
-		nil,
-	)
+	sess, err := client.Connect(ctx, transport, nil)
 	if err != nil {
-		return nil, err
+		return nil, out.withStderr(err)
 	}
-	s.sess = sess
-	s.name = sess.InitializeResult().ServerInfo.Name
-	return s, nil
-}
-
-func (s *RemoteSession) Name() (string, string) {
-	return s.name, fmt.Sprintf("Remote MCP tools (endpoint %s).", s.endpoint)
-}
-
-func (s *RemoteSession) ToolList(ctx context.Context) ([]*tools.Spec, error) {
-	loaded := make(map[string]*mcp.Tool)
-	var cursor string
-	for {
-		res, err := s.sess.ListTools(ctx, &mcp.ListToolsParams{Cursor: cursor})
+	out.sess = sess
+	if info := sess.InitializeResult().ServerInfo; info != nil {
+		out.title = info.Name
+	}
+	for t, err := range sess.Tools(ctx, nil) {
 		if err != nil {
-			return nil, err
+			sess.Close()
+			return nil, out.withStderr(fmt.Errorf("list tools: %w", err))
 		}
-		for _, t := range res.Tools {
-			if t == nil || t.Name == "" {
-				continue
-			}
-			loaded[t.Name] = t
+		name := s.Name + separator + t.Name
+		if !toolName.MatchString(name) {
+			out.skipped = append(out.skipped, t.Name)
+			continue
 		}
-		if res.NextCursor == "" {
-			break
-		}
-		cursor = res.NextCursor
+		out.tools[name] = t
+		out.specs = append(out.specs, toSpec(name, t))
 	}
-	s.mu.Lock()
-	s.Tools = loaded
-	s.mu.Unlock()
-	specs := make([]*tools.Spec, 0, len(loaded))
-	for _, tool := range loaded {
-		specs = append(specs, toSpec(tool))
-	}
-	return specs, nil
+	go func() {
+		err := sess.Wait()
+		out.mu.Lock()
+		out.down = out.withStderr(fmt.Errorf("disconnected: %v", err))
+		out.mu.Unlock()
+	}()
+	return out, nil
 }
 
-func toSpec(t *mcp.Tool) *tools.Spec {
-	spec := &tools.Spec{Name: t.Name, Description: t.Description, InputSchema: t.InputSchema}
+func (s *Session) withStderr(err error) error {
+	if s.stderr == nil {
+		return err
+	}
+	if text := s.stderr.String(); text != "" {
+		return fmt.Errorf("%w; stderr: %s", err, text)
+	}
+	return err
+}
+
+func (s *Session) Name() (string, string) {
+	if s.title != "" && s.title != s.name {
+		return s.name, fmt.Sprintf("Tools from the MCP server %q (%s).", s.name, s.title)
+	}
+	return s.name, fmt.Sprintf("Tools from the MCP server %q.", s.name)
+}
+
+func (s *Session) ToolList(context.Context) ([]*tools.Spec, error) {
+	return s.specs, nil
+}
+
+func toSpec(name string, t *mcp.Tool) *tools.Spec {
+	spec := &tools.Spec{Name: name, Description: t.Description, InputSchema: t.InputSchema}
 	if t.Annotations != nil {
 		spec.Annotations = &tools.Annotations{
 			Title:           t.Annotations.Title,
@@ -99,15 +116,13 @@ func toSpec(t *mcp.Tool) *tools.Spec {
 	return spec
 }
 
-func (s *RemoteSession) Invoke(ctx context.Context, localTool string, arguments map[string]any) (tools.Result, error) {
-	s.mu.RLock()
-	_, ok := s.Tools[localTool]
-	s.mu.RUnlock()
+func (s *Session) Invoke(ctx context.Context, tool string, arguments map[string]any) (tools.Result, error) {
+	t, ok := s.tools[tool]
 	if !ok {
-		return tools.Result{Err: fmt.Errorf("mcp: tool %q not exposed by MCP server", localTool)}, fmt.Errorf("mcp: tool %q not exposed by MCP server", localTool)
+		err := fmt.Errorf("mcp: tool %q not exposed by MCP server %q", tool, s.name)
+		return tools.Result{Err: err}, err
 	}
-
-	res, err := s.sess.CallTool(ctx, &mcp.CallToolParams{Name: localTool, Arguments: arguments})
+	res, err := s.sess.CallTool(ctx, &mcp.CallToolParams{Name: t.Name, Arguments: arguments})
 	if err != nil {
 		return tools.Result{Err: err}, err
 	}
@@ -124,10 +139,6 @@ func (s *RemoteSession) Invoke(ctx context.Context, localTool string, arguments 
 	return tools.Result{Output: joinTextContent(res.Content)}, nil
 }
 
-func (s *RemoteSession) Close() error {
-	return s.sess.Close()
-}
-
 func joinTextContent(content []mcp.Content) string {
 	var parts []string
 	for _, c := range content {
@@ -138,4 +149,42 @@ func joinTextContent(content []mcp.Content) string {
 		}
 	}
 	return strings.Join(parts, "\n")
+}
+
+// headers adds a server's configured request headers to every request.
+type headers struct {
+	base   http.RoundTripper
+	values map[string]string
+}
+
+func (h headers) RoundTrip(r *http.Request) (*http.Response, error) {
+	r = r.Clone(r.Context())
+	for k, v := range h.values {
+		r.Header.Set(k, v)
+	}
+	return h.base.RoundTrip(r)
+}
+
+// tail keeps the end of a server's stderr, where it explains why it failed.
+type tail struct {
+	mu  sync.Mutex
+	buf []byte
+}
+
+const tailBytes = 2048
+
+func (t *tail) Write(p []byte) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.buf = append(t.buf, p...)
+	if over := len(t.buf) - tailBytes; over > 0 {
+		t.buf = t.buf[over:]
+	}
+	return len(p), nil
+}
+
+func (t *tail) String() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return strings.TrimSpace(strings.ToValidUTF8(string(t.buf), ""))
 }
