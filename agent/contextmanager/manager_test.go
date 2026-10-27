@@ -42,16 +42,16 @@ func build(t *testing.T, items ...repo.ItemRow) Prompt {
 // the stats name what each section carries.
 func TestSnapshotLeadsThePrompt(t *testing.T) {
 	snapshot := memory("SNAPSHOT",
-		repo.MemoryReference{ID: "g", Text: "global"},
-		repo.MemoryReference{ID: "w", WorkspaceID: "ws", Text: "workspace"})
+		repo.MemoryReference{MemoryNote: repo.MemoryNote{ID: "g", Text: "global"}, Scope: repo.MemoryGlobal},
+		repo.MemoryReference{MemoryNote: repo.MemoryNote{ID: "w", Text: "workspace"}, Scope: repo.MemoryWorkspace, WorkspaceID: "ws"})
 	p := build(t, user("q1"), snapshot, answer("r1", "a1"), user("q2"), answer("r2", "a2"), user("q3"))
 	if got, want := contents(p.Messages), []string{"SNAPSHOT", "q1", "a1", "q2", "a2", "q3"}; !slices.Equal(got, want) {
 		t.Errorf("messages %q, want %q", got, want)
 	}
 	s := p.Stats
 	if s.MemoryTokens != llm.EstimateTokens("SNAPSHOT") || s.GlobalMemory == nil || !slices.Equal(s.GlobalMemory.IDs, []string{"g"}) ||
-		s.WorkspaceMemory == nil || !slices.Equal(s.WorkspaceMemory.IDs, []string{"w"}) || s.GlobalMemory.Tokens == 0 {
-		t.Errorf("stats %+v, global %+v, workspace %+v", s, s.GlobalMemory, s.WorkspaceMemory)
+		s.LocalMemory == nil || !slices.Equal(s.LocalMemory.IDs, []string{"w"}) || s.GlobalMemory.Tokens == 0 {
+		t.Errorf("stats %+v, global %+v, local %+v", s, s.GlobalMemory, s.LocalMemory)
 	}
 
 	if s := build(t, user("q1"), answer("r1", "a1")).Stats; s.MemoryTokens != 0 || s.GlobalMemory != nil {

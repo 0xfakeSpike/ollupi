@@ -45,14 +45,14 @@ func nextBatch(db *repo.DB, limit int) (*Batch, error) {
 			return err
 		}
 		b := &Batch{
-			WorkspaceID: string(thread.WorkspaceID), ThreadID: turn.ThreadID, TurnID: turn.ID,
+			Scope: localScope(string(thread.WorkspaceID)), WorkspaceID: string(thread.WorkspaceID), ThreadID: turn.ThreadID, TurnID: turn.ID,
 			TurnStatus: turn.Status, TurnError: clipMemory(turn.Error, 1000), Facts: []Fact{},
 			Cursor: repo.MemoryCursor{At: turn.CompletedAt, ID: turn.ID}, Entries: len(items),
 		}
 		if len(items) > 0 {
 			b.Cursor.Seq = items[len(items)-1].Seq
 		}
-		if b.Existing, err = tx.Memories(b.WorkspaceID, false); err != nil {
+		if b.Existing, err = tx.Memories(b.Scope, b.WorkspaceID, true); err != nil {
 			return err
 		}
 		blocked := forgottenSources(b.Existing)
@@ -70,6 +70,15 @@ func nextBatch(db *repo.DB, limit int) (*Batch, error) {
 		return nil
 	})
 	return batch, err
+}
+
+// localScope is the scope of a thread's own memories: its workspace's, or
+// general outside any workspace.
+func localScope(workspaceID string) repo.MemoryScope {
+	if workspaceID == "" {
+		return repo.MemoryGeneral
+	}
+	return repo.MemoryWorkspace
 }
 
 func forgottenSources(entries []repo.MemoryRow) map[string]bool {

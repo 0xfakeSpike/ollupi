@@ -20,7 +20,7 @@ func (c *conn) memoryList(p MemoryListParams) (MemoryListResult, func(), error) 
 	if err != nil {
 		return MemoryListResult{}, nil, err
 	}
-	entries, err := store.List(p.WorkspaceID, p.IncludeGlobal)
+	entries, err := store.List(p.Scope, p.WorkspaceID)
 	if err != nil {
 		return MemoryListResult{}, nil, err
 	}
@@ -45,6 +45,18 @@ func (c *conn) memoryUpdate(p MemoryUpdateParams) (MemoryResult, func(), error) 
 		return MemoryResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "id is required")
 	}
 	entry, err := store.Edit(p.ID, p.Text)
+	return MemoryResult{Memory: entry}, nil, err
+}
+
+func (c *conn) memoryMove(p MemoryMoveParams) (MemoryResult, func(), error) {
+	store, err := c.memoryStore()
+	if err != nil {
+		return MemoryResult{}, nil, err
+	}
+	if strings.TrimSpace(p.ID) == "" {
+		return MemoryResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "id is required")
+	}
+	entry, err := store.Move(p.ID, p.Scope, p.WorkspaceID)
 	return MemoryResult{Memory: entry}, nil, err
 }
 

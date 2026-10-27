@@ -283,7 +283,7 @@
             }
           ]
         },
-        "workspaceMemory": {
+        "localMemory": {
           "anyOf": [
             {
               "type": "null"
@@ -743,13 +743,16 @@
     "MemoryListParams": {
       "type": "object",
       "properties": {
+        "scope": {
+          "$ref": "#/$defs/MemoryScope"
+        },
         "workspaceId": {
           "type": "string"
-        },
-        "includeGlobal": {
-          "type": "boolean"
         }
       },
+      "required": [
+        "scope"
+      ],
       "additionalProperties": false
     },
     "MemoryListResult": {
@@ -767,13 +770,29 @@
       ],
       "additionalProperties": false
     },
-    "MemoryReference": {
+    "MemoryMoveParams": {
       "type": "object",
       "properties": {
         "id": {
           "type": "string"
         },
+        "scope": {
+          "$ref": "#/$defs/MemoryScope"
+        },
         "workspaceId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "scope"
+      ],
+      "additionalProperties": false
+    },
+    "MemoryReference": {
+      "type": "object",
+      "properties": {
+        "id": {
           "type": "string"
         },
         "topic": {
@@ -781,11 +800,18 @@
         },
         "text": {
           "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/MemoryScope"
+        },
+        "workspaceId": {
+          "type": "string"
         }
       },
       "required": [
         "id",
-        "text"
+        "text",
+        "scope"
       ],
       "additionalProperties": false
     },
@@ -835,6 +861,9 @@
         "id": {
           "type": "string"
         },
+        "scope": {
+          "$ref": "#/$defs/MemoryScope"
+        },
         "workspaceId": {
           "type": "string"
         },
@@ -870,6 +899,7 @@
       },
       "required": [
         "id",
+        "scope",
         "topic",
         "kind",
         "text",
@@ -886,6 +916,14 @@
         "active",
         "retired",
         "forgotten"
+      ]
+    },
+    "MemoryScope": {
+      "type": "string",
+      "enum": [
+        "global",
+        "general",
+        "workspace"
       ]
     },
     "MemorySearchResult": {
@@ -2096,6 +2134,14 @@
       },
       "result": {
         "$ref": "#/$defs/MemoryListResult"
+      }
+    },
+    "memory/move": {
+      "params": {
+        "$ref": "#/$defs/MemoryMoveParams"
+      },
+      "result": {
+        "$ref": "#/$defs/MemoryResult"
       }
     },
     "memory/status": {

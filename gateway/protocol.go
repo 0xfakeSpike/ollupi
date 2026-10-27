@@ -86,6 +86,7 @@ var protocol = struct {
 		"memory/list":                 handle((*conn).memoryList),
 		"memory/status":               handle((*conn).memoryStatus),
 		"memory/update":               handle((*conn).memoryUpdate),
+		"memory/move":                 handle((*conn).memoryMove),
 		"memory/forget":               handle((*conn).memoryForget),
 	},
 	notifications: map[string]reflect.Type{
@@ -341,9 +342,10 @@ type CronDeleteParams struct {
 	Name     string `json:"name"`
 }
 
+// MemoryListParams name one scope; workspaceId only with the workspace scope.
 type MemoryListParams struct {
-	WorkspaceID   string `json:"workspaceId,omitempty"`
-	IncludeGlobal bool   `json:"includeGlobal,omitempty"`
+	Scope       repo.MemoryScope `json:"scope"`
+	WorkspaceID string           `json:"workspaceId,omitempty"`
 }
 
 type MemoryListResult struct {
@@ -353,6 +355,14 @@ type MemoryListResult struct {
 type MemoryUpdateParams struct {
 	ID   string `json:"id"`
 	Text string `json:"text"`
+}
+
+// MemoryMoveParams put a memory in another scope; workspaceId only with
+// the workspace scope.
+type MemoryMoveParams struct {
+	ID          string           `json:"id"`
+	Scope       repo.MemoryScope `json:"scope"`
+	WorkspaceID string           `json:"workspaceId,omitempty"`
 }
 
 type MemoryForgetParams struct {

@@ -10,17 +10,17 @@ import (
 
 func commit(db *repo.DB, b *Batch, ops []Operation, report repo.MemoryReport) error {
 	return db.Tx(func(tx *repo.DB) error {
-		current, err := tx.Memories(b.WorkspaceID, false)
+		current, err := tx.Memories(b.Scope, b.WorkspaceID, true)
 		if err != nil {
 			return err
 		}
 		s := &applyState{
-			tx: tx, scope: b.WorkspaceID, now: time.Now().UTC(),
-			byID: map[string]repo.MemoryRow{}, byTopic: map[string]string{}, blocked: forgottenSources(current),
+			tx: tx, batch: b, now: time.Now().UTC(),
+			byID: map[string]repo.MemoryRow{}, byTopic: map[topicKey]string{}, blocked: forgottenSources(current),
 		}
 		for _, e := range current {
 			s.byID[e.ID] = e
-			s.byTopic[e.Topic] = e.ID
+			s.byTopic[topicKey{e.Scope, e.Topic}] = e.ID
 		}
 		if err := s.apply(ops); err != nil {
 			return err
@@ -31,10 +31,10 @@ func commit(db *repo.DB, b *Batch, ops []Operation, report repo.MemoryReport) er
 
 type applyState struct {
 	tx      *repo.DB
-	scope   string
+	batch   *Batch
 	now     time.Time
 	byID    map[string]repo.MemoryRow
-	byTopic map[string]string
+	byTopic map[topicKey]string
 	blocked map[string]bool
 }
 
@@ -57,17 +57,28 @@ func (s *applyState) apply(ops []Operation) error {
 			return err
 		}
 		s.byID[e.ID] = e
-		s.byTopic[e.Topic] = e.ID
+		s.byTopic[topicKey{e.Scope, e.Topic}] = e.ID
 	}
 	return nil
+}
+
+// topicKey finds a memory by topic: topics are unique within a scope, and
+// a batch sees two scopes, global and its own.
+type topicKey struct {
+	scope repo.MemoryScope
+	topic string
 }
 
 func (s *applyState) target(op Operation) (repo.MemoryRow, bool, error) {
 	var e repo.MemoryRow
 	if op.Action == "add" {
-		id, exists := s.byTopic[op.Topic]
+		added := repo.MemoryRow{ID: uuid.NewString(), Scope: s.batch.Scope, WorkspaceID: s.batch.WorkspaceID, Topic: op.Topic, CreatedAt: s.now}
+		if op.Scope == scopeGlobal {
+			added.Scope, added.WorkspaceID = repo.MemoryGlobal, ""
+		}
+		id, exists := s.byTopic[topicKey{added.Scope, op.Topic}]
 		if !exists {
-			return repo.MemoryRow{ID: uuid.NewString(), WorkspaceID: s.scope, Topic: op.Topic, CreatedAt: s.now}, true, nil
+			return added, true, nil
 		}
 		e = s.byID[id]
 	} else {
