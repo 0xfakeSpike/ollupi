@@ -62,11 +62,13 @@ func TestTrafficMatchesContract(t *testing.T) {
 	}
 	var server *Server
 	ag := agent.New(agent.Config{
-		Name:        "test",
-		Models:      []llm.Model{{Name: "gpt-4o", Connection: "fake"}},
-		Settings:    permission.Settings{ApprovalPolicy: string(permission.OnRequest)},
+		Name:   "test",
+		Models: []llm.Model{{Name: "gpt-4o", Connection: "fake"}},
+		Settings: permission.Settings{ApprovalPolicy: string(permission.OnRequest),
+			Rules: permission.Rules{Deny: []string{"broken__drop_tables"}}},
 		Connections: map[string]*llm.OpenAI{"fake": llm.NewOpenAI(model.URL, "", 4, nil)},
 		Providers:   append([]tools.Provider{touchTool{}, jobs}, servers.Providers()...),
+		Unavailable: servers.Unavailable(),
 		Memory:      mem,
 		DB:          db,
 		OnEvent:     func(e agent.Event) { server.Deliver(e) },

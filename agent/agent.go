@@ -47,6 +47,7 @@ type Config struct {
 
 	Connections map[string]*llm.OpenAI
 	Providers   []tools.Provider
+	Unavailable []string
 	SkillsDir   string
 	Memory      *memory.Manager
 	DB          *repo.DB
@@ -110,7 +111,7 @@ func (a *Agent) buildTools(ctx context.Context) error {
 		providers = append(providers, a.skills)
 	}
 	var err error
-	if a.registry, err = tools.New(ctx, providers...); err != nil {
+	if a.registry, err = tools.New(ctx, a.cfg.Unavailable, providers...); err != nil {
 		return fmt.Errorf("agent: %w", err)
 	}
 	return nil

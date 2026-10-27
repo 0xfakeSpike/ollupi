@@ -9,20 +9,29 @@ import (
 	"runtime/debug"
 	"slices"
 	"sort"
+	"strings"
 )
 
 type Registry struct {
+	unavailable []string
 	providers   map[string]Provider
 	owner       map[string]Provider
 	specs       map[string]*Spec
 	descriptors []ToolDescriptor
 }
 
-func New(ctx context.Context, providers ...Provider) (*Registry, error) {
+// ProviderSeparator joins a provider id and a tool name for providers that
+// prefix their tools, such as MCP servers: "<provider>__<tool>".
+const ProviderSeparator = "__"
+
+// New registers the providers' tools. unavailable names providers that are
+// configured but could not start this run; their tools are not offered.
+func New(ctx context.Context, unavailable []string, providers ...Provider) (*Registry, error) {
 	r := &Registry{
-		providers: make(map[string]Provider, len(providers)+1),
-		owner:     make(map[string]Provider),
-		specs:     make(map[string]*Spec),
+		unavailable: slices.Clone(unavailable),
+		providers:   make(map[string]Provider, len(providers)+1),
+		owner:       make(map[string]Provider),
+		specs:       make(map[string]*Spec),
 	}
 	for _, p := range append(providers, newIntrospection(r)) {
 		id, _ := p.Name()
@@ -81,6 +90,13 @@ func (r *Registry) buildDescriptors() ([]ToolDescriptor, error) {
 		return out[i].Provider < out[j].Provider
 	})
 	return out, nil
+}
+
+// Unavailable reports whether tool is named for a provider that could not
+// start this run, so a permission rule may name it although it is not offered.
+func (r *Registry) Unavailable(tool string) bool {
+	provider, _, ok := strings.Cut(tool, ProviderSeparator)
+	return ok && slices.Contains(r.unavailable, provider)
 }
 
 func (r *Registry) Descriptors() []ToolDescriptor {

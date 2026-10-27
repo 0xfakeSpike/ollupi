@@ -55,6 +55,9 @@ func New(settings Settings, allowlist []string, registry *tools.Registry) (*Chec
 		return slices.ContainsFunc(catalog, func(d tools.ToolDescriptor) bool { return d.Name == name })
 	}
 	for _, r := range set.all() {
+		if registry.Unavailable(r.tool) {
+			continue
+		}
 		if !offered(r.tool) {
 			return nil, fmt.Errorf("permission rule %q: tool %q is not in the tool registry", r.text, r.tool)
 		}
@@ -66,7 +69,7 @@ func New(settings Settings, allowlist []string, registry *tools.Registry) (*Chec
 		if slices.Contains(allowlist[:i], name) {
 			return nil, fmt.Errorf("tool %q is listed twice", name)
 		}
-		if !offered(name) {
+		if !offered(name) && !registry.Unavailable(name) {
 			return nil, fmt.Errorf("tool %q is not in the tool registry", name)
 		}
 	}
