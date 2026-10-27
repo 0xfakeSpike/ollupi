@@ -45,7 +45,7 @@ func (a *Agent) contextsFor(m llm.Model) (*contextmanager.Manager, error) {
 }
 
 func (a *Agent) checkBudgets() error {
-	checker, err := permission.New(a.cfg.Settings, a.cfg.Tools, a.registry)
+	checker, err := permission.New(a.layers(repo.WorkspaceRow{}), a.cfg.Tools, a.registry)
 	if err != nil {
 		return err
 	}

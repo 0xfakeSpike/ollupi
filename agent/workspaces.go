@@ -60,7 +60,12 @@ func (a *Agent) ArchiveWorkspace(id string, archived bool) (repo.WorkspaceRow, e
 }
 
 func (a *Agent) UpdateWorkspaceSettings(id string, settings permission.Settings) (repo.WorkspaceRow, error) {
-	if err := a.validateLayer(a.cfg.Settings, settings); err != nil {
+	w, err := a.workspaceOf(repo.Ref(id))
+	if err != nil {
+		return repo.WorkspaceRow{}, err
+	}
+	layer := permission.Layer{Of: fmt.Sprintf("the permission settings of workspace %q", w.Name), Settings: settings}
+	if err := a.validateLayer(a.layers(repo.WorkspaceRow{}), w.Settings, layer); err != nil {
 		return repo.WorkspaceRow{}, err
 	}
 	return a.changeWorkspace(id, func(w *repo.WorkspaceRow) { w.Settings = settings })
@@ -78,11 +83,11 @@ func (a *Agent) changeWorkspace(id string, change func(*repo.WorkspaceRow)) (rep
 	return w, err
 }
 
-func (a *Agent) validateLayer(base, layer permission.Settings) error {
+func (a *Agent) validateLayer(base []permission.Layer, previous permission.Settings, layer permission.Layer) error {
 	if a.registry == nil {
 		return fmt.Errorf("agent: the tool registry is not ready")
 	}
-	if err := permission.ValidateLayer(base, layer, a.registry); err != nil {
+	if err := permission.ValidateLayer(base, previous, layer, a.registry); err != nil {
 		return fmt.Errorf("agent: %w", err)
 	}
 	return nil

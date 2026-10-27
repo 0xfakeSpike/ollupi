@@ -99,6 +99,16 @@ func (r *Registry) Unavailable(tool string) bool {
 	return ok && slices.Contains(r.unavailable, provider)
 }
 
+func (r *Registry) Offers(tool string) bool {
+	_, ok := r.specs[tool]
+	return ok
+}
+
+func (r *Registry) HasProvider(id string) bool {
+	_, ok := r.providers[id]
+	return ok
+}
+
 func (r *Registry) Descriptors() []ToolDescriptor {
 	return slices.Clone(r.descriptors)
 }

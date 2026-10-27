@@ -20,18 +20,31 @@ func (fileTools) Invoke(context.Context, string, map[string]any) (tools.Result, 
 	return tools.Result{}, nil
 }
 
-// Rules and allowlist entries may name the tools of a provider that could
-// not start, and are kept; every other unknown name is still a mistake.
-func TestRulesForUnavailableProviders(t *testing.T) {
+// The MCP server "github" is configured but did not connect.
+func testRegistry(t *testing.T) *tools.Registry {
+	t.Helper()
 	registry, err := tools.New(context.Background(), []string{"github"}, fileTools{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	settings := Settings{ApprovalPolicy: string(OnRequest), Rules: Rules{
+	return registry
+}
+
+var defaults = Layer{Of: "the defaults", Settings: Settings{ApprovalPolicy: string(OnRequest)}}
+
+func layer(allow ...string) Layer {
+	return Layer{Of: "the workspace", Settings: Settings{Rules: Rules{Allow: allow}}}
+}
+
+// A turn keeps rules and allowlist entries naming an unavailable provider's
+// tools; every other unknown name is still a mistake.
+func TestTurnKeepsRulesForUnavailableProviders(t *testing.T) {
+	registry := testRegistry(t)
+	workspace := Layer{Of: "the workspace", Settings: Settings{Rules: Rules{
 		Allow: []string{"github__create_issue"},
 		Deny:  []string{"github__delete_repo(main)"},
-	}}
-	checker, err := New(settings, []string{"touch", "github__list_issues"}, registry)
+	}}}
+	checker, err := New([]Layer{defaults, workspace}, []string{"touch", "github__list_issues"}, registry)
 	if err != nil {
 		t.Fatalf("rules for an unavailable provider's tools: %v", err)
 	}
@@ -39,12 +52,42 @@ func TestRulesForUnavailableProviders(t *testing.T) {
 		t.Errorf("offered %v, want only touch", offered)
 	}
 	for _, rule := range []string{"tuch", "githb__create_issue", "github", "files__touch"} {
-		_, err := New(Settings{ApprovalPolicy: string(OnRequest), Rules: Rules{Allow: []string{rule}}}, nil, registry)
-		if err == nil || !strings.Contains(err.Error(), "not in the tool registry") {
-			t.Errorf("rule %q: %v, want it rejected", rule, err)
+		_, err := New([]Layer{defaults, layer(rule)}, nil, registry)
+		if err == nil || !strings.HasPrefix(err.Error(), "the workspace: ") || !strings.Contains(err.Error(), "not in the tool registry") {
+			t.Errorf("rule %q: %v, want it rejected in the workspace", rule, err)
 		}
-		if _, err := New(Settings{ApprovalPolicy: string(OnRequest)}, []string{rule}, registry); err == nil {
+		if _, err := New([]Layer{defaults}, []string{rule}, registry); err == nil {
 			t.Errorf("allowlist entry %q was accepted", rule)
 		}
+	}
+}
+
+// A rule for a provider that is gone says so, and names its layer.
+func TestRuleForRemovedProvider(t *testing.T) {
+	_, err := New([]Layer{defaults, layer("gitlab__merge")}, nil, testRegistry(t))
+	if err == nil || !strings.HasPrefix(err.Error(), "the workspace: ") || !strings.Contains(err.Error(), `no tool provider is named "gitlab"`) {
+		t.Errorf("got %v", err)
+	}
+}
+
+// Saving a layer keeps the rules it already had for an unavailable
+// provider, and refuses new ones, which nothing can check now.
+func TestSaveRefusesNewRulesForUnavailableProviders(t *testing.T) {
+	registry := testRegistry(t)
+	base := []Layer{defaults}
+	stored := Settings{Rules: Rules{Allow: []string{"github__create_issue"}}}
+
+	kept := Layer{Of: "the workspace", Settings: Settings{ApprovalPolicy: string(Never), Rules: Rules{Deny: []string{" github__create_issue"}, Allow: []string{"touch"}}}}
+	if err := ValidateLayer(base, stored, kept, registry); err != nil {
+		t.Errorf("saving other changes beside a stored rule: %v", err)
+	}
+	for _, added := range []string{"github__creat_issue", "github__create_issue(x)"} {
+		err := ValidateLayer(base, stored, layer("github__create_issue", added), registry)
+		if err == nil || !strings.Contains(err.Error(), `the MCP server "github" is not connected`) || !strings.Contains(err.Error(), "the workspace: ") {
+			t.Errorf("adding %q: %v", added, err)
+		}
+	}
+	if err := ValidateLayer(base, Settings{}, layer("github__create_issue"), registry); err == nil {
+		t.Error("a new layer was saved with a rule for an unavailable provider")
 	}
 }

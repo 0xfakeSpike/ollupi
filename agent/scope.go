@@ -24,25 +24,37 @@ func (a *Agent) permissions(t repo.ThreadRow) (*permission.Checker, repo.Workspa
 	if err != nil {
 		return nil, repo.WorkspaceRow{}, err
 	}
-	settings, err := a.threadSettings(t, w)
+	layers, err := a.threadLayers(t, w)
 	if err != nil {
 		return nil, repo.WorkspaceRow{}, err
 	}
-	checker, err := permission.New(settings, a.cfg.Tools, a.registry)
+	checker, err := permission.New(layers, a.cfg.Tools, a.registry)
 	if err != nil {
 		return nil, repo.WorkspaceRow{}, err
 	}
 	return checker, w, nil
 }
 
-func (a *Agent) threadSettings(t repo.ThreadRow, w repo.WorkspaceRow) (permission.Settings, error) {
+// layers are the permission settings under a conversation in workspace w:
+// the defaults, and the workspace's when there is one.
+func (a *Agent) layers(w repo.WorkspaceRow) []permission.Layer {
+	out := []permission.Layer{{Of: "the default permission settings", Settings: a.cfg.Settings}}
+	if w.ID != "" {
+		out = append(out, permission.Layer{Of: fmt.Sprintf("the permission settings of workspace %q", w.Name), Settings: w.Settings})
+	}
+	return out
+}
+
+func (a *Agent) threadLayers(t repo.ThreadRow, w repo.WorkspaceRow) ([]permission.Layer, error) {
 	if t.ParentThreadID == "" {
-		return permission.Resolve(a.cfg.Settings, w.Settings, t.Settings), nil
+		return append(a.layers(w), permission.Layer{Of: "this conversation's permission settings", Settings: t.Settings}), nil
 	}
 	parent, err := a.cfg.DB.ThreadRow(string(t.ParentThreadID))
 	if err != nil {
-		return permission.Settings{}, fmt.Errorf("agent: parent thread %s: %w", t.ParentThreadID, err)
+		return nil, fmt.Errorf("agent: parent thread %s: %w", t.ParentThreadID, err)
 	}
-	noSubagents := permission.Settings{Rules: permission.Rules{Deny: []string{subagent.Tool}}}
-	return permission.Resolve(a.cfg.Settings, w.Settings, parent.Settings, noSubagents), nil
+	return append(a.layers(w),
+		permission.Layer{Of: "the parent conversation's permission settings", Settings: parent.Settings},
+		permission.Layer{Of: "the subagent restrictions", Settings: permission.Settings{Rules: permission.Rules{Deny: []string{subagent.Tool}}}},
+	), nil
 }
