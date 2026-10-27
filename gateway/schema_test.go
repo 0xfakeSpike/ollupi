@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/skills"
 	"github.com/0xfakeSpike/ollupi/repo"
@@ -57,14 +58,15 @@ type toolSchemas struct {
 }
 
 var builtinTools = map[string]struct{ arguments, output reflect.Type }{
-	plan.Tool:      {arguments: reflect.TypeFor[plan.Plan]()},
-	subagent.Tool:  {arguments: reflect.TypeFor[subagent.Call]()},
-	userinput.Tool: {arguments: reflect.TypeFor[userinput.Request](), output: reflect.TypeFor[userinput.Answers]()},
-	shell.ToolName: {output: reflect.TypeFor[shell.CommandOutput]()},
+	plan.Tool:         {arguments: reflect.TypeFor[plan.Plan]()},
+	subagent.Tool:     {arguments: reflect.TypeFor[subagent.Call]()},
+	userinput.Tool:    {arguments: reflect.TypeFor[userinput.Request](), output: reflect.TypeFor[userinput.Answers]()},
+	shell.ToolName:    {output: reflect.TypeFor[shell.CommandOutput]()},
+	memory.ToolSearch: {output: reflect.TypeFor[memory.SearchResult]()},
 }
 
 // providers are the ids ItemRow.server takes for ollupi's own providers.
-var providers = []string{cron.ProviderName, skills.ProviderName}
+var providers = []string{cron.ProviderName, skills.ProviderName, memory.ProviderName}
 
 // enums are the value lists declared beside each string type's constants.
 var enums = []any{
@@ -98,21 +100,24 @@ var arrays = []field{
 	{reflect.TypeFor[WorkspaceListResult](), "Data"},
 	{reflect.TypeFor[CronListResult](), "Data"},
 	{reflect.TypeFor[MemoryListResult](), "Data"},
+	{reflect.TypeFor[repo.MemoryStats](), "IDs"},
+	{reflect.TypeFor[memory.SearchResult](), "Memories"},
 	{reflect.TypeFor[ApprovalRequestParams](), "AvailableDecisions"},
 	{reflect.TypeFor[UserInputRequestParams](), "Questions"},
 }
 
 // defNames name the definitions whose Go names mean little outside their package.
 var defNames = map[reflect.Type]string{
-	reflect.TypeFor[permission.Policy]():  "ApprovalPolicy",
-	reflect.TypeFor[plan.Step]():          "PlanStep",
-	reflect.TypeFor[plan.Status]():        "PlanStepStatus",
-	reflect.TypeFor[subagent.Call]():      "SubagentCall",
-	reflect.TypeFor[userinput.Request]():  "UserInputRequest",
-	reflect.TypeFor[userinput.Question](): "UserInputQuestion",
-	reflect.TypeFor[userinput.Option]():   "UserInputOption",
-	reflect.TypeFor[userinput.Answer]():   "UserInputAnswer",
-	reflect.TypeFor[userinput.Answers]():  "UserInputAnswers",
+	reflect.TypeFor[permission.Policy]():   "ApprovalPolicy",
+	reflect.TypeFor[plan.Step]():           "PlanStep",
+	reflect.TypeFor[plan.Status]():         "PlanStepStatus",
+	reflect.TypeFor[subagent.Call]():       "SubagentCall",
+	reflect.TypeFor[userinput.Request]():   "UserInputRequest",
+	reflect.TypeFor[userinput.Question]():  "UserInputQuestion",
+	reflect.TypeFor[userinput.Option]():    "UserInputOption",
+	reflect.TypeFor[userinput.Answer]():    "UserInputAnswer",
+	reflect.TypeFor[userinput.Answers]():   "UserInputAnswers",
+	reflect.TypeFor[memory.SearchResult](): "MemorySearchResult",
 }
 
 var special = map[reflect.Type]*jsonschema.Schema{

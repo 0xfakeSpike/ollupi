@@ -273,6 +273,26 @@
         "memoryTokens": {
           "type": "integer"
         },
+        "globalMemory": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/MemoryStats"
+            }
+          ]
+        },
+        "workspaceMemory": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/MemoryStats"
+            }
+          ]
+        },
         "toolsTokens": {
           "type": "integer"
         },
@@ -868,6 +888,21 @@
         "forgotten"
       ]
     },
+    "MemorySearchResult": {
+      "type": "object",
+      "properties": {
+        "memories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MemoryReference"
+          }
+        }
+      },
+      "required": [
+        "memories"
+      ],
+      "additionalProperties": false
+    },
     "MemorySource": {
       "type": "object",
       "properties": {
@@ -887,6 +922,25 @@
       "required": [
         "table",
         "id"
+      ],
+      "additionalProperties": false
+    },
+    "MemoryStats": {
+      "type": "object",
+      "properties": {
+        "tokens": {
+          "type": "integer"
+        },
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "tokens",
+        "ids"
       ],
       "additionalProperties": false
     },
@@ -2260,6 +2314,11 @@
         "$ref": "#/$defs/SubagentCall"
       }
     },
+    "memory_search": {
+      "output": {
+        "$ref": "#/$defs/MemorySearchResult"
+      }
+    },
     "request_user_input": {
       "arguments": {
         "$ref": "#/$defs/UserInputRequest"
@@ -2281,6 +2340,7 @@
   },
   "providers": [
     "cron",
-    "skills"
+    "skills",
+    "memory"
   ]
 }

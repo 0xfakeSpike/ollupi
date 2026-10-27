@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -56,7 +57,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 	defer remote.Close()
 	servers := mcp.Connect(ctx, mcp.Client{}, []mcp.Server{{Name: "remote", URL: remote.URL}, {Name: "broken", Command: "/nonexistent/mcp-server"}})
 	defer servers.Close()
-	mem, err := memory.New(db, nil, memory.Options{})
+	mem, err := memory.New(db, nil, memory.Options{Use: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,6 +114,18 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.call("workspace/updatePermissions", WorkspacePermissionsParams{WorkspaceID: workspaceID,
 		PermissionSettings: repo.PermissionSettings{ApprovalPolicy: string(permission.OnRequest)}}, nil)
 
+	// The thread starts with one global memory and one of its workspace.
+	saved := time.Now().UTC()
+	for _, m := range []repo.MemoryRow{
+		{ID: "g1", Topic: "style", Kind: "preference", Text: "Answers briefly."},
+		{ID: "w1", WorkspaceID: workspaceID, Topic: "build", Kind: "fact", Text: "Builds with go."},
+	} {
+		m.Status, m.CreatedAt, m.UpdatedAt = repo.MemoryActive, saved, saved
+		if err := db.SaveMemory(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	var th ThreadResult
 	c.call("thread/start", ThreadStartParams{WorkspaceID: workspaceID}, &th)
 	c.await("thread/started", nil)
@@ -147,6 +160,10 @@ func TestTrafficMatchesContract(t *testing.T) {
 	turn = c.startTurn(threadID, "delegate this")
 	c.awaitTurnEnd(turn, repo.TurnCompleted)
 
+	// A memory search.
+	turn = c.startTurn(threadID, "recall how to answer")
+	c.awaitTurnEnd(turn, repo.TurnCompleted)
+
 	// Scheduled tasks, managed and run.
 	c.call("cron/create", CronCreateParams{ThreadID: threadID, Name: "daily", Spec: "@daily", Prompt: "daily check"}, nil)
 	c.call("cron/list", CronListParams{ThreadID: threadID}, nil)
@@ -173,7 +190,9 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.call("turn/interrupt", TurnInterruptParams{ThreadID: threadID, TurnID: turn}, nil)
 	c.awaitTurnEnd(turn, repo.TurnInterrupted)
 
-	c.call("thread/read", ThreadPageParams{ThreadID: threadID}, nil)
+	var page ThreadPageResult
+	c.call("thread/read", ThreadPageParams{ThreadID: threadID}, &page)
+	checkMemory(t, page.Items)
 	c.call("thread/read", ThreadPageParams{ThreadID: threadID, Limit: 2, BeforeSeq: 4}, nil)
 	c.call("thread/list", repo.ThreadFilter{WorkspaceID: &workspaceID}, nil)
 
@@ -234,6 +253,34 @@ func TestTrafficMatchesContract(t *testing.T) {
 	}
 }
 
+// checkMemory checks that a thread loaded its memory once, at its start,
+// that every prompt reported both sections, and that memory_search found
+// the global memory.
+func checkMemory(t *testing.T, items []repo.ItemRow) {
+	t.Helper()
+	snapshots, prompts, searched := 0, 0, false
+	for _, it := range items {
+		switch {
+		case it.Type == repo.ItemMemoryContext:
+			snapshots++
+			if len(it.Memory) != 2 || it.Memory[0].ID != "g1" || it.Memory[1].ID != "w1" {
+				t.Errorf("snapshot %+v, want g1 then w1", it.Memory)
+			}
+		case it.Tool == memory.ToolSearch:
+			searched = it.Status == repo.ItemCompleted && it.Result != nil && strings.Contains(string(it.Result.Output), `"g1"`)
+		}
+		if s := it.ContextStats; s != nil && s.GlobalMemory != nil {
+			prompts++
+			if s.MemoryTokens == 0 || !slices.Equal(s.GlobalMemory.IDs, []string{"g1"}) || !slices.Equal(s.WorkspaceMemory.IDs, []string{"w1"}) {
+				t.Errorf("context stats %+v, global %+v, workspace %+v", s, s.GlobalMemory, s.WorkspaceMemory)
+			}
+		}
+	}
+	if snapshots != 1 || prompts < 5 || !searched {
+		t.Errorf("%d snapshots, %d prompts reporting memory, searched %v; want 1 snapshot, every prompt, and a search", snapshots, prompts, searched)
+	}
+}
+
 // touchTool is a tool that is not read-only, so on-request asks before running it.
 type touchTool struct{}
 
@@ -291,6 +338,8 @@ func (f *fakeModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		call(userinput.Tool, `{"questions":[{"id":"color","header":"Color","question":"Which color?"}]}`)
 	case last.Role == "user" && strings.Contains(text, "delegate"):
 		call(subagent.Tool, `{"description":"Check a thing","prompt":"Check the thing and report."}`)
+	case last.Role == "user" && strings.Contains(text, "recall"):
+		call(memory.ToolSearch, `{"query":"answers"}`)
 	default:
 		chunks = append(chunks, map[string]any{"reasoning_content": "Thinking it over."}, map[string]any{"content": "All "}, map[string]any{"content": "done."})
 	}

@@ -28,7 +28,7 @@ func (m *Manager) CompactionPrompt(in Input) (Prompt, error) {
 		if messages, ok := rendered[limit]; ok {
 			return messages, nil
 		}
-		messages, _, err := m.transcript(obs, in.Items, "", limit, true)
+		messages, _, err := m.transcript(obs, in.Items, limit, true)
 		rendered[limit] = messages
 		return messages, err
 	}
