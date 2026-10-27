@@ -261,6 +261,9 @@
         "budgetTokens": {
           "type": "integer"
         },
+        "compactAtTokens": {
+          "type": "integer"
+        },
         "systemTokens": {
           "type": "integer"
         },
@@ -282,6 +285,7 @@
       },
       "required": [
         "budgetTokens",
+        "compactAtTokens",
         "systemTokens",
         "messagesTokens",
         "toolsTokens",
