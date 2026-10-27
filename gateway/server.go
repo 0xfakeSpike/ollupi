@@ -17,6 +17,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
+	"github.com/0xfakeSpike/ollupi/tools/mcp"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
 	"github.com/coder/websocket"
 )
@@ -33,6 +34,7 @@ type Server struct {
 	agent   *agent.Agent
 	memory  *memory.Manager
 	jobs    *cron.Jobs
+	mcp     *mcp.Servers
 	token   string
 	hosts   []string
 	methods map[string]Method
@@ -171,6 +173,14 @@ func (c *conn) modelList(Empty) (ModelListResult, func(), error) {
 
 func (c *conn) toolList(Empty) (ToolListResult, func(), error) {
 	return ToolListResult{Data: nonNil(c.s.agent.ListTools())}, nil, nil
+}
+
+func (c *conn) mcpServerList(Empty) (MCPServerListResult, func(), error) {
+	var servers []mcp.ServerStatus
+	if c.s.mcp != nil {
+		servers = c.s.mcp.Statuses()
+	}
+	return MCPServerListResult{Data: nonNil(servers)}, nil, nil
 }
 
 func (c *conn) event(e agent.Event) {

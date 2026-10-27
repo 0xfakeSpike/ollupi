@@ -13,6 +13,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/0xfakeSpike/ollupi/tools/mcp"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
 )
 
@@ -72,6 +73,7 @@ var protocol = struct {
 		"turn/interrupt":              handle((*conn).turnInterrupt),
 		"model/list":                  handle((*conn).modelList),
 		"tool/list":                   handle((*conn).toolList),
+		"mcpServer/list":              handle((*conn).mcpServerList),
 		"workspace/list":              handle((*conn).workspaceList),
 		"workspace/add":               handle((*conn).workspaceAdd),
 		"workspace/rename":            handle((*conn).workspaceRename),
@@ -223,6 +225,10 @@ type ModelListResult struct {
 
 type ToolListResult struct {
 	Data []tools.ToolDescriptor `json:"data"`
+}
+
+type MCPServerListResult struct {
+	Data []mcp.ServerStatus `json:"data"`
 }
 
 type UserInput struct {

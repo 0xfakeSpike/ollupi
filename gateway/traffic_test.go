@@ -22,10 +22,12 @@ import (
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
+	"github.com/0xfakeSpike/ollupi/tools/mcp"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
 	"github.com/coder/websocket"
 	"github.com/google/jsonschema-go/jsonschema"
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // TestTrafficMatchesContract runs a gateway session against a fake model and
@@ -44,6 +46,16 @@ func TestTrafficMatchesContract(t *testing.T) {
 	}
 	defer db.Close()
 	jobs := cron.New(db, time.UTC)
+	remote := httptest.NewServer(sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server {
+		s := sdk.NewServer(&sdk.Implementation{Name: "remote", Version: "1"}, nil)
+		sdk.AddTool(s, &sdk.Tool{Name: "lookup", Description: "Looks a thing up."}, func(context.Context, *sdk.CallToolRequest, struct{}) (*sdk.CallToolResult, any, error) {
+			return &sdk.CallToolResult{}, nil, nil
+		})
+		return s
+	}, nil))
+	defer remote.Close()
+	servers := mcp.Connect(ctx, mcp.Client{}, []mcp.Server{{Name: "remote", URL: remote.URL}, {Name: "broken", Command: "/nonexistent/mcp-server"}})
+	defer servers.Close()
 	mem, err := memory.New(db, nil, memory.Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -54,12 +66,12 @@ func TestTrafficMatchesContract(t *testing.T) {
 		Models:      []llm.Model{{Name: "gpt-4o", Connection: "fake"}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.OnRequest)},
 		Connections: map[string]*llm.OpenAI{"fake": llm.NewOpenAI(model.URL, "", 4, nil)},
-		Providers:   []tools.Provider{touchTool{}, jobs},
+		Providers:   append([]tools.Provider{touchTool{}, jobs}, servers.Providers()...),
 		Memory:      mem,
 		DB:          db,
 		OnEvent:     func(e agent.Event) { server.Deliver(e) },
 	})
-	if server, err = NewServer(ag, Options{Token: "secret", Memory: mem, Jobs: jobs}); err != nil {
+	if server, err = NewServer(ag, Options{Token: "secret", Memory: mem, Jobs: jobs, MCP: servers}); err != nil {
 		t.Fatal(err)
 	}
 	agentCtx, stop := context.WithCancel(ctx)
@@ -83,6 +95,11 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.notify("initialized", Empty{})
 	c.call("model/list", Empty{}, nil)
 	c.call("tool/list", Empty{}, nil)
+	var mcpServers MCPServerListResult
+	c.call("mcpServer/list", Empty{}, &mcpServers)
+	if len(mcpServers.Data) != 2 || !mcpServers.Data[0].Connected || mcpServers.Data[0].Tools != 1 || mcpServers.Data[1].Connected {
+		t.Errorf("mcpServer/list: %+v", mcpServers.Data)
+	}
 	c.call("workspace/list", Empty{}, nil)
 	c.call("thread/list", repo.ThreadFilter{}, nil)
 
