@@ -40,10 +40,9 @@ func (m *Manager) Fits(system string, tools any) error {
 }
 
 type Input struct {
-	Items         []repo.ItemRow
-	CurrentTurnID string
-	System        string
-	Tools         any
+	Items  []repo.ItemRow
+	System string
+	Tools  any
 }
 
 type Prompt struct {
@@ -54,18 +53,18 @@ type Prompt struct {
 }
 
 func (m *Manager) Build(in Input) (Prompt, error) {
-	memory := turnMemory(in.Items, in.CurrentTurnID)
 	compactable, natural := 0, 0
 	obs := newObservations()
 	p, err := m.fitted(func(limit int) (Prompt, error) {
-		messages, fixed, err := m.transcript(obs, in.Items, in.CurrentTurnID, limit, false)
+		messages, fixed, err := m.transcript(obs, in.Items, limit, false)
 		if err != nil {
 			return Prompt{}, err
 		}
 		p := Prompt{System: in.System, Messages: messages}
 		p.Stats = m.stats(in.System, messages, in.Tools)
-		if memory != "" {
-			p.Stats.MemoryTokens = llm.EstimateTokens(memory)
+		if s := snapshot(in.Items); s != nil {
+			p.Stats.MemoryTokens = llm.EstimateTokens(s.Text)
+			p.Stats.GlobalMemory, p.Stats.WorkspaceMemory = memorySection(s.Memory, true), memorySection(s.Memory, false)
 		}
 		m.calibrate(&p.Stats, in.Items)
 		if limit == maxObservationTokens {
@@ -135,8 +134,10 @@ func (m *Manager) SkillBudget() int {
 	return share(m.inputTokens, 4)
 }
 
+// MemoryBudget is what the memory snapshot may take. The snapshot is sent
+// once per thread, not per turn, so it can be larger than a recall would.
 func (m *Manager) MemoryBudget() int {
-	return max(0, min(2000, m.inputTokens*5/100))
+	return max(0, min(4000, m.inputTokens*8/100))
 }
 
 func (m *Manager) ArtifactBudget() int {
@@ -153,34 +154,55 @@ func (m *Manager) CheckArtifacts(artifacts []tools.ContextArtifact) error {
 	return nil
 }
 
-func turnMemory(items []repo.ItemRow, turnID string) string {
-	for _, it := range items {
-		if it.TurnID == turnID && it.Type == repo.ItemMemoryContext && it.Status == repo.ItemCompleted {
-			return it.Text
+// snapshot is the memory the prompt starts with: the snapshot recorded when
+// the thread started or after its latest compaction. A thread from before
+// snapshots carries the memory its latest turn recalled.
+func snapshot(items []repo.ItemRow) *repo.ItemRow {
+	for i := len(items) - 1; i >= 0; i-- {
+		if it := &items[i]; it.Type == repo.ItemMemoryContext && it.Status == repo.ItemCompleted {
+			return it
 		}
 	}
-	return ""
+	return nil
+}
+
+func memorySection(entries []repo.MemoryReference, global bool) *repo.MemoryStats {
+	s := &repo.MemoryStats{IDs: []string{}}
+	var shown []repo.MemoryReference
+	for _, e := range entries {
+		if (e.WorkspaceID == "") == global {
+			s.IDs = append(s.IDs, e.ID)
+			e.WorkspaceID = ""
+			shown = append(shown, e)
+		}
+	}
+	if len(shown) > 0 {
+		s.Tokens = llm.EstimateTokens(prettyJSON(shown))
+	}
+	return s
 }
 
 func (m *Manager) observationBudget(calls, limit int) int {
 	return min(limit, max(minPooledTokens, min(m.inputTokens/8, share(m.inputTokens, responsePercent)/max(1, calls))))
 }
 
-func (m *Manager) transcript(obs *observations, items []repo.ItemRow, turnID string, limit int, compacting bool) ([]llm.ChatMessage, int, error) {
-	var out, fixed []llm.ChatMessage
+// transcript renders the items after the latest compaction, after the
+// memory snapshot and the compacted history, which it counts as fixed.
+func (m *Manager) transcript(obs *observations, items []repo.ItemRow, limit int, compacting bool) ([]llm.ChatMessage, int, error) {
+	var out []llm.ChatMessage
 	latest := ""
 	if !compacting {
 		latest = latestResponse(items)
 	}
+	if s := snapshot(items); s != nil && s.Text != "" && !compacting {
+		out = append(out, llm.ChatMessage{Role: llm.RoleUser, Content: s.Text})
+	}
 	start := 0
 	if c := latestCompaction(items); c >= 0 {
-		if memory := turnMemory(items[:c], turnID); memory != "" && !compacting {
-			out = append(out, llm.ChatMessage{Role: llm.RoleUser, Content: memory})
-		}
 		out = append(out, llm.ChatMessage{Role: llm.RoleUser, Content: m.compactedHistory(items[:c], items[c].Text)})
-		fixed = slices.Clone(out)
 		start = c + 1
 	}
+	fixed := slices.Clone(out)
 	for i := start; i < len(items); {
 		it := items[i]
 		switch {
@@ -190,12 +212,7 @@ func (m *Manager) transcript(obs *observations, items []repo.ItemRow, turnID str
 		case it.Type == repo.ItemUserMessage || it.Type == repo.ItemError:
 			out = append(out, llm.ChatMessage{Role: llm.RoleUser, Content: it.Text})
 			i++
-		case it.Type == repo.ItemMemoryContext:
-			if !compacting && it.Status == repo.ItemCompleted {
-				out = append(out, llm.ChatMessage{Role: llm.RoleUser, Content: it.Text})
-			}
-			i++
-		case it.Type == repo.ItemContextCompaction || it.Type == repo.ItemToolProgress:
+		case it.Type == repo.ItemMemoryContext || it.Type == repo.ItemContextCompaction || it.Type == repo.ItemToolProgress:
 
 			i++
 		case it.ResponseID != "":

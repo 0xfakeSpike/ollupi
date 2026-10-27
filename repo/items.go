@@ -76,15 +76,25 @@ var ItemStatusValues = []ItemStatus{ItemPending, ItemInProgress, ItemCompleted, 
 func (s ItemStatus) Value() (driver.Value, error) { return enumValue(s, ItemStatusValues) }
 
 type ContextStats struct {
-	Model            string `json:"model,omitempty"`
-	BudgetTokens     int    `json:"budgetTokens"`
-	CompactAtTokens  int    `json:"compactAtTokens"`
-	SystemTokens     int    `json:"systemTokens"`
-	MessagesTokens   int    `json:"messagesTokens"`
-	MemoryTokens     int    `json:"memoryTokens,omitempty"`
-	ToolsTokens      int    `json:"toolsTokens"`
-	EstimatedTokens  int    `json:"estimatedTokens"`
-	CalibratedTokens int    `json:"calibratedTokens,omitempty"`
+	Model           string `json:"model,omitempty"`
+	BudgetTokens    int    `json:"budgetTokens"`
+	CompactAtTokens int    `json:"compactAtTokens"`
+	SystemTokens    int    `json:"systemTokens"`
+	MessagesTokens  int    `json:"messagesTokens"`
+	// MemoryTokens is the memory snapshot's part of MessagesTokens; the two
+	// sections count their own entries, without the snapshot's headings.
+	MemoryTokens     int          `json:"memoryTokens,omitempty"`
+	GlobalMemory     *MemoryStats `json:"globalMemory,omitempty"`
+	WorkspaceMemory  *MemoryStats `json:"workspaceMemory,omitempty"`
+	ToolsTokens      int          `json:"toolsTokens"`
+	EstimatedTokens  int          `json:"estimatedTokens"`
+	CalibratedTokens int          `json:"calibratedTokens,omitempty"`
+}
+
+// MemoryStats is one section of the memory snapshot a prompt carries.
+type MemoryStats struct {
+	Tokens int      `json:"tokens"`
+	IDs    []string `json:"ids"`
 }
 
 type MemoryReference struct {

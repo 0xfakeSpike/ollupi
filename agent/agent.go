@@ -103,6 +103,9 @@ func (a *Agent) Start(ctx context.Context) error {
 
 func (a *Agent) buildTools(ctx context.Context) error {
 	providers := append(slices.Clone(a.cfg.Providers), plan.New(), subagent.New(), userinput.New(), contextmanager.NewOutputs(a.cfg.DB))
+	if a.cfg.Memory != nil {
+		providers = append(providers, a.cfg.Memory)
+	}
 	if a.cfg.SkillsDir != "" {
 		var err error
 		if a.skills, err = skills.New(a.cfg.SkillsDir); err != nil {

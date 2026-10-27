@@ -15,10 +15,9 @@ import (
 
 func (rt *Runtime) contextInput() contextmanager.Input {
 	return contextmanager.Input{
-		Items:         slices.Concat(rt.History, rt.Items),
-		CurrentTurnID: rt.Turn.ID,
-		System:        rt.system,
-		Tools:         rt.specs(),
+		Items:  slices.Concat(rt.History, rt.Items),
+		System: rt.system,
+		Tools:  rt.specs(),
 	}
 }
 
@@ -108,7 +107,7 @@ func (rt *Runtime) compact(ctx context.Context) error {
 	if _, err := rt.complete(it, repo.ItemCompleted); err != nil {
 		return err
 	}
-	return nil
+	return rt.loadMemory()
 }
 
 func (rt *Runtime) send(ctx context.Context, prompt contextmanager.Prompt, choice llm.ToolChoice, onDelta func(llm.Delta)) (llm.ChatResponse, error) {

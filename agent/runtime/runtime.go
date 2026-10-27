@@ -71,33 +71,47 @@ func (rt *Runtime) start() error {
 		Agent: rt.Prompt, Subagent: rt.Caller.Subagent, Root: rt.Caller.Root,
 		Skills: catalog, SkillTokens: rt.Contexts.SkillBudget(),
 	})
-	if rt.Memory != nil && rt.modelCalls() == 0 && !slices.ContainsFunc(rt.Items, isMemoryContext) {
-		ctx, err := rt.Memory.Context(rt.Caller.WorkspaceID, turnQuery(rt.Items), rt.Contexts.MemoryBudget())
-		if err != nil {
-			log.Printf("memory: turn %s starts without memory: %v", rt.Turn.ID, err)
-		} else if len(ctx.Entries) > 0 {
-			now := time.Now().UTC()
-			if _, err := rt.record(repo.ItemRow{
-				ID: uuid.NewString(), TurnID: rt.Turn.ID, Type: repo.ItemMemoryContext, Status: repo.ItemCompleted,
-				Memory: ctx.Entries, Text: ctx.Text, StartedAt: now, CompletedAt: &now,
-			}); err != nil {
-				return err
-			}
-		}
+	if hasSnapshot(slices.Concat(rt.History, rt.Items)) {
+		return nil
 	}
-	return nil
+	return rt.loadMemory()
 }
 
-func isMemoryContext(it repo.ItemRow) bool { return it.Type == repo.ItemMemoryContext }
-
-func turnQuery(items []repo.ItemRow) string {
-	var requests []string
-	for _, it := range items {
-		if it.Type == repo.ItemUserMessage {
-			requests = append(requests, it.Text)
+// hasSnapshot reports whether the thread has its memory snapshot: one
+// recorded since its latest compaction, or when it started.
+func hasSnapshot(items []repo.ItemRow) bool {
+	for i := len(items) - 1; i >= 0; i-- {
+		switch it := items[i]; {
+		case it.Type == repo.ItemMemoryContext && it.Status == repo.ItemCompleted:
+			return true
+		case it.Type == repo.ItemContextCompaction && it.Status == repo.ItemCompleted:
+			return false
 		}
 	}
-	return strings.Join(requests, "\n\n")
+	return false
+}
+
+// loadMemory records the memory snapshot the thread works with until its
+// next compaction, even an empty one, so memories learned meanwhile wait
+// for that compaction instead of changing the start of every prompt.
+func (rt *Runtime) loadMemory() error {
+	if rt.Memory == nil {
+		return nil
+	}
+	snapshot, err := rt.Memory.Snapshot(rt.Caller.WorkspaceID, rt.Contexts.MemoryBudget())
+	if err != nil {
+		log.Printf("memory: turn %s goes on without a memory snapshot: %v", rt.Turn.ID, err)
+		return nil
+	}
+	if snapshot == nil {
+		return nil
+	}
+	now := time.Now().UTC()
+	_, err = rt.record(repo.ItemRow{
+		ID: uuid.NewString(), TurnID: rt.Turn.ID, Type: repo.ItemMemoryContext, Status: repo.ItemCompleted,
+		Memory: snapshot.Entries, Text: snapshot.Text, StartedAt: now, CompletedAt: &now,
+	})
+	return err
 }
 
 func (rt *Runtime) tool(name string) (tools.ToolDescriptor, bool) {
