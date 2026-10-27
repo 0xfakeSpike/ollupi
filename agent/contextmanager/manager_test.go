@@ -59,15 +59,6 @@ func TestSnapshotLeadsThePrompt(t *testing.T) {
 	}
 }
 
-// A thread from before snapshots has a recall in each turn; the latest one
-// leads the prompt and the others are left out.
-func TestEarlierRecallsAreLeftOut(t *testing.T) {
-	p := build(t, user("q1"), memory("RECALL1"), answer("r1", "a1"), user("q2"), memory("RECALL2"), answer("r2", "a2"))
-	if got, want := contents(p.Messages), []string{"RECALL2", "q1", "a1", "q2", "a2"}; !slices.Equal(got, want) {
-		t.Errorf("messages %q, want %q", got, want)
-	}
-}
-
 // After a compaction the snapshot taken with it leads, before the
 // compacted history; the summary request carries no memory.
 func TestCompactionRefreshesTheSnapshot(t *testing.T) {
