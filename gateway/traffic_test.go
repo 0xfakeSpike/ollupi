@@ -185,6 +185,28 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.call("memory/update", MemoryUpdateParams{ID: "m1", Text: "Likes green."}, nil)
 	c.call("memory/forget", MemoryForgetParams{ID: "m1"}, nil)
 
+	// Saving a new rule for a server that did not connect is refused; one
+	// stored for a server no longer configured fails the turn and says where.
+	c.refused("workspace/updatePermissions", WorkspacePermissionsParams{WorkspaceID: workspaceID,
+		PermissionSettings: repo.PermissionSettings{Rules: repo.PermissionRules{Allow: []string{"broken__creat_issue"}}}},
+		jsonrpc.CodeInvalidParams, `the MCP server "broken" is not connected`)
+	if _, err := db.UpdateWorkspace(workspaceID, func(w repo.WorkspaceRow) (repo.WorkspaceRow, error) {
+		w.Settings.Rules.Allow = []string{"gitlab__merge"}
+		return w, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	turn = c.startTurn(threadID, "hello again")
+	failed := c.await("turn/completed", func(params json.RawMessage) bool {
+		var n TurnNotification
+		return json.Unmarshal(params, &n) == nil && n.Turn.ID == turn
+	})
+	var ended TurnNotification
+	json.Unmarshal(failed.Params, &ended)
+	if ended.Turn.Status != repo.TurnFailed || !strings.Contains(ended.Turn.Error, `workspace "renamed"`) || !strings.Contains(ended.Turn.Error, `no tool provider is named "gitlab"`) {
+		t.Errorf("turn with a rule for a removed server ended %s: %s", ended.Turn.Status, ended.Turn.Error)
+	}
+
 	archived := true
 	c.call("workspace/archive", WorkspaceArchiveParams{WorkspaceID: workspaceID, Archived: &archived}, nil)
 
@@ -422,6 +444,28 @@ func (c *client) send(m jsonrpc.Message) {
 
 func (c *client) call(method string, params, result any) {
 	c.t.Helper()
+	reply := c.exchange(method, params)
+	if reply.Error != nil {
+		c.t.Fatalf("%s: %v", method, reply.Error)
+	}
+	if result != nil {
+		if err := json.Unmarshal(reply.Result, result); err != nil {
+			c.t.Fatal(err)
+		}
+	}
+}
+
+// refused calls method expecting the error code; its message must contain why.
+func (c *client) refused(method string, params any, code int, why string) {
+	c.t.Helper()
+	reply := c.exchange(method, params)
+	if reply.Error == nil || reply.Error.Code != code || !strings.Contains(reply.Error.Message, why) {
+		c.t.Errorf("%s: got %+v, want error %d about %q", method, reply.Error, code, why)
+	}
+}
+
+func (c *client) exchange(method string, params any) jsonrpc.Message {
+	c.t.Helper()
 	raw, err := json.Marshal(params)
 	if err != nil {
 		c.t.Fatal(err)
@@ -442,16 +486,10 @@ func (c *client) call(method string, params, result any) {
 	c.send(jsonrpc.Message{JSONRPC: "2.0", ID: json.RawMessage(id), Method: method, Params: raw})
 	select {
 	case reply := <-ch:
-		if reply.Error != nil {
-			c.t.Fatalf("%s: %v", method, reply.Error)
-		}
-		if result != nil {
-			if err := json.Unmarshal(reply.Result, result); err != nil {
-				c.t.Fatal(err)
-			}
-		}
+		return reply
 	case <-c.ctx.Done():
 		c.t.Fatalf("%s: no reply", method)
+		return jsonrpc.Message{}
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/repo"
@@ -41,7 +42,25 @@ type Checker struct {
 	tools  []tools.ToolDescriptor
 }
 
-func New(settings Settings, allowlist []string, registry *tools.Registry) (*Checker, error) {
+// Layer is one level of permission settings: the defaults, a workspace's,
+// a conversation's. Of names it in errors, so the user knows what to edit.
+type Layer struct {
+	Of       string
+	Settings Settings
+}
+
+// New merges the layers into the checker for a turn. Each layer is checked
+// on its own first; rules naming the tools of a provider that could not
+// start this run are kept, and match nothing.
+func New(layers []Layer, allowlist []string, registry *tools.Registry) (*Checker, error) {
+	all := make([]Settings, 0, len(layers))
+	for _, l := range layers {
+		if err := checkLayer(l.Settings, nil, registry); err != nil {
+			return nil, fmt.Errorf("%s: %w", l.Of, err)
+		}
+		all = append(all, l.Settings)
+	}
+	settings := Resolve(all...)
 	policy := Policy(settings.ApprovalPolicy)
 	if err := policy.Validate(); err != nil {
 		return nil, err
@@ -50,44 +69,70 @@ func New(settings Settings, allowlist []string, registry *tools.Registry) (*Chec
 	if err != nil {
 		return nil, err
 	}
-	catalog := registry.Descriptors()
-	offered := func(name string) bool {
-		return slices.ContainsFunc(catalog, func(d tools.ToolDescriptor) bool { return d.Name == name })
-	}
-	for _, r := range set.all() {
-		if registry.Unavailable(r.tool) {
-			continue
-		}
-		if !offered(r.tool) {
-			return nil, fmt.Errorf("permission rule %q: tool %q is not in the tool registry", r.text, r.tool)
-		}
-		if r.pattern != nil && !registry.HasPermissionContent(r.tool) {
-			return nil, fmt.Errorf("permission rule %q: %s takes no specifier; write %q to match every call", r.text, r.tool, r.tool)
-		}
-	}
 	for i, name := range allowlist {
 		if slices.Contains(allowlist[:i], name) {
-			return nil, fmt.Errorf("tool %q is listed twice", name)
+			return nil, fmt.Errorf("the tools allowlist names %q twice", name)
 		}
-		if !offered(name) && !registry.Unavailable(name) {
-			return nil, fmt.Errorf("tool %q is not in the tool registry", name)
+		if !registry.Offers(name) && !registry.Unavailable(name) {
+			return nil, fmt.Errorf("the tools allowlist: %w", unknownTool(fmt.Sprintf("tool %q", name), name, registry))
 		}
 	}
-	visible := slices.DeleteFunc(slices.Clone(catalog), func(d tools.ToolDescriptor) bool {
+	visible := slices.DeleteFunc(registry.Descriptors(), func(d tools.ToolDescriptor) bool {
 		return (allowlist != nil && !slices.Contains(allowlist, d.Name)) || set.removes(d.Name)
 	})
 	return &Checker{policy: policy, rules: set, tools: visible}, nil
 }
 
-var ErrInvalidSettings = errors.New("invalid permission settings")
-
-func ValidateLayer(base, layer Settings, registry *tools.Registry) error {
-	if layer.ApprovalPolicy != "" {
-		if err := Policy(layer.ApprovalPolicy).Validate(); err != nil {
-			return fmt.Errorf("%w: %v", ErrInvalidSettings, err)
+// checkLayer checks one layer's policy and rules. With previous, the layer
+// is being saved over previous: a rule it adds for a provider that could
+// not start is refused, since nothing can check its tool name now.
+func checkLayer(s Settings, previous *Settings, registry *tools.Registry) error {
+	if s.ApprovalPolicy != "" {
+		if err := Policy(s.ApprovalPolicy).Validate(); err != nil {
+			return err
 		}
 	}
-	if _, err := New(Resolve(base, layer), nil, registry); err != nil {
+	set, err := parseRules(s.Rules)
+	if err != nil {
+		return err
+	}
+	var kept []string
+	if previous != nil {
+		for _, text := range slices.Concat(previous.Rules.Allow, previous.Rules.Ask, previous.Rules.Deny) {
+			kept = append(kept, strings.TrimSpace(text))
+		}
+	}
+	for _, r := range set.all() {
+		switch {
+		case registry.Unavailable(r.tool):
+			if previous != nil && !slices.Contains(kept, r.text) {
+				provider, _, _ := strings.Cut(r.tool, tools.ProviderSeparator)
+				return fmt.Errorf("permission rule %q: the MCP server %q is not connected, so its tools cannot be checked now; add this rule once it is connected", r.text, provider)
+			}
+		case !registry.Offers(r.tool):
+			return unknownTool(fmt.Sprintf("permission rule %q", r.text), r.tool, registry)
+		case r.pattern != nil && !registry.HasPermissionContent(r.tool):
+			return fmt.Errorf("permission rule %q: %s takes no specifier; write %q to match every call", r.text, r.tool, r.tool)
+		}
+	}
+	return nil
+}
+
+func unknownTool(what, tool string, registry *tools.Registry) error {
+	if provider, _, ok := strings.Cut(tool, tools.ProviderSeparator); ok && !registry.HasProvider(provider) {
+		return fmt.Errorf("%s: tool %q is not in the tool registry, and no tool provider is named %q; if that MCP server was removed or renamed, remove or rename the rule", what, tool, provider)
+	}
+	return fmt.Errorf("%s: tool %q is not in the tool registry", what, tool)
+}
+
+var ErrInvalidSettings = errors.New("invalid permission settings")
+
+// ValidateLayer checks layer before it replaces previous on top of base.
+func ValidateLayer(base []Layer, previous Settings, layer Layer, registry *tools.Registry) error {
+	if err := checkLayer(layer.Settings, &previous, registry); err != nil {
+		return fmt.Errorf("%w: %s: %v", ErrInvalidSettings, layer.Of, err)
+	}
+	if _, err := New(append(slices.Clone(base), layer), nil, registry); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidSettings, err)
 	}
 	return nil
