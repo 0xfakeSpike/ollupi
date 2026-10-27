@@ -114,11 +114,13 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.call("workspace/updatePermissions", WorkspacePermissionsParams{WorkspaceID: workspaceID,
 		PermissionSettings: repo.PermissionSettings{ApprovalPolicy: string(permission.OnRequest)}}, nil)
 
-	// The thread starts with one global memory and one of its workspace.
+	// The thread starts with the global memory and that of its workspace,
+	// not the one from conversations outside any workspace.
 	saved := time.Now().UTC()
 	for _, m := range []repo.MemoryRow{
-		{ID: "g1", Topic: "style", Kind: "preference", Text: "Answers briefly."},
-		{ID: "w1", WorkspaceID: workspaceID, Topic: "build", Kind: "fact", Text: "Builds with go."},
+		{ID: "g1", Scope: repo.MemoryGlobal, Topic: "style", Kind: "preference", Text: "Answers briefly."},
+		{ID: "w1", Scope: repo.MemoryWorkspace, WorkspaceID: workspaceID, Topic: "build", Kind: "fact", Text: "Builds with go."},
+		{ID: "n1", Scope: repo.MemoryGeneral, Topic: "trip", Kind: "fact", Text: "Plans a trip in November."},
 	} {
 		m.Status, m.CreatedAt, m.UpdatedAt = repo.MemoryActive, saved, saved
 		if err := db.SaveMemory(m); err != nil {
@@ -192,14 +194,39 @@ func TestTrafficMatchesContract(t *testing.T) {
 
 	var page ThreadPageResult
 	c.call("thread/read", ThreadPageParams{ThreadID: threadID}, &page)
-	checkMemory(t, page.Items)
+	if prompts, searched := checkMemory(t, page.Items, "w1"); prompts < 5 || !searched {
+		t.Errorf("%d prompts reported memory, searched %v; want every prompt and a search", prompts, searched)
+	}
+
+	// A thread outside any workspace starts with the general memory instead.
+	var general ThreadResult
+	c.call("thread/start", ThreadStartParams{}, &general)
+	c.await("thread/started", nil)
+	c.awaitTurnEnd(c.startTurn(general.Thread.ID, "hello"), repo.TurnCompleted)
+	c.call("thread/read", ThreadPageParams{ThreadID: general.Thread.ID}, &page)
+	if prompts, _ := checkMemory(t, page.Items, "n1"); prompts != 1 {
+		t.Errorf("%d prompts reported memory in the general thread, want 1", prompts)
+	}
 	c.call("thread/read", ThreadPageParams{ThreadID: threadID, Limit: 2, BeforeSeq: 4}, nil)
 	c.call("thread/list", repo.ThreadFilter{WorkspaceID: &workspaceID}, nil)
 
-	if err := db.SaveMemory(repo.MemoryRow{ID: "m1", Topic: "colors", Kind: "preference", Text: "Likes blue.", Status: repo.MemoryActive, CreatedAt: now, UpdatedAt: now}); err != nil {
+	// Memories listed by scope, and moved where they belong.
+	if err := db.SaveMemory(repo.MemoryRow{ID: "m1", Scope: repo.MemoryGeneral, Topic: "colors", Kind: "preference", Text: "Likes blue.", Status: repo.MemoryActive, CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	c.call("memory/list", MemoryListParams{IncludeGlobal: true}, nil)
+	var listed MemoryListResult
+	c.call("memory/list", MemoryListParams{Scope: repo.MemoryGeneral}, &listed)
+	if len(listed.Data) != 2 {
+		t.Errorf("general memories %+v, want n1 and m1", listed.Data)
+	}
+	c.refused("memory/list", MemoryListParams{Scope: repo.MemoryWorkspace}, jsonrpc.CodeInvalidParams, "workspaceId")
+	var moved MemoryResult
+	c.call("memory/move", MemoryMoveParams{ID: "m1", Scope: repo.MemoryGlobal}, &moved)
+	if moved.Memory.Scope != repo.MemoryGlobal || moved.Memory.WorkspaceID != "" {
+		t.Errorf("moved to %s %q", moved.Memory.Scope, moved.Memory.WorkspaceID)
+	}
+	c.refused("memory/move", MemoryMoveParams{ID: "m1", Scope: repo.MemoryWorkspace, WorkspaceID: "nope"}, errNotFound, "nope")
+	c.refused("memory/move", MemoryMoveParams{ID: "m1", Scope: repo.MemoryGeneral, WorkspaceID: workspaceID}, jsonrpc.CodeInvalidParams, "workspaceId")
 	c.call("memory/status", Empty{}, nil)
 	c.call("memory/update", MemoryUpdateParams{ID: "m1", Text: "Likes green."}, nil)
 	c.call("memory/forget", MemoryForgetParams{ID: "m1"}, nil)
@@ -253,32 +280,34 @@ func TestTrafficMatchesContract(t *testing.T) {
 	}
 }
 
-// checkMemory checks that a thread loaded its memory once, at its start,
-// that every prompt reported both sections, and that memory_search found
-// the global memory.
-func checkMemory(t *testing.T, items []repo.ItemRow) {
+// checkMemory checks that a thread loaded its memory once, at its start:
+// the global memory g1, then local, the one of its own scope; and that
+// every prompt reported both sections. It returns how many prompts did,
+// and whether memory_search found g1.
+func checkMemory(t *testing.T, items []repo.ItemRow, local string) (prompts int, searched bool) {
 	t.Helper()
-	snapshots, prompts, searched := 0, 0, false
+	snapshots := 0
 	for _, it := range items {
 		switch {
 		case it.Type == repo.ItemMemoryContext:
 			snapshots++
-			if len(it.Memory) != 2 || it.Memory[0].ID != "g1" || it.Memory[1].ID != "w1" {
-				t.Errorf("snapshot %+v, want g1 then w1", it.Memory)
+			if len(it.Memory) != 2 || it.Memory[0].ID != "g1" || it.Memory[0].Scope != repo.MemoryGlobal || it.Memory[1].ID != local {
+				t.Errorf("snapshot %+v, want g1 then %s", it.Memory, local)
 			}
 		case it.Tool == memory.ToolSearch:
 			searched = it.Status == repo.ItemCompleted && it.Result != nil && strings.Contains(string(it.Result.Output), `"g1"`)
 		}
 		if s := it.ContextStats; s != nil && s.GlobalMemory != nil {
 			prompts++
-			if s.MemoryTokens == 0 || !slices.Equal(s.GlobalMemory.IDs, []string{"g1"}) || !slices.Equal(s.WorkspaceMemory.IDs, []string{"w1"}) {
-				t.Errorf("context stats %+v, global %+v, workspace %+v", s, s.GlobalMemory, s.WorkspaceMemory)
+			if s.MemoryTokens == 0 || !slices.Equal(s.GlobalMemory.IDs, []string{"g1"}) || !slices.Equal(s.LocalMemory.IDs, []string{local}) {
+				t.Errorf("context stats %+v, global %+v, local %+v", s, s.GlobalMemory, s.LocalMemory)
 			}
 		}
 	}
-	if snapshots != 1 || prompts < 5 || !searched {
-		t.Errorf("%d snapshots, %d prompts reporting memory, searched %v; want 1 snapshot, every prompt, and a search", snapshots, prompts, searched)
+	if snapshots != 1 {
+		t.Errorf("%d snapshots, want 1", snapshots)
 	}
+	return prompts, searched
 }
 
 // touchTool is a tool that is not read-only, so on-request asks before running it.

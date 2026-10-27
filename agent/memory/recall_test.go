@@ -25,6 +25,12 @@ func testManager(t *testing.T, use bool, rows ...repo.MemoryRow) *Manager {
 		if r.Status == "" {
 			r.Status = repo.MemoryActive
 		}
+		if r.Scope == "" {
+			r.Scope = repo.MemoryGlobal
+			if r.WorkspaceID != "" {
+				r.Scope = repo.MemoryWorkspace
+			}
+		}
 		r.CreatedAt = base
 		r.UpdatedAt = base.Add(time.Duration(i) * time.Minute)
 		if err := db.SaveMemory(r); err != nil {
@@ -57,6 +63,7 @@ func TestSnapshotSections(t *testing.T) {
 		repo.MemoryRow{ID: "w-fact-new", WorkspaceID: "w", Topic: "e", Kind: "fact", Text: "Uses gorm."},
 		repo.MemoryRow{ID: "w-retired", WorkspaceID: "w", Topic: "f", Kind: "preference", Text: "Old.", Status: repo.MemoryRetired},
 		repo.MemoryRow{ID: "other", WorkspaceID: "x", Topic: "g", Kind: "preference", Text: "Elsewhere."},
+		repo.MemoryRow{ID: "n-fact", Scope: repo.MemoryGeneral, Topic: "h", Kind: "fact", Text: "Plans a trip."},
 	)
 	s, err := m.Snapshot("w", 4000)
 	if err != nil {
@@ -66,7 +73,7 @@ func TestSnapshotSections(t *testing.T) {
 		t.Errorf("entries %v, want %v", got, want)
 	}
 	global, workspace := strings.Index(s.Text, "Global memories"), strings.Index(s.Text, "Memories of this conversation's workspace")
-	if global < 0 || workspace < global || strings.Contains(s.Text, `"workspaceId"`) || strings.Contains(s.Text, "did not fit") {
+	if global < 0 || workspace < global || strings.Contains(s.Text, `"workspaceId"`) || strings.Contains(s.Text, `"scope"`) || strings.Contains(s.Text, "did not fit") {
 		t.Errorf("text:\n%s", s.Text)
 	}
 
@@ -74,7 +81,7 @@ func TestSnapshotSections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := ids(s.Entries); !slices.Equal(got, []string{"g-pref", "g-fact"}) || strings.Contains(s.Text, "this conversation's workspace") {
+	if got := ids(s.Entries); !slices.Equal(got, []string{"g-pref", "g-fact", "n-fact"}) || !strings.Contains(s.Text, "outside any workspace, like this one") {
 		t.Errorf("a thread without a workspace got %v:\n%s", got, s.Text)
 	}
 }
@@ -124,6 +131,7 @@ func TestSearch(t *testing.T) {
 		repo.MemoryRow{ID: "g", Topic: "colors", Kind: "fact", Text: "Likes blue."},
 		repo.MemoryRow{ID: "w", WorkspaceID: "w", Topic: "palette", Kind: "preference", Text: "Blue buttons."},
 		repo.MemoryRow{ID: "other", WorkspaceID: "x", Topic: "colors", Kind: "fact", Text: "Blue too."},
+		repo.MemoryRow{ID: "general", Scope: repo.MemoryGeneral, Topic: "colors", Kind: "fact", Text: "Blue as well."},
 		repo.MemoryRow{ID: "gone", WorkspaceID: "w", Topic: "old", Kind: "fact", Text: "Blue once.", Status: repo.MemoryRetired},
 		repo.MemoryRow{ID: "unrelated", WorkspaceID: "w", Topic: "db", Kind: "fact", Text: "Uses sqlite."},
 	)

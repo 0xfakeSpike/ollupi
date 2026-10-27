@@ -82,10 +82,11 @@ type ContextStats struct {
 	SystemTokens    int    `json:"systemTokens"`
 	MessagesTokens  int    `json:"messagesTokens"`
 	// MemoryTokens is the memory snapshot's part of MessagesTokens; the two
-	// sections count their own entries, without the snapshot's headings.
+	// sections, global and the thread's own scope (general or its
+	// workspace), count their own entries, without the snapshot's headings.
 	MemoryTokens     int          `json:"memoryTokens,omitempty"`
 	GlobalMemory     *MemoryStats `json:"globalMemory,omitempty"`
-	WorkspaceMemory  *MemoryStats `json:"workspaceMemory,omitempty"`
+	LocalMemory      *MemoryStats `json:"localMemory,omitempty"`
 	ToolsTokens      int          `json:"toolsTokens"`
 	EstimatedTokens  int          `json:"estimatedTokens"`
 	CalibratedTokens int          `json:"calibratedTokens,omitempty"`
@@ -97,11 +98,23 @@ type MemoryStats struct {
 	IDs    []string `json:"ids"`
 }
 
+// MemoryReference is a memory as a prompt or a tool result carries it.
 type MemoryReference struct {
-	ID          string `json:"id"`
-	WorkspaceID string `json:"workspaceId,omitempty"`
-	Topic       string `json:"topic,omitempty"`
-	Text        string `json:"text"`
+	MemoryNote
+	Scope       MemoryScope `json:"scope"`
+	WorkspaceID string      `json:"workspaceId,omitempty"`
+}
+
+// MemoryNote is what the model reads of a memory; the section it is
+// shown in says its scope.
+type MemoryNote struct {
+	ID    string `json:"id"`
+	Topic string `json:"topic,omitempty"`
+	Text  string `json:"text"`
+}
+
+func (e MemoryRow) Reference() MemoryReference {
+	return MemoryReference{MemoryNote: MemoryNote{ID: e.ID, Topic: e.Topic, Text: e.Text}, Scope: e.Scope, WorkspaceID: e.WorkspaceID}
 }
 
 type Approval struct {

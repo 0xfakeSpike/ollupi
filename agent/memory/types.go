@@ -12,7 +12,8 @@ type Fact struct {
 }
 
 type Batch struct {
-	WorkspaceID string            `json:"workspaceId"`
+	Scope       repo.MemoryScope  `json:"scope"`
+	WorkspaceID string            `json:"workspaceId,omitempty"`
 	ThreadID    string            `json:"threadId"`
 	TurnID      string            `json:"turnId"`
 	TurnStatus  repo.TurnStatus   `json:"turnStatus"`
@@ -25,6 +26,7 @@ type Batch struct {
 
 type Operation struct {
 	Action  string              `json:"action"`
+	Scope   string              `json:"scope,omitempty"`
 	ID      string              `json:"id,omitempty"`
 	Topic   string              `json:"topic,omitempty"`
 	Kind    string              `json:"kind,omitempty"`

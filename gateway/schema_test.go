@@ -71,7 +71,7 @@ var providers = []string{cron.ProviderName, skills.ProviderName, memory.Provider
 // enums are the value lists declared beside each string type's constants.
 var enums = []any{
 	repo.ItemTypeValues, repo.ItemStatusValues, repo.TurnStatusValues, repo.ThreadStatusValues,
-	repo.DecisionValues, repo.MemoryRowStatusValues, permission.PolicyValues, plan.StatusValues, tools.AwaitByValues,
+	repo.DecisionValues, repo.MemoryRowStatusValues, repo.MemoryScopeValues, permission.PolicyValues, plan.StatusValues, tools.AwaitByValues,
 }
 
 // plainStrings are named string types that hold any string.

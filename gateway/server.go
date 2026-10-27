@@ -316,6 +316,7 @@ var errorCodes = []struct {
 	{agent.ErrInvalidDecision, jsonrpc.CodeInvalidParams},
 	{agent.ErrInvalidName, jsonrpc.CodeInvalidParams},
 	{permission.ErrInvalidSettings, jsonrpc.CodeInvalidParams},
+	{memory.ErrInvalidChange, jsonrpc.CodeInvalidParams},
 	{tools.ErrUnknownTool, jsonrpc.CodeInvalidParams},
 	{tools.ErrInvalidArguments, jsonrpc.CodeInvalidParams},
 }

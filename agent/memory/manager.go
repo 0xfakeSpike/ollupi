@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -182,12 +183,68 @@ func (m *Manager) deferBatch(b *Batch, cause error) error {
 	return nil
 }
 
-func (m *Manager) List(workspaceID string, includeGlobal bool) ([]repo.MemoryRow, error) {
-	entries, err := m.db.Memories(workspaceID, includeGlobal)
+// ErrInvalidChange is a user's edit or move that cannot be made.
+var ErrInvalidChange = errors.New("invalid memory change")
+
+// List lists the memories of one scope; workspaceID names the workspace of
+// the workspace scope, and only it.
+func (m *Manager) List(scope repo.MemoryScope, workspaceID string) ([]repo.MemoryRow, error) {
+	if err := checkPlace(scope, workspaceID); err != nil {
+		return nil, err
+	}
+	entries, err := m.db.Memories(scope, workspaceID, false)
 	if entries == nil {
 		entries = []repo.MemoryRow{}
 	}
 	return entries, err
+}
+
+func checkPlace(scope repo.MemoryScope, workspaceID string) error {
+	if !slices.Contains(repo.MemoryScopeValues, scope) {
+		return fmt.Errorf("%w: the scope must be one of %v", ErrInvalidChange, repo.MemoryScopeValues)
+	}
+	if (scope == repo.MemoryWorkspace) != (workspaceID != "") {
+		return fmt.Errorf("%w: give a workspaceId with the workspace scope, and only with it", ErrInvalidChange)
+	}
+	return nil
+}
+
+// Move puts a memory in another scope, when the model chose the wrong one.
+// The workspace must exist, and the topic be free there.
+func (m *Manager) Move(id string, scope repo.MemoryScope, workspaceID string) (repo.MemoryRow, error) {
+	if err := checkPlace(scope, workspaceID); err != nil {
+		return repo.MemoryRow{}, err
+	}
+	var out repo.MemoryRow
+	err := m.db.Tx(func(tx *repo.DB) error {
+		e, err := tx.Memory(id)
+		if err != nil {
+			return err
+		}
+		if e.Status == repo.MemoryForgotten {
+			return fmt.Errorf("%w: a forgotten memory cannot be moved", ErrInvalidChange)
+		}
+		if e.Scope == scope && e.WorkspaceID == workspaceID {
+			out = e
+			return nil
+		}
+		if workspaceID != "" {
+			if _, err := tx.Workspace(workspaceID); err != nil {
+				return fmt.Errorf("workspace %s: %w", workspaceID, err)
+			}
+		}
+		there, err := tx.Memories(scope, workspaceID, false)
+		if err != nil {
+			return err
+		}
+		if slices.ContainsFunc(there, func(o repo.MemoryRow) bool { return o.Topic == e.Topic }) {
+			return fmt.Errorf("%w: a memory with the topic %q is already there; forget or edit that one instead", ErrInvalidChange, e.Topic)
+		}
+		e.Scope, e.WorkspaceID, e.UpdatedAt = scope, workspaceID, time.Now().UTC()
+		out = e
+		return tx.SaveMemory(e)
+	})
+	return out, err
 }
 
 func (m *Manager) Status() (repo.MemoryStatus, error) {
@@ -199,10 +256,10 @@ func (m *Manager) Status() (repo.MemoryStatus, error) {
 func (m *Manager) Edit(id, text string) (repo.MemoryRow, error) {
 	text = strings.TrimSpace(text)
 	if text == "" || utf8.RuneCountInString(text) > maxTextRunes {
-		return repo.MemoryRow{}, fmt.Errorf("memory text must contain 1 to %d characters", maxTextRunes)
+		return repo.MemoryRow{}, fmt.Errorf("%w: memory text must contain 1 to %d characters", ErrInvalidChange, maxTextRunes)
 	}
 	if redact(text) != text {
-		return repo.MemoryRow{}, errors.New("remove credentials from memory text before saving")
+		return repo.MemoryRow{}, fmt.Errorf("%w: remove credentials from memory text before saving", ErrInvalidChange)
 	}
 	var out repo.MemoryRow
 	err := m.db.Tx(func(tx *repo.DB) error {
@@ -211,7 +268,7 @@ func (m *Manager) Edit(id, text string) (repo.MemoryRow, error) {
 			return err
 		}
 		if e.Status == repo.MemoryForgotten {
-			return errors.New("a forgotten memory cannot be edited")
+			return fmt.Errorf("%w: a forgotten memory cannot be edited", ErrInvalidChange)
 		}
 		e.Text, e.UserEdited, e.Status = text, true, repo.MemoryActive
 		e.UpdatedAt = time.Now().UTC()

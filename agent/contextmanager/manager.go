@@ -64,7 +64,7 @@ func (m *Manager) Build(in Input) (Prompt, error) {
 		p.Stats = m.stats(in.System, messages, in.Tools)
 		if s := snapshot(in.Items); s != nil {
 			p.Stats.MemoryTokens = llm.EstimateTokens(s.Text)
-			p.Stats.GlobalMemory, p.Stats.WorkspaceMemory = memorySection(s.Memory, true), memorySection(s.Memory, false)
+			p.Stats.GlobalMemory, p.Stats.LocalMemory = memorySection(s.Memory, true), memorySection(s.Memory, false)
 		}
 		m.calibrate(&p.Stats, in.Items)
 		if limit == maxObservationTokens {
@@ -168,12 +168,11 @@ func snapshot(items []repo.ItemRow) *repo.ItemRow {
 
 func memorySection(entries []repo.MemoryReference, global bool) *repo.MemoryStats {
 	s := &repo.MemoryStats{IDs: []string{}}
-	var shown []repo.MemoryReference
+	var shown []repo.MemoryNote
 	for _, e := range entries {
-		if (e.WorkspaceID == "") == global {
+		if (e.Scope == repo.MemoryGlobal) == global {
 			s.IDs = append(s.IDs, e.ID)
-			e.WorkspaceID = ""
-			shown = append(shown, e)
+			shown = append(shown, e.MemoryNote)
 		}
 	}
 	if len(shown) > 0 {
