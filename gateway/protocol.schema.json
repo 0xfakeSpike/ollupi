@@ -313,6 +313,33 @@
       ],
       "additionalProperties": false
     },
+    "CronChangedNotification": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "job": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/CronJobView"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "threadId",
+        "job"
+      ],
+      "additionalProperties": false
+    },
     "CronCreateParams": {
       "type": "object",
       "properties": {
@@ -395,6 +422,68 @@
       ],
       "additionalProperties": false
     },
+    "CronJobView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "spec": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "paused": {
+          "type": "boolean"
+        },
+        "nextRunAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "threadPreview": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "parentThreadId": {
+          "type": "string"
+        },
+        "lastRunAt": {
+          "type": [
+            "null",
+            "string"
+          ],
+          "format": "date-time"
+        },
+        "lastTurnId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "threadId",
+        "name",
+        "spec",
+        "prompt",
+        "paused",
+        "nextRunAt",
+        "createdAt",
+        "threadPreview"
+      ],
+      "additionalProperties": false
+    },
     "CronListParams": {
       "type": "object",
       "properties": {
@@ -402,9 +491,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "threadId"
-      ],
       "additionalProperties": false
     },
     "CronListResult": {
@@ -413,7 +499,7 @@
         "data": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/CronJobRow"
+            "$ref": "#/$defs/CronJobView"
           }
         }
       },
@@ -2282,6 +2368,9 @@
     }
   },
   "notifications": {
+    "cron/changed": {
+      "$ref": "#/$defs/CronChangedNotification"
+    },
     "error": {
       "$ref": "#/$defs/ErrorNotification"
     },

@@ -32,8 +32,8 @@ type TurnRow struct {
 	Usage       Usage      `gorm:"embedded" json:"usage"`
 	Error       string     `gorm:"not null;default:''" json:"error,omitempty"`
 	Input       string     `gorm:"not null;default:''" json:"input,omitempty"`
-	CronJobID   string     `gorm:"not null;default:''" json:"cronJobId,omitempty"`
-	StartedAt   time.Time  `gorm:"not null" json:"startedAt"`
+	CronJobID   string     `gorm:"not null;default:'';index:turns_cron_job,priority:1" json:"cronJobId,omitempty"`
+	StartedAt   time.Time  `gorm:"not null;index:turns_cron_job,priority:2" json:"startedAt"`
 	CompletedAt *time.Time `json:"completedAt,omitempty"`
 }
 

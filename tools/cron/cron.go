@@ -25,13 +25,24 @@ type Jobs struct {
 	db       *repo.DB
 	location *time.Location
 	parser   robfig.Parser
+	onChange func(id, threadID string)
 }
 
-func New(db *repo.DB, location *time.Location) *Jobs {
+// New makes the scheduler. onChange, if not nil, is called after every
+// change to a task, whoever made it: created, paused, resumed, deleted, or
+// its next run moved on after a run; the gateway reads the task then.
+func New(db *repo.DB, location *time.Location, onChange func(id, threadID string)) *Jobs {
 	return &Jobs{
 		db:       db,
 		location: location,
 		parser:   robfig.NewParser(robfig.Minute | robfig.Hour | robfig.Dom | robfig.Month | robfig.Dow | robfig.Descriptor),
+		onChange: onChange,
+	}
+}
+
+func (j *Jobs) changed(id, threadID string) {
+	if j.onChange != nil {
+		j.onChange(id, threadID)
 	}
 }
 
@@ -99,11 +110,19 @@ func (j *Jobs) Create(threadID, name, spec, prompt string) (repo.CronJobRow, err
 	if err := j.db.CreateCronJob(job, maxJobs); err != nil {
 		return repo.CronJobRow{}, err
 	}
+	j.changed(job.ID, job.ThreadID)
 	return job, nil
 }
 
-func (j *Jobs) List(threadID string) ([]repo.CronJobRow, error) {
-	return j.db.CronJobs(threadID)
+// List lists the tasks of threadID, or of every conversation when it is
+// empty, with what a list shows of their conversations and latest runs.
+func (j *Jobs) List(threadID string) ([]repo.CronJobView, error) {
+	return j.db.CronJobViews(threadID)
+}
+
+// Job reads one task as List shows it; repo.ErrNotFound once it is deleted.
+func (j *Jobs) Job(id string) (repo.CronJobView, error) {
+	return j.db.CronJobView(id)
 }
 
 func (j *Jobs) Delete(threadID, name string) error {
@@ -130,7 +149,11 @@ func (j *Jobs) Sent(job repo.CronJobRow, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	return j.db.SetCronJobNextRun(job.ID, job.NextRunAt, next)
+	if err := j.db.SetCronJobNextRun(job.ID, job.NextRunAt, next); err != nil {
+		return err
+	}
+	j.changed(job.ID, job.ThreadID)
+	return nil
 }
 
 func (j *Jobs) change(threadID, name string, fn func(repo.CronJobRow) (*repo.CronJobRow, error)) (repo.CronJobRow, error) {
@@ -140,6 +163,9 @@ func (j *Jobs) change(threadID, name string, fn func(repo.CronJobRow) (*repo.Cro
 	row, err := j.db.UpdateCronJob(threadID, strings.TrimSpace(name), fn)
 	if errors.Is(err, repo.ErrNotFound) {
 		return repo.CronJobRow{}, fmt.Errorf("cron: this conversation has no task named %q: %w", name, repo.ErrNotFound)
+	}
+	if err == nil {
+		j.changed(row.ID, row.ThreadID)
 	}
 	return row, err
 }

@@ -3,6 +3,8 @@ package repo
 import (
 	"fmt"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type CronJobRow struct {
@@ -43,6 +45,48 @@ func (d *DB) CreateCronJob(job CronJobRow, max int) error {
 	})
 }
 
+// CronJobView is a task with what a list of every conversation's tasks
+// shows of its conversation, and its latest run: the turn it last
+// submitted, whether that turn started at once or waited in the queue.
+type CronJobView struct {
+	CronJobRow
+	ThreadPreview  string     `json:"threadPreview"`
+	WorkspaceID    string     `json:"workspaceId,omitempty"`
+	ParentThreadID string     `json:"parentThreadId,omitempty"`
+	LastRunAt      *time.Time `json:"lastRunAt,omitempty"`
+	LastTurnID     string     `json:"lastTurnId,omitempty"`
+}
+
+// CronJobViews lists the tasks of threadID, or of every conversation
+// when it is empty, paused ones and those of archived workspaces included.
+func (d *DB) CronJobViews(threadID string) ([]CronJobView, error) {
+	var rows []CronJobView
+	q := d.cronJobViews().Order("j.thread_id, j.name")
+	if threadID != "" {
+		q = q.Where("j.thread_id = ?", threadID)
+	}
+	return rows, q.Scan(&rows).Error
+}
+
+func (d *DB) CronJobView(id string) (CronJobView, error) {
+	var rows []CronJobView
+	if err := d.cronJobViews().Where("j.id = ?", id).Scan(&rows).Error; err != nil {
+		return CronJobView{}, err
+	}
+	if len(rows) == 0 {
+		return CronJobView{}, ErrNotFound
+	}
+	return rows[0], nil
+}
+
+func (d *DB) cronJobViews() *gorm.DB {
+	return d.gorm.Table("cron_jobs AS j").
+		Select("j.*, t.preview AS thread_preview, COALESCE(t.workspace_id, '') AS workspace_id, " +
+			"COALESCE(t.parent_thread_id, '') AS parent_thread_id, COALESCE(lt.id, '') AS last_turn_id, lt.started_at AS last_run_at").
+		Joins("JOIN threads t ON t.id = j.thread_id").
+		Joins("LEFT JOIN turns lt ON lt.id = (SELECT id FROM turns WHERE cron_job_id = j.id ORDER BY started_at DESC, id DESC LIMIT 1)")
+}
+
 func (d *DB) CronJobs(threadID string) ([]CronJobRow, error) {
 	var rows []CronJobRow
 	q := d.gorm.Order("thread_id, name")
@@ -58,6 +102,8 @@ func (d *DB) DueCronJobs(now time.Time) ([]CronJobRow, error) {
 	return rows, err
 }
 
+// UpdateCronJob changes a task, or deletes it when change returns nil;
+// it returns the task as changed, or as it was before it was deleted.
 func (d *DB) UpdateCronJob(threadID, name string, change func(CronJobRow) (*CronJobRow, error)) (CronJobRow, error) {
 	var out CronJobRow
 	err := d.Tx(func(tx *DB) error {
@@ -71,6 +117,7 @@ func (d *DB) UpdateCronJob(threadID, name string, change func(CronJobRow) (*Cron
 			return err
 		}
 		if next == nil {
+			out = row
 			return tx.gorm.Delete(&CronJobRow{}, "id = ?", id).Error
 		}
 		out = *next

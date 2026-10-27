@@ -46,7 +46,8 @@ func TestTrafficMatchesContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	jobs := cron.New(db, time.UTC)
+	var server *Server
+	jobs := cron.New(db, time.UTC, func(id, threadID string) { server.CronChanged(id, threadID) })
 	remote := httptest.NewServer(sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server {
 		s := sdk.NewServer(&sdk.Implementation{Name: "remote", Version: "1"}, nil)
 		sdk.AddTool(s, &sdk.Tool{Name: "lookup", Description: "Looks a thing up."}, func(context.Context, *sdk.CallToolRequest, struct{}) (*sdk.CallToolResult, any, error) {
@@ -61,7 +62,6 @@ func TestTrafficMatchesContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var server *Server
 	ag := agent.New(agent.Config{
 		Name:   "test",
 		Models: []llm.Model{{Name: "gpt-4o", Connection: "fake"}},
@@ -166,12 +166,16 @@ func TestTrafficMatchesContract(t *testing.T) {
 	turn = c.startTurn(threadID, "recall how to answer")
 	c.awaitTurnEnd(turn, repo.TurnCompleted)
 
-	// Scheduled tasks, managed and run.
-	c.call("cron/create", CronCreateParams{ThreadID: threadID, Name: "daily", Spec: "@daily", Prompt: "daily check"}, nil)
+	// Scheduled tasks, managed and run; each change is pushed.
+	var daily repo.CronJobRow
+	c.call("cron/create", CronCreateParams{ThreadID: threadID, Name: "daily", Spec: "@daily", Prompt: "daily check"}, &daily)
+	c.cronChanged(daily.ID, func(j *repo.CronJobView) bool { return j != nil && j.Name == "daily" && j.ThreadPreview == "hello" })
 	c.call("cron/list", CronListParams{ThreadID: threadID}, nil)
 	paused := true
 	c.call("cron/pause", CronPauseParams{ThreadID: threadID, Name: "daily", Paused: &paused}, nil)
+	c.cronChanged(daily.ID, func(j *repo.CronJobView) bool { return j != nil && j.Paused })
 	c.call("cron/delete", CronDeleteParams{ThreadID: threadID, Name: "daily"}, nil)
+	c.cronChanged(daily.ID, func(j *repo.CronJobView) bool { return j == nil })
 	now := time.Now().UTC()
 	if err := db.CreateCronJob(repo.CronJobRow{ID: "due", ThreadID: threadID, Name: "due", Spec: "@hourly", Prompt: "scheduled check",
 		NextRunAt: now.Add(-time.Minute), CreatedAt: now}, 10); err != nil {
@@ -181,9 +185,14 @@ func TestTrafficMatchesContract(t *testing.T) {
 		_, err := ag.StartTurn(threadID, agent.Input{Text: text, CronJobID: jobID})
 		return err
 	})
-	c.await("turn/completed", func(params json.RawMessage) bool {
+	ran := c.await("turn/completed", func(params json.RawMessage) bool {
 		var n TurnNotification
 		return json.Unmarshal(params, &n) == nil && n.Turn.CronJobID == "due"
+	})
+	var ranTurn TurnNotification
+	json.Unmarshal(ran.Params, &ranTurn)
+	c.cronChanged("due", func(j *repo.CronJobView) bool {
+		return j != nil && j.LastTurnID == ranTurn.Turn.ID && j.LastRunAt != nil && j.NextRunAt.After(now)
 	})
 
 	// An interrupted turn.
@@ -253,8 +262,28 @@ func TestTrafficMatchesContract(t *testing.T) {
 		t.Errorf("turn with a rule for a removed server ended %s: %s", ended.Turn.Status, ended.Turn.Error)
 	}
 
+	// Every conversation's tasks, listed together: paused ones, those of
+	// an archived workspace, and those of a conversation outside any.
+	c.call("cron/create", CronCreateParams{ThreadID: threadID, Name: "weekly", Spec: "@weekly", Prompt: "weekly check"}, nil)
+	c.call("cron/pause", CronPauseParams{ThreadID: threadID, Name: "weekly", Paused: &paused}, nil)
+	c.call("cron/create", CronCreateParams{ThreadID: general.Thread.ID, Name: "nightly", Spec: "@midnight", Prompt: "nightly check"}, nil)
 	archived := true
 	c.call("workspace/archive", WorkspaceArchiveParams{WorkspaceID: workspaceID, Archived: &archived}, nil)
+	var all CronListResult
+	c.call("cron/list", CronListParams{}, &all)
+	byName := map[string]repo.CronJobView{}
+	for _, j := range all.Data {
+		byName[j.Name] = j
+	}
+	if j := byName["weekly"]; len(all.Data) != 3 || !j.Paused || j.WorkspaceID != workspaceID || j.ParentThreadID != "" || j.LastRunAt != nil {
+		t.Errorf("all tasks %+v", all.Data)
+	}
+	if j := byName["nightly"]; j.WorkspaceID != "" || j.ThreadID != general.Thread.ID || j.ThreadPreview != "hello" {
+		t.Errorf("task outside any workspace %+v", j)
+	}
+	if j := byName["due"]; j.LastTurnID != ranTurn.Turn.ID {
+		t.Errorf("task that ran %+v", j)
+	}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -614,6 +643,15 @@ func (c *client) await(method string, match func(params json.RawMessage) bool) j
 			c.t.Fatalf("no %s arrived", method)
 		}
 	}
+}
+
+// cronChanged waits for cron/changed about the task id that satisfies ok.
+func (c *client) cronChanged(id string, ok func(*repo.CronJobView) bool) {
+	c.t.Helper()
+	c.await(notifyCronChanged, func(params json.RawMessage) bool {
+		var n CronChangedNotification
+		return json.Unmarshal(params, &n) == nil && n.ID == id && n.ThreadID != "" && ok(n.Job)
+	})
 }
 
 func (c *client) startTurn(threadID, text string) string {

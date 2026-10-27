@@ -43,6 +43,7 @@ const (
 	notifyTurnCompleted       = "turn/completed"
 	notifyThreadStatusChanged = "thread/status/changed"
 	notifyWorkspaceChanged    = "workspace/changed"
+	notifyCronChanged         = "cron/changed"
 	notifyError               = "error"
 )
 
@@ -100,6 +101,7 @@ var protocol = struct {
 		notifyTurnCompleted:       reflect.TypeFor[TurnNotification](),
 		notifyThreadStatusChanged: reflect.TypeFor[ThreadStatusNotification](),
 		notifyWorkspaceChanged:    reflect.TypeFor[WorkspaceResult](),
+		notifyCronChanged:         reflect.TypeFor[CronChangedNotification](),
 		notifyError:               reflect.TypeFor[ErrorNotification](),
 	},
 	serverRequests: map[string]serverRequest{
@@ -316,12 +318,22 @@ type WorkspaceResult struct {
 	Workspace repo.WorkspaceRow `json:"workspace"`
 }
 
+// CronListParams name the conversation whose tasks to list; without one,
+// every conversation's tasks are listed.
 type CronListParams struct {
-	ThreadID string `json:"threadId"`
+	ThreadID string `json:"threadId,omitempty"`
 }
 
 type CronListResult struct {
-	Data []repo.CronJobRow `json:"data"`
+	Data []repo.CronJobView `json:"data"`
+}
+
+// CronChangedNotification reports a task after a change; Job is null once
+// the task is deleted.
+type CronChangedNotification struct {
+	ID       string            `json:"id"`
+	ThreadID string            `json:"threadId"`
+	Job      *repo.CronJobView `json:"job"`
 }
 
 type CronCreateParams struct {
