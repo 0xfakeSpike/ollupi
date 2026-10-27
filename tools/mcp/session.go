@@ -30,8 +30,6 @@ type Session struct {
 	down error
 }
 
-const separator = "__"
-
 func connect(ctx context.Context, client *mcp.Client, s Server) (*Session, error) {
 	out := &Session{name: s.Name, tools: map[string]*mcp.Tool{}}
 	var transport mcp.Transport
@@ -64,7 +62,7 @@ func connect(ctx context.Context, client *mcp.Client, s Server) (*Session, error
 			sess.Close()
 			return nil, out.withStderr(fmt.Errorf("list tools: %w", err))
 		}
-		name := s.Name + separator + t.Name
+		name := s.Name + tools.ProviderSeparator + t.Name
 		if !toolName.MatchString(name) {
 			out.skipped = append(out.skipped, t.Name)
 			continue

@@ -103,11 +103,15 @@ func TestConnect(t *testing.T) {
 		}
 	}
 
+	if got, want := servers.Unavailable(), []string{"no-header", "crashes", "gone", "both"}; !slices.Equal(got, want) {
+		t.Errorf("unavailable servers %q, want %q", got, want)
+	}
+
 	providers := servers.Providers()
 	if len(providers) != 2 {
 		t.Fatalf("%d providers, want the 2 that connected", len(providers))
 	}
-	reg, err := tools.New(ctx, providers...)
+	reg, err := tools.New(ctx, servers.Unavailable(), providers...)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -49,6 +49,7 @@ type ServerStatus struct {
 // status, so the rest of the app starts without it.
 type Servers struct {
 	servers  []Server
+	named    []bool
 	sessions []*Session
 	failures []error
 }
@@ -70,11 +71,16 @@ func Connect(ctx context.Context, client Client, servers []Server) *Servers {
 		client.Version = "0.1"
 	}
 	mc := mcp.NewClient(&mcp.Implementation{Name: client.Name, Version: client.Version}, nil)
-	out := &Servers{servers: servers, sessions: make([]*Session, len(servers)), failures: make([]error, len(servers))}
+	out := &Servers{servers: servers, named: make([]bool, len(servers)), sessions: make([]*Session, len(servers)), failures: make([]error, len(servers))}
 	seen := map[string]bool{}
 	var wg sync.WaitGroup
 	for i, s := range servers {
-		if err := check(s, seen); err != nil {
+		if err := checkName(s.Name, seen); err != nil {
+			out.failures[i] = err
+			continue
+		}
+		seen[s.Name], out.named[i] = true, true
+		if err := checkTransport(s); err != nil {
 			out.failures[i] = err
 			continue
 		}
@@ -90,12 +96,18 @@ func Connect(ctx context.Context, client Client, servers []Server) *Servers {
 	return out
 }
 
-func check(s Server, seen map[string]bool) error {
+func checkName(name string, seen map[string]bool) error {
 	switch {
-	case !serverName.MatchString(s.Name) || strings.Contains(s.Name, separator):
-		return fmt.Errorf("the name %q must be 1 to 32 letters, digits, '-' or '_', start with a letter or digit, and not contain %q", s.Name, separator)
-	case seen[s.Name]:
-		return fmt.Errorf("another server is already named %q", s.Name)
+	case !serverName.MatchString(name) || strings.Contains(name, tools.ProviderSeparator):
+		return fmt.Errorf("the name %q must be 1 to 32 letters, digits, '-' or '_', start with a letter or digit, and not contain %q", name, tools.ProviderSeparator)
+	case seen[name]:
+		return fmt.Errorf("another server is already named %q", name)
+	}
+	return nil
+}
+
+func checkTransport(s Server) error {
+	switch {
 	case (s.Command == "") == (s.URL == ""):
 		return errors.New("give either a command (stdio) or a URL (HTTP)")
 	case s.Command == "" && (len(s.Args) > 0 || len(s.Env) > 0):
@@ -103,7 +115,6 @@ func check(s Server, seen map[string]bool) error {
 	case s.URL == "" && len(s.Headers) > 0:
 		return errors.New("headers are for a URL; this server has a command")
 	}
-	seen[s.Name] = true
 	return nil
 }
 
@@ -113,6 +124,19 @@ func (s *Servers) Providers() []tools.Provider {
 	for _, sess := range s.sessions {
 		if sess != nil {
 			out = append(out, sess)
+		}
+	}
+	return out
+}
+
+// Unavailable names the servers that are configured under a valid name but
+// did not connect, for agent.Config.Unavailable: permission rules naming
+// their tools are kept, and match nothing this run.
+func (s *Servers) Unavailable() []string {
+	var out []string
+	for i, server := range s.servers {
+		if s.named[i] && s.sessions[i] == nil {
+			out = append(out, server.Name)
 		}
 	}
 	return out
