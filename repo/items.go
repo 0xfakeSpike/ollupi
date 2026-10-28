@@ -126,7 +126,6 @@ type Approval struct {
 	Decision    Decision   `json:"decision,omitempty"`
 	DecidedBy   string     `json:"decidedBy,omitempty"`
 	DecidedAt   *time.Time `json:"decidedAt,omitempty"`
-	Error       string     `json:"error,omitempty"`
 }
 
 type Decision string
@@ -236,13 +235,6 @@ func (d *DB) SaveItem(row ItemRow) error {
 		return fmt.Errorf("item %s: %w", row.ID, err)
 	}
 	return nil
-}
-
-func (d *DB) EndedItem(id string) (ItemRow, error) {
-	var row ItemRow
-	err := d.gorm.Table("items AS i").Select("i.*").Joins("JOIN turns t ON t.id = i.turn_id").
-		Where("i.id = ? AND t.status IN ('completed', 'failed', 'interrupted') AND i.type NOT IN ('reasoning', 'contextCompaction', 'memoryContext')", id).Take(&row).Error
-	return row, notFound(err)
 }
 
 func (d *DB) RecordItem(threadID string, item ItemRow) (ItemRow, bool, error) {

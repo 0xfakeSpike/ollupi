@@ -87,15 +87,6 @@ func (d *DB) cronJobViews() *gorm.DB {
 		Joins("LEFT JOIN turns lt ON lt.id = (SELECT id FROM turns WHERE cron_job_id = j.id ORDER BY started_at DESC, id DESC LIMIT 1)")
 }
 
-func (d *DB) CronJobs(threadID string) ([]CronJobRow, error) {
-	var rows []CronJobRow
-	q := d.gorm.Order("thread_id, name")
-	if threadID != "" {
-		q = q.Where("thread_id = ?", threadID)
-	}
-	return rows, q.Find(&rows).Error
-}
-
 func (d *DB) DueCronJobs(now time.Time) ([]CronJobRow, error) {
 	var rows []CronJobRow
 	err := d.gorm.Where("paused = ? AND next_run_at <= ?", false, now.UTC()).Order("next_run_at, id").Find(&rows).Error
@@ -129,14 +120,4 @@ func (d *DB) UpdateCronJob(threadID, name string, change func(CronJobRow) (*Cron
 
 func (d *DB) SetCronJobNextRun(id string, due, next time.Time) error {
 	return d.gorm.Model(&CronJobRow{}).Where("id = ? AND next_run_at = ?", id, due.UTC()).Update("next_run_at", next.UTC()).Error
-}
-
-func (d *DB) CronJobWithScope(id string) (CronJobRow, string, error) {
-	var row struct {
-		CronJobRow
-		Scope string
-	}
-	err := d.gorm.Table("cron_jobs AS j").Select("j.*, COALESCE(t.workspace_id, '') AS scope").
-		Joins("JOIN threads t ON t.id = j.thread_id").Where("j.id = ?", id).Take(&row).Error
-	return row.CronJobRow, row.Scope, notFound(err)
 }

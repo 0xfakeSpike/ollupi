@@ -10,7 +10,6 @@ import (
 type MemorySource struct {
 	Table      string `json:"table"`
 	ID         string `json:"id"`
-	Operation  string `json:"operation,omitempty"`
 	OccurredAt string `json:"occurredAt,omitempty"`
 }
 

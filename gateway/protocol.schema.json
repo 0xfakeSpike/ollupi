@@ -59,9 +59,6 @@
             "string"
           ],
           "format": "date-time"
-        },
-        "error": {
-          "type": "string"
         }
       },
       "required": [
@@ -1019,9 +1016,6 @@
           "type": "string"
         },
         "id": {
-          "type": "string"
-        },
-        "operation": {
           "type": "string"
         },
         "occurredAt": {
