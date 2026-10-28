@@ -110,13 +110,25 @@ func toSpec(name string, t *mcp.Tool) *tools.Spec {
 	return spec
 }
 
+const metaCaller = "ollupi/caller"
+
+type caller struct {
+	ThreadID    string `json:"threadId"`
+	WorkspaceID string `json:"workspaceId,omitempty"`
+	Subagent    bool   `json:"subagent,omitempty"`
+}
+
 func (s *Session) Invoke(ctx context.Context, tool string, arguments map[string]any) (tools.Result, error) {
 	t, ok := s.tools[tool]
 	if !ok {
 		err := fmt.Errorf("mcp: tool %q not exposed by MCP server %q", tool, s.name)
 		return tools.Result{Err: err}, err
 	}
-	res, err := s.sess.CallTool(ctx, &mcp.CallToolParams{Name: t.Name, Arguments: arguments})
+	params := &mcp.CallToolParams{Name: t.Name, Arguments: arguments}
+	if c := tools.CallerOf(ctx); c.ThreadID != "" {
+		params.Meta = mcp.Meta{metaCaller: caller{ThreadID: c.ThreadID, WorkspaceID: c.WorkspaceID, Subagent: c.Subagent}}
+	}
+	res, err := s.sess.CallTool(ctx, params)
 	if err != nil {
 		return tools.Result{Err: err}, err
 	}

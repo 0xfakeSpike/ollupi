@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -37,6 +38,10 @@ func testServer() *mcp.Server {
 	}
 	mcp.AddTool(s, &mcp.Tool{Name: "greet", Description: "Greets."}, greet)
 	mcp.AddTool(s, &mcp.Tool{Name: "a.dotted.name", Description: "Has a name the model API refuses."}, greet)
+	mcp.AddTool(s, &mcp.Tool{Name: "whoami", Description: "Tells who called."}, func(_ context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+		raw, err := json.Marshal(req.Params.Meta[metaCaller])
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(raw)}}}, nil, err
+	})
 	return s
 }
 
@@ -88,7 +93,7 @@ func TestConnect(t *testing.T) {
 	}
 	for _, name := range []string{"local", "web"} {
 		st := byName[name]
-		if !st.Connected || st.Tools != 1 || !slices.Equal(st.SkippedTools, []string{"a.dotted.name"}) || st.Error != "" {
+		if !st.Connected || st.Tools != 2 || !slices.Equal(st.SkippedTools, []string{"a.dotted.name"}) || st.Error != "" {
 			t.Errorf("%s: %+v", name, st)
 		}
 	}
@@ -118,6 +123,15 @@ func TestConnect(t *testing.T) {
 		r := reg.Invoke(ctx, tool, map[string]any{})
 		if r.Err != nil || r.Output != want {
 			t.Errorf("%s: %v, %v; want %q", tool, r.Output, r.Err, want)
+		}
+	}
+	for c, want := range map[tools.Caller]string{
+		{}: "null",
+		{ThreadID: "t1", WorkspaceID: "w1", Root: "/home/me/project"}: `{"threadId":"t1","workspaceId":"w1"}`,
+		{ThreadID: "t2", Subagent: true}:                              `{"subagent":true,"threadId":"t2"}`,
+	} {
+		if r := reg.Invoke(tools.WithCaller(ctx, c), "local__whoami", map[string]any{}); r.Err != nil || r.Output != want {
+			t.Errorf("caller %+v reached the server as %v, %v; want %s", c, r.Output, r.Err, want)
 		}
 	}
 }
