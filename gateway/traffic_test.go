@@ -67,7 +67,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 		Models: []llm.Model{{Name: "gpt-4o", Connection: "fake"}},
 		Settings: permission.Settings{ApprovalPolicy: string(permission.OnRequest),
 			Rules: permission.Rules{Deny: []string{"broken__drop_tables"}}},
-		Connections: map[string]*llm.OpenAI{"fake": llm.NewOpenAI(model.URL, "", 4, nil)},
+		Connections: map[string]*llm.OpenAI{"fake": llm.NewOpenAI(model.URL, "", 4, map[string]llm.Limits{"gpt-4o": {Context: 128_000, Output: 16_384}})},
 		Providers:   append([]tools.Provider{touchTool{}, jobs}, servers.Providers()...),
 		Unavailable: servers.Unavailable(),
 		Memory:      mem,
