@@ -19,19 +19,16 @@
   <text class="title" x="60" y="72">Ollupi 架构</text>
   <text class="sub" x="60" y="110">一个进程承载所有对话、子代理和定时任务，状态全在 SQLite</text>
 
-  <!-- client -->
   <rect x="600" y="140" width="400" height="60" rx="12" fill="#f8fafc" stroke="#94a3b8" stroke-width="2"/>
   <text class="h" x="800" y="178" text-anchor="middle">ollupi-desktop · 其他客户端</text>
   <line class="line" x1="800" y1="200" x2="800" y2="242" marker-start="url(#a)" marker-end="url(#a)"/>
   <text class="s" x="816" y="228">JSON-RPC 2.0 · WebSocket</text>
 
-  <!-- gateway -->
   <rect x="380" y="244" width="840" height="64" rx="12" fill="#f8fafc" stroke="#64748b" stroke-width="2"/>
   <text class="h mono" x="408" y="284">gateway</text>
   <text class="b" x="530" y="284">请求分发 · 事件推送 · 一张方法表生成 protocol.schema.json</text>
   <line class="line" x1="800" y1="308" x2="800" y2="350" marker-start="url(#a)" marker-end="url(#a)"/>
 
-  <!-- agent -->
   <rect x="380" y="352" width="840" height="250" rx="16" fill="#eff6ff" stroke="#3b82f6" stroke-width="2"/>
   <text class="h mono" x="404" y="390" style="fill:#1d4ed8">agent</text>
 
@@ -56,7 +53,6 @@
   <line class="line" x1="654" y1="493" x2="673" y2="493" marker-end="url(#a)"/>
   <line class="line" x1="925" y1="493" x2="944" y2="493" marker-end="url(#a)"/>
 
-  <!-- memory / cron -->
   <rect x="60" y="352" width="270" height="115" rx="12" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="2"/>
   <text class="h" x="84" y="392" style="fill:#6d28d9">记忆</text>
   <text class="b" x="84" y="424">从结束的 turn 里提炼</text>
@@ -69,7 +65,6 @@
   <text class="b" x="84" y="587">和别的 turn 一样排队</text>
   <line class="line" x1="330" y1="545" x2="378" y2="545" marker-end="url(#a)"/>
 
-  <!-- llm -->
   <rect x="1270" y="352" width="270" height="115" rx="12" fill="#f8fafc" stroke="#64748b" stroke-width="2"/>
   <text class="h" x="1294" y="392">模型连接</text>
   <text class="b" x="1294" y="424">OpenAI 兼容接口</text>
@@ -81,7 +76,6 @@
   <text class="b" x="1294" y="579">只看到占位符</text>
   <line class="line" x1="1405" y1="467" x2="1405" y2="505" marker-start="url(#a)" marker-end="url(#a)"/>
 
-  <!-- tools -->
   <line class="line" x1="830" y1="602" x2="830" y2="638" marker-end="url(#a)"/>
   <text class="s" x="846" y="626">经权限检查后调用</text>
 
@@ -101,7 +95,6 @@
   <text class="h" x="1130" y="678" text-anchor="middle" style="font-size:21px">应用自己的工具</text>
   <text class="s mono" x="1130" y="708" text-anchor="middle">tools.Provider</text>
 
-  <!-- sqlite -->
   <line class="line" x1="410" y1="602" x2="410" y2="768" marker-start="url(#a)" marker-end="url(#a)"/>
   <line class="line" x1="195" y1="602" x2="195" y2="768" marker-start="url(#a)" marker-end="url(#a)"/>
 

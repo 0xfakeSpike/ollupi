@@ -38,8 +38,6 @@ func build(t *testing.T, items ...repo.ItemRow) Prompt {
 	return p
 }
 
-// The snapshot leads the prompt, once, however many turns follow it, and
-// the stats name what each section carries.
 func TestSnapshotLeadsThePrompt(t *testing.T) {
 	snapshot := memory("SNAPSHOT",
 		repo.MemoryReference{MemoryNote: repo.MemoryNote{ID: "g", Text: "global"}, Scope: repo.MemoryGlobal},
@@ -59,8 +57,6 @@ func TestSnapshotLeadsThePrompt(t *testing.T) {
 	}
 }
 
-// After a compaction the snapshot taken with it leads, before the
-// compacted history; the summary request carries no memory.
 func TestCompactionRefreshesTheSnapshot(t *testing.T) {
 	compaction := repo.ItemRow{Type: repo.ItemContextCompaction, Status: repo.ItemCompleted, ResponseID: "c", Text: "SUMMARY"}
 	items := []repo.ItemRow{user("q1"), memory("OLD"), answer("r1", "a1"), user("q2"), compaction, memory("NEW"), answer("r2", "a2")}

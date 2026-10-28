@@ -18,8 +18,6 @@ func scopeBatch(existing ...repo.MemoryRow) *Batch {
 
 func same(s string) string { return s }
 
-// An add is local unless it asks for global, which only preferences and
-// facts can be; update and retire keep their memory's scope.
 func TestExtractionScopes(t *testing.T) {
 	global := repo.MemoryRow{ID: "g", Scope: repo.MemoryGlobal, Topic: "language", Kind: "preference", Status: repo.MemoryActive}
 	batch := scopeBatch(global)
@@ -50,8 +48,6 @@ func TestExtractionScopes(t *testing.T) {
 	}
 }
 
-// Committing puts each add in its scope, a global one noting the
-// workspace it came from; a topic is matched only within the add's scope.
 func TestCommitPlacesAddsByScope(t *testing.T) {
 	m := testManager(t, true,
 		repo.MemoryRow{ID: "local-build", WorkspaceID: "w", Topic: "build", Kind: "fact", Text: "Builds with go."},

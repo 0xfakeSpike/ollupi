@@ -292,8 +292,6 @@ func inputText(input []UserInput) (string, error) {
 	return strings.Join(texts, "\n"), nil
 }
 
-// nonNil returns s, or an empty slice for nil: the lists protocol.schema.json
-// declares as arrays are never sent as null.
 func nonNil[T any](s []T) []T {
 	if s == nil {
 		return []T{}

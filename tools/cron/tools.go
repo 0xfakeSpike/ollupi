@@ -22,7 +22,6 @@ func (j *Jobs) Name() (string, string) {
 	return ProviderName, "Scheduled tasks: messages sent to this conversation later, on a cron schedule."
 }
 
-// CreateArgs are the arguments of create_scheduled_job.
 type CreateArgs struct {
 	Name   string `json:"name" jsonschema:"Short task name, unique in this conversation, e.g. daily-market-report."`
 	Spec   string `json:"spec" jsonschema:"5-field cron expression (minute hour day-of-month month day-of-week), or @hourly/@daily/@weekly/@monthly/@yearly."`
@@ -34,33 +33,26 @@ func (CreateArgs) Constrain(s *jsonschema.Schema) {
 	s.Properties["prompt"].MinLength, s.Properties["prompt"].MaxLength = jsonschema.Ptr(1), jsonschema.Ptr(maxPromptRunes)
 }
 
-// PauseArgs are the arguments of pause_scheduled_job.
 type PauseArgs struct {
 	Name   string `json:"name"`
 	Paused bool   `json:"paused" jsonschema:"true to pause, false to resume."`
 }
 
-// NameArgs are the arguments of delete_scheduled_job.
 type NameArgs struct {
 	Name string `json:"name"`
 }
 
-// ListArgs are the arguments of list_scheduled_jobs: none.
 type ListArgs struct{}
 
-// Deleted is what delete_scheduled_job returns.
 type Deleted struct {
 	ID   string `json:"id"`
 	Name string `json:"deleted"`
 }
 
-// JobList is what list_scheduled_jobs returns.
 type JobList struct {
 	Jobs []repo.CronJobView `json:"jobs"`
 }
 
-// ToolList offers the tools; create and pause return the task as cron/list
-// and cron/changed show it.
 func (j *Jobs) ToolList(context.Context) ([]*tools.Spec, error) {
 	return []*tools.Spec{
 		{

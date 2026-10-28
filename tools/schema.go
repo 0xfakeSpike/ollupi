@@ -52,18 +52,10 @@ func normalizeInputSchema(schema any) (map[string]any, error) {
 	return value, nil
 }
 
-// Constrainer is a type whose JSON Schema says more than its Go type can:
-// Constrain adds the lengths, patterns, item counts and enums its values
-// keep to, to the schema inferred for it. Tool input schemas and the
-// gateway contract are both built with it, so the two cannot drift.
 type Constrainer interface {
 	Constrain(*jsonschema.Schema)
 }
 
-// InputSchema is the JSON Schema of a tool's arguments T, as models take
-// it: inferred from T with descriptions from jsonschema tags, each named
-// type in it that is a Constrainer constrained, every list an array that
-// is never null, and no $refs.
 func InputSchema[T any]() *jsonschema.Schema {
 	s, err := InputSchemaOf(reflect.TypeFor[T]())
 	if err != nil {
@@ -72,7 +64,6 @@ func InputSchema[T any]() *jsonschema.Schema {
 	return s
 }
 
-// InputSchemaOf is InputSchema for a type known at run time.
 func InputSchemaOf(t reflect.Type) (*jsonschema.Schema, error) {
 	return inputSchema(t, map[reflect.Type]*jsonschema.Schema{})
 }
@@ -101,7 +92,6 @@ func inputSchema(t reflect.Type, known map[reflect.Type]*jsonschema.Schema) (*js
 
 var constrainer = reflect.TypeFor[Constrainer]()
 
-// reached are the types t's fields hold, through pointers, slices and maps.
 func reached(t reflect.Type) []reflect.Type {
 	var out []reflect.Type
 	var add func(reflect.Type)
@@ -138,7 +128,6 @@ func nonNullLists(s *jsonschema.Schema) {
 	nonNullLists(s.AdditionalProperties)
 }
 
-// DecodeArguments reads validated tool arguments into T.
 func DecodeArguments[T any](arguments map[string]any) (T, error) {
 	var out T
 	raw, err := json.Marshal(arguments)

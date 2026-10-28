@@ -43,9 +43,7 @@ type Runtime struct {
 	Record      func(repo.ItemRow) (repo.ItemRow, error)
 	Delta       func(repo.ItemRow, string)
 	Reload      func() ([]repo.ItemRow, *permission.Checker, error)
-	// Redaction reports whether sensitive values are masked; every model
-	// call asks, so the user's switch applies from the next one.
-	Redaction func() (bool, error)
+	Redaction   func() (bool, error)
 
 	system   string
 	redactor *redact.Redactor
@@ -80,8 +78,6 @@ func (rt *Runtime) start() error {
 	return rt.loadMemory()
 }
 
-// hasSnapshot reports whether the thread has its memory snapshot: one
-// recorded since its latest compaction, or when it started.
 func hasSnapshot(items []repo.ItemRow) bool {
 	for i := len(items) - 1; i >= 0; i-- {
 		switch it := items[i]; {
@@ -94,9 +90,6 @@ func hasSnapshot(items []repo.ItemRow) bool {
 	return false
 }
 
-// loadMemory records the memory snapshot the thread works with until its
-// next compaction, even an empty one, so memories learned meanwhile wait
-// for that compaction instead of changing the start of every prompt.
 func (rt *Runtime) loadMemory() error {
 	if rt.Memory == nil {
 		return nil

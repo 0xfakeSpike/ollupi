@@ -20,7 +20,6 @@ func (fileTools) Invoke(context.Context, string, map[string]any) (tools.Result, 
 	return tools.Result{}, nil
 }
 
-// The MCP server "github" is configured but did not connect.
 func testRegistry(t *testing.T) *tools.Registry {
 	t.Helper()
 	registry, err := tools.New(context.Background(), []string{"github"}, fileTools{})
@@ -36,8 +35,6 @@ func layer(allow ...string) Layer {
 	return Layer{Of: "the workspace", Settings: Settings{Rules: Rules{Allow: allow}}}
 }
 
-// A turn keeps rules and allowlist entries naming an unavailable provider's
-// tools; every other unknown name is still a mistake.
 func TestTurnKeepsRulesForUnavailableProviders(t *testing.T) {
 	registry := testRegistry(t)
 	workspace := Layer{Of: "the workspace", Settings: Settings{Rules: Rules{
@@ -62,7 +59,6 @@ func TestTurnKeepsRulesForUnavailableProviders(t *testing.T) {
 	}
 }
 
-// A rule for a provider that is gone says so, and names its layer.
 func TestRuleForRemovedProvider(t *testing.T) {
 	_, err := New([]Layer{defaults, layer("gitlab__merge")}, nil, testRegistry(t))
 	if err == nil || !strings.HasPrefix(err.Error(), "the workspace: ") || !strings.Contains(err.Error(), `no tool provider is named "gitlab"`) {
@@ -70,8 +66,6 @@ func TestRuleForRemovedProvider(t *testing.T) {
 	}
 }
 
-// Saving a layer keeps the rules it already had for an unavailable
-// provider, and refuses new ones, which nothing can check now.
 func TestSaveRefusesNewRulesForUnavailableProviders(t *testing.T) {
 	registry := testRegistry(t)
 	base := []Layer{defaults}

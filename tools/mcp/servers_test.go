@@ -15,7 +15,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// TestMain runs the test binary as a stdio MCP server when a test starts it so.
 func TestMain(m *testing.M) {
 	switch os.Getenv("OLLUPI_MCP_TEST_SERVER") {
 	case "serve":

@@ -13,9 +13,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Server is one configured MCP server: a command run over stdio, or a
-// streamable HTTP endpoint. Name identifies it everywhere: it is the
-// provider id, the prefix of its tool names and the name in its status.
 type Server struct {
 	Name string
 
@@ -32,21 +29,14 @@ type Client struct {
 	Version string
 }
 
-// ServerStatus is how a configured server is doing. Env and header values
-// never appear in it.
 type ServerStatus struct {
-	Name      string `json:"name"`
-	Connected bool   `json:"connected"`
-	Tools     int    `json:"tools"`
-	// SkippedTools are the server's tools whose prefixed names the model
-	// API would refuse, so they are not offered.
+	Name         string   `json:"name"`
+	Connected    bool     `json:"connected"`
+	Tools        int      `json:"tools"`
 	SkippedTools []string `json:"skippedTools,omitempty"`
 	Error        string   `json:"error,omitempty"`
 }
 
-// Servers are the configured servers after connecting. A server that is
-// misconfigured or cannot be reached is left out, with its reason in its
-// status, so the rest of the app starts without it.
 type Servers struct {
 	servers  []Server
 	named    []bool
@@ -61,8 +51,6 @@ var (
 
 const connectTimeout = 30 * time.Second
 
-// Connect connects to every server at once and returns when each has
-// connected and listed its tools, or failed.
 func Connect(ctx context.Context, client Client, servers []Server) *Servers {
 	if client.Name == "" {
 		client.Name = "ollupi"
@@ -118,7 +106,6 @@ func checkTransport(s Server) error {
 	return nil
 }
 
-// Providers are the connected servers, to register as tool providers.
 func (s *Servers) Providers() []tools.Provider {
 	var out []tools.Provider
 	for _, sess := range s.sessions {
@@ -129,9 +116,6 @@ func (s *Servers) Providers() []tools.Provider {
 	return out
 }
 
-// Unavailable names the servers that are configured under a valid name but
-// did not connect, for agent.Config.Unavailable: permission rules naming
-// their tools are kept, and match nothing this run.
 func (s *Servers) Unavailable() []string {
 	var out []string
 	for i, server := range s.servers {
@@ -142,8 +126,6 @@ func (s *Servers) Unavailable() []string {
 	return out
 }
 
-// Statuses reports every configured server in configuration order; a
-// server that has disconnected since reports why.
 func (s *Servers) Statuses() []ServerStatus {
 	out := make([]ServerStatus, len(s.servers))
 	for i, server := range s.servers {

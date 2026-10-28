@@ -17,8 +17,6 @@ func (c *conn) threadStart(p ThreadStartParams) (ThreadResult, func(), error) {
 	return result, func() { c.rpc.Notify(notifyThreadStarted, result) }, nil
 }
 
-// threadPage serves thread/read and, with resume, thread/resume, which also
-// asks the client again for the thread's pending approvals and answers.
 func threadPage(resume bool) func(*conn, ThreadPageParams) (ThreadPageResult, func(), error) {
 	return func(c *conn, p ThreadPageParams) (ThreadPageResult, func(), error) {
 		if p.Limit == 0 {

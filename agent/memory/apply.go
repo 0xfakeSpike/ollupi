@@ -62,8 +62,6 @@ func (s *applyState) apply(ops []Operation) error {
 	return nil
 }
 
-// topicKey finds a memory by topic: topics are unique within a scope, and
-// a batch sees two scopes, global and its own.
 type topicKey struct {
 	scope repo.MemoryScope
 	topic string

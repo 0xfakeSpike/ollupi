@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"gorm.io/gorm"
 )
 
 type MemoryReport struct {
@@ -29,15 +28,42 @@ func (c MemoryCursor) at() time.Time {
 	return c.At.UTC()
 }
 
+// MemoryFailureCode says what part of memory generation failed, so that a
+// client can explain it in its own words.
+type MemoryFailureCode string
+
+const (
+	MemoryModelRequest    MemoryFailureCode = "model_request"
+	MemoryInvalidResponse MemoryFailureCode = "invalid_response"
+	MemoryEvidence        MemoryFailureCode = "evidence"
+	MemoryStorage         MemoryFailureCode = "storage"
+)
+
+var MemoryFailureCodeValues = []MemoryFailureCode{MemoryModelRequest, MemoryInvalidResponse, MemoryEvidence, MemoryStorage}
+
+type MemoryFailure struct {
+	Code  MemoryFailureCode `json:"code"`
+	Error string            `json:"error"`
+}
+
+// MemorySkip is the last batch given up after repeated failures.
+type MemorySkip struct {
+	At      time.Time `json:"at"`
+	Entries int       `json:"entries"`
+	TurnID  string    `json:"turnId"`
+	MemoryFailure
+}
+
 type MemoryStateRow struct {
-	ID          int           `gorm:"primaryKey;autoIncrement:false;check:memory_state_one,id = 1" json:"-"`
-	Cursor      MemoryCursor  `gorm:"embedded;embeddedPrefix:cursor_" json:"-"`
-	Attempts    int           `gorm:"not null;default:0" json:"attempts,omitempty"`
-	NextAttempt *time.Time    `json:"nextAttempt,omitempty"`
-	Skipped     int64         `gorm:"not null;default:0" json:"-"`
-	LastSuccess *time.Time    `json:"lastSuccess,omitempty"`
-	LastError   string        `gorm:"not null;default:''" json:"lastError,omitempty"`
-	LastReport  *MemoryReport `gorm:"serializer:json;check:memory_state_report,last_report IS NULL OR json_valid(last_report)" json:"lastReport,omitempty"`
+	ID          int          `gorm:"primaryKey;autoIncrement:false;check:memory_state_one,id = 1" json:"-"`
+	Cursor      MemoryCursor `gorm:"embedded;embeddedPrefix:cursor_" json:"-"`
+	Attempts    int          `gorm:"not null;default:0" json:"attempts,omitempty"`
+	NextAttempt *time.Time   `json:"nextAttempt,omitempty"`
+	Skipped     int64        `gorm:"not null;default:0" json:"-"`
+	LastSuccess *time.Time   `json:"lastSuccess,omitempty"`
+	LastError  *MemoryFailure `gorm:"column:last_failure;serializer:json;check:memory_state_failure,last_failure IS NULL OR json_valid(last_failure)" json:"lastError,omitempty"`
+	LastSkip   *MemorySkip    `gorm:"serializer:json;check:memory_state_skip,last_skip IS NULL OR json_valid(last_skip)" json:"lastSkip,omitempty"`
+	LastReport *MemoryReport  `gorm:"serializer:json;check:memory_state_report,last_report IS NULL OR json_valid(last_report)" json:"lastReport,omitempty"`
 }
 
 func (MemoryStateRow) TableName() string { return "memory_state" }
@@ -87,8 +113,12 @@ func (d *DB) TurnItemsAfter(turnID string, seq int, types []ItemType, statuses [
 	return rows, err
 }
 
-func (d *DB) SetMemoryError(message string) error {
-	return d.gorm.Model(&MemoryStateRow{}).Where("id = 1").Update("last_error", message).Error
+func (d *DB) SetMemoryError(f MemoryFailure) error {
+	raw, err := json.Marshal(f)
+	if err != nil {
+		return err
+	}
+	return d.gorm.Model(&MemoryStateRow{}).Where("id = 1").Update("last_failure", string(raw)).Error
 }
 
 func cursorColumns(c MemoryCursor) map[string]any {
@@ -103,28 +133,41 @@ func (d *DB) AdvanceMemory(c MemoryCursor, now time.Time, report MemoryReport) e
 	cols := cursorColumns(c)
 	cols["attempts"], cols["next_attempt"] = 0, nil
 	cols["last_success"] = now.UTC()
-	cols["last_error"] = gorm.Expr("CASE WHEN skipped > 0 THEN last_error ELSE '' END")
+	cols["last_failure"] = nil
 	cols["last_report"] = string(raw)
 	return checkOne(d.gorm.Model(&MemoryStateRow{}).Where("id = 1").Updates(cols))
 }
 
 const maxMemoryAttempts = 10
 
-func (d *DB) DeferMemory(skipTo MemoryCursor, entries int, message string, now time.Time) (skipped bool, err error) {
+// DeferMemory records a failed batch as the last error until its retry, or,
+// once it has failed maxMemoryAttempts times, skips it to skipTo, the end
+// of the batch, and records it as the last skip instead.
+func (d *DB) DeferMemory(skipTo MemoryCursor, entries int, f MemoryFailure, now time.Time) (skipped bool, err error) {
 	err = d.Tx(func(tx *DB) error {
 		s, err := tx.MemoryState()
 		if err != nil {
 			return err
 		}
-		cols := map[string]any{"last_error": message}
+		cols := map[string]any{}
 		if s.Attempts+1 >= maxMemoryAttempts {
 			skipped = true
+			raw, err := json.Marshal(MemorySkip{At: now.UTC(), Entries: entries, TurnID: skipTo.ID, MemoryFailure: f})
+			if err != nil {
+				return err
+			}
 			for k, v := range cursorColumns(skipTo) {
 				cols[k] = v
 			}
 			cols["attempts"], cols["next_attempt"] = 0, nil
 			cols["skipped"] = s.Skipped + int64(entries)
+			cols["last_failure"], cols["last_skip"] = nil, string(raw)
 		} else {
+			raw, err := json.Marshal(f)
+			if err != nil {
+				return err
+			}
+			cols["last_failure"] = string(raw)
 			cols["attempts"] = s.Attempts + 1
 			cols["next_attempt"] = now.UTC().Add(time.Duration(min(60, 1<<min(s.Attempts, 6))) * time.Minute)
 		}

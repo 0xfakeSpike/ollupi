@@ -76,14 +76,11 @@ var ItemStatusValues = []ItemStatus{ItemPending, ItemInProgress, ItemCompleted, 
 func (s ItemStatus) Value() (driver.Value, error) { return enumValue(s, ItemStatusValues) }
 
 type ContextStats struct {
-	Model           string `json:"model,omitempty"`
-	BudgetTokens    int    `json:"budgetTokens"`
-	CompactAtTokens int    `json:"compactAtTokens"`
-	SystemTokens    int    `json:"systemTokens"`
-	MessagesTokens  int    `json:"messagesTokens"`
-	// MemoryTokens is the memory snapshot's part of MessagesTokens; the two
-	// sections, global and the thread's own scope (general or its
-	// workspace), count their own entries, without the snapshot's headings.
+	Model            string       `json:"model,omitempty"`
+	BudgetTokens     int          `json:"budgetTokens"`
+	CompactAtTokens  int          `json:"compactAtTokens"`
+	SystemTokens     int          `json:"systemTokens"`
+	MessagesTokens   int          `json:"messagesTokens"`
 	MemoryTokens     int          `json:"memoryTokens,omitempty"`
 	GlobalMemory     *MemoryStats `json:"globalMemory,omitempty"`
 	LocalMemory      *MemoryStats `json:"localMemory,omitempty"`
@@ -92,21 +89,17 @@ type ContextStats struct {
 	CalibratedTokens int          `json:"calibratedTokens,omitempty"`
 }
 
-// MemoryStats is one section of the memory snapshot a prompt carries.
 type MemoryStats struct {
 	Tokens int      `json:"tokens"`
 	IDs    []string `json:"ids"`
 }
 
-// MemoryReference is a memory as a prompt or a tool result carries it.
 type MemoryReference struct {
 	MemoryNote
 	Scope       MemoryScope `json:"scope"`
 	WorkspaceID string      `json:"workspaceId,omitempty"`
 }
 
-// MemoryNote is what the model reads of a memory; the section it is
-// shown in says its scope.
 type MemoryNote struct {
 	ID    string `json:"id"`
 	Topic string `json:"topic,omitempty"`

@@ -13,10 +13,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Session is one connected MCP server. Its tools are registered as
-// "<server>__<tool>", so a tool a server adds can never collide with
-// another server's or with a built-in tool, and names stay the same
-// whatever else is configured.
 type Session struct {
 	name    string
 	title   string
@@ -149,7 +145,6 @@ func joinTextContent(content []mcp.Content) string {
 	return strings.Join(parts, "\n")
 }
 
-// headers adds a server's configured request headers to every request.
 type headers struct {
 	base   http.RoundTripper
 	values map[string]string
@@ -163,7 +158,6 @@ func (h headers) RoundTrip(r *http.Request) (*http.Response, error) {
 	return h.base.RoundTrip(r)
 }
 
-// tail keeps the end of a server's stderr, where it explains why it failed.
 type tail struct {
 	mu  sync.Mutex
 	buf []byte

@@ -72,8 +72,6 @@ func nextBatch(db *repo.DB, limit int) (*Batch, error) {
 	return batch, err
 }
 
-// localScope is the scope of a thread's own memories: its workspace's, or
-// general outside any workspace.
 func localScope(workspaceID string) repo.MemoryScope {
 	if workspaceID == "" {
 		return repo.MemoryGeneral

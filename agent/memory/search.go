@@ -16,7 +16,6 @@ const (
 	maxSearchResults = 20
 )
 
-// SearchArgs are the arguments of memory_search.
 type SearchArgs struct {
 	Query string `json:"query" jsonschema:"Words to look for in a memory's topic and text."`
 }
@@ -25,8 +24,6 @@ func (SearchArgs) Constrain(s *jsonschema.Schema) {
 	s.Properties["query"].MinLength = jsonschema.Ptr(2)
 }
 
-// SearchResult is what memory_search returns: matching memories, best
-// first, each with its scope.
 type SearchResult struct {
 	Memories []repo.MemoryReference `json:"memories"`
 }
@@ -35,7 +32,6 @@ func (*Manager) Name() (string, string) {
 	return ProviderName, "Searches long-term memory beyond what the conversation starts with."
 }
 
-// ToolList offers memory_search only when memory is used.
 func (m *Manager) ToolList(context.Context) ([]*tools.Spec, error) {
 	if !m.opts.Use {
 		return nil, nil
