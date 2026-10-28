@@ -19,17 +19,19 @@ const (
 	EventUserInputRequested  EventKind = "user_input_requested"
 	EventTurnCompleted       EventKind = "turn_completed"
 	EventThreadStatusChanged EventKind = "thread_status_changed"
+	EventWorkspaceChanged    EventKind = "workspace_changed"
 	EventError               EventKind = "error"
 )
 
 type Event struct {
-	Kind   EventKind
-	Thread repo.ThreadRow
-	Turn   repo.TurnRow
-	Item   *repo.ItemRow
-	Delta  string
-	Status repo.ThreadStatus
-	Error  string
+	Kind      EventKind
+	Thread    repo.ThreadRow
+	Turn      repo.TurnRow
+	Item      *repo.ItemRow
+	Workspace *repo.WorkspaceRow
+	Delta     string
+	Status    repo.ThreadStatus
+	Error     string
 }
 
 func (a *Agent) fault(threadID, turnID string, err error) {

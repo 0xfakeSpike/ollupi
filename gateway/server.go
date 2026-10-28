@@ -207,6 +207,8 @@ func (c *conn) event(e agent.Event) {
 		c.rpc.Notify(notifyError, ErrorNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Message: e.Error})
 	case agent.EventThreadStatusChanged:
 		c.rpc.Notify(notifyThreadStatusChanged, ThreadStatusNotification{ThreadID: e.Thread.ID, Status: e.Status})
+	case agent.EventWorkspaceChanged:
+		c.rpc.Notify(notifyWorkspaceChanged, WorkspaceResult{Workspace: *e.Workspace})
 	case agent.EventApprovalRequested, agent.EventUserInputRequested:
 		c.request(e.Thread.ID, *e.Item)
 	}
@@ -252,7 +254,7 @@ func (c *conn) request(threadID string, it repo.ItemRow) {
 	c.rpc.Request(requestApproval, ApprovalRequestParams{
 		ThreadID: threadID, TurnID: it.TurnID, ItemID: it.ID, ApprovalID: it.Approval.ID,
 		Server: it.Server, Tool: it.Tool, Arguments: args, PreparedExecution: it.PreparedExecution,
-		Reason: it.Approval.Reason, AvailableDecisions: it.Approval.AvailableDecisions(),
+		Reason: it.Approval.Reason, SuggestedRules: it.Approval.Suggested, AvailableDecisions: it.Approval.AvailableDecisions(),
 	}, answered)
 }
 

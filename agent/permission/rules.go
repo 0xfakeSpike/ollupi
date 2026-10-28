@@ -162,3 +162,40 @@ func (s ruleSet) decide(tool string, content tools.Content, hasContent bool) (ru
 	}
 	return ruleAllow, strings.Join(used, ", ")
 }
+
+var subcommand = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
+
+func suggest(call Call) []string {
+	if p := call.Prepared; p != nil && p.Escalated {
+		return nil
+	}
+	if !call.HasContent {
+		return []string{call.Tool}
+	}
+	if call.Content.Opaque {
+		return nil
+	}
+	parts := call.Content.Parts
+	if len(parts) == 0 {
+		parts = []string{call.Content.Match}
+	}
+	var out []string
+	for _, part := range parts {
+		words := strings.Fields(part)
+		if len(words) == 0 || strings.Contains(part, "*") {
+			return nil
+		}
+		spec := part
+		if len(words) > 1 && subcommand.MatchString(words[1]) {
+			spec = words[0] + " " + words[1] + ":*"
+		}
+		text := call.Tool + "(" + spec + ")"
+		if r, err := parseRule(text); err != nil || !r.matches(call.Tool, part, true) {
+			return nil
+		}
+		if !slices.Contains(out, text) {
+			out = append(out, text)
+		}
+	}
+	return out
+}

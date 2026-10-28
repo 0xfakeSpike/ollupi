@@ -150,12 +150,21 @@ const (
 )
 
 type Decision struct {
-	Verdict Verdict
-	Reason  string
-	Rule    string
+	Verdict   Verdict
+	Reason    string
+	Rule      string
+	Suggested []string
 }
 
 func (c *Checker) Decide(call Call, history []repo.ItemRow) Decision {
+	d := c.decide(call, history)
+	if d.Verdict == Ask && d.Rule == "" {
+		d.Suggested = suggest(call)
+	}
+	return d
+}
+
+func (c *Checker) decide(call Call, history []repo.ItemRow) Decision {
 	if p := call.Prepared; p != nil && p.Escalated && !c.policy.allowsEscalation() {
 		return Decision{Verdict: Deny, Reason: fmt.Sprintf("refused: under the approval policy %q nobody can approve running outside the sandbox; do the work inside the sandbox, or tell the user what needs to run outside it", c.policy)}
 	}
@@ -187,7 +196,7 @@ func (c *Checker) Decide(call Call, history []repo.ItemRow) Decision {
 }
 
 func (d Decision) Approval(id string, call Call, at time.Time) *repo.Approval {
-	a := &repo.Approval{ID: id, RequestedAt: at, Reason: d.Reason, Rule: d.Rule}
+	a := &repo.Approval{ID: id, RequestedAt: at, Reason: d.Reason, Rule: d.Rule, Suggested: d.Suggested}
 	if call.HasContent {
 		a.Content = call.Content.Text
 	}
