@@ -254,9 +254,18 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.call("thread/read", ThreadPageParams{ThreadID: threadID, Limit: 2, BeforeSeq: 4}, nil)
 	c.call("thread/list", repo.ThreadFilter{WorkspaceID: &workspaceID}, nil)
 
-	// Memories listed by scope, and moved where they belong.
-	if err := db.SaveMemory(repo.MemoryRow{ID: "m1", Scope: repo.MemoryGeneral, Topic: "colors", Kind: "preference", Text: "Likes blue.", Status: repo.MemoryActive, CreatedAt: now, UpdatedAt: now}); err != nil {
-		t.Fatal(err)
+	// Memories listed by scope; a move takes a local one to global and a
+	// global one back where it came from.
+	for _, e := range []repo.MemoryRow{
+		{ID: "m1", Scope: repo.MemoryGeneral, Topic: "colors", Kind: "preference", Text: "Likes blue."},
+		{ID: "m2", Scope: repo.MemoryWorkspace, WorkspaceID: workspaceID, Topic: "shell", Kind: "preference", Text: "Uses zsh."},
+		{ID: "m3", Scope: repo.MemoryWorkspace, WorkspaceID: workspaceID, Topic: "editor", Kind: "preference", Text: "Uses vim."},
+		{ID: "m4", Scope: repo.MemoryGlobal, Topic: "editor", Kind: "preference", Text: "Uses emacs."},
+	} {
+		e.Status, e.CreatedAt, e.UpdatedAt = repo.MemoryActive, now, now
+		if err := db.SaveMemory(e); err != nil {
+			t.Fatal(err)
+		}
 	}
 	var listed MemoryListResult
 	c.call("memory/list", MemoryListParams{Scope: repo.MemoryGeneral}, &listed)
@@ -265,12 +274,25 @@ func TestTrafficMatchesContract(t *testing.T) {
 	}
 	c.refused("memory/list", MemoryListParams{Scope: repo.MemoryWorkspace}, jsonrpc.CodeInvalidParams, "workspaceId")
 	var moved MemoryResult
-	c.call("memory/move", MemoryMoveParams{ID: "m1", Scope: repo.MemoryGlobal}, &moved)
-	if moved.Memory.Scope != repo.MemoryGlobal || moved.Memory.WorkspaceID != "" {
-		t.Errorf("moved to %s %q", moved.Memory.Scope, moved.Memory.WorkspaceID)
+	for _, want := range []repo.MemoryRow{
+		{Scope: repo.MemoryGlobal},
+		{Scope: repo.MemoryGeneral},
+	} {
+		c.call("memory/move", MemoryMoveParams{ID: "m1"}, &moved)
+		if moved.Memory.Scope != want.Scope || moved.Memory.WorkspaceID != "" || moved.Memory.OriginWorkspaceID != "" {
+			t.Errorf("m1 moved to %s %q from %q, want %s", moved.Memory.Scope, moved.Memory.WorkspaceID, moved.Memory.OriginWorkspaceID, want.Scope)
+		}
 	}
-	c.refused("memory/move", MemoryMoveParams{ID: "m1", Scope: repo.MemoryWorkspace, WorkspaceID: "nope"}, errNotFound, "nope")
-	c.refused("memory/move", MemoryMoveParams{ID: "m1", Scope: repo.MemoryGeneral, WorkspaceID: workspaceID}, jsonrpc.CodeInvalidParams, "workspaceId")
+	c.refused("memory/move", MemoryMoveParams{ID: "m3"}, jsonrpc.CodeInvalidParams, "already there")
+	c.call("memory/move", MemoryMoveParams{ID: "m2"}, &moved)
+	if moved.Memory.Scope != repo.MemoryGlobal || moved.Memory.OriginWorkspaceID != workspaceID {
+		t.Errorf("m2 moved to %s from %q", moved.Memory.Scope, moved.Memory.OriginWorkspaceID)
+	}
+	moved = MemoryResult{}
+	c.call("memory/move", MemoryMoveParams{ID: "m2"}, &moved)
+	if moved.Memory.Scope != repo.MemoryWorkspace || moved.Memory.WorkspaceID != workspaceID || moved.Memory.OriginWorkspaceID != "" {
+		t.Errorf("m2 moved back to %s %q", moved.Memory.Scope, moved.Memory.WorkspaceID)
+	}
 	c.call("memory/status", Empty{}, nil)
 	c.call("memory/update", MemoryUpdateParams{ID: "m1", Text: "Likes green."}, nil)
 	c.call("memory/forget", MemoryForgetParams{ID: "m1"}, nil)

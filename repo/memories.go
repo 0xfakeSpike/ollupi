@@ -15,19 +15,22 @@ type MemorySource struct {
 
 // MemoryRow is one memory. Its scope says where it applies: global ones
 // to every conversation, general ones to conversations outside any
-// workspace, workspace ones to the conversations of WorkspaceID.
+// workspace, workspace ones to the conversations of WorkspaceID. A global
+// one keeps where it came from in OriginWorkspaceID, its workspace or
+// empty for general, so moving it back needs no choice.
 type MemoryRow struct {
-	ID          string          `gorm:"primaryKey" json:"id"`
-	Scope       MemoryScope     `gorm:"not null;uniqueIndex:memories_scope_topic,priority:1;index:memories_scope_status,priority:1;check:memories_scope_workspace,(scope = 'workspace') = (workspace_id <> '')" json:"scope"`
-	WorkspaceID string          `gorm:"not null;default:'';uniqueIndex:memories_scope_topic,priority:2;index:memories_scope_status,priority:2" json:"workspaceId,omitempty"`
-	Topic       string          `gorm:"not null;uniqueIndex:memories_scope_topic,priority:3" json:"topic"`
-	Kind        string          `gorm:"not null" json:"kind"`
-	Text        string          `gorm:"not null" json:"text"`
-	Status      MemoryRowStatus `gorm:"not null;index:memories_scope_status,priority:3" json:"status"`
-	UserEdited  bool            `gorm:"not null" json:"userEdited,omitempty"`
-	Sources     []MemorySource  `gorm:"not null;serializer:json;check:memories_sources,json_valid(sources)" json:"sources"`
-	CreatedAt   time.Time       `gorm:"not null;autoCreateTime:false" json:"createdAt"`
-	UpdatedAt   time.Time       `gorm:"not null;autoUpdateTime:false" json:"updatedAt"`
+	ID                string          `gorm:"primaryKey" json:"id"`
+	Scope             MemoryScope     `gorm:"not null;uniqueIndex:memories_scope_topic,priority:1;index:memories_scope_status,priority:1;check:memories_scope_workspace,(scope = 'workspace') = (workspace_id <> '')" json:"scope"`
+	WorkspaceID       string          `gorm:"not null;default:'';uniqueIndex:memories_scope_topic,priority:2;index:memories_scope_status,priority:2" json:"workspaceId,omitempty"`
+	OriginWorkspaceID string          `gorm:"not null;default:'';check:memories_origin,scope = 'global' OR origin_workspace_id = ''" json:"originWorkspaceId,omitempty"`
+	Topic             string          `gorm:"not null;uniqueIndex:memories_scope_topic,priority:3" json:"topic"`
+	Kind              string          `gorm:"not null" json:"kind"`
+	Text              string          `gorm:"not null" json:"text"`
+	Status            MemoryRowStatus `gorm:"not null;index:memories_scope_status,priority:3" json:"status"`
+	UserEdited        bool            `gorm:"not null" json:"userEdited,omitempty"`
+	Sources           []MemorySource  `gorm:"not null;serializer:json;check:memories_sources,json_valid(sources)" json:"sources"`
+	CreatedAt         time.Time       `gorm:"not null;autoCreateTime:false" json:"createdAt"`
+	UpdatedAt         time.Time       `gorm:"not null;autoUpdateTime:false" json:"updatedAt"`
 }
 
 func (MemoryRow) TableName() string { return "memories" }
@@ -76,6 +79,6 @@ func (d *DB) SaveMemory(m MemoryRow) error {
 	}
 	return d.gorm.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"scope", "workspace_id", "topic", "kind", "text", "status", "sources", "updated_at", "user_edited"}),
+		DoUpdates: clause.AssignmentColumns([]string{"scope", "workspace_id", "origin_workspace_id", "topic", "kind", "text", "status", "sources", "updated_at", "user_edited"}),
 	}).Create(&m).Error
 }

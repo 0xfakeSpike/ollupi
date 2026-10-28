@@ -74,7 +74,7 @@ func (s *applyState) target(op Operation) (repo.MemoryRow, bool, error) {
 	if op.Action == "add" {
 		added := repo.MemoryRow{ID: uuid.NewString(), Scope: s.batch.Scope, WorkspaceID: s.batch.WorkspaceID, Topic: op.Topic, CreatedAt: s.now}
 		if op.Scope == scopeGlobal {
-			added.Scope, added.WorkspaceID = repo.MemoryGlobal, ""
+			added.Scope, added.WorkspaceID, added.OriginWorkspaceID = repo.MemoryGlobal, "", s.batch.WorkspaceID
 		}
 		id, exists := s.byTopic[topicKey{added.Scope, op.Topic}]
 		if !exists {

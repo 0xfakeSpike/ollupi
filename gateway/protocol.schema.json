@@ -858,17 +858,10 @@
       "properties": {
         "id": {
           "type": "string"
-        },
-        "scope": {
-          "$ref": "#/$defs/MemoryScope"
-        },
-        "workspaceId": {
-          "type": "string"
         }
       },
       "required": [
-        "id",
-        "scope"
+        "id"
       ],
       "additionalProperties": false
     },
@@ -948,6 +941,9 @@
           "$ref": "#/$defs/MemoryScope"
         },
         "workspaceId": {
+          "type": "string"
+        },
+        "originWorkspaceId": {
           "type": "string"
         },
         "topic": {

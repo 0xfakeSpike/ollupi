@@ -216,12 +216,10 @@ func checkPlace(scope repo.MemoryScope, workspaceID string) error {
 	return nil
 }
 
-// Move puts a memory in another scope, when the model chose the wrong one.
-// The workspace must exist, and the topic be free there.
-func (m *Manager) Move(id string, scope repo.MemoryScope, workspaceID string) (repo.MemoryRow, error) {
-	if err := checkPlace(scope, workspaceID); err != nil {
-		return repo.MemoryRow{}, err
-	}
+// Move takes a local memory to global, or a global one back to where it
+// came from, when the model chose the wrong scope. The topic must be free
+// there.
+func (m *Manager) Move(id string) (repo.MemoryRow, error) {
 	var out repo.MemoryRow
 	err := m.db.Tx(func(tx *repo.DB) error {
 		e, err := tx.Memory(id)
@@ -231,23 +229,19 @@ func (m *Manager) Move(id string, scope repo.MemoryScope, workspaceID string) (r
 		if e.Status == repo.MemoryForgotten {
 			return fmt.Errorf("%w: a forgotten memory cannot be moved", ErrInvalidChange)
 		}
-		if e.Scope == scope && e.WorkspaceID == workspaceID {
-			out = e
-			return nil
+		if e.Scope == repo.MemoryGlobal {
+			e.Scope, e.WorkspaceID, e.OriginWorkspaceID = localScope(e.OriginWorkspaceID), e.OriginWorkspaceID, ""
+		} else {
+			e.Scope, e.WorkspaceID, e.OriginWorkspaceID = repo.MemoryGlobal, "", e.WorkspaceID
 		}
-		if workspaceID != "" {
-			if _, err := tx.Workspace(workspaceID); err != nil {
-				return fmt.Errorf("workspace %s: %w", workspaceID, err)
-			}
-		}
-		there, err := tx.Memories(scope, workspaceID, false)
+		there, err := tx.Memories(e.Scope, e.WorkspaceID, false)
 		if err != nil {
 			return err
 		}
 		if slices.ContainsFunc(there, func(o repo.MemoryRow) bool { return o.Topic == e.Topic }) {
 			return fmt.Errorf("%w: a memory with the topic %q is already there; forget or edit that one instead", ErrInvalidChange, e.Topic)
 		}
-		e.Scope, e.WorkspaceID, e.UpdatedAt = scope, workspaceID, time.Now().UTC()
+		e.UpdatedAt = time.Now().UTC()
 		out = e
 		return tx.SaveMemory(e)
 	})

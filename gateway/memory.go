@@ -56,7 +56,7 @@ func (c *conn) memoryMove(p MemoryMoveParams) (MemoryResult, func(), error) {
 	if strings.TrimSpace(p.ID) == "" {
 		return MemoryResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "id is required")
 	}
-	entry, err := store.Move(p.ID, p.Scope, p.WorkspaceID)
+	entry, err := store.Move(p.ID)
 	return MemoryResult{Memory: entry}, nil, err
 }
 
