@@ -340,32 +340,6 @@
       ],
       "additionalProperties": false
     },
-    "CronCreateArgs": {
-      "type": "object",
-      "properties": {
-        "name": {
-          "type": "string",
-          "description": "Short task name, unique in this conversation, e.g. daily-market-report.",
-          "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
-        },
-        "spec": {
-          "type": "string",
-          "description": "5-field cron expression (minute hour day-of-month month day-of-week), or @hourly/@daily/@weekly/@monthly/@yearly."
-        },
-        "prompt": {
-          "type": "string",
-          "description": "The message sent at each run, as the user would write it.",
-          "minLength": 1,
-          "maxLength": 4000
-        }
-      },
-      "required": [
-        "name",
-        "spec",
-        "prompt"
-      ],
-      "additionalProperties": false
-    },
     "CronCreateParams": {
       "type": "object",
       "properties": {
@@ -403,37 +377,6 @@
       "required": [
         "threadId",
         "name"
-      ],
-      "additionalProperties": false
-    },
-    "CronDeleted": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "deleted": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "deleted"
-      ],
-      "additionalProperties": false
-    },
-    "CronJobList": {
-      "type": "object",
-      "properties": {
-        "jobs": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/CronJobView"
-          }
-        }
-      },
-      "required": [
-        "jobs"
       ],
       "additionalProperties": false
     },
@@ -541,10 +484,6 @@
       ],
       "additionalProperties": false
     },
-    "CronListArgs": {
-      "type": "object",
-      "additionalProperties": false
-    },
     "CronListParams": {
       "type": "object",
       "properties": {
@@ -566,35 +505,6 @@
       },
       "required": [
         "data"
-      ],
-      "additionalProperties": false
-    },
-    "CronNameArgs": {
-      "type": "object",
-      "properties": {
-        "name": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "name"
-      ],
-      "additionalProperties": false
-    },
-    "CronPauseArgs": {
-      "type": "object",
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "paused": {
-          "type": "boolean",
-          "description": "true to pause, false to resume."
-        }
-      },
-      "required": [
-        "name",
-        "paused"
       ],
       "additionalProperties": false
     },
@@ -1101,35 +1011,6 @@
         "general",
         "workspace"
       ]
-    },
-    "MemorySearchArgs": {
-      "type": "object",
-      "properties": {
-        "query": {
-          "type": "string",
-          "description": "Words to look for in a memory's topic and text.",
-          "minLength": 2
-        }
-      },
-      "required": [
-        "query"
-      ],
-      "additionalProperties": false
-    },
-    "MemorySearchResult": {
-      "type": "object",
-      "properties": {
-        "memories": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/MemoryReference"
-          }
-        }
-      },
-      "required": [
-        "memories"
-      ],
-      "additionalProperties": false
     },
     "MemorySource": {
       "type": "object",
@@ -2571,46 +2452,6 @@
     "Agent": {
       "arguments": {
         "$ref": "#/$defs/SubagentCall"
-      }
-    },
-    "create_scheduled_job": {
-      "arguments": {
-        "$ref": "#/$defs/CronCreateArgs"
-      },
-      "output": {
-        "$ref": "#/$defs/CronJobView"
-      }
-    },
-    "delete_scheduled_job": {
-      "arguments": {
-        "$ref": "#/$defs/CronNameArgs"
-      },
-      "output": {
-        "$ref": "#/$defs/CronDeleted"
-      }
-    },
-    "list_scheduled_jobs": {
-      "arguments": {
-        "$ref": "#/$defs/CronListArgs"
-      },
-      "output": {
-        "$ref": "#/$defs/CronJobList"
-      }
-    },
-    "memory_search": {
-      "arguments": {
-        "$ref": "#/$defs/MemorySearchArgs"
-      },
-      "output": {
-        "$ref": "#/$defs/MemorySearchResult"
-      }
-    },
-    "pause_scheduled_job": {
-      "arguments": {
-        "$ref": "#/$defs/CronPauseArgs"
-      },
-      "output": {
-        "$ref": "#/$defs/CronJobView"
       }
     },
     "request_user_input": {
