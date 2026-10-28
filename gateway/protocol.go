@@ -373,12 +373,10 @@ type MemoryUpdateParams struct {
 	Text string `json:"text"`
 }
 
-// MemoryMoveParams put a memory in another scope; workspaceId only with
-// the workspace scope.
+// MemoryMoveParams take a local memory to global, or a global one back
+// to the scope it came from.
 type MemoryMoveParams struct {
-	ID          string           `json:"id"`
-	Scope       repo.MemoryScope `json:"scope"`
-	WorkspaceID string           `json:"workspaceId,omitempty"`
+	ID string `json:"id"`
 }
 
 type MemoryForgetParams struct {

@@ -18,8 +18,8 @@ func scopeBatch(existing ...repo.MemoryRow) *Batch {
 
 func same(s string) string { return s }
 
-// An add chooses global or local; only preferences and facts can be
-// global; update and retire keep their memory's scope.
+// An add is local unless it asks for global, which only preferences and
+// facts can be; update and retire keep their memory's scope.
 func TestExtractionScopes(t *testing.T) {
 	global := repo.MemoryRow{ID: "g", Scope: repo.MemoryGlobal, Topic: "language", Kind: "preference", Status: repo.MemoryActive}
 	batch := scopeBatch(global)
@@ -31,10 +31,11 @@ func TestExtractionScopes(t *testing.T) {
 	}{
 		{op(`"action":"add","scope":"global","topic":"Editor","kind":"preference","text":"Uses vim."`), "", scopeGlobal},
 		{op(`"action":"add","scope":"local","topic":"Build","kind":"decision","text":"Builds with make."`), "", scopeLocal},
-		{op(`"action":"add","topic":"Build","kind":"fact","text":"Builds with make."`), `choose the scope`, ""},
-		{op(`"action":"add","scope":"global","topic":"Build","kind":"decision","text":"Builds with make."`), "only preferences and facts", ""},
+		{op(`"action":"add","topic":"Build","kind":"fact","text":"Builds with make."`), "", scopeLocal},
+		{op(`"action":"add","scope":"workspace","topic":"Build","kind":"fact","text":"Builds with make."`), "", scopeLocal},
+		{op(`"action":"add","scope":"global","topic":"Build","kind":"decision","text":"Builds with make."`), "", scopeLocal},
 		{op(`"action":"update","id":"g","topic":"language","text":"Answers in Chinese.","kind":"preference"`), "", scopeGlobal},
-		{op(`"action":"update","id":"g","topic":"language","scope":"local","text":"Answers in Chinese.","kind":"preference"`), "scope is immutable", ""},
+		{op(`"action":"update","id":"g","topic":"language","scope":"local","text":"Answers in Chinese.","kind":"preference"`), "", scopeGlobal},
 		{op(`"action":"update","id":"g","topic":"language","text":"Ships on Fridays.","kind":"procedure"`), "only preferences and facts", ""},
 	} {
 		ops, err := parseOperations(c.content, batch, same)
@@ -49,8 +50,8 @@ func TestExtractionScopes(t *testing.T) {
 	}
 }
 
-// Committing puts each add in its scope; a topic is matched only within
-// the scope the add chose.
+// Committing puts each add in its scope, a global one noting the
+// workspace it came from; a topic is matched only within the add's scope.
 func TestCommitPlacesAddsByScope(t *testing.T) {
 	m := testManager(t, true,
 		repo.MemoryRow{ID: "local-build", WorkspaceID: "w", Topic: "build", Kind: "fact", Text: "Builds with go."},
@@ -78,16 +79,17 @@ func TestCommitPlacesAddsByScope(t *testing.T) {
 	}
 	var got []string
 	for _, r := range rows {
-		got = append(got, string(r.Scope)+" "+r.WorkspaceID+" "+r.Topic+": "+r.Text)
+		got = append(got, string(r.Scope)+" "+r.WorkspaceID+" "+r.OriginWorkspaceID+" "+r.Topic+": "+r.Text)
 	}
 	slices.Sort(got)
-	want := []string{"global  build: Knows Go well.", "global  editor: Uses vim.", "workspace w build: Builds with make."}
+	want := []string{"global  w build: Knows Go well.", "global  w editor: Uses vim.", "workspace w  build: Builds with make."}
 	if !slices.Equal(got, want) {
 		t.Errorf("memories\n%q\nwant\n%q", got, want)
 	}
 	for _, bad := range []repo.MemoryRow{
 		{ID: "b1", Scope: repo.MemoryGlobal, WorkspaceID: "w", Topic: "b1", Kind: "fact", Text: "x", Status: repo.MemoryActive},
 		{ID: "b2", Scope: repo.MemoryWorkspace, Topic: "b2", Kind: "fact", Text: "x", Status: repo.MemoryActive},
+		{ID: "b3", Scope: repo.MemoryWorkspace, WorkspaceID: "w", OriginWorkspaceID: "x", Topic: "b3", Kind: "fact", Text: "x", Status: repo.MemoryActive},
 	} {
 		if err := m.db.SaveMemory(bad); err == nil {
 			t.Errorf("the database took a %s memory with workspace %q", bad.Scope, bad.WorkspaceID)
