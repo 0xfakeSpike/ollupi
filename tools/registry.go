@@ -157,11 +157,11 @@ func (r *Registry) HasPermissionContent(tool string) bool {
 	return ok && spec.PermissionContent != nil
 }
 
-func (r *Registry) PermissionContent(tool string, arguments map[string]any) (content Content, ok bool, err error) {
+func (r *Registry) PermissionContent(ctx context.Context, tool string, arguments map[string]any) (content Content, ok bool, err error) {
 	if !r.HasPermissionContent(tool) {
 		return Content{}, false, nil
 	}
-	content, err = r.specs[tool].PermissionContent(arguments)
+	content, err = r.specs[tool].PermissionContent(ctx, arguments)
 	if err != nil {
 		return Content{}, false, fmt.Errorf("tool registry: permission content of %q: %w", tool, err)
 	}

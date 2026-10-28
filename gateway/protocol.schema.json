@@ -119,6 +119,9 @@
         "reason": {
           "type": "string"
         },
+        "content": {
+          "type": "string"
+        },
         "suggestedRules": {
           "type": [
             "null",

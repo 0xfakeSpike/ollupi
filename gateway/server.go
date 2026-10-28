@@ -254,7 +254,7 @@ func (c *conn) request(threadID string, it repo.ItemRow) {
 	c.rpc.Request(requestApproval, ApprovalRequestParams{
 		ThreadID: threadID, TurnID: it.TurnID, ItemID: it.ID, ApprovalID: it.Approval.ID,
 		Server: it.Server, Tool: it.Tool, Arguments: args, PreparedExecution: it.PreparedExecution,
-		Reason: it.Approval.Reason, SuggestedRules: it.Approval.Suggested, AvailableDecisions: it.Approval.AvailableDecisions(),
+		Reason: it.Approval.Reason, Content: it.Approval.Content, SuggestedRules: it.Approval.Suggested, AvailableDecisions: it.Approval.AvailableDecisions(),
 	}, answered)
 }
 

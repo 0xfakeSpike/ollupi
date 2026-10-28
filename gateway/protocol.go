@@ -388,6 +388,7 @@ type ApprovalRequestParams struct {
 	Tool               string          `json:"tool"`
 	Arguments          json.RawMessage `json:"arguments"`
 	Reason             string          `json:"reason,omitempty"`
+	Content            string          `json:"content,omitempty"`
 	SuggestedRules     []string        `json:"suggestedRules,omitempty"`
 	AvailableDecisions []repo.Decision `json:"availableDecisions"`
 }
