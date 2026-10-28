@@ -58,15 +58,10 @@ type toolSchemas struct {
 }
 
 var builtinTools = map[string]struct{ arguments, output reflect.Type }{
-	plan.Tool:          {arguments: reflect.TypeFor[plan.Plan]()},
-	subagent.Tool:      {arguments: reflect.TypeFor[subagent.Call]()},
-	userinput.Tool:     {arguments: reflect.TypeFor[userinput.Request](), output: reflect.TypeFor[userinput.Answers]()},
-	shell.ToolName:     {output: reflect.TypeFor[shell.CommandOutput]()},
-	memory.ToolSearch:  {arguments: reflect.TypeFor[memory.SearchArgs](), output: reflect.TypeFor[memory.SearchResult]()},
-	cron.ToolCreateJob: {arguments: reflect.TypeFor[cron.CreateArgs](), output: reflect.TypeFor[repo.CronJobView]()},
-	cron.ToolPauseJob:  {arguments: reflect.TypeFor[cron.PauseArgs](), output: reflect.TypeFor[repo.CronJobView]()},
-	cron.ToolDeleteJob: {arguments: reflect.TypeFor[cron.NameArgs](), output: reflect.TypeFor[cron.Deleted]()},
-	cron.ToolListJobs:  {arguments: reflect.TypeFor[cron.ListArgs](), output: reflect.TypeFor[cron.JobList]()},
+	plan.Tool:      {arguments: reflect.TypeFor[plan.Plan]()},
+	subagent.Tool:  {arguments: reflect.TypeFor[subagent.Call]()},
+	userinput.Tool: {arguments: reflect.TypeFor[userinput.Request](), output: reflect.TypeFor[userinput.Answers]()},
+	shell.ToolName: {output: reflect.TypeFor[shell.CommandOutput]()},
 }
 
 // providers are the ids ItemRow.server takes for ollupi's own providers.
@@ -105,8 +100,6 @@ var arrays = []field{
 	{reflect.TypeFor[CronListResult](), "Data"},
 	{reflect.TypeFor[MemoryListResult](), "Data"},
 	{reflect.TypeFor[repo.MemoryStats](), "IDs"},
-	{reflect.TypeFor[memory.SearchResult](), "Memories"},
-	{reflect.TypeFor[cron.JobList](), "Jobs"},
 	{reflect.TypeFor[plan.Plan](), "Steps"},
 	{reflect.TypeFor[userinput.Request](), "Questions"},
 	{reflect.TypeFor[userinput.Question](), "Options"},
@@ -116,23 +109,15 @@ var arrays = []field{
 
 // defNames name the definitions whose Go names mean little outside their package.
 var defNames = map[reflect.Type]string{
-	reflect.TypeFor[permission.Policy]():   "ApprovalPolicy",
-	reflect.TypeFor[plan.Step]():           "PlanStep",
-	reflect.TypeFor[plan.Status]():         "PlanStepStatus",
-	reflect.TypeFor[subagent.Call]():       "SubagentCall",
-	reflect.TypeFor[userinput.Request]():   "UserInputRequest",
-	reflect.TypeFor[userinput.Question]():  "UserInputQuestion",
-	reflect.TypeFor[userinput.Option]():    "UserInputOption",
-	reflect.TypeFor[userinput.Answer]():    "UserInputAnswer",
-	reflect.TypeFor[userinput.Answers]():   "UserInputAnswers",
-	reflect.TypeFor[memory.SearchResult](): "MemorySearchResult",
-	reflect.TypeFor[memory.SearchArgs]():   "MemorySearchArgs",
-	reflect.TypeFor[cron.CreateArgs]():     "CronCreateArgs",
-	reflect.TypeFor[cron.PauseArgs]():      "CronPauseArgs",
-	reflect.TypeFor[cron.NameArgs]():       "CronNameArgs",
-	reflect.TypeFor[cron.ListArgs]():       "CronListArgs",
-	reflect.TypeFor[cron.Deleted]():        "CronDeleted",
-	reflect.TypeFor[cron.JobList]():        "CronJobList",
+	reflect.TypeFor[permission.Policy]():  "ApprovalPolicy",
+	reflect.TypeFor[plan.Step]():          "PlanStep",
+	reflect.TypeFor[plan.Status]():        "PlanStepStatus",
+	reflect.TypeFor[subagent.Call]():      "SubagentCall",
+	reflect.TypeFor[userinput.Request]():  "UserInputRequest",
+	reflect.TypeFor[userinput.Question](): "UserInputQuestion",
+	reflect.TypeFor[userinput.Option]():   "UserInputOption",
+	reflect.TypeFor[userinput.Answer]():   "UserInputAnswer",
+	reflect.TypeFor[userinput.Answers]():  "UserInputAnswers",
 }
 
 var special = map[reflect.Type]*jsonschema.Schema{
