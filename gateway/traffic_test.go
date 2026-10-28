@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -62,13 +63,14 @@ func TestTrafficMatchesContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	browser := &pageTool{pages: map[string]string{}}
 	ag := agent.New(agent.Config{
 		Name:   "test",
 		Models: []llm.Model{{Name: "gpt-4o", Connection: "fake"}},
 		Settings: permission.Settings{ApprovalPolicy: string(permission.OnRequest),
 			Rules: permission.Rules{Deny: []string{"broken__drop_tables"}}},
 		Connections: map[string]*llm.OpenAI{"fake": llm.NewOpenAI(model.URL, "", 4, map[string]llm.Limits{"gpt-4o": {Context: 128_000, Output: 16_384}})},
-		Providers:   append([]tools.Provider{touchTool{}, jobs}, servers.Providers()...),
+		Providers:   append([]tools.Provider{touchTool{}, browser, jobs}, servers.Providers()...),
 		Unavailable: servers.Unavailable(),
 		Memory:      mem,
 		DB:          db,
@@ -156,6 +158,32 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.awaitTurnEnd(turn, repo.TurnCompleted)
 	c.awaitTurnEnd(queued, repo.TurnCompleted)
 	c.awaitTurnEnd(c.startTurn(threadID, "touch it again"), repo.TurnCompleted)
+
+	var tab ThreadResult
+	c.call("thread/start", ThreadStartParams{WorkspaceID: workspaceID,
+		PermissionSettings: repo.PermissionSettings{Rules: repo.PermissionRules{Allow: []string{"click(example.com)"}}}}, &tab)
+	c.await("thread/started", nil)
+	browser.open(tab.Thread.ID, "example.com")
+	c.awaitTurnEnd(c.startTurn(tab.Thread.ID, "click the link"), repo.TurnCompleted)
+	browser.open(tab.Thread.ID, "other.org")
+	turn = c.startTurn(tab.Thread.ID, "click the link")
+	approval = c.await(requestApproval, nil)
+	json.Unmarshal(approval.Params, &asked)
+	if asked.Content != "click Learn more — other.org" || !slices.Equal(asked.SuggestedRules, []string{"click(other.org)"}) {
+		t.Errorf("approval shows %q and suggests %q", asked.Content, asked.SuggestedRules)
+	}
+	browser.open(tab.Thread.ID, "evil.test")
+	c.respond(approval, ApprovalResponse{Decision: repo.DecisionAccept})
+	approval = c.await(requestApproval, nil)
+	json.Unmarshal(approval.Params, &asked)
+	if asked.Content != "click Learn more — evil.test" || !strings.Contains(asked.Reason, "click Learn more — other.org") {
+		t.Errorf("approval after the page moved shows %q because %q", asked.Content, asked.Reason)
+	}
+	c.respond(approval, ApprovalResponse{Decision: repo.DecisionAccept})
+	c.awaitTurnEnd(turn, repo.TurnCompleted)
+	if clicked := browser.clicked(); !slices.Equal(clicked, []string{"example.com", "evil.test"}) {
+		t.Errorf("clicked on %q, want example.com and evil.test", clicked)
+	}
 
 	turn = c.startTurn(threadID, "ask me something")
 	question := c.await(requestUserInput, nil)
@@ -414,6 +442,56 @@ func (touchTool) Invoke(context.Context, string, map[string]any) (tools.Result, 
 	return tools.Result{Output: map[string]any{"touched": true}}, nil
 }
 
+type pageTool struct {
+	mu     sync.Mutex
+	pages  map[string]string
+	clicks []string
+}
+
+func (p *pageTool) Name() (string, string) { return "browser", "Drives a browser tab." }
+
+func (p *pageTool) ToolList(context.Context) ([]*tools.Spec, error) {
+	return []*tools.Spec{{
+		Name:        "click",
+		Description: "Clicks a link on the current page.",
+		InputSchema: map[string]any{"type": "object", "properties": map[string]any{}, "additionalProperties": false},
+		Annotations: &tools.Annotations{Title: "Click"},
+		PermissionContent: func(ctx context.Context, _ map[string]any) (tools.Content, error) {
+			host := p.page(tools.CallerOf(ctx).ThreadID)
+			if host == "" {
+				return tools.Content{}, errors.New("no page is open in this thread")
+			}
+			return tools.Content{Text: "click Learn more — " + host, Match: host}, nil
+		},
+	}}, nil
+}
+
+func (p *pageTool) Invoke(ctx context.Context, _ string, _ map[string]any) (tools.Result, error) {
+	host := p.page(tools.CallerOf(ctx).ThreadID)
+	p.mu.Lock()
+	p.clicks = append(p.clicks, host)
+	p.mu.Unlock()
+	return tools.Result{Output: map[string]any{"clicked": host}}, nil
+}
+
+func (p *pageTool) open(threadID, host string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.pages[threadID] = host
+}
+
+func (p *pageTool) page(threadID string) string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.pages[threadID]
+}
+
+func (p *pageTool) clicked() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.clicks)
+}
+
 type fakeModel struct {
 	mu      sync.Mutex
 	calls   int
@@ -453,6 +531,8 @@ func (f *fakeModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case last.Role == "user" && strings.Contains(text, "touch"):
 		call("touch", `{}`)
+	case last.Role == "user" && strings.Contains(text, "click"):
+		call("click", `{}`)
 	case last.Role == "user" && strings.Contains(text, "ask"):
 		call(userinput.Tool, `{"questions":[{"id":"color","header":"Color","question":"Which color?"}]}`)
 	case last.Role == "user" && strings.Contains(text, "delegate"):

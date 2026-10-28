@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"regexp"
@@ -17,7 +18,7 @@ var (
 	errProgram = errors.New(`shell: argument "program" must be non-empty string`)
 )
 
-func permissionContent(arguments map[string]any) (tools.Content, error) {
+func permissionContent(_ context.Context, arguments map[string]any) (tools.Content, error) {
 	text, err := commandLine(arguments)
 	if err != nil {
 		return tools.Content{}, err

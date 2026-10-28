@@ -58,8 +58,17 @@ func (rt *Runtime) readOnly(tool string) bool {
 }
 
 func (rt *Runtime) handleCall(ctx context.Context, it repo.ItemRow) (string, *repo.ItemRow, *job, error) {
+	var approved *repo.Approval
 	if it.Approval != nil {
-		return rt.decided(it)
+		changed, err := rt.changedSinceApproval(ctx, it)
+		if err != nil {
+			h, err := rt.refuse(it, err.Error())
+			return h, nil, nil, err
+		}
+		if !changed {
+			return rt.decided(it)
+		}
+		approved, it.Approval = it.Approval, nil
 	}
 	if _, offered := rt.tool(it.Tool); !offered {
 		h, err := rt.refuse(it, fmt.Sprintf("tool %q is not available in this turn; use an exact tool name from the tool list", it.Tool))
@@ -96,7 +105,7 @@ func (rt *Runtime) handleCall(ctx context.Context, it repo.ItemRow) (string, *re
 			it = stored
 		}
 	}
-	content, hasContent, err := rt.Registry.PermissionContent(it.Tool, args)
+	content, hasContent, err := rt.Registry.PermissionContent(ctx, it.Tool, args)
 	if err != nil {
 		h, err := rt.refuse(it, err.Error())
 		return h, nil, nil, err
@@ -113,6 +122,9 @@ func (rt *Runtime) handleCall(ctx context.Context, it repo.ItemRow) (string, *re
 	}
 	if decision.Verdict == permission.Ask {
 		it.Approval = decision.Approval(uuid.NewString(), call, time.Now().UTC())
+		if approved != nil {
+			it.Approval.Reason = strings.TrimSpace(fmt.Sprintf("This call changed after you approved it, which was for: %s. %s", approved.Content, it.Approval.Reason))
+		}
 		stored, err := rt.record(it)
 		if err != nil {
 			return "", nil, nil, err
@@ -120,6 +132,21 @@ func (rt *Runtime) handleCall(ctx context.Context, it repo.ItemRow) (string, *re
 		return "", &stored, nil, nil
 	}
 	return "", nil, &job{it: it, args: args}, nil
+}
+
+func (rt *Runtime) changedSinceApproval(ctx context.Context, it repo.ItemRow) (bool, error) {
+	if it.Approval.Decision == repo.DecisionDecline {
+		return false, nil
+	}
+	args, err := callArguments(it)
+	if err != nil {
+		return false, nil
+	}
+	content, ok, err := rt.Registry.PermissionContent(ctx, it.Tool, args)
+	if err != nil {
+		return false, err
+	}
+	return ok && content.Text != it.Approval.Content, nil
 }
 
 func (rt *Runtime) decided(it repo.ItemRow) (string, *repo.ItemRow, *job, error) {

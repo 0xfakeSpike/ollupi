@@ -18,7 +18,8 @@ func (fileTools) Name() (string, string) { return "files", "Touches files." }
 func (fileTools) ToolList(context.Context) ([]*tools.Spec, error) {
 	return []*tools.Spec{
 		{Name: "touch", InputSchema: map[string]any{"type": "object"}},
-		{Name: "exec", InputSchema: map[string]any{"type": "object"}, PermissionContent: func(map[string]any) (tools.Content, error) { return tools.Content{}, nil }},
+		{Name: "exec", InputSchema: map[string]any{"type": "object"}, PermissionContent: func(context.Context, map[string]any) (tools.Content, error) { return tools.Content{}, nil }},
+		{Name: "click", InputSchema: map[string]any{"type": "object"}, PermissionContent: func(context.Context, map[string]any) (tools.Content, error) { return tools.Content{}, nil }},
 	}, nil
 }
 
@@ -115,6 +116,7 @@ func TestSuggestedRulesAllowTheCallNextTime(t *testing.T) {
 		{command("git status --short"), []string{"exec(git status:*)"}},
 		{command("rm -rf build"), []string{"exec(rm -rf build)"}},
 		{command("pwd"), []string{"exec(pwd)"}},
+		{Call{Tool: "click", Content: tools.Content{Text: "click Learn more — example.com", Match: "example.com"}, HasContent: true}, []string{"click(example.com)"}},
 		{command("git add .", "go test ./...", "git add -A"), []string{"exec(git add:*)", "exec(go test:*)"}},
 	} {
 		d := checker.Decide(tc.call, nil)

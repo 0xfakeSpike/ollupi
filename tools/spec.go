@@ -18,9 +18,9 @@ type Spec struct {
 	InputSchema any          `json:"inputSchema"`
 	Annotations *Annotations `json:"annotations,omitempty"`
 
-	PermissionContent func(arguments map[string]any) (Content, error) `json:"-"`
-	Local             *Local                                          `json:"-"`
-	Serial            bool                                            `json:"-"`
+	PermissionContent func(ctx context.Context, arguments map[string]any) (Content, error) `json:"-"`
+	Local             *Local                                                               `json:"-"`
+	Serial            bool                                                                 `json:"-"`
 }
 
 type Content struct {
