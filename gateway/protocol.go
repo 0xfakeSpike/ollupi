@@ -44,6 +44,7 @@ const (
 	notifyThreadStatusChanged = "thread/status/changed"
 	notifyWorkspaceChanged    = "workspace/changed"
 	notifyCronChanged         = "cron/changed"
+	notifySettingsChanged     = "settings/changed"
 	notifyError               = "error"
 )
 
@@ -89,6 +90,8 @@ var protocol = struct {
 		"memory/update":               handle((*conn).memoryUpdate),
 		"memory/move":                 handle((*conn).memoryMove),
 		"memory/forget":               handle((*conn).memoryForget),
+		"settings/read":               handle((*conn).settingsRead),
+		"settings/update":             handle((*conn).settingsUpdate),
 	},
 	notifications: map[string]reflect.Type{
 		notifyThreadStarted:       reflect.TypeFor[ThreadResult](),
@@ -102,6 +105,7 @@ var protocol = struct {
 		notifyThreadStatusChanged: reflect.TypeFor[ThreadStatusNotification](),
 		notifyWorkspaceChanged:    reflect.TypeFor[WorkspaceResult](),
 		notifyCronChanged:         reflect.TypeFor[CronChangedNotification](),
+		notifySettingsChanged:     reflect.TypeFor[repo.SettingsRow](),
 		notifyError:               reflect.TypeFor[ErrorNotification](),
 	},
 	serverRequests: map[string]serverRequest{
@@ -383,6 +387,12 @@ type MemoryForgetParams struct {
 
 type MemoryResult struct {
 	Memory repo.MemoryRow `json:"memory"`
+}
+
+// SettingsUpdateParams switch masking of sensitive values before they
+// reach a model, for every conversation and for memory extraction.
+type SettingsUpdateParams struct {
+	Redaction *bool `json:"redaction"`
 }
 
 type ApprovalRequestParams struct {

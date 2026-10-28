@@ -43,6 +43,9 @@ type Runtime struct {
 	Record      func(repo.ItemRow) (repo.ItemRow, error)
 	Delta       func(repo.ItemRow, string)
 	Reload      func() ([]repo.ItemRow, *permission.Checker, error)
+	// Redaction reports whether sensitive values are masked; every model
+	// call asks, so the user's switch applies from the next one.
+	Redaction func() (bool, error)
 
 	system   string
 	redactor *redact.Redactor

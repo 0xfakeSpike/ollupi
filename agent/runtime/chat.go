@@ -111,13 +111,21 @@ func (rt *Runtime) compact(ctx context.Context) error {
 }
 
 func (rt *Runtime) send(ctx context.Context, prompt contextmanager.Prompt, choice llm.ToolChoice, onDelta func(llm.Delta)) (llm.ChatResponse, error) {
+	on, err := rt.Redaction()
+	if err != nil {
+		return llm.ChatResponse{}, fmt.Errorf("runtime: read the redaction setting: %w", err)
+	}
+	mask := rt.redactor.Mask
+	if !on {
+		mask = func(s string) string { return s }
+	}
 	messages := make([]llm.ChatMessage, 0, len(prompt.Messages)+1)
-	messages = append(messages, llm.ChatMessage{Role: llm.RoleSystem, Content: rt.redactor.Mask(prompt.System)})
+	messages = append(messages, llm.ChatMessage{Role: llm.RoleSystem, Content: mask(prompt.System)})
 	for _, message := range prompt.Messages {
-		message.Content, message.ReasoningContent = rt.redactor.Mask(message.Content), rt.redactor.Mask(message.ReasoningContent)
+		message.Content, message.ReasoningContent = mask(message.Content), mask(message.ReasoningContent)
 		message.ToolCalls = slices.Clone(message.ToolCalls)
 		for i := range message.ToolCalls {
-			message.ToolCalls[i].Arguments = rt.redactor.Mask(message.ToolCalls[i].Arguments)
+			message.ToolCalls[i].Arguments = mask(message.ToolCalls[i].Arguments)
 		}
 		messages = append(messages, message)
 	}
