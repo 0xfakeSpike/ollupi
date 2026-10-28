@@ -125,9 +125,9 @@ func (j *Jobs) Job(id string) (repo.CronJobView, error) {
 	return j.db.CronJobView(id)
 }
 
-func (j *Jobs) Delete(threadID, name string) error {
-	_, err := j.change(threadID, name, func(repo.CronJobRow) (*repo.CronJobRow, error) { return nil, nil })
-	return err
+// Delete deletes a task and returns it as it was.
+func (j *Jobs) Delete(threadID, name string) (repo.CronJobRow, error) {
+	return j.change(threadID, name, func(repo.CronJobRow) (*repo.CronJobRow, error) { return nil, nil })
 }
 
 func (j *Jobs) SetPaused(threadID, name string, paused bool) (repo.CronJobRow, error) {

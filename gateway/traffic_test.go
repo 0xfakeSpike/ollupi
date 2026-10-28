@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -24,6 +25,8 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
 	"github.com/0xfakeSpike/ollupi/tools/mcp"
+	"github.com/0xfakeSpike/ollupi/tools/plan"
+	"github.com/0xfakeSpike/ollupi/tools/shell"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
 	"github.com/coder/websocket"
@@ -97,7 +100,9 @@ func TestTrafficMatchesContract(t *testing.T) {
 	}
 	c.notify("initialized", Empty{})
 	c.call("model/list", Empty{}, nil)
-	c.call("tool/list", Empty{}, nil)
+	var toolList ToolListResult
+	c.call("tool/list", Empty{}, &toolList)
+	checkToolSchemas(t, toolList.Data)
 	var mcpServers MCPServerListResult
 	c.call("mcpServer/list", Empty{}, &mcpServers)
 	if len(mcpServers.Data) != 2 || !mcpServers.Data[0].Connected || mcpServers.Data[0].Tools != 1 || mcpServers.Data[1].Connected {
@@ -165,6 +170,12 @@ func TestTrafficMatchesContract(t *testing.T) {
 	// A memory search.
 	turn = c.startTurn(threadID, "recall how to answer")
 	c.awaitTurnEnd(turn, repo.TurnCompleted)
+
+	// A plan, and the scheduled-task tools as the model calls them.
+	c.awaitTurnEnd(c.startTurn(threadID, "make a plan"), repo.TurnCompleted)
+	for _, words := range []string{"cron-create", "cron-pause", "cron-list", "cron-delete"} {
+		c.toolTurn(threadID, words)
+	}
 
 	// Scheduled tasks, managed and run; each change is pushed.
 	var daily repo.CronJobRow
@@ -307,6 +318,17 @@ func TestTrafficMatchesContract(t *testing.T) {
 			t.Errorf("the session never sent %s", name)
 		}
 	}
+	for name, tool := range builtinTools {
+		if name == shell.ToolName {
+			continue // the session has no shell
+		}
+		if tool.arguments != nil && !c.seen["arguments "+name] {
+			t.Errorf("no call of %s checked its arguments", name)
+		}
+		if tool.output != nil && !c.seen["output "+name] {
+			t.Errorf("no call of %s checked its output", name)
+		}
+	}
 }
 
 // checkMemory checks that a thread loaded its memory once, at its start:
@@ -398,6 +420,16 @@ func (f *fakeModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		call(subagent.Tool, `{"description":"Check a thing","prompt":"Check the thing and report."}`)
 	case last.Role == "user" && strings.Contains(text, "recall"):
 		call(memory.ToolSearch, `{"query":"answers"}`)
+	case last.Role == "user" && strings.Contains(text, "make a plan"):
+		call(plan.Tool, `{"explanation":"Two steps.","plan":[{"step":"Look around","status":"in_progress"},{"step":"Report","status":"pending"}]}`)
+	case last.Role == "user" && strings.Contains(text, "cron-create"):
+		call(cron.ToolCreateJob, `{"name":"standup","spec":"0 9 * * 1-5","prompt":"Write the standup notes."}`)
+	case last.Role == "user" && strings.Contains(text, "cron-pause"):
+		call(cron.ToolPauseJob, `{"name":"standup","paused":true}`)
+	case last.Role == "user" && strings.Contains(text, "cron-list"):
+		call(cron.ToolListJobs, `{}`)
+	case last.Role == "user" && strings.Contains(text, "cron-delete"):
+		call(cron.ToolDeleteJob, `{"name":"standup"}`)
 	default:
 		chunks = append(chunks, map[string]any{"reasoning_content": "Thinking it over."}, map[string]any{"content": "All "}, map[string]any{"content": "done."})
 	}
@@ -490,6 +522,9 @@ func (c *client) read() {
 				c.validate("notification "+m.Method, n, m.Params)
 			} else {
 				c.t.Errorf("the gateway sent notification %s, which the contract does not declare", m.Method)
+			}
+			if m.Method == notifyItemCompleted {
+				c.validateToolCall(m.Params)
 			}
 			c.inbox = append(c.inbox, m)
 		default:
@@ -627,10 +662,17 @@ func (c *client) respond(request jsonrpc.Message, result any) {
 // any), waiting for it if it has not arrived; it leaves other messages.
 func (c *client) await(method string, match func(params json.RawMessage) bool) jsonrpc.Message {
 	c.t.Helper()
+	return c.awaitAny(method, func(m jsonrpc.Message) bool { return m.Method == method && (match == nil || match(m.Params)) })
+}
+
+// awaitAny takes the first message from the inbox that match accepts,
+// waiting for it; what names it in the failure.
+func (c *client) awaitAny(what string, match func(jsonrpc.Message) bool) jsonrpc.Message {
+	c.t.Helper()
 	for {
 		c.mu.Lock()
 		for i, m := range c.inbox {
-			if m.Method == method && (match == nil || match(m.Params)) {
+			if match(m) {
 				c.inbox = append(c.inbox[:i], c.inbox[i+1:]...)
 				c.mu.Unlock()
 				return m
@@ -640,7 +682,83 @@ func (c *client) await(method string, match func(params json.RawMessage) bool) j
 		select {
 		case <-c.arrived:
 		case <-c.ctx.Done():
-			c.t.Fatalf("no %s arrived", method)
+			c.t.Fatalf("no %s arrived", what)
+		}
+	}
+}
+
+// validateToolCall checks a completed call of a built-in tool: its
+// arguments, and its output when it succeeded, against the tool's types in
+// the contract. The caller holds c.mu.
+func (c *client) validateToolCall(params json.RawMessage) {
+	var n ItemNotification
+	if err := json.Unmarshal(params, &n); err != nil || !n.Item.IsCall() {
+		return
+	}
+	it := n.Item
+	tool, ok := c.contract.BuiltinTools[it.Tool]
+	if !ok {
+		return
+	}
+	if tool.Arguments != nil {
+		c.validate("arguments of "+it.Tool, tool.Arguments, json.RawMessage(it.Arguments))
+		c.seen["arguments "+it.Tool] = true
+	}
+	if tool.Output != nil && it.Status == repo.ItemCompleted && it.Error == "" && it.Result != nil {
+		c.validate("output of "+it.Tool, tool.Output, it.Result.Output)
+		c.seen["output "+it.Tool] = true
+	}
+}
+
+// toolTurn runs a turn whose one tool call may need approval, and accepts it.
+func (c *client) toolTurn(threadID, text string) {
+	c.t.Helper()
+	turn := c.startTurn(threadID, text)
+	for {
+		m := c.awaitAny("approval or end of "+text, func(m jsonrpc.Message) bool {
+			if m.Method == requestApproval {
+				return true
+			}
+			var n TurnNotification
+			return m.Method == "turn/completed" && json.Unmarshal(m.Params, &n) == nil && n.Turn.ID == turn
+		})
+		if m.Method == requestApproval {
+			c.respond(m, ApprovalResponse{Decision: repo.DecisionAccept})
+			continue
+		}
+		var n TurnNotification
+		json.Unmarshal(m.Params, &n)
+		if n.Turn.Status != repo.TurnCompleted {
+			c.t.Fatalf("%q: the turn ended %s: %s", text, n.Turn.Status, n.Turn.Error)
+		}
+		return
+	}
+}
+
+// checkToolSchemas checks that each built-in tool offers the input schema
+// its arguments type in the contract gives.
+func checkToolSchemas(t *testing.T, offered []tools.ToolDescriptor) {
+	t.Helper()
+	for name, tool := range builtinTools {
+		if tool.arguments == nil {
+			continue
+		}
+		want, err := tools.InputSchemaOf(tool.arguments)
+		if err != nil {
+			t.Fatal(err)
+		}
+		i := slices.IndexFunc(offered, func(d tools.ToolDescriptor) bool { return d.Name == name })
+		if i < 0 {
+			t.Errorf("built-in tool %s is not offered", name)
+			continue
+		}
+		a, _ := json.Marshal(want)
+		b, _ := json.Marshal(offered[i].InputSchema)
+		var wantJSON, gotJSON any
+		json.Unmarshal(a, &wantJSON)
+		json.Unmarshal(b, &gotJSON)
+		if !reflect.DeepEqual(wantJSON, gotJSON) {
+			t.Errorf("%s offers the input schema\n%s\nbut its arguments type %s gives\n%s", name, b, tool.arguments, a)
 		}
 	}
 }

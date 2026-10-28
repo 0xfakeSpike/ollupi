@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/google/jsonschema-go/jsonschema"
 )
 
 const (
@@ -20,13 +22,46 @@ func (j *Jobs) Name() (string, string) {
 	return ProviderName, "Scheduled tasks: messages sent to this conversation later, on a cron schedule."
 }
 
+// CreateArgs are the arguments of create_scheduled_job.
+type CreateArgs struct {
+	Name   string `json:"name" jsonschema:"Short task name, unique in this conversation, e.g. daily-market-report."`
+	Spec   string `json:"spec" jsonschema:"5-field cron expression (minute hour day-of-month month day-of-week), or @hourly/@daily/@weekly/@monthly/@yearly."`
+	Prompt string `json:"prompt" jsonschema:"The message sent at each run, as the user would write it."`
+}
+
+func (CreateArgs) Constrain(s *jsonschema.Schema) {
+	s.Properties["name"].Pattern = namePattern.String()
+	s.Properties["prompt"].MinLength, s.Properties["prompt"].MaxLength = jsonschema.Ptr(1), jsonschema.Ptr(maxPromptRunes)
+}
+
+// PauseArgs are the arguments of pause_scheduled_job.
+type PauseArgs struct {
+	Name   string `json:"name"`
+	Paused bool   `json:"paused" jsonschema:"true to pause, false to resume."`
+}
+
+// NameArgs are the arguments of delete_scheduled_job.
+type NameArgs struct {
+	Name string `json:"name"`
+}
+
+// ListArgs are the arguments of list_scheduled_jobs: none.
+type ListArgs struct{}
+
+// Deleted is what delete_scheduled_job returns.
+type Deleted struct {
+	ID   string `json:"id"`
+	Name string `json:"deleted"`
+}
+
+// JobList is what list_scheduled_jobs returns.
+type JobList struct {
+	Jobs []repo.CronJobView `json:"jobs"`
+}
+
+// ToolList offers the tools; create and pause return the task as cron/list
+// and cron/changed show it.
 func (j *Jobs) ToolList(context.Context) ([]*tools.Spec, error) {
-	byName := map[string]any{
-		"type":                 "object",
-		"properties":           map[string]any{"name": map[string]any{"type": "string"}},
-		"required":             []string{"name"},
-		"additionalProperties": false,
-	}
 	return []*tools.Spec{
 		{
 			Name:        ToolCreateJob,
@@ -35,49 +70,31 @@ func (j *Jobs) ToolList(context.Context) ([]*tools.Spec, error) {
 				"prompt is sent here as a new message and you work on it with this conversation's history, project, and settings. "+
 				"If a turn is still running then, the message waits as the next turn.",
 				j.location, time.Now().In(j.location).Format("2006-01-02 15:04 -07:00")),
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"name":   map[string]any{"type": "string", "pattern": namePattern.String(), "description": "Short task name, unique in this conversation, e.g. daily-market-report."},
-					"spec":   map[string]any{"type": "string", "description": "5-field cron expression (minute hour day-of-month month day-of-week), or @hourly/@daily/@weekly/@monthly/@yearly."},
-					"prompt": map[string]any{"type": "string", "minLength": 1, "maxLength": maxPromptRunes, "description": "The message sent at each run, as the user would write it."},
-				},
-				"required":             []string{"name", "spec", "prompt"},
-				"additionalProperties": false,
-			},
+			InputSchema: tools.InputSchema[CreateArgs](),
 		},
 		{
 			Name:        ToolPauseJob,
 			Description: "Pause or resume a scheduled task of this conversation. A resumed task runs next at its next scheduled time.",
 			Annotations: &tools.Annotations{DestructiveHint: tools.Hint(false), OpenWorldHint: tools.Hint(false)},
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"name":   map[string]any{"type": "string"},
-					"paused": map[string]any{"type": "boolean", "description": "true to pause, false to resume."},
-				},
-				"required":             []string{"name", "paused"},
-				"additionalProperties": false,
-			},
+			InputSchema: tools.InputSchema[PauseArgs](),
 		},
 		{
 			Name:        ToolDeleteJob,
 			Description: "Delete a scheduled task of this conversation by name.",
 			Annotations: &tools.Annotations{DestructiveHint: tools.Hint(true), OpenWorldHint: tools.Hint(false)},
-			InputSchema: byName,
+			InputSchema: tools.InputSchema[NameArgs](),
 		},
 		{
 			Name:        ToolListJobs,
 			Description: "List the scheduled tasks of this conversation with their next run time.",
 			Annotations: &tools.Annotations{ReadOnlyHint: true, OpenWorldHint: tools.Hint(false)},
-			InputSchema: map[string]any{"type": "object", "properties": map[string]any{}, "additionalProperties": false},
+			InputSchema: tools.InputSchema[ListArgs](),
 		},
 	}, nil
 }
 
-func (j *Jobs) Invoke(ctx context.Context, tool string, args map[string]any) (tools.Result, error) {
+func (j *Jobs) Invoke(ctx context.Context, tool string, arguments map[string]any) (tools.Result, error) {
 	caller := tools.CallerOf(ctx)
-	name, _ := args["name"].(string)
 	switch tool {
 	case ToolCreateJob:
 		if caller.ThreadID == "" {
@@ -86,32 +103,53 @@ func (j *Jobs) Invoke(ctx context.Context, tool string, args map[string]any) (to
 		if caller.Subagent {
 			return tools.Result{}, fmt.Errorf("cron: a subagent cannot schedule tasks; report what should be scheduled instead")
 		}
-		spec, _ := args["spec"].(string)
-		prompt, _ := args["prompt"].(string)
-		job, err := j.Create(caller.ThreadID, name, spec, prompt)
+		args, err := tools.DecodeArguments[CreateArgs](arguments)
 		if err != nil {
 			return tools.Result{}, err
 		}
-		return tools.Result{Output: job}, nil
+		job, err := j.Create(caller.ThreadID, args.Name, args.Spec, args.Prompt)
+		if err != nil {
+			return tools.Result{}, err
+		}
+		return j.result(job.ID)
 	case ToolPauseJob:
-		paused, _ := args["paused"].(bool)
-		job, err := j.SetPaused(caller.ThreadID, name, paused)
+		args, err := tools.DecodeArguments[PauseArgs](arguments)
 		if err != nil {
 			return tools.Result{}, err
 		}
-		return tools.Result{Output: job}, nil
+		job, err := j.SetPaused(caller.ThreadID, args.Name, args.Paused)
+		if err != nil {
+			return tools.Result{}, err
+		}
+		return j.result(job.ID)
 	case ToolDeleteJob:
-		if err := j.Delete(caller.ThreadID, name); err != nil {
-			return tools.Result{}, err
-		}
-		return tools.Result{Output: map[string]any{"deleted": name}}, nil
-	case ToolListJobs:
-		jobs, err := j.db.CronJobs(caller.ThreadID)
+		args, err := tools.DecodeArguments[NameArgs](arguments)
 		if err != nil {
 			return tools.Result{}, err
 		}
-		return tools.Result{Output: map[string]any{"jobs": jobs}}, nil
+		job, err := j.Delete(caller.ThreadID, args.Name)
+		if err != nil {
+			return tools.Result{}, err
+		}
+		return tools.Result{Output: Deleted{ID: job.ID, Name: job.Name}}, nil
+	case ToolListJobs:
+		jobs, err := j.List(caller.ThreadID)
+		if err != nil {
+			return tools.Result{}, err
+		}
+		if jobs == nil {
+			jobs = []repo.CronJobView{}
+		}
+		return tools.Result{Output: JobList{Jobs: jobs}}, nil
 	default:
 		return tools.Result{}, fmt.Errorf("cron: unknown tool %q", tool)
 	}
+}
+
+func (j *Jobs) result(id string) (tools.Result, error) {
+	job, err := j.Job(id)
+	if err != nil {
+		return tools.Result{}, err
+	}
+	return tools.Result{Output: job}, nil
 }

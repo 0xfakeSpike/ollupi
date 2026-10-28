@@ -7,20 +7,33 @@ import (
 	"strings"
 
 	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/google/jsonschema-go/jsonschema"
 )
 
 const Tool = "request_user_input"
 
 type Question struct {
-	ID       string   `json:"id"`
-	Header   string   `json:"header"`
-	Question string   `json:"question"`
-	Options  []Option `json:"options,omitempty"`
+	ID       string   `json:"id" jsonschema:"Stable identifier for mapping answers (snake_case)."`
+	Header   string   `json:"header" jsonschema:"Short header label shown in the UI (12 or fewer chars)."`
+	Question string   `json:"question" jsonschema:"Single-sentence prompt shown to the user, in the user's language."`
+	Options  []Option `json:"options,omitempty" jsonschema:"Optional mutually exclusive choices. The user can always answer in their own words instead."`
+}
+
+func (Question) Constrain(s *jsonschema.Schema) {
+	s.Properties["id"].Pattern = "^[a-z][a-z0-9_]{0,63}$"
+	s.Properties["header"].MinLength, s.Properties["header"].MaxLength = jsonschema.Ptr(1), jsonschema.Ptr(12)
+	s.Properties["question"].MinLength, s.Properties["question"].MaxLength = jsonschema.Ptr(1), jsonschema.Ptr(600)
+	s.Properties["options"].MaxItems = jsonschema.Ptr(4)
 }
 
 type Option struct {
-	Label       string `json:"label"`
-	Description string `json:"description,omitempty"`
+	Label       string `json:"label" jsonschema:"User-facing label (1-5 words)."`
+	Description string `json:"description,omitempty" jsonschema:"One short sentence explaining the impact of this option."`
+}
+
+func (Option) Constrain(s *jsonschema.Schema) {
+	s.Properties["label"].MinLength, s.Properties["label"].MaxLength = jsonschema.Ptr(1), jsonschema.Ptr(60)
+	s.Properties["description"].MaxLength = jsonschema.Ptr(200)
 }
 
 type Answer struct {
@@ -30,7 +43,11 @@ type Answer struct {
 type Answers map[string]Answer
 
 type Request struct {
-	Questions []Question `json:"questions"`
+	Questions []Question `json:"questions" jsonschema:"Questions to show the user. Prefer 1 and do not exceed 3."`
+}
+
+func (Request) Constrain(s *jsonschema.Schema) {
+	s.Properties["questions"].MinItems, s.Properties["questions"].MaxItems = jsonschema.Ptr(1), jsonschema.Ptr(3)
 }
 
 func Decode(raw json.RawMessage) (Request, error) {
@@ -83,44 +100,6 @@ func (r Request) Check(answers Answers, maxRunes int) error {
 	return nil
 }
 
-var schema = map[string]any{
-	"type": "object",
-	"properties": map[string]any{
-		"questions": map[string]any{
-			"type":        "array",
-			"minItems":    1,
-			"maxItems":    3,
-			"description": "Questions to show the user. Prefer 1 and do not exceed 3.",
-			"items": map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"id":       map[string]any{"type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$", "description": "Stable identifier for mapping answers (snake_case)."},
-					"header":   map[string]any{"type": "string", "minLength": 1, "maxLength": 12, "description": "Short header label shown in the UI (12 or fewer chars)."},
-					"question": map[string]any{"type": "string", "minLength": 1, "maxLength": 600, "description": "Single-sentence prompt shown to the user, in the user's language."},
-					"options": map[string]any{
-						"type":        "array",
-						"maxItems":    4,
-						"description": "Optional mutually exclusive choices. The user can always answer in their own words instead.",
-						"items": map[string]any{
-							"type": "object",
-							"properties": map[string]any{
-								"label":       map[string]any{"type": "string", "minLength": 1, "maxLength": 60, "description": "User-facing label (1-5 words)."},
-								"description": map[string]any{"type": "string", "maxLength": 200, "description": "One short sentence explaining the impact of this option."},
-							},
-							"required":             []any{"label"},
-							"additionalProperties": false,
-						},
-					},
-				},
-				"required":             []any{"id", "header", "question"},
-				"additionalProperties": false,
-			},
-		},
-	},
-	"required":             []any{"questions"},
-	"additionalProperties": false,
-}
-
 type Provider struct{}
 
 func New() *Provider { return &Provider{} }
@@ -132,7 +111,7 @@ func (*Provider) ToolList(context.Context) ([]*tools.Spec, error) {
 		Name: Tool,
 		Description: "Asks the user one to three short questions and waits for the answers. Use it when a specific answer is required before safe progress is possible " +
 			"and you cannot find it out with other tools; ask instead of guessing. Make it the only call of its response: other calls in the same response run before the user answers.",
-		InputSchema: schema,
+		InputSchema: tools.InputSchema[Request](),
 		Annotations: &tools.Annotations{Title: "Question", ReadOnlyHint: true, OpenWorldHint: tools.Hint(false)},
 	}}, nil
 }

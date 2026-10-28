@@ -2,12 +2,12 @@ package plan
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
 
 	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/google/jsonschema-go/jsonschema"
 )
 
 const Tool = "update_plan"
@@ -56,27 +56,19 @@ func (p Plan) Validate() error {
 	return nil
 }
 
-var schema = map[string]any{
-	"type": "object",
-	"properties": map[string]any{
-		"explanation": map[string]any{"type": "string", "maxLength": 500},
-		"plan": map[string]any{
-			"type":     "array",
-			"minItems": 1,
-			"maxItems": maxSteps,
-			"items": map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"step":   map[string]any{"type": "string", "minLength": 1, "maxLength": 200},
-					"status": map[string]any{"type": "string", "enum": StatusValues},
-				},
-				"required":             []any{"step", "status"},
-				"additionalProperties": false,
-			},
-		},
-	},
-	"required":             []any{"plan"},
-	"additionalProperties": false,
+func (Status) Constrain(s *jsonschema.Schema) {
+	for _, v := range StatusValues {
+		s.Enum = append(s.Enum, v)
+	}
+}
+
+func (Step) Constrain(s *jsonschema.Schema) {
+	s.Properties["step"].MinLength, s.Properties["step"].MaxLength = jsonschema.Ptr(1), jsonschema.Ptr(200)
+}
+
+func (Plan) Constrain(s *jsonschema.Schema) {
+	s.Properties["explanation"].MaxLength = jsonschema.Ptr(500)
+	s.Properties["plan"].MinItems, s.Properties["plan"].MaxItems = jsonschema.Ptr(1), jsonschema.Ptr(maxSteps)
 }
 
 type Provider struct{}
@@ -90,18 +82,14 @@ func (*Provider) ToolList(context.Context) ([]*tools.Spec, error) {
 		Name: Tool,
 		Description: "Updates the task plan the user sees. For non-trivial work with several distinct steps, call it with a short plan and keep it current: " +
 			"exactly one step in_progress while you work on it, and mark steps completed as soon as they are done. Skip it for simple requests. Each call replaces the whole plan.",
-		InputSchema: schema,
+		InputSchema: tools.InputSchema[Plan](),
 		Annotations: &tools.Annotations{Title: "Plan", ReadOnlyHint: true, OpenWorldHint: tools.Hint(false)},
 	}}, nil
 }
 
 func (*Provider) Invoke(_ context.Context, _ string, arguments map[string]any) (tools.Result, error) {
-	raw, err := json.Marshal(arguments)
+	p, err := tools.DecodeArguments[Plan](arguments)
 	if err != nil {
-		return tools.Result{}, err
-	}
-	var p Plan
-	if err := json.Unmarshal(raw, &p); err != nil {
 		return tools.Result{}, err
 	}
 	if err := p.Validate(); err != nil {
