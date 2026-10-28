@@ -28,8 +28,6 @@ func (c MemoryCursor) at() time.Time {
 	return c.At.UTC()
 }
 
-// MemoryFailureCode says what part of memory generation failed, so that a
-// client can explain it in its own words.
 type MemoryFailureCode string
 
 const (
@@ -46,24 +44,24 @@ type MemoryFailure struct {
 	Error string            `json:"error"`
 }
 
-// MemorySkip is the last batch given up after repeated failures.
 type MemorySkip struct {
-	At      time.Time `json:"at"`
-	Entries int       `json:"entries"`
-	TurnID  string    `json:"turnId"`
+	At       time.Time `json:"at"`
+	Entries  int       `json:"entries"`
+	ThreadID string    `json:"threadId"`
+	TurnID   string    `json:"turnId"`
 	MemoryFailure
 }
 
 type MemoryStateRow struct {
-	ID          int          `gorm:"primaryKey;autoIncrement:false;check:memory_state_one,id = 1" json:"-"`
-	Cursor      MemoryCursor `gorm:"embedded;embeddedPrefix:cursor_" json:"-"`
-	Attempts    int          `gorm:"not null;default:0" json:"attempts,omitempty"`
-	NextAttempt *time.Time   `json:"nextAttempt,omitempty"`
-	Skipped     int64        `gorm:"not null;default:0" json:"-"`
-	LastSuccess *time.Time   `json:"lastSuccess,omitempty"`
-	LastError  *MemoryFailure `gorm:"column:last_failure;serializer:json;check:memory_state_failure,last_failure IS NULL OR json_valid(last_failure)" json:"lastError,omitempty"`
-	LastSkip   *MemorySkip    `gorm:"serializer:json;check:memory_state_skip,last_skip IS NULL OR json_valid(last_skip)" json:"lastSkip,omitempty"`
-	LastReport *MemoryReport  `gorm:"serializer:json;check:memory_state_report,last_report IS NULL OR json_valid(last_report)" json:"lastReport,omitempty"`
+	ID          int            `gorm:"primaryKey;autoIncrement:false;check:memory_state_one,id = 1" json:"-"`
+	Cursor      MemoryCursor   `gorm:"embedded;embeddedPrefix:cursor_" json:"-"`
+	Attempts    int            `gorm:"not null;default:0" json:"attempts,omitempty"`
+	NextAttempt *time.Time     `json:"nextAttempt,omitempty"`
+	Skipped     int64          `gorm:"not null;default:0" json:"-"`
+	LastSuccess *time.Time     `json:"lastSuccess,omitempty"`
+	LastError   *MemoryFailure `gorm:"column:last_failure;serializer:json;check:memory_state_failure,last_failure IS NULL OR json_valid(last_failure)" json:"lastError,omitempty"`
+	LastSkip    *MemorySkip    `gorm:"serializer:json;check:memory_state_skip,last_skip IS NULL OR json_valid(last_skip)" json:"lastSkip,omitempty"`
+	LastReport  *MemoryReport  `gorm:"serializer:json;check:memory_state_report,last_report IS NULL OR json_valid(last_report)" json:"lastReport,omitempty"`
 }
 
 func (MemoryStateRow) TableName() string { return "memory_state" }
@@ -140,10 +138,7 @@ func (d *DB) AdvanceMemory(c MemoryCursor, now time.Time, report MemoryReport) e
 
 const maxMemoryAttempts = 10
 
-// DeferMemory records a failed batch as the last error until its retry, or,
-// once it has failed maxMemoryAttempts times, skips it to skipTo, the end
-// of the batch, and records it as the last skip instead.
-func (d *DB) DeferMemory(skipTo MemoryCursor, entries int, f MemoryFailure, now time.Time) (skipped bool, err error) {
+func (d *DB) DeferMemory(skipTo MemoryCursor, skip MemorySkip, now time.Time) (skipped bool, err error) {
 	err = d.Tx(func(tx *DB) error {
 		s, err := tx.MemoryState()
 		if err != nil {
@@ -152,7 +147,8 @@ func (d *DB) DeferMemory(skipTo MemoryCursor, entries int, f MemoryFailure, now 
 		cols := map[string]any{}
 		if s.Attempts+1 >= maxMemoryAttempts {
 			skipped = true
-			raw, err := json.Marshal(MemorySkip{At: now.UTC(), Entries: entries, TurnID: skipTo.ID, MemoryFailure: f})
+			skip.At = now.UTC()
+			raw, err := json.Marshal(skip)
 			if err != nil {
 				return err
 			}
@@ -160,10 +156,10 @@ func (d *DB) DeferMemory(skipTo MemoryCursor, entries int, f MemoryFailure, now 
 				cols[k] = v
 			}
 			cols["attempts"], cols["next_attempt"] = 0, nil
-			cols["skipped"] = s.Skipped + int64(entries)
+			cols["skipped"] = s.Skipped + int64(skip.Entries)
 			cols["last_failure"], cols["last_skip"] = nil, string(raw)
 		} else {
-			raw, err := json.Marshal(f)
+			raw, err := json.Marshal(skip.MemoryFailure)
 			if err != nil {
 				return err
 			}
