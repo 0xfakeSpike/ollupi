@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
@@ -156,10 +157,50 @@ func (a *Agent) resolveApproval(threadID, approvalID string, decision repo.Decis
 		if available := it.Approval.AvailableDecisions(); !slices.Contains(available, decision) {
 			return repo.ItemRow{}, fmt.Errorf("agent: %w: %q is not one of %q", ErrInvalidDecision, decision, available)
 		}
+		if decision == repo.DecisionAcceptAlways {
+			if err := a.allowAlways(threadID, it.Approval.Suggested); err != nil {
+				return repo.ItemRow{}, err
+			}
+		}
 		now := time.Now().UTC()
 		it.Approval.Decision, it.Approval.DecidedBy, it.Approval.DecidedAt = decision, decidedBy, &now
 		return it, nil
 	})
+}
+
+func (a *Agent) allowAlways(threadID string, rules []string) error {
+	t, err := a.cfg.DB.ThreadRow(threadID)
+	if err != nil {
+		return fmt.Errorf("agent: thread %s: %w", threadID, err)
+	}
+	if parent := string(t.ParentThreadID); parent != "" {
+		if t, err = a.cfg.DB.ThreadRow(parent); err != nil {
+			return fmt.Errorf("agent: parent thread %s: %w", parent, err)
+		}
+	}
+	if t.WorkspaceID == "" {
+		_, err := a.UpdateThreadSettings(t.ID, withAllowed(t.Settings, rules))
+		return err
+	}
+	w, err := a.workspaceOf(t.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	if w, err = a.UpdateWorkspaceSettings(w.ID, withAllowed(w.Settings, rules)); err != nil {
+		return err
+	}
+	a.emit(Event{Kind: EventWorkspaceChanged, Thread: t, Workspace: &w})
+	return nil
+}
+
+func withAllowed(s permission.Settings, rules []string) permission.Settings {
+	s.Rules.Allow = slices.Clone(s.Rules.Allow)
+	for _, r := range rules {
+		if !slices.Contains(s.Rules.Allow, r) {
+			s.Rules.Allow = append(s.Rules.Allow, r)
+		}
+	}
+	return s
 }
 
 func (a *Agent) answerUserInput(threadID, itemID string, answers userinput.Answers) error {

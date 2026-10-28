@@ -116,6 +116,7 @@ type Approval struct {
 	Reason      string     `json:"reason,omitempty"`
 	Rule        string     `json:"rule,omitempty"`
 	Content     string     `json:"content,omitempty"`
+	Suggested   []string   `json:"suggestedRules,omitempty"`
 	Decision    Decision   `json:"decision,omitempty"`
 	DecidedBy   string     `json:"decidedBy,omitempty"`
 	DecidedAt   *time.Time `json:"decidedAt,omitempty"`
@@ -126,14 +127,18 @@ type Decision string
 const (
 	DecisionAccept           Decision = "accept"
 	DecisionAcceptForSession Decision = "acceptForSession"
+	DecisionAcceptAlways     Decision = "acceptAlways"
 	DecisionDecline          Decision = "decline"
 )
 
-var DecisionValues = []Decision{DecisionAccept, DecisionAcceptForSession, DecisionDecline}
+var DecisionValues = []Decision{DecisionAccept, DecisionAcceptForSession, DecisionAcceptAlways, DecisionDecline}
 
 func (a Approval) AvailableDecisions() []Decision {
 	if a.Rule != "" {
 		return []Decision{DecisionAccept, DecisionDecline}
+	}
+	if len(a.Suggested) == 0 {
+		return []Decision{DecisionAccept, DecisionAcceptForSession, DecisionDecline}
 	}
 	return slices.Clone(DecisionValues)
 }

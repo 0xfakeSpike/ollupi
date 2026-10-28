@@ -2,9 +2,12 @@ package permission
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
@@ -13,7 +16,10 @@ type fileTools struct{}
 func (fileTools) Name() (string, string) { return "files", "Touches files." }
 
 func (fileTools) ToolList(context.Context) ([]*tools.Spec, error) {
-	return []*tools.Spec{{Name: "touch", InputSchema: map[string]any{"type": "object"}}}, nil
+	return []*tools.Spec{
+		{Name: "touch", InputSchema: map[string]any{"type": "object"}},
+		{Name: "exec", InputSchema: map[string]any{"type": "object"}, PermissionContent: func(map[string]any) (tools.Content, error) { return tools.Content{}, nil }},
+	}, nil
 }
 
 func (fileTools) Invoke(context.Context, string, map[string]any) (tools.Result, error) {
@@ -83,5 +89,76 @@ func TestSaveRefusesNewRulesForUnavailableProviders(t *testing.T) {
 	}
 	if err := ValidateLayer(base, Settings{}, layer("github__create_issue"), registry); err == nil {
 		t.Error("a new layer was saved with a rule for an unavailable provider")
+	}
+}
+
+func command(parts ...string) Call {
+	line := strings.Join(parts, " && ")
+	c := tools.Content{Text: line, Match: line}
+	if len(parts) > 1 {
+		c.Parts = parts
+	}
+	return Call{Tool: "exec", Content: c, HasContent: true}
+}
+
+func TestSuggestedRulesAllowTheCallNextTime(t *testing.T) {
+	registry := testRegistry(t)
+	checker, err := New([]Layer{defaults}, nil, registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		call Call
+		want []string
+	}{
+		{Call{Tool: "touch"}, []string{"touch"}},
+		{command("git status --short"), []string{"exec(git status:*)"}},
+		{command("rm -rf build"), []string{"exec(rm -rf build)"}},
+		{command("pwd"), []string{"exec(pwd)"}},
+		{command("git add .", "go test ./...", "git add -A"), []string{"exec(git add:*)", "exec(go test:*)"}},
+	} {
+		d := checker.Decide(tc.call, nil)
+		if d.Verdict != Ask || !slices.Equal(d.Suggested, tc.want) {
+			t.Errorf("%q: verdict %v suggests %q, want ask with %q", tc.call.Content.Text, d.Verdict, d.Suggested, tc.want)
+			continue
+		}
+		if a := d.Approval("a", tc.call, time.Time{}); !slices.Contains(a.AvailableDecisions(), repo.DecisionAcceptAlways) {
+			t.Errorf("%q: offers %q", tc.call.Content.Text, a.AvailableDecisions())
+		}
+		allowed, err := New([]Layer{defaults, layer(d.Suggested...)}, nil, registry)
+		if err != nil {
+			t.Errorf("%q: %v", tc.call.Content.Text, err)
+			continue
+		}
+		if v := allowed.Decide(tc.call, nil).Verdict; v != Run {
+			t.Errorf("%q: verdict %v once %q are allowed", tc.call.Content.Text, v, d.Suggested)
+		}
+	}
+}
+
+func TestNoSuggestionWhereAnAllowRuleWouldNotHelp(t *testing.T) {
+	registry := testRegistry(t)
+	asking := Layer{Of: "the workspace", Settings: Settings{Rules: Rules{Ask: []string{"touch", "exec(curl:*)"}}}}
+	checker, err := New([]Layer{defaults, asking}, nil, registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opaque := command("sh -c $X")
+	opaque.Content.Opaque = true
+	escalated := command("make install")
+	escalated.Prepared = &tools.Prepared{Sandboxed: true, Escalated: true, Justification: "writes /usr/local"}
+	for what, call := range map[string]Call{
+		"asked by a rule":     {Tool: "touch"},
+		"not fully checkable": opaque,
+		"outside the sandbox": escalated,
+		"with a wildcard":     command("ls *.go"),
+	} {
+		d := checker.Decide(call, nil)
+		if d.Verdict != Ask || d.Suggested != nil {
+			t.Errorf("%s: verdict %v suggests %q", what, d.Verdict, d.Suggested)
+		}
+		if a := d.Approval("a", call, time.Time{}); slices.Contains(a.AvailableDecisions(), repo.DecisionAcceptAlways) {
+			t.Errorf("%s: offers %q", what, a.AvailableDecisions())
+		}
 	}
 }

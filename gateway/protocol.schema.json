@@ -47,6 +47,15 @@
         "content": {
           "type": "string"
         },
+        "suggestedRules": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
         "decision": {
           "$ref": "#/$defs/Decision"
         },
@@ -109,6 +118,15 @@
         "arguments": true,
         "reason": {
           "type": "string"
+        },
+        "suggestedRules": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "string"
+          }
         },
         "availableDecisions": {
           "type": "array",
@@ -533,6 +551,7 @@
       "enum": [
         "accept",
         "acceptForSession",
+        "acceptAlways",
         "decline"
       ]
     },

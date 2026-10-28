@@ -143,9 +143,19 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.await("turn/queued", nil)
 	c.call("turn/steer", TurnSteerParams{ThreadID: threadID, ExpectedTurnID: turn, Input: []UserInput{{Type: "text", Text: "thanks"}}}, nil)
 	c.call("thread/resume", ThreadPageParams{ThreadID: threadID}, nil)
-	c.respond(approval, ApprovalResponse{Decision: repo.DecisionAccept})
+	var asked ApprovalRequestParams
+	json.Unmarshal(approval.Params, &asked)
+	if !slices.Equal(asked.SuggestedRules, []string{"touch"}) || !slices.Contains(asked.AvailableDecisions, repo.DecisionAcceptAlways) {
+		t.Errorf("approval suggests %q and offers %q, want touch and acceptAlways", asked.SuggestedRules, asked.AvailableDecisions)
+	}
+	c.respond(approval, ApprovalResponse{Decision: repo.DecisionAcceptAlways})
+	c.await("workspace/changed", func(params json.RawMessage) bool {
+		var n WorkspaceResult
+		return json.Unmarshal(params, &n) == nil && n.Workspace.ID == workspaceID && slices.Equal(n.Workspace.Settings.Rules.Allow, []string{"touch"})
+	})
 	c.awaitTurnEnd(turn, repo.TurnCompleted)
 	c.awaitTurnEnd(queued, repo.TurnCompleted)
+	c.awaitTurnEnd(c.startTurn(threadID, "touch it again"), repo.TurnCompleted)
 
 	turn = c.startTurn(threadID, "ask me something")
 	question := c.await(requestUserInput, nil)
@@ -213,6 +223,13 @@ func TestTrafficMatchesContract(t *testing.T) {
 	if prompts, _ := checkMemory(t, page.Items, "n1"); prompts != 1 {
 		t.Errorf("%d prompts reported memory in the general thread, want 1", prompts)
 	}
+	turn = c.startTurn(general.Thread.ID, "please touch the file")
+	c.respond(c.await(requestApproval, nil), ApprovalResponse{Decision: repo.DecisionAcceptAlways})
+	c.awaitTurnEnd(turn, repo.TurnCompleted)
+	if row, err := db.ThreadRow(general.Thread.ID); err != nil || !slices.Equal(row.Settings.Rules.Allow, []string{"touch"}) {
+		t.Errorf("the general thread allows %q (%v), want touch", row.Settings.Rules.Allow, err)
+	}
+	c.awaitTurnEnd(c.startTurn(general.Thread.ID, "touch it again"), repo.TurnCompleted)
 
 	var settings repo.SettingsRow
 	c.call("settings/read", Empty{}, &settings)

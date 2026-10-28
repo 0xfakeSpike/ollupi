@@ -124,7 +124,7 @@ func (rt *Runtime) handleCall(ctx context.Context, it repo.ItemRow) (string, *re
 
 func (rt *Runtime) decided(it repo.ItemRow) (string, *repo.ItemRow, *job, error) {
 	switch it.Approval.Decision {
-	case repo.DecisionAccept, repo.DecisionAcceptForSession:
+	case repo.DecisionAccept, repo.DecisionAcceptForSession, repo.DecisionAcceptAlways:
 		args, err := callArguments(it)
 		if err != nil {
 			h, err := rt.refuse(it, fmt.Sprintf("the approved call has invalid arguments: %v", err))
