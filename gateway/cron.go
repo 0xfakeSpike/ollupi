@@ -88,5 +88,6 @@ func (c *conn) cronDelete(p CronDeleteParams) (Empty, func(), error) {
 	if err != nil {
 		return Empty{}, nil, err
 	}
-	return Empty{}, nil, jobs.Delete(p.ThreadID, p.Name)
+	_, err = jobs.Delete(p.ThreadID, p.Name)
+	return Empty{}, nil, err
 }

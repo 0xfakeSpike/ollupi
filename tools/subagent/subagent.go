@@ -7,13 +7,19 @@ import (
 	"strings"
 
 	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/google/jsonschema-go/jsonschema"
 )
 
 const Tool = "Agent"
 
 type Call struct {
-	Description string `json:"description"`
-	Prompt      string `json:"prompt"`
+	Description string `json:"description" jsonschema:"A short (3-5 word) description of the task, shown to the user."`
+	Prompt      string `json:"prompt" jsonschema:"The complete task for the subagent, self-contained."`
+}
+
+func (Call) Constrain(s *jsonschema.Schema) {
+	s.Properties["description"].MinLength, s.Properties["description"].MaxLength = jsonschema.Ptr(1), jsonschema.Ptr(80)
+	s.Properties["prompt"].MinLength, s.Properties["prompt"].MaxLength = jsonschema.Ptr(1), jsonschema.Ptr(20000)
 }
 
 func Decode(raw json.RawMessage) (Call, error) {
@@ -37,15 +43,7 @@ func (p *Provider) ToolList(context.Context) ([]*tools.Spec, error) {
 			"It knows nothing of this conversation: put everything it needs in prompt, including what its report must contain. " +
 			"To work on independent tasks at the same time, call Agent several times in the same response; the subagents run in parallel. " +
 			"The turn waits until every subagent launched in the response has reported, and each call returns that subagent's final report. Subagents cannot launch subagents.",
-		InputSchema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"description": map[string]any{"type": "string", "minLength": 1, "maxLength": 80, "description": "A short (3-5 word) description of the task, shown to the user."},
-				"prompt":      map[string]any{"type": "string", "minLength": 1, "maxLength": 20000, "description": "The complete task for the subagent, self-contained."},
-			},
-			"required":             []any{"description", "prompt"},
-			"additionalProperties": false,
-		},
+		InputSchema: tools.InputSchema[Call](),
 		Annotations: &tools.Annotations{Title: "Subagent", ReadOnlyHint: true, OpenWorldHint: tools.Hint(false)},
 	}}, nil
 }
