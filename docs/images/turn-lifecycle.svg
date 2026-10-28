@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900">
+  <defs>
+    <style>
+      text { font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif; fill: #1f2937; }
+      .title { font-size: 40px; font-weight: 700; }
+      .sub { font-size: 22px; fill: #64748b; }
+      .h { font-size: 24px; font-weight: 600; }
+      .b { font-size: 19px; fill: #475569; }
+      .s { font-size: 17px; fill: #64748b; }
+      .chip { font-size: 17px; font-weight: 500; }
+      .mono { font-family: "SF Mono", Menlo, Consolas, monospace; }
+      .line { stroke: #64748b; stroke-width: 2; fill: none; }
+    </style>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#64748b"/>
+    </marker>
+    <marker id="w" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#d97706"/>
+    </marker>
+    <marker id="l" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/>
+    </marker>
+  </defs>
+  <rect width="1600" height="900" fill="#ffffff"/>
+
+  <text class="title" x="60" y="72">一个 turn 的一生</text>
+  <text class="sub" x="60" y="110">每一步先落库再执行；内存里没有调度状态，进程重启后进行中的 turn 接着跑</text>
+
+  <!-- start -->
+  <circle cx="90" cy="330" r="14" fill="#334155"/>
+  <path class="line" d="M90,316 V215 H178" marker-end="url(#a)"/>
+  <text class="s" x="102" y="270">会话忙</text>
+  <line class="line" x1="104" y1="330" x2="538" y2="330" marker-end="url(#a)"/>
+  <text class="s" x="400" y="318">会话空闲</text>
+
+  <!-- queued -->
+  <rect x="180" y="170" width="200" height="90" rx="12" fill="#f8fafc" stroke="#64748b" stroke-width="2"/>
+  <text class="h mono" x="280" y="208" text-anchor="middle">queued</text>
+  <text class="s" x="280" y="238" text-anchor="middle">排在会话里</text>
+  <line class="line" x1="380" y1="215" x2="538" y2="215" marker-end="url(#a)"/>
+  <text class="s" x="459" y="203" text-anchor="middle">前一个 turn 结束</text>
+
+  <!-- inProgress -->
+  <rect x="540" y="170" width="480" height="300" rx="16" fill="#eff6ff" stroke="#3b82f6" stroke-width="2"/>
+  <text class="h mono" x="564" y="208" style="fill:#1d4ed8">inProgress</text>
+  <text class="s" x="564" y="236">占一个槽位</text>
+  <rect x="580" y="290" width="170" height="70" rx="10" fill="#ffffff" stroke="#3b82f6" stroke-width="1.5"/>
+  <text class="h" x="665" y="333" text-anchor="middle" style="font-size:22px">调模型</text>
+  <rect x="810" y="290" width="170" height="70" rx="10" fill="#ffffff" stroke="#10b981" stroke-width="1.5"/>
+  <text class="h" x="895" y="333" text-anchor="middle" style="font-size:22px">执行工具</text>
+  <path d="M665,290 C665,255 895,255 895,288" stroke="#2563eb" stroke-width="2" fill="none" marker-end="url(#l)"/>
+  <text class="s" x="780" y="252" text-anchor="middle">工具调用</text>
+  <path d="M895,360 C895,395 665,395 665,362" stroke="#2563eb" stroke-width="2" fill="none" marker-end="url(#l)"/>
+  <text class="s" x="780" y="408" text-anchor="middle">结果</text>
+  <text class="s" x="564" y="448">循环直到模型给出最终回答</text>
+
+  <!-- terminal states -->
+  <line class="line" x1="1020" y1="205" x2="1138" y2="205" marker-end="url(#a)"/>
+  <text class="s" x="1079" y="193" text-anchor="middle">最终回答</text>
+  <rect x="1140" y="170" width="220" height="70" rx="12" fill="#ecfdf5" stroke="#10b981" stroke-width="2"/>
+  <text class="h mono" x="1250" y="214" text-anchor="middle" style="fill:#047857">completed</text>
+
+  <line class="line" x1="1020" y1="320" x2="1138" y2="320" marker-end="url(#a)"/>
+  <text class="s" x="1079" y="308" text-anchor="middle">用户中断</text>
+  <rect x="1140" y="285" width="220" height="70" rx="12" fill="#f8fafc" stroke="#64748b" stroke-width="2"/>
+  <text class="h mono" x="1250" y="329" text-anchor="middle" style="fill:#334155">interrupted</text>
+
+  <line class="line" x1="1020" y1="435" x2="1138" y2="435" marker-end="url(#a)"/>
+  <text class="s" x="1079" y="423" text-anchor="middle">出错</text>
+  <rect x="1140" y="400" width="220" height="70" rx="12" fill="#fef2f2" stroke="#ef4444" stroke-width="2"/>
+  <text class="h mono" x="1250" y="444" text-anchor="middle" style="fill:#b91c1c">failed</text>
+  <text class="s" x="1380" y="428">读写库失败等</text>
+  <text class="s" x="1380" y="452">立刻结束，不降级</text>
+
+  <!-- waiting -->
+  <line x1="700" y1="470" x2="700" y2="558" stroke="#d97706" stroke-width="2" marker-end="url(#w)"/>
+  <text class="s" x="688" y="520" text-anchor="end" style="fill:#b45309">需要审批 / 提问 / 子代理</text>
+  <line x1="860" y1="558" x2="860" y2="472" stroke="#d97706" stroke-width="2" marker-end="url(#w)"/>
+  <text class="s" x="872" y="520" style="fill:#b45309">回答到达，回到队列</text>
+
+  <rect x="540" y="560" width="480" height="150" rx="16" fill="#fffbeb" stroke="#f59e0b" stroke-width="2" stroke-dasharray="9 6"/>
+  <text class="h" x="564" y="598" style="fill:#b45309">等待</text>
+  <text class="s" x="564" y="626">状态仍是 inProgress，但让出槽位</text>
+  <rect x="564" y="648" width="130" height="40" rx="8" fill="#ffffff" stroke="#f59e0b" stroke-width="1.5"/>
+  <text class="chip" x="629" y="674" text-anchor="middle" style="fill:#b45309">等审批</text>
+  <rect x="709" y="648" width="130" height="40" rx="8" fill="#ffffff" stroke="#f59e0b" stroke-width="1.5"/>
+  <text class="chip" x="774" y="674" text-anchor="middle" style="fill:#b45309">等回答</text>
+  <rect x="854" y="648" width="130" height="40" rx="8" fill="#ffffff" stroke="#f59e0b" stroke-width="1.5"/>
+  <text class="chip" x="919" y="674" text-anchor="middle" style="fill:#b45309">等子代理</text>
+
+  <!-- persistence strip -->
+  <rect x="60" y="750" width="1480" height="110" rx="14" fill="#f1f5f9" stroke="#475569" stroke-width="2"/>
+  <text class="h" x="88" y="790">先落库，再执行</text>
+  <text class="s" x="88" y="820">模型文字、工具调用、审批、提问和回答都先成为一条 item</text>
+  <text class="s" x="88" y="846">恢复和平时的调度是同一个函数；重启后按工具调用状态决定 →</text>
+
+  <rect x="890" y="768" width="170" height="40" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+  <text class="chip mono" x="975" y="794" text-anchor="middle">pending</text>
+  <text class="s" x="975" y="840" text-anchor="middle">确定没执行，可重做</text>
+  <line class="line" x1="1060" y1="788" x2="1098" y2="788" marker-end="url(#a)"/>
+  <rect x="1100" y="768" width="170" height="40" rx="8" fill="#ffffff" stroke="#f59e0b" stroke-width="1.5"/>
+  <text class="chip mono" x="1185" y="794" text-anchor="middle">inProgress</text>
+  <text class="s" x="1185" y="840" text-anchor="middle">可能已生效，先核对</text>
+  <line class="line" x1="1270" y1="788" x2="1308" y2="788" marker-end="url(#a)"/>
+  <rect x="1310" y="768" width="170" height="40" rx="8" fill="#ffffff" stroke="#10b981" stroke-width="1.5"/>
+  <text class="chip mono" x="1395" y="794" text-anchor="middle">completed</text>
+  <text class="s" x="1395" y="840" text-anchor="middle">结果已入库</text>
+</svg>
