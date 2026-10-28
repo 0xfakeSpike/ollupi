@@ -1,0 +1,125 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900">
+  <defs>
+    <style>
+      text { font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif; fill: #1f2937; }
+      .title { font-size: 40px; font-weight: 700; }
+      .sub { font-size: 22px; fill: #64748b; }
+      .h { font-size: 24px; font-weight: 600; }
+      .b { font-size: 18px; fill: #475569; }
+      .s { font-size: 17px; fill: #64748b; }
+      .chip { font-size: 15px; font-weight: 600; }
+      .mono { font-family: "SF Mono", Menlo, Consolas, monospace; }
+      .line { stroke: #64748b; stroke-width: 2; fill: none; }
+      .lead { stroke: #94a3b8; stroke-width: 1.5; stroke-dasharray: 5 5; fill: none; }
+    </style>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#64748b"/>
+    </marker>
+  </defs>
+  <rect width="1600" height="900" fill="#ffffff"/>
+
+  <text class="title" x="60" y="72">安全边界</text>
+  <text class="sub" x="60" y="110">模型只看到占位符；每条命令先过权限，再进沙箱</text>
+
+  <!-- flow -->
+  <rect x="60" y="160" width="190" height="80" rx="12" fill="#ffffff" stroke="#94a3b8" stroke-width="2" stroke-dasharray="8 6"/>
+  <text class="h" x="155" y="208" text-anchor="middle" style="font-size:22px">模型服务商</text>
+  <line class="line" x1="252" y1="200" x2="328" y2="200" marker-start="url(#a)" marker-end="url(#a)"/>
+  <text class="s" x="290" y="188" text-anchor="middle">占位符</text>
+
+  <rect x="330" y="160" width="200" height="80" rx="12" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="2"/>
+  <text class="h" x="430" y="208" text-anchor="middle" style="fill:#6d28d9;font-size:22px">脱敏层</text>
+  <line class="line" x1="532" y1="200" x2="608" y2="200" marker-start="url(#a)" marker-end="url(#a)"/>
+  <text class="s" x="570" y="188" text-anchor="middle">真实值</text>
+
+  <rect x="610" y="160" width="170" height="80" rx="12" fill="#f8fafc" stroke="#475569" stroke-width="2"/>
+  <text class="h mono" x="695" y="208" text-anchor="middle" style="font-size:22px">agent</text>
+  <line class="line" x1="780" y1="200" x2="858" y2="200" marker-end="url(#a)"/>
+  <text class="s" x="819" y="188" text-anchor="middle">工具调用</text>
+
+  <rect x="860" y="160" width="200" height="80" rx="12" fill="#eff6ff" stroke="#3b82f6" stroke-width="2"/>
+  <text class="h" x="960" y="208" text-anchor="middle" style="fill:#1d4ed8;font-size:22px">权限</text>
+  <line class="line" x1="1060" y1="200" x2="1138" y2="200" marker-end="url(#a)"/>
+  <text class="s" x="1099" y="188" text-anchor="middle">放行</text>
+
+  <rect x="1140" y="160" width="200" height="80" rx="12" fill="#ecfdf5" stroke="#10b981" stroke-width="2"/>
+  <text class="h" x="1240" y="208" text-anchor="middle" style="fill:#047857;font-size:22px">沙箱</text>
+  <line class="line" x1="1340" y1="200" x2="1418" y2="200" marker-end="url(#a)"/>
+
+  <rect x="1420" y="160" width="120" height="80" rx="12" fill="#f8fafc" stroke="#475569" stroke-width="2"/>
+  <text class="h" x="1480" y="208" text-anchor="middle" style="font-size:22px">工具</text>
+
+  <line class="lead" x1="430" y1="240" x2="430" y2="298"/>
+  <line class="lead" x1="960" y1="240" x2="960" y2="298"/>
+  <line class="lead" x1="1240" y1="240" x2="1240" y2="298"/>
+
+  <!-- card: redaction -->
+  <rect x="60" y="300" width="460" height="540" rx="16" fill="#faf5ff" stroke="#c4b5fd" stroke-width="2"/>
+  <text class="h" x="88" y="344" style="fill:#6d28d9">双向脱敏</text>
+  <text class="b" x="88" y="384">发给模型前：真实值 → 占位符</text>
+  <rect x="88" y="404" width="404" height="56" rx="10" fill="#ffffff" stroke="#ddd6fe" stroke-width="1.5"/>
+  <text class="mono" x="108" y="439" style="font-size:18px;fill:#334155">13812345678</text>
+  <text x="252" y="439" style="font-size:18px;fill:#8b5cf6">⇄</text>
+  <text class="mono" x="282" y="439" style="font-size:18px;fill:#6d28d9">&lt;PHONE:3f9a1c2e&gt;</text>
+  <text class="b" x="88" y="498">模型的回答在记录和交给工具前还原</text>
+
+  <g class="chip mono">
+    <rect x="88" y="522" width="92" height="32" rx="6" fill="#ede9fe"/><text x="134" y="543" text-anchor="middle" style="fill:#6d28d9">PHONE</text>
+    <rect x="192" y="522" width="92" height="32" rx="6" fill="#ede9fe"/><text x="238" y="543" text-anchor="middle" style="fill:#6d28d9">EMAIL</text>
+    <rect x="296" y="522" width="92" height="32" rx="6" fill="#ede9fe"/><text x="342" y="543" text-anchor="middle" style="fill:#6d28d9">IDCARD</text>
+    <rect x="400" y="522" width="92" height="32" rx="6" fill="#ede9fe"/><text x="446" y="543" text-anchor="middle" style="fill:#6d28d9">BANKCARD</text>
+    <rect x="88" y="564" width="92" height="32" rx="6" fill="#ede9fe"/><text x="134" y="585" text-anchor="middle" style="fill:#6d28d9">IP</text>
+    <rect x="192" y="564" width="92" height="32" rx="6" fill="#ede9fe"/><text x="238" y="585" text-anchor="middle" style="fill:#6d28d9">MAC</text>
+    <rect x="296" y="564" width="92" height="32" rx="6" fill="#ede9fe"/><text x="342" y="585" text-anchor="middle" style="fill:#6d28d9">JWT</text>
+    <rect x="400" y="564" width="92" height="32" rx="6" fill="#ede9fe"/><text x="446" y="585" text-anchor="middle" style="fill:#6d28d9">SECRET</text>
+  </g>
+
+  <text class="b" x="88" y="640">服务商看不到真实值</text>
+  <text class="b" x="88" y="672">会话记录和工具看到的都是真实值</text>
+  <text class="b" x="88" y="720">占位符是进程级随机密钥的 HMAC</text>
+  <text class="b" x="88" y="752">外部伪造不了</text>
+  <text class="s" x="88" y="808">用户可以随时关掉</text>
+
+  <!-- card: permission -->
+  <rect x="570" y="300" width="460" height="540" rx="16" fill="#f5f9ff" stroke="#bfdbfe" stroke-width="2"/>
+  <text class="h" x="598" y="344" style="fill:#1d4ed8">三层权限规则</text>
+
+  <rect x="598" y="366" width="404" height="40" rx="8" fill="#dbeafe"/>
+  <text class="b" x="618" y="392" style="fill:#1e3a8a">agent 默认</text>
+  <rect x="618" y="412" width="384" height="40" rx="8" fill="#e0ecff"/>
+  <text class="b" x="638" y="438" style="fill:#1e3a8a">工作区</text>
+  <rect x="638" y="458" width="364" height="40" rx="8" fill="#eaf2ff"/>
+  <text class="b" x="658" y="484" style="fill:#1e3a8a">会话</text>
+  <text class="s" x="598" y="528">下层只能加规则，去不掉上层的 deny</text>
+
+  <rect x="598" y="550" width="72" height="32" rx="6" fill="#fee2e2"/>
+  <text class="chip mono" x="634" y="571" text-anchor="middle" style="fill:#b91c1c">deny</text>
+  <text class="b" x="686" y="572">命中就拒绝，任何一层都去不掉</text>
+  <rect x="598" y="594" width="72" height="32" rx="6" fill="#fef3c7"/>
+  <text class="chip mono" x="634" y="615" text-anchor="middle" style="fill:#b45309">ask</text>
+  <text class="b" x="686" y="616">问用户，可答“本会话都允许”</text>
+  <rect x="598" y="638" width="72" height="32" rx="6" fill="#d1fae5"/>
+  <text class="chip mono" x="634" y="659" text-anchor="middle" style="fill:#047857">allow</text>
+  <text class="b" x="686" y="660">放行；看不清的命令不放行</text>
+
+  <text class="b" x="598" y="720">sh -c、env、xargs、sudo 拆开逐条查</text>
+  <text class="b" x="598" y="752">按程序名和参数结构化匹配</text>
+  <text class="b" x="598" y="800">审批前冻结目录、命令和环境变量，</text>
+  <text class="b" x="598" y="826">批准后按冻结的内容执行</text>
+
+  <!-- card: sandbox -->
+  <rect x="1080" y="300" width="460" height="540" rx="16" fill="#f3fdf8" stroke="#a7f3d0" stroke-width="2"/>
+  <text class="h" x="1108" y="344" style="fill:#047857">macOS Seatbelt 沙箱</text>
+  <g>
+    <circle cx="1116" cy="378" r="5" fill="#10b981"/><text class="b" x="1132" y="384">凭据文件不可读</text>
+    <circle cx="1116" cy="418" r="5" fill="#10b981"/><text class="b" x="1132" y="424">缓存默认只读</text>
+    <circle cx="1116" cy="458" r="5" fill="#10b981"/><text class="b" x="1132" y="464">.git 的 hooks 和 config 写不进去</text>
+    <circle cx="1116" cy="498" r="5" fill="#10b981"/><text class="b" x="1132" y="504">网络经代理，只放行允许的域名</text>
+    <circle cx="1116" cy="538" r="5" fill="#10b981"/><text class="b" x="1132" y="544">解析到内网的地址一律拦下</text>
+    <circle cx="1116" cy="578" r="5" fill="#10b981"/><text class="b" x="1132" y="584">命令结束时清掉派生的后台进程</text>
+  </g>
+  <rect x="1108" y="636" width="404" height="120" rx="12" fill="#fffbeb" stroke="#f59e0b" stroke-width="1.5"/>
+  <text class="h" x="1132" y="676" style="fill:#b45309;font-size:21px">跑出沙箱 = 提权</text>
+  <text class="b" x="1132" y="708">必须单独批准</text>
+  <text class="b" x="1132" y="736">allow 规则也替代不了</text>
+</svg>

@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900">
+  <defs>
+    <style>
+      text { font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif; fill: #1f2937; }
+      .title { font-size: 40px; font-weight: 700; }
+      .sub { font-size: 22px; fill: #64748b; }
+      .h { font-size: 28px; font-weight: 700; }
+      .b { font-size: 19px; fill: #475569; }
+      .s { font-size: 17px; fill: #64748b; }
+      .lane { font-size: 17px; font-weight: 500; fill: #334155; }
+      .seg { font-size: 17px; font-weight: 600; }
+      .line { stroke: #94a3b8; stroke-width: 2; fill: none; }
+    </style>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/>
+    </marker>
+    <pattern id="hatch" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="10" height="10" fill="#f8fafc"/>
+      <line x1="0" y1="0" x2="0" y2="10" stroke="#e2e8f0" stroke-width="5"/>
+    </pattern>
+  </defs>
+  <rect width="1600" height="900" fill="#ffffff"/>
+
+  <text class="title" x="60" y="72">同样的时间，模型调用更密</text>
+  <text class="sub" x="60" y="110">命令行 agent 等人时整个进程停着；Ollupi 等人时让出槽位，别的 turn 补上（字母是对话，斜纹是等待）</text>
+
+  <rect x="60" y="150" width="700" height="690" rx="16" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2"/>
+  <text class="h" x="88" y="198">命令行 agent</text>
+  <text class="s" x="88" y="230">Claude Code · Codex CLI · pi</text>
+
+  <rect x="840" y="150" width="700" height="690" rx="16" fill="#eff6ff" stroke="#bfdbfe" stroke-width="2"/>
+  <text class="h" x="868" y="198" style="fill:#1d4ed8">Ollupi</text>
+  <text class="s" x="868" y="230">一个进程，一个共享执行池</text>
+
+  <text class="lane" x="88" y="308">进程 1 · 对话 A</text>
+  <rect x="271" y="280" width="115" height="44" rx="6" fill="#3b82f6"/>
+  <text class="seg" x="328.5" y="308" text-anchor="middle" style="fill:#ffffff">A</text>
+  <rect x="388" y="280" width="193" height="44" rx="6" fill="url(#hatch)" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="484.5" y="307.76" text-anchor="middle" style="font-size:16px;fill:#64748b">等审批</text>
+  <rect x="583" y="280" width="115" height="44" rx="6" fill="#3b82f6"/>
+  <text class="seg" x="640.5" y="308" text-anchor="middle" style="fill:#ffffff">A</text>
+  <text class="lane" x="88" y="372">进程 2 · 对话 B</text>
+  <rect x="271" y="344" width="76" height="44" rx="6" fill="#8b5cf6"/>
+  <text class="seg" x="309.0" y="372" text-anchor="middle" style="fill:#ffffff">B</text>
+  <rect x="349" y="344" width="154" height="44" rx="6" fill="url(#hatch)" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="426.0" y="371.76" text-anchor="middle" style="font-size:16px;fill:#64748b">等回答</text>
+  <rect x="505" y="344" width="115" height="44" rx="6" fill="#8b5cf6"/>
+  <text class="seg" x="562.5" y="372" text-anchor="middle" style="fill:#ffffff">B</text>
+  <rect x="622" y="344" width="115" height="44" rx="6" fill="url(#hatch)" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="679.5" y="371.76" text-anchor="middle" style="font-size:16px;fill:#64748b">等审批</text>
+  <text class="lane" x="88" y="436">进程 3 · 对话 C</text>
+  <rect x="271" y="408" width="154" height="44" rx="6" fill="#14b8a6"/>
+  <text class="seg" x="348.0" y="436" text-anchor="middle" style="fill:#ffffff">C</text>
+  <rect x="427" y="408" width="193" height="44" rx="6" fill="url(#hatch)" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="523.5" y="435.76" text-anchor="middle" style="font-size:16px;fill:#64748b">等回答</text>
+  <rect x="622" y="408" width="115" height="44" rx="6" fill="#14b8a6"/>
+  <text class="seg" x="679.5" y="436" text-anchor="middle" style="fill:#ffffff">C</text>
+  <text class="lane" x="88" y="500">对话 D、E</text>
+  <rect x="271" y="472" width="466" height="44" rx="6" fill="none" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="7 6"/>
+  <text x="504" y="500" text-anchor="middle" style="font-size:16px;fill:#94a3b8">要再开进程才能跑</text>
+  <text class="lane" x="868" y="308">槽位 1</text>
+  <rect x="1051" y="280" width="115" height="44" rx="6" fill="#3b82f6"/>
+  <text class="seg" x="1108.5" y="308" text-anchor="middle" style="fill:#ffffff">A</text>
+  <rect x="1168" y="280" width="115" height="44" rx="6" fill="#ec4899"/>
+  <text class="seg" x="1225.5" y="308" text-anchor="middle" style="fill:#ffffff">D</text>
+  <rect x="1285" y="280" width="76" height="44" rx="6" fill="#64748b"/>
+  <text class="seg" x="1323" y="308" text-anchor="middle" style="fill:#ffffff">定时</text>
+  <rect x="1363" y="280" width="115" height="44" rx="6" fill="#3b82f6"/>
+  <text class="seg" x="1420.5" y="308" text-anchor="middle" style="fill:#ffffff">A</text>
+  <rect x="1480" y="280" width="37" height="44" rx="6" fill="#f59e0b"/>
+  <text class="seg" x="1498.5" y="308" text-anchor="middle" style="fill:#ffffff">E</text>
+  <text class="lane" x="868" y="372">槽位 2</text>
+  <rect x="1051" y="344" width="76" height="44" rx="6" fill="#8b5cf6"/>
+  <text class="seg" x="1089.0" y="372" text-anchor="middle" style="fill:#ffffff">B</text>
+  <rect x="1129" y="344" width="154" height="44" rx="6" fill="#f59e0b"/>
+  <text class="seg" x="1206.0" y="372" text-anchor="middle" style="fill:#ffffff">E</text>
+  <rect x="1285" y="344" width="115" height="44" rx="6" fill="#8b5cf6"/>
+  <text class="seg" x="1342.5" y="372" text-anchor="middle" style="fill:#ffffff">B</text>
+  <rect x="1402" y="344" width="115" height="44" rx="6" fill="#ec4899"/>
+  <text class="seg" x="1459.5" y="372" text-anchor="middle" style="fill:#ffffff">D</text>
+  <text class="lane" x="868" y="436">槽位 3</text>
+  <rect x="1051" y="408" width="154" height="44" rx="6" fill="#14b8a6"/>
+  <text class="seg" x="1128.0" y="436" text-anchor="middle" style="fill:#ffffff">C</text>
+  <rect x="1207" y="408" width="193" height="44" rx="6" fill="#fbcfe8"/>
+  <text class="seg" x="1303.5" y="436" text-anchor="middle" style="fill:#9d174d">D 的子代理</text>
+  <rect x="1402" y="408" width="115" height="44" rx="6" fill="#14b8a6"/>
+  <text class="seg" x="1459.5" y="436" text-anchor="middle" style="fill:#ffffff">C</text>
+  <text class="lane" x="868" y="496">等待中</text>
+  <text class="s" x="868" y="522">不占槽位</text>
+  <rect x="1168" y="470" width="193" height="23" rx="6" fill="url(#hatch)" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="1264.5" y="487" text-anchor="middle" style="font-size:14px;fill:#64748b">A 等审批</text>
+  <rect x="1129" y="496" width="154" height="23" rx="6" fill="url(#hatch)" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="1206.0" y="513" text-anchor="middle" style="font-size:14px;fill:#64748b">B 等回答</text>
+  <rect x="1402" y="496" width="115" height="23" rx="6" fill="url(#hatch)" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="1459.5" y="513" text-anchor="middle" style="font-size:14px;fill:#64748b">B 等审批</text>
+  <rect x="1207" y="522" width="193" height="23" rx="6" fill="url(#hatch)" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="1303.5" y="538" text-anchor="middle" style="font-size:14px;fill:#64748b">C 等回答</text>
+  <line class="line" x1="270" y1="566" x2="744" y2="566" marker-end="url(#a)"/>
+  <text class="s" x="738" y="592" text-anchor="end">时间</text>
+  <line class="line" x1="1050" y1="566" x2="1524" y2="566" marker-end="url(#a)"/>
+  <text class="s" x="1518" y="592" text-anchor="end">时间</text>
+  <circle cx="94" cy="658" r="5" fill="#94a3b8"/>
+  <text class="b" x="110" y="664">一个进程只跑一个对话</text>
+  <circle cx="94" cy="694" r="5" fill="#94a3b8"/>
+  <text class="b" x="110" y="700">等审批、等回答时整个进程停着</text>
+  <circle cx="94" cy="730" r="5" fill="#94a3b8"/>
+  <text class="b" x="110" y="736">调度状态在内存，进程退出就没了</text>
+  <circle cx="94" cy="766" r="5" fill="#94a3b8"/>
+  <text class="b" x="110" y="772">定时任务靠外部 cron 起新进程</text>
+  <circle cx="874" cy="658" r="5" fill="#3b82f6"/>
+  <text class="b" x="890" y="664">一个进程跑所有对话、子代理、定时任务</text>
+  <circle cx="874" cy="694" r="5" fill="#3b82f6"/>
+  <text class="b" x="890" y="700">等人时让出槽位，别的 turn 补上</text>
+  <circle cx="874" cy="730" r="5" fill="#3b82f6"/>
+  <text class="b" x="890" y="736">调度状态在 SQLite，重启后接着跑</text>
+  <circle cx="874" cy="766" r="5" fill="#3b82f6"/>
+  <text class="b" x="890" y="772">定时任务到点往会话发消息，照常排队</text>
+</svg>

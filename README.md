@@ -1,10 +1,17 @@
-# Ollupi
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/logo/logo-dark.svg">
+    <img alt="Ollupi" src="docs/logo/logo.svg" width="240">
+  </picture>
+</h1>
 
 一个 Go 库，用来构建常驻运行的 agent 服务。
 
 所有对话、子代理、定时任务共享一个执行池：每一轮都是池里的任务，等人、等子代理时让出位置，并发名额只给正在调模型的任务。agent 的时间几乎都花在等模型上，所以这样能让同时进行的模型调用尽量多。状态全在 SQLite 里，重启后队列和进行中的任务都还在。
 
 [ollupi-desktop](https://github.com/0xfakeSpike/ollupi-desktop) 是它的桌面端界面。
+
+![Ollupi 架构](docs/images/architecture.svg)
 
 ## 和命令行 agent 的区别
 
@@ -17,38 +24,17 @@
 | 子代理 | 特殊机制或子进程 | 普通的会话和 turn，和别的一起排队 |
 | 定时任务 | 外部 cron 起新进程 | 到点往会话里发一条消息，照常排队 |
 
+![命令行 agent 和 Ollupi 的对比](docs/images/cli-vs-ollupi.svg)
+
 ## 它是怎么跑的
 
-```mermaid
-flowchart LR
-    U[用户消息] --> Q
-    S[子代理] --> Q
-    C[定时任务] --> Q
-    Q[(队列<br/>库里可前进的 turn)] --> W1[槽位 1]
-    Q --> W2[槽位 2]
-    Q --> Wn[槽位 n]
-    W1 & W2 & Wn --> R{运行到}
-    R -->|最终回答| D[turn 结束]
-    R -->|等审批 / 等回答 / 等子代理| P[让出槽位]
-    P -.->|批准、回答、子代理报告| Q
-```
+![共享执行池](docs/images/execution-pool.svg)
 
 队列里是所有会话中能往前走的 turn，无论来自用户、子代理还是定时任务。一组槽位（默认 32 个）消费它；要等人或等子代理的 turn 让出槽位，不占 goroutine，也不占模型名额，等的事一到就回到队列。槽位满时普通会话先于子代理，同类先开始的先走：先派出的子代理先完成，父任务也就先完成。并发上限按模型连接计（默认每个连接 4 个），工具执行不占名额，跑十分钟测试的工具不会挡住别的会话调模型。
 
 ### 一个 turn 的一生
 
-```mermaid
-stateDiagram-v2
-    [*] --> queued: 会话忙时的新消息
-    [*] --> inProgress: 会话空闲
-    queued --> inProgress: 前一个 turn 结束
-    inProgress --> inProgress: 调模型 → 执行工具 → 调模型 …
-    inProgress --> 等待: 需要审批 / 提问 / 子代理
-    等待 --> inProgress: 回答到达，回到队列
-    inProgress --> completed: 最终回答
-    inProgress --> interrupted: 用户中断
-    inProgress --> failed: 出错
-```
+![一个 turn 的一生](docs/images/turn-lifecycle.svg)
 
 每一步都先落库再执行：模型的文字、每次工具调用、审批、提问和回答都先成为一条 item。runtime 每次调模型前从库里重读，内存里没有调度状态，所以进程重启后进行中的 turn 接着跑，恢复和平时的调度是同一个函数。工具调用区分 `pending`（确定没执行）和 `inProgress`（可能已生效），重启后知道哪些能重做、哪些要先核对。
 
@@ -56,17 +42,7 @@ stateDiagram-v2
 
 ## 安全边界
 
-```mermaid
-flowchart LR
-    M[模型] <-->|占位符| X[脱敏层]
-    X <-->|真实值| A[agent]
-    A --> P{权限}
-    P -->|deny| N[拒绝]
-    P -->|ask| H[问用户]
-    P -->|allow| B[沙箱]
-    H -->|批准| B
-    B --> T[工具]
-```
+![安全边界](docs/images/security.svg)
 
 **权限分三层叠加。** deny / ask / allow 规则按 agent 默认、工作区、会话三层合并，下层只能加规则，去不掉上层的 deny。命令按程序名和参数结构化匹配，`sh -c`、`env`、`xargs`、`sudo` 这类包装会拆开逐条检查，看不清的一律问用户。审批前先冻结目录、命令和环境变量，批准后按冻结的内容执行。
 
