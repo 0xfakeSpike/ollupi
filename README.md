@@ -1,66 +1,145 @@
 # Ollupi
 
-Ollupi 是用 Go 写的 agent 运行时库。它把模型、工具、权限、沙箱、脱敏和记忆组织成一条执行链路：每一步都先写进数据库再执行，所以整条链路可以审计，进程崩溃后也能接着跑。应用 import 它，接上自己的工具、技能和界面，就能做出自己的 agent 软件。
+一个 Go 库，用来构建常驻运行的 agent 服务。
 
-桌面端界面见 [ollupi-desktop](https://github.com/0xfakeSpike/ollupi-desktop)。
+所有对话、子代理、定时任务共享一个执行池：每一轮都是池里的任务，等人、等子代理时让出位置，并发名额只给正在调模型的任务。agent 的时间几乎都花在等模型上，所以这样能让同时进行的模型调用尽量多。状态全在 SQLite 里，重启后队列和进行中的任务都还在。
 
-## 特色
+[ollupi-desktop](https://github.com/0xfakeSpike/ollupi-desktop) 是它的桌面端界面。
 
-**1. 所有对话共用一个队列和一组执行槽位**
-所有会话里能往前走的 turn，包括子代理的，都排在同一个队列里，由一组固定的执行槽位消费（默认 32 个）。turn 一旦要等审批、回答或子代理，就让出槽位，下一个能跑的 turn 马上补上，所以槽位不会被等待中的任务白白占着。一个任务派出几十个子代理时，它们和其他会话一起并行，能并行的工作会尽快一起完成。槽位满时，普通会话排在子代理前面，同类按开始时间先后；先派出的子代理先完成，它们的父任务也就先完成。队列就是库里可前进的 turn，不在内存里，重启后原样还在。
+## 和命令行 agent 的区别
 
-**2. 状态全在库里，崩溃后能接着跑**
-模型的文字、每次工具调用、审批、提问和回答都先落成一条 item 再执行。runtime 每次调模型前都从库里重读状态，内存里没有隐藏状态。工具调用分 `pending`（确定还没执行）和 `inProgress`（可能已经生效）两种状态，所以重启后能准确判断哪些可以重做、哪些要先核对。重启后的恢复和平时的调度走同一个函数 `reconcile`，没有另一条恢复路径。
+| | Claude Code、Codex CLI、pi | Ollupi |
+|---|---|---|
+| 一个进程 | 一个对话 | 所有对话 |
+| 并行的范围 | 一个对话里的子代理 | 所有对话、子代理和定时任务 |
+| 等审批、等回答时 | 整个进程停着 | 这一轮退出队列，不占任何资源 |
+| 调度状态在哪 | 内存 | SQLite，重启后队列还在 |
+| 子代理 | 特殊机制或子进程 | 普通的会话和 turn，和别的一起排队 |
+| 定时任务 | 外部 cron 起新进程 | 到点往会话里发一条消息，照常排队 |
 
-**3. 调度不用锁，并发按模型限流**
-所有改变调度状态的事件由一个事件循环逐个处理，运行 turn 的 goroutine 停下时把结果作为事件发回，所以调度状态不需要锁。并发上限加在模型调用上（每个连接默认 4 个），不加在工具执行上：跑十分钟测试的工具不会占住别的会话调模型的名额。会话忙时新消息自动排队，运行中插话（`SteerTurn`）从下一次模型调用起生效。
+## 它是怎么跑的
 
-**4. 结构化的权限系统**
-deny / ask / allow 规则分三层叠加（agent 默认、工作区、会话），下层只能加规则，去不掉上层的 deny。命令按程序名和参数结构化匹配：`sh -c` 脚本和 `env`、`xargs`、`sudo` 这类包装命令会拆开逐条检查，看不清的命令一律问用户。审批前先冻结目录、命令和环境变量，批准后按冻结的内容执行。跑出沙箱算提权，必须单独批准。
-
-**5. macOS Seatbelt 沙箱**
-命令默认在沙箱里跑：凭据文件不可读，缓存默认只读，`.git` 的 hooks 和 config 写不进去。网络经过代理，只放行允许的域名，并拦下解析到内网的地址。命令结束时，它派生的所有后台进程都会被清掉。
-
-**6. 模型边界上的双向脱敏**
-发给模型前，把手机号、身份证、银行卡、邮箱、密钥等替换成占位符，模型的回答在记录和交给工具之前再还原。所以敏感值不会发给模型服务商，而会话记录、界面和工具看到的都是真实值。占位符用进程启动时生成的随机密钥做 HMAC，外部无法伪造。用户可以随时关掉或打开脱敏。
-
-**7. 生成式长期记忆**
-后台协程按游标读取已结束的 turn，用模型提炼出记忆，再和已有记忆合并（新建、更新、废弃）。记忆按内容分三个范围：全局、general、工作区。thread 开始时载入一份快照，保持请求前缀不变，有利于服务商的前缀缓存。另有只读的 `memory_search` 工具。用户改过或遗忘的条目不会被自动覆盖。
-
-**8. 类型化的协议契约**
-网关是 WebSocket 上的 JSON-RPC 2.0，方法名对齐 Codex app-server。`gateway/protocol.go` 里的一张表既用来分发请求，也用来生成 `protocol.schema.json`。内置工具的参数类型同时生成模型看到的 schema 和契约里的 schema，两边不会对不上。测试会用假模型跑一段完整会话，按契约校验收发的每一条消息。
-
-**9. 依赖少而直接**
-依赖只往下指：gateway → agent → runtime → 各组件 → repo → tools / pkg，同层之间互不 import。行结构体就是业务类型，没有转换层。整个库只有真正存在多个实现的几个 interface（如 `tools.Provider`）。
-
-此外还内置子代理（`Agent` 工具）、计划（`update_plan`）、结构化提问（`request_user_input`）、Agent Skills、MCP 客户端（stdio 和 streamable HTTP）、定时任务，以及超长工具输出的截断和读回。
-
-## 包结构
-
-```
-agent/            编排：事件循环、调度、turn、工作区、子代理、恢复
-  runtime/        ReAct 循环：跑到必须等待或给出最终回答为止
-  permission/     规则、审批策略和"本会话都允许"
-  contextmanager/ 按预算拼请求、截断、压缩
-  memory/         记忆抽取、快照、搜索、编辑
-  skills/         Agent Skills
-  systemprompt/   拼 system message
-gateway/          JSON-RPC 网关和协议契约
-repo/             SQLite（gorm）、表结构和会话状态机
-tools/            工具契约和注册表；shell、mcp、cron、plan、userinput、subagent
-pkg/              llm、sandbox、redact、jsonrpc，都不依赖 agent
+```mermaid
+flowchart LR
+    U[用户消息] --> Q
+    S[子代理] --> Q
+    C[定时任务] --> Q
+    Q[(队列<br/>库里可前进的 turn)] --> W1[槽位 1]
+    Q --> W2[槽位 2]
+    Q --> Wn[槽位 n]
+    W1 & W2 & Wn --> R{运行到}
+    R -->|最终回答| D[turn 结束]
+    R -->|等审批 / 等回答 / 等子代理| P[让出槽位]
+    P -.->|批准、回答、子代理报告| Q
 ```
 
-## 用法
+队列里是所有会话中能往前走的 turn，无论来自用户、子代理还是定时任务。一组槽位（默认 32 个）消费它；要等人或等子代理的 turn 让出槽位，不占 goroutine，也不占模型名额，等的事一到就回到队列。槽位满时普通会话先于子代理，同类先开始的先走：先派出的子代理先完成，父任务也就先完成。并发上限按模型连接计（默认每个连接 4 个），工具执行不占名额，跑十分钟测试的工具不会挡住别的会话调模型。
 
-```sh
-go get github.com/0xfakeSpike/ollupi
+### 一个 turn 的一生
+
+```mermaid
+stateDiagram-v2
+    [*] --> queued: 会话忙时的新消息
+    [*] --> inProgress: 会话空闲
+    queued --> inProgress: 前一个 turn 结束
+    inProgress --> inProgress: 调模型 → 执行工具 → 调模型 …
+    inProgress --> 等待: 需要审批 / 提问 / 子代理
+    等待 --> inProgress: 回答到达，回到队列
+    inProgress --> completed: 最终回答
+    inProgress --> interrupted: 用户中断
+    inProgress --> failed: 出错
 ```
 
-由应用自己装配：打开 `repo.DB`，用 `agent.New(agent.Config{...})` 创建 agent（填模型 `Models` 和它们的 `Connections`、权限默认值 `Settings`、工具提供方 `Providers`、可选的 `SkillsDir` 和 `Memory`），再调用 `Start(ctx)`。和 agent 并列的组件由应用一起启动：记忆抽取 `go mem.Run(ctx)`、定时任务 `go jobs.Run(ctx, send)`，以及用 `gateway.NewServer` 建好的网关 `server.Serve(ctx, listener)`。关闭时先取消 ctx，再调用 `agent.Wait()`。完整的装配示例见 ollupi-desktop 的 `sidecar/internal/host/host.go`。
+每一步都先落库再执行：模型的文字、每次工具调用、审批、提问和回答都先成为一条 item。runtime 每次调模型前从库里重读，内存里没有调度状态，所以进程重启后进行中的 turn 接着跑，恢复和平时的调度是同一个函数。工具调用区分 `pending`（确定没执行）和 `inProgress`（可能已生效），重启后知道哪些能重做、哪些要先核对。
 
-修改协议后用 `go generate ./gateway` 重新生成 `protocol.schema.json`。
+出错就暴露：读写库失败、会话推不动、权限依赖的数据读不出来，都立刻结束当前 turn 并通知界面，不退回更宽松的规则，也没有定时对账来掩盖问题。
+
+## 安全边界
+
+```mermaid
+flowchart LR
+    M[模型] <-->|占位符| X[脱敏层]
+    X <-->|真实值| A[agent]
+    A --> P{权限}
+    P -->|deny| N[拒绝]
+    P -->|ask| H[问用户]
+    P -->|allow| B[沙箱]
+    H -->|批准| B
+    B --> T[工具]
+```
+
+**权限分三层叠加。** deny / ask / allow 规则按 agent 默认、工作区、会话三层合并，下层只能加规则，去不掉上层的 deny。命令按程序名和参数结构化匹配，`sh -c`、`env`、`xargs`、`sudo` 这类包装会拆开逐条检查，看不清的一律问用户。审批前先冻结目录、命令和环境变量，批准后按冻结的内容执行。
+
+| 规则 | 作用 |
+|---|---|
+| `deny run_command(rm -rf *)` | 命中就拒绝，任何一层都去不掉 |
+| `ask run_command(git push *)` | 命中就问，用户可以回答"本会话都允许" |
+| `allow run_command(go test *)` | 命中就放行；看不清的命令（变量、`$(...)`）不放行 |
+
+**macOS Seatbelt 沙箱。** 命令默认在沙箱里跑：凭据文件不可读，缓存默认只读，`.git` 的 hooks 和 config 写不进去。网络经代理只放行允许的域名，并拦下解析到内网的地址。命令结束时清掉它派生的所有后台进程。跑出沙箱算提权，必须单独批准，allow 规则也替代不了。
+
+**双向脱敏。** 手机号、身份证、银行卡、邮箱、密钥在发给模型前换成占位符，模型的回答在记录和交给工具前还原。服务商看不到真实值，会话记录和工具看到的都是真实值。占位符用进程级随机密钥做 HMAC，外部伪造不了。用户可以随时关掉。
+
+## 记忆
+
+```mermaid
+flowchart LR
+    T[(已结束的 turn)] -->|按游标读取| E[后台抽取]
+    E -->|模型提炼，与已有合并| M[(记忆<br/>全局 / general / 工作区)]
+    M -->|thread 开始时一份快照| R[对话]
+    M -->|memory_search| R
+```
+
+后台协程从已结束的 turn 里提炼记忆，和已有的合并（新建、更新、废弃）；用户改过或遗忘的条目不会被自动覆盖。记忆按内容分三个范围：全局（关于用户本人）、general（不属于任何工作区的对话）、工作区。thread 开始时载入一份快照放在对话开头，之后请求前缀不变，有利于服务商的前缀缓存；新记忆等下一次压缩时才换进来。
+
+## 内置工具
+
+| 工具 | 作用 |
+|---|---|
+| `Agent` | 派生子代理，结果由另一个 turn 回答 |
+| `update_plan` | 计划与进度，界面直接显示 |
+| `request_user_input` | 结构化提问，回答成为调用结果 |
+| `read_tool_output` | 分段读回被截短的工具输出 |
+| `memory_search` | 搜索记忆 |
+| `list_skills` `activate_skill` `read_skill_resource` | Agent Skills |
+| `create_scheduled_job` `pause_scheduled_job` `delete_scheduled_job` `list_scheduled_jobs` | 定时任务 |
+| `run_command` | 沙箱里跑命令（`tools/shell`，应用装配） |
+| `<服务器>__<工具>` | MCP 服务器的工具，stdio 或 streamable HTTP（`tools/mcp`，应用装配） |
+
+应用自己的工具实现 `tools.Provider` 接入。所有工具都受 `Config.Tools` 允许列表和权限规则约束。
+
+## 协议
+
+网关是 WebSocket 上的 JSON-RPC 2.0，方法名对齐 Codex app-server。`gateway/protocol.go` 里的一张表既分发请求，也生成 `protocol.schema.json`，内置工具的参数类型同时生成模型看到的 schema 和契约里的 schema，两边来自同一份定义。测试用假模型跑一段完整会话，按契约校验收发的每一条消息。界面的类型从 `protocol.schema.json` 生成。
+
+## 快速开始
+
+```go
+db, err := repo.Open(home)
+if err != nil {
+	log.Fatal(err)
+}
+a := agent.New(agent.Config{
+	Name:        "ollupi",
+	Models:      []llm.Model{{Name: "gpt-5", Connection: "openai"}},
+	Connections: map[string]*llm.OpenAI{"openai": llm.NewOpenAI("", os.Getenv("OPENAI_API_KEY"), 0, nil)},
+	Settings:    permission.Settings{ApprovalPolicy: string(permission.OnRequest)},
+	DB:          db,
+	OnEvent: func(e agent.Event) {
+		if e.Kind == agent.EventItemDelta {
+			fmt.Print(e.Delta)
+		}
+	},
+})
+if err := a.Start(ctx); err != nil {
+	log.Fatal(err)
+}
+thread, _ := a.StartThread("", permission.Settings{})
+a.StartTurn(thread.ID, agent.Input{Text: "你好"})
+```
+
+工具通过 `Config.Providers` 接入。记忆、定时任务和网关与 agent 并列，由应用启动：`go mem.Run(ctx)`、`go jobs.Run(ctx, send)`、`server.Serve(ctx, listener)`。关闭时取消 ctx 再 `a.Wait()`。完整装配见 ollupi-desktop 的 `sidecar/internal/host/host.go`。修改协议后 `go generate ./gateway`。
 
 ## 许可
 
-[AGPL-3.0](LICENSE)
+[MIT](LICENSE)
