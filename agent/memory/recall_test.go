@@ -52,8 +52,6 @@ func ids(entries []repo.MemoryReference) []string {
 	return out
 }
 
-// A snapshot has the global memories and the workspace's, each section
-// ranked by kind and then recency, and nothing inactive or from elsewhere.
 func TestSnapshotSections(t *testing.T) {
 	m := testManager(t, true,
 		repo.MemoryRow{ID: "g-fact", Topic: "a", Kind: "fact", Text: "The sky is blue."},
@@ -86,7 +84,6 @@ func TestSnapshotSections(t *testing.T) {
 	}
 }
 
-// Each section gets half the budget, and what one leaves goes to the other.
 func TestSnapshotBudget(t *testing.T) {
 	text := strings.Repeat("word ", 40)
 	var rows []repo.MemoryRow

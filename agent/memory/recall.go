@@ -21,12 +21,6 @@ const (
 	omittedNote    = "\n\n%d more memories did not fit here; find them with " + ToolSearch + " when they may matter."
 )
 
-// Snapshot is the memory a thread starts with, and starts again with after
-// each compaction, in two sections: the global memories and those of the
-// thread's own scope, its workspace or general without one. Each section
-// lists preferences first, then decisions, procedures and facts, newest
-// first within a kind, and gets half the budget; what one section leaves
-// unused goes to the other. It is nil when memory is not used.
 func (m *Manager) Snapshot(workspaceID string, budget int) (*Context, error) {
 	if !m.opts.Use {
 		return nil, nil
@@ -80,8 +74,6 @@ func snapshotScore(e repo.MemoryRow) int {
 	return 1 + slices.Index(snapshotKinds, e.Kind)
 }
 
-// fit takes entries in order while they fit in budget tokens, skipping any
-// too large for what is left.
 func fit(entries []repo.MemoryReference, budget int) ([]repo.MemoryReference, int) {
 	var out []repo.MemoryReference
 	used := 0
@@ -93,8 +85,6 @@ func fit(entries []repo.MemoryReference, budget int) ([]repo.MemoryReference, in
 	return out, used
 }
 
-// renderNotes renders the notes of one snapshot section, whose heading
-// says their scope.
 func renderNotes(entries []repo.MemoryReference) string {
 	notes := make([]repo.MemoryNote, len(entries))
 	for i, e := range entries {

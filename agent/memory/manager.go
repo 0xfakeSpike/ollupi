@@ -86,7 +86,7 @@ func (m *Manager) Run(ctx context.Context) {
 				continue
 			}
 			log.Printf("memory: %v", err)
-			if rerr := m.db.SetMemoryError(clipMemory(err.Error(), 1000)); rerr != nil {
+			if rerr := m.db.SetMemoryError(failureOf(err)); rerr != nil {
 				log.Printf("memory: the error could not be recorded: %v", rerr)
 			}
 		}
@@ -99,17 +99,17 @@ func (m *Manager) RunOnce(ctx context.Context) error {
 	}
 	state, err := m.db.MemoryState()
 	if err != nil {
-		return fmt.Errorf("could not read memory state: %w", err)
+		return failure{repo.MemoryStorage, fmt.Errorf("could not read memory state: %w", err)}
 	}
 	if state.NextAttempt != nil && time.Now().Before(*state.NextAttempt) {
 		return nil
 	}
 	batch, payload, estimated, err := m.gatherEvidence()
-	if err != nil {
+	if batch == nil {
 		return err
 	}
-	if batch == nil {
-		return nil
+	if err != nil {
+		return m.deferBatch(batch, err)
 	}
 	report := repo.MemoryReport{Model: m.opts.Model.Clone(), EstimatedInputTokens: estimated}
 	var ops []Operation
@@ -122,16 +122,34 @@ func (m *Manager) RunOnce(ctx context.Context) error {
 		}
 	}
 	if err := commit(m.db, batch, ops, report); err != nil {
-		return fmt.Errorf("could not commit the memory batch of turn %s: %w", batch.TurnID, err)
+		return m.deferBatch(batch, failure{repo.MemoryStorage, fmt.Errorf("could not commit the memory batch of turn %s: %w", batch.TurnID, err)})
 	}
 	return nil
 }
 
+// failure is an error of memory generation with the code a client explains
+// it by.
+type failure struct {
+	code repo.MemoryFailureCode
+	err  error
+}
+
+func (f failure) Error() string { return f.err.Error() }
+func (f failure) Unwrap() error { return f.err }
+
+func failureOf(err error) repo.MemoryFailure {
+	f := failure{code: repo.MemoryStorage}
+	errors.As(err, &f)
+	return repo.MemoryFailure{Code: f.code, Error: clipMemory(err.Error(), 1000)}
+}
+
+// gatherEvidence returns the next batch, halved until it fits the budget;
+// with an error, a batch is one that never fits.
 func (m *Manager) gatherEvidence() (*Batch, string, int, error) {
 	for limit := m.opts.BatchSize; ; limit = max(1, limit/2) {
 		batch, err := nextBatch(m.db, limit)
 		if err != nil {
-			return nil, "", 0, fmt.Errorf("could not read pending memory evidence: %w", err)
+			return nil, "", 0, failure{repo.MemoryEvidence, fmt.Errorf("could not read pending memory evidence: %w", err)}
 		}
 		if batch == nil {
 			return nil, "", 0, nil
@@ -141,7 +159,7 @@ func (m *Manager) gatherEvidence() (*Batch, string, int, error) {
 			return batch, payload, estimated, nil
 		}
 		if limit == 1 {
-			return nil, "", 0, err
+			return batch, "", 0, failure{repo.MemoryEvidence, err}
 		}
 	}
 }
@@ -151,7 +169,7 @@ func (m *Manager) extract(ctx context.Context, batch *Batch, payload string, rep
 	defer cancel()
 	settings, err := m.db.Settings()
 	if err != nil {
-		return nil, fmt.Errorf("could not read the redaction setting: %w", err)
+		return nil, failure{repo.MemoryStorage, fmt.Errorf("could not read the redaction setting: %w", err)}
 	}
 	redactor := redact.New()
 	if settings.Redaction {
@@ -163,14 +181,14 @@ func (m *Manager) extract(ctx context.Context, batch *Batch, payload string, rep
 		ToolChoice: llm.ToolChoiceNone,
 	}, nil)
 	if err != nil {
-		return nil, fmt.Errorf("memory extraction model request failed: %w", err)
+		return nil, failure{repo.MemoryModelRequest, fmt.Errorf("memory extraction model request failed: %w", err)}
 	}
 	if len(response.Message.ToolCalls) != 0 || (response.FinishReason != "" && response.FinishReason != "stop") {
-		return nil, errors.New("memory extraction did not produce a complete text response")
+		return nil, failure{repo.MemoryInvalidResponse, errors.New("memory extraction did not produce a complete text response")}
 	}
 	ops, err := parseOperations(response.Message.Content, batch, redactor.Restore)
 	if err != nil {
-		return nil, err
+		return nil, failure{repo.MemoryInvalidResponse, err}
 	}
 	report.InputTokens, report.OutputTokens = response.Usage.PromptTokens, response.Usage.CompletionTokens
 	report.UsageReported = response.UsageReported
@@ -178,7 +196,7 @@ func (m *Manager) extract(ctx context.Context, batch *Batch, payload string, rep
 }
 
 func (m *Manager) deferBatch(b *Batch, cause error) error {
-	skipped, err := m.db.DeferMemory(b.Cursor, b.Entries, clipMemory(cause.Error(), 1000), time.Now())
+	skipped, err := m.db.DeferMemory(b.Cursor, b.Entries, failureOf(cause), time.Now())
 	if err != nil {
 		return fmt.Errorf("could not defer the memory batch of turn %s (%v): %w", b.TurnID, cause, err)
 	}
@@ -190,11 +208,8 @@ func (m *Manager) deferBatch(b *Batch, cause error) error {
 	return nil
 }
 
-// ErrInvalidChange is a user's edit or move that cannot be made.
 var ErrInvalidChange = errors.New("invalid memory change")
 
-// List lists the memories of one scope; workspaceID names the workspace of
-// the workspace scope, and only it.
 func (m *Manager) List(scope repo.MemoryScope, workspaceID string) ([]repo.MemoryRow, error) {
 	if err := checkPlace(scope, workspaceID); err != nil {
 		return nil, err
@@ -216,9 +231,6 @@ func checkPlace(scope repo.MemoryScope, workspaceID string) error {
 	return nil
 }
 
-// Move takes a local memory to global, or a global one back to where it
-// came from, when the model chose the wrong scope. The topic must be free
-// there.
 func (m *Manager) Move(id string) (repo.MemoryRow, error) {
 	var out repo.MemoryRow
 	err := m.db.Tx(func(tx *repo.DB) error {

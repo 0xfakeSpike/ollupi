@@ -1,7 +1,5 @@
 package repo
 
-// SettingsRow holds the user's global settings. Redaction turns masking of
-// sensitive values before they reach a model on or off.
 type SettingsRow struct {
 	ID        int  `gorm:"primaryKey;autoIncrement:false;check:settings_one,id = 1" json:"-"`
 	Redaction bool `gorm:"not null;default:true" json:"redaction"`

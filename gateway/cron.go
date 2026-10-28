@@ -10,8 +10,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools/cron"
 )
 
-// cronJobs checks the thread and the job's name unless it lists, and
-// returns the scheduler.
 func (c *conn) cronJobs(threadID, name string, named bool) (*cron.Jobs, error) {
 	if c.s.jobs == nil {
 		return nil, jsonrpc.Errorf(jsonrpc.CodeServerError, "scheduled tasks are unavailable")
@@ -25,8 +23,6 @@ func (c *conn) cronJobs(threadID, name string, named bool) (*cron.Jobs, error) {
 	return c.s.jobs, nil
 }
 
-// cronList holds back cron/changed until the list is sent, so no
-// notification older than the list arrives after it.
 func (c *conn) cronList(p CronListParams) (CronListResult, func(), error) {
 	jobs, err := c.cronJobs(p.ThreadID, "", false)
 	if err != nil {
@@ -41,8 +37,6 @@ func (c *conn) cronList(p CronListParams) (CronListResult, func(), error) {
 	return CronListResult{Data: nonNil(rows)}, c.s.deliver.Unlock, nil
 }
 
-// CronChanged sends cron/changed for a task the scheduler reports changed,
-// as it is when the notification is sent; give it to cron.New.
 func (s *Server) CronChanged(id, threadID string) {
 	s.deliver.Lock()
 	defer s.deliver.Unlock()

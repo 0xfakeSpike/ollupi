@@ -134,8 +134,6 @@ func (m *Manager) SkillBudget() int {
 	return share(m.inputTokens, 4)
 }
 
-// MemoryBudget is what the memory snapshot may take. The snapshot is sent
-// once per thread, not per turn, so it can be larger than a recall would.
 func (m *Manager) MemoryBudget() int {
 	return max(0, min(4000, m.inputTokens*8/100))
 }
@@ -154,9 +152,6 @@ func (m *Manager) CheckArtifacts(artifacts []tools.ContextArtifact) error {
 	return nil
 }
 
-// snapshot is the memory the prompt starts with: the latest snapshot,
-// recorded when the thread started or after a compaction. If reloading
-// after a compaction failed, the one before it stays until a turn reloads.
 func snapshot(items []repo.ItemRow) *repo.ItemRow {
 	for i := len(items) - 1; i >= 0; i-- {
 		if it := &items[i]; it.Type == repo.ItemMemoryContext && it.Status == repo.ItemCompleted {
@@ -185,8 +180,6 @@ func (m *Manager) observationBudget(calls, limit int) int {
 	return min(limit, max(minPooledTokens, min(m.inputTokens/8, share(m.inputTokens, responsePercent)/max(1, calls))))
 }
 
-// transcript renders the items after the latest compaction, after the
-// memory snapshot and the compacted history, which it counts as fixed.
 func (m *Manager) transcript(obs *observations, items []repo.ItemRow, limit int, compacting bool) ([]llm.ChatMessage, int, error) {
 	var out []llm.ChatMessage
 	latest := ""

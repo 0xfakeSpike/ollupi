@@ -42,16 +42,11 @@ type Checker struct {
 	tools  []tools.ToolDescriptor
 }
 
-// Layer is one level of permission settings: the defaults, a workspace's,
-// a conversation's. Of names it in errors, so the user knows what to edit.
 type Layer struct {
 	Of       string
 	Settings Settings
 }
 
-// New merges the layers into the checker for a turn. Each layer is checked
-// on its own first; rules naming the tools of a provider that could not
-// start this run are kept, and match nothing.
 func New(layers []Layer, allowlist []string, registry *tools.Registry) (*Checker, error) {
 	all := make([]Settings, 0, len(layers))
 	for _, l := range layers {
@@ -83,9 +78,6 @@ func New(layers []Layer, allowlist []string, registry *tools.Registry) (*Checker
 	return &Checker{policy: policy, rules: set, tools: visible}, nil
 }
 
-// checkLayer checks one layer's policy and rules. With previous, the layer
-// is being saved over previous: a rule it adds for a provider that could
-// not start is refused, since nothing can check its tool name now.
 func checkLayer(s Settings, previous *Settings, registry *tools.Registry) error {
 	if s.ApprovalPolicy != "" {
 		if err := Policy(s.ApprovalPolicy).Validate(); err != nil {
@@ -127,7 +119,6 @@ func unknownTool(what, tool string, registry *tools.Registry) error {
 
 var ErrInvalidSettings = errors.New("invalid permission settings")
 
-// ValidateLayer checks layer before it replaces previous on top of base.
 func ValidateLayer(base []Layer, previous Settings, layer Layer, registry *tools.Registry) error {
 	if err := checkLayer(layer.Settings, &previous, registry); err != nil {
 		return fmt.Errorf("%w: %s: %v", ErrInvalidSettings, layer.Of, err)

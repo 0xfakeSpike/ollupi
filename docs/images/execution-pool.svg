@@ -22,7 +22,6 @@
   <text class="title" x="60" y="72">共享执行池</text>
   <text class="sub" x="60" y="110">所有对话、子代理、定时任务的 turn 排同一个队；等人时让出槽位，模型名额只给正在调模型的 turn</text>
 
-  <!-- sources -->
   <rect x="60" y="200" width="230" height="86" rx="12" fill="#eff6ff" stroke="#3b82f6" stroke-width="2"/>
   <text class="h" x="84" y="237" style="fill:#1d4ed8">用户消息</text>
   <text class="s" x="84" y="267">任意多个会话</text>
@@ -36,7 +35,6 @@
   <line class="line" x1="290" y1="353" x2="378" y2="353" marker-end="url(#a)"/>
   <path class="line" d="M290,463 C335,463 335,376 378,376" marker-end="url(#a)"/>
 
-  <!-- queue -->
   <rect x="380" y="180" width="270" height="346" rx="14" fill="#f8fafc" stroke="#64748b" stroke-width="2"/>
   <text class="h" x="404" y="218">队列</text>
   <text class="s" x="404" y="246">库里所有能往前走的 turn</text>
@@ -55,7 +53,6 @@
 
   <line class="line" x1="650" y1="353" x2="718" y2="353" marker-end="url(#a)"/>
 
-  <!-- slots -->
   <rect x="720" y="180" width="420" height="346" rx="14" fill="#ffffff" stroke="#3b82f6" stroke-width="2"/>
   <text class="h" x="744" y="218">槽位（默认 32 个）</text>
   <text class="s" x="744" y="246">一个 turn 占一个，不等人</text>
@@ -100,7 +97,6 @@
 
   <line class="line" x1="1140" y1="353" x2="1198" y2="353" marker-end="url(#a)"/>
 
-  <!-- model permits -->
   <rect x="1200" y="180" width="340" height="346" rx="14" fill="#f8fafc" stroke="#64748b" stroke-width="2"/>
   <text class="h" x="1224" y="218">模型名额</text>
   <text class="s" x="1224" y="246">按连接计，默认每个连接 4 个</text>
@@ -117,7 +113,6 @@
   <text class="s" x="1224" y="488">工具执行不占名额</text>
   <text class="s" x="1224" y="512">跑十分钟测试，也不挡别人调模型</text>
 
-  <!-- waiting -->
   <line x1="930" y1="526" x2="930" y2="638" stroke="#d97706" stroke-width="2" marker-end="url(#w)"/>
   <text class="s" x="946" y="590" style="fill:#b45309">需要审批 / 提问 / 子代理</text>
   <rect x="720" y="640" width="420" height="150" rx="14" fill="#fffbeb" stroke="#f59e0b" stroke-width="2" stroke-dasharray="9 6"/>

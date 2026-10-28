@@ -32,7 +32,6 @@ import (
 
 var update = flag.Bool("update", false, "rewrite protocol.schema.json from the protocol table")
 
-// contract is the layout of protocol.schema.json.
 type contract struct {
 	Schema              string                        `json:"$schema"`
 	Defs                map[string]*jsonschema.Schema `json:"$defs"`
@@ -50,8 +49,6 @@ type messageSchemas struct {
 	Result *jsonschema.Schema `json:"result"`
 }
 
-// toolSchemas tell the UI how to read a built-in tool's call item: the
-// arguments the model sent and the output it got back.
 type toolSchemas struct {
 	Arguments *jsonschema.Schema `json:"arguments,omitempty"`
 	Output    *jsonschema.Schema `json:"output,omitempty"`
@@ -64,16 +61,13 @@ var builtinTools = map[string]struct{ arguments, output reflect.Type }{
 	shell.ToolName: {output: reflect.TypeFor[shell.CommandOutput]()},
 }
 
-// providers are the ids ItemRow.server takes for ollupi's own providers.
 var providers = []string{cron.ProviderName, skills.ProviderName, memory.ProviderName}
 
-// enums are the value lists declared beside each string type's constants.
 var enums = []any{
 	repo.ItemTypeValues, repo.ItemStatusValues, repo.TurnStatusValues, repo.ThreadStatusValues,
 	repo.DecisionValues, repo.MemoryRowStatusValues, repo.MemoryScopeValues, permission.PolicyValues, plan.StatusValues, tools.AwaitByValues,
 }
 
-// plainStrings are named string types that hold any string.
 var plainStrings = []reflect.Type{reflect.TypeFor[repo.Ref]()}
 
 type field struct {
@@ -81,13 +75,10 @@ type field struct {
 	name  string
 }
 
-// fieldTypes give a field the type of the values it always holds where Go
-// cannot: repo cannot import permission for PermissionSettings.ApprovalPolicy.
 var fieldTypes = map[field]reflect.Type{
 	{reflect.TypeFor[repo.PermissionSettings](), "ApprovalPolicy"}: reflect.TypeFor[permission.Policy](),
 }
 
-// arrays are the slice fields the gateway never sends as null.
 var arrays = []field{
 	{reflect.TypeFor[repo.ThreadView](), "Turns"},
 	{reflect.TypeFor[repo.ThreadView](), "Items"},
@@ -107,7 +98,6 @@ var arrays = []field{
 	{reflect.TypeFor[UserInputRequestParams](), "Questions"},
 }
 
-// defNames name the definitions whose Go names mean little outside their package.
 var defNames = map[reflect.Type]string{
 	reflect.TypeFor[permission.Policy]():  "ApprovalPolicy",
 	reflect.TypeFor[plan.Step]():          "PlanStep",
@@ -162,7 +152,6 @@ func TestEnumValuesMatchConstants(t *testing.T) {
 	}
 }
 
-// constants returns the values of the string constants of type typ declared in dir.
 func constants(dir, typ string) ([]string, error) {
 	files, err := filepath.Glob(filepath.Join(dir, "*.go"))
 	if err != nil {
@@ -304,7 +293,6 @@ func generateSchema() ([]byte, error) {
 	return append(out, '\n'), nil
 }
 
-// visit finds the named types reachable from t that need a definition.
 func (g *generator) visit(t reflect.Type, embedded bool) error {
 	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
@@ -401,8 +389,6 @@ func (g *generator) schema(t reflect.Type) (*jsonschema.Schema, error) {
 	if values := g.enums[t]; values != nil {
 		return &jsonschema.Schema{Type: "string", Enum: values}, nil
 	}
-	// jsonschema-go accepts only object schemas for embedded structs, so
-	// the types t embeds are spelled out in its definition, not referenced.
 	inline := map[reflect.Type]bool{}
 	for _, f := range visibleFields(t) {
 		if name, _ := jsonName(f); f.Anonymous && name == "" {
@@ -453,8 +439,6 @@ func visibleFields(t reflect.Type) []reflect.StructField {
 	return reflect.VisibleFields(t)
 }
 
-// nullableRefs rewrites a pointer to a defined type, which jsonschema-go
-// gives as a $ref beside "type": "null", into "the type, or null".
 func nullableRefs(s *jsonschema.Schema) {
 	if s == nil {
 		return
@@ -470,8 +454,6 @@ func nullableRefs(s *jsonschema.Schema) {
 	nullableRefs(s.AdditionalProperties)
 }
 
-// jsonName is the name encoding/json gives f, empty for an embedded struct
-// whose fields it promotes, and false when f is not encoded.
 func jsonName(f reflect.StructField) (string, bool) {
 	tag := f.Tag.Get("json")
 	if tag == "-" || (!f.IsExported() && !f.Anonymous) {

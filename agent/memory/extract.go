@@ -22,7 +22,6 @@ Write concise self-contained text in the user's language. Each note covers one r
 {"action":"add|update|retire","scope":"global, only for an add that belongs in global memory","id":"existing ID for update/retire","topic":"stable short descriptive topic for add/update","kind":"preference|decision|fact|procedure","text":"memory text for add/update","sources":[{"table":"items","id":"evidence ID"}]}
 For update/retire copy the current ID. Add omits ID. Every operation must cite at least one fact supplied in this slice by its source id. Existing source references may additionally be retained. Never invent IDs or evidence. Use newer explicit evidence to revise automatic notes when they conflict; a slice can be older than the existing notes and is not itself proof of recency.`
 
-// The scopes of an operation: an add is local unless it asks for global.
 const (
 	scopeGlobal = "global"
 	scopeLocal  = "local"

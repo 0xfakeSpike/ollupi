@@ -35,8 +35,6 @@ func (a *Agent) permissions(t repo.ThreadRow) (*permission.Checker, repo.Workspa
 	return checker, w, nil
 }
 
-// layers are the permission settings under a conversation in workspace w:
-// the defaults, and the workspace's when there is one.
 func (a *Agent) layers(w repo.WorkspaceRow) []permission.Layer {
 	out := []permission.Layer{{Of: "the default permission settings", Settings: a.cfg.Settings}}
 	if w.ID != "" {

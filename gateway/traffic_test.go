@@ -34,10 +34,6 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// TestTrafficMatchesContract runs a gateway session against a fake model and
-// validates every message the gateway sends and receives against
-// protocol.schema.json, and that the session used every message the
-// protocol declares.
 func TestTrafficMatchesContract(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -120,8 +116,6 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.call("workspace/updatePermissions", WorkspacePermissionsParams{WorkspaceID: workspaceID,
 		PermissionSettings: repo.PermissionSettings{ApprovalPolicy: string(permission.OnRequest)}}, nil)
 
-	// The thread starts with the global memory and that of its workspace,
-	// not the one from conversations outside any workspace.
 	saved := time.Now().UTC()
 	for _, m := range []repo.MemoryRow{
 		{ID: "g1", Scope: repo.MemoryGlobal, Topic: "style", Kind: "preference", Text: "Answers briefly."},
@@ -140,11 +134,9 @@ func TestTrafficMatchesContract(t *testing.T) {
 	threadID := th.Thread.ID
 	c.call("thread/updatePermissions", ThreadPermissionsParams{ThreadID: threadID}, nil)
 
-	// A streamed reply.
 	turn := c.startTurn(threadID, "hello")
 	c.awaitTurnEnd(turn, repo.TurnCompleted)
 
-	// A call that needs approval, with a message queued and one steered in while it waits.
 	turn = c.startTurn(threadID, "please touch the file")
 	approval := c.await(requestApproval, nil)
 	queued := c.startTurn(threadID, "and then say hi")
@@ -155,7 +147,6 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.awaitTurnEnd(turn, repo.TurnCompleted)
 	c.awaitTurnEnd(queued, repo.TurnCompleted)
 
-	// A question, answered wrongly first.
 	turn = c.startTurn(threadID, "ask me something")
 	question := c.await(requestUserInput, nil)
 	c.respond(question, UserInputResponse{Answers: userinput.Answers{}})
@@ -164,21 +155,17 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.respond(question, UserInputResponse{Answers: userinput.Answers{"color": {Answers: []string{"blue"}}}})
 	c.awaitTurnEnd(turn, repo.TurnCompleted)
 
-	// A subagent.
 	turn = c.startTurn(threadID, "delegate this")
 	c.awaitTurnEnd(turn, repo.TurnCompleted)
 
-	// A memory search.
 	turn = c.startTurn(threadID, "recall how to answer")
 	c.awaitTurnEnd(turn, repo.TurnCompleted)
 
-	// A plan, and the scheduled-task tools as the model calls them.
 	c.awaitTurnEnd(c.startTurn(threadID, "make a plan"), repo.TurnCompleted)
 	for _, words := range []string{"cron-create", "cron-pause", "cron-list", "cron-delete"} {
 		c.toolTurn(threadID, words)
 	}
 
-	// Scheduled tasks, managed and run; each change is pushed.
 	var daily repo.CronJobRow
 	c.call("cron/create", CronCreateParams{ThreadID: threadID, Name: "daily", Spec: "@daily", Prompt: "daily check"}, &daily)
 	c.cronChanged(daily.ID, func(j *repo.CronJobView) bool { return j != nil && j.Name == "daily" && j.ThreadPreview == "hello" })
@@ -207,7 +194,6 @@ func TestTrafficMatchesContract(t *testing.T) {
 		return j != nil && j.LastTurnID == ranTurn.Turn.ID && j.LastRunAt != nil && j.NextRunAt.After(now)
 	})
 
-	// An interrupted turn.
 	turn = c.startTurn(threadID, "ask again")
 	c.await(requestUserInput, nil)
 	c.call("turn/interrupt", TurnInterruptParams{ThreadID: threadID, TurnID: turn}, nil)
@@ -219,7 +205,6 @@ func TestTrafficMatchesContract(t *testing.T) {
 		t.Errorf("%d prompts reported memory, searched %v; want every prompt and a search", prompts, searched)
 	}
 
-	// A thread outside any workspace starts with the general memory instead.
 	var general ThreadResult
 	c.call("thread/start", ThreadStartParams{}, &general)
 	c.await("thread/started", nil)
@@ -229,8 +214,6 @@ func TestTrafficMatchesContract(t *testing.T) {
 		t.Errorf("%d prompts reported memory in the general thread, want 1", prompts)
 	}
 
-	// Sensitive values are masked before they reach the model until the
-	// user switches redaction off.
 	var settings repo.SettingsRow
 	c.call("settings/read", Empty{}, &settings)
 	if !settings.Redaction {
@@ -254,8 +237,6 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.call("thread/read", ThreadPageParams{ThreadID: threadID, Limit: 2, BeforeSeq: 4}, nil)
 	c.call("thread/list", repo.ThreadFilter{WorkspaceID: &workspaceID}, nil)
 
-	// Memories listed by scope; a move takes a local one to global and a
-	// global one back where it came from.
 	for _, e := range []repo.MemoryRow{
 		{ID: "m1", Scope: repo.MemoryGeneral, Topic: "colors", Kind: "preference", Text: "Likes blue."},
 		{ID: "m2", Scope: repo.MemoryWorkspace, WorkspaceID: workspaceID, Topic: "shell", Kind: "preference", Text: "Uses zsh."},
@@ -297,8 +278,6 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.call("memory/update", MemoryUpdateParams{ID: "m1", Text: "Likes green."}, nil)
 	c.call("memory/forget", MemoryForgetParams{ID: "m1"}, nil)
 
-	// Saving a new rule for a server that did not connect is refused; one
-	// stored for a server no longer configured fails the turn and says where.
 	c.refused("workspace/updatePermissions", WorkspacePermissionsParams{WorkspaceID: workspaceID,
 		PermissionSettings: repo.PermissionSettings{Rules: repo.PermissionRules{Allow: []string{"broken__creat_issue"}}}},
 		jsonrpc.CodeInvalidParams, `the MCP server "broken" is not connected`)
@@ -319,8 +298,6 @@ func TestTrafficMatchesContract(t *testing.T) {
 		t.Errorf("turn with a rule for a removed server ended %s: %s", ended.Turn.Status, ended.Turn.Error)
 	}
 
-	// Every conversation's tasks, listed together: paused ones, those of
-	// an archived workspace, and those of a conversation outside any.
 	c.call("cron/create", CronCreateParams{ThreadID: threadID, Name: "weekly", Spec: "@weekly", Prompt: "weekly check"}, nil)
 	c.call("cron/pause", CronPauseParams{ThreadID: threadID, Name: "weekly", Paused: &paused}, nil)
 	c.call("cron/create", CronCreateParams{ThreadID: general.Thread.ID, Name: "nightly", Spec: "@midnight", Prompt: "nightly check"}, nil)
@@ -366,7 +343,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 	}
 	for name, tool := range builtinTools {
 		if name == shell.ToolName {
-			continue // the session has no shell
+			continue
 		}
 		if tool.arguments != nil && !c.seen["arguments "+name] {
 			t.Errorf("no call of %s checked its arguments", name)
@@ -377,10 +354,6 @@ func TestTrafficMatchesContract(t *testing.T) {
 	}
 }
 
-// checkMemory checks that a thread loaded its memory once, at its start:
-// the global memory g1, then local, the one of its own scope; and that
-// every prompt reported both sections. It returns how many prompts did,
-// and whether memory_search found g1.
 func checkMemory(t *testing.T, items []repo.ItemRow, local string) (prompts int, searched bool) {
 	t.Helper()
 	snapshots := 0
@@ -407,7 +380,6 @@ func checkMemory(t *testing.T, items []repo.ItemRow, local string) (prompts int,
 	return prompts, searched
 }
 
-// touchTool is a tool that is not read-only, so on-request asks before running it.
 type touchTool struct{}
 
 func (touchTool) Name() (string, string) { return "files", "Touches files." }
@@ -425,8 +397,6 @@ func (touchTool) Invoke(context.Context, string, map[string]any) (tools.Result, 
 	return tools.Result{Output: map[string]any{"touched": true}}, nil
 }
 
-// fakeModel streams OpenAI chat completions. It answers a tool result with
-// text, and a user message with the tool call its words ask for, or text.
 type fakeModel struct {
 	mu      sync.Mutex
 	calls   int
@@ -508,7 +478,6 @@ func (f *fakeModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "data: [DONE]\n\n")
 }
 
-// client is a gateway client that checks every message against the contract.
 type client struct {
 	t            *testing.T
 	ctx          context.Context
@@ -596,7 +565,6 @@ func (c *client) read() {
 	}
 }
 
-// validate checks raw against the schema s refers to; the caller holds c.mu.
 func (c *client) validate(what string, s *jsonschema.Schema, raw json.RawMessage) {
 	if s == nil {
 		c.t.Errorf("%s: the contract has no schema for it", what)
@@ -649,7 +617,6 @@ func (c *client) call(method string, params, result any) {
 	}
 }
 
-// refused calls method expecting the error code; its message must contain why.
 func (c *client) refused(method string, params any, code int, why string) {
 	c.t.Helper()
 	reply := c.exchange(method, params)
@@ -710,15 +677,11 @@ func (c *client) respond(request jsonrpc.Message, result any) {
 	c.send(jsonrpc.Message{JSONRPC: "2.0", ID: request.ID, Result: raw})
 }
 
-// await takes the first message named method that match accepts (nil accepts
-// any), waiting for it if it has not arrived; it leaves other messages.
 func (c *client) await(method string, match func(params json.RawMessage) bool) jsonrpc.Message {
 	c.t.Helper()
 	return c.awaitAny(method, func(m jsonrpc.Message) bool { return m.Method == method && (match == nil || match(m.Params)) })
 }
 
-// awaitAny takes the first message from the inbox that match accepts,
-// waiting for it; what names it in the failure.
 func (c *client) awaitAny(what string, match func(jsonrpc.Message) bool) jsonrpc.Message {
 	c.t.Helper()
 	for {
@@ -739,9 +702,6 @@ func (c *client) awaitAny(what string, match func(jsonrpc.Message) bool) jsonrpc
 	}
 }
 
-// validateToolCall checks a completed call of a built-in tool: its
-// arguments, and its output when it succeeded, against the tool's types in
-// the contract. The caller holds c.mu.
 func (c *client) validateToolCall(params json.RawMessage) {
 	var n ItemNotification
 	if err := json.Unmarshal(params, &n); err != nil || !n.Item.IsCall() {
@@ -762,7 +722,6 @@ func (c *client) validateToolCall(params json.RawMessage) {
 	}
 }
 
-// toolTurn runs a turn whose one tool call may need approval, and accepts it.
 func (c *client) toolTurn(threadID, text string) {
 	c.t.Helper()
 	turn := c.startTurn(threadID, text)
@@ -787,8 +746,6 @@ func (c *client) toolTurn(threadID, text string) {
 	}
 }
 
-// checkToolSchemas checks that each built-in tool offers the input schema
-// its arguments type in the contract gives.
 func checkToolSchemas(t *testing.T, offered []tools.ToolDescriptor) {
 	t.Helper()
 	for name, tool := range builtinTools {
@@ -815,7 +772,6 @@ func checkToolSchemas(t *testing.T, offered []tools.ToolDescriptor) {
 	}
 }
 
-// cronChanged waits for cron/changed about the task id that satisfies ok.
 func (c *client) cronChanged(id string, ok func(*repo.CronJobView) bool) {
 	c.t.Helper()
 	c.await(notifyCronChanged, func(params json.RawMessage) bool {

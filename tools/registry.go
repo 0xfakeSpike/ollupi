@@ -20,12 +20,8 @@ type Registry struct {
 	descriptors []ToolDescriptor
 }
 
-// ProviderSeparator joins a provider id and a tool name for providers that
-// prefix their tools, such as MCP servers: "<provider>__<tool>".
 const ProviderSeparator = "__"
 
-// New registers the providers' tools. unavailable names providers that are
-// configured but could not start this run; their tools are not offered.
 func New(ctx context.Context, unavailable []string, providers ...Provider) (*Registry, error) {
 	r := &Registry{
 		unavailable: slices.Clone(unavailable),
@@ -92,8 +88,6 @@ func (r *Registry) buildDescriptors() ([]ToolDescriptor, error) {
 	return out, nil
 }
 
-// Unavailable reports whether tool is named for a provider that could not
-// start this run, so a permission rule may name it although it is not offered.
 func (r *Registry) Unavailable(tool string) bool {
 	provider, _, ok := strings.Cut(tool, ProviderSeparator)
 	return ok && slices.Contains(r.unavailable, provider)

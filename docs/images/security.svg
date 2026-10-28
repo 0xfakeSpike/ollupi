@@ -21,7 +21,6 @@
   <text class="title" x="60" y="72">安全边界</text>
   <text class="sub" x="60" y="110">模型只看到占位符；每条命令先过权限，再进沙箱</text>
 
-  <!-- flow -->
   <rect x="60" y="160" width="190" height="80" rx="12" fill="#ffffff" stroke="#94a3b8" stroke-width="2" stroke-dasharray="8 6"/>
   <text class="h" x="155" y="208" text-anchor="middle" style="font-size:22px">模型服务商</text>
   <line class="line" x1="252" y1="200" x2="328" y2="200" marker-start="url(#a)" marker-end="url(#a)"/>
@@ -53,7 +52,6 @@
   <line class="lead" x1="960" y1="240" x2="960" y2="298"/>
   <line class="lead" x1="1240" y1="240" x2="1240" y2="298"/>
 
-  <!-- card: redaction -->
   <rect x="60" y="300" width="460" height="540" rx="16" fill="#faf5ff" stroke="#c4b5fd" stroke-width="2"/>
   <text class="h" x="88" y="344" style="fill:#6d28d9">双向脱敏</text>
   <text class="b" x="88" y="384">发给模型前：真实值 → 占位符</text>
@@ -80,7 +78,6 @@
   <text class="b" x="88" y="752">外部伪造不了</text>
   <text class="s" x="88" y="808">用户可以随时关掉</text>
 
-  <!-- card: permission -->
   <rect x="570" y="300" width="460" height="540" rx="16" fill="#f5f9ff" stroke="#bfdbfe" stroke-width="2"/>
   <text class="h" x="598" y="344" style="fill:#1d4ed8">三层权限规则</text>
 
@@ -107,7 +104,6 @@
   <text class="b" x="598" y="800">审批前冻结目录、命令和环境变量，</text>
   <text class="b" x="598" y="826">批准后按冻结的内容执行</text>
 
-  <!-- card: sandbox -->
   <rect x="1080" y="300" width="460" height="540" rx="16" fill="#f3fdf8" stroke="#a7f3d0" stroke-width="2"/>
   <text class="h" x="1108" y="344" style="fill:#047857">macOS Seatbelt 沙箱</text>
   <g>

@@ -45,9 +45,6 @@ func (d *DB) CreateCronJob(job CronJobRow, max int) error {
 	})
 }
 
-// CronJobView is a task with what a list of every conversation's tasks
-// shows of its conversation, and its latest run: the turn it last
-// submitted, whether that turn started at once or waited in the queue.
 type CronJobView struct {
 	CronJobRow
 	ThreadPreview  string     `json:"threadPreview"`
@@ -57,8 +54,6 @@ type CronJobView struct {
 	LastTurnID     string     `json:"lastTurnId,omitempty"`
 }
 
-// CronJobViews lists the tasks of threadID, or of every conversation
-// when it is empty, paused ones and those of archived workspaces included.
 func (d *DB) CronJobViews(threadID string) ([]CronJobView, error) {
 	var rows []CronJobView
 	q := d.cronJobViews().Order("j.thread_id, j.name")
@@ -93,8 +88,6 @@ func (d *DB) DueCronJobs(now time.Time) ([]CronJobRow, error) {
 	return rows, err
 }
 
-// UpdateCronJob changes a task, or deletes it when change returns nil;
-// it returns the task as changed, or as it was before it was deleted.
 func (d *DB) UpdateCronJob(threadID, name string, change func(CronJobRow) (*CronJobRow, error)) (CronJobRow, error) {
 	var out CronJobRow
 	err := d.Tx(func(tx *DB) error {

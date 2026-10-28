@@ -28,9 +28,6 @@ type Jobs struct {
 	onChange func(id, threadID string)
 }
 
-// New makes the scheduler. onChange, if not nil, is called after every
-// change to a task, whoever made it: created, paused, resumed, deleted, or
-// its next run moved on after a run; the gateway reads the task then.
 func New(db *repo.DB, location *time.Location, onChange func(id, threadID string)) *Jobs {
 	return &Jobs{
 		db:       db,
@@ -114,18 +111,14 @@ func (j *Jobs) Create(threadID, name, spec, prompt string) (repo.CronJobRow, err
 	return job, nil
 }
 
-// List lists the tasks of threadID, or of every conversation when it is
-// empty, with what a list shows of their conversations and latest runs.
 func (j *Jobs) List(threadID string) ([]repo.CronJobView, error) {
 	return j.db.CronJobViews(threadID)
 }
 
-// Job reads one task as List shows it; repo.ErrNotFound once it is deleted.
 func (j *Jobs) Job(id string) (repo.CronJobView, error) {
 	return j.db.CronJobView(id)
 }
 
-// Delete deletes a task and returns it as it was.
 func (j *Jobs) Delete(threadID, name string) (repo.CronJobRow, error) {
 	return j.change(threadID, name, func(repo.CronJobRow) (*repo.CronJobRow, error) { return nil, nil })
 }

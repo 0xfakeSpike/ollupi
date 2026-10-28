@@ -53,9 +53,6 @@ const (
 	requestUserInput = "item/tool/requestUserInput"
 )
 
-// protocol declares every message of the gateway. Call dispatches client
-// methods from it, and protocol.schema.json is generated from it, so the
-// contract the UI builds against is the one the gateway serves.
 var protocol = struct {
 	methods             map[string]method
 	notifications       map[string]reflect.Type
@@ -167,7 +164,6 @@ var protocolSHA256 = func() string {
 	return hex.EncodeToString(sum[:])
 }()
 
-// Empty is the params or result of a message that carries nothing.
 type Empty struct{}
 
 type ClientInfo struct {
@@ -185,10 +181,8 @@ type ServerInfo struct {
 }
 
 type InitializeResult struct {
-	ServerInfo ServerInfo `json:"serverInfo"`
-	// ProtocolSHA256 is the sha256 of the protocol.schema.json this server
-	// was built with; a client built from another contract can tell.
-	ProtocolSHA256 string `json:"protocolSha256"`
+	ServerInfo     ServerInfo `json:"serverInfo"`
+	ProtocolSHA256 string     `json:"protocolSha256"`
 }
 
 type ThreadStartParams struct {
@@ -322,8 +316,6 @@ type WorkspaceResult struct {
 	Workspace repo.WorkspaceRow `json:"workspace"`
 }
 
-// CronListParams name the conversation whose tasks to list; without one,
-// every conversation's tasks are listed.
 type CronListParams struct {
 	ThreadID string `json:"threadId,omitempty"`
 }
@@ -332,8 +324,6 @@ type CronListResult struct {
 	Data []repo.CronJobView `json:"data"`
 }
 
-// CronChangedNotification reports a task after a change; Job is null once
-// the task is deleted.
 type CronChangedNotification struct {
 	ID       string            `json:"id"`
 	ThreadID string            `json:"threadId"`
@@ -358,7 +348,6 @@ type CronDeleteParams struct {
 	Name     string `json:"name"`
 }
 
-// MemoryListParams name one scope; workspaceId only with the workspace scope.
 type MemoryListParams struct {
 	Scope       repo.MemoryScope `json:"scope"`
 	WorkspaceID string           `json:"workspaceId,omitempty"`
@@ -373,8 +362,6 @@ type MemoryUpdateParams struct {
 	Text string `json:"text"`
 }
 
-// MemoryMoveParams take a local memory to global, or a global one back
-// to the scope it came from.
 type MemoryMoveParams struct {
 	ID string `json:"id"`
 }
@@ -387,8 +374,6 @@ type MemoryResult struct {
 	Memory repo.MemoryRow `json:"memory"`
 }
 
-// SettingsUpdateParams switch masking of sensitive values before they
-// reach a model, for every conversation and for memory extraction.
 type SettingsUpdateParams struct {
 	Redaction *bool `json:"redaction"`
 }
