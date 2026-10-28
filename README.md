@@ -1,8 +1,6 @@
 <h1>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/logo/logo-dark.svg">
-    <img alt="Ollupi" src="docs/logo/logo.svg" width="240">
-  </picture>
+  <img alt="Ollupi" src="docs/logo/logo.svg#gh-light-mode-only" width="240">
+  <img alt="Ollupi" src="docs/logo/logo-dark.svg#gh-dark-mode-only" width="240">
 </h1>
 
 一个 Go 库，用来构建常驻运行的 agent 服务。
