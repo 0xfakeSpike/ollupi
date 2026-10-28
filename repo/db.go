@@ -72,6 +72,9 @@ func (d *DB) applySchema() error {
 		if err := tx.FirstOrCreate(&MemoryStateRow{}, MemoryStateRow{ID: 1}).Error; err != nil {
 			return fmt.Errorf("create memory state: %w", err)
 		}
+		if err := tx.FirstOrCreate(&SettingsRow{}, SettingsRow{ID: 1}).Error; err != nil {
+			return fmt.Errorf("create settings: %w", err)
+		}
 		return nil
 	})
 }
@@ -100,7 +103,7 @@ func checkOne(res *gorm.DB) error {
 
 var rowTypes = []any{
 	&WorkspaceRow{}, &ThreadRow{}, &TurnRow{}, &ItemRow{}, &CronJobRow{},
-	&MemoryRow{}, &MemoryStateRow{},
+	&MemoryRow{}, &MemoryStateRow{}, &SettingsRow{},
 }
 
 var ErrNotFound = errors.New("storage: not found")

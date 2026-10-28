@@ -1361,6 +1361,33 @@
       ],
       "additionalProperties": false
     },
+    "SettingsRow": {
+      "type": "object",
+      "properties": {
+        "redaction": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "redaction"
+      ],
+      "additionalProperties": false
+    },
+    "SettingsUpdateParams": {
+      "type": "object",
+      "properties": {
+        "redaction": {
+          "type": [
+            "null",
+            "boolean"
+          ]
+        }
+      },
+      "required": [
+        "redaction"
+      ],
+      "additionalProperties": false
+    },
     "SubagentCall": {
       "type": "object",
       "properties": {
@@ -2259,6 +2286,22 @@
         "$ref": "#/$defs/ModelListResult"
       }
     },
+    "settings/read": {
+      "params": {
+        "$ref": "#/$defs/Empty"
+      },
+      "result": {
+        "$ref": "#/$defs/SettingsRow"
+      }
+    },
+    "settings/update": {
+      "params": {
+        "$ref": "#/$defs/SettingsUpdateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/SettingsRow"
+      }
+    },
     "thread/list": {
       "params": {
         "$ref": "#/$defs/ThreadFilter"
@@ -2390,6 +2433,9 @@
     },
     "item/started": {
       "$ref": "#/$defs/ItemNotification"
+    },
+    "settings/changed": {
+      "$ref": "#/$defs/SettingsRow"
     },
     "thread/started": {
       "$ref": "#/$defs/ThreadResult"

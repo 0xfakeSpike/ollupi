@@ -149,10 +149,17 @@ func (m *Manager) gatherEvidence() (*Batch, string, int, error) {
 func (m *Manager) extract(ctx context.Context, batch *Batch, payload string, report *repo.MemoryReport) ([]Operation, error) {
 	callCtx, cancel := context.WithTimeout(ctx, m.opts.Timeout)
 	defer cancel()
+	settings, err := m.db.Settings()
+	if err != nil {
+		return nil, fmt.Errorf("could not read the redaction setting: %w", err)
+	}
 	redactor := masking.New()
+	if settings.Redaction {
+		payload = redactor.Mask(payload)
+	}
 	response, err := m.model.Chat(callCtx, llm.ChatRequest{
 		Model:      m.opts.Model,
-		Messages:   []llm.ChatMessage{{Role: llm.RoleSystem, Content: extractionInstructions}, {Role: llm.RoleUser, Content: redactor.Mask(payload)}},
+		Messages:   []llm.ChatMessage{{Role: llm.RoleSystem, Content: extractionInstructions}, {Role: llm.RoleUser, Content: payload}},
 		ToolChoice: llm.ToolChoiceNone,
 	}, nil)
 	if err != nil {

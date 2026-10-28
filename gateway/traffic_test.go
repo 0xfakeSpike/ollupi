@@ -42,7 +42,8 @@ func TestTrafficMatchesContract(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
-	model := httptest.NewServer(&fakeModel{})
+	fake := &fakeModel{}
+	model := httptest.NewServer(fake)
 	defer model.Close()
 	db, err := repo.Open(t.TempDir())
 	if err != nil {
@@ -227,6 +228,29 @@ func TestTrafficMatchesContract(t *testing.T) {
 	if prompts, _ := checkMemory(t, page.Items, "n1"); prompts != 1 {
 		t.Errorf("%d prompts reported memory in the general thread, want 1", prompts)
 	}
+
+	// Sensitive values are masked before they reach the model until the
+	// user switches redaction off.
+	var settings repo.SettingsRow
+	c.call("settings/read", Empty{}, &settings)
+	if !settings.Redaction {
+		t.Error("redaction is off by default")
+	}
+	c.awaitTurnEnd(c.startTurn(general.Thread.ID, "mail alice@example.com"), repo.TurnCompleted)
+	c.refused("settings/update", SettingsUpdateParams{}, jsonrpc.CodeInvalidParams, "redaction")
+	off := false
+	c.call("settings/update", SettingsUpdateParams{Redaction: &off}, nil)
+	c.await("settings/changed", func(params json.RawMessage) bool {
+		var n repo.SettingsRow
+		return json.Unmarshal(params, &n) == nil && !n.Redaction
+	})
+	c.awaitTurnEnd(c.startTurn(general.Thread.ID, "mail bob@example.com"), repo.TurnCompleted)
+	fake.mu.Lock()
+	sent := strings.Join(fake.prompts, "\n")
+	fake.mu.Unlock()
+	if strings.Contains(sent, "alice@example.com") || !strings.Contains(sent, "mail <EMAIL:") || !strings.Contains(sent, "mail bob@example.com") {
+		t.Errorf("the model was sent:\n%s", sent)
+	}
 	c.call("thread/read", ThreadPageParams{ThreadID: threadID, Limit: 2, BeforeSeq: 4}, nil)
 	c.call("thread/list", repo.ThreadFilter{WorkspaceID: &workspaceID}, nil)
 
@@ -382,8 +406,9 @@ func (touchTool) Invoke(context.Context, string, map[string]any) (tools.Result, 
 // fakeModel streams OpenAI chat completions. It answers a tool result with
 // text, and a user message with the tool call its words ask for, or text.
 type fakeModel struct {
-	mu    sync.Mutex
-	calls int
+	mu      sync.Mutex
+	calls   int
+	prompts []string
 }
 
 func (f *fakeModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -404,6 +429,11 @@ func (f *fakeModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	last := req.Messages[len(req.Messages)-1]
 	var text string
 	json.Unmarshal(last.Content, &text)
+	if last.Role == "user" {
+		f.mu.Lock()
+		f.prompts = append(f.prompts, text)
+		f.mu.Unlock()
+	}
 
 	var chunks []map[string]any
 	call := func(name, arguments string) {
