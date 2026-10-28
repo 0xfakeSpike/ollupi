@@ -11,7 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	masking "github.com/0xfakeSpike/ollupi/pkg/redact"
+	"github.com/0xfakeSpike/ollupi/pkg/redact"
 	"github.com/0xfakeSpike/ollupi/repo"
 )
 
@@ -153,7 +153,7 @@ func (m *Manager) extract(ctx context.Context, batch *Batch, payload string, rep
 	if err != nil {
 		return nil, fmt.Errorf("could not read the redaction setting: %w", err)
 	}
-	redactor := masking.New()
+	redactor := redact.New()
 	if settings.Redaction {
 		payload = redactor.Mask(payload)
 	}
@@ -264,9 +264,6 @@ func (m *Manager) Edit(id, text string) (repo.MemoryRow, error) {
 	text = strings.TrimSpace(text)
 	if text == "" || utf8.RuneCountInString(text) > maxTextRunes {
 		return repo.MemoryRow{}, fmt.Errorf("%w: memory text must contain 1 to %d characters", ErrInvalidChange, maxTextRunes)
-	}
-	if redact(text) != text {
-		return repo.MemoryRow{}, fmt.Errorf("%w: remove credentials from memory text before saving", ErrInvalidChange)
 	}
 	var out repo.MemoryRow
 	err := m.db.Tx(func(tx *repo.DB) error {

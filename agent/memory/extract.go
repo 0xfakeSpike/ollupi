@@ -38,15 +38,6 @@ const (
 
 func extractionInput(batch *Batch, budget int) (string, int, error) {
 	input := *batch
-	input.Facts = make([]Fact, 0, len(batch.Facts))
-	for _, f := range batch.Facts {
-		data, err := sanitizeJSON(f.Data)
-		if err != nil {
-			return "", 0, fmt.Errorf("invalid memory evidence snapshot: %w", err)
-		}
-		f.Data = data
-		input.Facts = append(input.Facts, f)
-	}
 	input.Existing = []repo.MemoryRow{}
 	encode := func() (string, int) {
 		b, err := json.Marshal(input)
@@ -61,9 +52,7 @@ func extractionInput(batch *Batch, budget int) (string, int, error) {
 	}
 	terms := searchTerms(payload)
 	for _, r := range rank(batch.Existing, func(e repo.MemoryRow) int { return extractionScore(e, terms, payload) }) {
-		e := r.entry
-		e.Text = redact(e.Text)
-		input.Existing = append(input.Existing, e)
+		input.Existing = append(input.Existing, r.entry)
 		next, count := encode()
 		if count > budget {
 			input.Existing = input.Existing[:len(input.Existing)-1]
@@ -168,9 +157,6 @@ func parseOperations(content string, batch *Batch, restore func(string) string) 
 			}
 			if op.Scope == scopeGlobal && op.Kind != "preference" && op.Kind != "fact" {
 				return nil, errors.New("only preferences and facts can be global memories")
-			}
-			if redact(op.Text) != op.Text || redact(op.Topic) != op.Topic {
-				return nil, errors.New("memory extraction contained credentials")
 			}
 		}
 		if len(op.Sources) > maxSourcesPerNote {
