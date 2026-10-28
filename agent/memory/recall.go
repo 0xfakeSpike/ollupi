@@ -52,9 +52,9 @@ func (m *Manager) Snapshot(workspaceID string, budget int) (*Context, error) {
 		localTitle = generalTitle
 	}
 	budget -= llm.EstimateTokens(snapshotIntro + globalTitle + localTitle + fmt.Sprintf(omittedNote, len(rows)))
-	g, used := fit(global, budget/2)
+	_, used := fit(global, budget/2)
 	l, usedLocal := fit(local, budget-used)
-	g, _ = fit(global, budget-usedLocal)
+	g, _ := fit(global, budget-usedLocal)
 	if len(g)+len(l) == 0 {
 		return &Context{Entries: []repo.MemoryReference{}}, nil
 	}
