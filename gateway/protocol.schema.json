@@ -811,6 +811,31 @@
       ],
       "additionalProperties": false
     },
+    "MemoryFailure": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/MemoryFailureCode"
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "error"
+      ],
+      "additionalProperties": false
+    },
+    "MemoryFailureCode": {
+      "type": "string",
+      "enum": [
+        "model_request",
+        "invalid_response",
+        "evidence",
+        "storage"
+      ]
+    },
     "MemoryForgetParams": {
       "type": "object",
       "properties": {
@@ -1005,6 +1030,39 @@
         "workspace"
       ]
     },
+    "MemorySkip": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "entries": {
+          "type": "integer"
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": "string"
+        },
+        "code": {
+          "$ref": "#/$defs/MemoryFailureCode"
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "entries",
+        "threadId",
+        "turnId",
+        "code",
+        "error"
+      ],
+      "additionalProperties": false
+    },
     "MemorySource": {
       "type": "object",
       "properties": {
@@ -1079,7 +1137,24 @@
           "format": "date-time"
         },
         "lastError": {
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/MemoryFailure"
+            }
+          ]
+        },
+        "lastSkip": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/MemorySkip"
+            }
+          ]
         },
         "lastReport": {
           "anyOf": [

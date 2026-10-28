@@ -65,7 +65,7 @@ var providers = []string{cron.ProviderName, skills.ProviderName, memory.Provider
 
 var enums = []any{
 	repo.ItemTypeValues, repo.ItemStatusValues, repo.TurnStatusValues, repo.ThreadStatusValues,
-	repo.DecisionValues, repo.MemoryRowStatusValues, repo.MemoryScopeValues, permission.PolicyValues, plan.StatusValues, tools.AwaitByValues,
+	repo.DecisionValues, repo.MemoryRowStatusValues, repo.MemoryScopeValues, repo.MemoryFailureCodeValues, permission.PolicyValues, plan.StatusValues, tools.AwaitByValues,
 }
 
 var plainStrings = []reflect.Type{reflect.TypeFor[repo.Ref]()}

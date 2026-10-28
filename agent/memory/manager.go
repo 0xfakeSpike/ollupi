@@ -127,8 +127,6 @@ func (m *Manager) RunOnce(ctx context.Context) error {
 	return nil
 }
 
-// failure is an error of memory generation with the code a client explains
-// it by.
 type failure struct {
 	code repo.MemoryFailureCode
 	err  error
@@ -143,8 +141,6 @@ func failureOf(err error) repo.MemoryFailure {
 	return repo.MemoryFailure{Code: f.code, Error: clipMemory(err.Error(), 1000)}
 }
 
-// gatherEvidence returns the next batch, halved until it fits the budget;
-// with an error, a batch is one that never fits.
 func (m *Manager) gatherEvidence() (*Batch, string, int, error) {
 	for limit := m.opts.BatchSize; ; limit = max(1, limit/2) {
 		batch, err := nextBatch(m.db, limit)
@@ -196,7 +192,8 @@ func (m *Manager) extract(ctx context.Context, batch *Batch, payload string, rep
 }
 
 func (m *Manager) deferBatch(b *Batch, cause error) error {
-	skipped, err := m.db.DeferMemory(b.Cursor, b.Entries, failureOf(cause), time.Now())
+	skip := repo.MemorySkip{Entries: b.Entries, ThreadID: b.ThreadID, TurnID: b.TurnID, MemoryFailure: failureOf(cause)}
+	skipped, err := m.db.DeferMemory(b.Cursor, skip, time.Now())
 	if err != nil {
 		return fmt.Errorf("could not defer the memory batch of turn %s (%v): %w", b.TurnID, cause, err)
 	}
