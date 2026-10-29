@@ -80,7 +80,7 @@ func (c *Catalog) ToolList(context.Context) ([]*tools.Spec, error) {
 					"skill": map[string]any{"type": "string", "enum": names},
 					"path": map[string]any{
 						"type":        "string",
-						"description": "Resource path relative to the skill directory, as listed in AVAILABLE SKILLS.",
+						"description": "Resource path relative to the skill directory, as activate_skill listed it.",
 					},
 					"offset_runes": map[string]any{"type": "integer", "minimum": 0},
 					"limit_runes":  map[string]any{"type": "integer", "minimum": 1, "maximum": MaxResourceRunes},
