@@ -68,6 +68,18 @@ func TestUserMessagesCarryTheirSendTime(t *testing.T) {
 	}
 }
 
+func TestCompactedHistoryKeepsTheLatestSendTime(t *testing.T) {
+	at := time.Date(2026, 10, 29, 2, 15, 0, 0, time.UTC)
+	huge := user(strings.Repeat("word ", 20000))
+	huge.StartedAt = at
+	compaction := repo.ItemRow{Type: repo.ItemContextCompaction, Status: repo.ItemCompleted, ResponseID: "c", Text: "SUMMARY"}
+	got := contents(build(t, user("q1"), huge, compaction, answer("r2", "a2")).Messages)
+	want := "Latest user message before this summary: [sent " + at.In(time.Local).Format(sentLayout) + "]\n\n"
+	if len(got) != 2 || !strings.HasPrefix(got[0], want) || strings.Contains(got[0], "word word") {
+		t.Errorf("compacted history %.300q, want it to start with %q and leave out the message that does not fit", got[0], want)
+	}
+}
+
 func TestCompactionRefreshesTheSnapshot(t *testing.T) {
 	compaction := repo.ItemRow{Type: repo.ItemContextCompaction, Status: repo.ItemCompleted, ResponseID: "c", Text: "SUMMARY"}
 	items := []repo.ItemRow{user("q1"), memory("OLD"), answer("r1", "a1"), user("q2"), compaction, memory("NEW"), answer("r2", "a2")}

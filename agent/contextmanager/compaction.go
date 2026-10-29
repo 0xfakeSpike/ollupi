@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
@@ -81,6 +82,12 @@ const summaryPrefix = "Another language model started this conversation and prod
 
 func (m *Manager) compactedHistory(before []repo.ItemRow, summary string) string {
 	var b strings.Builder
+	for i := len(before) - 1; i >= 0; i-- {
+		if it := before[i]; it.Type == repo.ItemUserMessage && !it.StartedAt.IsZero() {
+			b.WriteString("Latest user message before this summary: [sent " + it.StartedAt.In(time.Local).Format(sentLayout) + "]\n\n")
+			break
+		}
+	}
 	if users := recentUserMessages(before, share(m.inputTokens, 10)); len(users) > 0 {
 		b.WriteString("Earlier messages from the user:\n")
 		for _, text := range users {
