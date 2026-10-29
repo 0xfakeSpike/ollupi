@@ -139,6 +139,7 @@ func (rt *Runtime) executePlan(ctx context.Context, plan callPlan) (bool, error)
 }
 
 func (rt *Runtime) runJobs(ctx context.Context, jobs []job) ([]tools.Result, error) {
+	ctx = tools.WithDeferred(ctx, rt.deferred)
 	for i := range jobs {
 		jobs[i].it.Status = repo.ItemInProgress
 		stored, err := rt.record(jobs[i].it)

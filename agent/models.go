@@ -59,8 +59,9 @@ func (a *Agent) checkBudgets() error {
 		if err != nil {
 			return err
 		}
-		system := systemprompt.Build(systemprompt.Input{Agent: systemprompt.AgentPrompt(a.cfg.Name, a.cfg.Prompt), Skills: catalog, SkillTokens: contexts.SkillBudget()})
-		if err := contexts.Fits(system, runtime.Specs(descriptors)); err != nil {
+		offered, deferred := runtime.Offer(descriptors, contexts, nil)
+		system := systemprompt.Build(systemprompt.Input{Agent: systemprompt.AgentPrompt(a.cfg.Name, a.cfg.Prompt), Skills: catalog, SkillTokens: contexts.SkillBudget(), Deferred: deferred})
+		if err := contexts.Fits(system, runtime.Specs(offered)); err != nil {
 			return err
 		}
 	}
