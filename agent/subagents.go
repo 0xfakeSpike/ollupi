@@ -12,7 +12,12 @@ import (
 func (a *Agent) settle(parent repo.ThreadRow, turn repo.TurnRow, call repo.ItemRow) (bool, error) {
 	childID := call.Await.ThreadID
 	if childID == "" {
+		req, err := subagent.Decode(call.Await.Request)
+		if err != nil {
+			return false, err
+		}
 		child, err := a.createThread(repo.ThreadRow{
+			Title:          clipRunes(req.Description, maxTitleRunes),
 			ParentThreadID: repo.Ref(parent.ID), ParentItemID: repo.Ref(call.ID),
 			WorkspaceID: parent.WorkspaceID,
 		})
@@ -37,7 +42,7 @@ func (a *Agent) settle(parent repo.ThreadRow, turn repo.TurnRow, call repo.ItemR
 		if err != nil {
 			return false, err
 		}
-		if _, err := a.submit(child.Thread, req.Prompt, "", turn.Model); err != nil {
+		if _, err := a.submit(child.Thread, repo.TurnRow{Input: req.Prompt}, turn.Model); err != nil {
 			return false, err
 		}
 		a.reconcile(childID)

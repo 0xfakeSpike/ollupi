@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"crypto/rand"
 	"database/sql/driver"
 	"errors"
 	"fmt"
@@ -72,7 +73,7 @@ func (d *DB) applySchema() error {
 		if err := tx.FirstOrCreate(&MemoryStateRow{}, MemoryStateRow{ID: 1}).Error; err != nil {
 			return fmt.Errorf("create memory state: %w", err)
 		}
-		if err := tx.FirstOrCreate(&SettingsRow{}, SettingsRow{ID: 1}).Error; err != nil {
+		if err := tx.Attrs(SettingsRow{RedactionKey: rand.Text()}).FirstOrCreate(&SettingsRow{}, SettingsRow{ID: 1}).Error; err != nil {
 			return fmt.Errorf("create settings: %w", err)
 		}
 		return nil

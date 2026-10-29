@@ -11,4 +11,14 @@ type Prepared struct {
 	Sandboxed       bool              `json:"sandboxed,omitempty"`
 	Escalated       bool              `json:"escalated,omitempty"`
 	Justification   string            `json:"justification,omitempty"`
+	Files           []FileChange      `json:"files,omitempty"`
+}
+
+type FileChange struct {
+	Path    string `json:"path"`
+	Before  string `json:"before,omitempty"`
+	After   string `json:"after"`
+	Diff    string `json:"diff"`
+	Added   int    `json:"added"`
+	Removed int    `json:"removed"`
 }

@@ -3,9 +3,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"maps"
 	"strings"
 	"time"
 
@@ -21,9 +19,8 @@ const (
 )
 
 type OpenAI struct {
+	connection
 	client openai.Client
-	limits map[string]Limits
-	calls  chan struct{}
 }
 
 func NewOpenAI(baseURL, apiKey string, calls int, limits map[string]Limits) *OpenAI {
@@ -34,10 +31,7 @@ func NewOpenAI(baseURL, apiKey string, calls int, limits map[string]Limits) *Ope
 	if baseURL != "" {
 		opts = append(opts, option.WithBaseURL(baseURL))
 	}
-	if calls <= 0 {
-		calls = DefaultCalls
-	}
-	return &OpenAI{client: openai.NewClient(opts...), limits: maps.Clone(limits), calls: make(chan struct{}, calls)}
+	return &OpenAI{connection: newConnection(calls, limits), client: openai.NewClient(opts...)}
 }
 
 func withDefaultTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
@@ -54,14 +48,11 @@ func (c *OpenAI) Chat(ctx context.Context, req ChatRequest, onDelta func(Delta))
 	if req.ToolChoice != ToolChoiceAuto && req.ToolChoice != ToolChoiceNone {
 		return ChatResponse{}, fmt.Errorf("llm.OpenAI: unsupported tool choice %q", req.ToolChoice)
 	}
-	select {
-	case c.calls <- struct{}{}:
-	case <-ctx.Done():
-		return ChatResponse{}, ctx.Err()
+	ctx, release, err := c.acquire(ctx)
+	if err != nil {
+		return ChatResponse{}, err
 	}
-	defer func() { <-c.calls }()
-	ctx, cancel := withDefaultTimeout(ctx, defaultChatTimeout)
-	defer cancel()
+	defer release()
 
 	params := openai.ChatCompletionNewParams{
 		Model:    shared.ChatModel(req.Model.Name),
@@ -114,20 +105,6 @@ func (c *OpenAI) Chat(ctx context.Context, req ChatRequest, onDelta func(Delta))
 		return acc.usageResponse(), safeRequestError(err)
 	}
 	return acc.response()
-}
-
-func safeRequestError(err error) error {
-	if errors.Is(err, context.Canceled) {
-		return context.Canceled
-	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		return context.DeadlineExceeded
-	}
-	var apiErr *openai.Error
-	if errors.As(err, &apiErr) {
-		return fmt.Errorf("model request failed (HTTP %d); check the selected connection and model", apiErr.StatusCode)
-	}
-	return fmt.Errorf("model request failed; check the selected connection and try again")
 }
 
 type streamAccumulator struct {
@@ -223,7 +200,21 @@ func toMessageParam(message ChatMessage) (openai.ChatCompletionMessageParamUnion
 	case RoleSystem:
 		return openai.SystemMessage(message.Content), nil
 	case RoleUser:
-		return openai.UserMessage(message.Content), nil
+		if len(message.Parts) == 0 {
+			return openai.UserMessage(message.Content), nil
+		}
+		parts := []openai.ChatCompletionContentPartUnionParam{openai.TextContentPart(message.Content)}
+		for _, p := range message.Parts {
+			switch p.Type {
+			case PartImage:
+				parts = append(parts, openai.ImageContentPart(openai.ChatCompletionContentPartImageImageURLParam{URL: p.DataURL()}))
+			case PartText:
+				parts = append(parts, openai.TextContentPart(p.Text))
+			default:
+				return openai.ChatCompletionMessageParamUnion{}, fmt.Errorf("unsupported content part %q", p.Type)
+			}
+		}
+		return openai.UserMessage(parts), nil
 	case RoleAssistant:
 		var assistant openai.ChatCompletionAssistantMessageParam
 		if message.Content != "" {

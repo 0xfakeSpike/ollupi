@@ -93,10 +93,8 @@ func (a *Agent) runTurn(ctx context.Context, view repo.ThreadView, turn repo.Tur
 			checker, _, err := a.permissions(t)
 			return items, checker, err
 		},
-		Redaction: func() (bool, error) {
-			settings, err := a.cfg.DB.Settings()
-			return settings.Redaction, err
-		},
+		AttachmentsDir: a.cfg.AttachmentsDir,
+		Settings:       a.cfg.DB.Settings,
 	}
 	return rt.Run(ctx)
 }

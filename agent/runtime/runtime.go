@@ -28,7 +28,7 @@ const (
 )
 
 type Runtime struct {
-	LLM      *llm.OpenAI
+	LLM      llm.Client
 	Registry *tools.Registry
 	Skills   *skills.Catalog
 	Contexts *contextmanager.Manager
@@ -44,7 +44,9 @@ type Runtime struct {
 	Record      func(repo.ItemRow) (repo.ItemRow, error)
 	Delta       func(repo.ItemRow, string)
 	Reload      func() ([]repo.ItemRow, *permission.Checker, error)
-	Redaction   func() (bool, error)
+	Settings    func() (repo.SettingsRow, error)
+
+	AttachmentsDir string
 
 	offered  []tools.ToolDescriptor
 	deferred []tools.ToolDescriptor
@@ -66,7 +68,11 @@ func (rt *Runtime) start() error {
 	if rt.waiting() {
 		return fmt.Errorf("runtime: turn %s still waits for an answer", rt.Turn.ID)
 	}
-	rt.redactor = redact.New()
+	settings, err := rt.Settings()
+	if err != nil {
+		return fmt.Errorf("runtime: read the settings: %w", err)
+	}
+	rt.redactor = redact.New(settings.RedactionKey)
 	var catalog []skills.Skill
 	if rt.Skills != nil {
 		catalog = rt.Skills.All()

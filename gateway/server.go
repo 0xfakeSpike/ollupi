@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"log"
@@ -23,7 +24,7 @@ import (
 )
 
 const (
-	maxMessageBytes = 1 << 20
+	maxMessageBytes = 32 << 20
 	defaultLimit    = 20
 	maxLimit        = 100
 	defaultItems    = 100
@@ -187,6 +188,10 @@ func (c *conn) event(e agent.Event) {
 	switch e.Kind {
 	case agent.EventThreadStarted:
 		c.rpc.Notify(notifyThreadStarted, ThreadResult{Thread: e.Thread})
+	case agent.EventThreadChanged:
+		c.rpc.Notify(notifyThreadChanged, ThreadChangedNotification{ThreadID: e.Thread.ID, Thread: &e.Thread})
+	case agent.EventThreadDeleted:
+		c.rpc.Notify(notifyThreadChanged, ThreadChangedNotification{ThreadID: e.Thread.ID})
 	case agent.EventTurnQueued:
 		c.rpc.Notify(notifyTurnQueued, TurnNotification{ThreadID: e.Thread.ID, Thread: e.Thread, Turn: e.Turn})
 	case agent.EventTurnStarted:
@@ -283,15 +288,25 @@ func itemBytes(it repo.ItemRow) int {
 	return len(raw)
 }
 
-func inputText(input []UserInput) (string, error) {
+func userInput(input []UserInput) (agent.Input, error) {
+	var in agent.Input
 	texts := make([]string, 0, len(input))
-	for _, in := range input {
-		if in.Type != "text" {
-			return "", jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "input type %q is not supported", in.Type)
+	for _, part := range input {
+		switch part.Type {
+		case "text":
+			texts = append(texts, part.Text)
+		case "image", "file":
+			data, err := base64.StdEncoding.DecodeString(part.Data)
+			if err != nil {
+				return agent.Input{}, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "the data of %s %q is not base64: %v", part.Type, part.Name, err)
+			}
+			in.Attachments = append(in.Attachments, agent.AttachmentInput{Name: part.Name, MimeType: part.MimeType, Data: data})
+		default:
+			return agent.Input{}, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "input type %q is not supported", part.Type)
 		}
-		texts = append(texts, in.Text)
 	}
-	return strings.Join(texts, "\n"), nil
+	in.Text = strings.Join(texts, "\n")
+	return in, nil
 }
 
 func nonNil[T any](s []T) []T {
@@ -311,6 +326,8 @@ var errorCodes = []struct {
 	{agent.ErrNoSuchRequest, errNoSuchRequest},
 	{agent.ErrSubagentThread, errSubagentThread},
 	{agent.ErrWorkspaceArchived, errWorkspaceArchived},
+	{agent.ErrThreadArchived, errThreadArchived},
+	{agent.ErrThreadBusy, errThreadBusy},
 	{agent.ErrInvalidMessage, jsonrpc.CodeInvalidParams},
 	{agent.ErrInvalidAnswer, jsonrpc.CodeInvalidParams},
 	{agent.ErrInvalidDecision, jsonrpc.CodeInvalidParams},

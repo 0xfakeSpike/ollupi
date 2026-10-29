@@ -23,11 +23,14 @@ func nextBatch(db *repo.DB, limit int) (*Batch, error) {
 		var turn repo.TurnRow
 		var items []repo.ItemRow
 		if c.ID != "" {
-			if turn, err = tx.EndedTurn(c.ID); err != nil {
+			switch turn, err = tx.EndedTurn(c.ID); {
+			case repo.IsNotFound(err):
+			case err != nil:
 				return err
-			}
-			if items, err = tx.TurnItemsAfter(turn.ID, c.Seq, evidenceTypes, evidenceStatuses, limit); err != nil {
-				return err
+			default:
+				if items, err = tx.TurnItemsAfter(turn.ID, c.Seq, evidenceTypes, evidenceStatuses, limit); err != nil {
+					return err
+				}
 			}
 		}
 		if len(items) == 0 {

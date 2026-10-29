@@ -13,28 +13,32 @@ import (
 type Usage struct {
 	InputTokens       int64 `gorm:"not null" json:"inputTokens"`
 	CachedInputTokens int64 `gorm:"not null" json:"cachedInputTokens"`
-	OutputTokens      int64 `gorm:"not null" json:"outputTokens"`
+	// CacheWriteInputTokens counts input tokens written to the provider's prompt cache; they are part of InputTokens.
+	CacheWriteInputTokens int64 `gorm:"not null" json:"cacheWriteInputTokens"`
+	OutputTokens          int64 `gorm:"not null" json:"outputTokens"`
 }
 
 func (u *Usage) Add(v Usage) {
 	u.InputTokens += v.InputTokens
 	u.CachedInputTokens += v.CachedInputTokens
+	u.CacheWriteInputTokens += v.CacheWriteInputTokens
 	u.OutputTokens += v.OutputTokens
 }
 
 type TurnRow struct {
-	ID          string     `gorm:"primaryKey" json:"id"`
-	ThreadID    string     `gorm:"not null;uniqueIndex:turns_thread_seq,priority:1;uniqueIndex:turns_one_active,where:status = 'inProgress';index:turns_open,where:status = 'inProgress' OR status = 'queued'" json:"threadId"`
-	Thread      *ThreadRow `gorm:"constraint:OnDelete:CASCADE" json:"-"`
-	Seq         int        `gorm:"not null;uniqueIndex:turns_thread_seq,priority:2" json:"seq"`
-	Status      TurnStatus `gorm:"not null" json:"status"`
-	Model       llm.Model  `gorm:"not null;serializer:json;check:turns_model,json_valid(model)" json:"model"`
-	Usage       Usage      `gorm:"embedded" json:"usage"`
-	Error       string     `gorm:"not null;default:''" json:"error,omitempty"`
-	Input       string     `gorm:"not null;default:''" json:"input,omitempty"`
-	CronJobID   string     `gorm:"not null;default:'';index:turns_cron_job,priority:1" json:"cronJobId,omitempty"`
-	StartedAt   time.Time  `gorm:"not null;index:turns_cron_job,priority:2" json:"startedAt"`
-	CompletedAt *time.Time `json:"completedAt,omitempty"`
+	ID          string       `gorm:"primaryKey" json:"id"`
+	ThreadID    string       `gorm:"not null;uniqueIndex:turns_thread_seq,priority:1;uniqueIndex:turns_one_active,where:status = 'inProgress';index:turns_open,where:status = 'inProgress' OR status = 'queued'" json:"threadId"`
+	Thread      *ThreadRow   `gorm:"constraint:OnDelete:CASCADE" json:"-"`
+	Seq         int          `gorm:"not null;uniqueIndex:turns_thread_seq,priority:2" json:"seq"`
+	Status      TurnStatus   `gorm:"not null" json:"status"`
+	Model       llm.Model    `gorm:"not null;serializer:json;check:turns_model,json_valid(model)" json:"model"`
+	Usage       Usage        `gorm:"embedded" json:"usage"`
+	Error       string       `gorm:"not null;default:''" json:"error,omitempty"`
+	Input       string       `gorm:"not null;default:''" json:"input,omitempty"`
+	Attachments []Attachment `gorm:"serializer:json" json:"attachments,omitempty"`
+	CronJobID   string       `gorm:"not null;default:'';index:turns_cron_job,priority:1" json:"cronJobId,omitempty"`
+	StartedAt   time.Time    `gorm:"not null;index:turns_cron_job,priority:2" json:"startedAt"`
+	CompletedAt *time.Time   `json:"completedAt,omitempty"`
 }
 
 func (TurnRow) TableName() string { return "turns" }
@@ -84,7 +88,7 @@ func (d *DB) CreateTurn(row TurnRow) error {
 func (d *DB) UpdateTurn(row TurnRow) error {
 	res := d.gorm.Model(&TurnRow{}).Where("id = ? AND thread_id = ?", row.ID, row.ThreadID).Updates(map[string]any{
 		"status": row.Status, "input_tokens": row.Usage.InputTokens, "cached_input_tokens": row.Usage.CachedInputTokens,
-		"output_tokens": row.Usage.OutputTokens, "error": row.Error, "completed_at": nullTime(row.CompletedAt),
+		"cache_write_input_tokens": row.Usage.CacheWriteInputTokens, "output_tokens": row.Usage.OutputTokens, "error": row.Error, "completed_at": nullTime(row.CompletedAt),
 	})
 	if err := checkOne(res); err != nil {
 		return fmt.Errorf("turn %s: %w", row.ID, err)
@@ -115,7 +119,7 @@ func (d *DB) SubmitTurn(threadID string, turn TurnRow) (ThreadRow, TurnRow, *Ite
 		if thread, err = tx.ThreadRow(threadID); err != nil {
 			return err
 		}
-		if turn.ID == "" || strings.TrimSpace(turn.Input) == "" {
+		if turn.ID == "" || (strings.TrimSpace(turn.Input) == "" && len(turn.Attachments) == 0) {
 			return fmt.Errorf("a new turn needs an id and an input")
 		}
 		var total, open int64
@@ -172,16 +176,13 @@ func (d *DB) startIn(t ThreadRow, turn TurnRow) (ThreadRow, TurnRow, ItemRow, er
 		return ThreadRow{}, TurnRow{}, ItemRow{}, fmt.Errorf("turn %s: %w", turn.ID, err)
 	}
 	turn.Status, turn.StartedAt = TurnInProgress, now
-	message := NewUserMessage(uuid.NewString(), turn.ID, turn.Input, now)
+	message := NewUserMessage(uuid.NewString(), turn.ID, turn.Input, turn.Attachments, now)
 	if err := d.saveItemOf(t.ID, message); err != nil {
 		return ThreadRow{}, TurnRow{}, ItemRow{}, err
 	}
 	stored, err := d.Item(message.ID)
 	if err != nil {
 		return ThreadRow{}, TurnRow{}, ItemRow{}, err
-	}
-	if t.Preview == "" {
-		t.Preview = preview(turn.Input)
 	}
 	t.UpdatedAt = now
 	if err := d.UpdateThread(t); err != nil {

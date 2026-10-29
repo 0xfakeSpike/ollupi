@@ -1,15 +1,20 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -30,6 +35,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools/shell"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
+	"github.com/0xfakeSpike/ollupi/tools/web"
 	"github.com/coder/websocket"
 	"github.com/google/jsonschema-go/jsonschema"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -64,17 +70,26 @@ func TestTrafficMatchesContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	browser := &pageTool{pages: map[string]string{}}
+	runner, err := shell.NewRunner(shell.Options{Config: shell.Config{WorkspaceDirs: []string{t.TempDir()}, SandboxMode: "full-access"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runner.Close()
 	ag := agent.New(agent.Config{
 		Name:   "test",
-		Models: []llm.Model{{Name: "gpt-4o", Connection: "fake"}},
+		Models: []llm.Model{{Name: "gpt-4o", Connection: "fake"}, {Name: "gpt-4o", Connection: "vision", Images: true}},
 		Settings: permission.Settings{ApprovalPolicy: string(permission.OnRequest),
 			Rules: permission.Rules{Deny: []string{"broken__drop_tables"}}},
-		Connections: map[string]*llm.OpenAI{"fake": llm.NewOpenAI(model.URL, "", 4, map[string]llm.Limits{"gpt-4o": {Context: 128_000, Output: 16_384}})},
-		Providers:   append([]tools.Provider{touchTool{}, browser, jobs}, servers.Providers()...),
-		Unavailable: servers.Unavailable(),
-		Memory:      mem,
-		DB:          db,
-		OnEvent:     func(e agent.Event) { server.Deliver(e) },
+		Connections: map[string]llm.Client{
+			"fake":   llm.NewOpenAI(model.URL, "", 4, map[string]llm.Limits{"gpt-4o": {Context: 128_000, Output: 16_384}}),
+			"vision": llm.NewOpenAI(model.URL, "", 4, map[string]llm.Limits{"gpt-4o": {Context: 128_000, Output: 16_384}}),
+		},
+		AttachmentsDir: t.TempDir(),
+		Providers:      append([]tools.Provider{touchTool{}, browser, jobs, runner, web.New(web.Options{Transport: http.DefaultTransport})}, servers.Providers()...),
+		Unavailable:    servers.Unavailable(),
+		Memory:         mem,
+		DB:             db,
+		OnEvent:        func(e agent.Event) { server.Deliver(e) },
 	})
 	if server, err = NewServer(ag, Options{Token: "secret", Memory: mem, Jobs: jobs, MCP: servers}); err != nil {
 		t.Fatal(err)
@@ -131,7 +146,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 	}
 
 	var th ThreadResult
-	c.call("thread/start", ThreadStartParams{WorkspaceID: workspaceID}, &th)
+	c.call("thread/start", ThreadStartParams{WorkspaceID: workspaceID, Title: "hello"}, &th)
 	c.await("thread/started", nil)
 	threadID := th.Thread.ID
 	c.call("thread/updatePermissions", ThreadPermissionsParams{ThreadID: threadID}, nil)
@@ -200,13 +215,38 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.awaitTurnEnd(turn, repo.TurnCompleted)
 
 	c.awaitTurnEnd(c.startTurn(threadID, "make a plan"), repo.TurnCompleted)
+	for _, words := range []string{"write notes", "edit notes"} {
+		c.toolTurn(threadID, words)
+	}
+	if body, err := os.ReadFile(filepath.Join(ws.Workspace.RootPath, "notes.txt")); err != nil || string(body) != "Hello there.\n" {
+		t.Errorf("notes.txt holds %q (%v)", body, err)
+	}
 	for _, words := range []string{"cron-create", "cron-pause", "cron-list", "cron-delete"} {
 		c.toolTurn(threadID, words)
 	}
 
+	site := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(`<html><head><title>Docs</title></head><body><h1>Welcome</h1></body></html>`))
+	}))
+	defer site.Close()
+	turn = c.startTurn(threadID, "fetch "+site.URL+"/docs")
+	approval = c.await(requestApproval, nil)
+	json.Unmarshal(approval.Params, &asked)
+	if asked.Content != site.URL+"/docs" || !slices.Equal(asked.SuggestedRules, []string{"web_fetch(127.0.0.1)"}) {
+		t.Errorf("web_fetch approval shows %q and suggests %q", asked.Content, asked.SuggestedRules)
+	}
+	c.respond(approval, ApprovalResponse{Decision: repo.DecisionAccept})
+	c.awaitTurnEnd(turn, repo.TurnCompleted)
+	if v, err := db.Thread(threadID); err != nil || !slices.ContainsFunc(v.Items, func(it repo.ItemRow) bool {
+		return it.Tool == web.Tool && it.Result != nil && strings.Contains(string(it.Result.Output), "# Welcome")
+	}) {
+		t.Errorf("web_fetch did not return the page text (%v)", err)
+	}
+
 	var daily repo.CronJobRow
 	c.call("cron/create", CronCreateParams{ThreadID: threadID, Name: "daily", Spec: "@daily", Prompt: "daily check"}, &daily)
-	c.cronChanged(daily.ID, func(j *repo.CronJobView) bool { return j != nil && j.Name == "daily" && j.ThreadPreview == "hello" })
+	c.cronChanged(daily.ID, func(j *repo.CronJobView) bool { return j != nil && j.Name == "daily" && j.ThreadTitle == "hello" })
 	c.call("cron/list", CronListParams{ThreadID: threadID}, nil)
 	paused := true
 	c.call("cron/pause", CronPauseParams{ThreadID: threadID, Name: "daily", Paused: &paused}, nil)
@@ -244,7 +284,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 	}
 
 	var general ThreadResult
-	c.call("thread/start", ThreadStartParams{}, &general)
+	c.call("thread/start", ThreadStartParams{Title: "hello"}, &general)
 	c.await("thread/started", nil)
 	c.awaitTurnEnd(c.startTurn(general.Thread.ID, "hello"), repo.TurnCompleted)
 	c.call("thread/read", ThreadPageParams{ThreadID: general.Thread.ID}, &page)
@@ -281,6 +321,82 @@ func TestTrafficMatchesContract(t *testing.T) {
 	}
 	c.call("thread/read", ThreadPageParams{ThreadID: threadID, Limit: 2, BeforeSeq: 4}, nil)
 	c.call("thread/list", repo.ThreadFilter{WorkspaceID: &workspaceID}, nil)
+
+	var pic bytes.Buffer
+	png.Encode(&pic, image.NewRGBA(image.Rect(0, 0, 2, 2)))
+	pictured := []UserInput{{Type: "text", Text: "what is this"}, {Type: "image", Name: "dot.png", Data: base64.StdEncoding.EncodeToString(pic.Bytes())},
+		{Type: "file", Name: "notes.md", Data: base64.StdEncoding.EncodeToString([]byte("# Notes\n"))}}
+	c.refused("turn/start", TurnStartParams{ThreadID: general.Thread.ID, Input: pictured}, jsonrpc.CodeInvalidParams, "does not accept images")
+	var shown ThreadResult
+	c.call("thread/start", ThreadStartParams{}, &shown)
+	c.await("thread/started", nil)
+	var started TurnResult
+	c.call("turn/start", TurnStartParams{ThreadID: shown.Thread.ID, Input: pictured, Connection: "vision"}, &started)
+	c.awaitTurnEnd(started.Turn.ID, repo.TurnCompleted)
+	fake.mu.Lock()
+	parts := strings.Join(fake.parts, ",")
+	fake.mu.Unlock()
+	if parts != "text,image_url,text" {
+		t.Errorf("the model got the parts %s", parts)
+	}
+	c.refused("turn/start", TurnStartParams{ThreadID: shown.Thread.ID, Input: []UserInput{{Type: "text", Text: "hi"}}, Connection: "fake"}, jsonrpc.CodeInvalidParams, "shows the model images")
+	var page2 ThreadPageResult
+	c.call("thread/read", ThreadPageParams{ThreadID: shown.Thread.ID}, &page2)
+	var atts []repo.Attachment
+	for _, it := range page2.Items {
+		atts = append(atts, it.Attachments...)
+	}
+	if len(atts) != 2 || atts[0].Kind != repo.AttachmentImage || atts[0].Width != 2 || atts[1].Kind != repo.AttachmentFile {
+		t.Fatalf("attachments %+v", atts)
+	}
+	var read AttachmentReadResult
+	c.call("attachment/read", AttachmentReadParams{ThreadID: shown.Thread.ID, AttachmentID: atts[0].ID}, &read)
+	if read.Data != pictured[1].Data || read.Attachment.MimeType != "image/png" {
+		t.Errorf("attachment/read returned %+v", read.Attachment)
+	}
+	c.call("thread/delete", ThreadDeleteParams{ThreadID: shown.Thread.ID}, nil)
+
+	var renamed ThreadResult
+	c.call("thread/rename", ThreadRenameParams{ThreadID: general.Thread.ID, Title: "Mail"}, &renamed)
+	if renamed.Thread.Title != "Mail" {
+		t.Errorf("renamed thread %+v", renamed.Thread)
+	}
+	c.refused("thread/rename", ThreadRenameParams{ThreadID: general.Thread.ID, Title: " "}, jsonrpc.CodeInvalidParams, "title")
+	c.call("cron/create", CronCreateParams{ThreadID: general.Thread.ID, Name: "hourly", Spec: "@hourly", Prompt: "hourly check"}, nil)
+	archived := true
+	c.call("thread/archive", ThreadArchiveParams{ThreadID: general.Thread.ID, Archived: &archived}, nil)
+	c.await(notifyThreadChanged, func(params json.RawMessage) bool {
+		var n ThreadChangedNotification
+		return json.Unmarshal(params, &n) == nil && n.Thread != nil && n.Thread.ArchivedAt != nil
+	})
+	c.await(notifyCronChanged, func(params json.RawMessage) bool {
+		var n CronChangedNotification
+		return json.Unmarshal(params, &n) == nil && n.Job != nil && n.Job.Name == "hourly" && n.Job.ThreadArchived
+	})
+	c.refused("turn/start", TurnStartParams{ThreadID: general.Thread.ID, Input: []UserInput{{Type: "text", Text: "hi"}}}, errThreadArchived, "archived")
+	var shelf ThreadListResult
+	c.call("thread/list", repo.ThreadFilter{Archived: true}, &shelf)
+	if len(shelf.Data) != 1 || shelf.Data[0].ID != general.Thread.ID {
+		t.Errorf("archived threads %+v", shelf.Data)
+	}
+	restore := false
+	c.call("thread/archive", ThreadArchiveParams{ThreadID: general.Thread.ID, Archived: &restore}, nil)
+	var doomed ThreadResult
+	c.call("thread/start", ThreadStartParams{}, &doomed)
+	c.await("thread/started", nil)
+	turn = c.startTurn(doomed.Thread.ID, "ask me first")
+	c.await(requestUserInput, nil)
+	c.refused("thread/delete", ThreadDeleteParams{ThreadID: doomed.Thread.ID}, errThreadBusy, "interrupt")
+	c.call("turn/interrupt", TurnInterruptParams{ThreadID: doomed.Thread.ID, TurnID: turn}, nil)
+	c.awaitTurnEnd(turn, repo.TurnInterrupted)
+	c.call("thread/delete", ThreadDeleteParams{ThreadID: doomed.Thread.ID}, nil)
+	c.await(notifyThreadChanged, func(params json.RawMessage) bool {
+		var n ThreadChangedNotification
+		return json.Unmarshal(params, &n) == nil && n.ThreadID == doomed.Thread.ID && n.Thread == nil
+	})
+	if _, err := db.ThreadRow(doomed.Thread.ID); !repo.IsNotFound(err) {
+		t.Errorf("the deleted thread is still stored: %v", err)
+	}
 
 	for _, e := range []repo.MemoryRow{
 		{ID: "m1", Scope: repo.MemoryGeneral, Topic: "colors", Kind: "preference", Text: "Likes blue."},
@@ -346,7 +462,6 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.call("cron/create", CronCreateParams{ThreadID: threadID, Name: "weekly", Spec: "@weekly", Prompt: "weekly check"}, nil)
 	c.call("cron/pause", CronPauseParams{ThreadID: threadID, Name: "weekly", Paused: &paused}, nil)
 	c.call("cron/create", CronCreateParams{ThreadID: general.Thread.ID, Name: "nightly", Spec: "@midnight", Prompt: "nightly check"}, nil)
-	archived := true
 	c.call("workspace/archive", WorkspaceArchiveParams{WorkspaceID: workspaceID, Archived: &archived}, nil)
 	var all CronListResult
 	c.call("cron/list", CronListParams{}, &all)
@@ -354,15 +469,45 @@ func TestTrafficMatchesContract(t *testing.T) {
 	for _, j := range all.Data {
 		byName[j.Name] = j
 	}
-	if j := byName["weekly"]; len(all.Data) != 3 || !j.Paused || j.WorkspaceID != workspaceID || j.ParentThreadID != "" || j.LastRunAt != nil {
+	if j := byName["weekly"]; len(all.Data) != 4 || !j.Paused || j.WorkspaceID != workspaceID || j.ParentThreadID != "" || j.LastRunAt != nil {
 		t.Errorf("all tasks %+v", all.Data)
 	}
-	if j := byName["nightly"]; j.WorkspaceID != "" || j.ThreadID != general.Thread.ID || j.ThreadPreview != "hello" {
+	if j := byName["nightly"]; j.WorkspaceID != "" || j.ThreadID != general.Thread.ID || j.ThreadTitle != "Mail" || j.ThreadArchived {
 		t.Errorf("task outside any workspace %+v", j)
 	}
 	if j := byName["due"]; j.LastTurnID != ranTurn.Turn.ID {
 		t.Errorf("task that ran %+v", j)
 	}
+
+	c.awaitTurnEnd(c.startTurn(general.Thread.ID, "请检查数据库连接是否正常"), repo.TurnCompleted)
+	var found SearchResult
+	c.call("search", SearchParams{Query: "数据库"}, &found)
+	if len(found.Messages) != 1 || found.Messages[0].ThreadID != general.Thread.ID || found.Messages[0].ThreadTitle != "Mail" ||
+		found.Messages[0].Type != repo.ItemUserMessage || found.Messages[0].Snippet != "请检查数据库连接是否正常" {
+		t.Errorf("search 数据库 found messages %+v", found.Messages)
+	}
+	c.call("search", SearchParams{Query: "weekly check"}, &found)
+	if len(found.Tasks) != 1 || found.Tasks[0].Name != "weekly" || len(found.Threads) != 0 || len(found.Memories) != 0 {
+		t.Errorf("search weekly found %+v", found)
+	}
+	c.call("search", SearchParams{Query: "mail"}, &found)
+	if len(found.Threads) != 1 || found.Threads[0].ID != general.Thread.ID {
+		t.Errorf("search mail found threads %+v", found.Threads)
+	}
+	c.call("search", SearchParams{Query: "zsh", WorkspaceID: workspaceID}, &found)
+	if len(found.Memories) != 1 || found.Memories[0].ID != "m2" {
+		t.Errorf("search zsh found memories %+v", found.Memories)
+	}
+	c.call("search", SearchParams{Query: "touch", WorkspaceID: workspaceID}, &found)
+	for _, m := range found.Messages {
+		if m.ThreadID == general.Thread.ID {
+			t.Errorf("search in a workspace found a message outside it: %+v", m)
+		}
+	}
+	if len(found.Messages) == 0 {
+		t.Error("search touch found no messages in the workspace")
+	}
+	c.refused("search", SearchParams{Query: "  "}, jsonrpc.CodeInvalidParams, "query")
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -495,6 +640,7 @@ func (p *pageTool) clicked() []string {
 type fakeModel struct {
 	mu      sync.Mutex
 	calls   int
+	parts   []string
 	prompts []string
 }
 
@@ -516,6 +662,19 @@ func (f *fakeModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	last := req.Messages[len(req.Messages)-1]
 	var text string
 	json.Unmarshal(last.Content, &text)
+	var parts []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(last.Content, &parts) == nil {
+		f.mu.Lock()
+		f.parts = nil
+		for _, p := range parts {
+			f.parts = append(f.parts, p.Type)
+		}
+		f.mu.Unlock()
+		text = parts[0].Text
+	}
 	if last.Role == "user" {
 		f.mu.Lock()
 		f.prompts = append(f.prompts, text)
@@ -539,6 +698,13 @@ func (f *fakeModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		call(subagent.Tool, `{"description":"Check a thing","prompt":"Check the thing and report."}`)
 	case last.Role == "user" && strings.Contains(text, "recall"):
 		call(memory.ToolSearch, `{"query":"answers"}`)
+	case last.Role == "user" && strings.Contains(text, "write notes"):
+		call(shell.ToolWriteFile, `{"path":"notes.txt","content":"Hello.\n"}`)
+	case last.Role == "user" && strings.Contains(text, "edit notes"):
+		call(shell.ToolEditFile, `{"path":"notes.txt","edits":[{"old_text":"Hello.","new_text":"Hello there."}]}`)
+	case last.Role == "user" && strings.Contains(text, "fetch http"):
+		words := strings.Fields(text)
+		call(web.Tool, fmt.Sprintf(`{"url":%q}`, words[len(words)-1]))
 	case last.Role == "user" && strings.Contains(text, "make a plan"):
 		call(plan.Tool, `{"explanation":"Two steps.","plan":[{"step":"Look around","status":"in_progress"},{"step":"Report","status":"pending"}]}`)
 	case last.Role == "user" && strings.Contains(text, "cron-create"):

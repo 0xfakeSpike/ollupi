@@ -56,7 +56,7 @@ func NewRunner(o Options) (*Runner, error) {
 func (r *Runner) Close() error { return r.box.Close() }
 
 func (r *Runner) Name() (string, string) {
-	return "shell", "Run commands in the working folders, under the macOS sandbox unless it is turned off."
+	return "shell", "Run commands and edit files in the working folders, under the sandbox unless it is turned off."
 }
 
 func (r *Runner) tool() *tools.Spec {
@@ -79,7 +79,7 @@ func (r *Runner) tool() *tools.Spec {
 		Annotations: &tools.Annotations{DestructiveHint: tools.Hint(true), OpenWorldHint: tools.Hint(true)},
 
 		PermissionContent: permissionContent,
-		Local:             &tools.Local{Prepare: r.Prepare, Run: r.Run},
+		Local:             &tools.Local{Prepare: r.prepareCommand, Run: r.runCommand},
 	}
 }
 
@@ -140,7 +140,7 @@ func (r *Runner) inputSchema() map[string]any {
 }
 
 func (r *Runner) ToolList(context.Context) ([]*tools.Spec, error) {
-	return []*tools.Spec{r.tool()}, nil
+	return append([]*tools.Spec{r.tool()}, r.fileTools()...), nil
 }
 
 func parseExecArgsSlice(v any) ([]string, error) {

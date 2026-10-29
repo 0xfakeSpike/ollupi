@@ -51,7 +51,7 @@
 
 **macOS Seatbelt 沙箱。** 命令默认在沙箱里跑：凭据文件不可读，缓存默认只读，`.git` 的 hooks 和 config 写不进去。网络经代理只放行允许的域名，并拦下解析到内网的地址。命令结束时清掉它派生的所有后台进程。跑出沙箱算提权，必须单独批准，allow 规则也替代不了。
 
-**双向脱敏。** 手机号、身份证、银行卡、邮箱、密钥在发给模型前换成占位符，模型的回答在记录和交给工具前还原。服务商看不到真实值，会话记录和工具看到的都是真实值。占位符用进程级随机密钥做 HMAC，外部伪造不了。用户可以随时关掉。
+**双向脱敏。** 手机号、身份证、银行卡、邮箱、密钥在发给模型前换成占位符，模型的回答在记录和交给工具前还原。服务商看不到真实值，会话记录和工具看到的都是真实值。占位符用每个安装各自的密钥做 HMAC（存在库里，重启不变，历史记录的占位符因此保持一致），外部伪造不了。用户可以随时关掉。
 
 ## 记忆
 
@@ -77,9 +77,15 @@ flowchart LR
 | `list_skills` `activate_skill` `read_skill_resource` | Agent Skills |
 | `create_scheduled_job` `pause_scheduled_job` `delete_scheduled_job` `list_scheduled_jobs` | 定时任务 |
 | `run_command` | 沙箱里跑命令（`tools/shell`，应用装配） |
+| `edit_file` `write_file` | 改写和新建文件，只写沙箱允许的目录，审批时冻结 diff（`tools/shell`，应用装配） |
+| `web_fetch` | 读取公网网页，HTML 转成类 Markdown 正文（`tools/web`，应用装配） |
 | `<服务器>__<工具>` | MCP 服务器的工具，stdio 或 streamable HTTP（`tools/mcp`，应用装配） |
 
 应用自己的工具实现 `tools.Provider` 接入。所有工具都受 `Config.Tools` 允许列表和权限规则约束。
+
+## 模型
+
+`pkg/llm` 有三种连接，都实现 `llm.Client`：`NewOpenAI`（兼容 OpenAI 的 API）、`NewAnthropic`、`NewGemini`。每次回复另存一份服务商原样的记录，下次发给同一服务商时原样回放，Anthropic 的思考块签名和 Gemini 的 thought signature 因此能带回去；Anthropic 的思考块在它之前的内容变了以后不再回放。
 
 ## 协议
 
@@ -95,7 +101,7 @@ if err != nil {
 a := agent.New(agent.Config{
 	Name:        "ollupi",
 	Models:      []llm.Model{{Name: "gpt-5", Connection: "openai"}},
-	Connections: map[string]*llm.OpenAI{"openai": llm.NewOpenAI("", os.Getenv("OPENAI_API_KEY"), 0, nil)},
+	Connections: map[string]llm.Client{"openai": llm.NewOpenAI("", os.Getenv("OPENAI_API_KEY"), 0, nil)},
 	Settings:    permission.Settings{ApprovalPolicy: string(permission.OnRequest)},
 	DB:          db,
 	OnEvent: func(e agent.Event) {
@@ -107,7 +113,7 @@ a := agent.New(agent.Config{
 if err := a.Start(ctx); err != nil {
 	log.Fatal(err)
 }
-thread, _ := a.StartThread("", permission.Settings{})
+thread, _ := a.StartThread("", "问候", permission.Settings{})
 a.StartTurn(thread.ID, agent.Input{Text: "你好"})
 ```
 

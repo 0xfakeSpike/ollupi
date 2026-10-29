@@ -2,7 +2,6 @@ package redact
 
 import (
 	"crypto/hmac"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -48,11 +47,13 @@ var detectors = []detector{
 }
 
 type Redactor struct {
+	key     []byte
 	reverse map[string]string
 }
 
-func New() *Redactor {
-	return &Redactor{reverse: map[string]string{}}
+// New returns a redactor whose placeholders are keyed by key: the same key masks a value to the same placeholder.
+func New(key string) *Redactor {
+	return &Redactor{key: []byte(key), reverse: map[string]string{}}
 }
 
 func (r *Redactor) Mask(s string) string {
@@ -194,16 +195,8 @@ func findSpans(s string) []span {
 	return kept
 }
 
-var placeholderKey = func() []byte {
-	key := make([]byte, 32)
-	if _, err := rand.Read(key); err != nil {
-		panic(fmt.Sprintf("redact: random key: %v", err))
-	}
-	return key
-}()
-
 func (r *Redactor) placeholder(cat Category, value string) string {
-	mac := hmac.New(sha256.New, placeholderKey)
+	mac := hmac.New(sha256.New, r.key)
 	mac.Write([]byte(value))
 	hexSum := hex.EncodeToString(mac.Sum(nil))
 	for n := 8; ; n += 4 {

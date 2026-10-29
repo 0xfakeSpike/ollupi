@@ -13,7 +13,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
-func (r *Runner) Prepare(ctx context.Context, args map[string]any) (*tools.Prepared, error) {
+func (r *Runner) prepareCommand(ctx context.Context, args map[string]any) (*tools.Prepared, error) {
 	d, err := r.dirs(tools.CallerOf(ctx))
 	if err != nil {
 		return nil, err
@@ -168,7 +168,7 @@ type CommandOutput struct {
 	Sandbox        string   `json:"sandbox,omitempty"`
 }
 
-func (r *Runner) Run(ctx context.Context, args map[string]any, p *tools.Prepared) (tools.Result, error) {
+func (r *Runner) runCommand(ctx context.Context, args map[string]any, p *tools.Prepared) (tools.Result, error) {
 	fail := func(err error) (tools.Result, error) { return tools.Result{Err: err}, err }
 	d, err := r.dirs(tools.CallerOf(ctx))
 	if err != nil {

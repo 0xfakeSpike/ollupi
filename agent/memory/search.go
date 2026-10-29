@@ -61,16 +61,43 @@ func (m *Manager) Invoke(ctx context.Context, _ string, arguments map[string]any
 		return tools.Result{}, err
 	}
 	out := SearchResult{Memories: []repo.MemoryReference{}}
+	for _, e := range best(rows, terms, maxSearchResults) {
+		out.Memories = append(out.Memories, e.Reference())
+	}
+	return tools.Result{Output: out}, nil
+}
+
+// Search finds active memories by words for the user: those of a workspace and the global ones, or with no workspace all of them.
+func (m *Manager) Search(query, workspaceID string, limit int) ([]repo.MemoryRow, error) {
+	terms := searchTerms(query)
+	if len(terms) == 0 {
+		return []repo.MemoryRow{}, nil
+	}
+	var rows []repo.MemoryRow
+	var err error
+	if workspaceID != "" {
+		rows, err = m.db.Memories(repo.MemoryWorkspace, workspaceID, true)
+	} else {
+		rows, err = m.db.AllMemories()
+	}
+	if err != nil {
+		return nil, err
+	}
+	return best(rows, terms, limit), nil
+}
+
+func best(rows []repo.MemoryRow, terms []string, limit int) []repo.MemoryRow {
+	out := []repo.MemoryRow{}
 	for _, r := range rank(rows, func(e repo.MemoryRow) int {
 		if score := termScore(e, terms); score > 0 && e.Status == repo.MemoryActive {
 			return score + kindPriority(e)
 		}
 		return 0
 	}) {
-		if r.score == 0 || len(out.Memories) == maxSearchResults {
+		if r.score == 0 || len(out) == limit {
 			break
 		}
-		out.Memories = append(out.Memories, r.entry.Reference())
+		out = append(out, r.entry)
 	}
-	return tools.Result{Output: out}, nil
+	return out
 }

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
-	"strings"
 	"time"
 )
 
@@ -12,13 +11,14 @@ type ThreadRow struct {
 	ID             string             `gorm:"primaryKey" json:"id"`
 	WorkspaceID    Ref                `gorm:"index:threads_workspace_updated,priority:1" json:"workspaceId,omitempty"`
 	Workspace      *WorkspaceRow      `gorm:"foreignKey:WorkspaceID;constraint:OnDelete:RESTRICT" json:"-"`
-	Preview        string             `gorm:"not null" json:"preview"`
+	Title          string             `gorm:"not null" json:"title"`
 	Settings       PermissionSettings `gorm:"not null;default:'{}';serializer:json;check:threads_settings,json_valid(settings)" json:"settings"`
 	ParentThreadID Ref                `gorm:"index" json:"parentThreadId,omitempty"`
 	Parent         *ThreadRow         `gorm:"foreignKey:ParentThreadID;constraint:OnDelete:CASCADE" json:"-"`
 	ParentItemID   Ref                `json:"parentItemId,omitempty"`
 	CreatedAt      time.Time          `gorm:"not null;autoCreateTime:false" json:"createdAt"`
 	UpdatedAt      time.Time          `gorm:"not null;autoUpdateTime:false;index;index:threads_workspace_updated,priority:2,sort:desc" json:"updatedAt"`
+	ArchivedAt     *time.Time         `json:"archivedAt,omitempty"`
 }
 
 func (ThreadRow) TableName() string { return "threads" }
@@ -81,6 +81,7 @@ func (d *DB) ThreadRow(id string) (ThreadRow, error) {
 
 type ThreadFilter struct {
 	WorkspaceID *string `json:"workspaceId,omitempty"`
+	Archived    bool    `json:"archived,omitempty"`
 	Limit       int     `json:"limit,omitempty"`
 }
 
@@ -94,6 +95,11 @@ func (d *DB) ThreadRows(f ThreadFilter) ([]ThreadRow, error) {
 		}
 	}
 	q = q.Where("parent_thread_id IS NULL")
+	if f.Archived {
+		q = q.Where("archived_at IS NOT NULL")
+	} else {
+		q = q.Where("archived_at IS NULL")
+	}
 	if f.Limit > 0 {
 		q = q.Limit(f.Limit)
 	}
@@ -108,10 +114,47 @@ func (d *DB) CreateThread(row ThreadRow) error {
 
 func (d *DB) UpdateThread(row ThreadRow) error {
 	res := d.gorm.Model(&ThreadRow{}).Where("id = ?", row.ID).Updates(map[string]any{
-		"preview": row.Preview, "updated_at": row.UpdatedAt.UTC(),
+		"title": row.Title, "updated_at": row.UpdatedAt.UTC(),
 	})
 	if err := checkOne(res); err != nil {
 		return fmt.Errorf("thread %s: %w", row.ID, err)
+	}
+	return nil
+}
+
+func (d *DB) SetThreadTitle(id, title string) (ThreadRow, error) {
+	var row ThreadRow
+	err := d.Tx(func(tx *DB) error {
+		if err := checkOne(tx.gorm.Model(&ThreadRow{}).Where("id = ?", id).Update("title", title)); err != nil {
+			return fmt.Errorf("thread %s: %w", id, err)
+		}
+		var err error
+		row, err = tx.ThreadRow(id)
+		return err
+	})
+	return row, err
+}
+
+func (d *DB) SetThreadArchived(id string, at *time.Time) (ThreadRow, error) {
+	var row ThreadRow
+	err := d.Tx(func(tx *DB) error {
+		if err := checkOne(tx.gorm.Model(&ThreadRow{}).Where("id = ?", id).Update("archived_at", nullTime(at))); err != nil {
+			return fmt.Errorf("thread %s: %w", id, err)
+		}
+		var err error
+		row, err = tx.ThreadRow(id)
+		return err
+	})
+	return row, err
+}
+
+func (d *DB) DeleteThread(id string) error {
+	res := d.gorm.Delete(&ThreadRow{}, "id = ?", id)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
 	}
 	return nil
 }
@@ -245,12 +288,4 @@ func activeTurn(turns []TurnRow) (TurnRow, bool) {
 		}
 	}
 	return TurnRow{}, false
-}
-
-func preview(text string) string {
-	line, _, _ := strings.Cut(strings.TrimSpace(text), "\n")
-	if runes := []rune(line); len(runes) > 80 {
-		return string(runes[:80])
-	}
-	return line
 }

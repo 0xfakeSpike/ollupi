@@ -99,7 +99,7 @@ func TestLoadedToolIsSentWithTheNextRequest(t *testing.T) {
 	ag := agent.New(agent.Config{
 		Name: "Ollupi", Models: []llm.Model{{Name: "demo", Connection: "fake"}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
-		Connections: map[string]*llm.OpenAI{"fake": llm.NewOpenAI(srv.URL, "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
+		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
 		Providers:   []tools.Provider{githubTools{}, jobs}, Memory: mem, DB: db,
 	})
 	actx, stop := context.WithCancel(ctx)
@@ -112,7 +112,7 @@ func TestLoadedToolIsSentWithTheNextRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	th, err := ag.StartThread(w.ID, permission.Settings{})
+	th, err := ag.StartThread(w.ID, "", permission.Settings{})
 	if err != nil {
 		t.Fatal(err)
 	}

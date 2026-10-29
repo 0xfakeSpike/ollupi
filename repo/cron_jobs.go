@@ -47,9 +47,10 @@ func (d *DB) CreateCronJob(job CronJobRow, max int) error {
 
 type CronJobView struct {
 	CronJobRow
-	ThreadPreview  string     `json:"threadPreview"`
+	ThreadTitle    string     `json:"threadTitle"`
 	WorkspaceID    string     `json:"workspaceId,omitempty"`
 	ParentThreadID string     `json:"parentThreadId,omitempty"`
+	ThreadArchived bool       `json:"threadArchived,omitempty"`
 	LastRunAt      *time.Time `json:"lastRunAt,omitempty"`
 	LastTurnID     string     `json:"lastTurnId,omitempty"`
 }
@@ -76,15 +77,21 @@ func (d *DB) CronJobView(id string) (CronJobView, error) {
 
 func (d *DB) cronJobViews() *gorm.DB {
 	return d.gorm.Table("cron_jobs AS j").
-		Select("j.*, t.preview AS thread_preview, COALESCE(t.workspace_id, '') AS workspace_id, " +
-			"COALESCE(t.parent_thread_id, '') AS parent_thread_id, COALESCE(lt.id, '') AS last_turn_id, lt.started_at AS last_run_at").
+		Select("j.*, t.title AS thread_title, COALESCE(t.workspace_id, '') AS workspace_id, " +
+			"COALESCE(t.parent_thread_id, '') AS parent_thread_id, COALESCE(lt.id, '') AS last_turn_id, lt.started_at AS last_run_at, " +
+			"(t.archived_at IS NOT NULL OR p.archived_at IS NOT NULL) AS thread_archived").
 		Joins("JOIN threads t ON t.id = j.thread_id").
+		Joins("LEFT JOIN threads p ON p.id = t.parent_thread_id").
 		Joins("LEFT JOIN turns lt ON lt.id = (SELECT id FROM turns WHERE cron_job_id = j.id ORDER BY started_at DESC, id DESC LIMIT 1)")
 }
 
 func (d *DB) DueCronJobs(now time.Time) ([]CronJobRow, error) {
 	var rows []CronJobRow
-	err := d.gorm.Where("paused = ? AND next_run_at <= ?", false, now.UTC()).Order("next_run_at, id").Find(&rows).Error
+	err := d.gorm.Table("cron_jobs AS j").Select("j.*").
+		Joins("JOIN threads t ON t.id = j.thread_id").
+		Joins("LEFT JOIN threads p ON p.id = t.parent_thread_id").
+		Where("j.paused = ? AND j.next_run_at <= ? AND t.archived_at IS NULL AND p.archived_at IS NULL", false, now.UTC()).
+		Order("j.next_run_at, j.id").Find(&rows).Error
 	return rows, err
 }
 

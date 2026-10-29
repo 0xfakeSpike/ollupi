@@ -25,6 +25,8 @@ const (
 	errNoSuchRequest     = -32012
 	errSubagentThread    = -32013
 	errWorkspaceArchived = -32014
+	errThreadArchived    = -32015
+	errThreadBusy        = -32016
 )
 
 const (
@@ -34,6 +36,7 @@ const (
 
 const (
 	notifyThreadStarted       = "thread/started"
+	notifyThreadChanged       = "thread/changed"
 	notifyTurnQueued          = "turn/queued"
 	notifyTurnStarted         = "turn/started"
 	notifyItemStarted         = "item/started"
@@ -67,9 +70,13 @@ var protocol = struct {
 		"thread/read":                 handle(threadPage(false)),
 		"thread/list":                 handle((*conn).threadList),
 		"thread/updatePermissions":    handle((*conn).threadPermissions),
+		"thread/rename":               handle((*conn).threadRename),
+		"thread/archive":              handle((*conn).threadArchive),
+		"thread/delete":               handle((*conn).threadDelete),
 		"turn/start":                  handle((*conn).turnStart),
 		"turn/steer":                  handle((*conn).turnSteer),
 		"turn/interrupt":              handle((*conn).turnInterrupt),
+		"attachment/read":             handle((*conn).attachmentRead),
 		"model/list":                  handle((*conn).modelList),
 		"tool/list":                   handle((*conn).toolList),
 		"mcpServer/list":              handle((*conn).mcpServerList),
@@ -87,11 +94,13 @@ var protocol = struct {
 		"memory/update":               handle((*conn).memoryUpdate),
 		"memory/move":                 handle((*conn).memoryMove),
 		"memory/forget":               handle((*conn).memoryForget),
+		"search":                      handle((*conn).search),
 		"settings/read":               handle((*conn).settingsRead),
 		"settings/update":             handle((*conn).settingsUpdate),
 	},
 	notifications: map[string]reflect.Type{
 		notifyThreadStarted:       reflect.TypeFor[ThreadResult](),
+		notifyThreadChanged:       reflect.TypeFor[ThreadChangedNotification](),
 		notifyTurnQueued:          reflect.TypeFor[TurnNotification](),
 		notifyTurnStarted:         reflect.TypeFor[TurnNotification](),
 		notifyItemStarted:         reflect.TypeFor[ItemNotification](),
@@ -126,6 +135,8 @@ var protocol = struct {
 		errNoSuchRequest:           "noSuchRequest",
 		errSubagentThread:          "subagentThread",
 		errWorkspaceArchived:       "workspaceArchived",
+		errThreadArchived:          "threadArchived",
+		errThreadBusy:              "threadBusy",
 	},
 }
 
@@ -187,6 +198,7 @@ type InitializeResult struct {
 
 type ThreadStartParams struct {
 	WorkspaceID string `json:"workspaceId,omitempty"`
+	Title       string `json:"title,omitempty"`
 	repo.PermissionSettings
 }
 
@@ -208,6 +220,25 @@ type ThreadPageResult struct {
 
 type ThreadResult struct {
 	Thread repo.ThreadRow `json:"thread"`
+}
+
+type ThreadRenameParams struct {
+	ThreadID string `json:"threadId"`
+	Title    string `json:"title"`
+}
+
+type ThreadArchiveParams struct {
+	ThreadID string `json:"threadId"`
+	Archived *bool  `json:"archived"`
+}
+
+type ThreadDeleteParams struct {
+	ThreadID string `json:"threadId"`
+}
+
+type ThreadChangedNotification struct {
+	ThreadID string          `json:"threadId"`
+	Thread   *repo.ThreadRow `json:"thread"`
 }
 
 type ThreadListResult struct {
@@ -233,8 +264,21 @@ type MCPServerListResult struct {
 }
 
 type UserInput struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type     string `json:"type"`
+	Text     string `json:"text,omitempty"`
+	Name     string `json:"name,omitempty"`
+	MimeType string `json:"mimeType,omitempty"`
+	Data     string `json:"data,omitempty"`
+}
+
+type AttachmentReadParams struct {
+	ThreadID     string `json:"threadId"`
+	AttachmentID string `json:"attachmentId"`
+}
+
+type AttachmentReadResult struct {
+	Attachment repo.Attachment `json:"attachment"`
+	Data       string          `json:"data"`
 }
 
 type TurnStartParams struct {
@@ -372,6 +416,17 @@ type MemoryForgetParams struct {
 
 type MemoryResult struct {
 	Memory repo.MemoryRow `json:"memory"`
+}
+
+type SearchParams struct {
+	Query       string `json:"query"`
+	WorkspaceID string `json:"workspaceId,omitempty"`
+	Limit       int    `json:"limit,omitempty"`
+}
+
+type SearchResult struct {
+	repo.Found
+	Memories []repo.MemoryRow `json:"memories"`
 }
 
 type SettingsUpdateParams struct {

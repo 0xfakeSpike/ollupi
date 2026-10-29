@@ -55,17 +55,19 @@ type toolSchemas struct {
 }
 
 var builtinTools = map[string]struct{ arguments, output reflect.Type }{
-	plan.Tool:      {arguments: reflect.TypeFor[plan.Plan]()},
-	subagent.Tool:  {arguments: reflect.TypeFor[subagent.Call]()},
-	userinput.Tool: {arguments: reflect.TypeFor[userinput.Request](), output: reflect.TypeFor[userinput.Answers]()},
-	shell.ToolName: {output: reflect.TypeFor[shell.CommandOutput]()},
+	plan.Tool:           {arguments: reflect.TypeFor[plan.Plan]()},
+	subagent.Tool:       {arguments: reflect.TypeFor[subagent.Call]()},
+	userinput.Tool:      {arguments: reflect.TypeFor[userinput.Request](), output: reflect.TypeFor[userinput.Answers]()},
+	shell.ToolName:      {output: reflect.TypeFor[shell.CommandOutput]()},
+	shell.ToolEditFile:  {output: reflect.TypeFor[shell.FileOutput]()},
+	shell.ToolWriteFile: {output: reflect.TypeFor[shell.FileOutput]()},
 }
 
 var providers = []string{cron.ProviderName, skills.ProviderName, memory.ProviderName}
 
 var enums = []any{
 	repo.ItemTypeValues, repo.ItemStatusValues, repo.TurnStatusValues, repo.ThreadStatusValues,
-	repo.DecisionValues, repo.MemoryRowStatusValues, repo.MemoryScopeValues, repo.MemoryFailureCodeValues, permission.PolicyValues, plan.StatusValues, tools.AwaitByValues,
+	repo.DecisionValues, repo.MemoryRowStatusValues, repo.MemoryScopeValues, repo.MemoryFailureCodeValues, permission.PolicyValues, plan.StatusValues, tools.AwaitByValues, repo.AttachmentKindValues,
 }
 
 var plainStrings = []reflect.Type{reflect.TypeFor[repo.Ref]()}

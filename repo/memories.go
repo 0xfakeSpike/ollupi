@@ -60,6 +60,11 @@ func (d *DB) Memories(scope MemoryScope, workspaceID string, global bool) ([]Mem
 	return rows, err
 }
 
+func (d *DB) AllMemories() ([]MemoryRow, error) {
+	var rows []MemoryRow
+	return rows, d.gorm.Order("updated_at DESC, id").Find(&rows).Error
+}
+
 func (d *DB) Memory(id string) (MemoryRow, error) {
 	var row MemoryRow
 	return row, notFound(d.gorm.Where("id = ?", id).Take(&row).Error)

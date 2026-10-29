@@ -10,6 +10,8 @@ type EventKind string
 
 const (
 	EventThreadStarted       EventKind = "thread_started"
+	EventThreadChanged       EventKind = "thread_changed"
+	EventThreadDeleted       EventKind = "thread_deleted"
 	EventTurnQueued          EventKind = "turn_queued"
 	EventTurnStarted         EventKind = "turn_started"
 	EventItemStarted         EventKind = "item_started"

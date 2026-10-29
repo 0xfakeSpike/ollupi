@@ -15,9 +15,10 @@ import (
 )
 
 type Input struct {
-	Text       string
-	Connection string
-	CronJobID  string
+	Text        string
+	Attachments []AttachmentInput
+	Connection  string
+	CronJobID   string
 }
 
 func (a *Agent) StartTurn(threadID string, in Input) (repo.TurnRow, error) {
@@ -29,10 +30,10 @@ func (a *Agent) StartTurn(threadID string, in Input) (repo.TurnRow, error) {
 	return turn, err
 }
 
-func (a *Agent) SteerTurn(threadID, expectedTurnID, text string) (repo.TurnRow, error) {
+func (a *Agent) SteerTurn(threadID, expectedTurnID string, in Input) (repo.TurnRow, error) {
 	var turn repo.TurnRow
 	err := a.call(func() (err error) {
-		turn, err = a.steer(threadID, expectedTurnID, text)
+		turn, err = a.steer(threadID, expectedTurnID, in)
 		return err
 	})
 	return turn, err
@@ -51,7 +52,7 @@ func (a *Agent) AnswerUserInput(threadID, itemID string, answers userinput.Answe
 }
 
 func (a *Agent) startTurn(threadID string, in Input) (repo.TurnRow, error) {
-	text, err := checkMessage(in.Text)
+	text, err := checkMessage(in.Text, len(in.Attachments))
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
@@ -66,10 +67,25 @@ func (a *Agent) startTurn(threadID string, in Input) (repo.TurnRow, error) {
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
-	return a.submit(st.Thread, text, in.CronJobID, model)
+	atts, err := a.storeAttachments(threadID, in.Attachments)
+	if err != nil {
+		return repo.TurnRow{}, err
+	}
+	err = a.checkImages(threadID, model, atts)
+	var turn repo.TurnRow
+	if err == nil {
+		turn, err = a.submit(st.Thread, repo.TurnRow{Input: text, Attachments: atts, CronJobID: in.CronJobID}, model)
+	}
+	if err != nil {
+		a.removeAttachments(atts)
+	}
+	return turn, err
 }
 
-func (a *Agent) submit(t repo.ThreadRow, text, cronJobID string, model llm.Model) (repo.TurnRow, error) {
+func (a *Agent) submit(t repo.ThreadRow, turn repo.TurnRow, model llm.Model) (repo.TurnRow, error) {
+	if t.ArchivedAt != nil {
+		return repo.TurnRow{}, ErrThreadArchived
+	}
 	if t.ParentThreadID == "" && t.WorkspaceID != "" {
 		w, err := a.workspaceOf(t.WorkspaceID)
 		if err != nil {
@@ -79,10 +95,7 @@ func (a *Agent) submit(t repo.ThreadRow, text, cronJobID string, model llm.Model
 			return repo.TurnRow{}, err
 		}
 	}
-	turn := repo.TurnRow{
-		ID: uuid.NewString(), Model: model.Clone(),
-		Input: text, CronJobID: cronJobID, StartedAt: time.Now().UTC(),
-	}
+	turn.ID, turn.Model, turn.StartedAt = uuid.NewString(), model.Clone(), time.Now().UTC()
 	t, turn, message, err := a.cfg.DB.SubmitTurn(t.ID, turn)
 	if err != nil {
 		return repo.TurnRow{}, err
@@ -97,8 +110,8 @@ func (a *Agent) submit(t repo.ThreadRow, text, cronJobID string, model llm.Model
 	return turn, nil
 }
 
-func (a *Agent) steer(threadID, expectedTurnID, text string) (repo.TurnRow, error) {
-	text, err := checkMessage(text)
+func (a *Agent) steer(threadID, expectedTurnID string, in Input) (repo.TurnRow, error) {
+	text, err := checkMessage(in.Text, len(in.Attachments))
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
@@ -116,8 +129,17 @@ func (a *Agent) steer(threadID, expectedTurnID, text string) (repo.TurnRow, erro
 	if turn.ID != expectedTurnID {
 		return repo.TurnRow{}, fmt.Errorf("%w (expected %s, in progress %s)", ErrTurnMismatch, expectedTurnID, turn.ID)
 	}
-	stored, isNew, err := a.cfg.DB.RecordItem(threadID, repo.NewUserMessage(uuid.NewString(), turn.ID, text, time.Now().UTC()))
+	atts, err := a.storeAttachments(threadID, in.Attachments)
 	if err != nil {
+		return repo.TurnRow{}, err
+	}
+	if err := a.checkImages(threadID, turn.Model, atts); err != nil {
+		a.removeAttachments(atts)
+		return repo.TurnRow{}, err
+	}
+	stored, isNew, err := a.cfg.DB.RecordItem(threadID, repo.NewUserMessage(uuid.NewString(), turn.ID, text, atts, time.Now().UTC()))
+	if err != nil {
+		a.removeAttachments(atts)
 		return repo.TurnRow{}, err
 	}
 	a.emitItem(st.Thread, turn, stored, isNew)
@@ -249,9 +271,9 @@ func (a *Agent) respond(threadID string, match func(repo.ItemRow) bool, apply fu
 	return nil
 }
 
-func checkMessage(text string) (string, error) {
+func checkMessage(text string, attachments int) (string, error) {
 	text = strings.TrimSpace(text)
-	if text == "" {
+	if text == "" && attachments == 0 {
 		return "", fmt.Errorf("agent: %w: empty message", ErrInvalidMessage)
 	}
 	if n := len([]rune(text)); n > maxInputRunes {

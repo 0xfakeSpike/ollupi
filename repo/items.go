@@ -15,19 +15,23 @@ import (
 )
 
 type ItemRow struct {
-	ID                string             `gorm:"primaryKey" json:"id"`
-	ThreadID          string             `gorm:"not null;uniqueIndex:items_thread_seq,priority:1" json:"-"`
-	Thread            *ThreadRow         `gorm:"constraint:OnDelete:CASCADE" json:"-"`
-	TurnID            string             `gorm:"not null;index" json:"turnId"`
-	Turn              *TurnRow           `gorm:"constraint:OnDelete:CASCADE" json:"-"`
-	Seq               int                `gorm:"not null;uniqueIndex:items_thread_seq,priority:2" json:"seq"`
-	Type              ItemType           `gorm:"not null" json:"type"`
-	Status            ItemStatus         `gorm:"not null" json:"status"`
-	Text              string             `gorm:"not null;default:''" json:"text,omitempty"`
-	ResponseID        string             `gorm:"not null;default:''" json:"responseId,omitempty"`
-	ContextStats      *ContextStats      `gorm:"serializer:json" json:"contextStats,omitempty"`
-	Usage             *Usage             `gorm:"serializer:json" json:"usage,omitempty"`
+	ID           string        `gorm:"primaryKey" json:"id"`
+	ThreadID     string        `gorm:"not null;uniqueIndex:items_thread_seq,priority:1" json:"-"`
+	Thread       *ThreadRow    `gorm:"constraint:OnDelete:CASCADE" json:"-"`
+	TurnID       string        `gorm:"not null;index" json:"turnId"`
+	Turn         *TurnRow      `gorm:"constraint:OnDelete:CASCADE" json:"-"`
+	Seq          int           `gorm:"not null;uniqueIndex:items_thread_seq,priority:2" json:"seq"`
+	Type         ItemType      `gorm:"not null" json:"type"`
+	Status       ItemStatus    `gorm:"not null" json:"status"`
+	Text         string        `gorm:"not null;default:''" json:"text,omitempty"`
+	ResponseID   string        `gorm:"not null;default:''" json:"responseId,omitempty"`
+	ContextStats *ContextStats `gorm:"serializer:json" json:"contextStats,omitempty"`
+	Usage        *Usage        `gorm:"serializer:json" json:"usage,omitempty"`
+	// Native is the model provider's own record of the response this item belongs to, kept on the item that
+	// carries the response's usage and replayed as is to the same kind of provider.
+	Native            []byte             `json:"-"`
 	Memory            []MemoryReference  `gorm:"serializer:json" json:"memory,omitempty"`
+	Attachments       []Attachment       `gorm:"serializer:json" json:"attachments,omitempty"`
 	CallID            string             `gorm:"not null;default:''" json:"callId,omitempty"`
 	Tool              string             `gorm:"not null;default:''" json:"tool,omitempty"`
 	Arguments         string             `gorm:"not null;default:''" json:"arguments,omitempty"`
@@ -110,6 +114,27 @@ func (e MemoryRow) Reference() MemoryReference {
 	return MemoryReference{MemoryNote: MemoryNote{ID: e.ID, Topic: e.Topic, Text: e.Text}, Scope: e.Scope, WorkspaceID: e.WorkspaceID}
 }
 
+type AttachmentKind string
+
+const (
+	AttachmentImage AttachmentKind = "image"
+	AttachmentFile  AttachmentKind = "file"
+)
+
+var AttachmentKindValues = []AttachmentKind{AttachmentImage, AttachmentFile}
+
+type Attachment struct {
+	ID       string         `json:"id"`
+	Kind     AttachmentKind `json:"kind"`
+	Name     string         `json:"name"`
+	MimeType string         `json:"mimeType"`
+	Size     int64          `json:"size"`
+	File     string         `json:"file"`
+	Width    int            `json:"width,omitempty"`
+	Height   int            `json:"height,omitempty"`
+	Tokens   int            `json:"tokens"`
+}
+
 type Approval struct {
 	ID          string     `json:"id"`
 	RequestedAt time.Time  `json:"requestedAt"`
@@ -148,8 +173,32 @@ type ToolResult struct {
 	Artifacts []tools.ContextArtifact `json:"artifacts,omitempty"`
 }
 
-func NewUserMessage(id, turnID, text string, at time.Time) ItemRow {
-	return ItemRow{ID: id, TurnID: turnID, Type: ItemUserMessage, Status: ItemCompleted, Text: text, StartedAt: at, CompletedAt: &at}
+func NewUserMessage(id, turnID, text string, attachments []Attachment, at time.Time) ItemRow {
+	return ItemRow{ID: id, TurnID: turnID, Type: ItemUserMessage, Status: ItemCompleted, Text: text, Attachments: attachments, StartedAt: at, CompletedAt: &at}
+}
+
+func (d *DB) HasImages(threadID string) (bool, error) {
+	var n int64
+	err := d.gorm.Model(&ItemRow{}).Where(`thread_id = ? AND type = 'userMessage'
+		AND seq > COALESCE((SELECT MAX(seq) FROM items WHERE thread_id = ? AND type = 'contextCompaction' AND status = 'completed'), 0)
+		AND EXISTS (SELECT 1 FROM json_each(items.attachments) WHERE json_extract(json_each.value, '$.kind') = 'image')`, threadID, threadID).Count(&n).Error
+	return n > 0, err
+}
+
+func (d *DB) Attachment(threadID, id string) (Attachment, error) {
+	var rows []ItemRow
+	err := d.gorm.Where("thread_id = ? AND type = 'userMessage' AND EXISTS (SELECT 1 FROM json_each(items.attachments) WHERE json_extract(json_each.value, '$.id') = ?)", threadID, id).Find(&rows).Error
+	if err != nil {
+		return Attachment{}, err
+	}
+	for _, it := range rows {
+		for _, a := range it.Attachments {
+			if a.ID == id {
+				return a, nil
+			}
+		}
+	}
+	return Attachment{}, ErrNotFound
 }
 
 func (it ItemRow) IsCall() bool {
@@ -224,7 +273,7 @@ func (d *DB) SaveItem(row ItemRow) error {
 	row.StartedAt, row.CompletedAt = row.StartedAt.UTC(), nullTime(row.CompletedAt)
 	res := d.gorm.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"status", "text", "response_id", "context_stats", "usage", "memory",
+		DoUpdates: clause.AssignmentColumns([]string{"status", "text", "response_id", "context_stats", "usage", "native", "memory",
 			"call_id", "tool", "arguments", "server", "annotations", "approval", "prepared_execution", "await", "result", "error", "completed_at"}),
 		Where: where(`items.thread_id = excluded.thread_id AND items.turn_id = excluded.turn_id
 			AND items.seq = excluded.seq AND items.type = excluded.type`),
