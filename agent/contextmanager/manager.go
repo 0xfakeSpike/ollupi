@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
@@ -27,6 +28,7 @@ const (
 	minPooledTokens    = 512
 	fixedPercent       = 50
 	artifactPercent    = 15
+	sentLayout         = "Mon 2006-01-02 15:04 -07:00"
 )
 
 func share(inputTokens, pct int) int { return max(256, inputTokens*pct/100) }
@@ -202,7 +204,11 @@ func (m *Manager) transcript(obs *observations, items []repo.ItemRow, limit int,
 
 			i++
 		case it.Type == repo.ItemUserMessage || it.Type == repo.ItemError:
-			out = append(out, llm.ChatMessage{Role: llm.RoleUser, Content: it.Text})
+			content := it.Text
+			if it.Type == repo.ItemUserMessage && !it.StartedAt.IsZero() {
+				content = "[sent " + it.StartedAt.In(time.Local).Format(sentLayout) + "]\n" + content
+			}
+			out = append(out, llm.ChatMessage{Role: llm.RoleUser, Content: content})
 			i++
 		case it.Type == repo.ItemMemoryContext || it.Type == repo.ItemContextCompaction || it.Type == repo.ItemToolProgress:
 
