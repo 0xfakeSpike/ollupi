@@ -71,7 +71,11 @@ func (rt *Runtime) handleCall(ctx context.Context, it repo.ItemRow) (string, *re
 		approved, it.Approval = it.Approval, nil
 	}
 	if _, offered := rt.tool(it.Tool); !offered {
-		h, err := rt.refuse(it, fmt.Sprintf("tool %q is not available in this turn; use an exact tool name from the tool list", it.Tool))
+		reason := fmt.Sprintf("tool %q is not available in this turn; use an exact tool name from the tool list", it.Tool)
+		if slices.ContainsFunc(rt.deferred, func(d tools.ToolDescriptor) bool { return d.Name == it.Tool }) {
+			reason = fmt.Sprintf("tool %q is not loaded yet; call %s with its name first", it.Tool, tools.ToolLoadTools)
+		}
+		h, err := rt.refuse(it, reason)
 		return h, nil, nil, err
 	}
 	args, err := callArguments(it)

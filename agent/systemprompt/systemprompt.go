@@ -6,6 +6,7 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent/skills"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
+	"github.com/0xfakeSpike/ollupi/tools"
 )
 
 type Input struct {
@@ -14,6 +15,7 @@ type Input struct {
 	Root        string
 	Skills      []skills.Skill
 	SkillTokens int
+	Deferred    []tools.ToolDescriptor
 }
 
 func Build(in Input) string {
@@ -21,6 +23,9 @@ func Build(in Input) string {
 	parts := []string{strings.TrimSpace(in.Agent), loopRules}
 	if s := listSkills(in.Skills, in.SkillTokens); s != "" {
 		parts = append(parts, s)
+	}
+	if len(in.Deferred) > 0 {
+		parts = append(parts, listDeferred(in.Deferred))
 	}
 	if in.Root != "" {
 		parts = append(parts, "# PROJECT\nThis conversation works in the project at "+in.Root+"; commands run there unless you set work_dir.")
@@ -103,4 +108,18 @@ func render(catalog []skills.Skill) string {
 		lines[i] = "- " + s.Name + ": " + strings.Join(strings.Fields(s.Description), " ")
 	}
 	return strings.Join(lines, "\n")
+}
+
+func listDeferred(deferred []tools.ToolDescriptor) string {
+	text := "# DEFERRED TOOLS\nThese tools are available, but their definitions are not loaded. Call " + tools.ToolLoadTools +
+		" with the exact names of the ones you need; a loaded tool stays callable for the rest of the conversation."
+	var names []string
+	for i, d := range deferred {
+		names = append(names, d.Name)
+		if i == len(deferred)-1 || deferred[i+1].Provider != d.Provider {
+			text += "\n- " + d.Provider + ": " + strings.Join(names, ", ")
+			names = nil
+		}
+	}
+	return text
 }

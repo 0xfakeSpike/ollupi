@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"slices"
@@ -45,6 +46,8 @@ type Runtime struct {
 	Reload      func() ([]repo.ItemRow, *permission.Checker, error)
 	Redaction   func() (bool, error)
 
+	offered  []tools.ToolDescriptor
+	deferred []tools.ToolDescriptor
 	system   string
 	redactor *redact.Redactor
 	usage    repo.Usage
@@ -68,9 +71,10 @@ func (rt *Runtime) start() error {
 	if rt.Skills != nil {
 		catalog = rt.Skills.All()
 	}
+	rt.offered, rt.deferred = Offer(rt.Tools, rt.Contexts, slices.Concat(rt.History, rt.Items))
 	rt.system = systemprompt.Build(systemprompt.Input{
 		Agent: rt.Prompt, Subagent: rt.Caller.Subagent, Root: rt.Caller.Root,
-		Skills: catalog, SkillTokens: rt.Contexts.SkillBudget(),
+		Skills: catalog, SkillTokens: rt.Contexts.SkillBudget(), Deferred: rt.deferred,
 	})
 	if hasSnapshot(slices.Concat(rt.History, rt.Items)) {
 		return nil
@@ -111,14 +115,54 @@ func (rt *Runtime) loadMemory() error {
 }
 
 func (rt *Runtime) tool(name string) (tools.ToolDescriptor, bool) {
-	i := slices.IndexFunc(rt.Tools, func(d tools.ToolDescriptor) bool { return d.Name == name })
+	i := slices.IndexFunc(rt.offered, func(d tools.ToolDescriptor) bool { return d.Name == name })
 	if i < 0 {
 		return tools.ToolDescriptor{}, false
 	}
-	return rt.Tools[i], true
+	return rt.offered[i], true
 }
 
-func (rt *Runtime) specs() []llm.ToolSpec { return Specs(rt.Tools) }
+func (rt *Runtime) specs() []llm.ToolSpec { return Specs(rt.offered) }
+
+// Offer splits the visible tools into the ones sent to the model and the ones only named in DEFERRED TOOLS.
+// Tools of external providers are deferred when all visible tools would take more than the tool budget;
+// the ones a load_tools call loaded follow the others in load order, so the tool list only grows.
+func Offer(visible []tools.ToolDescriptor, contexts *contextmanager.Manager, items []repo.ItemRow) (offered, deferred []tools.ToolDescriptor) {
+	external := func(d tools.ToolDescriptor) bool { return strings.Contains(d.Name, tools.ProviderSeparator) }
+	loader := func(d tools.ToolDescriptor) bool { return d.Name == tools.ToolLoadTools }
+	deferring := slices.ContainsFunc(visible, loader) && slices.ContainsFunc(visible, external) && !contexts.ToolsFit(Specs(visible))
+	for _, d := range visible {
+		switch {
+		case deferring && external(d):
+			deferred = append(deferred, d)
+		case deferring || !loader(d):
+			offered = append(offered, d)
+		}
+	}
+	for _, name := range loadedTools(items) {
+		i := slices.IndexFunc(deferred, func(d tools.ToolDescriptor) bool { return d.Name == name })
+		if i >= 0 && !slices.ContainsFunc(offered, func(d tools.ToolDescriptor) bool { return d.Name == name }) {
+			offered = append(offered, deferred[i])
+		}
+	}
+	return offered, deferred
+}
+
+func loadedTools(items []repo.ItemRow) []string {
+	var names []string
+	for _, it := range items {
+		if it.Tool != tools.ToolLoadTools || it.Status != repo.ItemCompleted || it.Result == nil {
+			continue
+		}
+		var out struct {
+			Loaded []string `json:"loaded"`
+		}
+		if json.Unmarshal(it.Result.Output, &out) == nil {
+			names = append(names, out.Loaded...)
+		}
+	}
+	return names
+}
 
 func Specs(descriptors []tools.ToolDescriptor) []llm.ToolSpec {
 	specs := make([]llm.ToolSpec, 0, len(descriptors))
@@ -149,6 +193,7 @@ func (rt *Runtime) run(ctx context.Context) (bool, error) {
 			return false, fmt.Errorf("runtime: reload the turn: %w", err)
 		}
 		rt.Items, rt.Permissions, rt.Tools = items, permissions, permissions.Tools()
+		rt.offered, rt.deferred = Offer(rt.Tools, rt.Contexts, slices.Concat(rt.History, rt.Items))
 		if len(resp.Message.ToolCalls) == 0 && !slices.ContainsFunc(rt.Items, func(it repo.ItemRow) bool { return it.Type == repo.ItemUserMessage && it.Seq > seen }) {
 			return true, nil
 		}

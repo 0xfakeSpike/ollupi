@@ -28,6 +28,7 @@ const (
 	minPooledTokens    = 512
 	fixedPercent       = 50
 	artifactPercent    = 15
+	toolPercent        = 10
 	sentLayout         = "Mon 2006-01-02 15:04 -07:00"
 )
 
@@ -138,6 +139,10 @@ func (m *Manager) SkillBudget() int {
 
 func (m *Manager) MemoryBudget() int {
 	return max(0, min(4000, m.inputTokens*8/100))
+}
+
+func (m *Manager) ToolsFit(tools any) bool {
+	return llm.EstimateTokens(prettyJSON(tools)) <= share(m.inputTokens, toolPercent)
 }
 
 func (m *Manager) ArtifactBudget() int {
