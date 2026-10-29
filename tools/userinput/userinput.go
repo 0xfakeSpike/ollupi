@@ -109,8 +109,8 @@ func (*Provider) Name() (string, string) { return "user_input", "Asks the user q
 func (*Provider) ToolList(context.Context) ([]*tools.Spec, error) {
 	return []*tools.Spec{{
 		Name: Tool,
-		Description: "Asks the user one to three short questions and waits for the answers. Use it when a specific answer is required before safe progress is possible " +
-			"and you cannot find it out with other tools; ask instead of guessing. Make it the only call of its response: other calls in the same response run before the user answers.",
+		Description: "Asks the user one to three short questions and waits for the answers. " +
+			"Make it the only call of its response: other calls in the same response run before the user answers.",
 		InputSchema: tools.InputSchema[Request](),
 		Annotations: &tools.Annotations{Title: "Question", ReadOnlyHint: true, OpenWorldHint: tools.Hint(false)},
 	}}, nil
