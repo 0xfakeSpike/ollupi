@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
@@ -54,6 +55,16 @@ func TestSnapshotLeadsThePrompt(t *testing.T) {
 
 	if s := build(t, user("q1"), answer("r1", "a1")).Stats; s.MemoryTokens != 0 || s.GlobalMemory != nil {
 		t.Errorf("no snapshot, but stats %+v", s)
+	}
+}
+
+func TestUserMessagesCarryTheirSendTime(t *testing.T) {
+	at := time.Date(2026, 10, 29, 2, 15, 0, 0, time.UTC)
+	sent := user("q1")
+	sent.StartedAt = at
+	got := contents(build(t, sent, answer("r1", "a1")).Messages)
+	if want := "[sent " + at.In(time.Local).Format(sentLayout) + "]\nq1"; len(got) != 2 || got[0] != want {
+		t.Errorf("messages %q, want %q first", got, want)
 	}
 }
 

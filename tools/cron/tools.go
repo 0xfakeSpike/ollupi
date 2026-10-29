@@ -3,7 +3,6 @@ package cron
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
@@ -58,10 +57,10 @@ func (j *Jobs) ToolList(context.Context) ([]*tools.Spec, error) {
 		{
 			Name:        ToolCreateJob,
 			Annotations: &tools.Annotations{DestructiveHint: tools.Hint(false), OpenWorldHint: tools.Hint(false)},
-			Description: fmt.Sprintf("Schedule a task in this conversation: at each time the cron schedule names (timezone %s, now %s), "+
+			Description: fmt.Sprintf("Schedule a task in this conversation: at each time the cron schedule names (timezone %s), "+
 				"prompt is sent here as a new message and you work on it with this conversation's history, project, and settings. "+
 				"If a turn is still running then, the message waits as the next turn.",
-				j.location, time.Now().In(j.location).Format("2006-01-02 15:04 -07:00")),
+				j.location),
 			InputSchema: tools.InputSchema[CreateArgs](),
 		},
 		{
