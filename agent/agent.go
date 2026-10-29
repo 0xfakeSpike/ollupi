@@ -31,6 +31,8 @@ var (
 	ErrNoSuchRequest     = errors.New("the thread does not wait on this request")
 	ErrSubagentThread    = errors.New("a subagent thread takes no input; send it to its parent conversation")
 	ErrWorkspaceArchived = errors.New("the workspace is archived; restore it before starting new work")
+	ErrThreadArchived    = errors.New("the conversation is archived; restore it before starting new work")
+	ErrThreadBusy        = errors.New("the conversation has a turn in progress or queued; interrupt it first")
 	ErrInvalidMessage    = errors.New("invalid message")
 	ErrInvalidAnswer     = errors.New("invalid answer")
 	ErrInvalidDecision   = errors.New("invalid decision")
@@ -45,13 +47,15 @@ type Config struct {
 	Settings permission.Settings
 	Slots    int
 
-	Connections map[string]*llm.OpenAI
+	Connections map[string]llm.Client
 	Providers   []tools.Provider
 	Unavailable []string
 	SkillsDir   string
-	Memory      *memory.Manager
-	DB          *repo.DB
-	OnEvent     func(Event)
+	// AttachmentsDir holds the images and files sent with messages; without it messages take none.
+	AttachmentsDir string
+	Memory         *memory.Manager
+	DB             *repo.DB
+	OnEvent        func(Event)
 }
 
 type Agent struct {

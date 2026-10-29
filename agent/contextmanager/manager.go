@@ -108,7 +108,7 @@ func (m *Manager) stats(system string, messages []llm.ChatMessage, tools any) re
 		BudgetTokens:    m.inputTokens,
 		CompactAtTokens: m.inputTokens * autoCompactPercent / 100,
 		SystemTokens:    llm.EstimateTokens(system),
-		MessagesTokens:  llm.EstimateTokens(prettyJSON(messages)),
+		MessagesTokens:  llm.EstimateTokens(prettyJSON(messages)) + llm.PartTokens(messages),
 		ToolsTokens:     llm.EstimateTokens(prettyJSON(tools)),
 	}
 	s.EstimatedTokens = s.SystemTokens + s.MessagesTokens + s.ToolsTokens
@@ -213,7 +213,7 @@ func (m *Manager) transcript(obs *observations, items []repo.ItemRow, limit int,
 			if it.Type == repo.ItemUserMessage && !it.StartedAt.IsZero() {
 				content = "[sent " + it.StartedAt.In(time.Local).Format(sentLayout) + "]\n" + content
 			}
-			out = append(out, llm.ChatMessage{Role: llm.RoleUser, Content: content})
+			out = append(out, llm.ChatMessage{Role: llm.RoleUser, Content: content, Parts: attachmentParts(it.Attachments)})
 			i++
 		case it.Type == repo.ItemMemoryContext || it.Type == repo.ItemContextCompaction || it.Type == repo.ItemToolProgress:
 
@@ -235,6 +235,9 @@ func (m *Manager) transcript(obs *observations, items []repo.ItemRow, limit int,
 			j := i
 			for ; j < len(items) && items[j].ResponseID == it.ResponseID; j++ {
 				part := items[j]
+				if part.Native != nil {
+					assistant.Native = part.Native
+				}
 				switch {
 				case part.Type == repo.ItemReasoning || part.Type == repo.ItemAgentMessage:
 
@@ -272,6 +275,18 @@ func (m *Manager) transcript(obs *observations, items []repo.ItemRow, limit int,
 		fixedTokens = llm.EstimateTokens(prettyJSON(fixed))
 	}
 	return out, fixedTokens, nil
+}
+
+func attachmentParts(atts []repo.Attachment) []llm.ContentPart {
+	var parts []llm.ContentPart
+	for _, att := range atts {
+		kind := llm.PartText
+		if att.Kind == repo.AttachmentImage {
+			kind = llm.PartImage
+		}
+		parts = append(parts, llm.ContentPart{Type: kind, Name: att.Name, MimeType: att.MimeType, Tokens: att.Tokens, Path: att.File})
+	}
+	return parts
 }
 
 func latestResponse(items []repo.ItemRow) string {

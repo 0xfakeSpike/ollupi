@@ -3,6 +3,8 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -51,7 +53,7 @@ func (rt *Runtime) respond(ctx context.Context, choice llm.ToolChoice) (llm.Chat
 	for i, call := range resp.Message.ToolCalls {
 		it := rt.callItem(r.id, call)
 		if r.agent == nil && r.reasoning == nil && i == 0 {
-			it.ContextStats, it.Usage = &r.stats, r.usage
+			it.ContextStats, it.Usage, it.Native = &r.stats, r.usage, resp.Message.Native
 		}
 		if _, err := rt.record(it); err != nil {
 			return llm.ChatResponse{}, err
@@ -112,18 +114,21 @@ func (rt *Runtime) compact(ctx context.Context) error {
 }
 
 func (rt *Runtime) send(ctx context.Context, prompt contextmanager.Prompt, choice llm.ToolChoice, onDelta func(llm.Delta)) (llm.ChatResponse, error) {
-	on, err := rt.Redaction()
+	settings, err := rt.Settings()
 	if err != nil {
 		return llm.ChatResponse{}, fmt.Errorf("runtime: read the redaction setting: %w", err)
 	}
 	mask := rt.redactor.Mask
-	if !on {
+	if !settings.Redaction {
 		mask = func(s string) string { return s }
 	}
 	messages := make([]llm.ChatMessage, 0, len(prompt.Messages)+1)
 	messages = append(messages, llm.ChatMessage{Role: llm.RoleSystem, Content: mask(prompt.System)})
 	for _, message := range prompt.Messages {
 		message.Content, message.ReasoningContent = mask(message.Content), mask(message.ReasoningContent)
+		if message.Parts, err = rt.loadParts(message.Parts, mask); err != nil {
+			return llm.ChatResponse{}, err
+		}
 		message.ToolCalls = slices.Clone(message.ToolCalls)
 		for i := range message.ToolCalls {
 			message.ToolCalls[i].Arguments = mask(message.ToolCalls[i].Arguments)
@@ -156,11 +161,36 @@ func (rt *Runtime) send(ctx context.Context, prompt contextmanager.Prompt, choic
 	return resp, err
 }
 
+func (rt *Runtime) loadParts(parts []llm.ContentPart, mask func(string) string) ([]llm.ContentPart, error) {
+	if len(parts) == 0 {
+		return nil, nil
+	}
+	if rt.AttachmentsDir == "" {
+		return nil, fmt.Errorf("runtime: the conversation has attachments, but this agent keeps none")
+	}
+	out := slices.Clone(parts)
+	for i, p := range out {
+		data, err := os.ReadFile(filepath.Join(rt.AttachmentsDir, filepath.FromSlash(p.Path)))
+		if err != nil {
+			return nil, fmt.Errorf("runtime: attachment %s: %w", p.Name, err)
+		}
+		if p.Type == llm.PartImage {
+			out[i].Data = data
+		} else {
+			out[i].Text = mask("--- file: " + p.Name + " ---\n" + string(data))
+		}
+	}
+	return out, nil
+}
+
 func responseUsage(resp llm.ChatResponse) *repo.Usage {
 	if !resp.UsageReported {
 		return nil
 	}
-	return &repo.Usage{InputTokens: resp.Usage.PromptTokens, CachedInputTokens: resp.Usage.CachedPromptTokens, OutputTokens: resp.Usage.CompletionTokens}
+	return &repo.Usage{
+		InputTokens: resp.Usage.PromptTokens, CachedInputTokens: resp.Usage.CachedPromptTokens,
+		CacheWriteInputTokens: resp.Usage.CacheWritePromptTokens, OutputTokens: resp.Usage.CompletionTokens,
+	}
 }
 
 func (rt *Runtime) modelCalls() int {

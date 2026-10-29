@@ -85,3 +85,27 @@ func (c *conn) cronDelete(p CronDeleteParams) (Empty, func(), error) {
 	_, err = jobs.Delete(p.ThreadID, p.Name)
 	return Empty{}, nil, err
 }
+
+func (s *Server) threadJobs(threadID string) []repo.CronJobView {
+	if s.jobs == nil {
+		return nil
+	}
+	all, err := s.jobs.List("")
+	if err != nil {
+		log.Printf("gateway: the tasks of thread %s cannot be listed: %v", threadID, err)
+		return nil
+	}
+	var out []repo.CronJobView
+	for _, j := range all {
+		if j.ThreadID == threadID || j.ParentThreadID == threadID {
+			out = append(out, j)
+		}
+	}
+	return out
+}
+
+func (s *Server) cronJobsChanged(jobs []repo.CronJobView) {
+	for _, j := range jobs {
+		s.CronChanged(j.ID, j.ThreadID)
+	}
+}

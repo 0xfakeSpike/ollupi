@@ -1,15 +1,15 @@
 package gateway
 
 import (
+	"encoding/base64"
 	"strings"
 
-	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/repo"
 )
 
 func (c *conn) threadStart(p ThreadStartParams) (ThreadResult, func(), error) {
-	t, err := c.s.agent.StartThread(p.WorkspaceID, p.PermissionSettings)
+	t, err := c.s.agent.StartThread(p.WorkspaceID, p.Title, p.PermissionSettings)
 	if err != nil {
 		return ThreadResult{}, nil, err
 	}
@@ -61,6 +61,31 @@ func (c *conn) threadPermissions(p ThreadPermissionsParams) (ThreadResult, func(
 	return ThreadResult{Thread: t}, nil, nil
 }
 
+func (c *conn) threadRename(p ThreadRenameParams) (ThreadResult, func(), error) {
+	t, err := c.s.agent.RenameThread(p.ThreadID, p.Title)
+	return ThreadResult{Thread: t}, nil, err
+}
+
+func (c *conn) threadArchive(p ThreadArchiveParams) (ThreadResult, func(), error) {
+	if p.Archived == nil {
+		return ThreadResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "archived is required")
+	}
+	jobs := c.s.threadJobs(p.ThreadID)
+	t, err := c.s.agent.ArchiveThread(p.ThreadID, *p.Archived)
+	if err != nil {
+		return ThreadResult{}, nil, err
+	}
+	return ThreadResult{Thread: t}, func() { c.s.cronJobsChanged(jobs) }, nil
+}
+
+func (c *conn) threadDelete(p ThreadDeleteParams) (Empty, func(), error) {
+	jobs := c.s.threadJobs(p.ThreadID)
+	if err := c.s.agent.DeleteThread(p.ThreadID); err != nil {
+		return Empty{}, nil, err
+	}
+	return Empty{}, func() { c.s.cronJobsChanged(jobs) }, nil
+}
+
 func (c *conn) threadList(p repo.ThreadFilter) (ThreadListResult, func(), error) {
 	if p.Limit == 0 {
 		p.Limit = defaultLimit
@@ -76,11 +101,12 @@ func (c *conn) threadList(p repo.ThreadFilter) (ThreadListResult, func(), error)
 }
 
 func (c *conn) turnStart(p TurnStartParams) (TurnResult, func(), error) {
-	text, err := inputText(p.Input)
+	in, err := userInput(p.Input)
 	if err != nil {
 		return TurnResult{}, nil, err
 	}
-	turn, err := c.s.agent.StartTurn(p.ThreadID, agent.Input{Text: text, Connection: p.Connection})
+	in.Connection = p.Connection
+	turn, err := c.s.agent.StartTurn(p.ThreadID, in)
 	if err != nil {
 		return TurnResult{}, nil, err
 	}
@@ -91,11 +117,11 @@ func (c *conn) turnSteer(p TurnSteerParams) (TurnSteerResult, func(), error) {
 	if p.ExpectedTurnID == "" {
 		return TurnSteerResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "expectedTurnId is required")
 	}
-	text, err := inputText(p.Input)
+	in, err := userInput(p.Input)
 	if err != nil {
 		return TurnSteerResult{}, nil, err
 	}
-	turn, err := c.s.agent.SteerTurn(p.ThreadID, p.ExpectedTurnID, text)
+	turn, err := c.s.agent.SteerTurn(p.ThreadID, p.ExpectedTurnID, in)
 	if err != nil {
 		return TurnSteerResult{}, nil, err
 	}
@@ -107,4 +133,9 @@ func (c *conn) turnInterrupt(p TurnInterruptParams) (Empty, func(), error) {
 		return Empty{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "turnId is required")
 	}
 	return Empty{}, nil, c.s.agent.InterruptTurn(p.ThreadID, p.TurnID)
+}
+
+func (c *conn) attachmentRead(p AttachmentReadParams) (AttachmentReadResult, func(), error) {
+	att, data, err := c.s.agent.ReadAttachment(p.ThreadID, p.AttachmentID)
+	return AttachmentReadResult{Attachment: att, Data: base64.StdEncoding.EncodeToString(data)}, nil, err
 }

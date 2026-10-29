@@ -76,7 +76,7 @@ func (r *responseRecorder) finish(resp llm.ChatResponse) error {
 		}
 		it.Text, it.Status, it.CompletedAt = part.text, repo.ItemCompleted, &now
 		if part.kind == repo.ItemAgentMessage || (r.agent == nil && part.kind == repo.ItemReasoning) {
-			it.ContextStats, it.Usage = &r.stats, r.usage
+			it.ContextStats, it.Usage, it.Native = &r.stats, r.usage, resp.Message.Native
 		}
 		if _, err := r.rt.record(*it); err != nil {
 			return err

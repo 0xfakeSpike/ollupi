@@ -32,12 +32,12 @@ const (
 
 type Manager struct {
 	db     *repo.DB
-	model  *llm.OpenAI
+	model  llm.Client
 	opts   Options
 	budget int
 }
 
-func New(db *repo.DB, model *llm.OpenAI, opts Options) (*Manager, error) {
+func New(db *repo.DB, model llm.Client, opts Options) (*Manager, error) {
 	if db == nil {
 		return nil, errors.New("memory: database is required")
 	}
@@ -167,7 +167,7 @@ func (m *Manager) extract(ctx context.Context, batch *Batch, payload string, rep
 	if err != nil {
 		return nil, failure{repo.MemoryStorage, fmt.Errorf("could not read the redaction setting: %w", err)}
 	}
-	redactor := redact.New()
+	redactor := redact.New(settings.RedactionKey)
 	if settings.Redaction {
 		payload = redactor.Mask(payload)
 	}
