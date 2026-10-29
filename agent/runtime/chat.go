@@ -22,6 +22,7 @@ func (rt *Runtime) contextInput() contextmanager.Input {
 }
 
 func (rt *Runtime) respond(ctx context.Context, choice llm.ToolChoice) (llm.ChatResponse, error) {
+	rt.offered, rt.deferred = Offer(rt.Tools, rt.Contexts, slices.Concat(rt.History, rt.Items))
 	prompt, err := rt.Contexts.Build(rt.contextInput())
 	if err != nil {
 		return llm.ChatResponse{}, fmt.Errorf("runtime: %w", err)
