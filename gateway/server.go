@@ -33,12 +33,11 @@ const (
 
 type Server struct {
 	agent   *agent.Agent
+	db      *repo.DB
 	memory  *memory.Manager
 	jobs    *cron.Jobs
 	mcp     *mcp.Servers
 	token   string
-	hosts   []string
-	methods map[string]Method
 	origins []string
 	mu      sync.Mutex
 	deliver sync.Mutex
@@ -143,16 +142,11 @@ func (c *conn) Call(method string, params json.RawMessage) (any, func(), *jsonrp
 	case method != methodInitialize && !initialized:
 		return nil, nil, jsonrpc.Errorf(errNotInitialized, "call initialize first")
 	}
-	if m, ok := protocol.methods[method]; ok {
-		return m.call(c, params)
-	}
-	c.s.mu.Lock()
-	m, ok := c.s.methods[method]
-	c.s.mu.Unlock()
+	m, ok := protocol.methods[method]
 	if !ok {
 		return nil, nil, jsonrpc.Errorf(jsonrpc.CodeMethodNotFound, "method %q not found", method)
 	}
-	return callMethod(m, params)
+	return m.call(c, params)
 }
 
 func (c *conn) initialize(InitializeParams) (InitializeResult, func(), error) {
@@ -216,6 +210,8 @@ func (c *conn) event(e agent.Event) {
 		c.rpc.Notify(notifyThreadStatusChanged, ThreadStatusNotification{ThreadID: e.Thread.ID, Status: e.Status})
 	case agent.EventWorkspaceChanged:
 		c.rpc.Notify(notifyWorkspaceChanged, WorkspaceResult{Workspace: *e.Workspace})
+	case agent.EventCronJobChanged:
+		c.cronChanged(e.CronJobID, e.Thread.ID)
 	case agent.EventApprovalRequested, agent.EventUserInputRequested:
 		c.request(e.Thread.ID, *e.Item)
 	}
@@ -290,7 +286,7 @@ func itemBytes(it repo.ItemRow) int {
 	return len(raw)
 }
 
-func userInput(input []UserInput) (agent.Input, error) {
+func agentInput(input []UserInput) (agent.Input, error) {
 	var in agent.Input
 	texts := make([]string, 0, len(input))
 	for _, part := range input {
@@ -338,6 +334,7 @@ var errorCodes = []struct {
 	{memory.ErrInvalidChange, jsonrpc.CodeInvalidParams},
 	{tools.ErrUnknownTool, jsonrpc.CodeInvalidParams},
 	{tools.ErrInvalidArguments, jsonrpc.CodeInvalidParams},
+	{cron.ErrInvalidJob, jsonrpc.CodeInvalidParams},
 }
 
 func serverError(err error) *jsonrpc.Error {

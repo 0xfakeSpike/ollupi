@@ -194,7 +194,7 @@ func omitted(from, to int) string {
 
 func readable(id string) func(from, to int) string {
 	return func(from, to int) string {
-		return fmt.Sprintf("\n[... characters %d-%d of this output omitted; call %s with output_id %q and offset %d to read them ...]\n", from, to, ToolReadOutput, id, from)
+		return fmt.Sprintf("\n[... characters %d-%d of this output omitted; call %s with output_id %q and offset %d to read them ...]\n", from, to, toolReadOutput, id, from)
 	}
 }
 

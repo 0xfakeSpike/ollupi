@@ -2,6 +2,7 @@ package repo
 
 import (
 	"database/sql/driver"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -26,7 +27,7 @@ func (u *Usage) Add(v Usage) {
 }
 
 type TurnRow struct {
-	ID          string       `gorm:"primaryKey" json:"id"`
+	ID          string       `gorm:"primaryKey;index:turns_ended,priority:2" json:"id"`
 	ThreadID    string       `gorm:"not null;uniqueIndex:turns_thread_seq,priority:1;uniqueIndex:turns_one_active,where:status = 'inProgress';index:turns_open,where:status = 'inProgress' OR status = 'queued'" json:"threadId"`
 	Thread      *ThreadRow   `gorm:"constraint:OnDelete:CASCADE" json:"-"`
 	Seq         int          `gorm:"not null;uniqueIndex:turns_thread_seq,priority:2" json:"seq"`
@@ -38,7 +39,8 @@ type TurnRow struct {
 	Attachments []Attachment `gorm:"serializer:json" json:"attachments,omitempty"`
 	CronJobID   string       `gorm:"not null;default:'';index:turns_cron_job,priority:1" json:"cronJobId,omitempty"`
 	StartedAt   time.Time    `gorm:"not null;index:turns_cron_job,priority:2" json:"startedAt"`
-	CompletedAt *time.Time   `json:"completedAt,omitempty"`
+	// turns_ended orders the ended turns for memory extraction; its condition is endedTurn, word for word.
+	CompletedAt *time.Time `gorm:"index:turns_ended,priority:1,where:(status = 'completed' OR status = 'failed' OR status = 'interrupted') AND completed_at IS NOT NULL" json:"completedAt,omitempty"`
 }
 
 func (TurnRow) TableName() string { return "turns" }
@@ -57,12 +59,6 @@ var TurnStatusValues = []TurnStatus{TurnQueued, TurnInProgress, TurnCompleted, T
 
 func (s TurnStatus) Value() (driver.Value, error) { return enumValue(s, TurnStatusValues) }
 
-func (d *DB) ActiveThreadIDs() ([]string, error) {
-	var ids []string
-	err := d.gorm.Model(&TurnRow{}).Where("status = 'inProgress' OR status = 'queued'").Distinct("thread_id").Pluck("thread_id", &ids).Error
-	return ids, err
-}
-
 func (d *DB) OpenThreads(exclude []string) ([]string, error) {
 	q := d.gorm.Table("turns").Joins("JOIN threads ON threads.id = turns.thread_id").
 		Where("(turns.status = 'inProgress' OR turns.status = 'queued')")
@@ -80,12 +76,12 @@ func (d *DB) HasQueuedTurn(threadID, cronJobID string) (bool, error) {
 	return n > 0, err
 }
 
-func (d *DB) CreateTurn(row TurnRow) error {
+func (d *DB) createTurn(row TurnRow) error {
 	row.StartedAt, row.CompletedAt = row.StartedAt.UTC(), nullTime(row.CompletedAt)
 	return d.gorm.Create(&row).Error
 }
 
-func (d *DB) UpdateTurn(row TurnRow) error {
+func (d *DB) updateTurn(row TurnRow) error {
 	res := d.gorm.Model(&TurnRow{}).Where("id = ? AND thread_id = ?", row.ID, row.ThreadID).Updates(map[string]any{
 		"status": row.Status, "input_tokens": row.Usage.InputTokens, "cached_input_tokens": row.Usage.CachedInputTokens,
 		"cache_write_input_tokens": row.Usage.CacheWriteInputTokens, "output_tokens": row.Usage.OutputTokens, "error": row.Error, "completed_at": nullTime(row.CompletedAt),
@@ -130,7 +126,7 @@ func (d *DB) SubmitTurn(threadID string, turn TurnRow) (ThreadRow, TurnRow, *Ite
 			return err
 		}
 		turn.ThreadID, turn.Seq, turn.Status = threadID, int(total)+1, TurnQueued
-		if err := tx.CreateTurn(turn); err != nil {
+		if err := tx.createTurn(turn); err != nil {
 			return err
 		}
 		if open > 0 {
@@ -185,7 +181,7 @@ func (d *DB) startIn(t ThreadRow, turn TurnRow) (ThreadRow, TurnRow, ItemRow, er
 		return ThreadRow{}, TurnRow{}, ItemRow{}, err
 	}
 	t.UpdatedAt = now
-	if err := d.UpdateThread(t); err != nil {
+	if err := d.touchThread(t.ID, now); err != nil {
 		return ThreadRow{}, TurnRow{}, ItemRow{}, err
 	}
 	return t, turn, stored, nil
@@ -197,14 +193,14 @@ func (d *DB) AddUsage(threadID, turnID string, u Usage) error {
 	}
 	return d.Tx(func(tx *DB) error {
 		row, err := tx.ActiveTurn(threadID)
-		if IsNotFound(err) || (err == nil && row.ID != turnID) {
+		if errors.Is(err, ErrNotFound) || (err == nil && row.ID != turnID) {
 			return fmt.Errorf("storage: turn %s is not in progress", turnID)
 		}
 		if err != nil {
 			return err
 		}
 		row.Usage.Add(u)
-		return tx.UpdateTurn(row)
+		return tx.updateTurn(row)
 	})
 }
 
@@ -213,7 +209,7 @@ func (d *DB) EndTurn(threadID string, turn TurnRow) (ThreadRow, TurnRow, []ItemR
 	var closed []ItemRow
 	err := d.Tx(func(tx *DB) error {
 		active, err := tx.ActiveTurn(threadID)
-		if IsNotFound(err) || (err == nil && active.ID != turn.ID) {
+		if errors.Is(err, ErrNotFound) || (err == nil && active.ID != turn.ID) {
 			return fmt.Errorf("turn %s is not in progress", turn.ID)
 		}
 		if err != nil {
@@ -224,7 +220,7 @@ func (d *DB) EndTurn(threadID string, turn TurnRow) (ThreadRow, TurnRow, []ItemR
 		}
 		now := time.Now().UTC()
 		turn.ThreadID, turn.Seq, turn.CompletedAt = threadID, active.Seq, &now
-		if err := tx.UpdateTurn(turn); err != nil {
+		if err := tx.updateTurn(turn); err != nil {
 			return err
 		}
 		var open []ItemRow
@@ -244,7 +240,7 @@ func (d *DB) EndTurn(threadID string, turn TurnRow) (ThreadRow, TurnRow, []ItemR
 			return err
 		}
 		thread.UpdatedAt = now
-		return tx.UpdateThread(thread)
+		return tx.touchThread(threadID, now)
 	})
 	if err != nil {
 		return ThreadRow{}, TurnRow{}, nil, fmt.Errorf("storage: end turn: %w", err)
@@ -258,14 +254,14 @@ func (d *DB) FinalAnswer(threadID, turnID string) (string, error) {
 	return row.Text, err
 }
 
-func (d *DB) TurnItems(threadID, turnID string) ([]ItemRow, error) {
+func (d *DB) TurnItems(turnID string) ([]ItemRow, error) {
 	var rows []ItemRow
-	err := d.gorm.Where("thread_id = ? AND turn_id = ?", threadID, turnID).Order("seq").Find(&rows).Error
+	err := d.gorm.Where("turn_id = ?", turnID).Order("seq").Find(&rows).Error
 	return rows, err
 }
 
-func (d *DB) InputAfterAnswer(threadID, turnID string) (bool, error) {
+func (d *DB) InputAfterAnswer(turnID string) (bool, error) {
 	var n int64
-	err := d.gorm.Model(&ItemRow{}).Where("thread_id = ? AND turn_id = ? AND type = 'userMessage' AND seq > (SELECT COALESCE(MAX(seq), 0) FROM items WHERE thread_id = ? AND turn_id = ? AND type = 'agentMessage' AND status = 'completed')", threadID, turnID, threadID, turnID).Count(&n).Error
+	err := d.gorm.Model(&ItemRow{}).Where("turn_id = ? AND type = 'userMessage' AND seq > (SELECT COALESCE(MAX(seq), 0) FROM items WHERE turn_id = ? AND type = 'agentMessage' AND status = 'completed')", turnID, turnID).Count(&n).Error
 	return n > 0, err
 }

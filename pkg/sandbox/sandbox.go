@@ -56,7 +56,7 @@ func ResolveMode(mode string) (Mode, error) {
 	m := ModeWorkspaceWrite
 	if mode != "" {
 		var err error
-		if m, err = ParseMode(mode); err != nil {
+		if m, err = parseMode(mode); err != nil {
 			return "", err
 		}
 	}
@@ -70,7 +70,7 @@ func ResolveMode(mode string) (Mode, error) {
 
 type Sandbox struct {
 	home           string
-	policy         Policy
+	policy         policy
 	domains        DomainRules
 	envPassthrough []string
 	maxOutputBytes int
@@ -87,7 +87,7 @@ func New(c Config) (*Sandbox, error) {
 		return nil, err
 	}
 	if mode != ModeFullAccess && runtime.GOOS == "darwin" {
-		if _, err := os.Stat(SeatbeltExecutable); err != nil {
+		if _, err := os.Stat(seatbeltExecutable); err != nil {
 			return nil, fmt.Errorf("sandbox: %w", err)
 		}
 	}
@@ -125,12 +125,12 @@ func New(c Config) (*Sandbox, error) {
 	}
 	if mode != ModeFullAccess {
 		for _, root := range roots {
-			if err := ValidateRoot(root, home); err != nil {
+			if err := validateRoot(root, home); err != nil {
 				return nil, err
 			}
 		}
 	}
-	denyRead, err := canonical("deny_read", append(DefaultDenyRead(home), c.DenyRead...))
+	denyRead, err := canonical("deny_read", append(defaultDenyRead(home), c.DenyRead...))
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +138,7 @@ func New(c Config) (*Sandbox, error) {
 	if err != nil {
 		return nil, err
 	}
-	extraWritable, err := canonical("extra_writable", append(DefaultWritableCaches(home), c.ExtraWritable...))
+	extraWritable, err := canonical("extra_writable", append(defaultWritableCaches(home), c.ExtraWritable...))
 	if err != nil {
 		return nil, err
 	}
@@ -163,10 +163,10 @@ func New(c Config) (*Sandbox, error) {
 	}
 	s := &Sandbox{
 		home: home,
-		policy: Policy{
+		policy: policy{
 			Mode: mode, Network: c.Network, WritableRoots: roots, ExtraWritable: extraWritable,
 			DenyRead: denyRead, ReadOnly: readOnly, UnixSockets: sockets,
-			ProtectedNames: append(append([]string(nil), DefaultProtectedNames...), c.ProtectedNames...),
+			ProtectedNames: append(append([]string(nil), defaultProtectedNames...), c.ProtectedNames...),
 		},
 		domains:        domains,
 		envPassthrough: append([]string(nil), c.EnvPassthrough...),
@@ -177,7 +177,7 @@ func New(c Config) (*Sandbox, error) {
 		return nil, err
 	}
 	if s.maxOutputBytes == 0 {
-		s.maxOutputBytes = DefaultMaxOutputBytes
+		s.maxOutputBytes = defaultMaxOutputBytes
 	}
 	if mode != ModeFullAccess && runtime.GOOS == "darwin" {
 		l := newDenialLog()
@@ -210,7 +210,7 @@ func (s *Sandbox) Roots() []string { return append([]string(nil), s.policy.Writa
 
 func (s *Sandbox) Fingerprint() any {
 	return struct {
-		Policy         Policy
+		Policy         policy
 		Domains        DomainRules
 		EnvPassthrough []string
 		MaxOutputBytes int
@@ -246,7 +246,7 @@ func (s *Sandbox) Summary() string {
 }
 
 func protectedSummary(names []string) string {
-	shown := append([]string{".vscode", ".envrc", ".husky"}, names[len(DefaultProtectedNames):]...)
+	shown := append([]string{".vscode", ".envrc", ".husky"}, names[len(defaultProtectedNames):]...)
 	return strings.Join(shown, ", ") + ", ..."
 }
 
@@ -254,7 +254,7 @@ func (s *Sandbox) Check(dir string) error {
 	if !s.Enforced() {
 		return nil
 	}
-	return ValidateRoot(dir, s.home)
+	return validateRoot(dir, s.home)
 }
 
 func (s *Sandbox) commandRoots(c Command) ([]string, error) {
@@ -269,7 +269,7 @@ func (s *Sandbox) commandRoots(c Command) ([]string, error) {
 		if canonical != root {
 			return nil, fmt.Errorf("sandbox: command directory %q is not canonical (%q)", root, canonical)
 		}
-		if err := ValidateRoot(root, s.home); err != nil {
+		if err := validateRoot(root, s.home); err != nil {
 			return nil, err
 		}
 	}
@@ -285,7 +285,7 @@ func (s *Sandbox) Run(ctx context.Context, c Command) (Result, error) {
 	if !s.Enforced() || c.Unsandboxed {
 		cmd := exec.CommandContext(ctx, c.Program, c.Args...)
 		cmd.Dir = c.Cwd
-		cmd.Env = Environ(os.Environ(), s.envPassthrough, c.Env)
+		cmd.Env = environ(os.Environ(), s.envPassthrough, c.Env)
 		return runProcess(ctx, cmd, c.Program, c.Timeout, s.maxOutputBytes, s.runMarker())
 	}
 	roots, err := s.commandRoots(c)
@@ -320,7 +320,7 @@ func (s *Sandbox) Run(ctx context.Context, c Command) (Result, error) {
 	if s.denials != nil && s.denials.running() {
 		tagID, policy.LogTag = s.denials.newTag()
 	}
-	args, err := SeatbeltArgs(policy, SeatbeltTempDirs(), append([]string{c.Program}, c.Args...))
+	args, err := seatbeltArgs(policy, seatbeltTempDirs(), append([]string{c.Program}, c.Args...))
 	if err != nil {
 		if tagID != "" {
 			s.denials.collect(tagID, false)
@@ -335,9 +335,9 @@ func (s *Sandbox) Run(ctx context.Context, c Command) (Result, error) {
 	for k, v := range env {
 		merged[k] = v
 	}
-	cmd := exec.CommandContext(ctx, SeatbeltExecutable, args...)
+	cmd := exec.CommandContext(ctx, seatbeltExecutable, args...)
 	cmd.Dir = c.Cwd
-	cmd.Env = Environ(os.Environ(), s.envPassthrough, merged)
+	cmd.Env = environ(os.Environ(), s.envPassthrough, merged)
 	res, err := runProcess(ctx, cmd, c.Program, c.Timeout, s.maxOutputBytes, s.runMarker())
 
 	failed := err != nil || res.ExitCode != 0

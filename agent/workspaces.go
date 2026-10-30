@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,10 +13,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/google/uuid"
 )
-
-func (a *Agent) ListWorkspaces() ([]repo.WorkspaceRow, error) {
-	return a.cfg.DB.Workspaces()
-}
 
 func (a *Agent) AddWorkspace(path, name string) (repo.WorkspaceRow, error) {
 	root, err := sandbox.CanonicalDirectory(path)
@@ -30,7 +27,7 @@ func (a *Agent) AddWorkspace(path, name string) (repo.WorkspaceRow, error) {
 	}
 	now := time.Now().UTC()
 	w := repo.WorkspaceRow{ID: uuid.NewString(), Name: name, RootPath: root, CreatedAt: now, UpdatedAt: now}
-	return a.cfg.DB.AddWorkspace(w,
+	w, err = a.cfg.DB.AddWorkspace(w,
 		func(existing repo.WorkspaceRow) bool { return sameDirectory(existing.RootPath, root) },
 		func(existing repo.WorkspaceRow) (repo.WorkspaceRow, bool) {
 			if existing.ArchivedAt == nil {
@@ -39,6 +36,11 @@ func (a *Agent) AddWorkspace(path, name string) (repo.WorkspaceRow, error) {
 			existing.ArchivedAt, existing.UpdatedAt = nil, now
 			return existing, true
 		})
+	if err != nil {
+		return repo.WorkspaceRow{}, err
+	}
+	a.emit(Event{Kind: EventWorkspaceChanged, Workspace: &w})
+	return w, nil
 }
 
 func (a *Agent) RenameWorkspace(id, name string) (repo.WorkspaceRow, error) {
@@ -64,8 +66,7 @@ func (a *Agent) UpdateWorkspaceSettings(id string, settings permission.Settings)
 	if err != nil {
 		return repo.WorkspaceRow{}, err
 	}
-	layer := permission.Layer{Of: fmt.Sprintf("the permission settings of workspace %q", w.Name), Settings: settings}
-	if err := a.validateLayer(a.layers(repo.WorkspaceRow{}), w.Settings, layer); err != nil {
+	if err := a.validateLayer(a.layers(repo.WorkspaceRow{}), w.Settings, workspaceLayer(w.Name, settings)); err != nil {
 		return repo.WorkspaceRow{}, err
 	}
 	return a.changeWorkspace(id, func(w *repo.WorkspaceRow) { w.Settings = settings })
@@ -77,10 +78,14 @@ func (a *Agent) changeWorkspace(id string, change func(*repo.WorkspaceRow)) (rep
 		change(&w)
 		return w, nil
 	})
-	if repo.IsNotFound(err) {
+	if errors.Is(err, repo.ErrNotFound) {
 		return repo.WorkspaceRow{}, fmt.Errorf("agent: workspace %s: %w", id, repo.ErrNotFound)
 	}
-	return w, err
+	if err != nil {
+		return repo.WorkspaceRow{}, err
+	}
+	a.emit(Event{Kind: EventWorkspaceChanged, Workspace: &w})
+	return w, nil
 }
 
 func (a *Agent) validateLayer(base []permission.Layer, previous permission.Settings, layer permission.Layer) error {
@@ -93,21 +98,7 @@ func (a *Agent) validateLayer(base []permission.Layer, previous permission.Setti
 	return nil
 }
 
-func (a *Agent) checkWorkspace(id string) error {
-	if id == "" {
-		return nil
-	}
-	w, err := a.cfg.DB.Workspace(id)
-	if err != nil {
-		return fmt.Errorf("agent: workspace %s: %w", id, repo.ErrNotFound)
-	}
-	return usable(id, w)
-}
-
-func usable(id string, w repo.WorkspaceRow) error {
-	if w.ID == "" {
-		return fmt.Errorf("agent: workspace %s: %w", id, repo.ErrNotFound)
-	}
+func usable(w repo.WorkspaceRow) error {
 	if w.ArchivedAt != nil {
 		return fmt.Errorf("agent: workspace %s: %w", w.Name, ErrWorkspaceArchived)
 	}

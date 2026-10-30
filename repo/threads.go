@@ -8,17 +8,19 @@ import (
 )
 
 type ThreadRow struct {
-	ID             string             `gorm:"primaryKey" json:"id"`
-	WorkspaceID    Ref                `gorm:"index:threads_workspace_updated,priority:1" json:"workspaceId,omitempty"`
-	Workspace      *WorkspaceRow      `gorm:"foreignKey:WorkspaceID;constraint:OnDelete:RESTRICT" json:"-"`
-	Title          string             `gorm:"not null" json:"title"`
-	Settings       PermissionSettings `gorm:"not null;default:'{}';serializer:json;check:threads_settings,json_valid(settings)" json:"settings"`
-	ParentThreadID Ref                `gorm:"index" json:"parentThreadId,omitempty"`
-	Parent         *ThreadRow         `gorm:"foreignKey:ParentThreadID;constraint:OnDelete:CASCADE" json:"-"`
-	ParentItemID   Ref                `json:"parentItemId,omitempty"`
-	CreatedAt      time.Time          `gorm:"not null;autoCreateTime:false" json:"createdAt"`
-	UpdatedAt      time.Time          `gorm:"not null;autoUpdateTime:false;index;index:threads_workspace_updated,priority:2,sort:desc" json:"updatedAt"`
-	ArchivedAt     *time.Time         `json:"archivedAt,omitempty"`
+	ID          string             `gorm:"primaryKey;index:threads_list,priority:3;index:threads_workspace_list,priority:4" json:"id"`
+	WorkspaceID Ref                `gorm:"index:threads_workspace_list,priority:1" json:"workspaceId,omitempty"`
+	Workspace   *WorkspaceRow      `gorm:"foreignKey:WorkspaceID;constraint:OnDelete:RESTRICT" json:"-"`
+	Title       string             `gorm:"not null" json:"title"`
+	Settings    PermissionSettings `gorm:"not null;default:'{}';serializer:json;check:threads_settings,json_valid(settings)" json:"settings"`
+	// threads_parent finds a thread's subagent threads; top-level threads stay out of it, so lists use threads_list.
+	ParentThreadID Ref        `gorm:"index:threads_parent,where:parent_thread_id IS NOT NULL" json:"parentThreadId,omitempty"`
+	Parent         *ThreadRow `gorm:"foreignKey:ParentThreadID;constraint:OnDelete:CASCADE" json:"-"`
+	ParentItemID   Ref        `json:"parentItemId,omitempty"`
+	CreatedAt      time.Time  `gorm:"not null;autoCreateTime:false;index:threads_list,priority:2;index:threads_workspace_list,priority:3" json:"createdAt"`
+	// threads_list and threads_workspace_list hold the top-level threads in list order, read backwards for newest first.
+	UpdatedAt  time.Time  `gorm:"not null;autoUpdateTime:false;index:threads_list,priority:1,where:parent_thread_id IS NULL;index:threads_workspace_list,priority:2,where:parent_thread_id IS NULL" json:"updatedAt"`
+	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
 }
 
 func (ThreadRow) TableName() string { return "threads" }
@@ -55,7 +57,8 @@ func (d *DB) ThreadPage(id string, before, limit int) (ThreadView, bool, error) 
 		if err := tx.gorm.Where("thread_id = ?", id).Order("seq").Find(&out.Turns).Error; err != nil {
 			return err
 		}
-		q := tx.gorm.Where("thread_id = ?", id)
+		// The page is for a client, which never sees native records; only the runtime reads them, through Thread.
+		q := tx.gorm.Omit("native").Where("thread_id = ?", id)
 		if before > 0 {
 			q = q.Where("seq < ?", before)
 		}
@@ -93,7 +96,8 @@ type ThreadCursor struct {
 	ID        string    `json:"id"`
 }
 
-func (d *DB) ThreadRows(f ThreadFilter) ([]ThreadRow, error) {
+// ThreadRows lists one page of top-level threads, newest first, and whether more follow it.
+func (d *DB) ThreadRows(f ThreadFilter) ([]ThreadRow, bool, error) {
 	q := d.gorm.Order("updated_at DESC, created_at DESC, id DESC")
 	if c := f.After; c != nil {
 		up, created := c.UpdatedAt.UTC(), c.CreatedAt.UTC()
@@ -112,11 +116,14 @@ func (d *DB) ThreadRows(f ThreadFilter) ([]ThreadRow, error) {
 	} else {
 		q = q.Where("archived_at IS NULL")
 	}
-	if f.Limit > 0 {
-		q = q.Limit(f.Limit)
-	}
 	var rows []ThreadRow
-	return rows, q.Find(&rows).Error
+	if err := q.Limit(f.Limit + 1).Find(&rows).Error; err != nil {
+		return nil, false, err
+	}
+	if len(rows) > f.Limit {
+		return rows[:f.Limit], true, nil
+	}
+	return rows, false, nil
 }
 
 func (d *DB) CreateThread(row ThreadRow) error {
@@ -124,12 +131,10 @@ func (d *DB) CreateThread(row ThreadRow) error {
 	return d.gorm.Create(&row).Error
 }
 
-func (d *DB) UpdateThread(row ThreadRow) error {
-	res := d.gorm.Model(&ThreadRow{}).Where("id = ?", row.ID).Updates(map[string]any{
-		"title": row.Title, "updated_at": row.UpdatedAt.UTC(),
-	})
-	if err := checkOne(res); err != nil {
-		return fmt.Errorf("thread %s: %w", row.ID, err)
+// touchThread moves a thread's updated_at; nothing else about the thread changes with a turn.
+func (d *DB) touchThread(id string, at time.Time) error {
+	if err := checkOne(d.gorm.Model(&ThreadRow{}).Where("id = ?", id).Update("updated_at", at.UTC())); err != nil {
+		return fmt.Errorf("thread %s: %w", id, err)
 	}
 	return nil
 }
@@ -223,6 +228,8 @@ type ThreadState struct {
 	OpenCalls []ItemRow
 }
 
+const openCalls = "type = 'toolCall' AND status IN ('pending', 'inProgress')"
+
 func (d *DB) ThreadState(id string) (ThreadState, error) {
 	var out ThreadState
 	err := d.Tx(func(tx *DB) error {
@@ -236,7 +243,7 @@ func (d *DB) ThreadState(id string) (ThreadState, error) {
 		if !active {
 			return nil
 		}
-		return tx.gorm.Where("thread_id = ? AND turn_id = ? AND type = 'toolCall' AND status IN ('pending', 'inProgress')", id, turn.ID).Order("seq").Find(&out.OpenCalls).Error
+		return tx.gorm.Where("turn_id = ? AND "+openCalls, turn.ID).Order("seq").Find(&out.OpenCalls).Error
 	})
 	if err != nil {
 		return ThreadState{}, err
@@ -261,7 +268,7 @@ func (s ThreadState) QueuedTurns() []TurnRow {
 func (s ThreadState) PendingRequests() []ItemRow {
 	var out []ItemRow
 	for _, it := range s.OpenCalls {
-		if it.IsPending() {
+		if it.WaitsOnUser() {
 			out = append(out, it)
 		}
 	}
@@ -271,7 +278,7 @@ func (s ThreadState) PendingRequests() []ItemRow {
 func (s ThreadState) AgentCalls() []ItemRow {
 	var out []ItemRow
 	for _, it := range s.OpenCalls {
-		if it.WaitsOnAgent() {
+		if it.waitsOnAgent() {
 			out = append(out, it)
 		}
 	}

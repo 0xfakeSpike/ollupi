@@ -13,11 +13,6 @@ type slot struct {
 	cancel context.CancelFunc
 }
 
-func (a *Agent) start() {
-	a.done.Add(1)
-	go a.loop()
-}
-
 func (a *Agent) Wait() {
 	a.done.Wait()
 }
@@ -57,7 +52,7 @@ func (a *Agent) call(fn func() error) error {
 	}
 }
 
-func (a *Agent) enqueue(threadID, turnID string) {
+func (a *Agent) launch(threadID, turnID string) {
 	ctx, cancel := context.WithCancel(a.ctx)
 	sl := &slot{turnID: turnID, ctx: ctx, cancel: cancel}
 	a.slotByThread[threadID] = sl

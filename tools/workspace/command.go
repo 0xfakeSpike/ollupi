@@ -1,11 +1,12 @@
-package shell
+package workspace
 
 import (
 	"context"
 	"errors"
+	"maps"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/0xfakeSpike/ollupi/tools"
@@ -15,53 +16,31 @@ const maxCommandDepth = 4
 
 var (
 	assignment = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
-	errProgram = errors.New(`shell: argument "program" must be non-empty string`)
+	errProgram = errors.New(`workspace: argument "program" must be non-empty string`)
 )
 
 func permissionContent(_ context.Context, arguments map[string]any) (tools.Content, error) {
-	text, err := commandLine(arguments)
-	if err != nil {
-		return tools.Content{}, err
-	}
-	program, _ := arguments["program"].(string)
-	args, err := parseExecArgsSlice(arguments["args"])
-	if err != nil {
-		return tools.Content{}, err
-	}
-	env, err := commandEnvironment(arguments["env"])
-	if err != nil {
-		return tools.Content{}, err
-	}
-	c := contentOf(strings.TrimSpace(program), args)
-	c.Text = text
-	c.Opaque = c.Opaque || len(env) > 0
-	return c, nil
-}
-
-func commandLine(arguments map[string]any) (string, error) {
 	program, ok := arguments["program"].(string)
-	if !ok || strings.TrimSpace(program) == "" {
-		return "", errProgram
+	if program = strings.TrimSpace(program); !ok || program == "" {
+		return tools.Content{}, errProgram
 	}
 	args, err := parseExecArgsSlice(arguments["args"])
 	if err != nil {
-		return "", err
+		return tools.Content{}, err
 	}
 	env, err := commandEnvironment(arguments["env"])
 	if err != nil {
-		return "", err
+		return tools.Content{}, err
 	}
-	keys := make([]string, 0, len(env))
-	for k := range env {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	words := make([]string, 0, len(keys)+1+len(args))
-	for _, k := range keys {
+	c := contentOf(program, args)
+	c.Opaque = c.Opaque || len(env) > 0
+	// The approval shows the environment first, as the command line would.
+	words := make([]string, 0, len(env)+1+len(args))
+	for _, k := range slices.Sorted(maps.Keys(env)) {
 		words = append(words, k+"="+env[k])
 	}
-	words = append(words, strings.TrimSpace(program))
-	return strings.Join(append(words, args...), " "), nil
+	c.Text = strings.Join(append(append(words, program), args...), " ")
+	return c, nil
 }
 
 func contentOf(program string, args []string) tools.Content {

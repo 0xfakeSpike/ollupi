@@ -3,6 +3,7 @@ package skills
 import (
 	"context"
 	"fmt"
+	"github.com/google/jsonschema-go/jsonschema"
 	"strings"
 
 	"github.com/0xfakeSpike/ollupi/tools"
@@ -32,72 +33,73 @@ func (c *Catalog) Invoke(_ context.Context, tool string, arguments map[string]an
 		return c.readResource(arguments)
 	default:
 		err := fmt.Errorf("skills: unknown tool %q", tool)
-		return tools.Result{Err: err}, err
+		return tools.Result{}, err
 	}
 }
 
+type activateArgs struct {
+	Name string `json:"name" jsonschema:"Exact skill name from AVAILABLE SKILLS."`
+}
+
+type resourceArgs struct {
+	Skill       string `json:"skill"`
+	Path        string `json:"path" jsonschema:"Resource path relative to the skill directory, as activate_skill listed it."`
+	OffsetRunes int    `json:"offset_runes,omitempty"`
+	LimitRunes  int    `json:"limit_runes,omitempty"`
+}
+
+func (resourceArgs) Constrain(s *jsonschema.Schema) {
+	s.Properties["offset_runes"].Minimum = jsonschema.Ptr(0.0)
+	s.Properties["limit_runes"].Minimum = jsonschema.Ptr(1.0)
+	s.Properties["limit_runes"].Maximum = jsonschema.Ptr(float64(maxResourceRunes))
+}
+
 func (c *Catalog) ToolList(context.Context) ([]*tools.Spec, error) {
-	names := c.Names()
+	var names []any
+	for _, name := range c.names() {
+		names = append(names, name)
+	}
+	activate, resource := tools.InputSchema[activateArgs](), tools.InputSchema[resourceArgs]()
+	activate.Properties["name"].Enum, resource.Properties["skill"].Enum = names, names
 
 	read := &tools.Annotations{ReadOnlyHint: true, OpenWorldHint: tools.Hint(false)}
 	return []*tools.Spec{
 		{
 			Name:        ToolGetRootDir,
 			Annotations: read,
-			Description: "Return the workspace Agent Skills root directory.",
-			InputSchema: emptyObjectSchema(),
+			Description: "Return the Agent Skills root directory, where every skill lives.",
+			InputSchema: tools.InputSchema[struct{}](),
 		},
 		{
 			Name:        ToolListSkills,
 			Annotations: read,
 			Description: "List available Agent Skills and their supporting resource files.",
-			InputSchema: emptyObjectSchema(),
+			InputSchema: tools.InputSchema[struct{}](),
 		},
 		{
 			Name:        ToolActivateSkill,
 			Annotations: read,
 			Description: "Activate one exact Agent Skill. Its complete SKILL.md instructions remain active for the conversation.",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"name": map[string]any{
-						"type":        "string",
-						"enum":        names,
-						"description": "Exact skill name from AVAILABLE SKILLS.",
-					},
-				},
-				"required":             []string{"name"},
-				"additionalProperties": false,
-			},
+			InputSchema: activate,
 		},
 		{
 			Name:        ToolReadResource,
 			Annotations: read,
 			Description: "Read a supporting UTF-8 resource from an activated Agent Skill. Use only paths listed for that skill.",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"skill": map[string]any{"type": "string", "enum": names},
-					"path": map[string]any{
-						"type":        "string",
-						"description": "Resource path relative to the skill directory, as activate_skill listed it.",
-					},
-					"offset_runes": map[string]any{"type": "integer", "minimum": 0},
-					"limit_runes":  map[string]any{"type": "integer", "minimum": 1, "maximum": MaxResourceRunes},
-				},
-				"required":             []string{"skill", "path"},
-				"additionalProperties": false,
-			},
+			InputSchema: resource,
 		},
 	}, nil
 }
 
 func (c *Catalog) activate(arguments map[string]any) (tools.Result, error) {
-	name, _ := arguments["name"].(string)
-	skill, ok := c.Get(strings.TrimSpace(name))
+	args, err := tools.DecodeArguments[activateArgs](arguments)
+	if err != nil {
+		return tools.Result{}, err
+	}
+	name := strings.TrimSpace(args.Name)
+	skill, ok := c.lookup(name)
 	if !ok {
-		err := fmt.Errorf("skills: no skill named %q", strings.TrimSpace(name))
-		return tools.Result{Err: err}, err
+		return tools.Result{}, fmt.Errorf("skills: no skill named %q", name)
 	}
 	return tools.Result{
 		Output: map[string]any{
@@ -111,50 +113,18 @@ func (c *Catalog) activate(arguments map[string]any) (tools.Result, error) {
 			Kind:    tools.ArtifactAgentSkill,
 			Name:    skill.Name,
 			Content: skill.Instructions,
-			Source:  skill.SourcePath,
-			Digest:  skill.Digest,
 		}},
 	}, nil
 }
 
 func (c *Catalog) readResource(arguments map[string]any) (tools.Result, error) {
-	skillName, _ := arguments["skill"].(string)
-	path, _ := arguments["path"].(string)
-	offset, err := integerArgument(arguments, "offset_runes", 0)
+	args, err := tools.DecodeArguments[resourceArgs](arguments)
 	if err != nil {
-		return tools.Result{Err: err}, err
+		return tools.Result{}, err
 	}
-	limit, err := integerArgument(arguments, "limit_runes", DefaultResourceRunes)
+	page, err := c.resourcePage(args.Skill, args.Path, args.OffsetRunes, args.LimitRunes)
 	if err != nil {
-		return tools.Result{Err: err}, err
-	}
-	page, err := c.ReadResource(skillName, path, offset, limit)
-	if err != nil {
-		return tools.Result{Err: err}, err
+		return tools.Result{}, err
 	}
 	return tools.Result{Output: page}, nil
-}
-
-func emptyObjectSchema() map[string]any {
-	return map[string]any{"type": "object", "properties": map[string]any{}, "additionalProperties": false}
-}
-
-func integerArgument(arguments map[string]any, key string, fallback int) (int, error) {
-	value, ok := arguments[key]
-	if !ok || value == nil {
-		return fallback, nil
-	}
-	switch n := value.(type) {
-	case int:
-		return n, nil
-	case int64:
-		return int(n), nil
-	case float64:
-		if n != float64(int(n)) {
-			return 0, fmt.Errorf("skills: %s must be an integer", key)
-		}
-		return int(n), nil
-	default:
-		return 0, fmt.Errorf("skills: %s must be an integer", key)
-	}
 }

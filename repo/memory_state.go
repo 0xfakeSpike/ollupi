@@ -57,9 +57,9 @@ type MemoryStateRow struct {
 	Cursor      MemoryCursor   `gorm:"embedded;embeddedPrefix:cursor_" json:"-"`
 	Attempts    int            `gorm:"not null;default:0" json:"attempts,omitempty"`
 	NextAttempt *time.Time     `json:"nextAttempt,omitempty"`
-	Skipped     int64          `gorm:"not null;default:0" json:"-"`
+	Skipped     int64          `gorm:"not null;default:0" json:"skipped"`
 	LastSuccess *time.Time     `json:"lastSuccess,omitempty"`
-	LastError   *MemoryFailure `gorm:"column:last_failure;serializer:json;check:memory_state_failure,last_failure IS NULL OR json_valid(last_failure)" json:"lastError,omitempty"`
+	LastFailure *MemoryFailure `gorm:"serializer:json;check:memory_state_failure,last_failure IS NULL OR json_valid(last_failure)" json:"lastFailure,omitempty"`
 	LastSkip    *MemorySkip    `gorm:"serializer:json;check:memory_state_skip,last_skip IS NULL OR json_valid(last_skip)" json:"lastSkip,omitempty"`
 	LastReport  *MemoryReport  `gorm:"serializer:json;check:memory_state_report,last_report IS NULL OR json_valid(last_report)" json:"lastReport,omitempty"`
 }
@@ -70,12 +70,12 @@ type MemoryStatus struct {
 	GenerationEnabled bool  `json:"generationEnabled"`
 	UseEnabled        bool  `json:"useEnabled"`
 	Pending           int64 `json:"pending"`
-	Failed            int64 `json:"failed"`
 	Active            int64 `json:"active"`
 	MemoryStateRow
 }
 
-const endedTurn = "status IN ('completed', 'failed', 'interrupted') AND completed_at IS NOT NULL"
+// endedTurn is the condition of the turns_ended index, so the queries using it can use the index.
+const endedTurn = "(status = 'completed' OR status = 'failed' OR status = 'interrupted') AND completed_at IS NOT NULL"
 
 func (d *DB) MemoryState() (MemoryStateRow, error) {
 	var row MemoryStateRow
@@ -94,7 +94,6 @@ func (d *DB) MemoryStatus() (MemoryStatus, error) {
 	if err := d.gorm.Model(&MemoryRow{}).Where("status = ?", MemoryActive).Count(&s.Active).Error; err != nil {
 		return s, err
 	}
-	s.Failed = s.Skipped
 	return s, nil
 }
 
@@ -111,7 +110,7 @@ func (d *DB) TurnItemsAfter(turnID string, seq int, types []ItemType, statuses [
 	return rows, err
 }
 
-func (d *DB) SetMemoryError(f MemoryFailure) error {
+func (d *DB) SetMemoryFailure(f MemoryFailure) error {
 	raw, err := json.Marshal(f)
 	if err != nil {
 		return err

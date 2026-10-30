@@ -89,9 +89,7 @@ func (c *Gemini) Chat(ctx context.Context, req ChatRequest, onDelta func(Delta))
 			if part.Thought {
 				d = Delta{Reasoning: part.Text}
 			}
-			if onDelta != nil && (d.Content != "" || d.Reasoning != "") {
-				onDelta(d)
-			}
+			emit(onDelta, d)
 		}
 	}
 	return geminiResponse(resp, parts, finish)
@@ -153,7 +151,7 @@ func geminiResponse(resp ChatResponse, parts []*genai.Part, finish genai.FinishR
 
 func geminiRequest(req ChatRequest, maxTokens int) ([]*genai.Content, *genai.GenerateContentConfig, error) {
 	config := &genai.GenerateContentConfig{MaxOutputTokens: int32(maxTokens)}
-	if req.Model.Thinking == nil || *req.Model.Thinking {
+	if req.Model.thinkingOn() {
 		config.ThinkingConfig = &genai.ThinkingConfig{IncludeThoughts: true}
 	} else {
 		config.ThinkingConfig = &genai.ThinkingConfig{ThinkingBudget: genai.Ptr[int32](0)}

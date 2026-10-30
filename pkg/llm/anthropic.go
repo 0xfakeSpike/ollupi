@@ -63,9 +63,7 @@ func (c *Anthropic) Chat(ctx context.Context, req ChatRequest, onDelta func(Delt
 			started = true
 		case "content_block_delta":
 			d := Delta{Content: event.Delta.Text, Reasoning: event.Delta.Thinking}
-			if onDelta != nil && (d.Content != "" || d.Reasoning != "") {
-				onDelta(d)
-			}
+			emit(onDelta, d)
 		}
 	}
 	if err := stream.Err(); err != nil {
@@ -142,7 +140,7 @@ func anthropicParams(req ChatRequest, maxTokens int) (anthropic.BetaMessageNewPa
 		Model: anthropic.Model(req.Model.Name), MaxTokens: int64(maxTokens),
 		CacheControl: anthropic.NewBetaCacheControlEphemeralParam(),
 	}
-	if req.Model.Thinking == nil || *req.Model.Thinking {
+	if req.Model.thinkingOn() {
 		p.Thinking.OfAdaptive = &anthropic.BetaThinkingConfigAdaptiveParam{
 			Display: anthropic.BetaThinkingConfigAdaptiveDisplaySummarized,
 			// replayable already leaves out the blocks it knows are stale; this keeps any it missed from failing the request.
@@ -167,7 +165,7 @@ func anthropicParams(req ChatRequest, maxTokens int) (anthropic.BetaMessageNewPa
 	if len(req.Tools) > 0 {
 		switch req.ToolChoice {
 		case ToolChoiceAuto:
-			p.ToolChoice.OfAuto = &anthropic.BetaToolChoiceAutoParam{DisableParallelToolUse: anthropic.Bool(!req.ParallelToolCalls)}
+			p.ToolChoice.OfAuto = &anthropic.BetaToolChoiceAutoParam{}
 		case ToolChoiceNone:
 			none := anthropic.NewBetaToolChoiceNoneParam()
 			p.ToolChoice.OfNone = &none

@@ -117,11 +117,7 @@ func (*Provider) ToolList(context.Context) ([]*tools.Spec, error) {
 }
 
 func (*Provider) Invoke(_ context.Context, _ string, arguments map[string]any) (tools.Result, error) {
-	raw, err := json.Marshal(arguments)
-	if err != nil {
-		return tools.Result{}, err
-	}
-	r, err := Decode(raw)
+	r, err := tools.DecodeArguments[Request](arguments)
 	if err != nil {
 		return tools.Result{}, err
 	}

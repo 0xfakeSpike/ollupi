@@ -32,10 +32,10 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools/cron"
 	"github.com/0xfakeSpike/ollupi/tools/mcp"
 	"github.com/0xfakeSpike/ollupi/tools/plan"
-	"github.com/0xfakeSpike/ollupi/tools/shell"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
 	"github.com/0xfakeSpike/ollupi/tools/web"
+	"github.com/0xfakeSpike/ollupi/tools/workspace"
 	"github.com/coder/websocket"
 	"github.com/google/jsonschema-go/jsonschema"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -70,7 +70,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	browser := &pageTool{pages: map[string]string{}}
-	runner, err := shell.NewRunner(shell.Options{Config: shell.Config{WorkspaceDirs: []string{t.TempDir()}, SandboxMode: "full-access"}})
+	runner, err := workspace.New(workspace.Options{Config: workspace.Config{WorkspaceDirs: []string{t.TempDir()}, SandboxMode: "full-access"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 		DB:             db,
 		OnEvent:        func(e agent.Event) { server.Deliver(e) },
 	})
-	if server, err = NewServer(ag, Options{Token: "secret", Memory: mem, Jobs: jobs, MCP: servers}); err != nil {
+	if server, err = NewServer(ag, Options{DB: db, Token: "secret", Memory: mem, Jobs: jobs, MCP: servers}); err != nil {
 		t.Fatal(err)
 	}
 	agentCtx, stop := context.WithCancel(ctx)
@@ -150,6 +150,10 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.await("thread/started", nil)
 	threadID := th.Thread.ID
 	c.call("thread/updatePermissions", ThreadPermissionsParams{ThreadID: threadID}, nil)
+	c.await(notifyThreadChanged, func(params json.RawMessage) bool {
+		var n ThreadChangedNotification
+		return json.Unmarshal(params, &n) == nil && n.ThreadID == threadID && n.Thread != nil
+	})
 
 	turn := c.startTurn(threadID, "hello")
 	c.awaitTurnEnd(turn, repo.TurnCompleted)
@@ -384,6 +388,8 @@ func TestTrafficMatchesContract(t *testing.T) {
 	var doomed ThreadResult
 	c.call("thread/start", ThreadStartParams{}, &doomed)
 	c.await("thread/started", nil)
+	c.refused("cron/create", CronCreateParams{ThreadID: doomed.Thread.ID, Name: "Daily Check", Spec: "@daily", Prompt: "daily check"}, jsonrpc.CodeInvalidParams, "must match")
+	c.call("cron/create", CronCreateParams{ThreadID: doomed.Thread.ID, Name: "daily", Spec: "@daily", Prompt: "daily check"}, nil)
 	turn = c.startTurn(doomed.Thread.ID, "ask me first")
 	c.await(requestUserInput, nil)
 	c.refused("thread/delete", ThreadDeleteParams{ThreadID: doomed.Thread.ID}, errThreadBusy, "interrupt")
@@ -394,7 +400,11 @@ func TestTrafficMatchesContract(t *testing.T) {
 		var n ThreadChangedNotification
 		return json.Unmarshal(params, &n) == nil && n.ThreadID == doomed.Thread.ID && n.Thread == nil
 	})
-	if _, err := db.ThreadRow(doomed.Thread.ID); !repo.IsNotFound(err) {
+	c.await(notifyCronChanged, func(params json.RawMessage) bool {
+		var n CronChangedNotification
+		return json.Unmarshal(params, &n) == nil && n.ThreadID == doomed.Thread.ID && n.Job == nil
+	})
+	if _, err := db.ThreadRow(doomed.Thread.ID); !errors.Is(err, repo.ErrNotFound) {
 		t.Errorf("the deleted thread is still stored: %v", err)
 	}
 
@@ -532,7 +542,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 		}
 	}
 	for name, tool := range builtinTools {
-		if name == shell.ToolName {
+		if name == workspace.ToolRunCommand {
 			continue
 		}
 		if tool.arguments != nil && !c.seen["arguments "+name] {
@@ -699,9 +709,9 @@ func (f *fakeModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case last.Role == "user" && strings.Contains(text, "recall"):
 		call(memory.ToolSearch, `{"query":"answers"}`)
 	case last.Role == "user" && strings.Contains(text, "write notes"):
-		call(shell.ToolWriteFile, `{"path":"notes.txt","content":"Hello.\n"}`)
+		call(workspace.ToolWriteFile, `{"path":"notes.txt","content":"Hello.\n"}`)
 	case last.Role == "user" && strings.Contains(text, "edit notes"):
-		call(shell.ToolEditFile, `{"path":"notes.txt","edits":[{"old_text":"Hello.","new_text":"Hello there."}]}`)
+		call(workspace.ToolEditFile, `{"path":"notes.txt","edits":[{"old_text":"Hello.","new_text":"Hello there."}]}`)
 	case last.Role == "user" && strings.Contains(text, "fetch http"):
 		words := strings.Fields(text)
 		call(web.Tool, fmt.Sprintf(`{"url":%q}`, words[len(words)-1]))

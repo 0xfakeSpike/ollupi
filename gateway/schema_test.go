@@ -24,9 +24,9 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
 	"github.com/0xfakeSpike/ollupi/tools/plan"
-	"github.com/0xfakeSpike/ollupi/tools/shell"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
+	"github.com/0xfakeSpike/ollupi/tools/workspace"
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
@@ -55,12 +55,12 @@ type toolSchemas struct {
 }
 
 var builtinTools = map[string]struct{ arguments, output reflect.Type }{
-	plan.Tool:           {arguments: reflect.TypeFor[plan.Plan]()},
-	subagent.Tool:       {arguments: reflect.TypeFor[subagent.Call]()},
-	userinput.Tool:      {arguments: reflect.TypeFor[userinput.Request](), output: reflect.TypeFor[userinput.Answers]()},
-	shell.ToolName:      {output: reflect.TypeFor[shell.CommandOutput]()},
-	shell.ToolEditFile:  {output: reflect.TypeFor[shell.FileOutput]()},
-	shell.ToolWriteFile: {output: reflect.TypeFor[shell.FileOutput]()},
+	plan.Tool:                {arguments: reflect.TypeFor[plan.Plan]()},
+	subagent.Tool:            {arguments: reflect.TypeFor[subagent.Call]()},
+	userinput.Tool:           {arguments: reflect.TypeFor[userinput.Request](), output: reflect.TypeFor[userinput.Answers]()},
+	workspace.ToolRunCommand: {output: reflect.TypeFor[workspace.CommandOutput]()},
+	workspace.ToolEditFile:   {output: reflect.TypeFor[workspace.FileOutput]()},
+	workspace.ToolWriteFile:  {output: reflect.TypeFor[workspace.FileOutput]()},
 }
 
 var providers = []string{cron.ProviderName, skills.ProviderName, memory.ProviderName}

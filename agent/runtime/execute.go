@@ -4,15 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
-	"strings"
 	"sync"
-	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
-	"github.com/google/uuid"
 )
 
 type callActionKind int
@@ -32,11 +27,7 @@ type callAction struct {
 	reason string
 }
 
-type callPlan struct {
-	actions []callAction
-}
-
-func (rt *Runtime) executePlan(ctx context.Context, plan callPlan) (bool, error) {
+func (rt *Runtime) executePlan(ctx context.Context, plan []callAction) (bool, error) {
 	var batch []job
 	halt := ""
 	flush := func() (string, error) {
@@ -69,7 +60,7 @@ func (rt *Runtime) executePlan(ctx context.Context, plan callPlan) (bool, error)
 		h, err := rt.finishTool(jobs[0], results[0])
 		return h, errors.Join(err, ctx.Err())
 	}
-	for _, a := range plan.actions {
+	for _, a := range plan {
 		if err := ctx.Err(); err != nil {
 			return false, err
 		}
@@ -139,7 +130,7 @@ func (rt *Runtime) executePlan(ctx context.Context, plan callPlan) (bool, error)
 }
 
 func (rt *Runtime) runJobs(ctx context.Context, jobs []job) ([]tools.Result, error) {
-	ctx = tools.WithDeferred(ctx, rt.deferred)
+	ctx = context.WithValue(ctx, deferredKey{}, rt.deferred)
 	for i := range jobs {
 		jobs[i].it.Status = repo.ItemInProgress
 		stored, err := rt.record(jobs[i].it)
@@ -149,37 +140,19 @@ func (rt *Runtime) runJobs(ctx context.Context, jobs []job) ([]tools.Result, err
 		jobs[i].it = stored
 	}
 	results := make([]tools.Result, len(jobs))
-	progress := make(chan string, 64)
 	var wg sync.WaitGroup
 	for i, j := range jobs {
-		wg.Add(1)
-		emit := func(text string) {
-			select {
-			case progress <- text:
-			case <-ctx.Done():
-			}
-		}
-		go func() {
-			defer wg.Done()
-			results[i] = execute(ctx, rt.Registry, rt.Contexts, rt.Caller, j, emit)
-		}()
+		wg.Go(func() { results[i] = rt.execute(ctx, j) })
 	}
-	go func() {
-		wg.Wait()
-		close(progress)
-	}()
-	for text := range progress {
-		rt.recordProgress(text)
-	}
+	wg.Wait()
 	return results, nil
 }
 
-func execute(ctx context.Context, registry *tools.Registry, contexts *contextmanager.Manager, caller tools.Caller, j job, emit tools.ProgressEmitter) tools.Result {
-	it, args := j.it, j.args
-	ctx = tools.WithCaller(tools.WithProgressEmitter(ctx, emit), caller)
-	result := registry.InvokePrepared(ctx, it.Tool, args, it.PreparedExecution)
+func (rt *Runtime) execute(ctx context.Context, j job) tools.Result {
+	it := j.it
+	result := rt.Registry.InvokePrepared(ctx, it.Tool, j.args, it.PreparedExecution)
 	if result.Err == nil {
-		if err := checkArtifacts(result.Artifacts, contexts); err != nil {
+		if err := rt.Window.CheckArtifacts(result.Artifacts); err != nil {
 			result = tools.Result{Err: fmt.Errorf("apply tool context: %w", err)}.For(it.Tool)
 		}
 	}
@@ -211,25 +184,7 @@ func (rt *Runtime) finishTool(j job, result tools.Result) (string, error) {
 	if status == repo.ItemCompleted {
 		return "", nil
 	}
-	if n := rt.consecutiveFailures(); n >= maxConsecutiveFailures {
-		return fmt.Sprintf("%d consecutive failed tool calls; last error: %s", n, errText), nil
-	}
-	return "", nil
-}
-
-func (rt *Runtime) recordProgress(text string) {
-	now := time.Now().UTC()
-	if _, err := rt.record(repo.ItemRow{
-		ID:          uuid.NewString(),
-		TurnID:      rt.Turn.ID,
-		Type:        repo.ItemToolProgress,
-		Status:      repo.ItemCompleted,
-		Text:        text,
-		StartedAt:   now,
-		CompletedAt: &now,
-	}); err != nil {
-		log.Printf("runtime: record tool progress: %v", err)
-	}
+	return rt.haltAfterFailures(errText), nil
 }
 
 func (rt *Runtime) fail(it repo.ItemRow, reason string) error {
@@ -241,25 +196,13 @@ func (rt *Runtime) refuse(it repo.ItemRow, reason string) (string, error) {
 	if err := rt.fail(it, reason); err != nil {
 		return "", err
 	}
-	if n := rt.consecutiveFailures(); n >= maxConsecutiveFailures {
-		return fmt.Sprintf("%d consecutive invalid or failed tool calls; last: %s", n, reason), nil
-	}
-	return "", nil
+	return rt.haltAfterFailures(reason), nil
 }
 
-const maxArtifactRunes = 20000
-
-func checkArtifacts(artifacts []tools.ContextArtifact, contexts *contextmanager.Manager) error {
-	for _, artifact := range artifacts {
-		if artifact.Name == "" || strings.TrimSpace(artifact.Content) == "" {
-			return fmt.Errorf("context artifact requires a name and content")
-		}
-		if artifact.Kind != tools.ArtifactAgentSkill {
-			return fmt.Errorf("context artifact %s/%s has unsupported kind", artifact.Kind, artifact.Name)
-		}
-		if len([]rune(artifact.Content)) > maxArtifactRunes {
-			return fmt.Errorf("context artifact %s/%s exceeds %d runes", artifact.Kind, artifact.Name, maxArtifactRunes)
-		}
+// haltAfterFailures returns why the turn stops when the latest tool calls all failed, or "" while it goes on.
+func (rt *Runtime) haltAfterFailures(last string) string {
+	if n := rt.consecutiveFailures(); n >= maxConsecutiveFailures {
+		return fmt.Sprintf("%d consecutive invalid or failed tool calls; last: %s", n, last)
 	}
-	return contexts.CheckArtifacts(artifacts)
+	return ""
 }

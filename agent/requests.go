@@ -17,38 +17,40 @@ func (a *Agent) PendingRequests(threadID string) []Request {
 	if err != nil {
 		return nil
 	}
-	var out []Request
-	for _, it := range st.PendingRequests() {
-		out = append(out, Request{Thread: st.Thread, Item: it})
-	}
+	out := requestsOf(st)
 	for _, call := range st.AgentCalls() {
 		if child, err := a.cfg.DB.ThreadState(call.Await.ThreadID); err == nil {
-			for _, it := range child.PendingRequests() {
-				out = append(out, Request{Thread: child.Thread, Item: it})
-			}
+			out = append(out, requestsOf(child)...)
 		}
 	}
-	sort.SliceStable(out, func(i, j int) bool { return requestedAt(out[i].Item).Before(requestedAt(out[j].Item)) })
-	return out
+	return byRequestTime(out)
 }
 
 func (a *Agent) AllPendingRequests() []Request {
-	ids, err := a.cfg.DB.ActiveThreadIDs()
+	ids, err := a.cfg.DB.OpenThreads(nil)
 	if err != nil {
 		return nil
 	}
 	var out []Request
 	for _, id := range ids {
-		st, err := a.cfg.DB.ThreadState(id)
-		if err != nil {
-			continue
-		}
-		for _, it := range st.PendingRequests() {
-			out = append(out, Request{Thread: st.Thread, Item: it})
+		if st, err := a.cfg.DB.ThreadState(id); err == nil {
+			out = append(out, requestsOf(st)...)
 		}
 	}
-	sort.SliceStable(out, func(i, j int) bool { return requestedAt(out[i].Item).Before(requestedAt(out[j].Item)) })
+	return byRequestTime(out)
+}
+
+func requestsOf(st repo.ThreadState) []Request {
+	var out []Request
+	for _, it := range st.PendingRequests() {
+		out = append(out, Request{Thread: st.Thread, Item: it})
+	}
 	return out
+}
+
+func byRequestTime(requests []Request) []Request {
+	sort.SliceStable(requests, func(i, j int) bool { return requestedAt(requests[i].Item).Before(requestedAt(requests[j].Item)) })
+	return requests
 }
 
 func requestedAt(it repo.ItemRow) time.Time {

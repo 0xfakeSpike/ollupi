@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 
@@ -48,7 +49,7 @@ func findTurn(view repo.ThreadView, turnID string) (repo.TurnRow, bool) {
 }
 
 func (a *Agent) runTurn(ctx context.Context, view repo.ThreadView, turn repo.TurnRow) (bool, repo.Usage, error) {
-	contexts, err := a.contextsFor(turn.Model)
+	window, err := a.windowFor(turn.Model)
 	if err != nil {
 		return false, repo.Usage{}, err
 	}
@@ -68,12 +69,11 @@ func (a *Agent) runTurn(ctx context.Context, view repo.ThreadView, turn repo.Tur
 		LLM:         a.cfg.Connections[turn.Model.Connection],
 		Registry:    a.registry,
 		Skills:      a.skills,
-		Contexts:    contexts,
+		Window:      window,
 		Memory:      a.cfg.Memory,
 		Turn:        turn,
 		Caller:      tools.Caller{ThreadID: view.Thread.ID, WorkspaceID: string(view.Thread.WorkspaceID), Root: w.RootPath, Subagent: view.Thread.ParentThreadID != ""},
 		Prompt:      systemprompt.AgentPrompt(a.cfg.Name, a.cfg.Prompt),
-		Tools:       checker.Tools(),
 		Permissions: checker,
 		History:     history,
 		Items:       items,
@@ -82,7 +82,7 @@ func (a *Agent) runTurn(ctx context.Context, view repo.ThreadView, turn repo.Tur
 			a.emit(Event{Kind: EventItemDelta, Thread: view.Thread, Turn: turn, Item: &it, Delta: text})
 		},
 		Reload: func() ([]repo.ItemRow, *permission.Checker, error) {
-			items, err := a.cfg.DB.TurnItems(view.Thread.ID, turn.ID)
+			items, err := a.cfg.DB.TurnItems(turn.ID)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -140,7 +140,7 @@ func (a *Agent) afterRun(threadID string, sl *slot, final bool, runErr error) {
 		turn.Status, turn.Error = repo.TurnFailed, runErr.Error()
 		log.Printf("agent: thread %s turn %s failed: %v", threadID, turn.ID, runErr)
 	case final:
-		more, err := a.cfg.DB.InputAfterAnswer(threadID, turn.ID)
+		more, err := a.cfg.DB.InputAfterAnswer(turn.ID)
 		if err != nil {
 			a.halt(threadID, err)
 			return
@@ -177,7 +177,7 @@ func (a *Agent) endTurn(turn repo.TurnRow) {
 	a.emit(Event{Kind: EventTurnCompleted, Thread: thread, Turn: ended})
 	a.emitStatus(turn.ThreadID)
 	for _, call := range st.AgentCalls() {
-		a.stopThread(call.Await.ThreadID)
+		a.stopSubagent(call.Await.ThreadID)
 	}
 	a.reconcile(turn.ThreadID)
 	if st.Thread.ParentThreadID != "" {
@@ -185,13 +185,13 @@ func (a *Agent) endTurn(turn repo.TurnRow) {
 	}
 }
 
-func (a *Agent) stopThread(threadID string) {
+func (a *Agent) stopSubagent(threadID string) {
 	if sl, ok := a.slotByThread[threadID]; ok {
 		sl.cancel()
 		return
 	}
 	turn, err := a.cfg.DB.ActiveTurn(threadID)
-	if repo.IsNotFound(err) {
+	if errors.Is(err, repo.ErrNotFound) {
 		return
 	}
 	if err != nil {

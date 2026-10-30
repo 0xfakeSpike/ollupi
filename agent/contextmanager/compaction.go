@@ -96,7 +96,7 @@ func (m *Manager) compactedHistory(before []repo.ItemRow, summary string) string
 		b.WriteString("\n")
 	}
 	b.WriteString(summaryPrefix + "\n\n" + strings.TrimSpace(summary))
-	kept, dropped := recentArtifacts(activeArtifacts(before), m.ArtifactBudget())
+	kept, dropped := recentArtifacts(activeArtifacts(before), m.artifactBudget())
 	for _, artifact := range kept {
 		fmt.Fprintf(&b, "\n\n--- active %s: %s ---\n%s", artifact.Kind, artifact.Name, artifact.Content)
 	}

@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const DefaultMaxOutputBytes = 1 << 20
+const defaultMaxOutputBytes = 1 << 20
 
 const drainDelay = 2 * time.Second
 
@@ -130,7 +130,7 @@ type cappedBuffer struct {
 
 func newCappedBuffer(max int) *cappedBuffer {
 	if max <= 0 {
-		max = DefaultMaxOutputBytes
+		max = defaultMaxOutputBytes
 	}
 	return &cappedBuffer{max: max}
 }

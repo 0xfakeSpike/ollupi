@@ -15,14 +15,15 @@ import (
 )
 
 type ItemRow struct {
-	ID           string        `gorm:"primaryKey" json:"id"`
-	ThreadID     string        `gorm:"not null;uniqueIndex:items_thread_seq,priority:1" json:"-"`
-	Thread       *ThreadRow    `gorm:"constraint:OnDelete:CASCADE" json:"-"`
-	TurnID       string        `gorm:"not null;index" json:"turnId"`
+	ID       string     `gorm:"primaryKey" json:"id"`
+	ThreadID string     `gorm:"not null;uniqueIndex:items_thread_seq,priority:1" json:"-"`
+	Thread   *ThreadRow `gorm:"constraint:OnDelete:CASCADE" json:"-"`
+	// items_turn finds a turn's items by type and status: its open tool calls, its messages.
+	TurnID       string        `gorm:"not null;index:items_turn,priority:1" json:"turnId"`
 	Turn         *TurnRow      `gorm:"constraint:OnDelete:CASCADE" json:"-"`
-	Seq          int           `gorm:"not null;uniqueIndex:items_thread_seq,priority:2" json:"seq"`
-	Type         ItemType      `gorm:"not null" json:"type"`
-	Status       ItemStatus    `gorm:"not null" json:"status"`
+	Seq          int           `gorm:"not null;uniqueIndex:items_thread_seq,priority:2;index:items_turn,priority:4" json:"seq"`
+	Type         ItemType      `gorm:"not null;index:items_turn,priority:2" json:"type"`
+	Status       ItemStatus    `gorm:"not null;index:items_turn,priority:3" json:"status"`
 	Text         string        `gorm:"not null;default:''" json:"text,omitempty"`
 	ResponseID   string        `gorm:"not null;default:''" json:"responseId,omitempty"`
 	ContextStats *ContextStats `gorm:"serializer:json" json:"contextStats,omitempty"`
@@ -57,11 +58,10 @@ const (
 	ItemToolCall          ItemType = "toolCall"
 	ItemContextCompaction ItemType = "contextCompaction"
 	ItemMemoryContext     ItemType = "memoryContext"
-	ItemToolProgress      ItemType = "toolProgress"
 	ItemError             ItemType = "error"
 )
 
-var ItemTypeValues = []ItemType{ItemUserMessage, ItemAgentMessage, ItemReasoning, ItemToolCall, ItemContextCompaction, ItemMemoryContext, ItemToolProgress, ItemError}
+var ItemTypeValues = []ItemType{ItemUserMessage, ItemAgentMessage, ItemReasoning, ItemToolCall, ItemContextCompaction, ItemMemoryContext, ItemError}
 
 func (t ItemType) Value() (driver.Value, error) { return enumValue(t, ItemTypeValues) }
 
@@ -209,11 +209,11 @@ func (it ItemRow) Awaits() bool {
 	return it.Type == ItemToolCall && it.Status == ItemInProgress && it.Await != nil
 }
 
-func (it ItemRow) WaitsOnAgent() bool {
+func (it ItemRow) waitsOnAgent() bool {
 	return it.Awaits() && it.Await.By == tools.AwaitAgent
 }
 
-func (it ItemRow) IsPending() bool {
+func (it ItemRow) WaitsOnUser() bool {
 	return it.WaitsForApproval() || (it.Awaits() && it.Await.By == tools.AwaitUser)
 }
 
@@ -260,13 +260,13 @@ func (d *DB) Item(id string) (ItemRow, error) {
 	return row, notFound(d.gorm.Where("id = ?", id).Take(&row).Error)
 }
 
-func (d *DB) NextItemSeq(threadID string) (int, error) {
+func (d *DB) nextItemSeq(threadID string) (int, error) {
 	var last int
 	err := d.gorm.Model(&ItemRow{}).Where("thread_id = ?", threadID).Select("COALESCE(MAX(seq), 0)").Scan(&last).Error
 	return last + 1, err
 }
 
-func (d *DB) SaveItem(row ItemRow) error {
+func (d *DB) saveItem(row ItemRow) error {
 	if row.Await != nil && !slices.Contains(tools.AwaitByValues, row.Await.By) {
 		return fmt.Errorf("item %s: awaits %q, which is not one of %q", row.ID, row.Await.By, tools.AwaitByValues)
 	}
@@ -289,14 +289,14 @@ func (d *DB) RecordItem(threadID string, item ItemRow) (ItemRow, bool, error) {
 	var isNew bool
 	err := d.Tx(func(tx *DB) error {
 		active, err := tx.ActiveTurn(threadID)
-		if IsNotFound(err) || (err == nil && active.ID != item.TurnID) {
+		if errors.Is(err, ErrNotFound) || (err == nil && active.ID != item.TurnID) {
 			return fmt.Errorf("item %s belongs to turn %s, which is not in progress", item.ID, item.TurnID)
 		}
 		if err != nil {
 			return err
 		}
 		_, err = tx.Item(item.ID)
-		isNew = IsNotFound(err)
+		isNew = errors.Is(err, ErrNotFound)
 		if err != nil && !isNew {
 			return err
 		}
@@ -356,8 +356,8 @@ func (d *DB) saveItemOf(threadID string, it ItemRow) error {
 	}
 	prev, err := d.Item(it.ID)
 	switch {
-	case IsNotFound(err):
-		if it.Seq, err = d.NextItemSeq(threadID); err != nil {
+	case errors.Is(err, ErrNotFound):
+		if it.Seq, err = d.nextItemSeq(threadID); err != nil {
 			return err
 		}
 	case err != nil:
@@ -372,5 +372,5 @@ func (d *DB) saveItemOf(threadID string, it ItemRow) error {
 		it.Seq = prev.Seq
 	}
 	it.ThreadID = threadID
-	return d.SaveItem(it)
+	return d.saveItem(it)
 }

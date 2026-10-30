@@ -112,7 +112,7 @@ var (
 	ErrInvalidArguments = errors.New("invalid arguments")
 )
 
-const MaxOutputBytes = 1 << 20
+const maxOutputBytes = 1 << 20
 
 func (r *Registry) Invoke(ctx context.Context, tool string, arguments map[string]any) Result {
 	return guard(tool, func() (Result, error) { return r.dispatch(ctx, tool, arguments) })
@@ -134,8 +134,8 @@ func guard(tool string, run func() (Result, error)) (result Result) {
 		switch {
 		case err != nil:
 			result = Result{Err: fmt.Errorf("the tool returned output that cannot be encoded as JSON: %v", err)}
-		case len(raw) > MaxOutputBytes:
-			result.Output = string(raw[:MaxOutputBytes]) + fmt.Sprintf("\n[output truncated: %d of %d bytes shown]", MaxOutputBytes, len(raw))
+		case len(raw) > maxOutputBytes:
+			result.Output = string(raw[:maxOutputBytes]) + fmt.Sprintf("\n[output truncated: %d of %d bytes shown]", maxOutputBytes, len(raw))
 		}
 	}
 	return result.For(tool)

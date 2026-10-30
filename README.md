@@ -76,8 +76,8 @@ flowchart LR
 | `memory_search` | 搜索记忆 |
 | `list_skills` `activate_skill` `read_skill_resource` | Agent Skills |
 | `create_scheduled_job` `pause_scheduled_job` `delete_scheduled_job` `list_scheduled_jobs` | 定时任务 |
-| `run_command` | 沙箱里跑命令（`tools/shell`，应用装配） |
-| `edit_file` `write_file` | 改写和新建文件，只写沙箱允许的目录，审批时冻结 diff（`tools/shell`，应用装配） |
+| `run_command` | 沙箱里跑命令（`tools/workspace`，应用装配） |
+| `edit_file` `write_file` | 改写和新建文件，只写沙箱允许的目录，审批时冻结 diff（`tools/workspace`，应用装配） |
 | `web_fetch` | 读取公网网页，HTML 转成类 Markdown 正文（`tools/web`，应用装配） |
 | `<服务器>__<工具>` | MCP 服务器的工具，stdio 或 streamable HTTP（`tools/mcp`，应用装配） |
 

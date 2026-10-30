@@ -16,18 +16,17 @@ import (
 )
 
 type Options struct {
-	Model            llm.Model
-	Generate         bool
-	Use              bool
-	Interval         time.Duration
-	Timeout          time.Duration
-	ExtractionTokens int
-	BatchSize        int
+	Model    llm.Model
+	Generate bool
+	Use      bool
 }
 
 const (
-	defaultExtractionTokens = 12000
-	minExtractionTokens     = 8192
+	extractInterval     = time.Minute
+	extractTimeout      = 2 * time.Minute
+	extractionTokens    = 12000
+	minExtractionTokens = 8192
+	batchSize           = 24
 )
 
 type Manager struct {
@@ -44,19 +43,7 @@ func New(db *repo.DB, model llm.Client, opts Options) (*Manager, error) {
 	if opts.Generate && (model == nil || strings.TrimSpace(opts.Model.Name) == "") {
 		return nil, errors.New("memory: extraction model is required")
 	}
-	if opts.Interval <= 0 {
-		opts.Interval = time.Minute
-	}
-	if opts.Timeout <= 0 {
-		opts.Timeout = 2 * time.Minute
-	}
-	if opts.ExtractionTokens <= 0 {
-		opts.ExtractionTokens = defaultExtractionTokens
-	}
-	if opts.BatchSize <= 0 {
-		opts.BatchSize = 24
-	}
-	m := &Manager{db: db, model: model, opts: opts, budget: opts.ExtractionTokens}
+	m := &Manager{db: db, model: model, opts: opts, budget: extractionTokens}
 	if opts.Generate {
 		limits, err := model.Limits(opts.Model.Name)
 		if err != nil {
@@ -74,7 +61,7 @@ func (m *Manager) Run(ctx context.Context) {
 	if !m.opts.Generate {
 		return
 	}
-	timer := time.NewTicker(m.opts.Interval)
+	timer := time.NewTicker(extractInterval)
 	defer timer.Stop()
 	for {
 		select {
@@ -86,7 +73,7 @@ func (m *Manager) Run(ctx context.Context) {
 				continue
 			}
 			log.Printf("memory: %v", err)
-			if rerr := m.db.SetMemoryError(failureOf(err)); rerr != nil {
+			if rerr := m.db.SetMemoryFailure(failureOf(err)); rerr != nil {
 				log.Printf("memory: the error could not be recorded: %v", rerr)
 			}
 		}
@@ -142,7 +129,7 @@ func failureOf(err error) repo.MemoryFailure {
 }
 
 func (m *Manager) gatherEvidence() (*Batch, string, int, error) {
-	for limit := m.opts.BatchSize; ; limit = max(1, limit/2) {
+	for limit := batchSize; ; limit = max(1, limit/2) {
 		batch, err := nextBatch(m.db, limit)
 		if err != nil {
 			return nil, "", 0, failure{repo.MemoryEvidence, fmt.Errorf("could not read pending memory evidence: %w", err)}
@@ -161,7 +148,7 @@ func (m *Manager) gatherEvidence() (*Batch, string, int, error) {
 }
 
 func (m *Manager) extract(ctx context.Context, batch *Batch, payload string, report *repo.MemoryReport) ([]Operation, error) {
-	callCtx, cancel := context.WithTimeout(ctx, m.opts.Timeout)
+	callCtx, cancel := context.WithTimeout(ctx, extractTimeout)
 	defer cancel()
 	settings, err := m.db.Settings()
 	if err != nil {

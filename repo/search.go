@@ -48,7 +48,7 @@ func (d *DB) Search(terms []string, workspaceID string, limit int) (Found, error
 		ItemRow
 		ThreadTitle string
 	}
-	q = d.gorm.Table("items AS i").Select("i.*, t.title AS thread_title").
+	q = d.gorm.Table("items AS i").Select("i.id, i.thread_id, i.turn_id, i.seq, i.type, i.text, i.started_at, t.title AS thread_title").
 		Joins("JOIN threads t ON t.id = i.thread_id").
 		Where("t.parent_thread_id IS NULL AND i.type IN ? AND i.status = ?", []ItemType{ItemUserMessage, ItemAgentMessage}, ItemCompleted)
 	for _, t := range terms {

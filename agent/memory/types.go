@@ -34,7 +34,7 @@ type Operation struct {
 	Sources []repo.MemorySource `json:"sources"`
 }
 
-type Context struct {
+type Snapshot struct {
 	Entries []repo.MemoryReference
 	Text    string
 }

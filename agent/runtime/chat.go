@@ -19,13 +19,13 @@ func (rt *Runtime) contextInput() contextmanager.Input {
 	return contextmanager.Input{
 		Items:  slices.Concat(rt.History, rt.Items),
 		System: rt.system,
-		Tools:  rt.specs(),
+		Tools:  Specs(rt.offered),
 	}
 }
 
 func (rt *Runtime) respond(ctx context.Context, choice llm.ToolChoice) (llm.ChatResponse, error) {
-	rt.offered, rt.deferred = Offer(rt.Tools, rt.Contexts, slices.Concat(rt.History, rt.Items))
-	prompt, err := rt.Contexts.Build(rt.contextInput())
+	rt.offered, rt.deferred = Offer(rt.Permissions.Tools(), rt.Window, slices.Concat(rt.History, rt.Items))
+	prompt, err := rt.Window.Build(rt.contextInput())
 	if err != nil {
 		return llm.ChatResponse{}, fmt.Errorf("runtime: %w", err)
 	}
@@ -33,7 +33,7 @@ func (rt *Runtime) respond(ctx context.Context, choice llm.ToolChoice) (llm.Chat
 		if err := rt.compact(ctx); err != nil {
 			return llm.ChatResponse{}, err
 		}
-		if prompt, err = rt.Contexts.Build(rt.contextInput()); err != nil {
+		if prompt, err = rt.Window.Build(rt.contextInput()); err != nil {
 			return llm.ChatResponse{}, fmt.Errorf("runtime: after compaction: %w", err)
 		}
 	}
@@ -50,11 +50,9 @@ func (rt *Runtime) respond(ctx context.Context, choice llm.ToolChoice) (llm.Chat
 	if err := r.finish(resp); err != nil {
 		return llm.ChatResponse{}, err
 	}
-	for i, call := range resp.Message.ToolCalls {
+	for _, call := range resp.Message.ToolCalls {
 		it := rt.callItem(r.id, call)
-		if r.agent == nil && r.reasoning == nil && i == 0 {
-			it.ContextStats, it.Usage, it.Native = &r.stats, r.usage, resp.Message.Native
-		}
+		r.carry(&it, resp.Message.Native)
 		if _, err := rt.record(it); err != nil {
 			return llm.ChatResponse{}, err
 		}
@@ -79,7 +77,7 @@ func checkResponse(resp llm.ChatResponse, choice llm.ToolChoice) error {
 }
 
 func (rt *Runtime) compact(ctx context.Context) error {
-	prompt, err := rt.Contexts.CompactionPrompt(rt.contextInput())
+	prompt, err := rt.Window.CompactionPrompt(rt.contextInput())
 	if err != nil {
 		return fmt.Errorf("runtime: %w", err)
 	}
@@ -144,8 +142,7 @@ func (rt *Runtime) send(ctx context.Context, prompt contextmanager.Prompt, choic
 	}
 	resp, err := rt.LLM.Chat(ctx, llm.ChatRequest{
 		Model:    rt.Turn.Model,
-		Messages: messages, Tools: rt.specs(), ToolChoice: choice,
-		ParallelToolCalls: true,
+		Messages: messages, Tools: Specs(rt.offered), ToolChoice: choice,
 	}, restored)
 	if rest := (llm.Delta{Content: content.Flush(), Reasoning: reasoning.Flush()}); onDelta != nil && (rest.Content != "" || rest.Reasoning != "") {
 		onDelta(rest)

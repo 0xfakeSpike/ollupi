@@ -108,7 +108,7 @@ func (m *Manager) stats(system string, messages []llm.ChatMessage, tools any) re
 		BudgetTokens:    m.inputTokens,
 		CompactAtTokens: m.inputTokens * autoCompactPercent / 100,
 		SystemTokens:    llm.EstimateTokens(system),
-		MessagesTokens:  llm.EstimateTokens(prettyJSON(messages)) + llm.PartTokens(messages),
+		MessagesTokens:  llm.EstimateTokens(prettyJSON(messages)) + partTokens(messages),
 		ToolsTokens:     llm.EstimateTokens(prettyJSON(tools)),
 	}
 	s.EstimatedTokens = s.SystemTokens + s.MessagesTokens + s.ToolsTokens
@@ -145,15 +145,29 @@ func (m *Manager) ToolsFit(tools any) bool {
 	return llm.EstimateTokens(prettyJSON(tools)) <= share(m.inputTokens, toolPercent)
 }
 
-func (m *Manager) ArtifactBudget() int {
+func (m *Manager) artifactBudget() int {
 	return share(m.inputTokens, artifactPercent)
 }
 
+const maxArtifactRunes = 20000
+
+// CheckArtifacts accepts the context artifacts of a tool result: named skills that fit the model's artifact budget.
 func (m *Manager) CheckArtifacts(artifacts []tools.ContextArtifact) error {
 	if len(artifacts) == 0 {
 		return nil
 	}
-	if need, budget := llm.EstimateTokens(renderArtifacts(artifacts)), m.ArtifactBudget(); need > budget {
+	for _, artifact := range artifacts {
+		if artifact.Name == "" || strings.TrimSpace(artifact.Content) == "" {
+			return fmt.Errorf("context artifact requires a name and content")
+		}
+		if artifact.Kind != tools.ArtifactAgentSkill {
+			return fmt.Errorf("context artifact %s/%s has unsupported kind", artifact.Kind, artifact.Name)
+		}
+		if len([]rune(artifact.Content)) > maxArtifactRunes {
+			return fmt.Errorf("context artifact %s/%s exceeds %d runes", artifact.Kind, artifact.Name, maxArtifactRunes)
+		}
+	}
+	if need, budget := llm.EstimateTokens(renderArtifacts(artifacts)), m.artifactBudget(); need > budget {
 		return fmt.Errorf("the tool's context artifacts need about %d tokens; model %s leaves %d for them", need, m.model, budget)
 	}
 	return nil
@@ -215,7 +229,7 @@ func (m *Manager) transcript(obs *observations, items []repo.ItemRow, limit int,
 			}
 			out = append(out, llm.ChatMessage{Role: llm.RoleUser, Content: content, Parts: attachmentParts(it.Attachments)})
 			i++
-		case it.Type == repo.ItemMemoryContext || it.Type == repo.ItemContextCompaction || it.Type == repo.ItemToolProgress:
+		case it.Type == repo.ItemMemoryContext || it.Type == repo.ItemContextCompaction:
 
 			i++
 		case it.ResponseID != "":
@@ -330,4 +344,15 @@ func prettyJSON(v any) string {
 		panic(fmt.Sprintf("contextmanager: render %T: %v", v, err))
 	}
 	return string(b)
+}
+
+// partTokens counts the images and files of messages, which the JSON estimate leaves out.
+func partTokens(messages []llm.ChatMessage) int {
+	n := 0
+	for _, m := range messages {
+		for _, p := range m.Parts {
+			n += p.Tokens
+		}
+	}
+	return n
 }

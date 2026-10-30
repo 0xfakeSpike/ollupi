@@ -44,8 +44,6 @@ type ContextArtifact struct {
 	Kind    string `json:"kind"`
 	Name    string `json:"name"`
 	Content string `json:"content"`
-	Source  string `json:"source,omitempty"`
-	Digest  string `json:"digest,omitempty"`
 }
 
 func (r Result) For(tool string) Result {

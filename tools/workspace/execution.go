@@ -1,4 +1,4 @@
-package shell
+package workspace
 
 import (
 	"context"
@@ -13,14 +13,14 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
-func (r *Runner) prepareCommand(ctx context.Context, args map[string]any) (*tools.Prepared, error) {
+func (r *Provider) prepareCommand(ctx context.Context, args map[string]any) (*tools.Prepared, error) {
 	d, err := r.dirs(tools.CallerOf(ctx))
 	if err != nil {
 		return nil, err
 	}
 	program, ok := args["program"].(string)
 	if !ok || strings.TrimSpace(program) == "" {
-		return nil, fmt.Errorf("shell: argument program must be a non-empty string")
+		return nil, fmt.Errorf("workspace: argument program must be a non-empty string")
 	}
 	program = strings.TrimSpace(program)
 	argv, err := parseExecArgsSlice(args["args"])
@@ -31,7 +31,7 @@ func (r *Runner) prepareCommand(ctx context.Context, args map[string]any) (*tool
 	if raw, ok := args["work_dir"]; ok {
 		requested, ok = raw.(string)
 		if !ok || strings.TrimSpace(requested) == "" {
-			return nil, fmt.Errorf("shell: argument work_dir must be a non-empty string")
+			return nil, fmt.Errorf("workspace: argument work_dir must be a non-empty string")
 		}
 	}
 	cwd, err := d.resolve(requested)
@@ -41,7 +41,7 @@ func (r *Runner) prepareCommand(ctx context.Context, args map[string]any) (*tool
 	content := contentOf(program, argv)
 	for _, blocked := range r.blacklist {
 		if blacklisted(content, blocked) {
-			return nil, fmt.Errorf("shell: command is forbidden by the blacklist entry %q: %s", blocked, strings.Join(append([]string{program}, argv...), " "))
+			return nil, fmt.Errorf("workspace: command is forbidden by the blacklist entry %q: %s", blocked, strings.Join(append([]string{program}, argv...), " "))
 		}
 	}
 	timeout := r.timeoutSec
@@ -70,12 +70,12 @@ func (r *Runner) prepareCommand(ctx context.Context, args map[string]any) (*tool
 	}, nil
 }
 
-func (r *Runner) escalation(args map[string]any) (bool, string, error) {
-	mode := SandboxUseDefault
+func (r *Provider) escalation(args map[string]any) (bool, string, error) {
+	mode := sandboxUseDefault
 	if raw, ok := args["sandbox_permissions"]; ok {
 		s, ok := raw.(string)
-		if !ok || (s != SandboxUseDefault && s != SandboxRequireEscalated) {
-			return false, "", fmt.Errorf("shell: argument sandbox_permissions must be %q or %q", SandboxUseDefault, SandboxRequireEscalated)
+		if !ok || (s != sandboxUseDefault && s != sandboxRequireEscalated) {
+			return false, "", fmt.Errorf("workspace: argument sandbox_permissions must be %q or %q", sandboxUseDefault, sandboxRequireEscalated)
 		}
 		mode = s
 	}
@@ -83,18 +83,18 @@ func (r *Runner) escalation(args map[string]any) (bool, string, error) {
 	if raw, ok := args["justification"]; ok {
 		s, ok := raw.(string)
 		if !ok {
-			return false, "", fmt.Errorf("shell: argument justification must be a string")
+			return false, "", fmt.Errorf("workspace: argument justification must be a string")
 		}
 		justification = strings.TrimSpace(s)
 	}
-	if mode != SandboxRequireEscalated {
+	if mode != sandboxRequireEscalated {
 		return false, "", nil
 	}
 	if !r.box.Enforced() {
-		return false, "", fmt.Errorf("shell: commands already run without a sandbox here; omit sandbox_permissions")
+		return false, "", fmt.Errorf("workspace: commands already run without a sandbox here; omit sandbox_permissions")
 	}
 	if justification == "" {
-		return false, "", fmt.Errorf("shell: sandbox_permissions %q needs a justification for the user", SandboxRequireEscalated)
+		return false, "", fmt.Errorf("workspace: sandbox_permissions %q needs a justification for the user", sandboxRequireEscalated)
 	}
 	return true, justification, nil
 }
@@ -105,7 +105,7 @@ func commandEnvironment(raw any) (map[string]string, error) {
 	}
 	values, ok := raw.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("shell: argument env must be an object")
+		return nil, fmt.Errorf("workspace: argument env must be an object")
 	}
 
 	if len(values) == 0 {
@@ -115,10 +115,10 @@ func commandEnvironment(raw any) (map[string]string, error) {
 	for k, v := range values {
 		value, ok := v.(string)
 		if !ok {
-			return nil, fmt.Errorf("shell: env value for %q must be string", k)
+			return nil, fmt.Errorf("workspace: env value for %q must be string", k)
 		}
 		if sandbox.ValidateEnvNames([]string{k}) != nil || strings.ContainsRune(value, 0) {
-			return nil, fmt.Errorf("shell: invalid environment variable %q; names are letters, digits and _, not starting with a digit", k)
+			return nil, fmt.Errorf("workspace: invalid environment variable %q; names are letters, digits and _, not starting with a digit", k)
 		}
 		out[k] = value
 	}
@@ -136,7 +136,7 @@ func resolveExecutable(program, cwd string) (string, error) {
 	} else {
 		path, err = exec.LookPath(program)
 		if err != nil {
-			return "", fmt.Errorf("shell: executable %q is not on PATH", program)
+			return "", fmt.Errorf("workspace: executable %q is not on PATH", program)
 		}
 	}
 	abs, err := filepath.Abs(path)
@@ -145,14 +145,14 @@ func resolveExecutable(program, cwd string) (string, error) {
 	}
 	resolved, err := filepath.EvalSymlinks(abs)
 	if err != nil {
-		return "", fmt.Errorf("shell: executable %q is unavailable: %w", program, err)
+		return "", fmt.Errorf("workspace: executable %q is unavailable: %w", program, err)
 	}
 	st, err := os.Stat(resolved)
 	if err != nil {
 		return "", err
 	}
 	if st.IsDir() || st.Mode()&0111 == 0 {
-		return "", fmt.Errorf("shell: %q is not executable", program)
+		return "", fmt.Errorf("workspace: %q is not executable", program)
 	}
 	return resolved, nil
 }
@@ -168,25 +168,24 @@ type CommandOutput struct {
 	Sandbox        string   `json:"sandbox,omitempty"`
 }
 
-func (r *Runner) runCommand(ctx context.Context, args map[string]any, p *tools.Prepared) (tools.Result, error) {
-	fail := func(err error) (tools.Result, error) { return tools.Result{Err: err}, err }
+func (r *Provider) runCommand(ctx context.Context, args map[string]any, p *tools.Prepared) (tools.Result, error) {
 	d, err := r.dirs(tools.CallerOf(ctx))
 	if err != nil {
-		return fail(err)
+		return tools.Result{}, err
 	}
 	if err := r.validatePrepared(d, p, args); err != nil {
-		return fail(err)
+		return tools.Result{}, err
 	}
 	if p.Program == "" || p.TimeoutSec <= 0 {
-		return fail(fmt.Errorf("shell: incomplete prepared command"))
+		return tools.Result{}, fmt.Errorf("workspace: incomplete prepared command")
 	}
 
 	current, err := resolveExecutable(p.Program, p.Cwd)
 	if err != nil {
-		return fail(err)
+		return tools.Result{}, err
 	}
 	if current != p.Program {
-		return fail(fmt.Errorf("shell: approved executable now resolves to a different path"))
+		return tools.Result{}, fmt.Errorf("workspace: approved executable now resolves to a different path")
 	}
 	res, err := r.box.Run(ctx, sandbox.Command{
 		Program: p.Program, Args: p.Args, Cwd: p.Cwd, Env: p.Env,
@@ -196,7 +195,7 @@ func (r *Runner) runCommand(ctx context.Context, args map[string]any, p *tools.P
 		Unsandboxed: p.Escalated,
 	})
 	if err != nil {
-		return fail(err)
+		return tools.Result{}, err
 	}
 	out := CommandOutput{Stdout: res.Stdout, Stderr: res.Stderr, ExitCode: res.ExitCode, WorkDir: p.Cwd,
 		Signal: res.Signal, Truncated: res.Truncated, SandboxDenials: res.Denials}
@@ -206,22 +205,22 @@ func (r *Runner) runCommand(ctx context.Context, args map[string]any, p *tools.P
 	return tools.Result{Output: out}, nil
 }
 
-func (r *Runner) validatePrepared(d dirs, p *tools.Prepared, args map[string]any) error {
+func (r *Provider) validatePrepared(d dirs, p *tools.Prepared, args map[string]any) error {
 	if p == nil {
-		return fmt.Errorf("shell: missing prepared command")
+		return fmt.Errorf("workspace: missing prepared command")
 	}
 	if p.SettingsDigest != r.settingsDigest(d) {
-		return fmt.Errorf("shell: the command settings or the project directory changed after this call was prepared, so it was not run; call run_command again")
+		return fmt.Errorf("workspace: the command settings or the project directory changed after this call was prepared, so it was not run; call run_command again")
 	}
 	if p.ArgumentsDigest != digest(args) {
-		return fmt.Errorf("shell: prepared command arguments changed")
+		return fmt.Errorf("workspace: prepared command arguments changed")
 	}
 	cwd, err := d.resolve(p.Cwd)
 	if err != nil {
 		return err
 	}
 	if cwd != p.Cwd {
-		return fmt.Errorf("shell: prepared command directory changed")
+		return fmt.Errorf("workspace: prepared command directory changed")
 	}
 	return nil
 }
