@@ -22,3 +22,14 @@ func TestCheckWrite(t *testing.T) {
 		t.Error("read-only mode allows a write")
 	}
 }
+
+func TestCheckRead(t *testing.T) {
+	s := &Sandbox{policy: policy{Mode: ModeFullAccess, DenyRead: []string{"/h/.ssh", "/a/data"}}}
+	for path, ok := range map[string]bool{
+		"/h/.ssh": false, "/h/.ssh/id_rsa": false, "/a/data/ollupi.sqlite": false, "/h/.sshx": true, "/a/config.go": true,
+	} {
+		if err := s.CheckRead(path); (err == nil) != ok {
+			t.Errorf("%s: %v", path, err)
+		}
+	}
+}

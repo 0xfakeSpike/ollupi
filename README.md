@@ -78,6 +78,7 @@ flowchart LR
 | `create_scheduled_job` `pause_scheduled_job` `delete_scheduled_job` `list_scheduled_jobs` | 定时任务 |
 | `run_command` | 沙箱里跑命令（`tools/workspace`，应用装配） |
 | `edit_file` `write_file` | 改写和新建文件，只写沙箱允许的目录，审批时冻结 diff（`tools/workspace`，应用装配） |
+| `read_file` `glob` `grep` | 读文件、按模式找文件、按正则搜内容，跳过 `.git` 和 `.gitignore` 忽略的文件；只读不审批，沙箱禁读的路径任何模式下都不读（`tools/workspace`，应用装配） |
 | `web_fetch` | 读取公网网页，HTML 转成类 Markdown 正文（`tools/web`，应用装配） |
 | `<服务器>__<工具>` | MCP 服务器的工具，stdio 或 streamable HTTP（`tools/mcp`，应用装配） |
 
