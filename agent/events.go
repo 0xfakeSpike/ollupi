@@ -15,6 +15,7 @@ const (
 	EventTurnQueued          EventKind = "turn_queued"
 	EventTurnStarted         EventKind = "turn_started"
 	EventItemStarted         EventKind = "item_started"
+	EventItemUpdated         EventKind = "item_updated"
 	EventItemCompleted       EventKind = "item_completed"
 	EventItemDelta           EventKind = "item_delta"
 	EventApprovalRequested   EventKind = "approval_requested"
@@ -77,11 +78,15 @@ func (a *Agent) emitRequests(st repo.ThreadState) {
 }
 
 func (a *Agent) emitItem(t repo.ThreadRow, turn repo.TurnRow, it repo.ItemRow, isNew bool) {
-	if isNew {
+	unfinished := it.Status == repo.ItemPending || it.Status == repo.ItemInProgress
+	switch {
+	case isNew:
 		started := it
 		a.emit(Event{Kind: EventItemStarted, Thread: t, Turn: turn, Item: &started})
+	case unfinished:
+		a.emit(Event{Kind: EventItemUpdated, Thread: t, Turn: turn, Item: &it})
 	}
-	if it.Status != repo.ItemPending && it.Status != repo.ItemInProgress {
+	if !unfinished {
 		a.emit(Event{Kind: EventItemCompleted, Thread: t, Turn: turn, Item: &it})
 	}
 }
