@@ -15,13 +15,14 @@ import (
 )
 
 type ItemRow struct {
-	ID       string     `gorm:"primaryKey" json:"id"`
-	ThreadID string     `gorm:"not null;uniqueIndex:items_thread_seq,priority:1" json:"-"`
+	ID string `gorm:"primaryKey" json:"id"`
+	// items_compactions and items_carried serve RunItems; their conditions are compactedItem and carriedItem, word for word.
+	ThreadID string     `gorm:"not null;uniqueIndex:items_thread_seq,priority:1;index:items_compactions,priority:1,where:type = 'contextCompaction' AND status = 'completed';index:items_carried,priority:1,where:type = 'userMessage' OR (type = 'toolCall' AND (approval ->> '$.decision' = 'acceptForSession' OR (status = 'completed' AND (tool = 'load_tools' OR result -> '$.artifacts' IS NOT NULL))))" json:"-"`
 	Thread   *ThreadRow `gorm:"constraint:OnDelete:CASCADE" json:"-"`
 	// items_turn finds a turn's items by type and status: its open tool calls, its messages.
 	TurnID       string        `gorm:"not null;index:items_turn,priority:1" json:"turnId"`
 	Turn         *TurnRow      `gorm:"constraint:OnDelete:CASCADE" json:"-"`
-	Seq          int           `gorm:"not null;uniqueIndex:items_thread_seq,priority:2;index:items_turn,priority:4" json:"seq"`
+	Seq          int           `gorm:"not null;uniqueIndex:items_thread_seq,priority:2;index:items_turn,priority:4;index:items_compactions,priority:2;index:items_carried,priority:2" json:"seq"`
 	Type         ItemType      `gorm:"not null;index:items_turn,priority:2" json:"type"`
 	Status       ItemStatus    `gorm:"not null;index:items_turn,priority:3" json:"status"`
 	Text         string        `gorm:"not null;default:''" json:"text,omitempty"`

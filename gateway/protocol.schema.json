@@ -2392,13 +2392,13 @@
         "text": {
           "type": "string"
         },
+        "path": {
+          "type": "string"
+        },
         "name": {
           "type": "string"
         },
         "mimeType": {
-          "type": "string"
-        },
-        "data": {
           "type": "string"
         }
       },

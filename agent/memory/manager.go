@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -72,9 +72,9 @@ func (m *Manager) Run(ctx context.Context) {
 			if err == nil || ctx.Err() != nil {
 				continue
 			}
-			log.Printf("memory: %v", err)
+			slog.Warn("memory extraction failed", "err", err)
 			if rerr := m.db.SetMemoryFailure(failureOf(err)); rerr != nil {
-				log.Printf("memory: the error could not be recorded: %v", rerr)
+				slog.Error("memory failure not recorded", "err", rerr)
 			}
 		}
 	}
@@ -91,6 +91,7 @@ func (m *Manager) RunOnce(ctx context.Context) error {
 	if state.NextAttempt != nil && time.Now().Before(*state.NextAttempt) {
 		return nil
 	}
+	started := time.Now()
 	batch, payload, estimated, err := m.gatherEvidence()
 	if batch == nil {
 		return err
@@ -111,6 +112,8 @@ func (m *Manager) RunOnce(ctx context.Context) error {
 	if err := commit(m.db, batch, ops, report); err != nil {
 		return m.deferBatch(batch, failure{repo.MemoryStorage, fmt.Errorf("could not commit the memory batch of turn %s: %w", batch.TurnID, err)})
 	}
+	slog.Info("memory extracted", "turn", batch.TurnID, "facts", len(batch.Facts), "changes", len(ops),
+		"input", report.InputTokens, "output", report.OutputTokens, "ms", time.Since(started).Milliseconds())
 	return nil
 }
 
@@ -185,9 +188,9 @@ func (m *Manager) deferBatch(b *Batch, cause error) error {
 		return fmt.Errorf("could not defer the memory batch of turn %s (%v): %w", b.TurnID, cause, err)
 	}
 	if skipped {
-		log.Printf("memory: turn %s skipped up to item %d after repeated failures: %v", b.TurnID, b.Cursor.Seq, cause)
+		slog.Warn("memory skipped items after repeated failures", "turn", b.TurnID, "seq", b.Cursor.Seq, "err", cause)
 	} else {
-		log.Printf("memory: turn %s deferred: %v", b.TurnID, cause)
+		slog.Info("memory extraction deferred", "turn", b.TurnID, "err", cause)
 	}
 	return nil
 }

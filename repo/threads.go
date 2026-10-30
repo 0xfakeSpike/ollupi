@@ -222,11 +222,17 @@ func (v ThreadView) ActiveTurn() (TurnRow, bool) {
 	return activeTurn(v.Turns)
 }
 
+// ThreadState is what scheduling needs of a thread: its open turns (in progress or queued, in order), its last
+// turn, and the unfinished tool calls of the turn in progress. Ended turns other than the last are not read.
 type ThreadState struct {
 	Thread    ThreadRow
-	Turns     []TurnRow
+	Open      []TurnRow
+	Last      *TurnRow
 	OpenCalls []ItemRow
 }
+
+// openTurn is the condition of the turns_open index, word for word; INDEXED BY makes a drift an error.
+const openTurn = "(status = 'inProgress' OR status = 'queued')"
 
 const openCalls = "type = 'toolCall' AND status IN ('pending', 'inProgress')"
 
@@ -236,8 +242,15 @@ func (d *DB) ThreadState(id string) (ThreadState, error) {
 		if err := notFound(tx.gorm.Where("id = ?", id).Take(&out.Thread).Error); err != nil {
 			return err
 		}
-		if err := tx.gorm.Where("thread_id = ?", id).Order("seq").Find(&out.Turns).Error; err != nil {
+		if err := tx.gorm.Table("turns INDEXED BY turns_open").Where("thread_id = ? AND "+openTurn, id).Order("seq").Find(&out.Open).Error; err != nil {
 			return err
+		}
+		var last []TurnRow
+		if err := tx.gorm.Where("thread_id = ?", id).Order("seq DESC").Limit(1).Find(&last).Error; err != nil {
+			return err
+		}
+		if len(last) > 0 {
+			out.Last = &last[0]
 		}
 		turn, active := out.ActiveTurn()
 		if !active {
@@ -252,12 +265,12 @@ func (d *DB) ThreadState(id string) (ThreadState, error) {
 }
 
 func (s ThreadState) ActiveTurn() (TurnRow, bool) {
-	return activeTurn(s.Turns)
+	return activeTurn(s.Open)
 }
 
 func (s ThreadState) QueuedTurns() []TurnRow {
 	var out []TurnRow
-	for _, t := range s.Turns {
+	for _, t := range s.Open {
 		if t.Status == TurnQueued {
 			out = append(out, t)
 		}

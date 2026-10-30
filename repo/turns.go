@@ -254,6 +254,36 @@ func (d *DB) FinalAnswer(threadID, turnID string) (string, error) {
 	return row.Text, err
 }
 
+const (
+	compactedItem = "type = 'contextCompaction' AND status = 'completed'"
+	// carriedItem marks the items before the latest compaction whose effect outlasts it: user messages, which the
+	// compacted history quotes; calls allowed for the conversation; and loaded tools and skills, which stay active.
+	carriedItem = "type = 'userMessage' OR (type = 'toolCall' AND (approval ->> '$.decision' = 'acceptForSession' OR (status = 'completed' AND (tool = 'load_tools' OR result -> '$.artifacts' IS NOT NULL))))"
+)
+
+// RunItems reads, in order, the items a run works from: every item from the thread's latest completed compaction
+// on, and before it only the carried ones, without their native records. A run that needs more of the earlier
+// items must widen carriedItem and its index. INDEXED BY makes a condition that drifted from its index an error.
+func (d *DB) RunItems(threadID string) ([]ItemRow, error) {
+	var rows []ItemRow
+	err := d.Tx(func(tx *DB) error {
+		var from int
+		if err := tx.gorm.Table("items INDEXED BY items_compactions").Where("thread_id = ? AND "+compactedItem, threadID).Select("COALESCE(MAX(seq), 0)").Scan(&from).Error; err != nil {
+			return err
+		}
+		if err := tx.gorm.Table("items INDEXED BY items_carried").Omit("native").Where("thread_id = ? AND seq < ? AND ("+carriedItem+")", threadID, from).Order("seq").Find(&rows).Error; err != nil {
+			return err
+		}
+		var recent []ItemRow
+		if err := tx.gorm.Where("thread_id = ? AND seq >= ?", threadID, from).Order("seq").Find(&recent).Error; err != nil {
+			return err
+		}
+		rows = append(rows, recent...)
+		return nil
+	})
+	return rows, err
+}
+
 func (d *DB) TurnItems(turnID string) ([]ItemRow, error) {
 	var rows []ItemRow
 	err := d.gorm.Where("turn_id = ?", turnID).Order("seq").Find(&rows).Error

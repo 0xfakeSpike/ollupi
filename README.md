@@ -119,6 +119,8 @@ a.StartTurn(thread.ID, agent.Input{Text: "你好"})
 
 工具通过 `Config.Providers` 接入。记忆、定时任务和网关与 agent 并列，由应用启动：`go mem.Run(ctx)`、`go jobs.Run(ctx, send)`、`server.Serve(ctx, listener)`。关闭时取消 ctx 再 `a.Wait()`。完整装配见 ollupi-desktop 的 `sidecar/internal/host/host.go`。修改协议后 `go generate ./gateway`。
 
+日志经 `log/slog` 写到默认 logger，写到哪里由应用用 `slog.SetDefault` 决定。每个 turn 的开始、等待和结束，每次模型调用的耗时和 token，每次工具调用的耗时和成败都有一行；日志只记 ID 和数字，不记消息、参数和工具输出。
+
 ## 许可
 
 [MIT](LICENSE)

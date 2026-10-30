@@ -2,6 +2,7 @@ package agent
 
 import (
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -63,7 +64,7 @@ func (a *Agent) startTurn(threadID string, in Input) (repo.TurnRow, error) {
 	if st.Thread.ParentThreadID != "" {
 		return repo.TurnRow{}, ErrSubagentThread
 	}
-	model, err := a.conversationModel(st.Turns, in.Connection)
+	model, err := a.conversationModel(st.Last, in.Connection)
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
@@ -101,10 +102,11 @@ func (a *Agent) submit(t repo.ThreadRow, turn repo.TurnRow, model llm.Model) (re
 		return repo.TurnRow{}, err
 	}
 	if message != nil {
-		a.emit(Event{Kind: EventTurnStarted, Thread: t, Turn: turn})
+		a.startedTurn(t, turn)
 		a.emitItem(t, turn, *message, true)
 		a.emitStatus(t.ID)
 	} else {
+		slog.Info("turn queued", "thread", t.ID, "turn", turn.ID)
 		a.emit(Event{Kind: EventTurnQueued, Thread: t, Turn: turn})
 	}
 	return turn, nil

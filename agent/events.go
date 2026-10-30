@@ -1,7 +1,7 @@
 package agent
 
 import (
-	"log"
+	"log/slog"
 
 	"github.com/0xfakeSpike/ollupi/repo"
 )
@@ -41,7 +41,7 @@ type Event struct {
 }
 
 func (a *Agent) fault(threadID, turnID string, err error) {
-	log.Printf("agent: thread %s turn %s: %v", threadID, turnID, err)
+	slog.Error("agent fault", "thread", threadID, "turn", turnID, "err", err)
 	t, rerr := a.cfg.DB.ThreadRow(threadID)
 	if rerr != nil {
 		t = repo.ThreadRow{ID: threadID}
@@ -58,7 +58,7 @@ func (a *Agent) emit(e Event) {
 func (a *Agent) emitStatus(threadID string) {
 	t, err := a.cfg.DB.ThreadRow(threadID)
 	if err != nil {
-		log.Printf("agent: thread %s: status not sent: %v", threadID, err)
+		slog.Warn("thread status not sent", "thread", threadID, "err", err)
 		return
 	}
 	if t.ParentThreadID != "" {
@@ -92,4 +92,11 @@ func (a *Agent) emitItem(t repo.ThreadRow, turn repo.TurnRow, it repo.ItemRow, i
 	if !unfinished {
 		a.emit(Event{Kind: EventItemCompleted, Thread: t, Turn: turn, Item: &it})
 	}
+}
+
+// startedTurn logs a turn that starts and tells the clients.
+func (a *Agent) startedTurn(t repo.ThreadRow, turn repo.TurnRow) {
+	slog.Info("turn started", "thread", t.ID, "turn", turn.ID, "model", turn.Model.Name, "connection", turn.Model.Connection,
+		"subagent", t.ParentThreadID != "", "cronJob", turn.CronJobID)
+	a.emit(Event{Kind: EventTurnStarted, Thread: t, Turn: turn})
 }

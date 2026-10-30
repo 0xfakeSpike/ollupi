@@ -2,7 +2,7 @@ package agent
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -165,7 +165,7 @@ func (a *Agent) DeleteThread(id string) error {
 		}
 		if a.cfg.AttachmentsDir != "" {
 			if err := os.RemoveAll(filepath.Join(a.cfg.AttachmentsDir, id)); err != nil {
-				log.Printf("agent: thread %s: remove its attachments: %v", id, err)
+				slog.Warn("thread attachments not removed", "thread", id, "err", err)
 			}
 		}
 		a.emit(Event{Kind: EventThreadDeleted, Thread: t})

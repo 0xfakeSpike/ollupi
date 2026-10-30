@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -76,7 +77,28 @@ func (m *recordingModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "data: [DONE]\n\n")
 }
 
+// lockedBuffer collects log lines written from several goroutines.
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (l *lockedBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *lockedBuffer) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
 func TestLoadedToolIsSentWithTheNextRequest(t *testing.T) {
+	logs := &lockedBuffer{}
+	defer slog.SetDefault(slog.Default())
+	slog.SetDefault(slog.New(slog.NewTextHandler(logs, nil)))
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	fake := &recordingModel{}
@@ -171,5 +193,17 @@ func TestLoadedToolIsSentWithTheNextRequest(t *testing.T) {
 	}
 	if last := reqs[2].Messages[len(reqs[2].Messages)-1]; last.Role != "tool" || !strings.Contains(last.Content, "issues/42") {
 		t.Errorf("the loaded tool's call returned %+v", last)
+	}
+	// The log follows the turn by ids and numbers, and keeps the message, the arguments and the output out.
+	got := logs.String()
+	for _, want := range []string{"msg=\"turn started\"", "msg=\"model call\"", "msg=\"tool call\"", "tool=github__create_issue"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the log lacks %s:\n%s", want, got)
+		}
+	}
+	for _, secret := range []string{"Safari", "issues/42", "中文"} {
+		if strings.Contains(got, secret) {
+			t.Errorf("the log quotes %q:\n%s", secret, got)
+		}
 	}
 }

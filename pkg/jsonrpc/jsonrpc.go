@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -138,7 +138,7 @@ func (c *Conn) response(m Message) {
 	delete(c.pending, string(m.ID))
 	c.mu.Unlock()
 	if !ok {
-		log.Printf("jsonrpc: response to unknown request %s", m.ID)
+		slog.Warn("response to unknown request", "id", string(m.ID))
 		return
 	}
 	onResponse(m.Result, m.Error)
@@ -152,7 +152,7 @@ func (c *Conn) reply(id json.RawMessage, result any, rerr *Error) {
 	if rerr == nil {
 		raw, err := json.Marshal(result)
 		if err != nil {
-			log.Printf("jsonrpc: encode result: %v", err)
+			slog.Error("result not encodable", "err", err)
 			raw, m.Error = nil, Errorf(CodeInternalError, "the result cannot be encoded: %v", err)
 		}
 		m.Result = raw
@@ -170,7 +170,7 @@ func (c *Conn) send(m Message) {
 	if c.queued+len(data) > maxOutboxBytes {
 		c.closed, c.outbox, c.queued = true, nil, 0
 		c.mu.Unlock()
-		log.Printf("jsonrpc: the client fell %d bytes behind; closing the connection", maxOutboxBytes)
+		slog.Warn("client fell behind; connection closed", "bytes", maxOutboxBytes)
 		go c.ws.Close(websocket.StatusPolicyViolation, "client is not reading fast enough")
 		c.wake()
 		return
@@ -202,7 +202,7 @@ func (c *Conn) write() {
 			c.queued = max(0, c.queued-len(data))
 			c.mu.Unlock()
 			if err != nil {
-				log.Printf("jsonrpc: write: %v", err)
+				slog.Warn("write to client failed", "err", err)
 				c.ws.Close(websocket.StatusInternalError, "write failed")
 				c.mu.Lock()
 				c.closed, c.outbox, c.queued = true, nil, 0
@@ -232,7 +232,7 @@ func DecodeParams(params json.RawMessage, out any) *Error {
 func encode(v any) json.RawMessage {
 	b, err := json.Marshal(v)
 	if err != nil {
-		log.Printf("jsonrpc: encode %T: %v", v, err)
+		slog.Error("message not encodable", "type", fmt.Sprintf("%T", v), "err", err)
 		return json.RawMessage("null")
 	}
 	return b

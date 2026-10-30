@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -105,7 +105,7 @@ func (rt *Runtime) loadMemory() error {
 	}
 	snapshot, err := rt.Memory.Snapshot(rt.Caller.WorkspaceID, rt.Window.MemoryBudget())
 	if err != nil {
-		log.Printf("memory: turn %s goes on without a memory snapshot: %v", rt.Turn.ID, err)
+		slog.Warn("memory snapshot not loaded", "thread", rt.Caller.ThreadID, "turn", rt.Turn.ID, "err", err)
 		return nil
 	}
 	if snapshot == nil {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"regexp"
 	"strings"
 	"time"
@@ -176,7 +176,7 @@ func (j *Jobs) sendDue(ctx context.Context, send func(threadID, text, jobID stri
 	now := time.Now().UTC()
 	due, err := j.db.DueCronJobs(now)
 	if err != nil {
-		log.Printf("cron: due tasks: %v", err)
+		slog.Error("cron due tasks not read", "err", err)
 		return
 	}
 	for _, job := range due {
@@ -185,16 +185,18 @@ func (j *Jobs) sendDue(ctx context.Context, send func(threadID, text, jobID stri
 		}
 		waiting, err := j.db.HasQueuedTurn(job.ThreadID, job.ID)
 		if err != nil {
-			log.Printf("cron: task %s: %v", job.ID, err)
+			slog.Error("cron task not checked", "job", job.ID, "err", err)
 			continue
 		}
-		if !waiting {
-			if err := send(job.ThreadID, job.Prompt, job.ID); err != nil && ctx.Err() == nil {
-				log.Printf("cron: task %s could not start in thread %s: %v", job.ID, job.ThreadID, err)
-			}
+		if waiting {
+			slog.Info("cron task skipped while its last run is queued", "job", job.ID, "thread", job.ThreadID)
+		} else if err := send(job.ThreadID, job.Prompt, job.ID); err == nil {
+			slog.Info("cron task sent", "job", job.ID, "thread", job.ThreadID)
+		} else if ctx.Err() == nil {
+			slog.Warn("cron task not started", "job", job.ID, "thread", job.ThreadID, "err", err)
 		}
 		if err := j.sent(job, now); err != nil {
-			log.Printf("cron: task %s: record its run: %v", job.ID, err)
+			slog.Error("cron task run not recorded", "job", job.ID, "err", err)
 		}
 	}
 }

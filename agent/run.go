@@ -4,7 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
+	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/runtime"
@@ -18,47 +19,47 @@ func (a *Agent) run(threadID string, sl *slot) {
 		a.post(func() { a.afterRun(threadID, sl, false, err) })
 		return
 	}
-	view, err := a.cfg.DB.Thread(threadID)
+	turn, err := a.cfg.DB.Turn(sl.turnID)
+	if errors.Is(err, repo.ErrNotFound) || err == nil && turn.Status != repo.TurnInProgress {
+		a.post(func() { a.release(threadID) })
+		return
+	}
+	var t repo.ThreadRow
+	var items []repo.ItemRow
+	if err == nil {
+		t, err = a.cfg.DB.ThreadRow(threadID)
+	}
+	if err == nil {
+		items, err = a.cfg.DB.RunItems(threadID)
+	}
 	if err != nil {
-		log.Printf("agent: thread %s cannot be read while turn %s is queued: %v", threadID, sl.turnID, err)
+		slog.Error("thread not readable to run", "thread", threadID, "turn", sl.turnID, "err", err)
 		a.post(func() {
 			a.release(threadID)
 			a.failTurn(sl.turnID, repo.TurnFailed, "the thread could not be read from storage")
 		})
 		return
 	}
-	turn, ok := findTurn(view, sl.turnID)
-	if !ok || turn.Status != repo.TurnInProgress {
-		a.post(func() { a.release(threadID) })
-		return
-	}
-	final, usage, err := a.runTurn(sl.ctx, view, turn)
+	started := time.Now()
+	final, usage, err := a.runTurn(sl.ctx, t, turn, items)
+	slog.Info("run ended", "thread", threadID, "turn", turn.ID, "ms", time.Since(started).Milliseconds(), "final", final, "items", len(items))
 	if err := a.cfg.DB.AddUsage(threadID, turn.ID, usage); err != nil {
-		log.Printf("agent: thread %s: record usage of turn %s: %v", threadID, turn.ID, err)
+		slog.Error("turn usage not recorded", "thread", threadID, "turn", turn.ID, "err", err)
 	}
 	a.post(func() { a.afterRun(threadID, sl, final, err) })
 }
 
-func findTurn(view repo.ThreadView, turnID string) (repo.TurnRow, bool) {
-	for _, t := range view.Turns {
-		if t.ID == turnID {
-			return t, true
-		}
-	}
-	return repo.TurnRow{}, false
-}
-
-func (a *Agent) runTurn(ctx context.Context, view repo.ThreadView, turn repo.TurnRow) (bool, repo.Usage, error) {
+func (a *Agent) runTurn(ctx context.Context, t repo.ThreadRow, turn repo.TurnRow, thread []repo.ItemRow) (bool, repo.Usage, error) {
 	window, err := a.windowFor(turn.Model)
 	if err != nil {
 		return false, repo.Usage{}, err
 	}
-	checker, w, err := a.permissions(view.Thread)
+	checker, w, err := a.permissions(t)
 	if err != nil {
 		return false, repo.Usage{}, err
 	}
 	var history, items []repo.ItemRow
-	for _, it := range view.Items {
+	for _, it := range thread {
 		if it.TurnID == turn.ID {
 			items = append(items, it)
 		} else {
@@ -72,25 +73,25 @@ func (a *Agent) runTurn(ctx context.Context, view repo.ThreadView, turn repo.Tur
 		Window:      window,
 		Memory:      a.cfg.Memory,
 		Turn:        turn,
-		Caller:      tools.Caller{ThreadID: view.Thread.ID, WorkspaceID: string(view.Thread.WorkspaceID), Root: w.RootPath, Subagent: view.Thread.ParentThreadID != ""},
+		Caller:      tools.Caller{ThreadID: t.ID, WorkspaceID: string(t.WorkspaceID), Root: w.RootPath, Subagent: t.ParentThreadID != ""},
 		Prompt:      systemprompt.AgentPrompt(a.cfg.Name, a.cfg.Prompt),
 		Permissions: checker,
 		History:     history,
 		Items:       items,
-		Record:      a.recorder(view.Thread, turn),
+		Record:      a.recorder(t, turn),
 		Delta: func(it repo.ItemRow, text string) {
-			a.emit(Event{Kind: EventItemDelta, Thread: view.Thread, Turn: turn, Item: &it, Delta: text})
+			a.emit(Event{Kind: EventItemDelta, Thread: t, Turn: turn, Item: &it, Delta: text})
 		},
 		Reload: func() ([]repo.ItemRow, *permission.Checker, error) {
 			items, err := a.cfg.DB.TurnItems(turn.ID)
 			if err != nil {
 				return nil, nil, err
 			}
-			t, err := a.cfg.DB.ThreadRow(view.Thread.ID)
+			current, err := a.cfg.DB.ThreadRow(t.ID)
 			if err != nil {
-				return nil, nil, fmt.Errorf("agent: thread %s: %w", view.Thread.ID, err)
+				return nil, nil, fmt.Errorf("agent: thread %s: %w", t.ID, err)
 			}
-			checker, _, err := a.permissions(t)
+			checker, _, err := a.permissions(current)
 			return items, checker, err
 		},
 		AttachmentsDir: a.cfg.AttachmentsDir,
@@ -118,7 +119,7 @@ func (a *Agent) afterRun(threadID string, sl *slot, final bool, runErr error) {
 	a.release(threadID)
 	st, err := a.cfg.DB.ThreadState(threadID)
 	if err != nil {
-		log.Printf("agent: thread %s cannot be read after its run: %v", threadID, err)
+		slog.Error("thread not readable after its run", "thread", threadID, "turn", sl.turnID, "err", err)
 		if interrupted {
 			a.failTurn(sl.turnID, repo.TurnInterrupted, "interrupted by the user")
 		} else {
@@ -132,13 +133,13 @@ func (a *Agent) afterRun(threadID string, sl *slot, final bool, runErr error) {
 	}
 	switch {
 	case a.ctx.Err() != nil && (runErr != nil || interrupted):
-		log.Printf("agent: thread %s turn %s left in progress at shutdown: %v", threadID, turn.ID, runErr)
+		slog.Info("turn left in progress at shutdown", "thread", threadID, "turn", turn.ID, "err", runErr)
 		return
 	case interrupted:
 		turn.Status, turn.Error = repo.TurnInterrupted, "interrupted by the user"
 	case runErr != nil:
 		turn.Status, turn.Error = repo.TurnFailed, runErr.Error()
-		log.Printf("agent: thread %s turn %s failed: %v", threadID, turn.ID, runErr)
+		slog.Warn("turn failed", "thread", threadID, "turn", turn.ID, "err", runErr)
 	case final:
 		more, err := a.cfg.DB.InputAfterAnswer(turn.ID)
 		if err != nil {
@@ -154,9 +155,12 @@ func (a *Agent) afterRun(threadID string, sl *slot, final bool, runErr error) {
 		return
 	}
 	a.reconcile(threadID)
-	if len(st.PendingRequests()) > 0 {
+	if n := len(st.PendingRequests()); n > 0 {
+		slog.Info("turn waiting", "thread", threadID, "turn", turn.ID, "on", "user", "requests", n)
 		a.emitRequests(st)
 		a.emitStatus(threadID)
+	} else if n := len(st.AgentCalls()); n > 0 {
+		slog.Info("turn waiting", "thread", threadID, "turn", turn.ID, "on", "subagents", "subagents", n)
 	}
 }
 
@@ -174,6 +178,11 @@ func (a *Agent) endTurn(turn repo.TurnRow) {
 	for _, it := range closed {
 		a.emitItem(thread, ended, it, false)
 	}
+	attrs := []any{"thread", thread.ID, "turn", ended.ID, "status", ended.Status, "input", ended.Usage.InputTokens, "output", ended.Usage.OutputTokens}
+	if ended.CompletedAt != nil {
+		attrs = append(attrs, "ms", ended.CompletedAt.Sub(ended.StartedAt).Milliseconds())
+	}
+	slog.Info("turn ended", attrs...)
 	a.emit(Event{Kind: EventTurnCompleted, Thread: thread, Turn: ended})
 	a.emitStatus(turn.ThreadID)
 	for _, call := range st.AgentCalls() {
@@ -204,7 +213,7 @@ func (a *Agent) stopSubagent(threadID string) {
 }
 
 func (a *Agent) halt(threadID string, cause error) {
-	log.Printf("agent: thread %s cannot advance: %v", threadID, cause)
+	slog.Error("thread cannot advance", "thread", threadID, "err", cause)
 	turn, err := a.cfg.DB.ActiveTurn(threadID)
 	if err != nil {
 		a.fault(threadID, "", fmt.Errorf("the thread could not advance: %w", cause))

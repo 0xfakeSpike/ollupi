@@ -266,12 +266,14 @@ type MCPServerListResult struct {
 	Data []mcp.ServerStatus `json:"data"`
 }
 
+// UserInput is one part of a message: "text", or a "file" on this machine, an image or a text file, which the
+// engine copies when the message is sent. Name defaults to the file's name.
 type UserInput struct {
 	Type     string `json:"type"`
 	Text     string `json:"text,omitempty"`
+	Path     string `json:"path,omitempty"`
 	Name     string `json:"name,omitempty"`
 	MimeType string `json:"mimeType,omitempty"`
-	Data     string `json:"data,omitempty"`
 }
 
 type AttachmentReadParams struct {

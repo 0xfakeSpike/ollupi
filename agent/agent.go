@@ -10,6 +10,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/runtime"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
+	"log/slog"
 	"slices"
 	"strings"
 	"sync"
@@ -104,6 +105,7 @@ func (a *Agent) Start(ctx context.Context) error {
 	}
 	a.done.Add(1)
 	go a.loop()
+	slog.Info("agent started", "name", a.cfg.Name, "slots", a.cfg.Slots, "models", len(a.cfg.Models), "tools", len(a.registry.Descriptors()))
 	return nil
 }
 

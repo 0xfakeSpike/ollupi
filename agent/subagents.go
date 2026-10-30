@@ -36,7 +36,7 @@ func (a *Agent) settle(parent repo.ThreadRow, turn repo.TurnRow, call repo.ItemR
 	if err != nil {
 		return false, fmt.Errorf("agent: subagent thread %s: %w", childID, err)
 	}
-	if len(child.Turns) == 0 {
+	if child.Last == nil {
 		if _, err := a.submit(child.Thread, repo.TurnRow{Input: req.Prompt}, turn.Model); err != nil {
 			return false, err
 		}
@@ -46,7 +46,7 @@ func (a *Agent) settle(parent repo.ThreadRow, turn repo.TurnRow, call repo.ItemR
 	if _, active := child.ActiveTurn(); active {
 		return false, nil
 	}
-	report, err := a.report(call, childID, child.Turns[len(child.Turns)-1])
+	report, err := a.report(call, childID, *child.Last)
 	if err != nil {
 		return false, err
 	}

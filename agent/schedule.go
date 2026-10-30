@@ -2,7 +2,7 @@ package agent
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"maps"
 	"slices"
 
@@ -28,7 +28,7 @@ func (a *Agent) reconcile(threadID string) {
 			a.halt(threadID, err)
 			return
 		}
-		a.emit(Event{Kind: EventTurnStarted, Thread: st.Thread, Turn: turn})
+		a.startedTurn(st.Thread, turn)
 		a.emitItem(st.Thread, turn, message, true)
 		a.emitStatus(threadID)
 	}
@@ -80,7 +80,7 @@ func (a *Agent) recover() error {
 			return fmt.Errorf("agent: recover thread %s: %w", id, err)
 		}
 		if len(closed) > 0 {
-			log.Printf("agent: thread %s: closed %d items cut off by the restart", id, len(closed))
+			slog.Warn("items cut off by the restart closed", "thread", id, "items", len(closed))
 		}
 	}
 	a.admit()
