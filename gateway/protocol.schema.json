@@ -1805,6 +1805,28 @@
       ],
       "additionalProperties": false
     },
+    "ThreadCursor": {
+      "type": "object",
+      "properties": {
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "updatedAt",
+        "createdAt",
+        "id"
+      ],
+      "additionalProperties": false
+    },
     "ThreadDeleteParams": {
       "type": "object",
       "properties": {
@@ -1829,6 +1851,16 @@
         "archived": {
           "type": "boolean"
         },
+        "after": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/ThreadCursor"
+            }
+          ]
+        },
         "limit": {
           "type": "integer"
         }
@@ -1843,10 +1875,14 @@
           "items": {
             "$ref": "#/$defs/ThreadSummary"
           }
+        },
+        "hasMore": {
+          "type": "boolean"
         }
       },
       "required": [
-        "data"
+        "data",
+        "hasMore"
       ],
       "additionalProperties": false
     },
@@ -2936,6 +2972,9 @@
       "$ref": "#/$defs/DeltaNotification"
     },
     "item/started": {
+      "$ref": "#/$defs/ItemNotification"
+    },
+    "item/updated": {
       "$ref": "#/$defs/ItemNotification"
     },
     "settings/changed": {

@@ -198,6 +198,8 @@ func (c *conn) event(e agent.Event) {
 		c.rpc.Notify(notifyTurnStarted, TurnNotification{ThreadID: e.Thread.ID, Thread: e.Thread, Turn: e.Turn})
 	case agent.EventItemStarted:
 		c.rpc.Notify(notifyItemStarted, ItemNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Item: *e.Item})
+	case agent.EventItemUpdated:
+		c.rpc.Notify(notifyItemUpdated, ItemNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Item: *e.Item})
 	case agent.EventItemCompleted:
 		c.rpc.Notify(notifyItemCompleted, ItemNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Item: *e.Item})
 	case agent.EventItemDelta:

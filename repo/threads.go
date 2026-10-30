@@ -80,13 +80,25 @@ func (d *DB) ThreadRow(id string) (ThreadRow, error) {
 }
 
 type ThreadFilter struct {
-	WorkspaceID *string `json:"workspaceId,omitempty"`
-	Archived    bool    `json:"archived,omitempty"`
-	Limit       int     `json:"limit,omitempty"`
+	WorkspaceID *string       `json:"workspaceId,omitempty"`
+	Archived    bool          `json:"archived,omitempty"`
+	After       *ThreadCursor `json:"after,omitempty"`
+	Limit       int           `json:"limit,omitempty"`
+}
+
+// ThreadCursor is a thread's place in list order: the last thread of a page, after which the next page starts.
+type ThreadCursor struct {
+	UpdatedAt time.Time `json:"updatedAt"`
+	CreatedAt time.Time `json:"createdAt"`
+	ID        string    `json:"id"`
 }
 
 func (d *DB) ThreadRows(f ThreadFilter) ([]ThreadRow, error) {
-	q := d.gorm.Order("updated_at DESC, created_at DESC")
+	q := d.gorm.Order("updated_at DESC, created_at DESC, id DESC")
+	if c := f.After; c != nil {
+		up, created := c.UpdatedAt.UTC(), c.CreatedAt.UTC()
+		q = q.Where("updated_at < ? OR (updated_at = ? AND (created_at < ? OR (created_at = ? AND id < ?)))", up, up, created, created, c.ID)
+	}
 	if f.WorkspaceID != nil {
 		if *f.WorkspaceID == "" {
 			q = q.Where("workspace_id IS NULL")

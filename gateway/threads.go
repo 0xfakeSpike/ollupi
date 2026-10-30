@@ -93,11 +93,17 @@ func (c *conn) threadList(p repo.ThreadFilter) (ThreadListResult, func(), error)
 	if p.Limit < 1 || p.Limit > maxLimit {
 		return ThreadListResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "limit must be 1 to %d", maxLimit)
 	}
+	limit := p.Limit
+	p.Limit++
 	threads, err := c.s.agent.ListThreads(p)
 	if err != nil {
 		return ThreadListResult{}, nil, err
 	}
-	return ThreadListResult{Data: nonNil(threads)}, nil, nil
+	more := len(threads) > limit
+	if more {
+		threads = threads[:limit]
+	}
+	return ThreadListResult{Data: nonNil(threads), HasMore: more}, nil, nil
 }
 
 func (c *conn) turnStart(p TurnStartParams) (TurnResult, func(), error) {

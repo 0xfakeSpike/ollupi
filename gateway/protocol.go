@@ -40,6 +40,7 @@ const (
 	notifyTurnQueued          = "turn/queued"
 	notifyTurnStarted         = "turn/started"
 	notifyItemStarted         = "item/started"
+	notifyItemUpdated         = "item/updated"
 	notifyItemCompleted       = "item/completed"
 	notifyAgentMessageDelta   = "item/agentMessage/delta"
 	notifyReasoningDelta      = "item/reasoning/textDelta"
@@ -104,6 +105,7 @@ var protocol = struct {
 		notifyTurnQueued:          reflect.TypeFor[TurnNotification](),
 		notifyTurnStarted:         reflect.TypeFor[TurnNotification](),
 		notifyItemStarted:         reflect.TypeFor[ItemNotification](),
+		notifyItemUpdated:         reflect.TypeFor[ItemNotification](),
 		notifyItemCompleted:       reflect.TypeFor[ItemNotification](),
 		notifyAgentMessageDelta:   reflect.TypeFor[DeltaNotification](),
 		notifyReasoningDelta:      reflect.TypeFor[DeltaNotification](),
@@ -242,7 +244,8 @@ type ThreadChangedNotification struct {
 }
 
 type ThreadListResult struct {
-	Data []repo.ThreadSummary `json:"data"`
+	Data    []repo.ThreadSummary `json:"data"`
+	HasMore bool                 `json:"hasMore"`
 }
 
 type ThreadStatusNotification struct {
