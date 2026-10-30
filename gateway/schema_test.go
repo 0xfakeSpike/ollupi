@@ -61,6 +61,9 @@ var builtinTools = map[string]struct{ arguments, output reflect.Type }{
 	workspace.ToolRunCommand: {output: reflect.TypeFor[workspace.CommandOutput]()},
 	workspace.ToolEditFile:   {output: reflect.TypeFor[workspace.FileOutput]()},
 	workspace.ToolWriteFile:  {output: reflect.TypeFor[workspace.FileOutput]()},
+	workspace.ToolReadFile:   {arguments: reflect.TypeFor[workspace.ReadFile](), output: reflect.TypeFor[workspace.ReadFileOutput]()},
+	workspace.ToolGlob:       {arguments: reflect.TypeFor[workspace.Glob](), output: reflect.TypeFor[workspace.GlobOutput]()},
+	workspace.ToolGrep:       {arguments: reflect.TypeFor[workspace.Grep](), output: reflect.TypeFor[workspace.GrepOutput]()},
 }
 
 var providers = []string{cron.ProviderName, skills.ProviderName, memory.ProviderName}

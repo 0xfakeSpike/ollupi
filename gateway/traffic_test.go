@@ -225,6 +225,15 @@ func TestTrafficMatchesContract(t *testing.T) {
 	if body, err := os.ReadFile(filepath.Join(ws.Workspace.RootPath, "notes.txt")); err != nil || string(body) != "Hello there.\n" {
 		t.Errorf("notes.txt holds %q (%v)", body, err)
 	}
+	// The read tools ask nobody: a turn that waited for an approval would not end.
+	for _, words := range []string{"read notes", "find notes", "search notes"} {
+		c.awaitTurnEnd(c.startTurn(threadID, words), repo.TurnCompleted)
+	}
+	if v, err := db.Thread(threadID); err != nil || !slices.ContainsFunc(v.Items, func(it repo.ItemRow) bool {
+		return it.Tool == workspace.ToolReadFile && it.Result != nil && strings.Contains(string(it.Result.Output), `1\tHello there.`)
+	}) {
+		t.Errorf("read_file did not return the numbered notes (%v)", err)
+	}
 	for _, words := range []string{"cron-create", "cron-pause", "cron-list", "cron-delete"} {
 		c.toolTurn(threadID, words)
 	}
@@ -720,6 +729,12 @@ func (f *fakeModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		call(workspace.ToolWriteFile, `{"path":"notes.txt","content":"Hello.\n"}`)
 	case last.Role == "user" && strings.Contains(text, "edit notes"):
 		call(workspace.ToolEditFile, `{"path":"notes.txt","edits":[{"old_text":"Hello.","new_text":"Hello there."}]}`)
+	case last.Role == "user" && strings.Contains(text, "read notes"):
+		call(workspace.ToolReadFile, `{"path":"notes.txt"}`)
+	case last.Role == "user" && strings.Contains(text, "find notes"):
+		call(workspace.ToolGlob, `{"pattern":"**/*.txt"}`)
+	case last.Role == "user" && strings.Contains(text, "search notes"):
+		call(workspace.ToolGrep, `{"pattern":"there","context":1}`)
 	case last.Role == "user" && strings.Contains(text, "fetch http"):
 		words := strings.Fields(text)
 		call(web.Tool, fmt.Sprintf(`{"url":%q}`, words[len(words)-1]))

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
@@ -62,7 +63,8 @@ func (r *Provider) Name() (string, string) {
 func (r *Provider) tool() *tools.Spec {
 	desc := "Run a command: set arguments.program to argv0 (a binary on PATH or an absolute path). work_dir defaults to the project root, or outside a project to " + r.box.Roots()[0] +
 		", and must stay inside the project (outside a project: inside " + strings.Join(r.box.Roots(), ", ") + "). " + r.box.Summary() +
-		". A non-zero exit_code is returned with the output, not as an error"
+		". A non-zero exit_code is returned with the output, not as an error. To read, find or search files use " +
+		ToolReadFile + ", " + ToolGlob + " and " + ToolGrep + ", not cat, find or grep"
 	if r.box.Enforced() {
 		desc += ". Commands run in the sandbox without asking the user. A result's sandbox_denials lists what the sandbox stopped. " +
 			"When a command fails because of the sandbox (a write outside the command directories or to a protected file, " +
@@ -83,9 +85,12 @@ func (r *Provider) tool() *tools.Spec {
 	}
 }
 
-func (r *Provider) Invoke(context.Context, string, map[string]any) (tools.Result, error) {
-	err := fmt.Errorf("workspace: run_command runs only inside a turn")
-	return tools.Result{}, err
+func (r *Provider) Invoke(ctx context.Context, tool string, args map[string]any) (tools.Result, error) {
+	switch tool {
+	case ToolReadFile, ToolGlob, ToolGrep:
+		return r.invokeRead(ctx, tool, args)
+	}
+	return tools.Result{}, fmt.Errorf("workspace: %s runs only inside a turn", tool)
 }
 
 func toolInputSchema() map[string]any {
@@ -140,7 +145,7 @@ func (r *Provider) inputSchema() map[string]any {
 }
 
 func (r *Provider) ToolList(context.Context) ([]*tools.Spec, error) {
-	return append([]*tools.Spec{r.tool()}, r.fileTools()...), nil
+	return slices.Concat([]*tools.Spec{r.tool()}, r.fileTools(), r.readTools()), nil
 }
 
 func parseExecArgsSlice(v any) ([]string, error) {

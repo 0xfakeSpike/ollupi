@@ -739,6 +739,164 @@
       ],
       "additionalProperties": false
     },
+    "Glob": {
+      "type": "object",
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "description": "Path pattern relative to path: * matches within a name, ** any number of folders, {a,b} either; e.g. **/*.go or src/**/*_test.{ts,tsx}.",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "description": "Folder to search, relative to the project root or absolute; default the project root."
+        }
+      },
+      "required": [
+        "pattern"
+      ],
+      "additionalProperties": false
+    },
+    "GlobOutput": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "files": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "skipped": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "files"
+      ],
+      "additionalProperties": false
+    },
+    "Grep": {
+      "type": "object",
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "description": "Regular expression to search for (Go RE2 syntax), matched against each line.",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "description": "File or folder to search, relative to the project root or absolute; default the project root."
+        },
+        "include": {
+          "type": "string",
+          "description": "Only files whose path relative to path matches this pattern, e.g. **/*.go or *.{ts,tsx}."
+        },
+        "ignore_case": {
+          "type": "boolean",
+          "description": "Match letters in either case."
+        },
+        "files_only": {
+          "type": "boolean",
+          "description": "Return only the files that match, not their lines."
+        },
+        "context": {
+          "type": "integer",
+          "description": "Lines to show before and after each matching line, at most 10.",
+          "minimum": 0,
+          "maximum": 10
+        }
+      },
+      "required": [
+        "pattern"
+      ],
+      "additionalProperties": false
+    },
+    "GrepFile": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "matches": {
+          "type": "integer"
+        },
+        "lines": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "$ref": "#/$defs/GrepLine"
+          }
+        }
+      },
+      "required": [
+        "path",
+        "matches"
+      ],
+      "additionalProperties": false
+    },
+    "GrepLine": {
+      "type": "object",
+      "properties": {
+        "line": {
+          "type": "integer"
+        },
+        "text": {
+          "type": "string"
+        },
+        "match": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "line",
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "GrepOutput": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "files": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "$ref": "#/$defs/GrepFile"
+          }
+        },
+        "matches": {
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "skipped": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "files",
+        "matches"
+      ],
+      "additionalProperties": false
+    },
     "InitializeParams": {
       "type": "object",
       "properties": {
@@ -1590,6 +1748,66 @@
         "cwd",
         "settingsDigest",
         "argumentsDigest"
+      ],
+      "additionalProperties": false
+    },
+    "ReadFile": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "File to read, relative to the project root or absolute.",
+          "minLength": 1
+        },
+        "offset": {
+          "type": "integer",
+          "description": "First line to read, counting from 1; default 1.",
+          "minimum": 1
+        },
+        "limit": {
+          "type": "integer",
+          "description": "How many lines to read; default and at most 2000.",
+          "minimum": 1,
+          "maximum": 2000
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "ReadFileOutput": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "startLine": {
+          "type": "integer"
+        },
+        "endLine": {
+          "type": "integer"
+        },
+        "totalLines": {
+          "type": "integer"
+        },
+        "binary": {
+          "type": "boolean"
+        },
+        "mimeType": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "totalLines",
+        "size"
       ],
       "additionalProperties": false
     },
@@ -3044,6 +3262,30 @@
     "edit_file": {
       "output": {
         "$ref": "#/$defs/FileOutput"
+      }
+    },
+    "glob": {
+      "arguments": {
+        "$ref": "#/$defs/Glob"
+      },
+      "output": {
+        "$ref": "#/$defs/GlobOutput"
+      }
+    },
+    "grep": {
+      "arguments": {
+        "$ref": "#/$defs/Grep"
+      },
+      "output": {
+        "$ref": "#/$defs/GrepOutput"
+      }
+    },
+    "read_file": {
+      "arguments": {
+        "$ref": "#/$defs/ReadFile"
+      },
+      "output": {
+        "$ref": "#/$defs/ReadFileOutput"
       }
     },
     "request_user_input": {
