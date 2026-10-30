@@ -2,7 +2,6 @@ package llm
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 )
@@ -52,18 +51,11 @@ type ContentPart struct {
 	Data     []byte   `json:"-"`
 }
 
-func (p ContentPart) DataURL() string {
-	return "data:" + p.MimeType + ";base64," + base64.StdEncoding.EncodeToString(p.Data)
-}
-
-func PartTokens(messages []ChatMessage) int {
-	n := 0
-	for _, m := range messages {
-		for _, p := range m.Parts {
-			n += p.Tokens
-		}
+// emit passes a delta on when it carries text.
+func emit(onDelta func(Delta), d Delta) {
+	if onDelta != nil && (d.Content != "" || d.Reasoning != "") {
+		onDelta(d)
 	}
-	return n
 }
 
 type ToolCall struct {
@@ -92,6 +84,9 @@ type Model struct {
 	Images     bool   `json:"images,omitempty"`
 }
 
+// thinkingOn says whether a provider that can switch thinking off should keep it on: unless the model turns it off.
+func (m Model) thinkingOn() bool { return m.Thinking == nil || *m.Thinking }
+
 func (m Model) Clone() Model {
 	if m.Thinking != nil {
 		t := *m.Thinking
@@ -101,11 +96,10 @@ func (m Model) Clone() Model {
 }
 
 type ChatRequest struct {
-	Model             Model
-	Messages          []ChatMessage
-	Tools             []ToolSpec
-	ToolChoice        ToolChoice
-	ParallelToolCalls bool
+	Model      Model
+	Messages   []ChatMessage
+	Tools      []ToolSpec
+	ToolChoice ToolChoice
 }
 
 type Usage struct {

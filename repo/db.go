@@ -109,8 +109,6 @@ var rowTypes = []any{
 
 var ErrNotFound = errors.New("storage: not found")
 
-func IsNotFound(err error) bool { return errors.Is(err, ErrNotFound) }
-
 func notFound(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return ErrNotFound

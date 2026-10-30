@@ -9,7 +9,7 @@ import (
 
 var baseEnv = []string{"PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "TERM", "LANG", "TZ"}
 
-func Environ(host []string, passthrough []string, extra map[string]string) []string {
+func environ(host []string, passthrough []string, extra map[string]string) []string {
 	allowed := map[string]bool{}
 	for _, k := range append(append([]string(nil), baseEnv...), passthrough...) {
 		allowed[k] = true

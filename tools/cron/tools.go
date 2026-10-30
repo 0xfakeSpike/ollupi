@@ -124,7 +124,7 @@ func (j *Jobs) Invoke(ctx context.Context, tool string, arguments map[string]any
 		}
 		return tools.Result{Output: Deleted{ID: job.ID, Name: job.Name}}, nil
 	case ToolListJobs:
-		jobs, err := j.List(caller.ThreadID)
+		jobs, err := j.db.CronJobViews(caller.ThreadID)
 		if err != nil {
 			return tools.Result{}, err
 		}
@@ -138,7 +138,7 @@ func (j *Jobs) Invoke(ctx context.Context, tool string, arguments map[string]any
 }
 
 func (j *Jobs) result(id string) (tools.Result, error) {
-	job, err := j.Job(id)
+	job, err := j.db.CronJobView(id)
 	if err != nil {
 		return tools.Result{}, err
 	}

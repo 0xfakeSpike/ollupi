@@ -27,7 +27,7 @@ func TestThreadPagesFollowListOrder(t *testing.T) {
 	var listed []string
 	var after *ThreadCursor
 	for {
-		page, err := db.ThreadRows(ThreadFilter{After: after, Limit: 2})
+		page, _, err := db.ThreadRows(ThreadFilter{After: after, Limit: 2})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -11,39 +11,39 @@ import (
 	"strings"
 )
 
-type Category string
+type category string
 
 const (
-	CatPhone    Category = "PHONE"
-	CatEmail    Category = "EMAIL"
-	CatIDCard   Category = "IDCARD"
-	CatBankCard Category = "BANKCARD"
-	CatIP       Category = "IP"
-	CatMAC      Category = "MAC"
-	CatJWT      Category = "JWT"
-	CatSecret   Category = "SECRET"
+	catPhone    category = "PHONE"
+	catEmail    category = "EMAIL"
+	catIDCard   category = "IDCARD"
+	catBankCard category = "BANKCARD"
+	catIP       category = "IP"
+	catMAC      category = "MAC"
+	catJWT      category = "JWT"
+	catSecret   category = "SECRET"
 )
 
 type detector struct {
-	category Category
+	category category
 	priority int
 	match    *regexp.Regexp
 	validate func(string) bool
 }
 
 var detectors = []detector{
-	{category: CatSecret, priority: 100, match: regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----`)},
-	{category: CatSecret, priority: 99, match: regexp.MustCompile(`\b(?:AKIA|ASIA)[0-9A-Z]{16}\b`)},
-	{category: CatSecret, priority: 99, match: regexp.MustCompile(`\bg(?:hp|ho|hu|hs|hr)_[A-Za-z0-9]{36}\b`)},
-	{category: CatSecret, priority: 99, match: regexp.MustCompile(`\bsk-[A-Za-z0-9]{20,}\b`)},
-	{category: CatSecret, priority: 99, match: regexp.MustCompile(`\bxox[baprs]-[A-Za-z0-9-]{10,}\b`)},
-	{category: CatJWT, priority: 95, match: regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b`)},
-	{category: CatIDCard, priority: 90, match: regexp.MustCompile(`\b\d{17}[\dXx]\b`), validate: validIDCard},
-	{category: CatBankCard, priority: 89, match: regexp.MustCompile(`\b\d{13,19}\b`), validate: validBankCard},
-	{category: CatPhone, priority: 88, match: regexp.MustCompile(`\b1[3-9]\d{9}\b`)},
-	{category: CatEmail, priority: 80, match: regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b`)},
-	{category: CatIP, priority: 70, match: regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`), validate: validIPv4},
-	{category: CatMAC, priority: 70, match: regexp.MustCompile(`\b[0-9A-Fa-f]{2}(?:[:-][0-9A-Fa-f]{2}){5}\b`)},
+	{category: catSecret, priority: 100, match: regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----`)},
+	{category: catSecret, priority: 99, match: regexp.MustCompile(`\b(?:AKIA|ASIA)[0-9A-Z]{16}\b`)},
+	{category: catSecret, priority: 99, match: regexp.MustCompile(`\bg(?:hp|ho|hu|hs|hr)_[A-Za-z0-9]{36}\b`)},
+	{category: catSecret, priority: 99, match: regexp.MustCompile(`\bsk-[A-Za-z0-9]{20,}\b`)},
+	{category: catSecret, priority: 99, match: regexp.MustCompile(`\bxox[baprs]-[A-Za-z0-9-]{10,}\b`)},
+	{category: catJWT, priority: 95, match: regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b`)},
+	{category: catIDCard, priority: 90, match: regexp.MustCompile(`\b\d{17}[\dXx]\b`), validate: validIDCard},
+	{category: catBankCard, priority: 89, match: regexp.MustCompile(`\b\d{13,19}\b`), validate: validBankCard},
+	{category: catPhone, priority: 88, match: regexp.MustCompile(`\b1[3-9]\d{9}\b`)},
+	{category: catEmail, priority: 80, match: regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b`)},
+	{category: catIP, priority: 70, match: regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`), validate: validIPv4},
+	{category: catMAC, priority: 70, match: regexp.MustCompile(`\b[0-9A-Fa-f]{2}(?:[:-][0-9A-Fa-f]{2}){5}\b`)},
 }
 
 type Redactor struct {
@@ -109,7 +109,7 @@ func (r *Redactor) restore(s string, inJSON bool) string {
 	return s
 }
 
-const MaxPlaceholderLen = 64
+const maxPlaceholderLen = 64
 
 type Stream struct {
 	r       *Redactor
@@ -122,7 +122,7 @@ func (s *Stream) Write(piece string) string {
 	s.pending += piece
 
 	cut := len(s.pending)
-	if i := strings.LastIndexByte(s.pending, '<'); i >= 0 && !strings.Contains(s.pending[i:], ">") && len(s.pending)-i < MaxPlaceholderLen {
+	if i := strings.LastIndexByte(s.pending, '<'); i >= 0 && !strings.Contains(s.pending[i:], ">") && len(s.pending)-i < maxPlaceholderLen {
 		cut = i
 	}
 	out := s.r.Restore(s.pending[:cut])
@@ -195,7 +195,7 @@ func findSpans(s string) []span {
 	return kept
 }
 
-func (r *Redactor) placeholder(cat Category, value string) string {
+func (r *Redactor) placeholder(cat category, value string) string {
 	mac := hmac.New(sha256.New, r.key)
 	mac.Write([]byte(value))
 	hexSum := hex.EncodeToString(mac.Sum(nil))
@@ -211,7 +211,7 @@ func (r *Redactor) placeholder(cat Category, value string) string {
 type span struct {
 	start, end int
 	priority   int
-	category   Category
+	category   category
 	value      string
 }
 

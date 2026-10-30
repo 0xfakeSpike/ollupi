@@ -45,9 +45,6 @@ func parseRule(text string) (rule, error) {
 				spec = strings.ToLower(first) + " " + rest
 			} else {
 				spec = strings.ToLower(spec)
-				if base, ok := strings.CutSuffix(spec, ":*"); ok {
-					spec = base + ":*"
-				}
 			}
 			r.pattern = specifierPattern(spec)
 		}

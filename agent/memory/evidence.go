@@ -2,6 +2,7 @@ package memory
 
 import (
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/repo"
@@ -24,7 +25,7 @@ func nextBatch(db *repo.DB, limit int) (*Batch, error) {
 		var items []repo.ItemRow
 		if c.ID != "" {
 			switch turn, err = tx.EndedTurn(c.ID); {
-			case repo.IsNotFound(err):
+			case errors.Is(err, repo.ErrNotFound):
 			case err != nil:
 				return err
 			default:
@@ -34,7 +35,7 @@ func nextBatch(db *repo.DB, limit int) (*Batch, error) {
 			}
 		}
 		if len(items) == 0 {
-			if turn, err = tx.NextEndedTurn(c); repo.IsNotFound(err) {
+			if turn, err = tx.NextEndedTurn(c); errors.Is(err, repo.ErrNotFound) {
 				return nil
 			} else if err != nil {
 				return err
@@ -60,7 +61,7 @@ func nextBatch(db *repo.DB, limit int) (*Batch, error) {
 		}
 		blocked := forgottenSources(b.Existing)
 		for _, it := range items {
-			if blocked["items/"+it.ID] {
+			if blocked[sourceKey(repo.MemorySource{Table: "items", ID: it.ID})] {
 				continue
 			}
 			f, err := itemFact(it)
@@ -89,7 +90,7 @@ func forgottenSources(entries []repo.MemoryRow) map[string]bool {
 			continue
 		}
 		for _, s := range e.Sources {
-			blocked[s.Table+"/"+s.ID] = true
+			blocked[sourceKey(s)] = true
 		}
 	}
 	return blocked
@@ -102,12 +103,16 @@ func itemFact(it repo.ItemRow) (Fact, error) {
 	if it.Type == repo.ItemUserMessage {
 		textBound = 1500
 	}
+	var result string
+	if it.Result != nil {
+		result = string(it.Result.Output)
+	}
 	fields := []struct {
 		key, value string
 		bound      int
 	}{
 		{"text", it.Text, textBound}, {"tool", it.Tool, 1500}, {"arguments", it.Arguments, 1500},
-		{"result", resultText(it), 3000}, {"error", it.Error, 1500},
+		{"result", result, 3000}, {"error", it.Error, 1500},
 	}
 	data := map[string]any{"type": it.Type, "status": it.Status}
 	remaining := factRunes
@@ -121,23 +126,13 @@ func itemFact(it repo.ItemRow) (Fact, error) {
 		}
 		text := clipMemory(f.value, min(f.bound, remaining))
 		data[f.key] = text
-		remaining -= runeLen(text)
+		remaining -= len([]rune(text))
 	}
 	raw, err := json.Marshal(data)
 	if err != nil {
 		return Fact{}, err
 	}
 	return Fact{Source: repo.MemorySource{Table: "items", ID: it.ID, OccurredAt: it.StartedAt.UTC().Format(time.RFC3339Nano)}, Data: raw}, nil
-}
-
-func resultText(it repo.ItemRow) string {
-	if it.Result == nil {
-		return ""
-	}
-	if it.Error != "" {
-		return clipMemory(it.Error, 1000)
-	}
-	return string(it.Result.Output)
 }
 
 func clipMemory(s string, n int) string {
@@ -147,5 +142,3 @@ func clipMemory(s string, n int) string {
 	}
 	return string(r[:n]) + "\n[truncated]"
 }
-
-func runeLen(s string) int { return len([]rune(s)) }

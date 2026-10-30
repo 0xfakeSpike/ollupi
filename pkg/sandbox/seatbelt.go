@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-const SeatbeltExecutable = "/usr/bin/sandbox-exec"
+const seatbeltExecutable = "/usr/bin/sandbox-exec"
 
 var (
 	//go:embed seatbelt_base.sbpl
@@ -108,8 +108,8 @@ func protectedNamePattern(name string) string { return name + "(/|$)" }
 
 var dependencyDirs = []string{"node_modules", "vendor", "Pods"}
 
-func SeatbeltArgs(p Policy, tempDirs []string, argv []string) ([]string, error) {
-	profile, params, err := SeatbeltProfile(p, tempDirs)
+func seatbeltArgs(p policy, tempDirs []string, argv []string) ([]string, error) {
+	profile, params, err := seatbeltProfile(p, tempDirs)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +124,7 @@ func SeatbeltArgs(p Policy, tempDirs []string, argv []string) ([]string, error) 
 	return append(args, argv...), nil
 }
 
-func SeatbeltProfile(p Policy, tempDirs []string) (string, [][2]string, error) {
+func seatbeltProfile(p policy, tempDirs []string) (string, [][2]string, error) {
 	if err := p.Validate(); err != nil {
 		return "", nil, err
 	}
@@ -267,7 +267,7 @@ func protectedAncestors(denied, writable []string) []string {
 	return out
 }
 
-func SeatbeltTempDirs() []string {
+func seatbeltTempDirs() []string {
 	dirs := []string{"/private/tmp"}
 	if tmp, err := CanonicalPath(os.TempDir(), ""); err == nil && tmp != "/private/tmp" {
 		dirs = append(dirs, tmp)

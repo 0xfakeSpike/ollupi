@@ -91,7 +91,7 @@ func (a *Agent) submit(t repo.ThreadRow, turn repo.TurnRow, model llm.Model) (re
 		if err != nil {
 			return repo.TurnRow{}, err
 		}
-		if err := usable(string(t.WorkspaceID), w); err != nil {
+		if err := usable(w); err != nil {
 			return repo.TurnRow{}, err
 		}
 	}
@@ -200,29 +200,17 @@ func (a *Agent) allowAlways(threadID string, rules []string) error {
 			return fmt.Errorf("agent: parent thread %s: %w", parent, err)
 		}
 	}
+	allow := permission.Settings{Rules: permission.Rules{Allow: rules}}
 	if t.WorkspaceID == "" {
-		_, err := a.UpdateThreadSettings(t.ID, withAllowed(t.Settings, rules))
+		_, err := a.UpdateThreadSettings(t.ID, permission.Resolve(t.Settings, allow))
 		return err
 	}
 	w, err := a.workspaceOf(t.WorkspaceID)
 	if err != nil {
 		return err
 	}
-	if w, err = a.UpdateWorkspaceSettings(w.ID, withAllowed(w.Settings, rules)); err != nil {
-		return err
-	}
-	a.emit(Event{Kind: EventWorkspaceChanged, Thread: t, Workspace: &w})
-	return nil
-}
-
-func withAllowed(s permission.Settings, rules []string) permission.Settings {
-	s.Rules.Allow = slices.Clone(s.Rules.Allow)
-	for _, r := range rules {
-		if !slices.Contains(s.Rules.Allow, r) {
-			s.Rules.Allow = append(s.Rules.Allow, r)
-		}
-	}
-	return s
+	_, err = a.UpdateWorkspaceSettings(w.ID, permission.Resolve(w.Settings, allow))
+	return err
 }
 
 func (a *Agent) answerUserInput(threadID, itemID string, answers userinput.Answers) error {

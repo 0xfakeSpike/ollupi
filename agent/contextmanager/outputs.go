@@ -2,6 +2,7 @@ package contextmanager
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/0xfakeSpike/ollupi/repo"
@@ -9,7 +10,7 @@ import (
 )
 
 const (
-	ToolReadOutput = "read_tool_output"
+	toolReadOutput = "read_tool_output"
 
 	defaultReadRunes = 8000
 	maxReadRunes     = 20000
@@ -27,7 +28,7 @@ func (*Outputs) Name() (string, string) {
 
 func (*Outputs) ToolList(context.Context) ([]*tools.Spec, error) {
 	return []*tools.Spec{{
-		Name: ToolReadOutput,
+		Name: toolReadOutput,
 		Description: "Reads characters of a tool output that the conversation shows shortened. " +
 			"A shortened output names its output_id and the offset of the omitted characters; read only the part you need.",
 		InputSchema: map[string]any{
@@ -58,7 +59,7 @@ func (o *Outputs) Invoke(ctx context.Context, _ string, args map[string]any) (to
 		return tools.Result{}, fmt.Errorf("offset must be at least 0 and length between 1 and %d", maxReadRunes)
 	}
 	it, err := o.db.Item(id)
-	if repo.IsNotFound(err) || err == nil && (it.ThreadID != tools.CallerOf(ctx).ThreadID || !it.IsCall() || it.Result == nil) {
+	if errors.Is(err, repo.ErrNotFound) || err == nil && (it.ThreadID != tools.CallerOf(ctx).ThreadID || !it.IsCall() || it.Result == nil) {
 		return tools.Result{}, fmt.Errorf("this conversation has no tool output %q", id)
 	}
 	if err != nil {

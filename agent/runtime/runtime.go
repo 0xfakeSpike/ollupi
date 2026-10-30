@@ -31,13 +31,12 @@ type Runtime struct {
 	LLM      llm.Client
 	Registry *tools.Registry
 	Skills   *skills.Catalog
-	Contexts *contextmanager.Manager
+	Window   *contextmanager.Manager
 	Memory   *memory.Manager
 
 	Turn        repo.TurnRow
 	Caller      tools.Caller
 	Prompt      string
-	Tools       []tools.ToolDescriptor
 	Permissions *permission.Checker
 	History     []repo.ItemRow
 	Items       []repo.ItemRow
@@ -77,10 +76,10 @@ func (rt *Runtime) start() error {
 	if rt.Skills != nil {
 		catalog = rt.Skills.All()
 	}
-	rt.offered, rt.deferred = Offer(rt.Tools, rt.Contexts, slices.Concat(rt.History, rt.Items))
+	rt.offered, rt.deferred = Offer(rt.Permissions.Tools(), rt.Window, slices.Concat(rt.History, rt.Items))
 	rt.system = systemprompt.Build(systemprompt.Input{
 		Agent: rt.Prompt, Subagent: rt.Caller.Subagent, Root: rt.Caller.Root,
-		Skills: catalog, SkillTokens: rt.Contexts.SkillBudget(), Deferred: rt.deferred,
+		Skills: catalog, SkillTokens: rt.Window.SkillBudget(), Deferred: rt.deferred,
 	})
 	if hasSnapshot(slices.Concat(rt.History, rt.Items)) {
 		return nil
@@ -104,7 +103,7 @@ func (rt *Runtime) loadMemory() error {
 	if rt.Memory == nil {
 		return nil
 	}
-	snapshot, err := rt.Memory.Snapshot(rt.Caller.WorkspaceID, rt.Contexts.MemoryBudget())
+	snapshot, err := rt.Memory.Snapshot(rt.Caller.WorkspaceID, rt.Window.MemoryBudget())
 	if err != nil {
 		log.Printf("memory: turn %s goes on without a memory snapshot: %v", rt.Turn.ID, err)
 		return nil
@@ -128,15 +127,13 @@ func (rt *Runtime) tool(name string) (tools.ToolDescriptor, bool) {
 	return rt.offered[i], true
 }
 
-func (rt *Runtime) specs() []llm.ToolSpec { return Specs(rt.offered) }
-
 // Offer splits the visible tools into the ones sent to the model and the ones only named in DEFERRED TOOLS.
 // Tools of external providers are deferred when all visible tools would take more than the tool budget;
 // the ones a load_tools call loaded follow the others in load order, so the tool list only grows.
-func Offer(visible []tools.ToolDescriptor, contexts *contextmanager.Manager, items []repo.ItemRow) (offered, deferred []tools.ToolDescriptor) {
+func Offer(visible []tools.ToolDescriptor, window *contextmanager.Manager, items []repo.ItemRow) (offered, deferred []tools.ToolDescriptor) {
 	external := func(d tools.ToolDescriptor) bool { return strings.Contains(d.Name, tools.ProviderSeparator) }
 	loader := func(d tools.ToolDescriptor) bool { return d.Name == tools.ToolLoadTools }
-	deferring := slices.ContainsFunc(visible, loader) && slices.ContainsFunc(visible, external) && !contexts.ToolsFit(Specs(visible))
+	deferring := slices.ContainsFunc(visible, loader) && slices.ContainsFunc(visible, external) && !window.ToolsFit(Specs(visible))
 	for _, d := range visible {
 		switch {
 		case deferring && external(d):
@@ -180,7 +177,11 @@ func Specs(descriptors []tools.ToolDescriptor) []llm.ToolSpec {
 
 func (rt *Runtime) run(ctx context.Context) (bool, error) {
 	for {
-		if final, err := rt.runCalls(ctx); final || err != nil || rt.waiting() {
+		plan, err := rt.planCalls(ctx)
+		if err != nil {
+			return false, err
+		}
+		if final, err := rt.executePlan(ctx, plan); final || err != nil || rt.waiting() {
 			return final, err
 		}
 		if rt.modelCalls() >= maxModelCalls {
@@ -198,20 +199,12 @@ func (rt *Runtime) run(ctx context.Context) (bool, error) {
 		if err != nil {
 			return false, fmt.Errorf("runtime: reload the turn: %w", err)
 		}
-		rt.Items, rt.Permissions, rt.Tools = items, permissions, permissions.Tools()
-		rt.offered, rt.deferred = Offer(rt.Tools, rt.Contexts, slices.Concat(rt.History, rt.Items))
+		rt.Items, rt.Permissions = items, permissions
+		rt.offered, rt.deferred = Offer(permissions.Tools(), rt.Window, slices.Concat(rt.History, rt.Items))
 		if len(resp.Message.ToolCalls) == 0 && !slices.ContainsFunc(rt.Items, func(it repo.ItemRow) bool { return it.Type == repo.ItemUserMessage && it.Seq > seen }) {
 			return true, nil
 		}
 	}
-}
-
-func (rt *Runtime) runCalls(ctx context.Context) (bool, error) {
-	plan, err := rt.planCalls(ctx)
-	if err != nil {
-		return false, err
-	}
-	return rt.executePlan(ctx, plan)
 }
 
 const finalAnswerNotice = `[runtime] Tool use has stopped: %s.
@@ -259,5 +252,5 @@ func withError(it repo.ItemRow, text string) repo.ItemRow {
 }
 
 func (rt *Runtime) waiting() bool {
-	return slices.ContainsFunc(rt.Items, func(it repo.ItemRow) bool { return it.IsPending() || it.Awaits() })
+	return slices.ContainsFunc(rt.Items, func(it repo.ItemRow) bool { return it.WaitsOnUser() || it.Awaits() })
 }

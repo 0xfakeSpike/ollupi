@@ -48,8 +48,6 @@ type Handler interface {
 	Notify(method string, params json.RawMessage)
 }
 
-type Async func(ctx context.Context) (result any, err *Error)
-
 type ResponseFunc func(result json.RawMessage, err *Error)
 
 const (
@@ -67,7 +65,6 @@ type Conn struct {
 	queued  int
 	closed  bool
 	ready   chan struct{}
-	calls   sync.WaitGroup
 }
 
 func NewConn(ws *websocket.Conn) *Conn {
@@ -83,7 +80,6 @@ func (c *Conn) Serve(ctx context.Context, h Handler) error {
 	}()
 	defer func() {
 		cancel()
-		c.calls.Wait()
 		c.mu.Lock()
 		c.closed = true
 		c.mu.Unlock()
@@ -109,15 +105,6 @@ func (c *Conn) Serve(ctx context.Context, h Handler) error {
 			c.reply(m.ID, nil, Errorf(CodeInvalidRequest, `jsonrpc must be "2.0"`))
 		case m.Method != "" && m.ID != nil:
 			result, after, rerr := h.Call(m.Method, m.Params)
-			if run, ok := result.(Async); ok && rerr == nil {
-				c.calls.Add(1)
-				go func(id json.RawMessage) {
-					defer c.calls.Done()
-					result, rerr := run(ctx)
-					c.reply(id, result, rerr)
-				}(m.ID)
-				continue
-			}
 			c.reply(m.ID, result, rerr)
 			if rerr == nil && after != nil {
 				after()

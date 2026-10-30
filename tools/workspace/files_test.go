@@ -1,4 +1,4 @@
-package shell
+package workspace
 
 import (
 	"context"
@@ -44,7 +44,7 @@ func TestFileTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := NewRunner(Options{Config: Config{WorkspaceDirs: []string{root}, SandboxMode: "full-access"}})
+	r, err := New(Options{Config: Config{WorkspaceDirs: []string{root}, SandboxMode: "full-access"}})
 	if err != nil {
 		t.Fatal(err)
 	}

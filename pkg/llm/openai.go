@@ -2,20 +2,15 @@ package llm
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/packages/respjson"
 	"github.com/openai/openai-go/shared"
-)
-
-const (
-	defaultChatTimeout = 180 * time.Second
-	DefaultCalls       = 4
 )
 
 type OpenAI struct {
@@ -32,13 +27,6 @@ func NewOpenAI(baseURL, apiKey string, calls int, limits map[string]Limits) *Ope
 		opts = append(opts, option.WithBaseURL(baseURL))
 	}
 	return &OpenAI{connection: newConnection(calls, limits), client: openai.NewClient(opts...)}
-}
-
-func withDefaultTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
-	if _, ok := ctx.Deadline(); ok {
-		return context.WithCancel(ctx)
-	}
-	return context.WithTimeout(ctx, timeout)
 }
 
 func (c *OpenAI) Chat(ctx context.Context, req ChatRequest, onDelta func(Delta)) (ChatResponse, error) {
@@ -79,7 +67,7 @@ func (c *OpenAI) Chat(ctx context.Context, req ChatRequest, onDelta func(Delta))
 			})
 		}
 		params.ToolChoice = openai.ChatCompletionToolChoiceOptionUnionParam{OfAuto: openai.String(string(req.ToolChoice))}
-		params.ParallelToolCalls = openai.Bool(req.ParallelToolCalls)
+		params.ParallelToolCalls = openai.Bool(true)
 	}
 
 	var requestOptions []option.RequestOption
@@ -97,9 +85,7 @@ func (c *OpenAI) Chat(ctx context.Context, req ChatRequest, onDelta func(Delta))
 		if err != nil {
 			return acc.usageResponse(), err
 		}
-		if onDelta != nil && (delta.Content != "" || delta.Reasoning != "") {
-			onDelta(delta)
-		}
+		emit(onDelta, delta)
 	}
 	if err := stream.Err(); err != nil {
 		return acc.usageResponse(), safeRequestError(err)
@@ -207,7 +193,7 @@ func toMessageParam(message ChatMessage) (openai.ChatCompletionMessageParamUnion
 		for _, p := range message.Parts {
 			switch p.Type {
 			case PartImage:
-				parts = append(parts, openai.ImageContentPart(openai.ChatCompletionContentPartImageImageURLParam{URL: p.DataURL()}))
+				parts = append(parts, openai.ImageContentPart(openai.ChatCompletionContentPartImageImageURLParam{URL: "data:" + p.MimeType + ";base64," + base64.StdEncoding.EncodeToString(p.Data)}))
 			case PartText:
 				parts = append(parts, openai.TextContentPart(p.Text))
 			default:

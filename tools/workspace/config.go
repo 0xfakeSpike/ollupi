@@ -1,9 +1,9 @@
-package shell
+package workspace
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 )
@@ -25,12 +25,17 @@ type Config struct {
 	MaxOutputBytes       int      `json:"max_output_bytes,omitempty"`
 }
 
-func (c *Config) Normalize(base string) error {
+func (c *Config) normalize(base string) error {
 	if len(c.WorkspaceDirs) == 0 {
 		if base == "" {
 			return fmt.Errorf("workspace_dirs: at least one command directory is required")
 		}
-		c.WorkspaceDirs = []string{base}
+		// Without workspace dirs commands run in a scratch folder, never in the agent home, which holds the database.
+		scratch := filepath.Join(base, scratchDir)
+		if err := os.MkdirAll(scratch, 0o755); err != nil {
+			return fmt.Errorf("workspace_dirs: %w", err)
+		}
+		c.WorkspaceDirs = []string{scratch}
 	} else {
 		resolved := make([]string, 0, len(c.WorkspaceDirs))
 		for _, entry := range c.WorkspaceDirs {
@@ -56,29 +61,7 @@ func (c *Config) Normalize(base string) error {
 	if c.MaxCommandTimeoutSec < c.CommandTimeoutSec {
 		return fmt.Errorf("max_command_timeout_sec must be >= command_timeout_sec")
 	}
-	c.SandboxMode = strings.TrimSpace(c.SandboxMode)
-	if _, err := sandbox.ResolveMode(c.SandboxMode); err != nil {
-		return err
-	}
-	for _, list := range []*[]string{&c.AllowedDomains, &c.DeniedDomains} {
-		parsed, err := sandbox.ParseDomains(*list)
-		if err != nil {
-			return err
-		}
-		if len(parsed) == 0 {
-			parsed = nil
-		}
-		*list = parsed
-	}
-	if len(c.DeniedDomains) > 0 && len(c.AllowedDomains) == 0 {
-		return fmt.Errorf("denied_domains needs allowed_domains")
-	}
-	if c.MaxOutputBytes < 0 {
-		return fmt.Errorf("max_output_bytes must be >= 0")
-	}
-	if err := sandbox.ValidateEnvNames(c.EnvPassthrough); err != nil {
-		return err
-	}
+	// The sandbox checks the rest: mode, domains, output limit and environment names.
 	return nil
 }
 
@@ -87,11 +70,14 @@ type AgentFiles struct {
 	SkillsDir string
 }
 
-var AgentProtectedNames = []string{
+var agentProtectedNames = []string{
 	"AGENTS.md", ".agents", ".codex", ".claude", "CLAUDE.md", ".cursor", ".mcp.json",
 }
 
-const dataDir = "data"
+const (
+	dataDir    = "data"
+	scratchDir = "scratch"
+)
 
 func sandboxConfig(o Options, c Config) sandbox.Config {
 	denyRead := append([]string(nil), o.DenyRead...)
@@ -99,19 +85,16 @@ func sandboxConfig(o Options, c Config) sandbox.Config {
 	if home := o.Agent.Home; home != "" {
 		denyRead = append(denyRead, filepath.Join(home, dataDir))
 	}
-	for _, dir := range []string{o.Agent.SkillsDir} {
-		if dir != "" {
-			readOnly = append(readOnly, dir)
-		}
+	if o.Agent.SkillsDir != "" {
+		readOnly = append(readOnly, o.Agent.SkillsDir)
 	}
 	return sandbox.Config{
 		Mode:           c.SandboxMode,
 		Network:        c.Network,
 		Domains:        sandbox.DomainRules{Allowed: c.AllowedDomains, Denied: c.DeniedDomains},
-		Roots:          c.WorkspaceDirs,
 		DenyRead:       append(denyRead, c.DenyRead...),
 		ReadOnly:       append(readOnly, c.ReadOnly...),
-		ProtectedNames: AgentProtectedNames,
+		ProtectedNames: agentProtectedNames,
 		EnvMarker:      o.EnvMarker,
 		ExtraWritable:  c.ExtraWritable,
 		UnixSockets:    c.UnixSockets,

@@ -15,7 +15,7 @@ const (
 	ModeFullAccess     Mode = "full-access"
 )
 
-func ParseMode(s string) (Mode, error) {
+func parseMode(s string) (Mode, error) {
 	switch m := Mode(strings.TrimSpace(s)); m {
 	case ModeReadOnly, ModeWorkspaceWrite, ModeFullAccess:
 		return m, nil
@@ -24,7 +24,7 @@ func ParseMode(s string) (Mode, error) {
 	}
 }
 
-type Policy struct {
+type policy struct {
 	Mode           Mode
 	Network        bool
 	WritableRoots  []string
@@ -37,8 +37,8 @@ type Policy struct {
 	LogTag         string
 }
 
-func (p Policy) Validate() error {
-	if _, err := ParseMode(string(p.Mode)); err != nil {
+func (p policy) Validate() error {
+	if _, err := parseMode(string(p.Mode)); err != nil {
 		return err
 	}
 	if p.Mode == ModeWorkspaceWrite && len(p.WritableRoots) == 0 {
@@ -67,7 +67,7 @@ func (p Policy) Validate() error {
 	return nil
 }
 
-func ValidateRoot(root, home string) error {
+func validateRoot(root, home string) error {
 	if root == "/" {
 		return fmt.Errorf("sandbox: / cannot be a command directory")
 	}
@@ -82,7 +82,7 @@ func ValidateRoot(root, home string) error {
 	return nil
 }
 
-var DefaultProtectedNames = []string{
+var defaultProtectedNames = []string{
 	".vscode", ".idea", ".zed", ".fleet", ".devcontainer",
 
 	".envrc", ".mise.toml", "mise.toml", ".mise",
@@ -106,7 +106,7 @@ func validProtectedName(name string) error {
 	return nil
 }
 
-func DefaultDenyRead(home string) []string {
+func defaultDenyRead(home string) []string {
 	if home == "" {
 		return nil
 	}
@@ -134,7 +134,7 @@ func DefaultDenyRead(home string) []string {
 	return out
 }
 
-func DefaultWritableCaches(home string) []string {
+func defaultWritableCaches(home string) []string {
 	if home == "" {
 		return nil
 	}

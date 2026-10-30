@@ -38,14 +38,14 @@ func TestMemoryFailureClearsOnSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := memoryState(t, m)
-	if s.LastError == nil || s.LastError.Code != repo.MemoryModelRequest || s.LastError.Error != cause.Error() {
-		t.Fatalf("lastError %+v, want the model request failure", s.LastError)
+	if s.LastFailure == nil || s.LastFailure.Code != repo.MemoryModelRequest || s.LastFailure.Error != cause.Error() {
+		t.Fatalf("lastFailure %+v, want the model request failure", s.LastFailure)
 	}
 	if s.Attempts != 1 || s.NextAttempt == nil || !s.NextAttempt.After(time.Now()) {
 		t.Fatalf("attempts %d, nextAttempt %v: want the first retry ahead", s.Attempts, s.NextAttempt)
 	}
 	succeed(t, m, b)
-	if s := memoryState(t, m); s.LastError != nil || s.Attempts != 0 || s.NextAttempt != nil || s.LastSkip != nil {
+	if s := memoryState(t, m); s.LastFailure != nil || s.Attempts != 0 || s.NextAttempt != nil || s.LastSkip != nil {
 		t.Fatalf("after a success: %+v, want no error, retry or skip", s.MemoryStateRow)
 	}
 }
@@ -70,8 +70,8 @@ func TestMemorySkipOutlivesSuccess(t *testing.T) {
 	if skip == nil || skip.Entries != 5 || skip.TurnID != "t1" || skip.ThreadID != "thread-t1" || skip.Code != repo.MemoryInvalidResponse || skip.Error != "invalid JSON" || skip.At.Before(before) {
 		t.Fatalf("lastSkip %+v, want the batch of turn t1 with its last failure", skip)
 	}
-	if s.LastError != nil || s.Attempts != 0 || s.NextAttempt != nil || s.Failed != 5 {
-		t.Fatalf("after the skip: %+v, failed %d", s.MemoryStateRow, s.Failed)
+	if s.LastFailure != nil || s.Attempts != 0 || s.NextAttempt != nil || s.Skipped != 5 {
+		t.Fatalf("after the skip: %+v, skipped %d", s.MemoryStateRow, s.Skipped)
 	}
 
 	if err := m.deferBatch(failingBatch("t2", 2), failure{repo.MemoryEvidence, errors.New("too large")}); err != nil {
@@ -79,8 +79,8 @@ func TestMemorySkipOutlivesSuccess(t *testing.T) {
 	}
 	succeed(t, m, failingBatch("t2", 2))
 	s = memoryState(t, m)
-	if s.LastError != nil || s.LastSkip == nil || *s.LastSkip != *skip || s.Failed != 5 {
-		t.Fatalf("after a success: lastError %+v, lastSkip %+v, failed %d; want the skip kept", s.LastError, s.LastSkip, s.Failed)
+	if s.LastFailure != nil || s.LastSkip == nil || *s.LastSkip != *skip || s.Skipped != 5 {
+		t.Fatalf("after a success: lastFailure %+v, lastSkip %+v, skipped %d; want the skip kept", s.LastFailure, s.LastSkip, s.Skipped)
 	}
 }
 

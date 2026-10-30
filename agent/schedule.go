@@ -9,24 +9,24 @@ import (
 	"github.com/0xfakeSpike/ollupi/repo"
 )
 
-func (a *Agent) reconcile(threadID string) bool {
+func (a *Agent) reconcile(threadID string) {
 	if _, busy := a.slotByThread[threadID]; busy || a.ctx.Err() != nil {
-		return false
+		return
 	}
 	st, err := a.cfg.DB.ThreadState(threadID)
 	if err != nil {
 		a.halt(threadID, err)
-		return false
+		return
 	}
 	turn, active := st.ActiveTurn()
 	if !active {
 		if len(st.QueuedTurns()) == 0 {
-			return false
+			return
 		}
 		var message repo.ItemRow
 		if st.Thread, turn, message, err = a.cfg.DB.StartQueuedTurn(threadID); err != nil {
 			a.halt(threadID, err)
-			return false
+			return
 		}
 		a.emit(Event{Kind: EventTurnStarted, Thread: st.Thread, Turn: turn})
 		a.emitItem(st.Thread, turn, message, true)
@@ -35,22 +35,21 @@ func (a *Agent) reconcile(threadID string) bool {
 	if _, err := a.modelOn(turn.Model.Connection); err != nil {
 		turn.Status, turn.Error = repo.TurnFailed, err.Error()
 		a.endTurn(turn)
-		return false
+		return
 	}
 	waiting := len(st.PendingRequests()) > 0
 	for _, call := range st.AgentCalls() {
 		settled, err := a.settle(st.Thread, turn, call)
 		if err != nil {
 			a.halt(threadID, err)
-			return false
+			return
 		}
 		waiting = waiting || !settled
 	}
 	if waiting || len(a.slotByThread) >= a.cfg.Slots {
-		return false
+		return
 	}
-	a.enqueue(threadID, turn.ID)
-	return true
+	a.launch(threadID, turn.ID)
 }
 
 func (a *Agent) admit() {
@@ -71,7 +70,7 @@ func (a *Agent) admit() {
 }
 
 func (a *Agent) recover() error {
-	active, err := a.cfg.DB.ActiveThreadIDs()
+	active, err := a.cfg.DB.OpenThreads(nil)
 	if err != nil {
 		return fmt.Errorf("agent: active threads: %w", err)
 	}

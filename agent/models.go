@@ -32,19 +32,15 @@ func (a *Agent) checkModels() error {
 	return nil
 }
 
-func (a *Agent) contextsFor(m llm.Model) (*contextmanager.Manager, error) {
-	conn := a.cfg.Connections[m.Connection]
-	if conn == nil {
-		return nil, fmt.Errorf("connection %q has no client", m.Connection)
-	}
-	limits, err := conn.Limits(m.Name)
+func (a *Agent) windowFor(m llm.Model) (*contextmanager.Manager, error) {
+	limits, err := a.cfg.Connections[m.Connection].Limits(m.Name)
 	if err != nil {
 		return nil, err
 	}
 	return contextmanager.New(m.Name, limits), nil
 }
 
-func (a *Agent) checkBudgets() error {
+func (a *Agent) checkPromptFits() error {
 	checker, err := permission.New(a.layers(repo.WorkspaceRow{}), a.cfg.Tools, a.registry)
 	if err != nil {
 		return err
@@ -55,13 +51,13 @@ func (a *Agent) checkBudgets() error {
 		catalog = a.skills.All()
 	}
 	for _, m := range a.cfg.Models {
-		contexts, err := a.contextsFor(m)
+		window, err := a.windowFor(m)
 		if err != nil {
 			return err
 		}
-		offered, deferred := runtime.Offer(descriptors, contexts, nil)
-		system := systemprompt.Build(systemprompt.Input{Agent: systemprompt.AgentPrompt(a.cfg.Name, a.cfg.Prompt), Skills: catalog, SkillTokens: contexts.SkillBudget(), Deferred: deferred})
-		if err := contexts.Fits(system, runtime.Specs(offered)); err != nil {
+		offered, deferred := runtime.Offer(descriptors, window, nil)
+		system := systemprompt.Build(systemprompt.Input{Agent: systemprompt.AgentPrompt(a.cfg.Name, a.cfg.Prompt), Skills: catalog, SkillTokens: window.SkillBudget(), Deferred: deferred})
+		if err := window.Fits(system, runtime.Specs(offered)); err != nil {
 			return err
 		}
 	}

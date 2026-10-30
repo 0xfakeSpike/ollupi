@@ -23,7 +23,9 @@ const (
 	EventTurnCompleted       EventKind = "turn_completed"
 	EventThreadStatusChanged EventKind = "thread_status_changed"
 	EventWorkspaceChanged    EventKind = "workspace_changed"
-	EventError               EventKind = "error"
+	// EventCronJobChanged reports a scheduled task that changed with its thread: archived with it, or deleted with it.
+	EventCronJobChanged EventKind = "cron_job_changed"
+	EventError          EventKind = "error"
 )
 
 type Event struct {
@@ -32,6 +34,7 @@ type Event struct {
 	Turn      repo.TurnRow
 	Item      *repo.ItemRow
 	Workspace *repo.WorkspaceRow
+	CronJobID string
 	Delta     string
 	Status    repo.ThreadStatus
 	Error     string

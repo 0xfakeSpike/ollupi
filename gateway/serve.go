@@ -14,15 +14,16 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/agent/memory"
+	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
 	"github.com/0xfakeSpike/ollupi/tools/mcp"
 )
 
 type Options struct {
-	Methods        map[string]Method
+	// DB is the agent's database; the gateway reads it for views that need no agent logic.
+	DB             *repo.DB
 	Token          string
 	AllowedOrigins []string
-	AllowedHosts   []string
 	Memory         *memory.Manager
 	Jobs           *cron.Jobs
 	MCP            *mcp.Servers
@@ -32,20 +33,17 @@ func NewServer(a *agent.Agent, opts Options) (*Server, error) {
 	if strings.TrimSpace(opts.Token) == "" {
 		return nil, errors.New("gateway: a token is required; clients send it as Authorization: Bearer <token>")
 	}
+	if opts.DB == nil {
+		return nil, errors.New("gateway: the agent's database is required")
+	}
 	s := &Server{
 		agent:   a,
+		db:      opts.DB,
 		memory:  opts.Memory,
 		jobs:    opts.Jobs,
 		mcp:     opts.MCP,
 		token:   opts.Token,
-		hosts:   append([]string{"localhost", "127.0.0.1", "::1"}, opts.AllowedHosts...),
 		origins: append([]string{"localhost:*", "127.0.0.1:*", "[::1]:*"}, opts.AllowedOrigins...),
-		methods: make(map[string]Method),
-	}
-	for name, m := range opts.Methods {
-		if err := s.Register(name, m); err != nil {
-			return nil, err
-		}
 	}
 	return s, nil
 }
@@ -73,12 +71,14 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 	return nil
 }
 
+var localHosts = []string{"localhost", "127.0.0.1", "::1"}
+
 func (s *Server) authorize(r *http.Request) (int, string) {
 	host := r.Host
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}
-	if !slices.Contains(s.hosts, strings.Trim(host, "[]")) {
+	if !slices.Contains(localHosts, strings.Trim(host, "[]")) {
 		return http.StatusForbidden, "host not allowed"
 	}
 	got := r.URL.Query().Get("token")

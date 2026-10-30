@@ -34,7 +34,7 @@ type Plan struct {
 	Steps       []Step `json:"plan"`
 }
 
-func (p Plan) Validate() error {
+func (p Plan) validate() error {
 	if len(p.Steps) == 0 || len(p.Steps) > maxSteps {
 		return fmt.Errorf("plan requires 1 to %d steps", maxSteps)
 	}
@@ -92,7 +92,7 @@ func (*Provider) Invoke(_ context.Context, _ string, arguments map[string]any) (
 	if err != nil {
 		return tools.Result{}, err
 	}
-	if err := p.Validate(); err != nil {
+	if err := p.validate(); err != nil {
 		return tools.Result{}, fmt.Errorf("invalid plan: %w", err)
 	}
 	return tools.Result{Output: "Plan updated"}, nil

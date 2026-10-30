@@ -38,14 +38,23 @@ func (a *Agent) permissions(t repo.ThreadRow) (*permission.Checker, repo.Workspa
 func (a *Agent) layers(w repo.WorkspaceRow) []permission.Layer {
 	out := []permission.Layer{{Of: "the default permission settings", Settings: a.cfg.Settings}}
 	if w.ID != "" {
-		out = append(out, permission.Layer{Of: fmt.Sprintf("the permission settings of workspace %q", w.Name), Settings: w.Settings})
+		out = append(out, workspaceLayer(w.Name, w.Settings))
 	}
 	return out
 }
 
+// workspaceLayer and threadLayer name the layers both where settings are validated and where they are enforced.
+func workspaceLayer(name string, s permission.Settings) permission.Layer {
+	return permission.Layer{Of: fmt.Sprintf("the permission settings of workspace %q", name), Settings: s}
+}
+
+func threadLayer(s permission.Settings) permission.Layer {
+	return permission.Layer{Of: "this conversation's permission settings", Settings: s}
+}
+
 func (a *Agent) threadLayers(t repo.ThreadRow, w repo.WorkspaceRow) ([]permission.Layer, error) {
 	if t.ParentThreadID == "" {
-		return append(a.layers(w), permission.Layer{Of: "this conversation's permission settings", Settings: t.Settings}), nil
+		return append(a.layers(w), threadLayer(t.Settings)), nil
 	}
 	parent, err := a.cfg.DB.ThreadRow(string(t.ParentThreadID))
 	if err != nil {

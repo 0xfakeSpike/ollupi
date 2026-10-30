@@ -5,10 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/openai/openai-go"
 	"google.golang.org/genai"
+)
+
+const (
+	defaultChatTimeout = 180 * time.Second
+	DefaultCalls       = 4
 )
 
 type Limits struct {
@@ -57,7 +63,10 @@ func (c connection) acquire(ctx context.Context) (context.Context, func(), error
 	case <-ctx.Done():
 		return nil, nil, ctx.Err()
 	}
-	ctx, cancel := withDefaultTimeout(ctx, defaultChatTimeout)
+	cancel := context.CancelFunc(func() {})
+	if _, ok := ctx.Deadline(); !ok {
+		ctx, cancel = context.WithTimeout(ctx, defaultChatTimeout)
+	}
 	return ctx, func() { cancel(); <-c.calls }, nil
 }
 

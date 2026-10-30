@@ -336,12 +336,6 @@
         },
         "content": {
           "type": "string"
-        },
-        "source": {
-          "type": "string"
-        },
-        "digest": {
-          "type": "string"
         }
       },
       "required": [
@@ -961,7 +955,6 @@
         "toolCall",
         "contextCompaction",
         "memoryContext",
-        "toolProgress",
         "error"
       ]
     },
@@ -1282,9 +1275,6 @@
         "pending": {
           "type": "integer"
         },
-        "failed": {
-          "type": "integer"
-        },
         "active": {
           "type": "integer"
         },
@@ -1298,6 +1288,9 @@
           ],
           "format": "date-time"
         },
+        "skipped": {
+          "type": "integer"
+        },
         "lastSuccess": {
           "type": [
             "null",
@@ -1305,7 +1298,7 @@
           ],
           "format": "date-time"
         },
-        "lastError": {
+        "lastFailure": {
           "anyOf": [
             {
               "type": "null"
@@ -1340,8 +1333,8 @@
         "generationEnabled",
         "useEnabled",
         "pending",
-        "failed",
-        "active"
+        "active",
+        "skipped"
       ],
       "additionalProperties": false
     },

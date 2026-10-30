@@ -95,7 +95,7 @@ func TestAnthropicReplaysThinkingUntilThePrefixChanges(t *testing.T) {
 	history := []ChatMessage{{Role: RoleSystem, Content: "be brief"}, {Role: RoleUser, Content: "find x"}}
 
 	var reasoning strings.Builder
-	a, err := c.Chat(context.Background(), ChatRequest{Model: model, Messages: history, Tools: []ToolSpec{lookup}, ToolChoice: ToolChoiceAuto, ParallelToolCalls: true}, func(d Delta) { reasoning.WriteString(d.Reasoning) })
+	a, err := c.Chat(context.Background(), ChatRequest{Model: model, Messages: history, Tools: []ToolSpec{lookup}, ToolChoice: ToolChoiceAuto}, func(d Delta) { reasoning.WriteString(d.Reasoning) })
 	if err != nil {
 		t.Fatal(err)
 	}

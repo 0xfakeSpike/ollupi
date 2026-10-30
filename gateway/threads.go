@@ -10,11 +10,7 @@ import (
 
 func (c *conn) threadStart(p ThreadStartParams) (ThreadResult, func(), error) {
 	t, err := c.s.agent.StartThread(p.WorkspaceID, p.Title, p.PermissionSettings)
-	if err != nil {
-		return ThreadResult{}, nil, err
-	}
-	result := ThreadResult{Thread: t}
-	return result, func() { c.rpc.Notify(notifyThreadStarted, result) }, nil
+	return ThreadResult{Thread: t}, nil, err
 }
 
 func threadPage(resume bool) func(*conn, ThreadPageParams) (ThreadPageResult, func(), error) {
@@ -25,9 +21,8 @@ func threadPage(resume bool) func(*conn, ThreadPageParams) (ThreadPageResult, fu
 		if p.Limit < 1 || p.Limit > maxItems || p.BeforeSeq < 0 {
 			return ThreadPageResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "limit must be 1 to %d and beforeSeq not negative", maxItems)
 		}
-		ag := c.s.agent
 		c.s.deliver.Lock()
-		view, more, err := ag.ReadThreadPage(p.ThreadID, p.BeforeSeq, p.Limit)
+		view, more, err := c.s.db.ThreadPage(p.ThreadID, p.BeforeSeq, p.Limit)
 		if err != nil {
 			c.s.deliver.Unlock()
 			return ThreadPageResult{}, nil, err
@@ -44,7 +39,7 @@ func threadPage(resume bool) func(*conn, ThreadPageParams) (ThreadPageResult, fu
 		after := func() {
 			c.s.deliver.Unlock()
 			if resume {
-				for _, r := range ag.PendingRequests(p.ThreadID) {
+				for _, r := range c.s.agent.PendingRequests(p.ThreadID) {
 					c.request(r.Thread.ID, r.Item)
 				}
 			}
@@ -55,10 +50,7 @@ func threadPage(resume bool) func(*conn, ThreadPageParams) (ThreadPageResult, fu
 
 func (c *conn) threadPermissions(p ThreadPermissionsParams) (ThreadResult, func(), error) {
 	t, err := c.s.agent.UpdateThreadSettings(p.ThreadID, p.PermissionSettings)
-	if err != nil {
-		return ThreadResult{}, nil, err
-	}
-	return ThreadResult{Thread: t}, nil, nil
+	return ThreadResult{Thread: t}, nil, err
 }
 
 func (c *conn) threadRename(p ThreadRenameParams) (ThreadResult, func(), error) {
@@ -70,20 +62,12 @@ func (c *conn) threadArchive(p ThreadArchiveParams) (ThreadResult, func(), error
 	if p.Archived == nil {
 		return ThreadResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "archived is required")
 	}
-	jobs := c.s.threadJobs(p.ThreadID)
 	t, err := c.s.agent.ArchiveThread(p.ThreadID, *p.Archived)
-	if err != nil {
-		return ThreadResult{}, nil, err
-	}
-	return ThreadResult{Thread: t}, func() { c.s.cronJobsChanged(jobs) }, nil
+	return ThreadResult{Thread: t}, nil, err
 }
 
 func (c *conn) threadDelete(p ThreadDeleteParams) (Empty, func(), error) {
-	jobs := c.s.threadJobs(p.ThreadID)
-	if err := c.s.agent.DeleteThread(p.ThreadID); err != nil {
-		return Empty{}, nil, err
-	}
-	return Empty{}, func() { c.s.cronJobsChanged(jobs) }, nil
+	return Empty{}, nil, c.s.agent.DeleteThread(p.ThreadID)
 }
 
 func (c *conn) threadList(p repo.ThreadFilter) (ThreadListResult, func(), error) {
@@ -93,21 +77,15 @@ func (c *conn) threadList(p repo.ThreadFilter) (ThreadListResult, func(), error)
 	if p.Limit < 1 || p.Limit > maxLimit {
 		return ThreadListResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "limit must be 1 to %d", maxLimit)
 	}
-	limit := p.Limit
-	p.Limit++
-	threads, err := c.s.agent.ListThreads(p)
+	threads, more, err := c.s.agent.ListThreads(p)
 	if err != nil {
 		return ThreadListResult{}, nil, err
-	}
-	more := len(threads) > limit
-	if more {
-		threads = threads[:limit]
 	}
 	return ThreadListResult{Data: nonNil(threads), HasMore: more}, nil, nil
 }
 
 func (c *conn) turnStart(p TurnStartParams) (TurnResult, func(), error) {
-	in, err := userInput(p.Input)
+	in, err := agentInput(p.Input)
 	if err != nil {
 		return TurnResult{}, nil, err
 	}
@@ -123,7 +101,7 @@ func (c *conn) turnSteer(p TurnSteerParams) (TurnSteerResult, func(), error) {
 	if p.ExpectedTurnID == "" {
 		return TurnSteerResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "expectedTurnId is required")
 	}
-	in, err := userInput(p.Input)
+	in, err := agentInput(p.Input)
 	if err != nil {
 		return TurnSteerResult{}, nil, err
 	}

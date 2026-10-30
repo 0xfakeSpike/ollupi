@@ -10,12 +10,12 @@ import (
 )
 
 func (a *Agent) settle(parent repo.ThreadRow, turn repo.TurnRow, call repo.ItemRow) (bool, error) {
+	req, err := subagent.Decode(call.Await.Request)
+	if err != nil {
+		return false, err
+	}
 	childID := call.Await.ThreadID
 	if childID == "" {
-		req, err := subagent.Decode(call.Await.Request)
-		if err != nil {
-			return false, err
-		}
 		child, err := a.createThread(repo.ThreadRow{
 			Title:          clipRunes(req.Description, maxTitleRunes),
 			ParentThreadID: repo.Ref(parent.ID), ParentItemID: repo.Ref(call.ID),
@@ -24,7 +24,6 @@ func (a *Agent) settle(parent repo.ThreadRow, turn repo.TurnRow, call repo.ItemR
 		if err != nil {
 			return false, err
 		}
-		a.emit(Event{Kind: EventThreadStarted, Thread: child})
 		call.Await.ThreadID = child.ID
 		stored, _, err := a.cfg.DB.RecordItem(parent.ID, call)
 		if err != nil {
@@ -38,10 +37,6 @@ func (a *Agent) settle(parent repo.ThreadRow, turn repo.TurnRow, call repo.ItemR
 		return false, fmt.Errorf("agent: subagent thread %s: %w", childID, err)
 	}
 	if len(child.Turns) == 0 {
-		req, err := subagent.Decode(call.Await.Request)
-		if err != nil {
-			return false, err
-		}
 		if _, err := a.submit(child.Thread, repo.TurnRow{Input: req.Prompt}, turn.Model); err != nil {
 			return false, err
 		}

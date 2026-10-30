@@ -7,6 +7,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
+	"github.com/0xfakeSpike/ollupi/agent/runtime"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"slices"
@@ -91,7 +92,7 @@ func (a *Agent) Start(ctx context.Context) error {
 	if err := a.checkModels(); err != nil {
 		return err
 	}
-	if err := a.checkBudgets(); err != nil {
+	if err := a.checkPromptFits(); err != nil {
 		return fmt.Errorf("agent %s: %w", a.cfg.Name, err)
 	}
 	if a.cfg.Slots <= 0 {
@@ -101,12 +102,13 @@ func (a *Agent) Start(ctx context.Context) error {
 	if err := a.recover(); err != nil {
 		return err
 	}
-	a.start()
+	a.done.Add(1)
+	go a.loop()
 	return nil
 }
 
 func (a *Agent) buildTools(ctx context.Context) error {
-	providers := append(slices.Clone(a.cfg.Providers), plan.New(), subagent.New(), userinput.New(), contextmanager.NewOutputs(a.cfg.DB))
+	providers := append(slices.Clone(a.cfg.Providers), plan.New(), subagent.New(), userinput.New(), contextmanager.NewOutputs(a.cfg.DB), runtime.Loader{})
 	if a.cfg.Memory != nil {
 		providers = append(providers, a.cfg.Memory)
 	}

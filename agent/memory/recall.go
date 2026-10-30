@@ -21,7 +21,7 @@ const (
 	omittedNote    = "\n\n%d more memories did not fit here; find them with " + ToolSearch + " when they may matter."
 )
 
-func (m *Manager) Snapshot(workspaceID string, budget int) (*Context, error) {
+func (m *Manager) Snapshot(workspaceID string, budget int) (*Snapshot, error) {
 	if !m.opts.Use {
 		return nil, nil
 	}
@@ -50,7 +50,7 @@ func (m *Manager) Snapshot(workspaceID string, budget int) (*Context, error) {
 	l, usedLocal := fit(local, budget-used)
 	g, _ := fit(global, budget-usedLocal)
 	if len(g)+len(l) == 0 {
-		return &Context{Entries: []repo.MemoryReference{}}, nil
+		return &Snapshot{Entries: []repo.MemoryReference{}}, nil
 	}
 	text := snapshotIntro
 	if len(g) > 0 {
@@ -62,7 +62,7 @@ func (m *Manager) Snapshot(workspaceID string, budget int) (*Context, error) {
 	if omitted := len(global) + len(local) - len(g) - len(l); omitted > 0 {
 		text += fmt.Sprintf(omittedNote, omitted)
 	}
-	return &Context{Entries: slices.Concat(g, l), Text: text}, nil
+	return &Snapshot{Entries: slices.Concat(g, l), Text: text}, nil
 }
 
 var snapshotKinds = []string{"fact", "procedure", "decision", "preference"}

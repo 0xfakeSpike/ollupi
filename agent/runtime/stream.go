@@ -21,6 +21,7 @@ type responseRecorder struct {
 	reasoningText strings.Builder
 	agentText     strings.Builder
 	err           error
+	carried       bool
 }
 
 func newResponseRecorder(rt *Runtime, stats repo.ContextStats) *responseRecorder {
@@ -48,7 +49,7 @@ func (r *responseRecorder) add(target **repo.ItemRow, text *strings.Builder, kin
 		*target = &started
 	}
 	text.WriteString(content)
-	r.rt.delta(**target, content)
+	r.rt.Delta(**target, content)
 }
 
 type responsePart struct {
@@ -75,9 +76,7 @@ func (r *responseRecorder) finish(resp llm.ChatResponse) error {
 			it = &repo.ItemRow{ID: uuid.NewString(), TurnID: r.rt.Turn.ID, Type: part.kind, ResponseID: r.id, StartedAt: now}
 		}
 		it.Text, it.Status, it.CompletedAt = part.text, repo.ItemCompleted, &now
-		if part.kind == repo.ItemAgentMessage || (r.agent == nil && part.kind == repo.ItemReasoning) {
-			it.ContextStats, it.Usage, it.Native = &r.stats, r.usage, resp.Message.Native
-		}
+		r.carry(it, resp.Message.Native)
 		if _, err := r.rt.record(*it); err != nil {
 			return err
 		}
@@ -85,21 +84,32 @@ func (r *responseRecorder) finish(resp llm.ChatResponse) error {
 	return nil
 }
 
+// carry puts the response's context stats, usage and native message on the first of its items recorded:
+// the agent message, else the reasoning, else the first tool call, so each response is counted once.
+func (r *responseRecorder) carry(it *repo.ItemRow, native []byte) {
+	if r.carried {
+		return
+	}
+	r.carried = true
+	it.ContextStats, it.Usage, it.Native = &r.stats, r.usage, native
+}
+
 func (r *responseRecorder) fail(cause error) error {
 	if r.reasoning == nil && r.agent == nil {
 		now := time.Now().UTC()
-		if _, err := r.rt.record(repo.ItemRow{
+		it := repo.ItemRow{
 			ID: uuid.NewString(), TurnID: r.rt.Turn.ID, Type: repo.ItemError, Status: repo.ItemFailed,
-			ResponseID: r.id, ContextStats: &r.stats, Usage: r.usage,
-			Text: cause.Error(), Error: cause.Error(), StartedAt: now, CompletedAt: &now,
-		}); err != nil {
+			ResponseID: r.id, Text: cause.Error(), Error: cause.Error(), StartedAt: now, CompletedAt: &now,
+		}
+		r.carry(&it, nil)
+		if _, err := r.rt.record(it); err != nil {
 			return errors.Join(cause, err)
 		}
 		return cause
 	}
 	for _, part := range []responsePart{
-		{repo.ItemReasoning, r.reasoning, r.reasoningText.String()},
 		{repo.ItemAgentMessage, r.agent, r.agentText.String()},
+		{repo.ItemReasoning, r.reasoning, r.reasoningText.String()},
 	} {
 		if part.item == nil {
 			continue
@@ -107,18 +117,10 @@ func (r *responseRecorder) fail(cause error) error {
 		now := time.Now().UTC()
 		it := part.item
 		it.Text, it.Status, it.Error, it.CompletedAt = part.text, repo.ItemFailed, cause.Error(), &now
-		if part.kind == repo.ItemAgentMessage || (r.agent == nil && part.kind == repo.ItemReasoning) {
-			it.ContextStats, it.Usage = &r.stats, r.usage
-		}
+		r.carry(it, nil)
 		if _, err := r.rt.record(*it); err != nil {
 			return errors.Join(cause, err)
 		}
 	}
 	return cause
-}
-
-func (rt *Runtime) delta(it repo.ItemRow, text string) {
-	if rt.Delta != nil {
-		rt.Delta(it, text)
-	}
 }

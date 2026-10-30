@@ -16,12 +16,12 @@ import (
 )
 
 const (
-	MaxDescriptionRunes   = 1024
-	MaxInstructionRunes   = 20000
-	MaxInstructionLines   = 500
-	DefaultResourceRunes  = 12000
-	MaxResourceRunes      = 30000
-	MaxReadableResourceB  = 1 << 20
+	maxDescriptionRunes   = 1024
+	maxInstructionRunes   = 20000
+	maxInstructionLines   = 500
+	defaultResourceRunes  = 12000
+	maxResourceRunes      = 30000
+	maxReadableResourceB  = 1 << 20
 	maxListedResources    = 200
 	skillInstructionsFile = "SKILL.md"
 )
@@ -34,7 +34,6 @@ type Skill struct {
 	SourceFile   string     `json:"source_file"`
 	Version      string     `json:"version"`
 	Resources    []Resource `json:"resources"`
-	AllowedTools []string   `json:"allowed_tools"`
 	ByteSize     int64      `json:"byte_size"`
 	RootDir      string     `json:"-"`
 	SourcePath   string     `json:"-"`
@@ -75,7 +74,7 @@ func New(root string) (*Catalog, error) {
 	return &Catalog{root: filepath.Clean(root), byName: byName}, nil
 }
 
-func (c *Catalog) Names() []string {
+func (c *Catalog) names() []string {
 	names := make([]string, 0, len(c.byName))
 	for name := range c.byName {
 		names = append(names, name)
@@ -85,7 +84,7 @@ func (c *Catalog) Names() []string {
 }
 
 func (c *Catalog) All() []Skill {
-	names := c.Names()
+	names := c.names()
 	out := make([]Skill, 0, len(names))
 	for _, name := range names {
 		out = append(out, cloneSkill(c.byName[name]))
@@ -93,13 +92,13 @@ func (c *Catalog) All() []Skill {
 	return out
 }
 
-func (c *Catalog) Get(name string) (Skill, bool) {
+func (c *Catalog) lookup(name string) (Skill, bool) {
 	skill, ok := c.byName[strings.TrimSpace(name)]
 	return cloneSkill(skill), ok
 }
 
-func (c *Catalog) ReadResource(skillName, resourcePath string, offset, limit int) (ResourcePage, error) {
-	skill, ok := c.Get(skillName)
+func (c *Catalog) resourcePage(skillName, resourcePath string, offset, limit int) (ResourcePage, error) {
+	skill, ok := c.lookup(skillName)
 	if !ok {
 		return ResourcePage{}, fmt.Errorf("skills: no skill named %q", strings.TrimSpace(skillName))
 	}
@@ -121,10 +120,10 @@ func (c *Catalog) ReadResource(skillName, resourcePath string, offset, limit int
 		return ResourcePage{}, fmt.Errorf("skills: resource offset must be >= 0")
 	}
 	if limit <= 0 {
-		limit = DefaultResourceRunes
+		limit = defaultResourceRunes
 	}
-	if limit > MaxResourceRunes {
-		return ResourcePage{}, fmt.Errorf("skills: resource limit must be <= %d", MaxResourceRunes)
+	if limit > maxResourceRunes {
+		return ResourcePage{}, fmt.Errorf("skills: resource limit must be <= %d", maxResourceRunes)
 	}
 
 	fullPath, err := safeResourcePath(skill.RootDir, resourcePath)
@@ -138,8 +137,8 @@ func (c *Catalog) ReadResource(skillName, resourcePath string, offset, limit int
 	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 		return ResourcePage{}, fmt.Errorf("skills: resource %q must be a regular non-symlink file", resourcePath)
 	}
-	if info.Size() > MaxReadableResourceB {
-		return ResourcePage{}, fmt.Errorf("skills: resource %q exceeds %d bytes", resourcePath, MaxReadableResourceB)
+	if info.Size() > maxReadableResourceB {
+		return ResourcePage{}, fmt.Errorf("skills: resource %q exceeds %d bytes", resourcePath, maxReadableResourceB)
 	}
 	raw, err := os.ReadFile(fullPath)
 	if err != nil {
@@ -169,10 +168,9 @@ func (c *Catalog) ReadResource(skillName, resourcePath string, offset, limit int
 }
 
 type frontmatter struct {
-	Name         string         `yaml:"name"`
-	Description  string         `yaml:"description"`
-	AllowedTools string         `yaml:"allowed-tools"`
-	Metadata     map[string]any `yaml:"metadata"`
+	Name        string         `yaml:"name"`
+	Description string         `yaml:"description"`
+	Metadata    map[string]any `yaml:"metadata"`
 }
 
 func scanRoot(root string) (map[string]Skill, error) {
@@ -232,18 +230,18 @@ func parseSkill(root, skillDir, sourcePath string, byteSize int64) (Skill, error
 	if description == "" {
 		return Skill{}, fmt.Errorf("description is required")
 	}
-	if len([]rune(description)) > MaxDescriptionRunes {
-		return Skill{}, fmt.Errorf("description exceeds %d runes", MaxDescriptionRunes)
+	if len([]rune(description)) > maxDescriptionRunes {
+		return Skill{}, fmt.Errorf("description exceeds %d runes", maxDescriptionRunes)
 	}
 	instructions = strings.TrimSpace(instructions)
 	if instructions == "" {
 		return Skill{}, fmt.Errorf("instruction body is required")
 	}
-	if len([]rune(instructions)) > MaxInstructionRunes {
-		return Skill{}, fmt.Errorf("instruction body exceeds %d runes; move details into references/", MaxInstructionRunes)
+	if len([]rune(instructions)) > maxInstructionRunes {
+		return Skill{}, fmt.Errorf("instruction body exceeds %d runes; move details into references/", maxInstructionRunes)
 	}
-	if lines := strings.Count(instructions, "\n") + 1; lines > MaxInstructionLines {
-		return Skill{}, fmt.Errorf("instruction body has %d lines; maximum is %d", lines, MaxInstructionLines)
+	if lines := strings.Count(instructions, "\n") + 1; lines > maxInstructionLines {
+		return Skill{}, fmt.Errorf("instruction body has %d lines; maximum is %d", lines, maxInstructionLines)
 	}
 	resources, err := scanResources(skillDir)
 	if err != nil {
@@ -253,7 +251,6 @@ func parseSkill(root, skillDir, sourcePath string, byteSize int64) (Skill, error
 	return Skill{
 		Name:         name,
 		Description:  description,
-		AllowedTools: strings.Fields(fm.AllowedTools),
 		Version:      version(fm.Metadata),
 		RootDir:      skillDir,
 		SourcePath:   sourcePath,
@@ -378,7 +375,6 @@ func mustRelative(root, path string) string {
 }
 
 func cloneSkill(in Skill) Skill {
-	in.AllowedTools = append([]string(nil), in.AllowedTools...)
 	in.Resources = append([]Resource(nil), in.Resources...)
 	return in
 }

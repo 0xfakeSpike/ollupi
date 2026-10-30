@@ -122,7 +122,7 @@ func (s *Session) Invoke(ctx context.Context, tool string, arguments map[string]
 	t, ok := s.tools[tool]
 	if !ok {
 		err := fmt.Errorf("mcp: tool %q not exposed by MCP server %q", tool, s.name)
-		return tools.Result{Err: err}, err
+		return tools.Result{}, err
 	}
 	params := &mcp.CallToolParams{Name: t.Name, Arguments: arguments}
 	if c := tools.CallerOf(ctx); c.ThreadID != "" {
@@ -130,7 +130,7 @@ func (s *Session) Invoke(ctx context.Context, tool string, arguments map[string]
 	}
 	res, err := s.sess.CallTool(ctx, params)
 	if err != nil {
-		return tools.Result{Err: err}, err
+		return tools.Result{}, err
 	}
 	if res.IsError {
 		msg := joinTextContent(res.Content)
