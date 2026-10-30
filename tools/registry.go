@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"runtime/debug"
 	"slices"
 	"sort"
@@ -121,7 +121,7 @@ func (r *Registry) Invoke(ctx context.Context, tool string, arguments map[string
 func guard(tool string, run func() (Result, error)) (result Result) {
 	defer func() {
 		if p := recover(); p != nil {
-			log.Printf("tool registry: %s crashed: %v\n%s", tool, p, debug.Stack())
+			slog.Error("tool crashed", "tool", tool, "panic", fmt.Sprint(p), "stack", string(debug.Stack()))
 			result = Result{Err: fmt.Errorf("the tool crashed: %v", p)}.For(tool)
 		}
 	}()
@@ -190,7 +190,7 @@ func (r *Registry) Prepare(ctx context.Context, tool string, arguments map[strin
 	}
 	defer func() {
 		if p := recover(); p != nil {
-			log.Printf("tool registry: %s crashed while preparing: %v\n%s", tool, p, debug.Stack())
+			slog.Error("tool crashed while preparing", "tool", tool, "panic", fmt.Sprint(p), "stack", string(debug.Stack()))
 			prepared, err = nil, fmt.Errorf("the tool crashed while preparing: %v", p)
 		}
 	}()

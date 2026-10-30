@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -132,6 +133,7 @@ func (rt *Runtime) handleCall(ctx context.Context, it repo.ItemRow) (string, boo
 		if _, err := rt.record(it); err != nil {
 			return "", false, nil, err
 		}
+		slog.Info("approval requested", "thread", rt.Caller.ThreadID, "turn", rt.Turn.ID, "item", it.ID, "tool", it.Tool)
 		return "", true, nil, nil
 	}
 	return "", false, &job{it: it, args: args}, nil

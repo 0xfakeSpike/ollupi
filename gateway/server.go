@@ -2,10 +2,9 @@ package gateway
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"runtime/debug"
 	"strings"
@@ -54,7 +53,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: s.origins})
 	if err != nil {
-		log.Printf("gateway: accept: %v", err)
+		slog.Warn("client not accepted", "err", err)
 		return
 	}
 	ws.SetReadLimit(maxMessageBytes)
@@ -64,8 +63,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.client = c
 	s.mu.Unlock()
 	if previous != nil {
+		slog.Info("client replaced by a newer connection")
 		go previous.ws.Close(websocket.StatusPolicyViolation, "replaced by a newer connection")
 	}
+	slog.Info("client connected", "origin", r.Header.Get("Origin"))
 	defer func() {
 		s.mu.Lock()
 		if s.client == c {
@@ -79,9 +80,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	err = c.rpc.Serve(context.Background(), c)
 	switch status := websocket.CloseStatus(err); {
 	case status == websocket.StatusNormalClosure || status == websocket.StatusGoingAway || r.Context().Err() != nil:
+		slog.Info("client disconnected")
 		ws.Close(websocket.StatusNormalClosure, "")
 	default:
-		log.Printf("gateway: connection closed: %v", err)
+		slog.Warn("client connection failed", "err", err)
 		ws.Close(websocket.StatusInternalError, "connection error")
 	}
 }
@@ -128,7 +130,7 @@ func (c *conn) isInitialized() bool {
 
 func (c *conn) Notify(method string, _ json.RawMessage) {
 	if _, ok := protocol.clientNotifications[method]; !ok {
-		log.Printf("gateway: ignored client notification %q", method)
+		slog.Warn("client notification ignored", "method", method)
 	}
 }
 
@@ -230,11 +232,11 @@ func (c *conn) request(threadID string, it repo.ItemRow) {
 		delete(c.asked, it.ID)
 		c.mu.Unlock()
 		if rerr != nil {
-			log.Printf("gateway: client refused request for item %s: %v", it.ID, rerr)
+			slog.Warn("client refused a request", "item", it.ID, "err", rerr)
 			return
 		}
 		if err := c.resolve(threadID, it, result); err != nil {
-			log.Printf("gateway: response for item %s: %v", it.ID, err)
+			slog.Warn("client response not applied", "item", it.ID, "err", err)
 			c.rpc.Notify(notifyError, ErrorNotification{ThreadID: threadID, TurnID: it.TurnID, ItemID: it.ID, Message: err.Error()})
 			if !errors.Is(err, agent.ErrNoSuchRequest) {
 				c.request(threadID, it)
@@ -244,7 +246,7 @@ func (c *conn) request(threadID string, it repo.ItemRow) {
 	if !it.WaitsForApproval() {
 		req, err := userinput.Decode(it.Await.Request)
 		if err != nil {
-			log.Printf("gateway: item %s: %v", it.ID, err)
+			slog.Error("request not sent", "item", it.ID, "err", err)
 			return
 		}
 		c.rpc.Request(requestUserInput, UserInputRequestParams{ThreadID: threadID, TurnID: it.TurnID, ItemID: it.ID, Questions: nonNil(req.Questions)}, answered)
@@ -293,12 +295,8 @@ func agentInput(input []UserInput) (agent.Input, error) {
 		switch part.Type {
 		case "text":
 			texts = append(texts, part.Text)
-		case "image", "file":
-			data, err := base64.StdEncoding.DecodeString(part.Data)
-			if err != nil {
-				return agent.Input{}, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "the data of %s %q is not base64: %v", part.Type, part.Name, err)
-			}
-			in.Attachments = append(in.Attachments, agent.AttachmentInput{Name: part.Name, MimeType: part.MimeType, Data: data})
+		case "file":
+			in.Attachments = append(in.Attachments, agent.AttachmentInput{Path: part.Path, Name: part.Name, MimeType: part.MimeType})
 		default:
 			return agent.Input{}, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "input type %q is not supported", part.Type)
 		}

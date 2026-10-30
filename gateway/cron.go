@@ -2,7 +2,7 @@ package gateway
 
 import (
 	"errors"
-	"log"
+	"log/slog"
 
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/repo"
@@ -41,7 +41,7 @@ func (c *conn) cronChanged(id, threadID string) {
 	case err == nil:
 		n.Job = &job
 	case !errors.Is(err, repo.ErrNotFound):
-		log.Printf("gateway: cron task %s changed but cannot be read: %v", id, err)
+		slog.Error("changed cron task not readable", "job", id, "err", err)
 		return
 	}
 	c.rpc.Notify(notifyCronChanged, n)

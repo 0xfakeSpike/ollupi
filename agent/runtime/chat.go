@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -39,8 +40,10 @@ func (rt *Runtime) respond(ctx context.Context, choice llm.ToolChoice) (llm.Chat
 	}
 	call := rt.modelCalls() + 1
 	r := newResponseRecorder(rt, prompt.Stats)
+	started := time.Now()
 	resp, err := rt.send(ctx, prompt, choice, r.delta)
 	r.usage = responseUsage(resp)
+	rt.logModelCall("model call", started, resp, err)
 	if err == nil {
 		err = checkResponse(resp, choice)
 	}
@@ -88,8 +91,10 @@ func (rt *Runtime) compact(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	started := time.Now()
 	resp, err := rt.send(ctx, prompt, llm.ToolChoiceNone, nil)
 	it.Usage = responseUsage(resp)
+	rt.logModelCall("context compaction", started, resp, err)
 	summary := strings.TrimSpace(resp.Message.Content)
 	switch {
 	case err != nil:
@@ -178,6 +183,17 @@ func (rt *Runtime) loadParts(parts []llm.ContentPart, mask func(string) string) 
 		}
 	}
 	return out, nil
+}
+
+// logModelCall records one model request: its model, duration, tokens and how it ended, never its text.
+func (rt *Runtime) logModelCall(msg string, started time.Time, resp llm.ChatResponse, err error) {
+	attrs := []any{"thread", rt.Caller.ThreadID, "turn", rt.Turn.ID, "model", rt.Turn.Model.Name, "ms", time.Since(started).Milliseconds()}
+	if err != nil {
+		slog.Warn(msg+" failed", append(attrs, "err", err)...)
+		return
+	}
+	slog.Info(msg, append(attrs, "input", resp.Usage.PromptTokens, "cached", resp.Usage.CachedPromptTokens,
+		"output", resp.Usage.CompletionTokens, "finish", resp.FinishReason, "toolCalls", len(resp.Message.ToolCalls))...)
 }
 
 func responseUsage(resp llm.ChatResponse) *repo.Usage {

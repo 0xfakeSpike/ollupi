@@ -328,8 +328,16 @@ func TestTrafficMatchesContract(t *testing.T) {
 
 	var pic bytes.Buffer
 	png.Encode(&pic, image.NewRGBA(image.Rect(0, 0, 2, 2)))
-	pictured := []UserInput{{Type: "text", Text: "what is this"}, {Type: "image", Name: "dot.png", Data: base64.StdEncoding.EncodeToString(pic.Bytes())},
-		{Type: "file", Name: "notes.md", Data: base64.StdEncoding.EncodeToString([]byte("# Notes\n"))}}
+	files := t.TempDir()
+	dot, notes := filepath.Join(files, "dot.png"), filepath.Join(files, "notes.md")
+	if err := os.WriteFile(dot, pic.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(notes, []byte("# Notes\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c.refused("turn/start", TurnStartParams{ThreadID: general.Thread.ID, Input: []UserInput{{Type: "file", Path: "dot.png"}}}, jsonrpc.CodeInvalidParams, "not absolute")
+	pictured := []UserInput{{Type: "text", Text: "what is this"}, {Type: "file", Path: dot}, {Type: "file", Path: notes, Name: "Notes.md"}}
 	c.refused("turn/start", TurnStartParams{ThreadID: general.Thread.ID, Input: pictured}, jsonrpc.CodeInvalidParams, "does not accept images")
 	var shown ThreadResult
 	c.call("thread/start", ThreadStartParams{}, &shown)
@@ -350,12 +358,12 @@ func TestTrafficMatchesContract(t *testing.T) {
 	for _, it := range page2.Items {
 		atts = append(atts, it.Attachments...)
 	}
-	if len(atts) != 2 || atts[0].Kind != repo.AttachmentImage || atts[0].Width != 2 || atts[1].Kind != repo.AttachmentFile {
+	if len(atts) != 2 || atts[0].Kind != repo.AttachmentImage || atts[0].Width != 2 || atts[0].Name != "dot.png" || atts[1].Kind != repo.AttachmentFile || atts[1].Name != "Notes.md" {
 		t.Fatalf("attachments %+v", atts)
 	}
 	var read AttachmentReadResult
 	c.call("attachment/read", AttachmentReadParams{ThreadID: shown.Thread.ID, AttachmentID: atts[0].ID}, &read)
-	if read.Data != pictured[1].Data || read.Attachment.MimeType != "image/png" {
+	if read.Data != base64.StdEncoding.EncodeToString(pic.Bytes()) || read.Attachment.MimeType != "image/png" {
 		t.Errorf("attachment/read returned %+v", read.Attachment)
 	}
 	c.call("thread/delete", ThreadDeleteParams{ThreadID: shown.Thread.ID}, nil)

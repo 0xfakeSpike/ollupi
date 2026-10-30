@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
@@ -150,12 +152,16 @@ func (rt *Runtime) runJobs(ctx context.Context, jobs []job) ([]tools.Result, err
 
 func (rt *Runtime) execute(ctx context.Context, j job) tools.Result {
 	it := j.it
+	started := time.Now()
 	result := rt.Registry.InvokePrepared(ctx, it.Tool, j.args, it.PreparedExecution)
 	if result.Err == nil {
 		if err := rt.Window.CheckArtifacts(result.Artifacts); err != nil {
 			result = tools.Result{Err: fmt.Errorf("apply tool context: %w", err)}.For(it.Tool)
 		}
 	}
+	// The error stays out of the log with the output: either can quote the files and commands it touched.
+	slog.Info("tool call", "thread", rt.Caller.ThreadID, "turn", rt.Turn.ID, "item", it.ID, "tool", it.Tool,
+		"ms", time.Since(started).Milliseconds(), "failed", result.Err != nil, "awaits", result.Await != nil)
 	return result
 }
 

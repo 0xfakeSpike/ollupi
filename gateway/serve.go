@@ -5,7 +5,7 @@ import (
 	"crypto/subtle"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"slices"
@@ -62,10 +62,10 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Printf("gateway shutdown: %v", err)
+		slog.Warn("gateway shutdown", "err", err)
 	}
 	if err := <-served; !errors.Is(err, http.ErrServerClosed) {
-		log.Printf("gateway: %v", err)
+		slog.Error("gateway stopped", "err", err)
 	}
 	s.served.Wait()
 	return nil

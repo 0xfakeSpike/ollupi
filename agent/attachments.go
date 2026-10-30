@@ -8,6 +8,7 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -28,10 +29,11 @@ const (
 	defaultImageToken = 1600
 )
 
+// AttachmentInput is a file on this machine sent with a message; the attachment is a copy taken when it is sent.
 type AttachmentInput struct {
+	Path     string
 	Name     string
 	MimeType string
-	Data     []byte
 }
 
 var imageTypes = map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}
@@ -48,54 +50,121 @@ func (a *Agent) storeAttachments(threadID string, ins []AttachmentInput) ([]repo
 	}
 	out := make([]repo.Attachment, 0, len(ins))
 	for _, in := range ins {
-		att, err := describe(in)
+		att, err := a.storeAttachment(threadID, in)
 		if err != nil {
 			a.removeAttachments(out)
-			return nil, fmt.Errorf("agent: %w: %v", ErrInvalidMessage, err)
-		}
-		att.File = threadID + "/" + att.File
-		path := filepath.Join(a.cfg.AttachmentsDir, filepath.FromSlash(att.File))
-		if err := os.MkdirAll(filepath.Dir(path), 0o700); err == nil {
-			err = os.WriteFile(path, in.Data, 0o600)
-		}
-		if err != nil {
-			a.removeAttachments(out)
-			return nil, fmt.Errorf("agent: store attachment %s: %w", att.Name, err)
+			return nil, err
 		}
 		out = append(out, att)
 	}
 	return out, nil
 }
 
-func describe(in AttachmentInput) (repo.Attachment, error) {
-	mime := strings.ToLower(strings.TrimSpace(in.MimeType))
-	if mime == "" {
-		mime, _, _ = strings.Cut(http.DetectContentType(in.Data), ";")
+func (a *Agent) storeAttachment(threadID string, in AttachmentInput) (repo.Attachment, error) {
+	if !filepath.IsAbs(in.Path) {
+		return repo.Attachment{}, fmt.Errorf("agent: %w: attachment path %q is not absolute", ErrInvalidMessage, in.Path)
 	}
-	att := repo.Attachment{ID: uuid.NewString(), Name: attachmentName(in.Name), MimeType: mime, Size: int64(len(in.Data))}
-	if len(in.Data) == 0 {
-		return repo.Attachment{}, fmt.Errorf("attachment %q is empty", att.Name)
+	src, err := os.Open(in.Path)
+	if err != nil {
+		return repo.Attachment{}, fmt.Errorf("agent: %w: attachment %s cannot be read: %v", ErrInvalidMessage, in.Path, err)
+	}
+	defer src.Close()
+	info, err := src.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		return repo.Attachment{}, fmt.Errorf("agent: %w: attachment %s is not a file", ErrInvalidMessage, in.Path)
+	}
+	name := in.Name
+	if strings.TrimSpace(name) == "" {
+		name = in.Path
+	}
+	att, err := describe(src, info.Size(), attachmentName(name), in.MimeType)
+	if err != nil {
+		return repo.Attachment{}, fmt.Errorf("agent: %w: %v", ErrInvalidMessage, err)
+	}
+	att.File = threadID + "/" + att.File
+	if err := a.copyAttachment(src, att); err != nil {
+		return repo.Attachment{}, fmt.Errorf("agent: store attachment %s: %w", att.Name, err)
+	}
+	return att, nil
+}
+
+// copyAttachment copies exactly the bytes describe measured, so a file that changes meanwhile is refused.
+func (a *Agent) copyAttachment(src io.ReadSeeker, att repo.Attachment) error {
+	if _, err := src.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	path := filepath.Join(a.cfg.AttachmentsDir, filepath.FromSlash(att.File))
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	dst, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	n, err := io.Copy(dst, io.LimitReader(src, att.Size+1))
+	if cerr := dst.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil && n != att.Size {
+		err = fmt.Errorf("the file changed while it was being attached")
+	}
+	if err != nil {
+		os.Remove(path)
+	}
+	return err
+}
+
+// describe classifies a file as an image or a text file from its first bytes and checks it against the limits
+// of its kind before reading more of it.
+func describe(src io.ReadSeeker, size int64, name, mime string) (repo.Attachment, error) {
+	head := make([]byte, 512)
+	n, err := io.ReadFull(src, head)
+	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
+		return repo.Attachment{}, fmt.Errorf("attachment %q cannot be read: %v", name, err)
+	}
+	head = head[:n]
+	mime = strings.ToLower(strings.TrimSpace(mime))
+	if mime == "" {
+		mime, _, _ = strings.Cut(http.DetectContentType(head), ";")
+	}
+	att := repo.Attachment{ID: uuid.NewString(), Name: name, MimeType: mime, Size: size}
+	if size == 0 {
+		return repo.Attachment{}, fmt.Errorf("attachment %q is empty", name)
 	}
 	if ext, ok := imageTypes[mime]; ok {
-		if len(in.Data) > maxImageBytes {
-			return repo.Attachment{}, fmt.Errorf("image %q has %d bytes; at most %d are accepted", att.Name, len(in.Data), maxImageBytes)
+		if size > maxImageBytes {
+			return repo.Attachment{}, fmt.Errorf("image %q has %d bytes; at most %d are accepted", name, size, maxImageBytes)
 		}
 		att.Kind, att.File = repo.AttachmentImage, att.ID+ext
-		att.Width, att.Height = imageSize(in.Data)
+		if _, err := src.Seek(0, io.SeekStart); err != nil {
+			return repo.Attachment{}, err
+		}
+		att.Width, att.Height = imageSize(src, head)
 		att.Tokens = imageTokens(att.Width, att.Height)
 		return att, nil
 	}
-	if !utf8.Valid(in.Data) || bytes.IndexByte(in.Data, 0) >= 0 {
-		return repo.Attachment{}, fmt.Errorf("%q (%s) is neither an image (PNG, JPEG, GIF, WebP) nor a text file", att.Name, mime)
+	notText := fmt.Errorf("%q (%s) is neither an image (PNG, JPEG, GIF, WebP) nor a text file", name, mime)
+	if bytes.IndexByte(head, 0) >= 0 {
+		return repo.Attachment{}, notText
 	}
-	if len(in.Data) > maxTextFileBytes {
-		return repo.Attachment{}, fmt.Errorf("text file %q has %d bytes; at most %d are accepted", att.Name, len(in.Data), maxTextFileBytes)
+	if size > maxTextFileBytes {
+		return repo.Attachment{}, fmt.Errorf("text file %q has %d bytes; at most %d are accepted", name, size, maxTextFileBytes)
+	}
+	if _, err := src.Seek(0, io.SeekStart); err != nil {
+		return repo.Attachment{}, err
+	}
+	data, err := io.ReadAll(io.LimitReader(src, maxTextFileBytes+1))
+	if err != nil {
+		return repo.Attachment{}, fmt.Errorf("attachment %q cannot be read: %v", name, err)
+	}
+	if !utf8.Valid(data) || bytes.IndexByte(data, 0) >= 0 {
+		return repo.Attachment{}, notText
 	}
 	if !strings.HasPrefix(mime, "text/") && mime != "application/json" {
 		att.MimeType = "text/plain"
 	}
 	att.Kind, att.File = repo.AttachmentFile, att.ID+".txt"
-	att.Tokens = llm.EstimateTokens(string(in.Data)) + llm.EstimateTokens(att.Name) + 8
+	att.Tokens = llm.EstimateTokens(string(data)) + llm.EstimateTokens(name) + 8
 	return att, nil
 }
 
@@ -107,11 +176,12 @@ func attachmentName(name string) string {
 	return clipRunes(name, 120)
 }
 
-func imageSize(data []byte) (int, int) {
-	if cfg, _, err := image.DecodeConfig(bytes.NewReader(data)); err == nil {
+// imageSize reads an image's dimensions from its header; head, its first bytes, is enough for WebP.
+func imageSize(r io.Reader, head []byte) (int, int) {
+	if cfg, _, err := image.DecodeConfig(r); err == nil {
 		return cfg.Width, cfg.Height
 	}
-	return webpSize(data)
+	return webpSize(head)
 }
 
 func webpSize(b []byte) (int, int) {
