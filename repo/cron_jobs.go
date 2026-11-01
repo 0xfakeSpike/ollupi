@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -14,6 +15,8 @@ type CronJobRow struct {
 	Thread    *ThreadRow `gorm:"constraint:OnDelete:CASCADE" json:"-"`
 	Spec      string     `gorm:"not null" json:"spec"`
 	Prompt    string     `gorm:"not null" json:"prompt"`
+	Times     *int       `json:"times,omitempty"`
+	Runs      int        `gorm:"not null;default:0" json:"runs"`
 	Paused    bool       `gorm:"not null;index:cron_jobs_due,priority:1" json:"paused"`
 	NextRunAt time.Time  `gorm:"not null;index:cron_jobs_due,priority:2" json:"nextRunAt"`
 	CreatedAt time.Time  `gorm:"not null;autoCreateTime:false" json:"createdAt"`
@@ -120,4 +123,27 @@ func (d *DB) UpdateCronJob(threadID, name string, change func(CronJobRow) (*Cron
 
 func (d *DB) SetCronJobNextRun(id string, due, next time.Time) error {
 	return d.gorm.Model(&CronJobRow{}).Where("id = ? AND next_run_at = ?", id, due.UTC()).Update("next_run_at", next.UTC()).Error
+}
+
+// CountCronJobRun records the run due at due: the job runs next at next, or
+// is deleted when that was its last run. It reports whether it was deleted.
+func (d *DB) CountCronJobRun(id string, due, next time.Time) (bool, error) {
+	ended := false
+	err := d.Tx(func(tx *DB) error {
+		var row CronJobRow
+		err := tx.gorm.Where("id = ? AND next_run_at = ?", id, due.UTC()).Take(&row).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if row.Times != nil && row.Runs+1 >= *row.Times {
+			ended = true
+			return tx.gorm.Delete(&CronJobRow{}, "id = ?", id).Error
+		}
+		return tx.gorm.Model(&CronJobRow{}).Where("id = ?", id).
+			Updates(map[string]any{"runs": row.Runs + 1, "next_run_at": next.UTC()}).Error
+	})
+	return ended, err
 }
