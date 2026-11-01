@@ -147,6 +147,9 @@ func burst(args []string) {
 	}
 	srv := httptest.NewServer(p)
 	defer srv.Close()
+	// The client keeps two idle connections a host by default; over plain HTTP/1.1 to the fake provider, thousands of
+	// calls in flight would then open and close a connection each, as a real provider's HTTP/2 connection does not.
+	http.DefaultTransport.(*http.Transport).MaxIdleConnsPerHost = *calls
 	dir, err := os.MkdirTemp("", "ollupi-bench-")
 	if err != nil {
 		log.Fatal(err)
