@@ -2686,7 +2686,7 @@
         },
         "description": {
           "type": "string",
-          "description": "One short sentence explaining the impact of this option.",
+          "description": "One short sentence explaining the impact or tradeoff of this option.",
           "maxLength": 200
         }
       },
@@ -2720,7 +2720,7 @@
           "items": {
             "$ref": "#/$defs/UserInputOption"
           },
-          "description": "Optional mutually exclusive choices. The user can always answer in their own words instead.",
+          "description": "Mutually exclusive likely answers, the recommended one first with \" (Recommended)\" after its label. Leave out an \"Other\" option: the user can always answer in their own words. Omit options only when no likely answers exist.",
           "maxItems": 4
         }
       },
@@ -2739,9 +2739,9 @@
           "items": {
             "$ref": "#/$defs/UserInputQuestion"
           },
-          "description": "Questions to show the user. Prefer 1 and do not exceed 3.",
+          "description": "Questions to show the user. Prefer 1 and do not exceed 4.",
           "minItems": 1,
-          "maxItems": 3
+          "maxItems": 4
         }
       },
       "required": [
