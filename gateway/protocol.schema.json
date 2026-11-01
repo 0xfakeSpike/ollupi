@@ -447,6 +447,12 @@
         },
         "prompt": {
           "type": "string"
+        },
+        "times": {
+          "type": [
+            "null",
+            "integer"
+          ]
         }
       },
       "required": [
@@ -491,6 +497,15 @@
         "prompt": {
           "type": "string"
         },
+        "times": {
+          "type": [
+            "null",
+            "integer"
+          ]
+        },
+        "runs": {
+          "type": "integer"
+        },
         "paused": {
           "type": "boolean"
         },
@@ -509,6 +524,7 @@
         "name",
         "spec",
         "prompt",
+        "runs",
         "paused",
         "nextRunAt",
         "createdAt"
@@ -532,6 +548,15 @@
         },
         "prompt": {
           "type": "string"
+        },
+        "times": {
+          "type": [
+            "null",
+            "integer"
+          ]
+        },
+        "runs": {
+          "type": "integer"
         },
         "paused": {
           "type": "boolean"
@@ -573,6 +598,7 @@
         "name",
         "spec",
         "prompt",
+        "runs",
         "paused",
         "nextRunAt",
         "createdAt",

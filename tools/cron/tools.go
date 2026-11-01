@@ -18,18 +18,20 @@ const (
 )
 
 func (j *Jobs) Name() (string, string) {
-	return ProviderName, "Scheduled tasks: messages sent to this conversation later, on a cron schedule."
+	return ProviderName, "Scheduled tasks: messages sent to this conversation later, on a cron schedule, repeatedly or a set number of times."
 }
 
 type CreateArgs struct {
 	Name   string `json:"name" jsonschema:"Short task name, unique in this conversation, e.g. daily-market-report."`
 	Spec   string `json:"spec" jsonschema:"5-field cron expression (minute hour day-of-month month day-of-week), or @hourly/@daily/@weekly/@monthly/@yearly."`
 	Prompt string `json:"prompt" jsonschema:"The message sent at each run, as the user would write it."`
+	Times  *int   `json:"times,omitempty" jsonschema:"How many times the task runs before it ends. Leave it out to repeat until deleted. For a task that runs once, give a spec naming its date and time (minute hour day-of-month month *) and times 1."`
 }
 
 func (CreateArgs) Constrain(s *jsonschema.Schema) {
 	s.Properties["name"].Pattern = namePattern.String()
 	s.Properties["prompt"].MinLength, s.Properties["prompt"].MaxLength = jsonschema.Ptr(1), jsonschema.Ptr(maxPromptRunes)
+	s.Properties["times"].Minimum = jsonschema.Ptr(1.0)
 }
 
 type PauseArgs struct {
@@ -59,7 +61,8 @@ func (j *Jobs) ToolList(context.Context) ([]*tools.Spec, error) {
 			Annotations: &tools.Annotations{DestructiveHint: tools.Hint(false), OpenWorldHint: tools.Hint(false)},
 			Description: fmt.Sprintf("Schedule a task in this conversation: at each time the cron schedule names (timezone %s), "+
 				"prompt is sent here as a new message and you work on it with this conversation's history, project, and settings. "+
-				"If a turn is still running then, the message waits as the next turn.",
+				"If a turn is still running then, the message waits as the next turn. "+
+				"With times, the task ends after that many runs; a spec has no year, so a one-time task must name a date still ahead.",
 				j.location),
 			InputSchema: tools.InputSchema[CreateArgs](),
 		},
@@ -98,7 +101,7 @@ func (j *Jobs) Invoke(ctx context.Context, tool string, arguments map[string]any
 		if err != nil {
 			return tools.Result{}, err
 		}
-		job, err := j.Create(caller.ThreadID, args.Name, args.Spec, args.Prompt)
+		job, err := j.Create(caller.ThreadID, args.Name, args.Spec, args.Prompt, args.Times)
 		if err != nil {
 			return tools.Result{}, err
 		}

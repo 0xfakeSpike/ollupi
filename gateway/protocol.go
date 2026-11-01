@@ -384,6 +384,7 @@ type CronCreateParams struct {
 	Name     string `json:"name"`
 	Spec     string `json:"spec"`
 	Prompt   string `json:"prompt"`
+	Times    *int   `json:"times,omitempty"`
 }
 
 type CronPauseParams struct {

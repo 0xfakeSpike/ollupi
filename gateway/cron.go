@@ -52,7 +52,7 @@ func (c *conn) cronCreate(p CronCreateParams) (repo.CronJobRow, func(), error) {
 	if err != nil {
 		return repo.CronJobRow{}, nil, err
 	}
-	row, err := jobs.Create(p.ThreadID, p.Name, p.Spec, p.Prompt)
+	row, err := jobs.Create(p.ThreadID, p.Name, p.Spec, p.Prompt, p.Times)
 	return row, nil, err
 }
 

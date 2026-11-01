@@ -90,7 +90,17 @@ func (j *Jobs) next(spec string, after time.Time) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("cron: spec %q has no next run", spec)
 }
 
-func (j *Jobs) Create(threadID, name, spec, prompt string) (repo.CronJobRow, error) {
+// lastRun refuses a job's last run when it is nearly a year away. A cron spec
+// has no year, so a one-time task whose date has passed would otherwise run
+// on that date next year.
+func lastRun(job repo.CronJobRow, next, now time.Time) error {
+	if job.Times != nil && *job.Times-job.Runs == 1 && next.After(now.AddDate(1, -1, 0)) {
+		return fmt.Errorf("cron: %w: the time of task %q's last run has passed; a spec has no year, so it would run next year", ErrInvalidJob, job.Name)
+	}
+	return nil
+}
+
+func (j *Jobs) Create(threadID, name, spec, prompt string, times *int) (repo.CronJobRow, error) {
 	name, spec, prompt = strings.TrimSpace(name), strings.TrimSpace(spec), strings.TrimSpace(prompt)
 	if threadID == "" {
 		return repo.CronJobRow{}, fmt.Errorf("cron: %w: a task belongs to a conversation", ErrInvalidJob)
@@ -101,12 +111,18 @@ func (j *Jobs) Create(threadID, name, spec, prompt string) (repo.CronJobRow, err
 	if prompt == "" || len([]rune(prompt)) > maxPromptRunes {
 		return repo.CronJobRow{}, fmt.Errorf("cron: %w: prompt must be 1 to %d characters", ErrInvalidJob, maxPromptRunes)
 	}
+	if times != nil && *times < 1 {
+		return repo.CronJobRow{}, fmt.Errorf("cron: %w: times must be at least 1", ErrInvalidJob)
+	}
 	now := time.Now().UTC()
 	next, err := j.next(spec, now)
 	if err != nil {
 		return repo.CronJobRow{}, err
 	}
-	job := repo.CronJobRow{ID: uuid.NewString(), ThreadID: threadID, Name: name, Spec: spec, Prompt: prompt, NextRunAt: next, CreatedAt: now}
+	job := repo.CronJobRow{ID: uuid.NewString(), ThreadID: threadID, Name: name, Spec: spec, Prompt: prompt, Times: times, NextRunAt: next, CreatedAt: now}
+	if err := lastRun(job, next, now); err != nil {
+		return repo.CronJobRow{}, err
+	}
 	if err := j.db.CreateCronJob(job, maxJobs); err != nil {
 		return repo.CronJobRow{}, err
 	}
@@ -122,8 +138,12 @@ func (j *Jobs) SetPaused(threadID, name string, paused bool) (repo.CronJobRow, e
 	return j.change(threadID, name, func(job repo.CronJobRow) (*repo.CronJobRow, error) {
 		job.Paused = paused
 		if !paused {
-			next, err := j.next(job.Spec, time.Now().UTC())
+			now := time.Now().UTC()
+			next, err := j.next(job.Spec, now)
 			if err != nil {
+				return nil, err
+			}
+			if err := lastRun(job, next, now); err != nil {
 				return nil, err
 			}
 			job.NextRunAt = next
@@ -132,12 +152,19 @@ func (j *Jobs) SetPaused(threadID, name string, paused bool) (repo.CronJobRow, e
 	})
 }
 
-func (j *Jobs) sent(job repo.CronJobRow, now time.Time) error {
+// ran moves job past the run due now. A run that was sent, or failed to
+// start, counts toward its times; one skipped does not.
+func (j *Jobs) ran(job repo.CronJobRow, now time.Time, counted bool) error {
 	next, err := j.next(job.Spec, now)
 	if err != nil {
 		return err
 	}
-	if err := j.db.SetCronJobNextRun(job.ID, job.NextRunAt, next); err != nil {
+	if counted {
+		_, err = j.db.CountCronJobRun(job.ID, job.NextRunAt, next)
+	} else {
+		err = j.db.SetCronJobNextRun(job.ID, job.NextRunAt, next)
+	}
+	if err != nil {
 		return err
 	}
 	j.changed(job.ID, job.ThreadID)
@@ -194,8 +221,10 @@ func (j *Jobs) sendDue(ctx context.Context, send func(threadID, text, jobID stri
 			slog.Info("cron task sent", "job", job.ID, "thread", job.ThreadID)
 		} else if ctx.Err() == nil {
 			slog.Warn("cron task not started", "job", job.ID, "thread", job.ThreadID, "err", err)
+		} else {
+			return
 		}
-		if err := j.sent(job, now); err != nil {
+		if err := j.ran(job, now, !waiting); err != nil {
 			slog.Error("cron task run not recorded", "job", job.ID, "err", err)
 		}
 	}
