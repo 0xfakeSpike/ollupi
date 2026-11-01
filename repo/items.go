@@ -20,32 +20,33 @@ type ItemRow struct {
 	ThreadID string     `gorm:"not null;uniqueIndex:items_thread_seq,priority:1;index:items_compactions,priority:1,where:type = 'contextCompaction' AND status = 'completed';index:items_carried,priority:1,where:type = 'userMessage' OR (type = 'toolCall' AND (approval ->> '$.decision' = 'acceptForSession' OR (status = 'completed' AND (tool = 'load_tools' OR result -> '$.artifacts' IS NOT NULL))))" json:"-"`
 	Thread   *ThreadRow `gorm:"constraint:OnDelete:CASCADE" json:"-"`
 	// items_turn finds a turn's items by type and status: its open tool calls, its messages.
-	TurnID       string        `gorm:"not null;index:items_turn,priority:1" json:"turnId"`
-	Turn         *TurnRow      `gorm:"constraint:OnDelete:CASCADE" json:"-"`
-	Seq          int           `gorm:"not null;uniqueIndex:items_thread_seq,priority:2;index:items_turn,priority:4;index:items_compactions,priority:2;index:items_carried,priority:2" json:"seq"`
-	Type         ItemType      `gorm:"not null;index:items_turn,priority:2" json:"type"`
-	Status       ItemStatus    `gorm:"not null;index:items_turn,priority:3" json:"status"`
-	Text         string        `gorm:"not null;default:''" json:"text,omitempty"`
-	ResponseID   string        `gorm:"not null;default:''" json:"responseId,omitempty"`
-	ContextStats *ContextStats `gorm:"serializer:json" json:"contextStats,omitempty"`
-	Usage        *Usage        `gorm:"serializer:json" json:"usage,omitempty"`
+	TurnID       string             `gorm:"not null;index:items_turn,priority:1" json:"turnId"`
+	Turn         *TurnRow           `gorm:"constraint:OnDelete:CASCADE" json:"-"`
+	Seq          int                `gorm:"not null;uniqueIndex:items_thread_seq,priority:2;index:items_turn,priority:4;index:items_compactions,priority:2;index:items_carried,priority:2" json:"seq"`
+	Type         ItemType           `gorm:"not null;index:items_turn,priority:2" json:"type"`
+	Status       ItemStatus         `gorm:"not null;index:items_turn,priority:3" json:"status"`
+	CallID       string             `gorm:"not null;default:''" json:"callId,omitempty"`
+	Tool         string             `gorm:"not null;default:''" json:"tool,omitempty"`
+	Server       string             `gorm:"not null;default:''" json:"server,omitempty"`
+	ResponseID   string             `gorm:"not null;default:''" json:"responseId,omitempty"`
+	Error        string             `gorm:"not null;default:''" json:"error,omitempty"`
+	StartedAt    time.Time          `gorm:"not null" json:"startedAt"`
+	CompletedAt  *time.Time         `json:"completedAt,omitempty"`
+	Approval     *Approval          `gorm:"serializer:json" json:"approval,omitempty"`
+	Await        *tools.Await       `gorm:"serializer:json" json:"await,omitempty"`
+	Annotations  *tools.Annotations `gorm:"serializer:json" json:"annotations,omitempty"`
+	Usage        *Usage             `gorm:"serializer:json" json:"usage,omitempty"`
+	ContextStats *ContextStats      `gorm:"serializer:json" json:"contextStats,omitempty"`
+	Memory       []MemoryReference  `gorm:"serializer:json" json:"memory,omitempty"`
+	Attachments  []Attachment       `gorm:"serializer:json" json:"attachments,omitempty"`
+	// The columns that can be large come last, so reading the ones above does not walk their overflow pages.
+	Text              string          `gorm:"not null;default:''" json:"text,omitempty"`
+	Arguments         string          `gorm:"not null;default:''" json:"arguments,omitempty"`
+	PreparedExecution *tools.Prepared `gorm:"serializer:json" json:"preparedExecution,omitempty"`
+	Result            *ToolResult     `gorm:"serializer:json" json:"result,omitempty"`
 	// Native is the model provider's own record of the response this item belongs to, kept on the item that
 	// carries the response's usage and replayed as is to the same kind of provider.
-	Native            []byte             `json:"-"`
-	Memory            []MemoryReference  `gorm:"serializer:json" json:"memory,omitempty"`
-	Attachments       []Attachment       `gorm:"serializer:json" json:"attachments,omitempty"`
-	CallID            string             `gorm:"not null;default:''" json:"callId,omitempty"`
-	Tool              string             `gorm:"not null;default:''" json:"tool,omitempty"`
-	Arguments         string             `gorm:"not null;default:''" json:"arguments,omitempty"`
-	Server            string             `gorm:"not null;default:''" json:"server,omitempty"`
-	Annotations       *tools.Annotations `gorm:"serializer:json" json:"annotations,omitempty"`
-	Approval          *Approval          `gorm:"serializer:json" json:"approval,omitempty"`
-	PreparedExecution *tools.Prepared    `gorm:"serializer:json" json:"preparedExecution,omitempty"`
-	Await             *tools.Await       `gorm:"serializer:json" json:"await,omitempty"`
-	Result            *ToolResult        `gorm:"serializer:json" json:"result,omitempty"`
-	Error             string             `gorm:"not null;default:''" json:"error,omitempty"`
-	StartedAt         time.Time          `gorm:"not null" json:"startedAt"`
-	CompletedAt       *time.Time         `json:"completedAt,omitempty"`
+	Native []byte `json:"-"`
 }
 
 func (ItemRow) TableName() string { return "items" }
@@ -316,19 +317,19 @@ func (d *DB) RecordItem(threadID string, item ItemRow) (ItemRow, bool, error) {
 func (d *DB) RecoverItems(threadID string) ([]ItemRow, error) {
 	var closed []ItemRow
 	err := d.Tx(func(tx *DB) error {
-		v, err := tx.Thread(threadID)
+		active, err := tx.ActiveTurn(threadID)
+		if errors.Is(err, ErrNotFound) {
+			return nil
+		}
 		if err != nil {
 			return err
 		}
-		active, ok := v.ActiveTurn()
-		if !ok {
-			return nil
+		var running []ItemRow
+		if err := tx.gorm.Where("turn_id = ? AND status = ?", active.ID, ItemInProgress).Order("seq").Find(&running).Error; err != nil {
+			return err
 		}
 		now := time.Now().UTC()
-		for _, it := range v.Items {
-			if it.TurnID != active.ID || it.Status != ItemInProgress {
-				continue
-			}
+		for _, it := range running {
 			switch {
 			case it.Type == ItemReasoning || it.Type == ItemAgentMessage || it.Type == ItemContextCompaction:
 				it.Error = "the app stopped before this finished"

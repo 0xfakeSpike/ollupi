@@ -127,7 +127,8 @@ var (
 func describe(t *testing.T, g *gorm.DB) []string {
 	t.Helper()
 	var objects []struct{ Type, Name, SQL string }
-	if err := g.Raw("SELECT type, name, sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%'").Scan(&objects).Error; err != nil {
+	// The message search index is no row of gorm's; TestSearchFindsMessagesBySubstring covers it.
+	if err := g.Raw("SELECT type, name, sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'items_search%'").Scan(&objects).Error; err != nil {
 		t.Fatal(err)
 	}
 	var lines []string

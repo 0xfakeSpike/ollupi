@@ -17,9 +17,9 @@ import (
 // in PRAGMA user_version; one taken further than this ollupi knows, by a
 // newer ollupi, is refused rather than used. Steps only go forward.
 //
-// A step that rebuilds a table must turn foreign keys off around its
-// transaction (they are on for every connection), which a step on its own
-// cannot do; add that here when one first needs it.
+// Steps run with foreign keys off, so one can rebuild a table the others
+// refer to without cascading deletes; before a step commits, the keys of
+// every row are checked, and any that points nowhere fails the step.
 
 //go:embed migrations/*.sql
 var migrationFiles embed.FS
@@ -82,15 +82,31 @@ func (d *DB) migrate() error {
 			version = 1
 		}
 	}
+	if version == len(all) {
+		return nil
+	}
+	if err := d.gorm.Exec("PRAGMA foreign_keys = OFF").Error; err != nil {
+		return fmt.Errorf("turn foreign keys off to migrate: %w", err)
+	}
 	for i := version; i < len(all); i++ {
 		if err := d.gorm.Transaction(func(tx *gorm.DB) error {
 			if err := tx.Exec(all[i]).Error; err != nil {
 				return err
 			}
+			var broken []struct{ Table string }
+			if err := tx.Raw("PRAGMA foreign_key_check").Scan(&broken).Error; err != nil {
+				return err
+			}
+			if len(broken) > 0 {
+				return fmt.Errorf("%d rows of %s refer to rows that do not exist", len(broken), broken[0].Table)
+			}
 			return tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", i+1)).Error
 		}); err != nil {
 			return fmt.Errorf("migrate to schema version %d: %w", i+1, err)
 		}
+	}
+	if err := d.gorm.Exec("PRAGMA foreign_keys = ON").Error; err != nil {
+		return fmt.Errorf("turn foreign keys back on after migrating: %w", err)
 	}
 	return nil
 }

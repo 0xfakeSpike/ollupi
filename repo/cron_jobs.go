@@ -81,11 +81,11 @@ func (d *DB) CronJobView(id string) (CronJobView, error) {
 func (d *DB) cronJobViews() *gorm.DB {
 	return d.gorm.Table("cron_jobs AS j").
 		Select("j.*, t.title AS thread_title, COALESCE(t.workspace_id, '') AS workspace_id, " +
-			"COALESCE(t.parent_thread_id, '') AS parent_thread_id, COALESCE(lt.id, '') AS last_turn_id, lt.started_at AS last_run_at, " +
+			"COALESCE(t.parent_thread_id, '') AS parent_thread_id, COALESCE(lt.id, '') AS last_turn_id, lt.created_at AS last_run_at, " +
 			"(t.archived_at IS NOT NULL OR p.archived_at IS NOT NULL) AS thread_archived").
 		Joins("JOIN threads t ON t.id = j.thread_id").
 		Joins("LEFT JOIN threads p ON p.id = t.parent_thread_id").
-		Joins("LEFT JOIN turns lt ON lt.id = (SELECT id FROM turns WHERE cron_job_id = j.id ORDER BY started_at DESC, id DESC LIMIT 1)")
+		Joins("LEFT JOIN turns lt ON lt.id = (SELECT id FROM turns WHERE cron_job_id = j.id AND cron_job_id <> '' ORDER BY created_at DESC, id DESC LIMIT 1)")
 }
 
 func (d *DB) DueCronJobs(now time.Time) ([]CronJobRow, error) {
