@@ -28,6 +28,26 @@ Ollupi 是一个 Go agent 框架，供云服务商构建大规模并发的个人
 
 ![逐个隔离 agent 与 Ollupi 的对比](docs/images/cli-vs-ollupi.svg)
 
+## 实测
+
+模型与工具均为模拟：假服务商经真实的 OpenAI 客户端访问，按设定延迟作答，在途请求超过额度即返回 429。测的是调度与持久化，不涉及模型质量。环境为 Apple M1（8 核，8 GB），单个 SQLite 库。
+
+| 主张 | 实验 | 结果 |
+|---|---|---|
+| 不活跃的对话不占资源 | 1 万个对话挂起等待用户回答，另有 16 个对话持续运行（模型延迟 100 ms） | 活跃 turn p50 为 107 ms，与无挂起对话时相同；挂起期间 CPU 约 0.1 ms/s |
+| 并发受控 | 一次提交 5000 个 turn，连接与服务商均限 16 并发 | 在途请求峰值 16，429 为 0；耗时 283.5 s，理论下限 281.2 s；每个 turn 的 CPU 与内存不随积压增长 |
+| 任意时刻可恢复 | 混合负载（工具调用、向用户提问、派生子代理）下随机 `kill -9` 共 90 次 | 960 个 turn 全部完成，无工具调用重复执行；被中断的调用标为可能已生效；重启至恢复服务中位约 50 ms |
+| 单机上限 | 模型与工具延迟为 0，每个 turn 3 次模型调用、2 次工具调用 | 每秒 636 次模型调用；按模型平均延迟 5 s 计，约可承载 3000 个在途调用。瓶颈为 SQLite 单写连接 |
+
+复现：
+
+```bash
+go run -tags sqlite_fts5 ./bench parked -n 10000 -state waiting
+go run -tags sqlite_fts5 ./bench burst -n 5000 -probe 20s
+go run -tags sqlite_fts5 ./bench crash -n 500 -kills 30
+go run -tags sqlite_fts5 ./bench burst -hold -n 3000 -rounds 2 -latency 0 -jitter 0 -tool 0 -calls 10000
+```
+
 ## 它是怎么跑的
 
 ![共享执行池](docs/images/execution-pool.svg)
