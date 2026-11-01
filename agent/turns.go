@@ -96,7 +96,8 @@ func (a *Agent) submit(t repo.ThreadRow, turn repo.TurnRow, model llm.Model) (re
 			return repo.TurnRow{}, err
 		}
 	}
-	turn.ID, turn.Model, turn.StartedAt = uuid.NewString(), model.Clone(), time.Now().UTC()
+	now := time.Now().UTC()
+	turn.ID, turn.Model, turn.CreatedAt, turn.StartedAt = uuid.NewString(), model.Clone(), now, now
 	t, turn, message, err := a.cfg.DB.SubmitTurn(t.ID, turn)
 	if err != nil {
 		return repo.TurnRow{}, err

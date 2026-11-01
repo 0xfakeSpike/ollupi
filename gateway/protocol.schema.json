@@ -989,19 +989,59 @@
         "status": {
           "$ref": "#/$defs/ItemStatus"
         },
-        "text": {
+        "callId": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        },
+        "server": {
           "type": "string"
         },
         "responseId": {
           "type": "string"
         },
-        "contextStats": {
+        "error": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "completedAt": {
+          "type": [
+            "null",
+            "string"
+          ],
+          "format": "date-time"
+        },
+        "approval": {
           "anyOf": [
             {
               "type": "null"
             },
             {
-              "$ref": "#/$defs/ContextStats"
+              "$ref": "#/$defs/Approval"
+            }
+          ]
+        },
+        "await": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/Await"
+            }
+          ]
+        },
+        "annotations": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/Annotations"
             }
           ]
         },
@@ -1012,6 +1052,16 @@
             },
             {
               "$ref": "#/$defs/Usage"
+            }
+          ]
+        },
+        "contextStats": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/ContextStats"
             }
           ]
         },
@@ -1033,37 +1083,11 @@
             "$ref": "#/$defs/Attachment"
           }
         },
-        "callId": {
-          "type": "string"
-        },
-        "tool": {
+        "text": {
           "type": "string"
         },
         "arguments": {
           "type": "string"
-        },
-        "server": {
-          "type": "string"
-        },
-        "annotations": {
-          "anyOf": [
-            {
-              "type": "null"
-            },
-            {
-              "$ref": "#/$defs/Annotations"
-            }
-          ]
-        },
-        "approval": {
-          "anyOf": [
-            {
-              "type": "null"
-            },
-            {
-              "$ref": "#/$defs/Approval"
-            }
-          ]
         },
         "preparedExecution": {
           "anyOf": [
@@ -1072,16 +1096,6 @@
             },
             {
               "$ref": "#/$defs/Prepared"
-            }
-          ]
-        },
-        "await": {
-          "anyOf": [
-            {
-              "type": "null"
-            },
-            {
-              "$ref": "#/$defs/Await"
             }
           ]
         },
@@ -1094,20 +1108,6 @@
               "$ref": "#/$defs/ToolResult"
             }
           ]
-        },
-        "error": {
-          "type": "string"
-        },
-        "startedAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "completedAt": {
-          "type": [
-            "null",
-            "string"
-          ],
-          "format": "date-time"
         }
       },
       "required": [
@@ -2492,20 +2492,12 @@
         "error": {
           "type": "string"
         },
-        "input": {
-          "type": "string"
-        },
-        "attachments": {
-          "type": [
-            "null",
-            "array"
-          ],
-          "items": {
-            "$ref": "#/$defs/Attachment"
-          }
-        },
         "cronJobId": {
           "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
         },
         "startedAt": {
           "type": "string",
@@ -2517,6 +2509,18 @@
             "string"
           ],
           "format": "date-time"
+        },
+        "attachments": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "$ref": "#/$defs/Attachment"
+          }
+        },
+        "input": {
+          "type": "string"
         }
       },
       "required": [
@@ -2526,6 +2530,7 @@
         "status",
         "model",
         "usage",
+        "createdAt",
         "startedAt"
       ],
       "additionalProperties": false

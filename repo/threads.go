@@ -9,7 +9,7 @@ import (
 
 type ThreadRow struct {
 	ID          string             `gorm:"primaryKey;index:threads_list,priority:3;index:threads_workspace_list,priority:4" json:"id"`
-	WorkspaceID Ref                `gorm:"index:threads_workspace_list,priority:1" json:"workspaceId,omitempty"`
+	WorkspaceID Ref                `gorm:"index:threads_workspace;index:threads_workspace_list,priority:1" json:"workspaceId,omitempty"`
 	Workspace   *WorkspaceRow      `gorm:"foreignKey:WorkspaceID;constraint:OnDelete:RESTRICT" json:"-"`
 	Title       string             `gorm:"not null" json:"title"`
 	Settings    PermissionSettings `gorm:"not null;default:'{}';serializer:json;check:threads_settings,json_valid(settings)" json:"settings"`

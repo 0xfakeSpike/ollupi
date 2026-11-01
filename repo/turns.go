@@ -27,21 +27,25 @@ func (u *Usage) Add(v Usage) {
 }
 
 type TurnRow struct {
-	ID          string       `gorm:"primaryKey;index:turns_ended,priority:2" json:"id"`
-	ThreadID    string       `gorm:"not null;uniqueIndex:turns_thread_seq,priority:1;uniqueIndex:turns_one_active,where:NOT (status = 'queued' OR status = 'completed' OR status = 'failed' OR status = 'interrupted');index:turns_open,where:NOT (status = 'completed' OR status = 'failed' OR status = 'interrupted')" json:"threadId"`
-	Thread      *ThreadRow   `gorm:"constraint:OnDelete:CASCADE" json:"-"`
-	Seq         int          `gorm:"not null;uniqueIndex:turns_thread_seq,priority:2" json:"seq"`
-	Status      TurnStatus   `gorm:"not null" json:"status"`
-	Model       llm.Model    `gorm:"not null;serializer:json;check:turns_model,json_valid(model)" json:"model"`
-	Usage       Usage        `gorm:"embedded" json:"usage"`
-	Error       string       `gorm:"not null;default:''" json:"error,omitempty"`
-	Input       string       `gorm:"not null;default:''" json:"input,omitempty"`
-	Attachments []Attachment `gorm:"serializer:json" json:"attachments,omitempty"`
-	CronJobID   string       `gorm:"not null;default:'';index:turns_cron_job,priority:1" json:"cronJobId,omitempty"`
+	ID       string     `gorm:"primaryKey;index:turns_ended,priority:2" json:"id"`
+	ThreadID string     `gorm:"not null;uniqueIndex:turns_thread_seq,priority:1;uniqueIndex:turns_one_active,where:NOT (status = 'queued' OR status = 'completed' OR status = 'failed' OR status = 'interrupted');index:turns_open,where:NOT (status = 'completed' OR status = 'failed' OR status = 'interrupted')" json:"threadId"`
+	Thread   *ThreadRow `gorm:"constraint:OnDelete:CASCADE" json:"-"`
+	Seq      int        `gorm:"not null;uniqueIndex:turns_thread_seq,priority:2" json:"seq"`
+	Status   TurnStatus `gorm:"not null" json:"status"`
+	Model    llm.Model  `gorm:"not null;serializer:json;check:turns_model,json_valid(model)" json:"model"`
+	Usage    Usage      `gorm:"embedded" json:"usage"`
+	Error    string     `gorm:"not null;default:''" json:"error,omitempty"`
+	// turns_cron_job finds the turns a scheduled task sent, newest last; the others stay out of it.
+	CronJobID string `gorm:"not null;default:'';index:turns_cron_job,priority:1,where:cron_job_id <> ''" json:"cronJobId,omitempty"`
+	// CreatedAt is when the turn was submitted; StartedAt, when it became its thread's current turn.
+	CreatedAt time.Time `gorm:"not null;autoCreateTime:false;index:turns_cron_job,priority:2" json:"createdAt"`
 	// turns_ready orders the turns that wait for a slot; its condition is readyTurn, word for word.
-	StartedAt time.Time `gorm:"not null;index:turns_cron_job,priority:2;index:turns_ready,where:status = 'ready'" json:"startedAt"`
+	StartedAt time.Time `gorm:"not null;index:turns_ready,where:status = 'ready'" json:"startedAt"`
 	// turns_ended orders the ended turns for memory extraction; its condition is endedTurn, word for word.
 	CompletedAt *time.Time `gorm:"index:turns_ended,priority:1,where:(status = 'completed' OR status = 'failed' OR status = 'interrupted') AND completed_at IS NOT NULL" json:"completedAt,omitempty"`
+	// The columns that can be large come last.
+	Attachments []Attachment `gorm:"serializer:json" json:"attachments,omitempty"`
+	Input       string       `gorm:"not null;default:''" json:"input,omitempty"`
 }
 
 func (TurnRow) TableName() string { return "turns" }
@@ -171,7 +175,7 @@ func (d *DB) HasQueuedTurn(threadID, cronJobID string) (bool, error) {
 }
 
 func (d *DB) createTurn(row TurnRow) error {
-	row.StartedAt, row.CompletedAt = row.StartedAt.UTC(), nullTime(row.CompletedAt)
+	row.CreatedAt, row.StartedAt, row.CompletedAt = row.CreatedAt.UTC(), row.StartedAt.UTC(), nullTime(row.CompletedAt)
 	return d.gorm.Create(&row).Error
 }
 

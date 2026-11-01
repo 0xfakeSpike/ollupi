@@ -52,7 +52,9 @@ func (d *DB) Search(terms []string, workspaceID string, limit int) (Found, error
 		Joins("JOIN threads t ON t.id = i.thread_id").
 		Where("t.parent_thread_id IS NULL AND i.type IN ? AND i.status = ?", []ItemType{ItemUserMessage, ItemAgentMessage}, ItemCompleted)
 	for _, t := range terms {
-		q = q.Where(`i.text LIKE ? ESCAPE '\'`, likePattern(t))
+		// The index takes LIKE only without ESCAPE, so it narrows to a superset, reading % and _ in the term as
+		// wildcards; the escaped LIKE on items then keeps the exact matches.
+		q = q.Where(`i.rowid IN (SELECT rowid FROM items_search WHERE text LIKE ?) AND i.text LIKE ? ESCAPE '\'`, "%"+t+"%", likePattern(t))
 	}
 	if err := inWorkspace(q, "t.workspace_id").Order("i.started_at DESC, i.id").Limit(limit).Scan(&rows).Error; err != nil {
 		return Found{}, err
