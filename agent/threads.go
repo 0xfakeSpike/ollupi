@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -75,23 +76,33 @@ func (a *Agent) ListThreads(f repo.ThreadFilter) ([]repo.ThreadSummary, bool, er
 	return out, more, nil
 }
 
+// threadStatus reads a conversation's status off its current turn: waiting on a person when the turn is, or when
+// a subagent it waits on is, and otherwise active or idle.
 func (a *Agent) threadStatus(id string) repo.ThreadStatus {
-	st, err := a.cfg.DB.ThreadState(id)
+	turn, err := a.cfg.DB.ActiveTurn(id)
+	if errors.Is(err, repo.ErrNotFound) {
+		return repo.ThreadIdle
+	}
 	if err != nil {
 		return ""
 	}
-	status := st.Status()
-	if status != repo.ThreadActive {
-		return status
-	}
-	for _, call := range st.AgentCalls() {
-		if child, err := a.cfg.DB.ThreadState(call.Await.ThreadID); err == nil {
-			if cs := child.Status(); cs == repo.ThreadWaitingOnApproval || cs == repo.ThreadWaitingOnUserInput {
+	switch turn.Status {
+	case repo.TurnWaitingOnApproval:
+		return repo.ThreadWaitingOnApproval
+	case repo.TurnWaitingOnUserInput:
+		return repo.ThreadWaitingOnUserInput
+	case repo.TurnWaitingOnAgent:
+		st, err := a.cfg.DB.ThreadState(id)
+		if err != nil {
+			return ""
+		}
+		for _, call := range st.AgentCalls() {
+			if cs := a.threadStatus(call.Await.ThreadID); cs == repo.ThreadWaitingOnApproval || cs == repo.ThreadWaitingOnUserInput {
 				return cs
 			}
 		}
 	}
-	return status
+	return repo.ThreadActive
 }
 
 const maxTitleRunes = 120

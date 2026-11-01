@@ -271,10 +271,7 @@ func (d *DB) startIn(t ThreadRow, turn TurnRow) (ThreadRow, TurnRow, ItemRow, er
 	}
 	turn.Status, turn.StartedAt = TurnReady, now
 	message := NewUserMessage(uuid.NewString(), turn.ID, turn.Input, turn.Attachments, now)
-	if err := d.saveItemOf(t.ID, message); err != nil {
-		return ThreadRow{}, TurnRow{}, ItemRow{}, err
-	}
-	stored, err := d.Item(message.ID)
+	stored, _, err := d.saveItemOf(t.ID, message)
 	if err != nil {
 		return ThreadRow{}, TurnRow{}, ItemRow{}, err
 	}
@@ -329,7 +326,7 @@ func (d *DB) EndTurn(threadID string, turn TurnRow) (ThreadRow, TurnRow, []ItemR
 			it.Status = ItemFailed
 			it.Error = fmt.Sprintf("the turn ended (%s) before this item finished", turn.Status)
 			it.CompletedAt = &now
-			if err := tx.saveItemOf(threadID, it); err != nil {
+			if _, _, err := tx.saveItemOf(threadID, it); err != nil {
 				return err
 			}
 			closed = append(closed, it)

@@ -27,7 +27,7 @@ func TestSearchFindsMessagesBySubstring(t *testing.T) {
 	save := func(it ItemRow) {
 		t.Helper()
 		it.TurnID, it.StartedAt = "turn", at
-		if err := db.saveItemOf("t", it); err != nil {
+		if _, _, err := db.saveItemOf("t", it); err != nil {
 			t.Fatal(err)
 		}
 	}
