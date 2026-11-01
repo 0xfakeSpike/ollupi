@@ -1,5 +1,7 @@
-// Command bench measures what conversations that are not running cost the agent: it parks N conversations,
-// idle or waiting on the user, and times a fixed active workload beside them.
+// Command bench runs ollupi's experiments against fake models and tools:
+//
+//	bench parked  what conversations that are not running cost the turns that are
+//	bench burst   how a burst of turns drains through the slots and a provider's concurrency limit
 package main
 
 import (
@@ -54,10 +56,10 @@ func (m *model) Limits(string) (llm.Limits, error) {
 
 // tracker counts parked conversations and times turns from StartTurn to turn_completed.
 type tracker struct {
-	asked, ended atomic.Int64
-	mu           sync.Mutex
-	startedAt    map[string]time.Time
-	endedAt      map[string]time.Time
+	asked, ended, failed atomic.Int64
+	mu                   sync.Mutex
+	startedAt            map[string]time.Time
+	endedAt              map[string]time.Time
 	// done signals a workload conversation's ended turn, so the workload never polls the database it measures.
 	done map[string]chan struct{}
 }
@@ -68,6 +70,9 @@ func (t *tracker) on(e agent.Event) {
 		t.asked.Add(1)
 	case agent.EventTurnCompleted:
 		t.ended.Add(1)
+		if e.Turn.Status != repo.TurnCompleted {
+			t.failed.Add(1)
+		}
 		t.mu.Lock()
 		t.endedAt[e.Turn.ID] = time.Now()
 		ch := t.done[e.Thread.ID]
@@ -138,15 +143,24 @@ func pct(d []time.Duration, p float64) time.Duration {
 }
 
 func main() {
-	parked := flag.Int("n", 1000, "conversations parked beside the workload")
-	state := flag.String("state", "waiting", "how parked conversations sit: waiting (on the user) or idle (turn ended)")
-	active := flag.Int("active", 16, "conversations running the workload at once")
-	rounds := flag.Int("rounds", 10, "turns each active conversation runs, one after another")
-	latency := flag.Duration("latency", 100*time.Millisecond, "model latency during the workload")
-	slots := flag.Int("slots", 32, "agent slots")
-	profile := flag.String("cpuprofile", "", "write a CPU profile of the workload to this file")
-	flag.Parse()
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	experiments := map[string]func([]string){"parked": parked, "burst": burst}
+	if len(os.Args) < 2 || experiments[os.Args[1]] == nil {
+		log.Fatal("usage: bench parked|burst [flags]")
+	}
+	experiments[os.Args[1]](os.Args[2:])
+}
+
+func parked(args []string) {
+	fs := flag.NewFlagSet("parked", flag.ExitOnError)
+	parked := fs.Int("n", 1000, "conversations parked beside the workload")
+	state := fs.String("state", "waiting", "how parked conversations sit: waiting (on the user) or idle (turn ended)")
+	active := fs.Int("active", 16, "conversations running the workload at once")
+	rounds := fs.Int("rounds", 10, "turns each active conversation runs, one after another")
+	latency := fs.Duration("latency", 100*time.Millisecond, "model latency during the workload")
+	slots := fs.Int("slots", 32, "agent slots")
+	profile := fs.String("cpuprofile", "", "write a CPU profile of the workload to this file")
+	fs.Parse(args)
 
 	dir, err := os.MkdirTemp("", "ollupi-bench-")
 	if err != nil {
