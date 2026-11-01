@@ -297,15 +297,14 @@ func (d *DB) RecordItem(threadID string, item ItemRow) (ItemRow, bool, error) {
 		if err != nil {
 			return err
 		}
-		_, err = tx.Item(item.ID)
-		isNew = errors.Is(err, ErrNotFound)
-		if err != nil && !isNew {
+		if stored, isNew, err = tx.saveItemOf(threadID, item); err != nil || item.Type != ItemToolCall {
 			return err
 		}
-		if err := tx.saveItemOf(threadID, item); err != nil {
-			return err
+		// A call answered, approved or reported may be the last one its waiting turn awaited.
+		switch active.Status {
+		case TurnWaitingOnApproval, TurnWaitingOnUserInput, TurnWaitingOnAgent:
+			_, err = tx.settleStatus(active.ID, active.Status)
 		}
-		stored, err = tx.Item(item.ID)
 		return err
 	})
 	if err != nil {
@@ -339,7 +338,7 @@ func (d *DB) RecoverItems(threadID string) ([]ItemRow, error) {
 				continue
 			}
 			it.Status, it.CompletedAt = ItemFailed, &now
-			if err := tx.saveItemOf(threadID, it); err != nil {
+			if _, _, err := tx.saveItemOf(threadID, it); err != nil {
 				return err
 			}
 			closed = append(closed, it)
@@ -352,40 +351,34 @@ func (d *DB) RecoverItems(threadID string) ([]ItemRow, error) {
 	return closed, nil
 }
 
-func (d *DB) saveItemOf(threadID string, it ItemRow) error {
+// saveItemOf writes the item and returns it as stored, saying whether it is new; it reads only the item as it was,
+// which may not change its thread, type or turn, nor a prepared execution once it has one.
+func (d *DB) saveItemOf(threadID string, it ItemRow) (ItemRow, bool, error) {
 	if it.ID == "" || it.TurnID == "" || it.Type == "" || it.Status == "" {
-		return fmt.Errorf("item needs an id, turn, type, and status")
+		return ItemRow{}, false, fmt.Errorf("item needs an id, turn, type, and status")
 	}
 	prev, err := d.Item(it.ID)
+	isNew := errors.Is(err, ErrNotFound)
 	switch {
-	case errors.Is(err, ErrNotFound):
+	case isNew:
 		if it.Seq, err = d.nextItemSeq(threadID); err != nil {
-			return err
+			return ItemRow{}, false, err
 		}
 	case err != nil:
-		return err
+		return ItemRow{}, false, err
 	default:
 		if prev.ThreadID != threadID || prev.Type != it.Type || prev.TurnID != it.TurnID {
-			return fmt.Errorf("item %s cannot change its thread, type, or turn", it.ID)
+			return ItemRow{}, false, fmt.Errorf("item %s cannot change its thread, type, or turn", it.ID)
 		}
 		if prev.PreparedExecution != nil && (!reflect.DeepEqual(prev.PreparedExecution, it.PreparedExecution) || prev.Arguments != it.Arguments || prev.Tool != it.Tool || prev.Server != it.Server) {
-			return fmt.Errorf("item %s cannot change its prepared execution or tool arguments", it.ID)
+			return ItemRow{}, false, fmt.Errorf("item %s cannot change its prepared execution or tool arguments", it.ID)
 		}
 		it.Seq = prev.Seq
 	}
 	it.ThreadID = threadID
-	if err := d.saveItem(it); err != nil || it.Type != ItemToolCall {
-		return err
+	it.StartedAt, it.CompletedAt = it.StartedAt.UTC(), nullTime(it.CompletedAt)
+	if err := d.saveItem(it); err != nil {
+		return ItemRow{}, false, err
 	}
-	// A call answered, approved or reported may be the last one its waiting turn awaited.
-	var turn TurnRow
-	if err := d.gorm.Select("status").Where("id = ?", it.TurnID).Take(&turn).Error; err != nil {
-		return fmt.Errorf("turn %s of item %s: %w", it.TurnID, it.ID, err)
-	}
-	switch turn.Status {
-	case TurnWaitingOnApproval, TurnWaitingOnUserInput, TurnWaitingOnAgent:
-		_, err := d.settleStatus(it.TurnID, turn.Status)
-		return err
-	}
-	return nil
+	return it, isNew, nil
 }

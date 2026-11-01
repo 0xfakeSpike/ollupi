@@ -295,21 +295,6 @@ func (s ThreadState) AgentCalls() []ItemRow {
 	return out
 }
 
-func (s ThreadState) Status() ThreadStatus {
-	if _, active := s.ActiveTurn(); !active {
-		return ThreadIdle
-	}
-	pending := s.PendingRequests()
-	switch {
-	case len(pending) == 0:
-		return ThreadActive
-	case !pending[0].WaitsForApproval():
-		return ThreadWaitingOnUserInput
-	default:
-		return ThreadWaitingOnApproval
-	}
-}
-
 func activeTurn(turns []TurnRow) (TurnRow, bool) {
 	for i := len(turns) - 1; i >= 0; i-- {
 		if turns[i].Status.Active() {

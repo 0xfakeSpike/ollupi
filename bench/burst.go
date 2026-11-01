@@ -31,7 +31,9 @@ type provider struct {
 	latency, jitter time.Duration
 	limit           int
 	// next names the call that answers a request made after the model answered the user's message ask so many times.
-	next                              func(ask string, answered int) (name, arguments string)
+	next func(ask string, answered int) (name, arguments string)
+	// hold, while open, keeps every request waiting, so a backlog builds before any turn can finish.
+	hold                              chan struct{}
 	inFlight, peak, requests, refused atomic.Int64
 }
 
@@ -65,6 +67,9 @@ func (p *provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	name, arguments := p.next(ask, answered)
+	if p.hold != nil {
+		<-p.hold
+	}
 	time.Sleep(p.latency + time.Duration((rand.Float64()*2-1)*float64(p.jitter)))
 
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -125,6 +130,7 @@ func burst(args []string) {
 	rounds := fs.Int("rounds", 2, "tool calls in each turn, each followed by a model call")
 	probeEvery := fs.Duration("probe", 5*time.Second, "start a new conversation this often during the burst and time its turn")
 	profile := fs.String("cpuprofile", "", "write a CPU profile of the burst to this file")
+	hold := fs.Bool("hold", false, "answer no model request until every turn is submitted, and time the burst from then")
 	fs.Parse(args)
 	if *limit == 0 {
 		*limit = *calls
@@ -136,6 +142,9 @@ func burst(args []string) {
 		}
 		return "", ""
 	}}
+	if *hold {
+		p.hold = make(chan struct{})
+	}
 	srv := httptest.NewServer(p)
 	defer srv.Close()
 	dir, err := os.MkdirTemp("", "ollupi-bench-")
@@ -202,6 +211,10 @@ func burst(args []string) {
 		turns = append(turns, tr.start(ag, id, "work"))
 	}
 	submit := time.Since(startAt)
+	if *hold {
+		startAt = time.Now()
+		close(p.hold)
+	}
 
 	var probes []string
 	var probesMu sync.Mutex
