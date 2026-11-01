@@ -70,63 +70,6 @@ flowchart LR
 
 后台协程从已结束的 turn 里提炼记忆，和已有的合并（新建、更新、废弃）；用户改过或遗忘的条目不会被自动覆盖。记忆按内容分三个范围：全局（关于用户本人）、general（不属于任何工作区的对话）、工作区。thread 开始时载入一份快照放在对话开头，之后请求前缀不变，有利于服务商的前缀缓存；新记忆等下一次压缩时才换进来。
 
-## 内置工具
-
-| 工具 | 作用 |
-|---|---|
-| `Agent` | 派生子代理，结果由另一个 turn 回答 |
-| `update_plan` | 计划与进度，界面直接显示 |
-| `request_user_input` | 结构化提问，回答成为调用结果 |
-| `read_tool_output` | 分段读回被截短的工具输出 |
-| `memory_search` | 搜索记忆 |
-| `list_skills` `activate_skill` `read_skill_resource` | Agent Skills |
-| `create_scheduled_job` `pause_scheduled_job` `delete_scheduled_job` `list_scheduled_jobs` | 定时任务 |
-| `run_command` | 沙箱里跑命令（`tools/workspace`，应用装配） |
-| `edit_file` `write_file` | 改写和新建文件，只写沙箱允许的目录，审批时冻结 diff（`tools/workspace`，应用装配） |
-| `read_file` `glob` `grep` | 读文件、按模式找文件、按正则搜内容，跳过 `.git` 和 `.gitignore` 忽略的文件；只读不审批，沙箱禁读的路径任何模式下都不读（`tools/workspace`，应用装配） |
-| `web_fetch` | 读取公网网页，HTML 转成类 Markdown 正文（`tools/web`，应用装配） |
-| `<服务器>__<工具>` | MCP 服务器的工具，stdio 或 streamable HTTP（`tools/mcp`，应用装配） |
-
-应用自己的工具实现 `tools.Provider` 接入。所有工具都受 `Config.Tools` 允许列表和权限规则约束。
-
-## 模型
-
-`pkg/llm` 有三种连接，都实现 `llm.Client`：`NewOpenAI`（兼容 OpenAI 的 API）、`NewAnthropic`、`NewGemini`。每次回复另存一份服务商原样的记录，下次发给同一服务商时原样回放，Anthropic 的思考块签名和 Gemini 的 thought signature 因此能带回去；Anthropic 的思考块在它之前的内容变了以后不再回放。
-
-## 协议
-
-网关是 WebSocket 上的 JSON-RPC 2.0，方法名对齐 Codex app-server。`gateway/protocol.go` 里的一张表既分发请求，也生成 `protocol.schema.json`，内置工具的参数类型同时生成模型看到的 schema 和契约里的 schema，两边来自同一份定义。测试用假模型跑一段完整会话，按契约校验收发的每一条消息。界面的类型从 `protocol.schema.json` 生成。
-
-## 快速开始
-
-```go
-db, err := repo.Open(home)
-if err != nil {
-	log.Fatal(err)
-}
-a := agent.New(agent.Config{
-	Name:        "ollupi",
-	Models:      []llm.Model{{Name: "gpt-5", Connection: "openai"}},
-	Connections: map[string]llm.Client{"openai": llm.NewOpenAI("", os.Getenv("OPENAI_API_KEY"), 0, nil)},
-	Settings:    permission.Settings{ApprovalPolicy: string(permission.OnRequest)},
-	DB:          db,
-	OnEvent: func(e agent.Event) {
-		if e.Kind == agent.EventItemDelta {
-			fmt.Print(e.Delta)
-		}
-	},
-})
-if err := a.Start(ctx); err != nil {
-	log.Fatal(err)
-}
-thread, _ := a.StartThread("", "问候", permission.Settings{})
-a.StartTurn(thread.ID, agent.Input{Text: "你好"})
-```
-
-工具通过 `Config.Providers` 接入。记忆、定时任务和网关与 agent 并列，由应用启动：`go mem.Run(ctx)`、`go jobs.Run(ctx, send)`、`server.Serve(ctx, listener)`。关闭时取消 ctx 再 `a.Wait()`。完整装配见 ollupi-desktop 的 `sidecar/internal/host/host.go`。修改协议后 `go generate ./gateway`。
-
-日志经 `log/slog` 写到默认 logger，写到哪里由应用用 `slog.SetDefault` 决定。每个 turn 的开始、等待和结束，每次模型调用的耗时和 token，每次工具调用的耗时和成败都有一行；日志只记 ID 和数字，不记消息、参数和工具输出。
-
 ## 许可
 
 [MIT](LICENSE)
