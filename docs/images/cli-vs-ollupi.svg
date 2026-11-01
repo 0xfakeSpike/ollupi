@@ -21,12 +21,12 @@
   </defs>
   <rect width="1600" height="900" fill="#ffffff"/>
 
-  <text class="title" x="60" y="72">同样的时间，模型调用更密</text>
-  <text class="sub" x="60" y="110">命令行 agent 等人时整个进程停着；Ollupi 等人时让出槽位，别的 turn 补上（字母是对话，斜纹是等待）</text>
+  <text class="title" x="60" y="72">同样的机器，承载更多对话</text>
+  <text class="sub" x="60" y="110">逐个隔离时，等待中的 agent 仍占一个进程；Ollupi 让出槽位，其他 turn 补上（字母是对话，斜纹是等待）</text>
 
   <rect x="60" y="150" width="700" height="690" rx="16" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2"/>
-  <text class="h" x="88" y="198">命令行 agent</text>
-  <text class="s" x="88" y="230">Claude Code · Codex CLI · pi</text>
+  <text class="h" x="88" y="198">逐个隔离</text>
+  <text class="s" x="88" y="230">每个 agent 一个虚拟机或容器</text>
 
   <rect x="840" y="150" width="700" height="690" rx="16" fill="#eff6ff" stroke="#bfdbfe" stroke-width="2"/>
   <text class="h" x="868" y="198" style="fill:#1d4ed8">Ollupi</text>
@@ -57,7 +57,7 @@
   <text class="seg" x="679.5" y="436" text-anchor="middle" style="fill:#ffffff">C</text>
   <text class="lane" x="88" y="500">对话 D、E</text>
   <rect x="271" y="472" width="466" height="44" rx="6" fill="none" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="7 6"/>
-  <text x="504" y="500" text-anchor="middle" style="font-size:16px;fill:#94a3b8">要再开进程才能跑</text>
+  <text x="504" y="500" text-anchor="middle" style="font-size:16px;fill:#94a3b8">需要新的进程</text>
   <text class="lane" x="868" y="308">槽位 1</text>
   <rect x="1051" y="280" width="115" height="44" rx="6" fill="#3b82f6"/>
   <text class="seg" x="1108.5" y="308" text-anchor="middle" style="fill:#ffffff">A</text>
@@ -100,19 +100,19 @@
   <line class="line" x1="1050" y1="566" x2="1524" y2="566" marker-end="url(#a)"/>
   <text class="s" x="1518" y="592" text-anchor="end">时间</text>
   <circle cx="94" cy="658" r="5" fill="#94a3b8"/>
-  <text class="b" x="110" y="664">一个进程只跑一个对话</text>
+  <text class="b" x="110" y="664">一个进程只承载一个对话</text>
   <circle cx="94" cy="694" r="5" fill="#94a3b8"/>
-  <text class="b" x="110" y="700">等审批、等回答时整个进程停着</text>
+  <text class="b" x="110" y="700">等待时进程挂起，仍占内存</text>
   <circle cx="94" cy="730" r="5" fill="#94a3b8"/>
-  <text class="b" x="110" y="736">调度状态在内存，进程退出就没了</text>
+  <text class="b" x="110" y="736">调度状态在内存，进程退出即丢失</text>
   <circle cx="94" cy="766" r="5" fill="#94a3b8"/>
-  <text class="b" x="110" y="772">定时任务靠外部 cron 起新进程</text>
+  <text class="b" x="110" y="772">定时任务由外部 cron 唤起进程</text>
   <circle cx="874" cy="658" r="5" fill="#3b82f6"/>
   <text class="b" x="890" y="664">一个进程跑所有对话、子代理、定时任务</text>
   <circle cx="874" cy="694" r="5" fill="#3b82f6"/>
-  <text class="b" x="890" y="700">等人时让出槽位，别的 turn 补上</text>
+  <text class="b" x="890" y="700">等待时让出槽位，其他 turn 补上</text>
   <circle cx="874" cy="730" r="5" fill="#3b82f6"/>
-  <text class="b" x="890" y="736">调度状态在 SQLite，重启后接着跑</text>
+  <text class="b" x="890" y="736">调度状态在 SQLite，重启后从断点继续</text>
   <circle cx="874" cy="766" r="5" fill="#3b82f6"/>
-  <text class="b" x="890" y="772">定时任务到点往会话发消息，照常排队</text>
+  <text class="b" x="890" y="772">定时任务到点向对话发送消息，同池排队</text>
 </svg>
