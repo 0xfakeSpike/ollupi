@@ -24,12 +24,14 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
-// provider is a fake OpenAI-compatible endpoint. A request takes latency plus or minus jitter; in a turn the first
-// rounds requests get a call to bench__work and the next gets the answer; a request beyond limit in flight is
-// refused with 429, as an account's concurrency limit would refuse it.
+// provider is a fake OpenAI-compatible endpoint. A request takes latency plus or minus jitter and is answered with
+// the call next names, or with the turn's answer when it names none; a request beyond limit in flight is refused
+// with 429, as an account's concurrency limit would refuse it.
 type provider struct {
-	latency, jitter                   time.Duration
-	rounds, limit                     int
+	latency, jitter time.Duration
+	limit           int
+	// next names the call that answers a request made after the model answered the user's message ask so many times.
+	next                              func(ask string, answered int) (name, arguments string)
 	inFlight, peak, requests, refused atomic.Int64
 }
 
@@ -46,16 +48,23 @@ func (p *provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		Messages []struct {
-			Role string `json:"role"`
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
 		} `json:"messages"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
-	answered := 0
-	for i := len(body.Messages) - 1; i >= 0 && body.Messages[i].Role != "user"; i-- {
+	answered, ask := 0, ""
+	for i := len(body.Messages) - 1; i >= 0; i-- {
+		if body.Messages[i].Role == "user" {
+			_ = json.Unmarshal(body.Messages[i].Content, &ask)
+			ask = ask[strings.LastIndex(ask, "\n")+1:] // after the "[sent …]" line the context adds
+			break
+		}
 		if body.Messages[i].Role == "assistant" {
 			answered++
 		}
 	}
+	name, arguments := p.next(ask, answered)
 	time.Sleep(p.latency + time.Duration((rand.Float64()*2-1)*float64(p.jitter)))
 
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -64,9 +73,9 @@ func (p *provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": finish}}})
 		fmt.Fprintf(w, "data: %s\n\n", raw)
 	}
-	if answered < p.rounds {
+	if name != "" {
 		send(map[string]any{"tool_calls": []any{map[string]any{"index": 0, "id": fmt.Sprintf("call_%d", p.requests.Load()),
-			"type": "function", "function": map[string]any{"name": "bench__work", "arguments": "{}"}}}}, nil)
+			"type": "function", "function": map[string]any{"name": name, "arguments": arguments}}}}, nil)
 		send(map[string]any{}, "tool_calls")
 	} else {
 		send(map[string]any{"content": "done"}, nil)
@@ -76,17 +85,26 @@ func (p *provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // work is a tool that takes latency, as a command or a fetch would; it holds the turn's slot but no model call.
-type work struct{ latency time.Duration }
+// With a log it first writes down the token it was called with, so a call that runs twice shows.
+type work struct {
+	latency time.Duration
+	log     *os.File
+}
 
 func (work) Name() (string, string) { return "bench", "Bench tools." }
 
 func (work) ToolList(context.Context) ([]*tools.Spec, error) {
-	schema := map[string]any{"type": "object", "properties": map[string]any{}, "additionalProperties": false}
+	schema := map[string]any{"type": "object", "properties": map[string]any{"token": map[string]any{"type": "string"}}, "additionalProperties": false}
 	return []*tools.Spec{{Name: "bench__work", Description: "Does one unit of work.", InputSchema: schema,
 		Annotations: &tools.Annotations{ReadOnlyHint: true}}}, nil
 }
 
-func (w work) Invoke(ctx context.Context, _ string, _ map[string]any) (tools.Result, error) {
+func (w work) Invoke(ctx context.Context, _ string, args map[string]any) (tools.Result, error) {
+	if w.log != nil {
+		if _, err := fmt.Fprintln(w.log, args["token"]); err != nil {
+			return tools.Result{}, err
+		}
+	}
 	select {
 	case <-time.After(w.latency):
 		return tools.Result{Output: "ok"}, nil
@@ -112,7 +130,12 @@ func burst(args []string) {
 		*limit = *calls
 	}
 
-	p := &provider{latency: *latency, jitter: *jitter, rounds: *rounds, limit: *limit}
+	p := &provider{latency: *latency, jitter: *jitter, limit: *limit, next: func(_ string, answered int) (string, string) {
+		if answered < *rounds {
+			return "bench__work", "{}"
+		}
+		return "", ""
+	}}
 	srv := httptest.NewServer(p)
 	defer srv.Close()
 	dir, err := os.MkdirTemp("", "ollupi-bench-")
