@@ -231,9 +231,6 @@ type ThreadState struct {
 	OpenCalls []ItemRow
 }
 
-// openTurn is the condition of the turns_open index, word for word; INDEXED BY makes a drift an error.
-const openTurn = "(status = 'inProgress' OR status = 'queued')"
-
 const openCalls = "type = 'toolCall' AND status IN ('pending', 'inProgress')"
 
 func (d *DB) ThreadState(id string) (ThreadState, error) {
@@ -315,7 +312,7 @@ func (s ThreadState) Status() ThreadStatus {
 
 func activeTurn(turns []TurnRow) (TurnRow, bool) {
 	for i := len(turns) - 1; i >= 0; i-- {
-		if turns[i].Status == TurnInProgress {
+		if turns[i].Status.Active() {
 			return turns[i], true
 		}
 	}

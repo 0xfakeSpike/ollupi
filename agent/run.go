@@ -154,6 +154,10 @@ func (a *Agent) afterRun(threadID string, sl *slot, final bool, runErr error) {
 		a.endTurn(turn)
 		return
 	}
+	if _, err := a.cfg.DB.Park(turn.ID); err != nil {
+		a.halt(threadID, err)
+		return
+	}
 	a.reconcile(threadID)
 	if n := len(st.PendingRequests()); n > 0 {
 		slog.Info("turn waiting", "thread", threadID, "turn", turn.ID, "on", "user", "requests", n)
@@ -229,7 +233,7 @@ func (a *Agent) failTurn(turnID string, status repo.TurnStatus, reason string) {
 		a.fault("", turnID, fmt.Errorf("the turn could not be read to end it (%s): %w", reason, err))
 		return
 	}
-	if turn.Status != repo.TurnInProgress {
+	if turn.Status.Ended() {
 		return
 	}
 	turn.Status, turn.Error = status, reason

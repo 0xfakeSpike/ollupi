@@ -2559,7 +2559,11 @@
       "type": "string",
       "enum": [
         "queued",
+        "ready",
         "inProgress",
+        "waitingOnApproval",
+        "waitingOnUserInput",
+        "waitingOnAgent",
         "completed",
         "interrupted",
         "failed"

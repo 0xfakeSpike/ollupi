@@ -61,3 +61,80 @@ func TestRunItemsCarryOnlyWhatOutlastsACompaction(t *testing.T) {
 		t.Errorf("native records: recent %q, carried %q; want only items after the compaction to keep theirs", got[len(got)-1].Native, got[1].Native)
 	}
 }
+
+// A turn holds a slot only while it runs: waiting on the user takes it out of the ready threads,
+// and the answer puts it back, as does a restart that finds it still marked as running.
+func TestOnlyReadyTurnsWaitForASlot(t *testing.T) {
+	db, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	at := time.Date(2026, 11, 2, 8, 0, 0, 0, time.UTC)
+	if err := db.CreateThread(ThreadRow{ID: "t", CreatedAt: at, UpdatedAt: at}); err != nil {
+		t.Fatal(err)
+	}
+	_, turn, _, err := db.SubmitTurn("t", TurnRow{ID: "turn", Input: "hi", Model: llm.Model{Name: "m", Connection: "c"}, StartedAt: at})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ready := func(want ...string) {
+		t.Helper()
+		got, err := db.ReadyThreads(10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(got, want) {
+			t.Fatalf("ready threads %v, want %v", got, want)
+		}
+	}
+	status := func(want TurnStatus) {
+		t.Helper()
+		got, err := db.Turn(turn.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Status != want {
+			t.Fatalf("turn is %s, want %s", got.Status, want)
+		}
+	}
+	if turn.Status != TurnReady {
+		t.Fatalf("a submitted turn is %s, want ready", turn.Status)
+	}
+	ready("t")
+	if err := db.Launch(turn.ID); err != nil {
+		t.Fatal(err)
+	}
+	ready()
+	ask := ItemRow{ID: "ask", TurnID: turn.ID, Type: ItemToolCall, Status: ItemInProgress, Tool: "request_user_input", Arguments: "{}",
+		Await: &tools.Await{By: tools.AwaitUser, Request: []byte(`{}`)}, StartedAt: at}
+	if _, _, err := db.RecordItem("t", ask); err != nil {
+		t.Fatal(err)
+	}
+	status(TurnInProgress)
+	if got, err := db.Park(turn.ID); err != nil || got != TurnWaitingOnUserInput {
+		t.Fatalf("parked as %s (%v), want waitingOnUserInput", got, err)
+	}
+	ready()
+	ask.Status, ask.Result = ItemCompleted, &ToolResult{}
+	if _, _, err := db.RecordItem("t", ask); err != nil {
+		t.Fatal(err)
+	}
+	status(TurnReady)
+	ready("t")
+
+	if err := db.Launch(turn.ID); err != nil {
+		t.Fatal(err)
+	}
+	stranded, err := db.StrandedThreads()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(stranded, []string{"t"}) {
+		t.Fatalf("stranded threads %v, want [t]", stranded)
+	}
+	if _, err := db.Park(turn.ID); err != nil {
+		t.Fatal(err)
+	}
+	ready("t")
+}

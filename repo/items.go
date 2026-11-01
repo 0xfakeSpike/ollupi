@@ -373,5 +373,18 @@ func (d *DB) saveItemOf(threadID string, it ItemRow) error {
 		it.Seq = prev.Seq
 	}
 	it.ThreadID = threadID
-	return d.saveItem(it)
+	if err := d.saveItem(it); err != nil || it.Type != ItemToolCall {
+		return err
+	}
+	// A call answered, approved or reported may be the last one its waiting turn awaited.
+	var turn TurnRow
+	if err := d.gorm.Select("status").Where("id = ?", it.TurnID).Take(&turn).Error; err != nil {
+		return fmt.Errorf("turn %s of item %s: %w", it.TurnID, it.ID, err)
+	}
+	switch turn.Status {
+	case TurnWaitingOnApproval, TurnWaitingOnUserInput, TurnWaitingOnAgent:
+		_, err := d.settleStatus(it.TurnID, turn.Status)
+		return err
+	}
+	return nil
 }
