@@ -114,7 +114,7 @@ func TestThinkingIsReplayedAcrossTurns(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if i := len(v.Turns) - 1; v.Turns[i].ID == turn.ID && v.Turns[i].Status != repo.TurnInProgress && v.Turns[i].Status != repo.TurnQueued {
+			if i := len(v.Turns) - 1; v.Turns[i].ID == turn.ID && v.Turns[i].Status.Ended() {
 				break
 			}
 			select {

@@ -3,8 +3,6 @@ package agent
 import (
 	"fmt"
 	"log/slog"
-	"maps"
-	"slices"
 
 	"github.com/0xfakeSpike/ollupi/repo"
 )
@@ -37,44 +35,55 @@ func (a *Agent) reconcile(threadID string) {
 		a.endTurn(turn)
 		return
 	}
-	waiting := len(st.PendingRequests()) > 0
+	reported := false
 	for _, call := range st.AgentCalls() {
 		settled, err := a.settle(st.Thread, turn, call)
 		if err != nil {
 			a.halt(threadID, err)
 			return
 		}
-		waiting = waiting || !settled
+		reported = reported || settled
 	}
-	if waiting || len(a.slotByThread) >= a.cfg.Slots {
+	if reported {
+		if turn, err = a.cfg.DB.Turn(turn.ID); err != nil {
+			a.halt(threadID, err)
+			return
+		}
+	}
+	if turn.Status != repo.TurnReady || len(a.slotByThread) >= a.cfg.Slots {
+		return
+	}
+	if err := a.cfg.DB.Launch(turn.ID); err != nil {
+		a.halt(threadID, err)
 		return
 	}
 	a.launch(threadID, turn.ID)
 }
 
+// admit fills the free slots with the threads whose turns are ready, reading no more of them than there are slots.
 func (a *Agent) admit() {
-	if len(a.slotByThread) >= a.cfg.Slots || a.ctx.Err() != nil {
+	free := a.cfg.Slots - len(a.slotByThread)
+	if free <= 0 || a.ctx.Err() != nil {
 		return
 	}
-	ids, err := a.cfg.DB.OpenThreads(slices.Collect(maps.Keys(a.slotByThread)))
+	ids, err := a.cfg.DB.ReadyThreads(free)
 	if err != nil {
-		a.fault("", "", fmt.Errorf("threads waiting for a slot could not be listed: %w", err))
+		a.fault("", "", fmt.Errorf("threads ready for a slot could not be listed: %w", err))
 		return
 	}
 	for _, id := range ids {
-		if len(a.slotByThread) >= a.cfg.Slots {
-			return
-		}
 		a.reconcile(id)
 	}
 }
 
+// recover puts right what a stopped process left: the turns it was running leave their slots,
+// and each thread it may have stranded is reconciled once.
 func (a *Agent) recover() error {
-	active, err := a.cfg.DB.OpenThreads(nil)
+	stranded, err := a.cfg.DB.StrandedThreads()
 	if err != nil {
-		return fmt.Errorf("agent: active threads: %w", err)
+		return fmt.Errorf("agent: stranded threads: %w", err)
 	}
-	for _, id := range active {
+	for _, id := range stranded {
 		closed, err := a.cfg.DB.RecoverItems(id)
 		if err != nil {
 			return fmt.Errorf("agent: recover thread %s: %w", id, err)
@@ -82,6 +91,12 @@ func (a *Agent) recover() error {
 		if len(closed) > 0 {
 			slog.Warn("items cut off by the restart closed", "thread", id, "items", len(closed))
 		}
+		if turn, err := a.cfg.DB.ActiveTurn(id); err == nil && turn.Status == repo.TurnInProgress {
+			if _, err := a.cfg.DB.Park(turn.ID); err != nil {
+				return fmt.Errorf("agent: recover thread %s: %w", id, err)
+			}
+		}
+		a.reconcile(id)
 	}
 	a.admit()
 	return nil

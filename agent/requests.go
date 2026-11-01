@@ -27,7 +27,7 @@ func (a *Agent) PendingRequests(threadID string) []Request {
 }
 
 func (a *Agent) AllPendingRequests() []Request {
-	ids, err := a.cfg.DB.OpenThreads(nil)
+	ids, err := a.cfg.DB.ThreadsWaitingOnUser()
 	if err != nil {
 		return nil
 	}
