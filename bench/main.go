@@ -2,6 +2,7 @@
 //
 //	bench parked  what conversations that are not running cost the turns that are
 //	bench burst   how a burst of turns drains through the slots and a provider's concurrency limit
+//	bench steady  how many conversations busy at once the process serves before their turns slow down
 //	bench crash   whether turns survive the process being killed at random moments
 package main
 
@@ -147,9 +148,9 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})))
 	// SetDefault routes the log package through slog at Info, below the level kept; the bench's own errors must show.
 	log.SetOutput(os.Stderr)
-	experiments := map[string]func([]string){"parked": parked, "burst": burst, "crash": crash, "crashchild": crashChild}
+	experiments := map[string]func([]string){"parked": parked, "burst": burst, "steady": steady, "crash": crash, "crashchild": crashChild}
 	if len(os.Args) < 2 || experiments[os.Args[1]] == nil {
-		log.Fatal("usage: bench parked|burst|crash [flags]")
+		log.Fatal("usage: bench parked|burst|steady|crash [flags]")
 	}
 	experiments[os.Args[1]](os.Args[2:])
 }
