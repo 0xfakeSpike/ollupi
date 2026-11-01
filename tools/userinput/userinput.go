@@ -16,7 +16,7 @@ type Question struct {
 	ID       string   `json:"id" jsonschema:"Stable identifier for mapping answers (snake_case)."`
 	Header   string   `json:"header" jsonschema:"Short header label shown in the UI (12 or fewer chars)."`
 	Question string   `json:"question" jsonschema:"Single-sentence prompt shown to the user, in the user's language."`
-	Options  []Option `json:"options,omitempty" jsonschema:"Optional mutually exclusive choices. The user can always answer in their own words instead."`
+	Options  []Option `json:"options,omitempty" jsonschema:"Mutually exclusive likely answers, the recommended one first with \" (Recommended)\" after its label. Leave out an \"Other\" option: the user can always answer in their own words. Omit options only when no likely answers exist."`
 }
 
 func (Question) Constrain(s *jsonschema.Schema) {
@@ -28,7 +28,7 @@ func (Question) Constrain(s *jsonschema.Schema) {
 
 type Option struct {
 	Label       string `json:"label" jsonschema:"User-facing label (1-5 words)."`
-	Description string `json:"description,omitempty" jsonschema:"One short sentence explaining the impact of this option."`
+	Description string `json:"description,omitempty" jsonschema:"One short sentence explaining the impact or tradeoff of this option."`
 }
 
 func (Option) Constrain(s *jsonschema.Schema) {
@@ -43,11 +43,11 @@ type Answer struct {
 type Answers map[string]Answer
 
 type Request struct {
-	Questions []Question `json:"questions" jsonschema:"Questions to show the user. Prefer 1 and do not exceed 3."`
+	Questions []Question `json:"questions" jsonschema:"Questions to show the user. Prefer 1 and do not exceed 4."`
 }
 
 func (Request) Constrain(s *jsonschema.Schema) {
-	s.Properties["questions"].MinItems, s.Properties["questions"].MaxItems = jsonschema.Ptr(1), jsonschema.Ptr(3)
+	s.Properties["questions"].MinItems, s.Properties["questions"].MaxItems = jsonschema.Ptr(1), jsonschema.Ptr(4)
 }
 
 func Decode(raw json.RawMessage) (Request, error) {
@@ -109,7 +109,9 @@ func (*Provider) Name() (string, string) { return "user_input", "Asks the user q
 func (*Provider) ToolList(context.Context) ([]*tools.Spec, error) {
 	return []*tools.Spec{{
 		Name: Tool,
-		Description: "Asks the user one to three short questions and waits for the answers. " +
+		Description: "Asks the user one to four short questions and waits for the answers. " +
+			"Use it whenever you need the user's answer, instead of writing questions in your reply. " +
+			"Not for permission to make a tool call: the runtime asks for approvals itself. " +
 			"Make it the only call of its response: other calls in the same response run before the user answers.",
 		InputSchema: tools.InputSchema[Request](),
 		Annotations: &tools.Annotations{Title: "Question", ReadOnlyHint: true, OpenWorldHint: tools.Hint(false)},
