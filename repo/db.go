@@ -66,10 +66,10 @@ func (d *DB) Close() error {
 }
 
 func (d *DB) applySchema() error {
+	if err := d.migrate(); err != nil {
+		return err
+	}
 	return d.gorm.Transaction(func(tx *gorm.DB) error {
-		if err := tx.AutoMigrate(rowTypes...); err != nil {
-			return fmt.Errorf("create tables: %w", err)
-		}
 		if err := tx.FirstOrCreate(&MemoryStateRow{}, MemoryStateRow{ID: 1}).Error; err != nil {
 			return fmt.Errorf("create memory state: %w", err)
 		}
