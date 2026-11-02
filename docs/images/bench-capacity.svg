@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" width="1600" height="1000">
+<defs><pattern id="hatch" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="10" height="10" fill="#f8fafc"/><line x1="0" y1="0" x2="0" y2="10" stroke="#cbd5e1" stroke-width="4"/></pattern><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="#94a3b8"/></marker></defs>
+<style>text { font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif; fill: #1e1b4b; } .eyebrow { font-size: 16px; font-weight: 600; letter-spacing: 3px; fill: #4f46e5; } .title { font-size: 36px; font-weight: 700; } .sub { font-size: 19px; fill: #64748b; } .kpi { font-size: 44px; font-weight: 700; letter-spacing: -0.5px; } .unit { font-size: 21px; font-weight: 600; fill: #334155; } .cap { font-size: 17px; fill: #64748b; } .h { font-size: 22px; font-weight: 700; } .hs { font-size: 19px; font-weight: 600; } .b { font-size: 17px; fill: #334155; } .s { font-size: 15px; fill: #64748b; } .code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-weight: 700; fill: #4f46e5; } .tick { font-size: 16px; fill: #64748b; } .lab { font-size: 17px; fill: #334155; } .val { font-size: 17px; font-weight: 600; } .chip { font-size: 15px; font-weight: 600; } .foot { font-size: 15px; fill: #94a3b8; }</style>
+<rect width="1600" height="1000" fill="#ffffff"/>
+<svg x="72" y="40" width="68" height="68" viewBox="0 0 240 240"><g shape-rendering="crispEdges"><rect x="36" y="6" width="12" height="12" fill="#1e1b4b"/><rect x="192" y="6" width="12" height="12" fill="#1e1b4b"/><rect x="24" y="18" width="12" height="12" fill="#1e1b4b"/><rect x="36" y="18" width="12" height="12" fill="#a5b4fc"/><rect x="48" y="18" width="12" height="12" fill="#1e1b4b"/><rect x="180" y="18" width="12" height="12" fill="#1e1b4b"/><rect x="192" y="18" width="12" height="12" fill="#a5b4fc"/><rect x="204" y="18" width="12" height="12" fill="#1e1b4b"/><rect x="24" y="30" width="12" height="12" fill="#1e1b4b"/><rect x="36" y="30" width="24" height="12" fill="#a5b4fc"/><rect x="60" y="30" width="12" height="12" fill="#1e1b4b"/><rect x="168" y="30" width="12" height="12" fill="#1e1b4b"/><rect x="180" y="30" width="24" height="12" fill="#a5b4fc"/><rect x="204" y="30" width="12" height="12" fill="#1e1b4b"/><rect x="24" y="42" width="12" height="12" fill="#1e1b4b"/><rect x="36" y="42" width="12" height="12" fill="#a5b4fc"/><rect x="48" y="42" width="12" height="12" fill="#f9a8d4"/><rect x="60" y="42" width="12" height="12" fill="#a5b4fc"/><rect x="72" y="42" width="12" height="12" fill="#1e1b4b"/><rect x="156" y="42" width="12" height="12" fill="#1e1b4b"/><rect x="168" y="42" width="12" height="12" fill="#a5b4fc"/><rect x="180" y="42" width="12" height="12" fill="#f9a8d4"/><rect x="192" y="42" width="12" height="12" fill="#a5b4fc"/><rect x="204" y="42" width="12" height="12" fill="#1e1b4b"/><rect x="24" y="54" width="12" height="12" fill="#1e1b4b"/><rect x="36" y="54" width="12" height="12" fill="#a5b4fc"/><rect x="48" y="54" width="24" height="12" fill="#f9a8d4"/><rect x="72" y="54" width="12" height="12" fill="#a5b4fc"/><rect x="84" y="54" width="72" height="12" fill="#1e1b4b"/><rect x="156" y="54" width="12" height="12" fill="#a5b4fc"/><rect x="168" y="54" width="24" height="12" fill="#f9a8d4"/><rect x="192" y="54" width="12" height="12" fill="#a5b4fc"/><rect x="204" y="54" width="12" height="12" fill="#1e1b4b"/><rect x="12" y="66" width="12" height="12" fill="#1e1b4b"/><rect x="24" y="66" width="24" height="12" fill="#a5b4fc"/><rect x="48" y="66" width="24" height="12" fill="#f9a8d4"/><rect x="72" y="66" width="96" height="12" fill="#a5b4fc"/><rect x="168" y="66" width="24" height="12" fill="#f9a8d4"/><rect x="192" y="66" width="24" height="12" fill="#a5b4fc"/><rect x="216" y="66" width="12" height="12" fill="#1e1b4b"/><rect x="12" y="78" width="12" height="12" fill="#1e1b4b"/><rect x="24" y="78" width="84" height="12" fill="#a5b4fc"/><rect x="108" y="78" width="24" height="12" fill="#eef2ff"/><rect x="132" y="78" width="84" height="12" fill="#a5b4fc"/><rect x="216" y="78" width="12" height="12" fill="#1e1b4b"/><rect x="12" y="90" width="12" height="12" fill="#1e1b4b"/><rect x="24" y="90" width="36" height="12" fill="#a5b4fc"/><rect x="60" y="90" width="12" height="12" fill="#ffffff"/><rect x="72" y="90" width="12" height="12" fill="#1e1b4b"/><rect x="84" y="90" width="24" height="12" fill="#a5b4fc"/><rect x="108" y="90" width="24" height="12" fill="#eef2ff"/><rect x="132" y="90" width="24" height="12" fill="#a5b4fc"/><rect x="156" y="90" width="12" height="12" fill="#ffffff"/><rect x="168" y="90" width="12" height="12" fill="#1e1b4b"/><rect x="180" y="90" width="36" height="12" fill="#a5b4fc"/><rect x="216" y="90" width="12" height="12" fill="#1e1b4b"/><rect x="0" y="102" width="12" height="12" fill="#1e1b4b"/><rect x="12" y="102" width="48" height="12" fill="#a5b4fc"/><rect x="60" y="102" width="24" height="12" fill="#1e1b4b"/><rect x="84" y="102" width="12" height="12" fill="#a5b4fc"/><rect x="96" y="102" width="48" height="12" fill="#eef2ff"/><rect x="144" y="102" width="12" height="12" fill="#a5b4fc"/><rect x="156" y="102" width="24" height="12" fill="#1e1b4b"/><rect x="180" y="102" width="48" height="12" fill="#a5b4fc"/><rect x="228" y="102" width="12" height="12" fill="#1e1b4b"/><rect x="0" y="114" width="12" height="12" fill="#1e1b4b"/><rect x="12" y="114" width="12" height="12" fill="#a5b4fc"/><rect x="24" y="114" width="36" height="12" fill="#eef2ff"/><rect x="60" y="114" width="24" height="12" fill="#1e1b4b"/><rect x="84" y="114" width="72" height="12" fill="#eef2ff"/><rect x="156" y="114" width="24" height="12" fill="#1e1b4b"/><rect x="180" y="114" width="36" height="12" fill="#eef2ff"/><rect x="216" y="114" width="12" height="12" fill="#a5b4fc"/><rect x="228" y="114" width="12" height="12" fill="#1e1b4b"/><rect x="0" y="126" width="12" height="12" fill="#1e1b4b"/><rect x="12" y="126" width="12" height="12" fill="#eef2ff"/><rect x="24" y="126" width="24" height="12" fill="#f9a8d4"/><rect x="48" y="126" width="48" height="12" fill="#eef2ff"/><rect x="96" y="126" width="48" height="12" fill="#1e1b4b"/><rect x="144" y="126" width="48" height="12" fill="#eef2ff"/><rect x="192" y="126" width="24" height="12" fill="#f9a8d4"/><rect x="216" y="126" width="12" height="12" fill="#eef2ff"/><rect x="228" y="126" width="12" height="12" fill="#1e1b4b"/><rect x="12" y="138" width="12" height="12" fill="#1e1b4b"/><rect x="24" y="138" width="84" height="12" fill="#eef2ff"/><rect x="108" y="138" width="24" height="12" fill="#1e1b4b"/><rect x="132" y="138" width="84" height="12" fill="#eef2ff"/><rect x="216" y="138" width="12" height="12" fill="#1e1b4b"/><rect x="0" y="150" width="12" height="12" fill="#1e1b4b"/><rect x="12" y="150" width="216" height="12" fill="#eef2ff"/><rect x="228" y="150" width="12" height="12" fill="#1e1b4b"/><rect x="12" y="162" width="12" height="12" fill="#1e1b4b"/><rect x="24" y="162" width="84" height="12" fill="#eef2ff"/><rect x="108" y="162" width="24" height="12" fill="#1e1b4b"/><rect x="132" y="162" width="84" height="12" fill="#eef2ff"/><rect x="216" y="162" width="12" height="12" fill="#1e1b4b"/><rect x="24" y="174" width="12" height="12" fill="#1e1b4b"/><rect x="36" y="174" width="60" height="12" fill="#eef2ff"/><rect x="96" y="174" width="12" height="12" fill="#1e1b4b"/><rect x="108" y="174" width="24" height="12" fill="#fb7185"/><rect x="132" y="174" width="12" height="12" fill="#1e1b4b"/><rect x="144" y="174" width="60" height="12" fill="#eef2ff"/><rect x="204" y="174" width="12" height="12" fill="#1e1b4b"/><rect x="36" y="186" width="12" height="12" fill="#1e1b4b"/><rect x="48" y="186" width="48" height="12" fill="#eef2ff"/><rect x="96" y="186" width="12" height="12" fill="#1e1b4b"/><rect x="108" y="186" width="24" height="12" fill="#fb7185"/><rect x="132" y="186" width="12" height="12" fill="#1e1b4b"/><rect x="144" y="186" width="48" height="12" fill="#eef2ff"/><rect x="192" y="186" width="12" height="12" fill="#1e1b4b"/><rect x="48" y="198" width="24" height="12" fill="#1e1b4b"/><rect x="72" y="198" width="36" height="12" fill="#eef2ff"/><rect x="108" y="198" width="24" height="12" fill="#1e1b4b"/><rect x="132" y="198" width="36" height="12" fill="#eef2ff"/><rect x="168" y="198" width="24" height="12" fill="#1e1b4b"/><rect x="72" y="210" width="24" height="12" fill="#1e1b4b"/><rect x="96" y="210" width="48" height="12" fill="#eef2ff"/><rect x="144" y="210" width="24" height="12" fill="#1e1b4b"/><rect x="96" y="222" width="48" height="12" fill="#1e1b4b"/></g></svg>
+<text class="eyebrow" x="164" y="62">OLLUPI BENCH · 容量</text>
+<text class="title" x="164" y="104">约 1500 个活跃会话以内，turn 耗时与单独运行基本持平</text>
+<text class="sub" x="72" y="152">闭环负载：每个会话在上一个 turn 结束后立即发起下一个。每个 turn 3 次模型调用（5 s ± 2 s）、2 次工具调用（1 s），单独运行约 17 s</text>
+<line x1="72" y1="940" x2="1528" y2="940" stroke="#e2e8f0" stroke-width="2"/>
+<text class="foot" x="72" y="972">Apple M1 · 8 核 · 8 GB · 单个 SQLite 库 · 模型与工具为模拟</text>
+<text class="foot" x="1528" y="972" text-anchor="end" style="font-family: ui-monospace, 'SF Mono', Menlo, monospace">go run ./bench steady -c 1536</text>
+<rect x="72" y="196" width="1456" height="124" rx="16" fill="#eef2ff"/>
+<text x="104.0" y="262"><tspan class="kpi">+5%</tspan><tspan class="unit" dx="8"></tspan></text>
+<text class="cap" x="104.0" y="296.0" text-anchor="start">1536 个活跃会话时 turn 耗时 p50 的增幅</text>
+<line x1="557.3333333333333" y1="222" x2="557.3333333333333" y2="294" stroke="#c7d2fe" stroke-width="2"/>
+<text x="589.3333333333333" y="262"><tspan class="kpi">350</tspan><tspan class="unit" dx="8">次/秒</tspan></text>
+<text class="cap" x="589.3" y="296.0" text-anchor="start">4096 个活跃会话时的模型调用吞吐</text>
+<line x1="1042.6666666666665" y1="222" x2="1042.6666666666665" y2="294" stroke="#c7d2fe" stroke-width="2"/>
+<text x="1074.6666666666665" y="262"><tspan class="kpi">11.6</tspan><tspan class="unit" dx="8">KB</tspan></text>
+<text class="cap" x="1074.7" y="296.0" text-anchor="start">每个 turn 的磁盘占用</text>
+<text class="hs" x="160.0" y="422.0" text-anchor="start">turn 耗时</text>
+<text class="tick" x="160.0" y="450.0" text-anchor="start">秒</text>
+<line x1="160" y1="830.0" x2="760" y2="830.0" stroke="#eef2f6" stroke-width="2"/>
+<text class="tick" x="146.0" y="836.0" text-anchor="end">0</text>
+<line x1="160" y1="710.0" x2="760" y2="710.0" stroke="#eef2f6" stroke-width="2"/>
+<text class="tick" x="146.0" y="716.0" text-anchor="end">15</text>
+<line x1="160" y1="590.0" x2="760" y2="590.0" stroke="#eef2f6" stroke-width="2"/>
+<text class="tick" x="146.0" y="596.0" text-anchor="end">30</text>
+<line x1="160" y1="470.0" x2="760" y2="470.0" stroke="#eef2f6" stroke-width="2"/>
+<text class="tick" x="146.0" y="476.0" text-anchor="end">45</text>
+<line x1="160" y1="830" x2="760" y2="830" stroke="#cbd5e1" stroke-width="2"/>
+<text class="tick" x="299.6" y="860.0" text-anchor="middle">1,024</text>
+<text class="tick" x="439.3" y="860.0" text-anchor="middle">2,048</text>
+<text class="tick" x="578.9" y="860.0" text-anchor="middle">3,072</text>
+<text class="tick" x="718.5" y="860.0" text-anchor="middle">4,096</text>
+<text class="cap" x="460.0" y="894.0" text-anchor="middle">同时活跃的会话</text>
+<polyline points="160.0,694.0 760.0,694.0" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="10 8"/>
+<text class="cap" x="760.0" y="724.0" text-anchor="end">单独运行 17 s</text>
+<polyline points="194.9,666.8 299.6,664.4 369.5,659.6 439.3,551.6 718.5,502.8" fill="none" stroke="#818cf8" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="194.9" cy="666.8" r="7" fill="#818cf8" stroke="#ffffff" stroke-width="3"/>
+<circle cx="299.6" cy="664.4" r="7" fill="#818cf8" stroke="#ffffff" stroke-width="3"/>
+<circle cx="369.5" cy="659.6" r="7" fill="#818cf8" stroke="#ffffff" stroke-width="3"/>
+<circle cx="439.3" cy="551.6" r="7" fill="#818cf8" stroke="#ffffff" stroke-width="3"/>
+<circle cx="718.5" cy="502.8" r="7" fill="#818cf8" stroke="#ffffff" stroke-width="3"/>
+<polyline points="194.9,693.2 299.6,691.6 369.5,687.6 439.3,653.2 718.5,594.0" fill="none" stroke="#4f46e5" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="194.9" cy="693.2" r="7" fill="#4f46e5" stroke="#ffffff" stroke-width="3"/>
+<circle cx="299.6" cy="691.6" r="7" fill="#4f46e5" stroke="#ffffff" stroke-width="3"/>
+<circle cx="369.5" cy="687.6" r="7" fill="#4f46e5" stroke="#ffffff" stroke-width="3"/>
+<circle cx="439.3" cy="653.2" r="7" fill="#4f46e5" stroke="#ffffff" stroke-width="3"/>
+<circle cx="718.5" cy="594.0" r="7" fill="#4f46e5" stroke="#ffffff" stroke-width="3"/>
+<text class="val" x="734.5" y="508.8" text-anchor="start">p95</text>
+<text class="val" x="734.5" y="600.0" text-anchor="start">p50</text>
+<text class="lab" x="731.4" y="428.0" text-anchor="start">p95</text>
+<line x1="689.44" y1="422" x2="719.44" y2="422" stroke="#818cf8" stroke-width="5" stroke-linecap="round"/>
+<text class="lab" x="632.9" y="428.0" text-anchor="start">p50</text>
+<line x1="590.8800000000001" y1="422" x2="620.8800000000001" y2="422" stroke="#4f46e5" stroke-width="5" stroke-linecap="round"/>
+<text class="hs" x="940.0" y="422.0" text-anchor="start">模型调用吞吐</text>
+<text class="tick" x="940.0" y="450.0" text-anchor="start">次/秒</text>
+<line x1="940" y1="830.0" x2="1540" y2="830.0" stroke="#eef2f6" stroke-width="2"/>
+<text class="tick" x="926.0" y="836.0" text-anchor="end">0</text>
+<line x1="940" y1="740.0" x2="1540" y2="740.0" stroke="#eef2f6" stroke-width="2"/>
+<text class="tick" x="926.0" y="746.0" text-anchor="end">100</text>
+<line x1="940" y1="650.0" x2="1540" y2="650.0" stroke="#eef2f6" stroke-width="2"/>
+<text class="tick" x="926.0" y="656.0" text-anchor="end">200</text>
+<line x1="940" y1="560.0" x2="1540" y2="560.0" stroke="#eef2f6" stroke-width="2"/>
+<text class="tick" x="926.0" y="566.0" text-anchor="end">300</text>
+<line x1="940" y1="470.0" x2="1540" y2="470.0" stroke="#eef2f6" stroke-width="2"/>
+<text class="tick" x="926.0" y="476.0" text-anchor="end">400</text>
+<line x1="940" y1="830" x2="1540" y2="830" stroke="#cbd5e1" stroke-width="2"/>
+<text class="tick" x="1079.6" y="860.0" text-anchor="middle">1,024</text>
+<text class="tick" x="1219.3" y="860.0" text-anchor="middle">2,048</text>
+<text class="tick" x="1358.9" y="860.0" text-anchor="middle">3,072</text>
+<text class="tick" x="1498.5" y="860.0" text-anchor="middle">4,096</text>
+<text class="cap" x="1240.0" y="894.0" text-anchor="middle">同时活跃的会话</text>
+<polyline points="974.9,794.9 1079.6,703.1 1149.5,639.2 1219.3,632.0 1498.5,515.0" fill="none" stroke="#4f46e5" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="974.9" cy="794.9" r="7" fill="#4f46e5" stroke="#ffffff" stroke-width="3"/>
+<circle cx="1079.6" cy="703.1" r="7" fill="#4f46e5" stroke="#ffffff" stroke-width="3"/>
+<circle cx="1149.5" cy="639.2" r="7" fill="#4f46e5" stroke="#ffffff" stroke-width="3"/>
+<circle cx="1219.3" cy="632.0" r="7" fill="#4f46e5" stroke="#ffffff" stroke-width="3"/>
+<circle cx="1498.5" cy="515.0" r="7" fill="#4f46e5" stroke="#ffffff" stroke-width="3"/>
+<text class="val" x="1079.6" y="683.1" text-anchor="middle">141</text>
+<text class="val" x="1219.3" y="612.0" text-anchor="middle">220</text>
+<text class="val" x="1498.5" y="495.0" text-anchor="middle">350</text>
+</svg>
