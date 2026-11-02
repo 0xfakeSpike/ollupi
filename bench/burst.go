@@ -38,6 +38,10 @@ type provider struct {
 }
 
 func (p *provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/stats" {
+		fmt.Fprintf(w, "%d %d %d", p.peak.Load(), p.refused.Load(), p.requests.Load())
+		return
+	}
 	n := p.inFlight.Add(1)
 	defer p.inFlight.Add(-1)
 	p.requests.Add(1)
@@ -131,6 +135,7 @@ func burst(args []string) {
 	probeEvery := fs.Duration("probe", 5*time.Second, "start a new conversation this often during the burst and time its turn")
 	profile := fs.String("cpuprofile", "", "write a CPU profile of the burst to this file")
 	hold := fs.Bool("hold", false, "answer no model request until every turn is submitted, and time the burst from then")
+	timeline := fs.String("timeline", "", "write the seconds into the burst, the requests in flight and the turns ended, every 250 ms, to this CSV file")
 	fs.Parse(args)
 	if *limit == 0 {
 		*limit = *calls
@@ -195,8 +200,13 @@ func burst(args []string) {
 	}
 	var peakRSS atomic.Value
 	peakRSS.Store(0.0)
+	var samples []string
+	var sampleAt atomic.Value
+	sampleAt.Store(time.Now())
 	done := make(chan struct{})
+	sampled := make(chan struct{})
 	go func() {
+		defer close(sampled)
 		for {
 			select {
 			case <-done:
@@ -205,10 +215,12 @@ func burst(args []string) {
 				if rss := rssMB(); rss > peakRSS.Load().(float64) {
 					peakRSS.Store(rss)
 				}
+				samples = append(samples, fmt.Sprintf("%.2f,%d,%d", time.Since(sampleAt.Load().(time.Time)).Seconds(), p.inFlight.Load(), tr.ended.Load()))
 			}
 		}
 	}()
 	busyCPU, startAt := cpu(), time.Now()
+	sampleAt.Store(startAt)
 	turns := make([]string, 0, *n)
 	for _, id := range threads {
 		turns = append(turns, tr.start(ag, id, "work"))
@@ -216,6 +228,7 @@ func burst(args []string) {
 	submit := time.Since(startAt)
 	if *hold {
 		startAt = time.Now()
+		sampleAt.Store(startAt)
 		close(p.hold)
 	}
 
@@ -239,6 +252,12 @@ func burst(args []string) {
 	waitFor("the burst", func() bool { return len(tr.took(turns)) == len(turns) })
 	total := time.Since(startAt)
 	close(done)
+	<-sampled
+	if *timeline != "" {
+		if err := os.WriteFile(*timeline, []byte("seconds,in_flight,turns_ended\n"+strings.Join(samples, "\n")+"\n"), 0o644); err != nil {
+			log.Fatal(err)
+		}
+	}
 	<-probing
 	probesMu.Lock()
 	waitFor("the probes", func() bool { return len(tr.took(probes)) == len(probes) })
