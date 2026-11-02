@@ -1,14 +1,19 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
-	"net/http/httptest"
 	"os"
+	"os/exec"
+	"runtime"
 	"runtime/pprof"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -41,14 +46,26 @@ func steady(args []string) {
 		*calls = *c
 	}
 
-	p := &provider{latency: *latency, jitter: *jitter, limit: *calls, next: func(_ string, answered int) (string, string) {
-		if answered < *rounds {
-			return "bench__work", "{}"
-		}
-		return "", ""
-	}}
-	srv := httptest.NewServer(p)
-	defer srv.Close()
+	exe, err := os.Executable()
+	if err != nil {
+		log.Fatal(err)
+	}
+	served := exec.Command(exe, "provider", "-latency", latency.String(), "-jitter", jitter.String(),
+		"-rounds", strconv.Itoa(*rounds), "-limit", strconv.Itoa(*calls))
+	served.Stderr = os.Stderr
+	out, err := served.StdoutPipe()
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := served.Start(); err != nil {
+		log.Fatal(err)
+	}
+	defer served.Process.Kill()
+	url, err := bufio.NewReader(out).ReadString('\n')
+	if err != nil {
+		log.Fatal(err)
+	}
+	url = strings.TrimSpace(url)
 	// As in burst: keep a connection per call in flight, as a real provider's HTTP/2 connection would serve them.
 	http.DefaultTransport.(*http.Transport).MaxIdleConnsPerHost = *calls
 	dir, err := os.MkdirTemp("", "ollupi-bench-")
@@ -64,7 +81,7 @@ func steady(args []string) {
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}, done: map[string]chan struct{}{}}
 	ag := agent.New(agent.Config{
 		Name: "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
-		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", *calls, map[string]llm.Limits{"fake": {Context: 200_000, Output: 32_000}})},
+		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(url, "", *calls, map[string]llm.Limits{"fake": {Context: 200_000, Output: 32_000}})},
 		Providers:   []tools.Provider{work{latency: *toolLatency}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 		Slots:       *slots, DB: db, OnEvent: tr.on,
@@ -94,8 +111,9 @@ func steady(args []string) {
 			log.Fatal(err)
 		}
 	}
-	var peakRSS atomic.Value
+	var peakRSS, peakHeap atomic.Value
 	peakRSS.Store(0.0)
+	peakHeap.Store(0.0)
 	stop := make(chan struct{})
 	go func() {
 		for {
@@ -103,6 +121,11 @@ func steady(args []string) {
 			case <-stop:
 				return
 			case <-time.After(time.Second):
+				var m runtime.MemStats
+				runtime.ReadMemStats(&m)
+				if heap := float64(m.HeapInuse) / (1 << 20); heap > peakHeap.Load().(float64) {
+					peakHeap.Store(heap)
+				}
 				if rss := rssMB(); rss > peakRSS.Load().(float64) {
 					peakRSS.Store(rss)
 				}
@@ -136,14 +159,42 @@ func steady(args []string) {
 	close(stop)
 	pprof.StopCPUProfile()
 
+	var peak, refused, requests int64
+	if resp, err := http.Get(url + "/stats"); err == nil {
+		fmt.Fscan(resp.Body, &peak, &refused, &requests)
+		resp.Body.Close()
+	}
 	took := tr.took(ids)
 	alone := time.Duration(*rounds+1)*(*latency) + time.Duration(*rounds)*(*toolLatency)
 	n := len(ids)
 	fmt.Printf("c=%d slots=%d calls=%d turns=%d total_s=%.1f turns_per_s=%.1f model_calls_per_s=%.0f alone_s=%.1f "+
-		"p50_s=%.1f p95_s=%.1f p99_s=%.1f peak_in_flight=%d refused_429=%d failed_turns=%d rss_peak_mb=%.0f cpu_cores=%.2f cpu_ms_per_turn=%.1f\n",
+		"p50_s=%.1f p95_s=%.1f p99_s=%.1f peak_in_flight=%d refused_429=%d failed_turns=%d rss_peak_mb=%.0f heap_peak_mb=%.0f db_kb_per_turn=%.1f cpu_cores=%.2f cpu_ms_per_turn=%.1f\n",
 		*c, *slots, *calls, n, total.Seconds(), float64(n)/total.Seconds(), float64(n*(*rounds+1))/total.Seconds(), alone.Seconds(),
-		pct(took, .5).Seconds(), pct(took, .95).Seconds(), pct(took, .99).Seconds(), p.peak.Load(), p.refused.Load(), tr.failed.Load(),
-		peakRSS.Load().(float64), busyCPU.Seconds()/total.Seconds(), float64(busyCPU)/float64(time.Millisecond)/float64(n))
+		pct(took, .5).Seconds(), pct(took, .95).Seconds(), pct(took, .99).Seconds(), peak, refused, tr.failed.Load(),
+		peakRSS.Load().(float64), peakHeap.Load().(float64), dbMB(dir)*1024/float64(n), busyCPU.Seconds()/total.Seconds(), float64(busyCPU)/float64(time.Millisecond)/float64(n))
 	cancel()
 	ag.Wait()
+}
+
+// providerMain serves the fake provider in a process of its own, so what it holds is not counted against the agent;
+// it prints its URL, and /stats answers with the peak in flight, the requests refused and all requests.
+func providerMain(args []string) {
+	fs := flag.NewFlagSet("provider", flag.ExitOnError)
+	latency := fs.Duration("latency", 5*time.Second, "model latency")
+	jitter := fs.Duration("jitter", 2*time.Second, "model latency varies by up to this much either way")
+	rounds := fs.Int("rounds", 2, "tool calls in each turn, each followed by a model call")
+	limit := fs.Int("limit", 1024, "requests allowed in flight before answering 429")
+	fs.Parse(args)
+	p := &provider{latency: *latency, jitter: *jitter, limit: *limit, next: func(_ string, answered int) (string, string) {
+		if answered < *rounds {
+			return "bench__work", "{}"
+		}
+		return "", ""
+	}}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("http://%s\n", ln.Addr())
+	log.Fatal(http.Serve(ln, p))
 }
