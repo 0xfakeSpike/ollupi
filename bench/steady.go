@@ -35,6 +35,9 @@ func steady(args []string) {
 	calls := fs.Int("calls", 0, "model calls the connection and the provider allow in flight (default: c)")
 	latency := fs.Duration("latency", 5*time.Second, "model latency")
 	jitter := fs.Duration("jitter", 2*time.Second, "model latency varies by up to this much either way")
+	sigma := fs.Float64("sigma", 0, "draw model latency log-normally around -latency with this sigma, in place of -jitter")
+	others := fs.Int("others", 0, "the most requests other clients of the account hold in flight against the provider's limit")
+	fail := fs.Float64("fail", 0, "share of model requests answered with a 500")
 	toolLatency := fs.Duration("tool", time.Second, "tool latency")
 	rounds := fs.Int("rounds", 2, "tool calls in each turn, each followed by a model call")
 	profile := fs.String("cpuprofile", "", "write a CPU profile of the run to this file")
@@ -51,6 +54,7 @@ func steady(args []string) {
 		log.Fatal(err)
 	}
 	served := exec.Command(exe, "provider", "-latency", latency.String(), "-jitter", jitter.String(),
+		"-sigma", strconv.FormatFloat(*sigma, 'g', -1, 64), "-others", strconv.Itoa(*others), "-fail", strconv.FormatFloat(*fail, 'g', -1, 64),
 		"-rounds", strconv.Itoa(*rounds), "-limit", strconv.Itoa(*calls))
 	served.Stderr = os.Stderr
 	out, err := served.StdoutPipe()
@@ -78,6 +82,7 @@ func steady(args []string) {
 		log.Fatal(err)
 	}
 	defer db.Close()
+	dbs := watchDB(db)
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}, done: map[string]chan struct{}{}}
 	ag := agent.New(agent.Config{
 		Name: "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
@@ -132,6 +137,7 @@ func steady(args []string) {
 			}
 		}
 	}()
+	dbs.start()
 	busyCPU, startAt := cpu(), time.Now()
 	var mu sync.Mutex
 	var ids []string
@@ -159,33 +165,36 @@ func steady(args []string) {
 	close(stop)
 	pprof.StopCPUProfile()
 
-	var peak, refused, requests int64
+	var peak, refused, requests, failed int64
 	if resp, err := http.Get(url + "/stats"); err == nil {
-		fmt.Fscan(resp.Body, &peak, &refused, &requests)
+		fmt.Fscan(resp.Body, &peak, &refused, &requests, &failed)
 		resp.Body.Close()
 	}
 	took := tr.took(ids)
 	alone := time.Duration(*rounds+1)*(*latency) + time.Duration(*rounds)*(*toolLatency)
 	n := len(ids)
 	fmt.Printf("c=%d slots=%d calls=%d turns=%d total_s=%.1f turns_per_s=%.1f model_calls_per_s=%.0f alone_s=%.1f "+
-		"p50_s=%.1f p95_s=%.1f p99_s=%.1f peak_in_flight=%d refused_429=%d failed_turns=%d rss_peak_mb=%.0f heap_peak_mb=%.0f db_kb_per_turn=%.1f cpu_cores=%.2f cpu_ms_per_turn=%.1f\n",
+		"p50_s=%.1f p95_s=%.1f p99_s=%.1f peak_in_flight=%d refused_429=%d failed_500=%d failed_turns=%d rss_peak_mb=%.0f heap_peak_mb=%.0f db_kb_per_turn=%.1f cpu_cores=%.2f cpu_ms_per_turn=%.1f %s\n",
 		*c, *slots, *calls, n, total.Seconds(), float64(n)/total.Seconds(), float64(n*(*rounds+1))/total.Seconds(), alone.Seconds(),
-		pct(took, .5).Seconds(), pct(took, .95).Seconds(), pct(took, .99).Seconds(), peak, refused, tr.failed.Load(),
-		peakRSS.Load().(float64), peakHeap.Load().(float64), dbMB(dir)*1024/float64(n), busyCPU.Seconds()/total.Seconds(), float64(busyCPU)/float64(time.Millisecond)/float64(n))
+		pct(took, .5).Seconds(), pct(took, .95).Seconds(), pct(took, .99).Seconds(), peak, refused, failed, tr.failed.Load(),
+		peakRSS.Load().(float64), peakHeap.Load().(float64), dbMB(dir)*1024/float64(n), busyCPU.Seconds()/total.Seconds(), float64(busyCPU)/float64(time.Millisecond)/float64(n), dbs.report(n))
 	cancel()
 	ag.Wait()
 }
 
 // providerMain serves the fake provider in a process of its own, so what it holds is not counted against the agent;
-// it prints its URL, and /stats answers with the peak in flight, the requests refused and all requests.
+// it prints its URL, and /stats answers with the peak in flight, the requests refused, all requests and those failed.
 func providerMain(args []string) {
 	fs := flag.NewFlagSet("provider", flag.ExitOnError)
 	latency := fs.Duration("latency", 5*time.Second, "model latency")
 	jitter := fs.Duration("jitter", 2*time.Second, "model latency varies by up to this much either way")
 	rounds := fs.Int("rounds", 2, "tool calls in each turn, each followed by a model call")
 	limit := fs.Int("limit", 1024, "requests allowed in flight before answering 429")
+	sigma := fs.Float64("sigma", 0, "draw latency log-normally around -latency with this sigma, in place of -jitter")
+	others := fs.Int("others", 0, "the most requests other clients of the account hold in flight against -limit")
+	fail := fs.Float64("fail", 0, "share of requests answered with a 500")
 	fs.Parse(args)
-	p := &provider{latency: *latency, jitter: *jitter, limit: *limit, next: func(_ string, answered int) (string, string) {
+	p := &provider{latency: *latency, jitter: *jitter, sigma: *sigma, limit: *limit, others: *others, fail: *fail, next: func(_ string, answered int) (string, string) {
 		if answered < *rounds {
 			return "bench__work", "{}"
 		}

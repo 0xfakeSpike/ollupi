@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
@@ -29,17 +30,29 @@ import (
 // with 429, as an account's concurrency limit would refuse it.
 type provider struct {
 	latency, jitter time.Duration
-	limit           int
+	// sigma, when above zero, draws the latency from a log-normal distribution with latency as its median, the long
+	// tail real providers show, in place of the even spread of jitter.
+	sigma float64
+	limit int
+	// others, when above zero, is the most requests other clients of the same account keep in flight; how many they
+	// hold changes every second, and they count against limit as this agent's requests do.
+	others int
+	// fail is the share of requests answered at once with a 500.
+	fail float64
+	// fanout is how many calls a response carries when it calls a tool, all of them the same call; one when zero.
+	fanout int
 	// next names the call that answers a request made after the model answered the user's message ask so many times.
 	next func(ask string, answered int) (name, arguments string)
+	// arrived, when set, hears the ask of each request as it arrives.
+	arrived func(ask string)
 	// hold, while open, keeps every request waiting, so a backlog builds before any turn can finish.
-	hold                              chan struct{}
-	inFlight, peak, requests, refused atomic.Int64
+	hold                                      chan struct{}
+	inFlight, peak, requests, refused, failed atomic.Int64
 }
 
 func (p *provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/stats" {
-		fmt.Fprintf(w, "%d %d %d", p.peak.Load(), p.refused.Load(), p.requests.Load())
+		fmt.Fprintf(w, "%d %d %d %d", p.peak.Load(), p.refused.Load(), p.requests.Load(), p.failed.Load())
 		return
 	}
 	n := p.inFlight.Add(1)
@@ -47,7 +60,12 @@ func (p *provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p.requests.Add(1)
 	for old := p.peak.Load(); n > old && !p.peak.CompareAndSwap(old, n); old = p.peak.Load() {
 	}
-	if n > int64(p.limit) {
+	others := 0
+	if p.others > 0 {
+		// Seeded by the second, so every request in that second sees the same load.
+		others = rand.New(rand.NewPCG(uint64(time.Now().Unix()), 0)).IntN(p.others + 1)
+	}
+	if n+int64(others) > int64(p.limit) {
 		p.refused.Add(1)
 		http.Error(w, `{"error":{"message":"too many requests in flight","type":"rate_limit"}}`, http.StatusTooManyRequests)
 		return
@@ -70,11 +88,23 @@ func (p *provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			answered++
 		}
 	}
+	if p.arrived != nil {
+		p.arrived(ask)
+	}
+	if rand.Float64() < p.fail {
+		p.failed.Add(1)
+		http.Error(w, `{"error":{"message":"internal error","type":"server_error"}}`, http.StatusInternalServerError)
+		return
+	}
 	name, arguments := p.next(ask, answered)
 	if p.hold != nil {
 		<-p.hold
 	}
-	time.Sleep(p.latency + time.Duration((rand.Float64()*2-1)*float64(p.jitter)))
+	delay := p.latency + time.Duration((rand.Float64()*2-1)*float64(p.jitter))
+	if p.sigma > 0 {
+		delay = time.Duration(float64(p.latency) * math.Exp(p.sigma*rand.NormFloat64()))
+	}
+	time.Sleep(delay)
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	send := func(delta map[string]any, finish any) {
@@ -83,8 +113,12 @@ func (p *provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "data: %s\n\n", raw)
 	}
 	if name != "" {
-		send(map[string]any{"tool_calls": []any{map[string]any{"index": 0, "id": fmt.Sprintf("call_%d", p.requests.Load()),
-			"type": "function", "function": map[string]any{"name": name, "arguments": arguments}}}}, nil)
+		var calls []any
+		for i := range max(p.fanout, 1) {
+			calls = append(calls, map[string]any{"index": i, "id": fmt.Sprintf("call_%d_%d", p.requests.Load(), i),
+				"type": "function", "function": map[string]any{"name": name, "arguments": arguments}})
+		}
+		send(map[string]any{"tool_calls": calls}, nil)
 		send(map[string]any{}, "tool_calls")
 	} else {
 		send(map[string]any{"content": "done"}, nil)
@@ -130,6 +164,9 @@ func burst(args []string) {
 	limit := fs.Int("limit", 0, "requests the provider allows in flight before answering 429 (default: calls)")
 	latency := fs.Duration("latency", 300*time.Millisecond, "model latency")
 	jitter := fs.Duration("jitter", 100*time.Millisecond, "model latency varies by up to this much either way")
+	sigma := fs.Float64("sigma", 0, "draw model latency log-normally around -latency with this sigma, in place of -jitter")
+	others := fs.Int("others", 0, "the most requests other clients of the account hold in flight against -limit")
+	fail := fs.Float64("fail", 0, "share of model requests answered with a 500")
 	toolLatency := fs.Duration("tool", 200*time.Millisecond, "tool latency")
 	rounds := fs.Int("rounds", 2, "tool calls in each turn, each followed by a model call")
 	probeEvery := fs.Duration("probe", 5*time.Second, "start a new conversation this often during the burst and time its turn")
@@ -141,7 +178,7 @@ func burst(args []string) {
 		*limit = *calls
 	}
 
-	p := &provider{latency: *latency, jitter: *jitter, limit: *limit, next: func(_ string, answered int) (string, string) {
+	p := &provider{latency: *latency, jitter: *jitter, sigma: *sigma, limit: *limit, others: *others, fail: *fail, next: func(_ string, answered int) (string, string) {
 		if answered < *rounds {
 			return "bench__work", "{}"
 		}
@@ -284,11 +321,11 @@ func burst(args []string) {
 	}
 	tr.mu.Unlock()
 	fmt.Printf("n=%d slots=%d calls=%d limit=%d total_s=%.1f bound_s=%.1f efficiency=%.2f submit_s=%.2f turns_per_s=%.1f "+
-		"p50_s=%.1f p95_s=%.1f p99_s=%.1f per_s_p10=%d per_s_p50=%d per_s_p90=%d peak_in_flight=%d requests=%d refused_429=%d "+
+		"p50_s=%.1f p95_s=%.1f p99_s=%.1f per_s_p10=%d per_s_p50=%d per_s_p90=%d peak_in_flight=%d requests=%d refused_429=%d failed_500=%d "+
 		"failed_turns=%d rss_peak_mb=%.0f cpu_ms_per_turn=%.2f probes_at_s:took_s=[%s]\n",
 		*n, *slots, *calls, *limit, total.Seconds(), bound.Seconds(), bound.Seconds()/total.Seconds(), submit.Seconds(),
 		float64(*n)/total.Seconds(), pct(took, .5).Seconds(), pct(took, .95).Seconds(), pct(took, .99).Seconds(),
-		pctInt(rates, .1), pctInt(rates, .5), pctInt(rates, .9), p.peak.Load(), p.requests.Load(), p.refused.Load(),
+		pctInt(rates, .1), pctInt(rates, .5), pctInt(rates, .9), p.peak.Load(), p.requests.Load(), p.refused.Load(), p.failed.Load(),
 		tr.failed.Load(), peakRSS.Load().(float64), float64(busyCPU)/float64(time.Millisecond)/float64(*n), strings.Join(probeTook, " "))
 	cancel()
 	ag.Wait()
