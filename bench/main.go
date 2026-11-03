@@ -6,6 +6,9 @@
 //	bench crash   whether turns survive the process being killed at random moments
 //	bench isolated  the memory of one process for each conversation, the baseline the pool replaces
 //	bench resume  how long a conversation idle in the database takes to answer again, and a restart takes
+//	bench mix     how long user, subagent and scheduled-task turns wait for their first model request, side by side
+//	bench fanout  whether turns that each start many subagents at once, more than there are slots, all end
+//	bench soak    whether turn time, memory, collector pauses and the database stay flat over a long run
 package main
 
 import (
@@ -182,9 +185,9 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})))
 	// SetDefault routes the log package through slog at Info, below the level kept; the bench's own errors must show.
 	log.SetOutput(os.Stderr)
-	experiments := map[string]func([]string){"parked": parked, "burst": burst, "steady": steady, "crash": crash, "crashchild": crashChild, "provider": providerMain, "isolated": isolated, "lone": lone, "resume": resume}
+	experiments := map[string]func([]string){"parked": parked, "burst": burst, "steady": steady, "crash": crash, "crashchild": crashChild, "provider": providerMain, "isolated": isolated, "lone": lone, "resume": resume, "mix": mix, "fanout": fanout, "soak": soak}
 	if len(os.Args) < 2 || experiments[os.Args[1]] == nil {
-		log.Fatal("usage: bench parked|burst|steady|crash|isolated|resume [flags]")
+		log.Fatal("usage: bench parked|burst|steady|crash|isolated|resume|mix|fanout|soak [flags]")
 	}
 	experiments[os.Args[1]](os.Args[2:])
 }
