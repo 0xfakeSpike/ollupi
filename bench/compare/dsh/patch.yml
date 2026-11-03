@@ -1,0 +1,28 @@
+# Overlay on the shipped sdk-minimal profile: route the model to the fake provider through dsh's pi-ai adapter,
+# drop the shell tools, and add bench__work. The provider URL comes from $BENCH_PROVIDER_URL.
+- id: llm-deepseek
+  disabled: true
+- id: persistent-bash
+  disabled: true
+- id: terminal-bash
+  disabled: true
+- insert:
+    - id: llm-fake
+      name: '@deepseek-ai/dsh-llm-pi-ai'
+      config:
+        providers:
+          fake:
+            api: openai-completions
+            baseURL: !!js process.env.BENCH_PROVIDER_URL
+            apiKeyEnv: BENCH_API_KEY
+            compat:
+              supportsStore: false
+              supportsDeveloperRole: false
+              supportsReasoningEffort: false
+            models:
+              - id: fake
+                contextWindow: 200000
+                maxTokens: 32000
+                reasoningEfforts: false
+    - id: bench-work
+      name: './bench-tool.mjs'
