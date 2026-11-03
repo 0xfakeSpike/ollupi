@@ -15,6 +15,11 @@ import (
 const (
 	defaultChatTimeout = 180 * time.Second
 	DefaultCalls       = 4
+	// retries is how many times a request refused with 408, 429 or a 5xx, or cut off before its answer, is sent
+	// again, waiting from half a second, doubling to at most eight (or, with OpenAI and Anthropic, as long as the
+	// provider's Retry-After asks): about 40 s in all, within defaultChatTimeout. A provider short of quota for a few seconds then slows a turn
+	// instead of failing it. The call keeps its slot while it waits, so the calls in flight stay within the limit.
+	retries = 8
 )
 
 type Limits struct {

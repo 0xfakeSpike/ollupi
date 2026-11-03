@@ -24,7 +24,7 @@ type Anthropic struct {
 }
 
 func NewAnthropic(baseURL, apiKey string, calls int, limits map[string]Limits) *Anthropic {
-	opts := []option.RequestOption{option.WithAPIKey(apiKey)}
+	opts := []option.RequestOption{option.WithAPIKey(apiKey), option.WithMaxRetries(retries)}
 	if baseURL != "" {
 		opts = append(opts, option.WithBaseURL(baseURL))
 	}
