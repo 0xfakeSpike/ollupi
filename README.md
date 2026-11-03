@@ -38,7 +38,7 @@ Ollupi 不以虚拟机或容器逐个隔离 agent，而是池化 runtime，并�
 
 ![容量](docs/images/bench-capacity.svg)
 
-闭环负载下，1536 个活跃会话时 turn 耗时 p50 较单独运行增加 5%，2048 个时增加 30%。4096 个会话时吞吐为每秒 350 次模型调用，CPU 占用约 2 核，瓶颈为单个 SQLite 连接。
+闭环负载下，1536 个活跃会话时 turn 耗时 p50 较单独运行增加 5%，2048 个时增加 30%。4096 个会话时吞吐为每秒 350 次模型调用，CPU 占用约 2 核，瓶颈为单个 SQLite 连接：每个 turn 执行 68 次读、15 次写，1536 个会话时每个 turn 等待该连接合计 43 ms。
 
 ![突发与额度](docs/images/bench-burst.svg)
 
@@ -47,6 +47,25 @@ Ollupi 不以虚拟机或容器逐个隔离 agent，而是池化 runtime，并�
 ![恢复](docs/images/bench-recovery.svg)
 
 混合负载（工具调用、向用户提问、派生子代理）下随机 `kill -9` 共 90 次，960 个 turn 全部完成，无工具调用重复执行，被中断的调用均标记为可能已生效；为使中断覆盖各执行阶段，此项将模型调用缩短为 200 ms、工具调用缩短为 300 ms。持有 1 万个挂起会话与 500 个运行中 turn 时，重启耗时 448 ms。闲置会话被唤醒至发出模型请求的耗时随历史长度增长，1000 轮历史时 p50 为 73 ms。
+
+256 个会话持续发送 turn（其中 20% 交给子代理），运行中 1000 个定时任务同时到点：高峰之外，turn 等待首次模型请求的 p50 为 7 ms、p99 为 275 ms；高峰期间新到的 turn 与定时任务按就绪先后排队，p50 为 47.5 s，高峰在 58.7 s 内排空，与模型额度允许的下限相当。子代理等待的 p99 为 4.4 s，各会话 turn 耗时的 Jain 公平性指数为 0.983。
+
+64 个 turn 各同时派生 8 个子代理，共 512 个子代理而只有 32 个槽位：576 个 turn 全部完成，耗时为理论下限的 1.12 倍，等待子代理的父 turn 均让出了槽位。
+
+5% 的模型请求返回 500、同账户其他客户端占用最多 256 个额度时，1024 个会话的 3072 个 turn 无一失败，p99 由 22.0 s 增至 25.8 s。
+
+会话历史越长，每个 turn 的 CPU 越高：模型调用 1 s 时，历史由 8 轮增至 127 轮，每个 turn 的 CPU 由 12.6 ms 增至 38.1 ms，主要用于编码含完整历史的请求和每个 turn 重读历史。
+
+与 pi、DeepSeek Harness 在同一模拟服务商与负载下对比（各测一次；内存按 phys_footprint 计，Ollupi 按常驻内存计）：
+
+| | Ollupi | pi（SDK） | pi-durable | DeepSeek Harness |
+|---|---|---|---|---|
+| 每个挂起会话的内存 | 约 0.3 KB | 91 KB | 23 KB | 181 KB |
+| 2048 个活跃会话时 p50 增幅 | 30% | 3% | 316% | 80% |
+| 3000 个 turn 同时提交、额度 256 | 全部完成 | 2534 个失败 | 2181 个失败 | 2190 个失败 |
+| 运行中 `kill -9` 后 | 全部续跑，工具不重复执行 | 进行中的 turn 丢失 | 全部续跑，工具不重复执行 | turn 标为中断 |
+
+版本为 pi-coding-agent 1.4.0、pi-durable 1.4.0（实验性）、DeepSeek Harness 0.2.1-rc.5，方法与原始结果见 [bench/compare](bench/compare/README.md)。
 
 复现：
 
@@ -57,13 +76,17 @@ go run -tags sqlite_fts5 ./bench steady -c 1536
 go run -tags sqlite_fts5 ./bench burst -n 3000 -slots 512 -calls 256 -latency 5s -jitter 2s -tool 1s
 go run -tags sqlite_fts5 ./bench resume
 go run -tags sqlite_fts5 ./bench crash -n 500 -kills 30
+go run -tags sqlite_fts5 ./bench mix
+go run -tags sqlite_fts5 ./bench fanout
+go run -tags sqlite_fts5 ./bench steady -c 1024 -fail 0.05 -others 256
+go run -tags sqlite_fts5 ./bench soak -c 256 -d 8m -every 30s -latency 1s -jitter 200ms -tool 200ms
 ```
 
 ## 执行模型
 
 ![共享执行池](docs/images/execution-pool.svg)
 
-所有会话中可推进的 turn，无论来自用户、子代理还是定时任务，进入同一队列，由固定数量的槽位（默认 32 个）执行。turn 等待用户、审批或子代理时释放槽位，不占用 goroutine 与模型并发额度，等待结束后重新就绪。槽位不足时，普通会话先于子代理，同类按就绪先后执行。模型并发按连接限制（默认每个连接 4 个），工具执行不占用模型额度。
+所有会话中可推进的 turn，无论来自用户、子代理还是定时任务，进入同一队列，由固定数量的槽位（默认 32 个）执行。turn 等待用户、审批或子代理时释放槽位，不占用 goroutine 与模型并发额度，等待结束后重新就绪。槽位不足时，普通会话先于子代理，同类按就绪先后执行。模型并发按连接限制（默认每个连接 4 个），工具执行不占用模型额度。模型请求遇到 429、5xx 或连接中断时按退避重试，最多 8 次，等待期间保留槽位与模型额度。
 
 每一步先写入数据库再执行，调度状态不驻留内存，进程重启后由同一调度逻辑恢复进行中的 turn。工具调用区分 `pending`（未执行）与 `inProgress`（可能已生效）：恢复时前者照常执行，后者标记为失败并提示核对，不会重复执行。
 
