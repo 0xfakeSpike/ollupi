@@ -19,7 +19,7 @@ type OpenAI struct {
 }
 
 func NewOpenAI(baseURL, apiKey string, calls int, limits map[string]Limits) *OpenAI {
-	opts := []option.RequestOption{option.WithAPIKey(apiKey)}
+	opts := []option.RequestOption{option.WithAPIKey(apiKey), option.WithMaxRetries(retries)}
 	if apiKey == "" {
 		opts = append(opts, option.WithHeaderDel("Authorization"))
 	}
