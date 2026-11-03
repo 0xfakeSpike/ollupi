@@ -20,3 +20,16 @@ func TestPlaceholdersFollowTheKey(t *testing.T) {
 		t.Errorf("a later redactor with the same key restored %q, want %q", got, text)
 	}
 }
+
+func TestATextMaskedAgainIsMaskedAlike(t *testing.T) {
+	r := New("k1")
+	const text = "call 13812345678 or mail a@example.com"
+	first := r.Mask(text)
+	r.Mask("mail b@example.com")
+	if again := r.Mask(text); again != first {
+		t.Errorf("masked again %q, first %q", again, first)
+	}
+	if got := r.Restore(first); got != text {
+		t.Errorf("restored %q, want %q", got, text)
+	}
+}
