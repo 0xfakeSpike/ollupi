@@ -49,14 +49,26 @@ var detectors = []detector{
 type Redactor struct {
 	key     []byte
 	reverse map[string]string
+	// masked keeps what Mask made of each text, so a history sent again with every model call of a turn is
+	// searched once; the placeholders in it stay in reverse.
+	masked map[string]string
 }
 
 // New returns a redactor whose placeholders are keyed by key: the same key masks a value to the same placeholder.
 func New(key string) *Redactor {
-	return &Redactor{key: []byte(key), reverse: map[string]string{}}
+	return &Redactor{key: []byte(key), reverse: map[string]string{}, masked: map[string]string{}}
 }
 
 func (r *Redactor) Mask(s string) string {
+	if out, ok := r.masked[s]; ok {
+		return out
+	}
+	out := r.mask(s)
+	r.masked[s] = out
+	return out
+}
+
+func (r *Redactor) mask(s string) string {
 	spans := findSpans(s)
 	if len(spans) == 0 {
 		return s
