@@ -6,8 +6,8 @@ the per-agent isolation it replaces (the wolf's nose), pink is tool execution (i
 hatched. Text never takes a series color.
 
 Run from anywhere: python3 docs/images/figures.py. The charts' numbers are the bench's output, written in below; the
-burst timeline is read from bench-burst.csv, which bench burst -timeline writes. After a new measurement, update both
-and run this again.
+burst timeline and the soak are read from bench/results, where the raw output is kept. After a new measurement, update
+both and run this again.
 """
 import csv
 import math
@@ -16,7 +16,8 @@ import re
 
 OUT = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(OUT))
-BURST_CSV = f"{OUT}/bench-burst.csv"
+BURST_CSV = f"{ROOT}/bench/results/burst.csv"
+SOAK_CSV = f"{ROOT}/bench/results/soak.csv"
 W, PAD = 1600, 72
 
 INDIGO, INDIGO_2, INDIGO_DEEP = "#4f46e5", "#818cf8", "#1e1b4b"
@@ -466,6 +467,100 @@ def recovery():
     f.save("bench-recovery.svg")
 
 
+def hbars(f, x, y, w, title, unit, rows, top):
+    """A small panel of horizontal bars: (name, value, label, color), the longest bar standing for top."""
+    f.text(x, y, title, "hs")
+    f.text(x, y + 28, unit, "tick")
+    bx, bw = x + 190, w - 190 - 130
+    for i, (name, v, label, color) in enumerate(rows):
+        yy = y + 58 + i * 62
+        width = max(bw * v / top, 6)
+        f.text(x, yy + 27, name, "lab")
+        f.block(bx, yy, width, 40, color, r=6)
+        f.text(bx + width + 14, yy + 27, label, "val")
+
+
+def compare():
+    f = Figure(CHART_H, "OLLUPI BENCH · 对比", "挂起内存最低，突发全部完成，kill -9 后全部续跑",
+               "同一模拟服务商与负载，各测一次。内存：Ollupi 为常驻内存，其余为 phys_footprint",
+               "pi-coding-agent 1.4.0 · pi-durable 1.4.0（实验性）· DeepSeek Harness 0.2.1-rc.5 · " + ENV, "bench/compare")
+    names = ["Ollupi", "pi（SDK）", "pi-durable", "DeepSeek Harness"]
+
+    def rows(values, labels):
+        return [(n, v, l, INDIGO if i == 0 else BASE) for i, (n, v, l) in enumerate(zip(names, values, labels))]
+
+    hbars(f, PAD, 210, 690, "每个挂起会话的内存", "KB，越低越好", rows([0.3, 91, 23, 181], ["0.3", "91", "23", "181"]), 181)
+    hbars(f, 838, 210, 690, "2048 个活跃会话时 turn 耗时 p50 的增幅", "越低越好", rows([2, 2, 314, 77], ["2%", "2%", "314%", "77%"]), 314)
+    hbars(f, PAD, 570, 690, "3000 个 turn 同时提交、额度 256 时完成的 turn", "个，越高越好",
+          rows([3000, 466, 819, 810], ["3000", "466", "819", "810"]), 3000)
+    f.text(838, 570, "运行中 kill -9 之后", "hs")
+    f.text(838, 598, "混合负载，反复重启", "tick")
+    outcomes = [("全部续跑，工具不重复执行", True), ("进行中的 turn 丢失", False), ("全部续跑，工具不重复执行", True), ("turn 标为中断", False)]
+    for i, (name, (outcome, kept)) in enumerate(zip(names, outcomes)):
+        yy = 628 + i * 62
+        f.text(838, yy + 27, name, "lab")
+        f.block(838 + 190, yy, 500, 40, TINT_2 if kept else GRID, outcome, INDIGO_DEEP if kept else INK2, r=6)
+    f.save("bench-compare.svg")
+
+
+def mix():
+    f = Figure(CHART_H, "OLLUPI BENCH · 混合负载", "定时任务高峰按模型额度排队，高峰之外 turn 几乎不等待",
+               "256 个会话持续发送 turn（20% 交给子代理），运行中 1000 个定时任务同时到点；额度 256。扇出：64 个 turn 各派生 8 个子代理，32 个槽位",
+               ENV, "go run ./bench mix | fanout")
+    f.kpis([("274", "ms", "高峰之外等待的 p99"), ("59.4", "s", "1000 个定时任务排空"), ("0.978", "", "各会话的 Jain 公平性指数"), ("1.11", "×", "扇出耗时 / 理论下限")])
+    data = [("用户 turn · 高峰之外", 7, 274), ("子代理", 5, 4571), ("用户 turn · 高峰期间", 44107, 58608), ("定时任务", 29637, 58276)]
+    p = Plot(f, 160, 470, 1368, 360, (0, 4), (1, 100_000), ylog=True)
+    ticks = [(1, "1 ms"), (10, "10 ms"), (100, "100 ms"), (1000, "1 s"), (10_000, "10 s"), (100_000, "100 s")]
+    p.frame("等待首次模型请求的时间", "对数坐标", ticks, [(i + 0.5, d[0]) for i, d in enumerate(data)], "turn 的类型")
+    for i, (_, p50, p99) in enumerate(data):
+        cx = p.px(i + 0.5)
+        for dx, v, color in ((-52, p50, INDIGO), (52, p99, INDIGO_2)):
+            p.bar(cx + dx, v, 92, color)
+            f.text(cx + dx, p.py(v) - 14, f"{v} ms" if v < 1000 else f"{v / 1000:.1f} s", "val", "middle")
+    f.legend(W - PAD, 422, [(INDIGO, "p50", False), (INDIGO_2, "p99", False)], bars=True)
+    f.save("bench-mix.svg")
+
+
+def faults():
+    f = Figure(CHART_H, "OLLUPI BENCH · 故障与长尾", "模型请求出错或变慢时，turn 变慢但不失败",
+               "故障：5% 的请求返回 500，同账户其他客户端占用最多 256 个额度。长尾：模型延迟为对数正态分布，中位数 5 s，σ = 0.6",
+               ENV, "go run ./bench steady -fail 0.05 -others 256 | -sigma 0.6")
+    f.kpis([("0", "/ 3072", "故障下失败的 turn"), ("326 → 0", "", "加入退避重试前后的失败 turn"), ("0", "/ 4608", "长尾下失败的 turn")])
+    data = [("无故障 · 1024 个会话", 17.2, 20.5, 21.6), ("故障 · 1024 个会话", 17.8, 23.3, 28.5), ("长尾 · 1536 个会话", 19.0, 33.0, 42.4)]
+    p = Plot(f, 160, 470, 1368, 360, (0, 3), (0, 50))
+    p.frame("turn 耗时", "秒", [(v, f"{v}") for v in (0, 10, 20, 30, 40, 50)], [(i + 0.5, d[0]) for i, d in enumerate(data)], "负载")
+    for i, (_, *values) in enumerate(data):
+        cx = p.px(i + 0.5)
+        for dx, v, color in zip((-104, 0, 104), values, (INDIGO, INDIGO_2, LINE)):
+            p.bar(cx + dx, v, 92, color)
+            f.text(cx + dx, p.py(v) - 14, f"{v:.1f}", "val", "middle")
+    f.legend(W - PAD, 422, [(INDIGO, "p50", False), (INDIGO_2, "p95", False), (LINE, "p99", False)], bars=True)
+    f.save("bench-faults.svg")
+
+
+def soak():
+    rows = list(csv.DictReader(open(SOAK_CSV)))
+    history = [int(r["history_turns"]) for r in rows]
+    f = Figure(CHART_H, "OLLUPI BENCH · 长时间运行", "goroutine 与 WAL 不随时间增长，CPU 与内存随会话历史增长",
+               "256 个会话连续运行 8 分钟，共 3.5 万个 turn，每个 turn 都加长所在会话的历史。模型调用 1 s ± 0.2 s，工具调用 0.2 s",
+               ENV, "go run ./bench soak -c 256 -d 8m -every 30s -latency 1s -jitter 200ms -tool 200ms")
+    f.kpis([("≈ 1000", "个", "goroutine，全程稳定"), ("6.1", "MB", "WAL，全程稳定"), ("0.23", "ms", "GC 停顿 p99 的最高值")])
+    xt = [(v, f"{v}") for v in (0, 40, 80, 120)]
+    left = Plot(f, 160, 470, 600, 360, (0, 145), (0, 40))
+    left.frame("每个 turn 的 CPU", "毫秒", [(v, f"{v}") for v in (0, 10, 20, 30, 40)], xt, "会话历史，轮")
+    cpu = list(zip(history, (float(r["cpu_ms_per_turn"]) for r in rows)))
+    left.line(cpu, INDIGO)
+    left.label(*cpu[0], f"{cpu[0][1]:g}", "val", "start", dy=-16)
+    left.label(*cpu[-1], f"{cpu[-1][1]:g}", "val", "end", dy=-16)
+    right = Plot(f, 940, 470, 600, 360, (0, 145), (0, 400))
+    right.frame("常驻内存", "MB", [(v, f"{v}") for v in (0, 100, 200, 300, 400)], xt, "会话历史，轮")
+    rss = list(zip(history, (float(r["rss_mb"]) for r in rows)))
+    right.line(rss, INDIGO)
+    right.label(*rss[0], f"{rss[0][1]:g}", "val", "start", dy=-16)
+    right.label(*rss[-1], f"{rss[-1][1]:g}", "val", "end", dx=-14, dy=6)
+    f.save("bench-soak.svg")
+
+
 architecture()
 comparison()
 pool()
@@ -473,3 +568,7 @@ memory()
 capacity()
 burst()
 recovery()
+compare()
+mix()
+faults()
+soak()

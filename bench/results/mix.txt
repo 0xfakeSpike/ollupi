@@ -1,0 +1,10 @@
+c=256 delegate=0.20 peak=1000 slots=512 calls=256 run_s=269 peak_drained_s=59.4 failed_turns=0 jain_user=0.978
+wait kind=user n=2607 p50_ms=7 p99_ms=57144 max_ms=58617
+wait kind=user_outside_peak n=2346 p50_ms=7 p99_ms=274 max_ms=5305
+wait kind=user_during_peak n=261 p50_ms=44107 p99_ms=58608 max_ms=58617
+wait kind=sub n=557 p50_ms=5 p99_ms=4571 max_ms=4812
+wait kind=cron n=1000 p50_ms=29637 p99_ms=58276 max_ms=58650
+took kind=work n=2050 p50_s=17.5 p99_s=79.5 max_s=84.6
+took kind=delegate n=557 p50_s=28.2 p99_s=89.6 max_s=93.2
+took kind=sub n=557 p50_s=17.7 p99_s=32.2 max_s=35.1
+took kind=cron n=1000 p50_s=54.6 p99_s=81.3 max_s=82.8
