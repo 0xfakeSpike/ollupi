@@ -40,13 +40,14 @@
 <text class="cap" x="815.0" y="894.0" text-anchor="middle">会话数，对数坐标</text>
 <polyline points="190.0,674.3 1440.0,471.4" fill="none" stroke="#f43f5e" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
 <text class="lab" x="1208.1" y="492.8" text-anchor="end">每会话一个进程</text>
-<polyline points="360.1,768.2 611.0,740.0 684.3,730.8 736.4,724.3 861.8,710.3" fill="none" stroke="#4f46e5" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
-<circle cx="360.1" cy="768.2" r="7" fill="#4f46e5" stroke="#ffffff" stroke-width="3"/>
-<circle cx="611.0" cy="740.0" r="7" fill="#4f46e5" stroke="#ffffff" stroke-width="3"/>
-<circle cx="684.3" cy="730.8" r="7" fill="#4f46e5" stroke="#ffffff" stroke-width="3"/>
-<circle cx="736.4" cy="724.3" r="7" fill="#4f46e5" stroke="#ffffff" stroke-width="3"/>
-<circle cx="861.8" cy="710.3" r="7" fill="#4f46e5" stroke="#ffffff" stroke-width="3"/>
-<text class="lab" x="879.8" y="716.3" text-anchor="start">Ollupi · 活跃会话</text>
+<polyline points="485.5,754.2 611.0,738.8 684.3,728.6 736.4,721.1 809.8,711.2 861.8,705.5" fill="none" stroke="#4f46e5" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="485.5" cy="754.2" r="7" fill="#4f46e5" stroke="#ffffff" stroke-width="3"/>
+<circle cx="611.0" cy="738.8" r="7" fill="#4f46e5" stroke="#ffffff" stroke-width="3"/>
+<circle cx="684.3" cy="728.6" r="7" fill="#4f46e5" stroke="#ffffff" stroke-width="3"/>
+<circle cx="736.4" cy="721.1" r="7" fill="#4f46e5" stroke="#ffffff" stroke-width="3"/>
+<circle cx="809.8" cy="711.2" r="7" fill="#4f46e5" stroke="#ffffff" stroke-width="3"/>
+<circle cx="861.8" cy="705.5" r="7" fill="#4f46e5" stroke="#ffffff" stroke-width="3"/>
+<text class="lab" x="879.8" y="711.5" text-anchor="start">Ollupi · 活跃会话</text>
 <polyline points="606.7,799.3 1023.3,790.3 1314.6,791.7" fill="none" stroke="#818cf8" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
 <circle cx="606.7" cy="799.3" r="7" fill="#818cf8" stroke="#ffffff" stroke-width="3"/>
 <circle cx="1023.3" cy="790.3" r="7" fill="#818cf8" stroke="#ffffff" stroke-width="3"/>
