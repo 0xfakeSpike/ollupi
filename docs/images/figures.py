@@ -388,10 +388,10 @@ def memory():
             [(v, f"{v:,}") for v in (100, 1000, 10_000, 100_000)], "会话数，对数坐标")
     p.line([(100, 2000), (100_000, 2_000_000)], ROSE)
     p.label(30_000, 600_000, "每会话一个进程", "lab", "end", dx=-14, dy=-14)
-    active = [(256, 82), (1024, 214), (1536, 293), (2048, 365), (4096, 589)]
+    active = [(512, 132), (1024, 223), (1536, 315), (2048, 407), (3072, 570), (4096, 692)]
     p.line(active, INDIGO)
     p.dots(active, INDIGO)
-    p.label(4096, 589, "Ollupi · 活跃会话", "lab", "start", dx=18, dy=6)
+    p.label(4096, 692, "Ollupi · 活跃会话", "lab", "start", dx=18, dy=6)
     waiting = [(1000, 28.4), (10_000, 38.6), (50_000, 36.8)]
     p.line(waiting, INDIGO_2)
     p.dots(waiting, INDIGO_2)
@@ -401,24 +401,24 @@ def memory():
 
 
 def capacity():
-    pts = [(256, 17.1, 20.4, 39), (1024, 17.3, 20.7, 141), (1536, 17.8, 21.3, 212), (2048, 22.1, 34.8, 220), (4096, 29.5, 40.9, 350)]
-    f = Figure(CHART_H, "OLLUPI BENCH · 容量", "约 1500 个活跃会话以内，turn 耗时与单独运行基本持平",
+    pts = [(512, 17.1, 20.4, 72), (1024, 17.2, 20.5, 147), (1536, 17.3, 20.7, 219), (2048, 17.3, 20.8, 296), (3072, 18.0, 22.5, 416), (4096, 20.9, 26.1, 477)]
+    f = Figure(CHART_H, "OLLUPI BENCH · 容量", "约 3000 个活跃会话以内，turn 耗时与单独运行基本持平",
                "闭环负载：每个会话在上一个 turn 结束后立即发起下一个。每个 turn 3 次模型调用（5 s ± 2 s）、2 次工具调用（1 s），单独运行约 17 s",
-               ENV, "go run ./bench steady -c 1536")
-    f.kpis([("+5%", "", "1536 个活跃会话时 turn 耗时 p50 的增幅"), ("350", "次/秒", "4096 个活跃会话时的模型调用吞吐"), ("11.6", "KB", "每个 turn 的磁盘占用")])
-    left = Plot(f, 160, 470, 600, 360, (0, 4400), (0, 45))
-    left.frame("turn 耗时", "秒", [(v, f"{v}") for v in (0, 15, 30, 45)], [(v, f"{v:,}") for v in (1024, 2048, 3072, 4096)], "同时活跃的会话")
+               ENV, "go run ./bench steady -c 3072")
+    f.kpis([("+6%", "", "3072 个活跃会话时 turn 耗时 p50 的增幅"), ("477", "次/秒", "4096 个活跃会话时的模型调用吞吐"), ("11.6", "KB", "每个 turn 的磁盘占用")])
+    left = Plot(f, 160, 470, 600, 360, (0, 4400), (0, 30))
+    left.frame("turn 耗时", "秒", [(v, f"{v}") for v in (0, 10, 20, 30)], [(v, f"{v:,}") for v in (1024, 2048, 3072, 4096)], "同时活跃的会话")
     left.line([(0, 17), (4400, 17)], FAINT, width=2, dashed=True)
     left.label(4400, 17, "单独运行 17 s", "cap", "end", dy=30)
     left.line([(x[0], x[2]) for x in pts], INDIGO_2)
     left.dots([(x[0], x[2]) for x in pts], INDIGO_2)
     left.line([(x[0], x[1]) for x in pts], INDIGO)
     left.dots([(x[0], x[1]) for x in pts], INDIGO)
-    left.label(4096, 40.9, "p95", "val", "start", dx=16, dy=6)
-    left.label(4096, 29.5, "p50", "val", "start", dx=16, dy=6)
+    left.label(4096, 26.1, "p95", "val", "start", dx=16, dy=6)
+    left.label(4096, 20.9, "p50", "val", "start", dx=16, dy=6)
     f.legend(760, 422, [(INDIGO, "p50", False), (INDIGO_2, "p95", False)])
-    right = Plot(f, 940, 470, 600, 360, (0, 4400), (0, 400))
-    right.frame("模型调用吞吐", "次/秒", [(v, f"{v}") for v in (0, 100, 200, 300, 400)], [(v, f"{v:,}") for v in (1024, 2048, 3072, 4096)], "同时活跃的会话")
+    right = Plot(f, 940, 470, 600, 360, (0, 4400), (0, 500))
+    right.frame("模型调用吞吐", "次/秒", [(v, f"{v}") for v in (0, 100, 200, 300, 400, 500)], [(v, f"{v:,}") for v in (1024, 2048, 3072, 4096)], "同时活跃的会话")
     right.line([(x[0], x[3]) for x in pts], INDIGO)
     right.dots([(x[0], x[3]) for x in pts], INDIGO)
     for x in pts:
