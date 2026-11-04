@@ -1,6 +1,6 @@
 # 与其他 harness 的对比测试
 
-用 ollupi `bench` 的同一负载测量两个 Node.js agent harness，结果可与 README「性能实测」并列：
+用 ollupi `bench` 的同一负载测量两个 Node.js agent harness，结果可与 [bench](../README.md) 的数字并列：
 
 - **pi**：`@earendil-works/pi-coding-agent` 1.4.0（`pi-sdk`，SDK 的 `AgentSession`，每会话一个 JSONL 文件），以及实验性的 `@earendil-works/pi-durable` 1.4.0（`pi-durable`，一个 `Harness` 托管多个会话，单个 SQLite 文件）。
 - **dsh**：`@deepseek-ai/dsh` 0.2.1-rc.5（DeepSeek Harness，Cordis 插件框架）。使用 `sdk-minimal` profile：一个进程经 stdio JSON-RPC 托管多个会话，会话以 JSONL 存于 `$DSH_HOME/sessions`。
