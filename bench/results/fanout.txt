@@ -1,0 +1,1 @@
+parents=64 n=8 subagents=512 slots=32 calls=256 total_s=301.2 bound_s=272.0 efficiency=0.90 p50_s=188.0 max_s=301.2 failed_turns=0 turns_ended=576 parents_holding_slot_peak=32 parents_waiting_peak=64 refused_429=0
