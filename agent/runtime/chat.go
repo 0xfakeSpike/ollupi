@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -129,7 +127,7 @@ func (rt *Runtime) send(ctx context.Context, prompt contextmanager.Prompt, choic
 	messages = append(messages, llm.ChatMessage{Role: llm.RoleSystem, Content: mask(prompt.System)})
 	for _, message := range prompt.Messages {
 		message.Content, message.ReasoningContent = mask(message.Content), mask(message.ReasoningContent)
-		if message.Parts, err = rt.loadParts(message.Parts, mask); err != nil {
+		if message.Parts, err = rt.loadParts(ctx, message.Parts, mask); err != nil {
 			return llm.ChatResponse{}, err
 		}
 		message.ToolCalls = slices.Clone(message.ToolCalls)
@@ -163,16 +161,16 @@ func (rt *Runtime) send(ctx context.Context, prompt contextmanager.Prompt, choic
 	return resp, err
 }
 
-func (rt *Runtime) loadParts(parts []llm.ContentPart, mask func(string) string) ([]llm.ContentPart, error) {
+func (rt *Runtime) loadParts(ctx context.Context, parts []llm.ContentPart, mask func(string) string) ([]llm.ContentPart, error) {
 	if len(parts) == 0 {
 		return nil, nil
 	}
-	if rt.AttachmentsDir == "" {
+	if rt.Attachments == nil {
 		return nil, fmt.Errorf("runtime: the conversation has attachments, but this agent keeps none")
 	}
 	out := slices.Clone(parts)
 	for i, p := range out {
-		data, err := os.ReadFile(filepath.Join(rt.AttachmentsDir, filepath.FromSlash(p.Path)))
+		data, err := rt.Attachments.Get(ctx, p.Path)
 		if err != nil {
 			return nil, fmt.Errorf("runtime: attachment %s: %w", p.Name, err)
 		}
