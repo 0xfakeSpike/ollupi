@@ -21,29 +21,41 @@ import (
 
 type Options struct {
 	// DB is the agent's database; the gateway reads it for views that need no agent logic.
-	DB             *repo.DB
-	Token          string
+	DB *repo.DB
+	// Token is the default user's, for a gateway with one user; Authenticate takes its place for many.
+	Token string
+	// Authenticate says whose token this is. Logging in happens before ollupi: it only checks what that gave out.
+	Authenticate   func(token string) (user string, ok bool)
 	AllowedOrigins []string
-	Memory         *memory.Manager
-	Jobs           *cron.Jobs
-	MCP            *mcp.Servers
+	// AllowedHosts are the names clients reach this gateway by, besides the local ones.
+	AllowedHosts []string
+	Memory       *memory.Manager
+	Jobs         *cron.Jobs
+	MCP          *mcp.Servers
 }
 
 func NewServer(a *agent.Agent, opts Options) (*Server, error) {
-	if strings.TrimSpace(opts.Token) == "" {
-		return nil, errors.New("gateway: a token is required; clients send it as Authorization: Bearer <token>")
+	if opts.Authenticate == nil {
+		if strings.TrimSpace(opts.Token) == "" {
+			return nil, errors.New("gateway: a token is required; clients send it as Authorization: Bearer <token>")
+		}
+		opts.Authenticate = func(token string) (string, bool) {
+			return repo.DefaultUser, subtle.ConstantTimeCompare([]byte(token), []byte(opts.Token)) == 1
+		}
 	}
 	if opts.DB == nil {
 		return nil, errors.New("gateway: the agent's database is required")
 	}
 	s := &Server{
-		agent:   a,
-		db:      opts.DB,
-		memory:  opts.Memory,
-		jobs:    opts.Jobs,
-		mcp:     opts.MCP,
-		token:   opts.Token,
-		origins: append([]string{"localhost:*", "127.0.0.1:*", "[::1]:*"}, opts.AllowedOrigins...),
+		agent:        a,
+		db:           opts.DB,
+		memory:       opts.Memory,
+		jobs:         opts.Jobs,
+		mcp:          opts.MCP,
+		authenticate: opts.Authenticate,
+		hosts:        append(slices.Clone(localHosts), opts.AllowedHosts...),
+		origins:      append([]string{"localhost:*", "127.0.0.1:*", "[::1]:*"}, opts.AllowedOrigins...),
+		clients:      map[string]*conn{},
 	}
 	return s, nil
 }
@@ -73,20 +85,22 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 
 var localHosts = []string{"localhost", "127.0.0.1", "::1"}
 
-func (s *Server) authorize(r *http.Request) (int, string) {
+// authorize says whose request this is, or the status and reason to refuse it with.
+func (s *Server) authorize(r *http.Request) (string, int, string) {
 	host := r.Host
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}
-	if !slices.Contains(localHosts, strings.Trim(host, "[]")) {
-		return http.StatusForbidden, "host not allowed"
+	if !slices.Contains(s.hosts, strings.Trim(host, "[]")) {
+		return "", http.StatusForbidden, "host not allowed"
 	}
 	got := r.URL.Query().Get("token")
 	if bearer, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
 		got = bearer
 	}
-	if subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) != 1 {
-		return http.StatusUnauthorized, "invalid or missing gateway token"
+	user, ok := s.authenticate(got)
+	if !ok {
+		return "", http.StatusUnauthorized, "invalid or missing gateway token"
 	}
-	return 0, ""
+	return user, 0, ""
 }
