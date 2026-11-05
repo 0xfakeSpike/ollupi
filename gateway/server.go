@@ -35,7 +35,7 @@ type Server struct {
 	db           *repo.DB
 	memory       *memory.Manager
 	jobs         *cron.Jobs
-	mcp          *mcp.Servers
+	mcp          *mcp.Users
 	authenticate func(token string) (string, bool)
 	hosts        []string
 	origins      []string
@@ -178,13 +178,21 @@ func (c *conn) modelList(Empty) (ModelListResult, func(), error) {
 }
 
 func (c *conn) toolList(Empty) (ToolListResult, func(), error) {
-	return ToolListResult{Data: nonNil(c.s.agent.ListTools())}, nil, nil
+	list, err := c.s.agent.ListTools(c.user)
+	if err != nil {
+		return ToolListResult{}, nil, err
+	}
+	return ToolListResult{Data: nonNil(list)}, nil, nil
 }
 
 func (c *conn) mcpServerList(Empty) (MCPServerListResult, func(), error) {
 	var servers []mcp.ServerStatus
 	if c.s.mcp != nil {
-		servers = c.s.mcp.Statuses()
+		mine, err := c.s.mcp.For(c.user)
+		if err != nil {
+			return MCPServerListResult{}, nil, err
+		}
+		servers = mine.Statuses()
 	}
 	return MCPServerListResult{Data: nonNil(servers)}, nil, nil
 }

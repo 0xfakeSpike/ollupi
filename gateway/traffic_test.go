@@ -27,6 +27,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
+	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
@@ -63,7 +64,14 @@ func TestTrafficMatchesContract(t *testing.T) {
 		return s
 	}, nil))
 	defer remote.Close()
-	servers := mcp.Connect(ctx, mcp.Client{}, []mcp.Server{{Name: "remote", URL: remote.URL}, {Name: "broken", Command: "/nonexistent/mcp-server"}})
+	box, err := sandbox.New(sandbox.Config{Mode: "full-access", Roots: []string{t.TempDir()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer box.Close()
+	servers := mcp.NewUsers(ctx, mcp.Client{}, func(string) ([]mcp.Server, error) {
+		return []mcp.Server{{Name: "remote", URL: remote.URL}, {Name: "broken", Command: "/nonexistent/mcp-server"}}, nil
+	}, func(string) (sandbox.Box, error) { return box, nil })
 	defer servers.Close()
 	mem, err := memory.New(db, nil, memory.Options{Use: true})
 	if err != nil {
@@ -85,8 +93,8 @@ func TestTrafficMatchesContract(t *testing.T) {
 			"vision": llm.NewOpenAI(model.URL, "", 4, map[string]llm.Limits{"gpt-4o": {Context: 128_000, Output: 16_384}}),
 		},
 		AttachmentsDir: t.TempDir(),
-		Providers:      append([]tools.Provider{touchTool{}, browser, jobs, runner, web.New(web.Options{Transport: http.DefaultTransport})}, servers.Providers()...),
-		Unavailable:    servers.Unavailable(),
+		Providers:      []tools.Provider{touchTool{}, browser, jobs, runner, web.New(web.Options{Transport: http.DefaultTransport})},
+		ToolsFor:       servers.Tools,
 		Memory:         mem,
 		DB:             db,
 		OnEvent:        func(e agent.Event) { server.Deliver(e) },

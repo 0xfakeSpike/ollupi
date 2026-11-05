@@ -40,7 +40,11 @@ func (a *Agent) permissions(t repo.ThreadRow) (*permission.Checker, repo.Workspa
 	if err != nil {
 		return nil, repo.WorkspaceRow{}, err
 	}
-	checker, err := permission.New(layers, a.cfg.Tools, a.registry)
+	registry, err := a.registryFor(t.UserID)
+	if err != nil {
+		return nil, repo.WorkspaceRow{}, err
+	}
+	checker, err := permission.New(layers, a.cfg.Tools, registry)
 	if err != nil {
 		return nil, repo.WorkspaceRow{}, err
 	}
@@ -48,7 +52,7 @@ func (a *Agent) permissions(t repo.ThreadRow) (*permission.Checker, repo.Workspa
 }
 
 func (a *Agent) layers(w repo.WorkspaceRow) []permission.Layer {
-	out := []permission.Layer{{Of: "the default permission settings", Settings: a.cfg.Settings}}
+	out := []permission.Layer{{Of: "the default permission settings", Settings: a.cfg.Settings, Shared: a.cfg.ToolsFor != nil}}
 	if w.ID != "" {
 		out = append(out, workspaceLayer(w.Name, w.Settings))
 	}

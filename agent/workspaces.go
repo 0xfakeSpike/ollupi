@@ -4,19 +4,22 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/permission"
-	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/google/uuid"
 )
 
 func (a *Agent) AddWorkspace(user, path, name string) (repo.WorkspaceRow, error) {
-	root, same, err := a.workspaceRoot(user, path)
+	ctx := context.Background()
+	box, err := a.cfg.BoxFor(user)
+	if err != nil {
+		return repo.WorkspaceRow{}, fmt.Errorf("agent: the sandbox of the user: %w", err)
+	}
+	root, err := box.Directory(ctx, path)
 	if err != nil {
 		return repo.WorkspaceRow{}, fmt.Errorf("agent: %w", err)
 	}
@@ -29,7 +32,7 @@ func (a *Agent) AddWorkspace(user, path, name string) (repo.WorkspaceRow, error)
 	now := time.Now().UTC()
 	w := repo.WorkspaceRow{ID: uuid.NewString(), UserID: user, Name: name, RootPath: root, CreatedAt: now, UpdatedAt: now}
 	w, err = a.cfg.DB.AddWorkspace(w,
-		func(existing repo.WorkspaceRow) bool { return same(existing.RootPath, root) },
+		func(existing repo.WorkspaceRow) bool { return box.Same(ctx, existing.RootPath, root) },
 		func(existing repo.WorkspaceRow) (repo.WorkspaceRow, bool) {
 			if existing.ArchivedAt == nil {
 				return existing, false
@@ -67,7 +70,7 @@ func (a *Agent) UpdateWorkspaceSettings(user, id string, settings permission.Set
 	if err != nil {
 		return repo.WorkspaceRow{}, err
 	}
-	if err := a.validateLayer(a.layers(repo.WorkspaceRow{}), w.Settings, workspaceLayer(w.Name, settings)); err != nil {
+	if err := a.validateLayer(user, a.layers(repo.WorkspaceRow{}), w.Settings, workspaceLayer(w.Name, settings)); err != nil {
 		return repo.WorkspaceRow{}, err
 	}
 	return a.changeWorkspace(user, id, func(w *repo.WorkspaceRow) { w.Settings = settings })
@@ -89,11 +92,15 @@ func (a *Agent) changeWorkspace(user, id string, change func(*repo.WorkspaceRow)
 	return w, nil
 }
 
-func (a *Agent) validateLayer(base []permission.Layer, previous permission.Settings, layer permission.Layer) error {
+func (a *Agent) validateLayer(user string, base []permission.Layer, previous permission.Settings, layer permission.Layer) error {
 	if a.registry == nil {
 		return fmt.Errorf("agent: the tool registry is not ready")
 	}
-	if err := permission.ValidateLayer(base, previous, layer, a.registry); err != nil {
+	registry, err := a.registryFor(user)
+	if err != nil {
+		return err
+	}
+	if err := permission.ValidateLayer(base, previous, layer, registry); err != nil {
 		return fmt.Errorf("agent: %w", err)
 	}
 	return nil
@@ -112,35 +119,4 @@ func workspaceName(name string) (string, error) {
 		return "", fmt.Errorf("agent: %w: a workspace name must be 1 to 120 characters", ErrInvalidName)
 	}
 	return name, nil
-}
-
-// workspaceRoot finds the folder a workspace names, and how to tell two names of one folder; in a user's sandbox the
-// canonical name is the only one.
-func (a *Agent) workspaceRoot(user, path string) (string, func(string, string) bool, error) {
-	if a.cfg.BoxFor == nil {
-		root, err := sandbox.CanonicalDirectory(path)
-		return root, sameDirectory, err
-	}
-	box, err := a.cfg.BoxFor(user)
-	if err != nil {
-		return "", nil, err
-	}
-	root, err := box.Directory(context.Background(), path)
-	return root, func(a, b string) bool { return a == b }, err
-}
-
-func sameDirectory(a, b string) bool {
-	if a == b {
-		return true
-	}
-	canonical, err := sandbox.CanonicalDirectory(a)
-	if err != nil || canonical != a {
-		return false
-	}
-	left, err := os.Stat(a)
-	if err != nil {
-		return false
-	}
-	right, err := os.Stat(b)
-	return err == nil && os.SameFile(left, right)
 }

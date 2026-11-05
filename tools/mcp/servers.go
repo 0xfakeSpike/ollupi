@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -42,6 +44,7 @@ type Servers struct {
 	named    []bool
 	sessions []*Session
 	failures []error
+	set      *tools.Set
 }
 
 var (
@@ -51,14 +54,94 @@ var (
 
 const connectTimeout = 30 * time.Second
 
-func Connect(ctx context.Context, client Client, servers []Server) *Servers {
+// Users keeps each user's servers. They start the first time the user needs them, in the user's own sandbox, and start
+// again once one has gone, as it does when the sandbox sleeps.
+type Users struct {
+	ctx    context.Context
+	client *mcp.Client
+	config func(user string) ([]Server, error)
+	boxFor func(user string) (sandbox.Box, error)
+
+	mu    sync.Mutex
+	users map[string]*connected
+}
+
+// connected holds a user's servers, and makes their other callers wait while they connect.
+type connected struct {
+	mu      sync.Mutex
+	servers *Servers
+}
+
+// NewUsers takes what each user has configured, credentials included, and where their commands run. Their processes
+// last until ctx ends.
+func NewUsers(ctx context.Context, client Client, config func(user string) ([]Server, error), boxFor func(user string) (sandbox.Box, error)) *Users {
 	if client.Name == "" {
 		client.Name = "ollupi"
 	}
 	if client.Version == "" {
 		client.Version = "0.1"
 	}
-	mc := mcp.NewClient(&mcp.Implementation{Name: client.Name, Version: client.Version}, nil)
+	return &Users{ctx: ctx, client: mcp.NewClient(&mcp.Implementation{Name: client.Name, Version: client.Version}, nil),
+		config: config, boxFor: boxFor, users: map[string]*connected{}}
+}
+
+// For gives the user's servers, connecting them if they are not.
+func (u *Users) For(user string) (*Servers, error) {
+	u.mu.Lock()
+	c := u.users[user]
+	if c == nil {
+		c = &connected{}
+		u.users[user] = c
+	}
+	u.mu.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.servers != nil && !c.servers.gone() {
+		return c.servers, nil
+	}
+	if c.servers != nil {
+		if err := c.servers.Close(); err != nil {
+			slog.Warn("mcp servers not closed", "user", user, "err", err)
+		}
+		c.servers = nil
+	}
+	servers, err := u.config(user)
+	if err != nil {
+		return nil, fmt.Errorf("mcp: the servers of the user: %w", err)
+	}
+	box, err := u.boxFor(user)
+	if err != nil {
+		return nil, fmt.Errorf("mcp: the sandbox of the user: %w", err)
+	}
+	c.servers = u.connect(box, servers)
+	return c.servers, nil
+}
+
+// Tools gives the user's tools, the same Set for as long as the same servers run.
+func (u *Users) Tools(user string) (*tools.Set, error) {
+	s, err := u.For(user)
+	if err != nil {
+		return nil, err
+	}
+	return s.set, nil
+}
+
+// Close stops every user's servers.
+func (u *Users) Close() error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	var errs []error
+	for _, c := range u.users {
+		c.mu.Lock()
+		if c.servers != nil {
+			errs = append(errs, c.servers.Close())
+		}
+		c.mu.Unlock()
+	}
+	return errors.Join(errs...)
+}
+
+func (u *Users) connect(box sandbox.Box, servers []Server) *Servers {
 	out := &Servers{servers: servers, named: make([]bool, len(servers)), sessions: make([]*Session, len(servers)), failures: make([]error, len(servers))}
 	seen := map[string]bool{}
 	var wg sync.WaitGroup
@@ -75,12 +158,21 @@ func Connect(ctx context.Context, client Client, servers []Server) *Servers {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			ctx, cancel := context.WithTimeout(ctx, connectTimeout)
+			ctx, cancel := context.WithTimeout(u.ctx, connectTimeout)
 			defer cancel()
-			out.sessions[i], out.failures[i] = connect(ctx, mc, s)
+			out.sessions[i], out.failures[i] = connect(ctx, u.ctx, u.client, box, s)
 		}()
 	}
 	wg.Wait()
+	out.set = &tools.Set{}
+	for i, sess := range out.sessions {
+		switch {
+		case sess != nil:
+			out.set.Providers = append(out.set.Providers, sess)
+		case out.named[i]:
+			out.set.Unavailable = append(out.set.Unavailable, servers[i].Name)
+		}
+	}
 	return out
 }
 
@@ -106,24 +198,19 @@ func checkTransport(s Server) error {
 	return nil
 }
 
-func (s *Servers) Providers() []tools.Provider {
-	var out []tools.Provider
+// gone says a server that was connected has since dropped.
+func (s *Servers) gone() bool {
 	for _, sess := range s.sessions {
 		if sess != nil {
-			out = append(out, sess)
+			sess.mu.Lock()
+			down := sess.down
+			sess.mu.Unlock()
+			if down != nil {
+				return true
+			}
 		}
 	}
-	return out
-}
-
-func (s *Servers) Unavailable() []string {
-	var out []string
-	for i, server := range s.servers {
-		if s.named[i] && s.sessions[i] == nil {
-			out = append(out, server.Name)
-		}
-	}
-	return out
+	return false
 }
 
 func (s *Servers) Statuses() []ServerStatus {

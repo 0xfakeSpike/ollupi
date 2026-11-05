@@ -36,6 +36,10 @@ func (m *memoryMachine) Run(_ context.Context, c sandbox.Command) (sandbox.Resul
 	return sandbox.Result{Stdout: "ran in the machine", ExitCode: 3}, nil
 }
 
+func (m *memoryMachine) Start(context.Context, sandbox.Command, io.Writer) (sandbox.Process, error) {
+	return nil, errors.New("no process runs here")
+}
+
 func (m *memoryMachine) Stat(_ context.Context, p string) (fs.FileInfo, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

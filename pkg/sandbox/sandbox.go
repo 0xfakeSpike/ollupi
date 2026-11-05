@@ -282,62 +282,13 @@ func (s *Sandbox) Run(ctx context.Context, c Command) (Result, error) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()
-	if !s.Enforced() || c.Unsandboxed {
-		cmd := exec.CommandContext(ctx, c.Program, c.Args...)
-		cmd.Dir = c.Cwd
-		cmd.Env = environ(os.Environ(), s.envPassthrough, c.Env)
-		return runProcess(ctx, cmd, c.Program, c.Timeout, s.maxOutputBytes, s.runMarker())
-	}
-	roots, err := s.commandRoots(c)
+	cmd, px, tagID, err := s.command(ctx, c)
 	if err != nil {
 		return Result{}, err
 	}
-	policy := s.policy
-	policy.WritableRoots = roots
-	env := map[string]string{}
-	if s.envMarker != "" {
-		env[s.envMarker] = "seatbelt"
-		if !policy.Network {
-			env[s.envMarker+"_NETWORK_DISABLED"] = "1"
-		}
-	}
-	var px *proxy
-	if s.proxied() {
-		if px, err = startProxy(s.domains); err != nil {
-			return Result{}, err
-		}
+	if px != nil {
 		defer px.close()
-		policy.ProxyPort = px.port()
-		for k, v := range px.env() {
-			env[k] = v
-		}
-
-		if own := c.Env["JAVA_TOOL_OPTIONS"]; own != "" {
-			env["JAVA_TOOL_OPTIONS"] = own + " " + env["JAVA_TOOL_OPTIONS"]
-		}
 	}
-	var tagID string
-	if s.denials != nil && s.denials.running() {
-		tagID, policy.LogTag = s.denials.newTag()
-	}
-	args, err := seatbeltArgs(policy, seatbeltTempDirs(), append([]string{c.Program}, c.Args...))
-	if err != nil {
-		if tagID != "" {
-			s.denials.collect(tagID, false)
-		}
-		return Result{}, err
-	}
-
-	merged := make(map[string]string, len(c.Env)+len(env))
-	for k, v := range c.Env {
-		merged[k] = v
-	}
-	for k, v := range env {
-		merged[k] = v
-	}
-	cmd := exec.CommandContext(ctx, seatbeltExecutable, args...)
-	cmd.Dir = c.Cwd
-	cmd.Env = environ(os.Environ(), s.envPassthrough, merged)
 	res, err := runProcess(ctx, cmd, c.Program, c.Timeout, s.maxOutputBytes, s.runMarker())
 
 	failed := err != nil || res.ExitCode != 0
@@ -359,4 +310,68 @@ func (s *Sandbox) Run(ctx context.Context, c Command) (Result, error) {
 	}
 	res.Denials = denials
 	return res, nil
+}
+
+// command builds the process for c under the sandbox's rules, with the proxy it reaches the network through and the
+// tag its denials are logged under, when it has them.
+func (s *Sandbox) command(ctx context.Context, c Command) (*exec.Cmd, *proxy, string, error) {
+	if !s.Enforced() || c.Unsandboxed {
+		cmd := exec.CommandContext(ctx, c.Program, c.Args...)
+		cmd.Dir = c.Cwd
+		cmd.Env = environ(os.Environ(), s.envPassthrough, c.Env)
+		return cmd, nil, "", nil
+	}
+	roots, err := s.commandRoots(c)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	policy := s.policy
+	policy.WritableRoots = roots
+	env := map[string]string{}
+	if s.envMarker != "" {
+		env[s.envMarker] = "seatbelt"
+		if !policy.Network {
+			env[s.envMarker+"_NETWORK_DISABLED"] = "1"
+		}
+	}
+	var px *proxy
+	if s.proxied() {
+		if px, err = startProxy(s.domains); err != nil {
+			return nil, nil, "", err
+		}
+		policy.ProxyPort = px.port()
+		for k, v := range px.env() {
+			env[k] = v
+		}
+
+		if own := c.Env["JAVA_TOOL_OPTIONS"]; own != "" {
+			env["JAVA_TOOL_OPTIONS"] = own + " " + env["JAVA_TOOL_OPTIONS"]
+		}
+	}
+	var tagID string
+	if s.denials != nil && s.denials.running() {
+		tagID, policy.LogTag = s.denials.newTag()
+	}
+	args, err := seatbeltArgs(policy, seatbeltTempDirs(), append([]string{c.Program}, c.Args...))
+	if err != nil {
+		if tagID != "" {
+			s.denials.collect(tagID, false)
+		}
+		if px != nil {
+			px.close()
+		}
+		return nil, nil, "", err
+	}
+
+	merged := make(map[string]string, len(c.Env)+len(env))
+	for k, v := range c.Env {
+		merged[k] = v
+	}
+	for k, v := range env {
+		merged[k] = v
+	}
+	cmd := exec.CommandContext(ctx, seatbeltExecutable, args...)
+	cmd.Dir = c.Cwd
+	cmd.Env = environ(os.Environ(), s.envPassthrough, merged)
+	return cmd, px, tagID, nil
 }
