@@ -21,6 +21,7 @@ go run -tags sqlite_fts5 ./bench steady -c 1536 -sigma 0.6
 go run -tags sqlite_fts5 ./bench burst -n 3000 -slots 512 -calls 256 -latency 5s -jitter 2s -tool 1s
 go run -tags sqlite_fts5 ./bench resume
 go run -tags sqlite_fts5 ./bench crash -n 500 -kills 30
+go run -tags sqlite_fts5 ./bench crash -n 400 -kills 8 -lease 1500ms
 go run -tags sqlite_fts5 ./bench mix
 go run -tags sqlite_fts5 ./bench fanout
 go run -tags sqlite_fts5 ./bench soak -c 256 -d 8m -every 30s -latency 1s -jitter 200ms -tool 200ms
@@ -33,12 +34,12 @@ go run -tags sqlite_fts5 ./bench soak -c 256 -d 8m -every 30s -latency 1s -jitte
 | `steady` | 闭环负载下的容量；`-fail`、`-others`、`-sigma` 注入故障与长尾 | `results/steady-*.txt` |
 | `burst` | 一次提交大量 turn 时的排队与额度 | `results/burst.csv`（时间线） |
 | `resume` | 闲置会话被唤醒至发出模型请求的耗时 | 未保存 |
-| `crash` | 随机 `kill -9` 后的恢复 | 未保存 |
+| `crash` | 随机 `kill -9` 后的恢复；`-lease` 时由备用进程接管 | 未保存 |
 | `mix` | 用户、子代理与定时任务混合时的等待与公平性 | `results/mix.txt` |
 | `fanout` | 子代理数超过槽位时父 turn 是否让出槽位 | `results/fanout.txt` |
 | `soak` | 长时间运行时的耗时、内存、goroutine、GC 与数据库增长 | `results/soak.csv` |
 
-`results` 中的数字于 2026-11-04 测得，每项跑一次。`parked`、`isolated`、`burst`、`resume`、`crash` 是更早的结果，此后未重测。
+`results` 中的数字于 2026-11-04 测得，每项跑一次。`parked`、`isolated`、`burst`、`resume`、`crash` 是更早的结果，此后未重测。这些数字都早于多用户、分片和沙箱接口的改动，改动后尚未重测。
 
 ## 结果
 
