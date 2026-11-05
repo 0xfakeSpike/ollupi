@@ -4,9 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -395,5 +399,147 @@ func TestAWorkspaceIsFoundInTheUsersSandbox(t *testing.T) {
 	}
 	if _, err := ag.AddWorkspace(repo.DefaultUser, "/cloud/missing", "x"); err == nil {
 		t.Error("a folder the sandbox does not have was added")
+	}
+}
+
+// memoryStore keeps objects in a map, the way a bucket keeps them away from this machine's disk.
+type memoryStore struct {
+	mu      sync.Mutex
+	objects map[string][]byte
+}
+
+func (s *memoryStore) Put(_ context.Context, key string, data []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.objects[key] = data
+	return nil
+}
+
+func (s *memoryStore) Get(_ context.Context, key string) ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	data, ok := s.objects[key]
+	if !ok {
+		return nil, fs.ErrNotExist
+	}
+	return data, nil
+}
+
+func (s *memoryStore) Delete(_ context.Context, key string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.objects, key)
+	return nil
+}
+
+func (s *memoryStore) DeletePrefix(_ context.Context, prefix string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for key := range s.objects {
+		if strings.HasPrefix(key, prefix+"/") {
+			delete(s.objects, key)
+		}
+	}
+	return nil
+}
+
+func (s *memoryStore) len() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.objects)
+}
+
+// noteMachine is a sandbox holding one note, which this machine does not have.
+type noteMachine struct{ sandbox.Machine }
+
+func (noteMachine) Stat(_ context.Context, path string) (fs.FileInfo, error) {
+	if path != "/cloud/note.txt" {
+		return nil, fs.ErrNotExist
+	}
+	return fstest.MapFS{"note.txt": {Data: []byte("a note")}}.Stat("note.txt")
+}
+
+func (noteMachine) Open(context.Context, string) (io.ReadCloser, error) {
+	return io.NopCloser(strings.NewReader("a note")), nil
+}
+
+// An attachment comes from the user's sandbox, is kept in the store and goes with its thread.
+func TestAttachmentsLiveInTheStore(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	fake := &holdingModel{release: make(chan struct{})}
+	close(fake.release)
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	db, err := repo.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	store := &memoryStore{objects: map[string][]byte{}}
+	ended := make(chan repo.TurnRow, 1)
+	ag := agent.New(agent.Config{
+		Name: "Ollupi", Models: []llm.Model{{Name: "demo", Connection: "fake"}},
+		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
+		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
+		Attachments: store, DB: db,
+		BoxFor: func(string) (sandbox.Box, error) {
+			return sandbox.Remote(noteMachine{}, []string{"/cloud"}, "cloud"), nil
+		},
+		OnEvent: func(e agent.Event) {
+			if e.Kind == agent.EventTurnCompleted {
+				ended <- e.Turn
+			}
+		},
+	})
+	actx, stop := context.WithCancel(ctx)
+	if err := ag.Start(actx); err != nil {
+		t.Fatal(err)
+	}
+	defer ag.Wait()
+	defer stop()
+	thread, err := ag.StartThread(repo.DefaultUser, "", "t", permission.Settings{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	onHost := filepath.Join(t.TempDir(), "host.txt")
+	if err := os.WriteFile(onHost, []byte("of this machine"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ag.StartTurn(repo.DefaultUser, thread.ID, agent.Input{Text: "read", Attachments: []agent.AttachmentInput{{Path: onHost}}}); err == nil {
+		t.Fatal("a user with a sandbox attached a file of this machine")
+	}
+	if _, err := ag.StartTurn(repo.DefaultUser, thread.ID, agent.Input{Text: "read", Attachments: []agent.AttachmentInput{{Path: "/cloud/note.txt"}}}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case turn := <-ended:
+		if turn.Status != repo.TurnCompleted {
+			t.Fatalf("the turn: %s %q", turn.Status, turn.Error)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if store.len() != 1 {
+		t.Fatalf("%d objects stored", store.len())
+	}
+	view, err := db.Thread(thread.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var id string
+	for _, it := range view.Items {
+		if len(it.Attachments) > 0 {
+			id = it.Attachments[0].ID
+		}
+	}
+	if _, data, err := ag.ReadAttachment(repo.DefaultUser, thread.ID, id); err != nil || string(data) != "a note" {
+		t.Errorf("the attachment: %q, %v", data, err)
+	}
+	if err := ag.DeleteThread(repo.DefaultUser, thread.ID); err != nil {
+		t.Fatal(err)
+	}
+	if store.len() != 0 {
+		t.Errorf("%d objects outlived their thread", store.len())
 	}
 }

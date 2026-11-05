@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -174,8 +172,8 @@ func (a *Agent) DeleteThread(user, id string) error {
 		if err := a.cfg.DB.DeleteThread(id); err != nil {
 			return fmt.Errorf("agent: thread %s: %w", id, err)
 		}
-		if a.cfg.AttachmentsDir != "" {
-			if err := os.RemoveAll(filepath.Join(a.cfg.AttachmentsDir, id)); err != nil {
+		if a.cfg.Attachments != nil {
+			if err := a.cfg.Attachments.DeletePrefix(a.ctx, id); err != nil {
 				slog.Warn("thread attachments not removed", "thread", id, "err", err)
 			}
 		}

@@ -98,8 +98,8 @@ func (a *Agent) runTurn(ctx context.Context, t repo.ThreadRow, turn repo.TurnRow
 			checker, _, err := a.permissions(current)
 			return items, checker, err
 		},
-		AttachmentsDir: a.cfg.AttachmentsDir,
-		Settings:       func() (repo.SettingsRow, error) { return a.cfg.DB.Settings(t.UserID) },
+		Attachments: a.cfg.Attachments,
+		Settings:    func() (repo.SettingsRow, error) { return a.cfg.DB.Settings(t.UserID) },
 	}
 	return rt.Run(ctx)
 }

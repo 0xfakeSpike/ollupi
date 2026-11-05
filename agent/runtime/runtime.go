@@ -14,6 +14,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/skills"
 	"github.com/0xfakeSpike/ollupi/agent/systemprompt"
+	"github.com/0xfakeSpike/ollupi/pkg/blobs"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/redact"
 	"github.com/0xfakeSpike/ollupi/repo"
@@ -45,7 +46,7 @@ type Runtime struct {
 	Reload      func() ([]repo.ItemRow, *permission.Checker, error)
 	Settings    func() (repo.SettingsRow, error)
 
-	AttachmentsDir string
+	Attachments blobs.Store
 
 	offered  []tools.ToolDescriptor
 	deferred []tools.ToolDescriptor
