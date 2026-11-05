@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -15,7 +16,7 @@ import (
 )
 
 func (a *Agent) AddWorkspace(user, path, name string) (repo.WorkspaceRow, error) {
-	root, err := sandbox.CanonicalDirectory(path)
+	root, same, err := a.workspaceRoot(user, path)
 	if err != nil {
 		return repo.WorkspaceRow{}, fmt.Errorf("agent: %w", err)
 	}
@@ -28,7 +29,7 @@ func (a *Agent) AddWorkspace(user, path, name string) (repo.WorkspaceRow, error)
 	now := time.Now().UTC()
 	w := repo.WorkspaceRow{ID: uuid.NewString(), UserID: user, Name: name, RootPath: root, CreatedAt: now, UpdatedAt: now}
 	w, err = a.cfg.DB.AddWorkspace(w,
-		func(existing repo.WorkspaceRow) bool { return sameDirectory(existing.RootPath, root) },
+		func(existing repo.WorkspaceRow) bool { return same(existing.RootPath, root) },
 		func(existing repo.WorkspaceRow) (repo.WorkspaceRow, bool) {
 			if existing.ArchivedAt == nil {
 				return existing, false
@@ -111,6 +112,21 @@ func workspaceName(name string) (string, error) {
 		return "", fmt.Errorf("agent: %w: a workspace name must be 1 to 120 characters", ErrInvalidName)
 	}
 	return name, nil
+}
+
+// workspaceRoot finds the folder a workspace names, and how to tell two names of one folder; in a user's sandbox the
+// canonical name is the only one.
+func (a *Agent) workspaceRoot(user, path string) (string, func(string, string) bool, error) {
+	if a.cfg.BoxFor == nil {
+		root, err := sandbox.CanonicalDirectory(path)
+		return root, sameDirectory, err
+	}
+	box, err := a.cfg.BoxFor(user)
+	if err != nil {
+		return "", nil, err
+	}
+	root, err := box.Directory(context.Background(), path)
+	return root, func(a, b string) bool { return a == b }, err
 }
 
 func sameDirectory(a, b string) bool {

@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -11,36 +12,45 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
-// dirs holds the roots a command may write; it runs in the first.
+// dirs is what a call works on: the caller's box, and the roots a command may write in it; it runs in the first.
 type dirs struct {
+	box   sandbox.Box
 	roots []string
 }
 
-func (r *Provider) dirs(caller tools.Caller) (dirs, error) {
-	if caller.Root == "" {
-		return dirs{roots: r.box.Roots()}, nil
+func (r *Provider) dirs(ctx context.Context) (dirs, error) {
+	caller := tools.CallerOf(ctx)
+	box := r.box
+	if r.boxFor != nil {
+		var err error
+		if box, err = r.boxFor(caller.UserID); err != nil {
+			return dirs{}, fmt.Errorf("workspace: the sandbox of the user: %w", err)
+		}
 	}
-	root, err := sandbox.CanonicalDirectory(caller.Root)
+	if caller.Root == "" {
+		return dirs{box: box, roots: box.Roots()}, nil
+	}
+	root, err := box.Directory(ctx, caller.Root)
 	if err != nil {
 		return dirs{}, err
 	}
 	if root != caller.Root {
 		return dirs{}, fmt.Errorf("workspace: the project directory %q now resolves to %q; add its new location as a workspace", caller.Root, root)
 	}
-	if err := r.box.Check(root); err != nil {
+	if err := box.Check(root); err != nil {
 		return dirs{}, err
 	}
-	return dirs{roots: []string{root}}, nil
+	return dirs{box: box, roots: []string{root}}, nil
 }
 
-func (d dirs) resolve(requested string) (string, error) {
+func (d dirs) resolve(ctx context.Context, requested string) (string, error) {
 	path := requested
 	if path == "" {
 		path = d.roots[0]
 	} else if !filepath.IsAbs(path) {
 		path = filepath.Join(d.roots[0], path)
 	}
-	resolved, err := sandbox.CanonicalDirectory(path)
+	resolved, err := d.box.Directory(ctx, path)
 	if err != nil {
 		return "", err
 	}
@@ -58,7 +68,7 @@ func (r *Provider) settingsDigest(d dirs) string {
 		TimeoutSec int
 		Blacklist  []string
 		Roots      []string
-	}{r.box.Fingerprint(), r.timeoutSec, r.blacklist, d.roots})
+	}{d.box.Fingerprint(), r.timeoutSec, r.blacklist, d.roots})
 }
 
 func sha(s string) string {

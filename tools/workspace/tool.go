@@ -18,6 +18,12 @@ type Options struct {
 	Agent     AgentFiles
 	DenyRead  []string
 	EnvMarker string
+	// Box describes the tools and serves any user BoxFor does not; by default it is a sandbox on this machine,
+	// made from Config.
+	Box sandbox.Box
+	// BoxFor gives the box a user's calls run in, connected for them. It keeps a box's lifetime: this package
+	// only closes Box.
+	BoxFor func(user string) (sandbox.Box, error)
 }
 
 const (
@@ -26,7 +32,8 @@ const (
 )
 
 type Provider struct {
-	box           *sandbox.Sandbox
+	box           sandbox.Box
+	boxFor        func(user string) (sandbox.Box, error)
 	timeoutSec    int
 	maxTimeoutSec int
 	blacklist     []string
@@ -35,23 +42,30 @@ type Provider struct {
 func New(o Options) (*Provider, error) {
 	c := o.Config
 	c.WorkspaceDirs = append([]string(nil), c.WorkspaceDirs...)
+	if o.Box != nil {
+		c.WorkspaceDirs = o.Box.Roots()
+	}
 	if err := c.normalize(o.Agent.Home); err != nil {
 		return nil, fmt.Errorf("workspace: %w", err)
 	}
-	cfg := sandboxConfig(o, c)
-	cfg.Roots = make([]string, 0, len(c.WorkspaceDirs))
-	for _, r := range c.WorkspaceDirs {
-		abs, err := sandbox.CanonicalDirectory(r)
-		if err != nil {
-			return nil, fmt.Errorf("workspace: workspace dir: %w", err)
+	box := o.Box
+	if box == nil {
+		cfg := sandboxConfig(o, c)
+		cfg.Roots = make([]string, 0, len(c.WorkspaceDirs))
+		for _, r := range c.WorkspaceDirs {
+			abs, err := sandbox.CanonicalDirectory(r)
+			if err != nil {
+				return nil, fmt.Errorf("workspace: workspace dir: %w", err)
+			}
+			cfg.Roots = append(cfg.Roots, abs)
 		}
-		cfg.Roots = append(cfg.Roots, abs)
+		local, err := sandbox.New(cfg)
+		if err != nil {
+			return nil, fmt.Errorf("workspace: %w", err)
+		}
+		box = local
 	}
-	box, err := sandbox.New(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("workspace: %w", err)
-	}
-	return &Provider{box: box, timeoutSec: c.CommandTimeoutSec, maxTimeoutSec: c.MaxCommandTimeoutSec, blacklist: append([]string(nil), c.CommandBlacklist...)}, nil
+	return &Provider{box: box, boxFor: o.BoxFor, timeoutSec: c.CommandTimeoutSec, maxTimeoutSec: c.MaxCommandTimeoutSec, blacklist: append([]string(nil), c.CommandBlacklist...)}, nil
 }
 
 func (r *Provider) Close() error { return r.box.Close() }
@@ -66,7 +80,10 @@ func (r *Provider) tool() *tools.Spec {
 		". A non-zero exit_code is returned with the output, not as an error. To read, find or search files use " +
 		ToolReadFile + ", " + ToolGlob + " and " + ToolGrep + ", not cat, find or grep"
 	if r.box.Enforced() {
-		desc += ". Commands run in the sandbox without asking the user. A result's sandbox_denials lists what the sandbox stopped. " +
+		desc += ". Commands run in the sandbox without asking the user"
+	}
+	if r.box.CanEscalate() {
+		desc += ". A result's sandbox_denials lists what the sandbox stopped. " +
 			"When a command fails because of the sandbox (a write outside the command directories or to a protected file, " +
 			"a host outside the allowed domains, the network, a local socket), " +
 			"retry it with sandbox_permissions \"require_escalated\" and a one-sentence justification: " +
@@ -128,7 +145,7 @@ func toolInputSchema() map[string]any {
 
 func (r *Provider) inputSchema() map[string]any {
 	schema := toolInputSchema()
-	if !r.box.Enforced() {
+	if !r.box.CanEscalate() {
 		return schema
 	}
 	props := schema["properties"].(map[string]any)

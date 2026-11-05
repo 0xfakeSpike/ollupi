@@ -9,6 +9,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/runtime"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
+	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"log/slog"
 	"slices"
@@ -67,6 +68,9 @@ type Config struct {
 	// Lease makes this process claim the shard before it runs it, waiting for as long as another holds it, and keep
 	// the claim alive; a process that dies leaves its claim for this long. Without it the process trusts it is alone.
 	Lease time.Duration
+	// BoxFor gives the sandbox a user's files live in, for workspaces to be found there; without it they are on this
+	// machine. The workspace tools take the same function.
+	BoxFor func(user string) (sandbox.Box, error)
 	// OnLeaseLost tells the host that another process took the shard: the agent has stopped, and all else on DB must.
 	OnLeaseLost func()
 }

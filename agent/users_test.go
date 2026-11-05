@@ -4,16 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
+	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
 )
@@ -353,4 +356,44 @@ func TestAStandbyTakesTheShard(t *testing.T) {
 		t.Fatal("the process never saw it lost the shard")
 	}
 	second.Wait()
+}
+
+// stubMachine is a sandbox with one folder, which this machine does not have.
+type stubMachine struct{ sandbox.Machine }
+
+func (stubMachine) Stat(_ context.Context, path string) (fs.FileInfo, error) {
+	if path != "/cloud/app" {
+		return nil, fs.ErrNotExist
+	}
+	return fstest.MapFS{"app": {Mode: fs.ModeDir}}.Stat("app")
+}
+
+func TestAWorkspaceIsFoundInTheUsersSandbox(t *testing.T) {
+	srv := httptest.NewServer(&recordingModel{})
+	defer srv.Close()
+	db, err := repo.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ag := agent.New(agent.Config{
+		DB: db,
+		BoxFor: func(string) (sandbox.Box, error) {
+			return sandbox.Remote(stubMachine{}, []string{"/cloud"}, "cloud"), nil
+		},
+	})
+	w, err := ag.AddWorkspace(repo.DefaultUser, "/cloud/app/", "app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.RootPath != "/cloud/app" {
+		t.Errorf("root %q", w.RootPath)
+	}
+	again, err := ag.AddWorkspace(repo.DefaultUser, "/cloud/app", "app")
+	if err != nil || again.ID != w.ID {
+		t.Errorf("the same folder again: %+v, %v", again, err)
+	}
+	if _, err := ag.AddWorkspace(repo.DefaultUser, "/cloud/missing", "x"); err == nil {
+		t.Error("a folder the sandbox does not have was added")
+	}
 }
