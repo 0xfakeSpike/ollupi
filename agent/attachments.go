@@ -2,13 +2,16 @@ package agent
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"image"
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,6 +19,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
+	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/google/uuid"
 )
@@ -29,7 +33,8 @@ const (
 	defaultImageToken = 1600
 )
 
-// AttachmentInput is a file on this machine sent with a message; the attachment is a copy taken when it is sent.
+// AttachmentInput is a file sent with a message, on this machine or in the user's sandbox when they have one; the
+// attachment is a copy taken when it is sent.
 type AttachmentInput struct {
 	Path     string
 	Name     string
@@ -38,11 +43,11 @@ type AttachmentInput struct {
 
 var imageTypes = map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}
 
-func (a *Agent) storeAttachments(threadID string, ins []AttachmentInput) ([]repo.Attachment, error) {
+func (a *Agent) storeAttachments(t repo.ThreadRow, ins []AttachmentInput) ([]repo.Attachment, error) {
 	if len(ins) == 0 {
 		return nil, nil
 	}
-	if a.cfg.AttachmentsDir == "" {
+	if a.cfg.Attachments == nil {
 		return nil, fmt.Errorf("agent: %w: this agent takes no attachments", ErrInvalidMessage)
 	}
 	if len(ins) > maxAttachments {
@@ -50,7 +55,7 @@ func (a *Agent) storeAttachments(threadID string, ins []AttachmentInput) ([]repo
 	}
 	out := make([]repo.Attachment, 0, len(ins))
 	for _, in := range ins {
-		att, err := a.storeAttachment(threadID, in)
+		att, err := a.storeAttachment(t, in)
 		if err != nil {
 			a.removeAttachments(out)
 			return nil, err
@@ -60,32 +65,61 @@ func (a *Agent) storeAttachments(threadID string, ins []AttachmentInput) ([]repo
 	return out, nil
 }
 
-func (a *Agent) storeAttachment(threadID string, in AttachmentInput) (repo.Attachment, error) {
+func (a *Agent) storeAttachment(t repo.ThreadRow, in AttachmentInput) (repo.Attachment, error) {
 	if !filepath.IsAbs(in.Path) {
 		return repo.Attachment{}, fmt.Errorf("agent: %w: attachment path %q is not absolute", ErrInvalidMessage, in.Path)
 	}
-	src, err := os.Open(in.Path)
+	src, size, done, err := a.attachmentSource(t.UserID, in.Path)
 	if err != nil {
-		return repo.Attachment{}, fmt.Errorf("agent: %w: attachment %s cannot be read: %v", ErrInvalidMessage, in.Path, err)
+		return repo.Attachment{}, fmt.Errorf("agent: %w: attachment %s: %v", ErrInvalidMessage, in.Path, err)
 	}
-	defer src.Close()
-	info, err := src.Stat()
-	if err != nil || !info.Mode().IsRegular() {
-		return repo.Attachment{}, fmt.Errorf("agent: %w: attachment %s is not a file", ErrInvalidMessage, in.Path)
-	}
+	defer done()
 	name := in.Name
 	if strings.TrimSpace(name) == "" {
 		name = in.Path
 	}
-	att, err := describe(src, info.Size(), attachmentName(name), in.MimeType)
+	att, err := describe(src, size, attachmentName(name), in.MimeType)
 	if err != nil {
 		return repo.Attachment{}, fmt.Errorf("agent: %w: %v", ErrInvalidMessage, err)
 	}
-	att.File = threadID + "/" + att.File
+	att.File = t.ID + "/" + att.File
 	if err := a.copyAttachment(src, att); err != nil {
 		return repo.Attachment{}, fmt.Errorf("agent: store attachment %s: %w", att.Name, err)
 	}
 	return att, nil
+}
+
+// attachmentSource opens the file a user names. With a sandbox of their own it can only be there: the files of this
+// machine are not theirs to send.
+func (a *Agent) attachmentSource(user, path string) (io.ReadSeeker, int64, func(), error) {
+	if a.cfg.BoxFor == nil {
+		f, err := os.Open(path)
+		if err != nil {
+			return nil, 0, nil, err
+		}
+		info, err := f.Stat()
+		if err != nil || !info.Mode().IsRegular() {
+			f.Close()
+			return nil, 0, nil, errors.New("not a file")
+		}
+		return f, info.Size(), func() { f.Close() }, nil
+	}
+	box, err := a.cfg.BoxFor(user)
+	if err != nil {
+		return nil, 0, nil, err
+	}
+	info, err := box.Stat(a.ctx, path)
+	if err != nil {
+		return nil, 0, nil, err
+	}
+	if !info.Mode().IsRegular() || info.Size() > maxImageBytes {
+		return nil, 0, nil, fmt.Errorf("not a file of at most %d bytes", maxImageBytes)
+	}
+	data, err := sandbox.ReadFile(a.ctx, box, path)
+	if err != nil {
+		return nil, 0, nil, err
+	}
+	return bytes.NewReader(data), int64(len(data)), func() {}, nil
 }
 
 // copyAttachment copies exactly the bytes describe measured, so a file that changes meanwhile is refused.
@@ -93,25 +127,14 @@ func (a *Agent) copyAttachment(src io.ReadSeeker, att repo.Attachment) error {
 	if _, err := src.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
-	path := filepath.Join(a.cfg.AttachmentsDir, filepath.FromSlash(att.File))
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	dst, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	data, err := io.ReadAll(io.LimitReader(src, att.Size+1))
 	if err != nil {
 		return err
 	}
-	n, err := io.Copy(dst, io.LimitReader(src, att.Size+1))
-	if cerr := dst.Close(); err == nil {
-		err = cerr
+	if int64(len(data)) != att.Size {
+		return fmt.Errorf("the file changed while it was being attached")
 	}
-	if err == nil && n != att.Size {
-		err = fmt.Errorf("the file changed while it was being attached")
-	}
-	if err != nil {
-		os.Remove(path)
-	}
-	return err
+	return a.cfg.Attachments.Put(a.ctx, att.File, data)
 }
 
 // describe classifies a file as an image or a text file from its first bytes and checks it against the limits
@@ -220,7 +243,9 @@ func clipRunes(s string, n int) string {
 
 func (a *Agent) removeAttachments(atts []repo.Attachment) {
 	for _, att := range atts {
-		os.Remove(filepath.Join(a.cfg.AttachmentsDir, filepath.FromSlash(att.File)))
+		if err := a.cfg.Attachments.Delete(context.Background(), att.File); err != nil {
+			slog.Warn("attachment not removed", "file", att.File, "err", err)
+		}
 	}
 }
 
@@ -232,7 +257,7 @@ func (a *Agent) ReadAttachment(user, threadID, id string) (repo.Attachment, []by
 	if err != nil {
 		return repo.Attachment{}, nil, fmt.Errorf("agent: attachment %s: %w", id, err)
 	}
-	data, err := os.ReadFile(filepath.Join(a.cfg.AttachmentsDir, filepath.FromSlash(att.File)))
+	data, err := a.cfg.Attachments.Get(a.ctx, att.File)
 	if err != nil {
 		return repo.Attachment{}, nil, fmt.Errorf("agent: attachment %s: %w", id, err)
 	}

@@ -8,6 +8,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/runtime"
+	"github.com/0xfakeSpike/ollupi/pkg/blobs"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/repo"
@@ -60,7 +61,9 @@ type Config struct {
 	Providers   []tools.Provider
 	Unavailable []string
 	SkillsDir   string
-	// AttachmentsDir holds the images and files sent with messages; without it messages take none.
+	// Attachments keeps the images and files sent with messages; without it messages take none.
+	Attachments blobs.Store
+	// AttachmentsDir is a folder on this machine to keep them in, when Attachments is not set.
 	AttachmentsDir string
 	Memory         *memory.Manager
 	DB             *repo.DB
@@ -117,6 +120,9 @@ func (a *Agent) Start(ctx context.Context) error {
 	}
 	if a.cfg.UserSlots <= 0 {
 		a.cfg.UserSlots = a.cfg.Slots
+	}
+	if a.cfg.Attachments == nil && a.cfg.AttachmentsDir != "" {
+		a.cfg.Attachments = blobs.Dir(a.cfg.AttachmentsDir)
 	}
 	a.events, a.slotByThread, a.slotsOfUser = make(chan func()), map[string]*slot{}, map[string]int{}
 	a.ctx = ctx

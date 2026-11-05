@@ -97,7 +97,7 @@ func (a *Agent) startTurn(threadID string, in Input) (repo.TurnRow, error) {
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
-	atts, err := a.storeAttachments(threadID, in.Attachments)
+	atts, err := a.storeAttachments(st.Thread, in.Attachments)
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
@@ -161,7 +161,7 @@ func (a *Agent) steer(threadID, expectedTurnID string, in Input) (repo.TurnRow, 
 	if turn.ID != expectedTurnID {
 		return repo.TurnRow{}, fmt.Errorf("%w (expected %s, in progress %s)", ErrTurnMismatch, expectedTurnID, turn.ID)
 	}
-	atts, err := a.storeAttachments(threadID, in.Attachments)
+	atts, err := a.storeAttachments(st.Thread, in.Attachments)
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
