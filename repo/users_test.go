@@ -257,3 +257,55 @@ func TestRowsFromBeforeUsersBelongToTheDefaultUser(t *testing.T) {
 		t.Errorf("memory state: %+v, %v", state, err)
 	}
 }
+
+func TestOneProcessHoldsTheShard(t *testing.T) {
+	db, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	at := time.Date(2026, 11, 5, 8, 0, 0, 0, time.UTC)
+	claim := func(owner string, now time.Time, want bool) {
+		t.Helper()
+		if got, err := db.ClaimShard(owner, now, time.Minute); err != nil || got != want {
+			t.Fatalf("%s claiming at %v: %v, %v", owner, now, got, err)
+		}
+	}
+	claim("first", at, true)
+	claim("second", at.Add(59*time.Second), false)
+	claim("first", at.Add(59*time.Second), true)
+	claim("second", at.Add(time.Minute), false)
+	claim("second", at.Add(2*time.Minute), true)
+	claim("first", at.Add(2*time.Minute), false)
+	if err := db.ReleaseShard("first"); err != nil {
+		t.Fatal(err)
+	}
+	claim("first", at.Add(2*time.Minute), false)
+	if err := db.ReleaseShard("second"); err != nil {
+		t.Fatal(err)
+	}
+	claim("first", at.Add(2*time.Minute), true)
+}
+
+func TestAFencedHandleStopsWritingOnceTheShardIsTaken(t *testing.T) {
+	db, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	at := time.Now()
+	if held, err := db.ClaimShard("first", at, time.Minute); err != nil || !held {
+		t.Fatal(held, err)
+	}
+	db.Fence("first")
+	write := func() error { return db.Tx(func(tx *DB) error { return tx.EnsureUser("a") }) }
+	if err := write(); err != nil {
+		t.Fatal(err)
+	}
+	if held, err := db.ClaimShard("second", at.Add(time.Hour), time.Minute); err != nil || !held {
+		t.Fatal(held, err)
+	}
+	if err := write(); !errors.Is(err, ErrShardLost) {
+		t.Errorf("writing after the shard was taken: %v", err)
+	}
+}

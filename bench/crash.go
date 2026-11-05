@@ -48,6 +48,7 @@ func crash(args []string) {
 	calls := fs.Int("calls", 8, "model calls the connection allows in flight")
 	latency := fs.Duration("latency", 200*time.Millisecond, "model latency")
 	toolLatency := fs.Duration("tool", 300*time.Millisecond, "tool latency")
+	lease := fs.Duration("lease", 0, "with a lease, a standby process already waits on the shard when one is killed")
 	fs.Parse(args)
 
 	var token atomic.Int64
@@ -75,7 +76,7 @@ func crash(args []string) {
 	}
 	start := func(submit int) (*exec.Cmd, <-chan string) {
 		cmd := exec.Command(exe, "crashchild", "-dir", dir, "-url", srv.URL, "-slots", strconv.Itoa(*slots),
-			"-calls", strconv.Itoa(*calls), "-tool", toolLatency.String(), "-submit", strconv.Itoa(submit))
+			"-calls", strconv.Itoa(*calls), "-tool", toolLatency.String(), "-submit", strconv.Itoa(submit), "-lease", lease.String())
 		cmd.Stderr = os.Stderr
 		out, err := cmd.StdoutPipe()
 		if err != nil {
@@ -105,6 +106,11 @@ func crash(args []string) {
 
 	cmd, lines := start(*n)
 	await(lines, "ready")
+	var standby *exec.Cmd
+	var standbyLines <-chan string
+	if *lease > 0 {
+		standby, standbyLines = start(0)
+	}
 	var restarts []time.Duration
 	var recoveries []string
 	killed, drained := 0, false
@@ -119,8 +125,15 @@ func crash(args []string) {
 		_ = cmd.Wait()
 		killed++
 		at := time.Now()
-		cmd, lines = start(0)
+		if *lease > 0 {
+			cmd, lines = standby, standbyLines
+		} else {
+			cmd, lines = start(0)
+		}
 		ready := await(lines, "ready")
+		if *lease > 0 {
+			standby, standbyLines = start(0)
+		}
 		restarts = append(restarts, time.Since(at))
 		recoveries = append(recoveries, strings.TrimPrefix(ready, "ready "))
 	}
@@ -128,6 +141,10 @@ func crash(args []string) {
 		await(lines, "drained")
 	}
 	_ = cmd.Wait()
+	if standby != nil {
+		await(standbyLines, "drained")
+		_ = standby.Wait()
+	}
 
 	g, err := gorm.Open(sqlite.Open(filepath.Join(dir, "data", "ollupi.sqlite")), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
@@ -196,6 +213,7 @@ func crashChild(args []string) {
 	calls := fs.Int("calls", 8, "model calls the connection allows in flight")
 	toolLatency := fs.Duration("tool", 300*time.Millisecond, "tool latency")
 	submit := fs.Int("submit", 0, "conversations to submit once started")
+	lease := fs.Duration("lease", 0, "how long a claim on the shard lasts")
 	fs.Parse(args)
 
 	toolLog, err := os.OpenFile(filepath.Join(*dir, "tools.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
@@ -220,7 +238,7 @@ func crashChild(args []string) {
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(*url, "", *calls, map[string]llm.Limits{"fake": {Context: 200_000, Output: 32_000}})},
 		Providers:   []tools.Provider{work{latency: *toolLatency, log: toolLog}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
-		Slots:       *slots, DB: db,
+		Slots:       *slots, DB: db, Lease: *lease,
 		OnEvent: func(e agent.Event) {
 			if e.Kind == agent.EventUserInputRequested {
 				answer(e.Thread.ID, e.Item.ID)

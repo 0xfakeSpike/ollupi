@@ -17,7 +17,8 @@ import (
 )
 
 type DB struct {
-	gorm *gorm.DB
+	gorm  *gorm.DB
+	owner string
 }
 
 func Open(homeDir string) (*DB, error) {
@@ -72,7 +73,13 @@ func (d *DB) applySchema() error {
 }
 
 func (d *DB) Tx(fn func(*DB) error) error {
-	return d.gorm.Transaction(func(tx *gorm.DB) error { return fn(&DB{gorm: tx}) })
+	return d.gorm.Transaction(func(tx *gorm.DB) error {
+		t := &DB{gorm: tx, owner: d.owner}
+		if err := t.checkFence(); err != nil {
+			return err
+		}
+		return fn(t)
+	})
 }
 
 func nullTime(t *time.Time) *time.Time {
@@ -95,7 +102,7 @@ func checkOne(res *gorm.DB) error {
 
 var rowTypes = []any{
 	&UserRow{}, &WorkspaceRow{}, &ThreadRow{}, &TurnRow{}, &ItemRow{}, &CronJobRow{},
-	&MemoryRow{}, &MemoryStateRow{}, &SettingsRow{},
+	&MemoryRow{}, &MemoryStateRow{}, &SettingsRow{}, &ShardLeaseRow{},
 }
 
 var ErrNotFound = errors.New("storage: not found")
