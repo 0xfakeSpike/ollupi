@@ -18,7 +18,7 @@ func (c *conn) cronJobs() (*cron.Jobs, error) {
 
 func (c *conn) cronList(p CronListParams) (CronListResult, func(), error) {
 	c.s.deliver.Lock()
-	rows, err := c.s.db.CronJobViews(p.ThreadID)
+	rows, err := c.s.db.CronJobViews(c.user, p.ThreadID)
 	if err != nil {
 		c.s.deliver.Unlock()
 		return CronListResult{}, nil, err
@@ -52,6 +52,9 @@ func (c *conn) cronCreate(p CronCreateParams) (repo.CronJobRow, func(), error) {
 	if err != nil {
 		return repo.CronJobRow{}, nil, err
 	}
+	if _, err := c.s.db.ThreadOf(c.user, p.ThreadID); err != nil {
+		return repo.CronJobRow{}, nil, err
+	}
 	row, err := jobs.Create(p.ThreadID, p.Name, p.Spec, p.Prompt, p.Times)
 	return row, nil, err
 }
@@ -64,6 +67,9 @@ func (c *conn) cronPause(p CronPauseParams) (repo.CronJobRow, func(), error) {
 	if p.Paused == nil {
 		return repo.CronJobRow{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "paused is required")
 	}
+	if _, err := c.s.db.ThreadOf(c.user, p.ThreadID); err != nil {
+		return repo.CronJobRow{}, nil, err
+	}
 	row, err := jobs.SetPaused(p.ThreadID, p.Name, *p.Paused)
 	return row, nil, err
 }
@@ -71,6 +77,9 @@ func (c *conn) cronPause(p CronPauseParams) (repo.CronJobRow, func(), error) {
 func (c *conn) cronDelete(p CronDeleteParams) (Empty, func(), error) {
 	jobs, err := c.cronJobs()
 	if err != nil {
+		return Empty{}, nil, err
+	}
+	if _, err := c.s.db.ThreadOf(c.user, p.ThreadID); err != nil {
 		return Empty{}, nil, err
 	}
 	_, err = jobs.Delete(p.ThreadID, p.Name)

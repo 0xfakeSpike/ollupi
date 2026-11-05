@@ -12,7 +12,10 @@ type Request struct {
 	Item   repo.ItemRow
 }
 
-func (a *Agent) PendingRequests(threadID string) []Request {
+func (a *Agent) PendingRequests(user, threadID string) []Request {
+	if a.owned(user, threadID) != nil {
+		return nil
+	}
 	st, err := a.cfg.DB.ThreadState(threadID)
 	if err != nil {
 		return nil
@@ -26,8 +29,8 @@ func (a *Agent) PendingRequests(threadID string) []Request {
 	return byRequestTime(out)
 }
 
-func (a *Agent) AllPendingRequests() []Request {
-	ids, err := a.cfg.DB.ThreadsWaitingOnUser()
+func (a *Agent) AllPendingRequests(user string) []Request {
+	ids, err := a.cfg.DB.ThreadsWaitingOnUser(user)
 	if err != nil {
 		return nil
 	}

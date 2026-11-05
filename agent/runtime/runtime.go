@@ -103,7 +103,7 @@ func (rt *Runtime) loadMemory() error {
 	if rt.Memory == nil {
 		return nil
 	}
-	snapshot, err := rt.Memory.Snapshot(rt.Caller.WorkspaceID, rt.Window.MemoryBudget())
+	snapshot, err := rt.Memory.Snapshot(rt.Caller.UserID, rt.Caller.WorkspaceID, rt.Window.MemoryBudget())
 	if err != nil {
 		slog.Warn("memory snapshot not loaded", "thread", rt.Caller.ThreadID, "turn", rt.Turn.ID, "err", err)
 		return nil

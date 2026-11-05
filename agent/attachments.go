@@ -224,7 +224,10 @@ func (a *Agent) removeAttachments(atts []repo.Attachment) {
 	}
 }
 
-func (a *Agent) ReadAttachment(threadID, id string) (repo.Attachment, []byte, error) {
+func (a *Agent) ReadAttachment(user, threadID, id string) (repo.Attachment, []byte, error) {
+	if err := a.owned(user, threadID); err != nil {
+		return repo.Attachment{}, nil, err
+	}
 	att, err := a.cfg.DB.Attachment(threadID, id)
 	if err != nil {
 		return repo.Attachment{}, nil, fmt.Errorf("agent: attachment %s: %w", id, err)

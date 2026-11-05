@@ -1,7 +1,6 @@
 package repo
 
 import (
-	"crypto/rand"
 	"database/sql/driver"
 	"errors"
 	"fmt"
@@ -69,15 +68,7 @@ func (d *DB) applySchema() error {
 	if err := d.migrate(); err != nil {
 		return err
 	}
-	return d.gorm.Transaction(func(tx *gorm.DB) error {
-		if err := tx.FirstOrCreate(&MemoryStateRow{}, MemoryStateRow{ID: 1}).Error; err != nil {
-			return fmt.Errorf("create memory state: %w", err)
-		}
-		if err := tx.Attrs(SettingsRow{RedactionKey: rand.Text()}).FirstOrCreate(&SettingsRow{}, SettingsRow{ID: 1}).Error; err != nil {
-			return fmt.Errorf("create settings: %w", err)
-		}
-		return nil
-	})
+	return d.EnsureUser(DefaultUser)
 }
 
 func (d *DB) Tx(fn func(*DB) error) error {
@@ -103,7 +94,7 @@ func checkOne(res *gorm.DB) error {
 }
 
 var rowTypes = []any{
-	&WorkspaceRow{}, &ThreadRow{}, &TurnRow{}, &ItemRow{}, &CronJobRow{},
+	&UserRow{}, &WorkspaceRow{}, &ThreadRow{}, &TurnRow{}, &ItemRow{}, &CronJobRow{},
 	&MemoryRow{}, &MemoryStateRow{}, &SettingsRow{},
 }
 

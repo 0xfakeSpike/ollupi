@@ -19,7 +19,7 @@ func TestThreadPagesFollowListOrder(t *testing.T) {
 		if i == 3 {
 			created = at.Add(-time.Hour)
 		}
-		row := ThreadRow{ID: fmt.Sprintf("t%d", i), CreatedAt: created, UpdatedAt: at.Add(updated * time.Minute)}
+		row := ThreadRow{UserID: DefaultUser, ID: fmt.Sprintf("t%d", i), CreatedAt: created, UpdatedAt: at.Add(updated * time.Minute)}
 		if err := db.CreateThread(row); err != nil {
 			t.Fatal(err)
 		}
@@ -27,7 +27,7 @@ func TestThreadPagesFollowListOrder(t *testing.T) {
 	var listed []string
 	var after *ThreadCursor
 	for {
-		page, _, err := db.ThreadRows(ThreadFilter{After: after, Limit: 2})
+		page, _, err := db.ThreadRows(DefaultUser, ThreadFilter{After: after, Limit: 2})
 		if err != nil {
 			t.Fatal(err)
 		}

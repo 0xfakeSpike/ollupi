@@ -96,10 +96,10 @@ func (d *DB) ReadyThreads(limit int) ([]string, error) {
 	return ids, err
 }
 
-// ThreadsWaitingOnUser lists the threads whose turn waits for an approval or an answer.
-func (d *DB) ThreadsWaitingOnUser() ([]string, error) {
+// ThreadsWaitingOnUser lists the user's threads whose turn waits for an approval or an answer.
+func (d *DB) ThreadsWaitingOnUser(user string) ([]string, error) {
 	var ids []string
-	err := d.gorm.Model(&TurnRow{}).Where("status IN ?", []TurnStatus{TurnWaitingOnApproval, TurnWaitingOnUserInput}).
+	err := d.gorm.Model(&TurnRow{}).Where("status IN ? AND "+ofUser, []TurnStatus{TurnWaitingOnApproval, TurnWaitingOnUserInput}, user).
 		Order("thread_id").Pluck("thread_id", &ids).Error
 	return ids, err
 }

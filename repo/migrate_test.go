@@ -48,7 +48,10 @@ func TestADatabaseFromBeforeMigrationsKeepsItsRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	at := time.Date(2026, 10, 30, 8, 0, 0, 0, time.UTC)
-	if err := old.Create(&ThreadRow{ID: "kept", Title: "kept", CreatedAt: at, UpdatedAt: at}).Error; err != nil {
+	if err := old.Create(&UserRow{ID: DefaultUser, CreatedAt: at}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := old.Create(&ThreadRow{UserID: DefaultUser, ID: "kept", Title: "kept", CreatedAt: at, UpdatedAt: at}).Error; err != nil {
 		t.Fatal(err)
 	}
 	closeRaw(t, old)
