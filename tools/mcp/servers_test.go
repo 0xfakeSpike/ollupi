@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/tools"
@@ -144,5 +145,49 @@ func TestConnect(t *testing.T) {
 		if r := reg.Invoke(tools.WithCaller(ctx, c), "local__whoami", map[string]any{}); r.Err != nil || r.Output != want {
 			t.Errorf("caller %+v reached the server as %v, %v; want %s", c, r.Output, r.Err, want)
 		}
+	}
+}
+
+func TestACallThatGetsNoAnswerEnds(t *testing.T) {
+	ctx := context.Background()
+	release := make(chan struct{})
+	hanging := mcp.NewServer(&mcp.Implementation{Name: "hanging", Version: "1"}, nil)
+	mcp.AddTool(hanging, &mcp.Tool{Name: "hang"}, func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, any, error) {
+		<-release
+		return &mcp.CallToolResult{}, nil, nil
+	})
+	web := httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return hanging }, nil))
+	defer web.Close()
+	users := NewUsers(ctx, Client{}, func(string) ([]Server, error) {
+		return []Server{{Name: "slow", URL: web.URL, Timeout: 100 * time.Millisecond}}, nil
+	}, func(string) (sandbox.Box, error) { return sandbox.Here(), nil })
+	defer users.Close()
+	defer close(release)
+	servers, err := users.For("someone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st := servers.Statuses()[0]; !st.Connected {
+		t.Fatalf("%+v", st)
+	}
+	_, err = servers.sessions[0].Invoke(ctx, "slow"+tools.ProviderSeparator+"hang", map[string]any{})
+	if err == nil || !strings.Contains(err.Error(), "may still have taken effect") {
+		t.Errorf("the call: %v", err)
+	}
+}
+
+func TestARemoteUserCannotReachThisNetwork(t *testing.T) {
+	web := httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return testServer() }, nil))
+	defer web.Close()
+	users := NewUsers(context.Background(), Client{}, func(string) ([]Server, error) {
+		return []Server{{Name: "internal", URL: web.URL}}, nil
+	}, func(string) (sandbox.Box, error) { return sandbox.Remote(nil, []string{"/cloud"}, "cloud"), nil })
+	defer users.Close()
+	servers, err := users.For("someone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st := servers.Statuses()[0]; st.Connected || !strings.Contains(st.Error, sandbox.ErrLocalAddress.Error()) {
+		t.Errorf("%+v", st)
 	}
 }

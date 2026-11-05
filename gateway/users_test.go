@@ -136,6 +136,22 @@ func TestEachUserHasTheirOwnConnectionAndEvents(t *testing.T) {
 	if res.StatusCode != http.StatusUnauthorized {
 		t.Errorf("an unknown token: %s", res.Status)
 	}
+	res, err = http.Get(gw.URL + "?token=token-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Errorf("a token in the URL: %s", res.Status)
+	}
+	browser, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(gw.URL, "http"), &websocket.DialOptions{Subprotocols: []string{tokenProtocol, "token-a"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := browser.Subprotocol(); got != tokenProtocol {
+		t.Errorf("the gateway answered the subprotocol %q", got)
+	}
+	browser.Close(websocket.StatusNormalClosure, "")
 
 	a, b := userClient(ctx, t, gw.URL, "token-a"), userClient(ctx, t, gw.URL, "token-b")
 	if users, err := db.Users(); err != nil || len(users) != 3 {

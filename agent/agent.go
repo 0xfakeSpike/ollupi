@@ -26,8 +26,9 @@ import (
 )
 
 const (
-	maxInputRunes = 4000
-	defaultSlots  = 32
+	maxInputRunes   = 4000
+	defaultSlots    = 32
+	defaultRunLimit = 4 * time.Hour
 )
 
 var (
@@ -42,6 +43,7 @@ var (
 	ErrInvalidAnswer     = errors.New("invalid answer")
 	ErrInvalidDecision   = errors.New("invalid decision")
 	ErrInvalidName       = errors.New("invalid name")
+	ErrInvalidPath       = errors.New("invalid path")
 )
 
 type Config struct {
@@ -53,6 +55,8 @@ type Config struct {
 	Slots    int
 	// UserSlots is the most slots one user may hold, so that one user's turns cannot fill a shard; by default, all.
 	UserSlots int
+	// RunLimit is how long a turn may run in its slot before it fails; by default, four hours.
+	RunLimit time.Duration
 
 	Connections map[string]llm.Client
 	// ClientFor gives the client a user's turns call a connection through, so that they run on the user's own key
@@ -159,6 +163,9 @@ func (a *Agent) Start(ctx context.Context) error {
 	}
 	if a.cfg.UserSlots <= 0 {
 		a.cfg.UserSlots = a.cfg.Slots
+	}
+	if a.cfg.RunLimit <= 0 {
+		a.cfg.RunLimit = defaultRunLimit
 	}
 	if a.cfg.Attachments == nil && a.cfg.AttachmentsDir != "" {
 		a.cfg.Attachments = blobs.Dir(a.cfg.AttachmentsDir)

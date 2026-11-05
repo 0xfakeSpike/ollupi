@@ -124,3 +124,11 @@ func TestExtractionRunsOnTheUsersClient(t *testing.T) {
 		t.Errorf("no client for the user: %v", err)
 	}
 }
+
+func TestACrashIsOneUsersFailure(t *testing.T) {
+	m := testManager(t, false)
+	m.db = nil
+	if err := m.runFor(context.Background(), repo.DefaultUser); err == nil {
+		t.Error("the crash was not reported")
+	}
+}

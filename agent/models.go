@@ -95,5 +95,9 @@ func (a *Agent) conversationModel(last *repo.TurnRow, requested string) (llm.Mod
 	if connection == "" {
 		connection = a.cfg.Models[0].Connection
 	}
-	return a.modelOn(connection)
+	model, err := a.modelOn(connection)
+	if err != nil {
+		return llm.Model{}, fmt.Errorf("agent: %w: %v", ErrInvalidMessage, err)
+	}
+	return model, nil
 }

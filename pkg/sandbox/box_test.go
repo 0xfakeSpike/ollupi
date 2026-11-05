@@ -3,6 +3,9 @@ package sandbox
 import (
 	"bufio"
 	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -65,5 +68,26 @@ func TestCloseStopsACommandThatWillNotEnd(t *testing.T) {
 	p.Close()
 	if took := time.Since(started); took > 10*time.Second {
 		t.Errorf("stopping took %s", took)
+	}
+}
+
+func TestNoHomeIsAnError(t *testing.T) {
+	t.Setenv("HOME", "")
+	if _, err := New(Config{Mode: "workspace-write", Roots: []string{t.TempDir()}}); err == nil {
+		t.Error("the rules that protect the home directory were left out")
+	}
+}
+
+func TestARemoteBoxKeepsOffThisNetwork(t *testing.T) {
+	local := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer local.Close()
+	box := Remote(nil, []string{"/cloud"}, "cloud")
+	defer box.Close()
+	req, err := http.NewRequest(http.MethodGet, local.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res, err := box.Transport().RoundTrip(req); !errors.Is(err, ErrLocalAddress) {
+		t.Errorf("reached %s: %v, %v", local.URL, res, err)
 	}
 }

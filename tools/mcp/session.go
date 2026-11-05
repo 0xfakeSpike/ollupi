@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/tools"
@@ -16,6 +17,7 @@ import (
 type Session struct {
 	name    string
 	title   string
+	timeout time.Duration
 	sess    *mcp.ClientSession
 	tools   map[string]*mcp.Tool
 	specs   []*tools.Spec
@@ -28,7 +30,10 @@ type Session struct {
 
 // connect reaches a server within ctx. One with a command runs in the box, for as long as running lasts.
 func connect(ctx, running context.Context, client *mcp.Client, box sandbox.Box, s Server) (*Session, error) {
-	out := &Session{name: s.Name, tools: map[string]*mcp.Tool{}}
+	out := &Session{name: s.Name, timeout: s.Timeout, tools: map[string]*mcp.Tool{}}
+	if out.timeout <= 0 {
+		out.timeout = defaultCallTimeout
+	}
 	var transport mcp.Transport
 	if s.Command != "" {
 		cwd := box.Roots()[0]
@@ -48,10 +53,7 @@ func connect(ctx, running context.Context, client *mcp.Client, box sandbox.Box, 
 		}()
 		transport = &mcp.IOTransport{Reader: process, Writer: process}
 	} else {
-		httpClient := http.DefaultClient
-		if len(s.Headers) > 0 {
-			httpClient = &http.Client{Transport: headers{base: http.DefaultTransport, values: s.Headers}}
-		}
+		httpClient := &http.Client{Transport: headers{base: box.Transport(), values: s.Headers}}
 		transport = &mcp.StreamableClientTransport{Endpoint: s.URL, HTTPClient: httpClient}
 	}
 	sess, err := client.Connect(ctx, transport, nil)
@@ -137,8 +139,13 @@ func (s *Session) Invoke(ctx context.Context, tool string, arguments map[string]
 	if c := tools.CallerOf(ctx); c.ThreadID != "" {
 		params.Meta = mcp.Meta{metaCaller: caller{ThreadID: c.ThreadID, WorkspaceID: c.WorkspaceID, Subagent: c.Subagent}}
 	}
-	res, err := s.sess.CallTool(ctx, params)
+	call, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+	res, err := s.sess.CallTool(call, params)
 	if err != nil {
+		if call.Err() != nil && ctx.Err() == nil {
+			return tools.Result{}, fmt.Errorf("mcp: %q did not answer within %s; the call may still have taken effect, so check before repeating it", s.name, s.timeout)
+		}
 		return tools.Result{}, err
 	}
 	if res.IsError {

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"mime"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -59,44 +58,9 @@ type Provider struct {
 func New(opts Options) *Provider {
 	transport := opts.Transport
 	if transport == nil {
-		dialer := &net.Dialer{Timeout: 10 * time.Second}
-		transport = &http.Transport{
-			// No proxy from the environment: a proxy would make the dial below check the proxy instead of the site.
-			Proxy: nil,
-			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				return dialPublic(ctx, dialer, network, addr)
-			},
-			TLSHandshakeTimeout: 10 * time.Second,
-			ForceAttemptHTTP2:   true,
-		}
+		transport = sandbox.PublicTransport()
 	}
 	return &Provider{client: &http.Client{Transport: transport, Timeout: fetchTimeout, CheckRedirect: sameHost}}
-}
-
-// dialPublic connects only to public addresses. It checks the addresses the name resolves to at dial time,
-// so a name cannot point at the local network after it was approved.
-func dialPublic(ctx context.Context, dialer *net.Dialer, network, addr string) (net.Conn, error) {
-	host, port, err := net.SplitHostPort(addr)
-	if err != nil {
-		return nil, err
-	}
-	addrs, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
-	if err != nil {
-		return nil, err
-	}
-	var lastErr error = fmt.Errorf("web: %s has no address", host)
-	for _, a := range addrs {
-		if sandbox.SensitiveAddr(a) {
-			lastErr = fmt.Errorf("web: %s resolves to a local or private address; use run_command to reach it", host)
-			continue
-		}
-		c, err := dialer.DialContext(ctx, network, net.JoinHostPort(a.Unmap().String(), port))
-		if err == nil {
-			return c, nil
-		}
-		lastErr = err
-	}
-	return nil, lastErr
 }
 
 // sameHost follows redirects within the host the call was approved for. A redirect elsewhere comes back
@@ -183,6 +147,9 @@ func (p *Provider) fetch(ctx context.Context, raw string) (FetchOutput, error) {
 		var urlErr *url.Error
 		if errors.As(err, &urlErr) {
 			err = urlErr.Err
+		}
+		if errors.Is(err, sandbox.ErrLocalAddress) {
+			return FetchOutput{}, fmt.Errorf("web: fetch %s: %w; use run_command to reach it", u.Redacted(), err)
 		}
 		return FetchOutput{}, fmt.Errorf("web: fetch %s: %w", u.Redacted(), err)
 	}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"time"
@@ -103,7 +104,13 @@ func (m *Manager) RunOnce(ctx context.Context) error {
 	return nil
 }
 
-func (m *Manager) runFor(ctx context.Context, user string) error {
+func (m *Manager) runFor(ctx context.Context, user string) (err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			slog.Error("memory extraction crashed", "user", user, "panic", fmt.Sprint(p), "stack", string(debug.Stack()))
+			err = errors.New("memory extraction crashed")
+		}
+	}()
 	state, err := m.db.MemoryState(user)
 	if err != nil {
 		return failure{repo.MemoryStorage, fmt.Errorf("could not read memory state: %w", err)}

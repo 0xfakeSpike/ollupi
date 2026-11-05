@@ -40,8 +40,14 @@ func (a *Agent) run(threadID string, sl *slot) {
 		})
 		return
 	}
+	limit := fmt.Errorf("agent: the turn reached its time limit of %s", a.cfg.RunLimit)
+	ctx, cancel := context.WithTimeoutCause(sl.ctx, a.cfg.RunLimit, limit)
+	defer cancel()
 	started := time.Now()
-	final, usage, err := a.runTurn(sl.ctx, t, turn, items)
+	final, usage, err := a.runTurn(ctx, t, turn, items)
+	if err != nil && context.Cause(ctx) == limit {
+		err = limit
+	}
 	slog.Info("run ended", "thread", threadID, "turn", turn.ID, "ms", time.Since(started).Milliseconds(), "final", final, "items", len(items))
 	if err := a.cfg.DB.AddUsage(threadID, turn.ID, usage); err != nil {
 		slog.Error("turn usage not recorded", "thread", threadID, "turn", turn.ID, "err", err)

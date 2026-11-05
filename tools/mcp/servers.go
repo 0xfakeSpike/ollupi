@@ -24,6 +24,9 @@ type Server struct {
 
 	URL     string
 	Headers map[string]string
+
+	// Timeout is how long a tool call may take; by default, five minutes.
+	Timeout time.Duration
 }
 
 type Client struct {
@@ -52,7 +55,10 @@ var (
 	toolName   = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 )
 
-const connectTimeout = 30 * time.Second
+const (
+	connectTimeout     = 30 * time.Second
+	defaultCallTimeout = 5 * time.Minute
+)
 
 // Users keeps each user's servers. They start the first time the user needs them, in the user's own sandbox, and start
 // again once one has gone, as it does when the sandbox sleeps.

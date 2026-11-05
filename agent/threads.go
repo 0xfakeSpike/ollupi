@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -157,7 +158,7 @@ func (a *Agent) ArchiveThread(user, id string, archived bool) (repo.ThreadRow, e
 }
 
 func (a *Agent) DeleteThread(user, id string) error {
-	return a.call(func() error {
+	err := a.call(func() error {
 		t, err := a.topThread(user, id)
 		if err != nil {
 			return err
@@ -172,15 +173,19 @@ func (a *Agent) DeleteThread(user, id string) error {
 		if err := a.cfg.DB.DeleteThread(id); err != nil {
 			return fmt.Errorf("agent: thread %s: %w", id, err)
 		}
-		if a.cfg.Attachments != nil {
-			if err := a.cfg.Attachments.DeletePrefix(a.ctx, id); err != nil {
-				slog.Warn("thread attachments not removed", "thread", id, "err", err)
-			}
-		}
 		a.emit(Event{Kind: EventThreadDeleted, Thread: t})
 		a.emitCronJobs(t, jobs)
 		return nil
 	})
+	if err != nil || a.cfg.Attachments == nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(a.ctx), attachmentTimeout)
+	defer cancel()
+	if err := a.cfg.Attachments.DeletePrefix(ctx, id); err != nil {
+		slog.Warn("thread attachments not removed", "thread", id, "err", err)
+	}
+	return nil
 }
 
 // emitCronJobs reports the scheduled tasks of a thread that was archived or deleted. Subagents cannot schedule

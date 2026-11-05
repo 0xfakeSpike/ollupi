@@ -107,9 +107,6 @@ func validProtectedName(name string) error {
 }
 
 func defaultDenyRead(home string) []string {
-	if home == "" {
-		return nil
-	}
 	names := []string{
 		".ssh", ".gnupg", ".aws", ".azure", ".kube", ".netrc", ".config/gcloud", ".docker/config.json",
 		".git-credentials", ".cargo/credentials", ".cargo/credentials.toml", ".pypirc", ".gem/credentials",
@@ -135,9 +132,6 @@ func defaultDenyRead(home string) []string {
 }
 
 func defaultWritableCaches(home string) []string {
-	if home == "" {
-		return nil
-	}
 	names := []string{".npm/_cacache", ".npm/_logs"}
 	out := make([]string, len(names))
 	for i, name := range names {

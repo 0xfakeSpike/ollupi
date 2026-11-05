@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
@@ -30,6 +31,7 @@ const (
 	maxImageSide      = 1568
 	minImageTokens    = 85
 	defaultImageToken = 1600
+	attachmentTimeout = time.Minute
 )
 
 // AttachmentInput is a file in the user's sandbox sent with a message; the attachment is a copy taken when it is sent.
@@ -41,7 +43,19 @@ type AttachmentInput struct {
 
 var imageTypes = map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}
 
-func (a *Agent) storeAttachments(t repo.ThreadRow, ins []AttachmentInput) ([]repo.Attachment, error) {
+// attach stores what a message brings, before the message goes through the loop: a sandbox or blob store that is slow
+// there would hold up every thread on the shard.
+func (a *Agent) attach(user, threadID string, ins []AttachmentInput) ([]repo.Attachment, error) {
+	t, err := a.topThread(user, threadID)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, attachmentTimeout)
+	defer cancel()
+	return a.storeAttachments(ctx, t, ins)
+}
+
+func (a *Agent) storeAttachments(ctx context.Context, t repo.ThreadRow, ins []AttachmentInput) ([]repo.Attachment, error) {
 	if len(ins) == 0 {
 		return nil, nil
 	}
@@ -53,7 +67,7 @@ func (a *Agent) storeAttachments(t repo.ThreadRow, ins []AttachmentInput) ([]rep
 	}
 	out := make([]repo.Attachment, 0, len(ins))
 	for _, in := range ins {
-		att, err := a.storeAttachment(t, in)
+		att, err := a.storeAttachment(ctx, t, in)
 		if err != nil {
 			a.removeAttachments(out)
 			return nil, err
@@ -63,11 +77,11 @@ func (a *Agent) storeAttachments(t repo.ThreadRow, ins []AttachmentInput) ([]rep
 	return out, nil
 }
 
-func (a *Agent) storeAttachment(t repo.ThreadRow, in AttachmentInput) (repo.Attachment, error) {
+func (a *Agent) storeAttachment(ctx context.Context, t repo.ThreadRow, in AttachmentInput) (repo.Attachment, error) {
 	if !filepath.IsAbs(in.Path) {
 		return repo.Attachment{}, fmt.Errorf("agent: %w: attachment path %q is not absolute", ErrInvalidMessage, in.Path)
 	}
-	src, size, err := a.attachmentSource(t.UserID, in.Path)
+	src, size, err := a.attachmentSource(ctx, t.UserID, in.Path)
 	if err != nil {
 		return repo.Attachment{}, fmt.Errorf("agent: %w: attachment %s: %v", ErrInvalidMessage, in.Path, err)
 	}
@@ -80,19 +94,19 @@ func (a *Agent) storeAttachment(t repo.ThreadRow, in AttachmentInput) (repo.Atta
 		return repo.Attachment{}, fmt.Errorf("agent: %w: %v", ErrInvalidMessage, err)
 	}
 	att.File = t.ID + "/" + att.File
-	if err := a.copyAttachment(src, att); err != nil {
+	if err := a.copyAttachment(ctx, src, att); err != nil {
 		return repo.Attachment{}, fmt.Errorf("agent: store attachment %s: %w", att.Name, err)
 	}
 	return att, nil
 }
 
 // attachmentSource reads the file a user names, from their sandbox: nothing else is theirs to send.
-func (a *Agent) attachmentSource(user, path string) (io.ReadSeeker, int64, error) {
+func (a *Agent) attachmentSource(ctx context.Context, user, path string) (io.ReadSeeker, int64, error) {
 	box, err := a.cfg.BoxFor(user)
 	if err != nil {
 		return nil, 0, err
 	}
-	info, err := box.Stat(a.ctx, path)
+	info, err := box.Stat(ctx, path)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -102,7 +116,7 @@ func (a *Agent) attachmentSource(user, path string) (io.ReadSeeker, int64, error
 	if info.Size() > maxImageBytes {
 		return nil, 0, fmt.Errorf("%d bytes; at most %d are accepted", info.Size(), maxImageBytes)
 	}
-	data, err := sandbox.ReadFile(a.ctx, box, path)
+	data, err := sandbox.ReadFile(ctx, box, path)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -110,7 +124,7 @@ func (a *Agent) attachmentSource(user, path string) (io.ReadSeeker, int64, error
 }
 
 // copyAttachment copies exactly the bytes describe measured, so a file that changes meanwhile is refused.
-func (a *Agent) copyAttachment(src io.ReadSeeker, att repo.Attachment) error {
+func (a *Agent) copyAttachment(ctx context.Context, src io.ReadSeeker, att repo.Attachment) error {
 	if _, err := src.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
@@ -119,9 +133,9 @@ func (a *Agent) copyAttachment(src io.ReadSeeker, att repo.Attachment) error {
 		return err
 	}
 	if int64(len(data)) != att.Size {
-		return fmt.Errorf("the file changed while it was being attached")
+		return fmt.Errorf("%w: the file changed while it was being attached", ErrInvalidMessage)
 	}
-	return a.cfg.Attachments.Put(a.ctx, att.File, data)
+	return a.cfg.Attachments.Put(ctx, att.File, data)
 }
 
 // describe classifies a file as an image or a text file from its first bytes and checks it against the limits
@@ -229,8 +243,10 @@ func clipRunes(s string, n int) string {
 }
 
 func (a *Agent) removeAttachments(atts []repo.Attachment) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(a.ctx), attachmentTimeout)
+	defer cancel()
 	for _, att := range atts {
-		if err := a.cfg.Attachments.Delete(context.Background(), att.File); err != nil {
+		if err := a.cfg.Attachments.Delete(ctx, att.File); err != nil {
 			slog.Warn("attachment not removed", "file", att.File, "err", err)
 		}
 	}
@@ -244,7 +260,9 @@ func (a *Agent) ReadAttachment(user, threadID, id string) (repo.Attachment, []by
 	if err != nil {
 		return repo.Attachment{}, nil, fmt.Errorf("agent: attachment %s: %w", id, err)
 	}
-	data, err := a.cfg.Attachments.Get(a.ctx, att.File)
+	ctx, cancel := context.WithTimeout(a.ctx, attachmentTimeout)
+	defer cancel()
+	data, err := a.cfg.Attachments.Get(ctx, att.File)
 	if err != nil {
 		return repo.Attachment{}, nil, fmt.Errorf("agent: attachment %s: %w", id, err)
 	}

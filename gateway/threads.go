@@ -42,9 +42,7 @@ func threadPage(resume bool) func(*conn, ThreadPageParams) (ThreadPageResult, fu
 		after := func() {
 			c.deliver.Unlock()
 			if resume {
-				for _, r := range c.s.agent.PendingRequests(c.user, p.ThreadID) {
-					c.request(r.Thread.ID, r.Item)
-				}
+				c.requests(c.s.agent.PendingRequests(c.user, p.ThreadID))
 			}
 		}
 		return ThreadPageResult{ThreadView: view, HasMore: more}, after, nil

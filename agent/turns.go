@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -23,35 +24,47 @@ type Input struct {
 }
 
 func (a *Agent) StartTurn(user, threadID string, in Input) (repo.TurnRow, error) {
+	atts, err := a.attach(user, threadID, in.Attachments)
+	if err != nil {
+		return repo.TurnRow{}, err
+	}
 	var turn repo.TurnRow
-	err := a.call(func() (err error) {
-		if err := a.owned(user, threadID); err != nil {
-			return err
-		}
-		turn, err = a.startTurn(threadID, in)
+	err = a.call(func() (err error) {
+		turn, err = a.startTurn(threadID, in, atts)
 		return err
 	})
+	a.dropUnsent(atts, err)
 	return turn, err
 }
 
 // StartScheduledTurn runs a scheduled task in its thread, whose owner set it; no caller asks for this one.
 func (a *Agent) StartScheduledTurn(threadID, text, jobID string) error {
 	return a.call(func() error {
-		_, err := a.startTurn(threadID, Input{Text: text, CronJobID: jobID})
+		_, err := a.startTurn(threadID, Input{Text: text, CronJobID: jobID}, nil)
 		return err
 	})
 }
 
 func (a *Agent) SteerTurn(user, threadID, expectedTurnID string, in Input) (repo.TurnRow, error) {
+	atts, err := a.attach(user, threadID, in.Attachments)
+	if err != nil {
+		return repo.TurnRow{}, err
+	}
 	var turn repo.TurnRow
-	err := a.call(func() (err error) {
-		if err := a.owned(user, threadID); err != nil {
-			return err
-		}
-		turn, err = a.steer(threadID, expectedTurnID, in)
+	err = a.call(func() (err error) {
+		turn, err = a.steer(threadID, expectedTurnID, in, atts)
 		return err
 	})
+	a.dropUnsent(atts, err)
 	return turn, err
+}
+
+// dropUnsent removes the attachments of a message that was refused. When the agent stopped, the loop may have taken
+// the message all the same, so they stay; deleting the thread removes them if not.
+func (a *Agent) dropUnsent(atts []repo.Attachment, err error) {
+	if err != nil && !errors.Is(err, errStopped) {
+		a.removeAttachments(atts)
+	}
 }
 
 func (a *Agent) InterruptTurn(user, threadID, expectedTurnID string) error {
@@ -81,7 +94,7 @@ func (a *Agent) AnswerUserInput(user, threadID, itemID string, answers userinput
 	})
 }
 
-func (a *Agent) startTurn(threadID string, in Input) (repo.TurnRow, error) {
+func (a *Agent) startTurn(threadID string, in Input, atts []repo.Attachment) (repo.TurnRow, error) {
 	text, err := checkMessage(in.Text, len(in.Attachments))
 	if err != nil {
 		return repo.TurnRow{}, err
@@ -97,19 +110,10 @@ func (a *Agent) startTurn(threadID string, in Input) (repo.TurnRow, error) {
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
-	atts, err := a.storeAttachments(st.Thread, in.Attachments)
-	if err != nil {
+	if err := a.checkImages(threadID, model, atts); err != nil {
 		return repo.TurnRow{}, err
 	}
-	err = a.checkImages(threadID, model, atts)
-	var turn repo.TurnRow
-	if err == nil {
-		turn, err = a.submit(st.Thread, repo.TurnRow{Input: text, Attachments: atts, CronJobID: in.CronJobID}, model)
-	}
-	if err != nil {
-		a.removeAttachments(atts)
-	}
-	return turn, err
+	return a.submit(st.Thread, repo.TurnRow{Input: text, Attachments: atts, CronJobID: in.CronJobID}, model)
 }
 
 func (a *Agent) submit(t repo.ThreadRow, turn repo.TurnRow, model llm.Model) (repo.TurnRow, error) {
@@ -142,7 +146,7 @@ func (a *Agent) submit(t repo.ThreadRow, turn repo.TurnRow, model llm.Model) (re
 	return turn, nil
 }
 
-func (a *Agent) steer(threadID, expectedTurnID string, in Input) (repo.TurnRow, error) {
+func (a *Agent) steer(threadID, expectedTurnID string, in Input, atts []repo.Attachment) (repo.TurnRow, error) {
 	text, err := checkMessage(in.Text, len(in.Attachments))
 	if err != nil {
 		return repo.TurnRow{}, err
@@ -151,9 +155,6 @@ func (a *Agent) steer(threadID, expectedTurnID string, in Input) (repo.TurnRow, 
 	if err != nil {
 		return repo.TurnRow{}, fmt.Errorf("agent: thread %s: %w", threadID, err)
 	}
-	if st.Thread.ParentThreadID != "" {
-		return repo.TurnRow{}, ErrSubagentThread
-	}
 	turn, active := st.ActiveTurn()
 	if !active {
 		return repo.TurnRow{}, ErrNoActiveTurn
@@ -161,17 +162,11 @@ func (a *Agent) steer(threadID, expectedTurnID string, in Input) (repo.TurnRow, 
 	if turn.ID != expectedTurnID {
 		return repo.TurnRow{}, fmt.Errorf("%w (expected %s, in progress %s)", ErrTurnMismatch, expectedTurnID, turn.ID)
 	}
-	atts, err := a.storeAttachments(st.Thread, in.Attachments)
-	if err != nil {
-		return repo.TurnRow{}, err
-	}
 	if err := a.checkImages(threadID, turn.Model, atts); err != nil {
-		a.removeAttachments(atts)
 		return repo.TurnRow{}, err
 	}
 	stored, isNew, err := a.cfg.DB.RecordItem(threadID, repo.NewUserMessage(uuid.NewString(), turn.ID, text, atts, time.Now().UTC()))
 	if err != nil {
-		a.removeAttachments(atts)
 		return repo.TurnRow{}, err
 	}
 	a.emitItem(st.Thread, turn, stored, isNew)

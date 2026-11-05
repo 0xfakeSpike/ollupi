@@ -108,8 +108,8 @@ func TestAUserCannotReachAnotherUsersThread(t *testing.T) {
 			t.Errorf("b tried to %s: %v", name, err)
 		}
 	}
-	if got := ag.PendingRequests("b", thread.ID); got != nil {
-		t.Errorf("b sees requests: %+v", got)
+	if got, err := ag.PendingRequests("b", thread.ID); !errors.Is(err, repo.ErrNotFound) {
+		t.Errorf("b sees requests: %+v, %v", got, err)
 	}
 	if rows, _, err := ag.ListThreads("b", repo.ThreadFilter{Limit: 10}); err != nil || len(rows) != 0 {
 		t.Errorf("b lists threads: %+v, %v", rows, err)

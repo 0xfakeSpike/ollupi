@@ -60,7 +60,9 @@ Ollupi 不以虚拟机或容器逐个隔离 agent，而是池化 runtime，并�
 
 一个数据库是一个分片，分片内的用户共用表，按用户隔离。一个分片同一时刻只由一个进程运行，由租约保证；进程退出后，备用进程接管并从断点继续。分片数量决定容量，客户端只连路由，路由把每个用户的连接转发到其所在分片。
 
-用户运行的一切都在自己的沙箱里：命令、文件和 MCP 服务器经 `sandbox.Box` 访问，接入一家云沙箱只需实现 `sandbox.Machine`。模型调用可走用户自己的客户端，附件经 `blobs.Store` 保存。
+用户运行的一切都在自己的沙箱里：命令、文件和 MCP 服务器经 `sandbox.Box` 访问，接入一家云沙箱只需实现 `sandbox.Machine`。云沙箱用户的 HTTP MCP 请求从分片进程发出，只能到达公网地址。模型调用可走用户自己的客户端，附件经 `blobs.Store` 保存。
+
+客户端用 `Authorization: Bearer <token>` 认证。浏览器无法设置这个请求头，改为把令牌放在 WebSocket 子协议里：`new WebSocket(url, ["ollupi.token", token])`。令牌不放在 URL 中。
 
 ## 许可
 
