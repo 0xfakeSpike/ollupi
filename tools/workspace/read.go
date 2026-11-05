@@ -9,7 +9,6 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
-	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -151,12 +150,12 @@ func (r *Provider) readTools() []*tools.Spec {
 
 // readContent is what permission rules match: the file or folder read, relative to the project root inside it.
 func (r *Provider) readContent(ctx context.Context, args map[string]any) (tools.Content, error) {
-	d, err := r.dirs(tools.CallerOf(ctx))
+	d, err := r.dirs(ctx)
 	if err != nil {
 		return tools.Content{}, err
 	}
 	raw, _ := args["path"].(string)
-	abs, err := r.readable(d, raw)
+	abs, err := readable(ctx, d, raw)
 	if err != nil {
 		return tools.Content{}, err
 	}
@@ -169,18 +168,18 @@ func (r *Provider) readContent(ctx context.Context, args map[string]any) (tools.
 }
 
 // readable resolves a path the read tools take, following links, and checks that the sandbox lets it be read.
-func (r *Provider) readable(d dirs, raw string) (string, error) {
+func readable(ctx context.Context, d dirs, raw string) (string, error) {
 	path := strings.TrimSpace(raw)
 	if path == "" {
 		path = d.roots[0]
 	} else if !filepath.IsAbs(path) {
 		path = filepath.Join(d.roots[0], path)
 	}
-	abs, err := sandbox.CanonicalPath(path, "")
+	abs, err := d.box.Canonical(ctx, path)
 	if err != nil {
 		return "", err
 	}
-	if err := r.box.CheckRead(abs); err != nil {
+	if err := d.box.CheckRead(abs); err != nil {
 		return "", fmt.Errorf("workspace: %s is closed to the read tools; if the task needs it, run a command so the user decides: %w", raw, err)
 	}
 	return abs, nil
@@ -198,18 +197,18 @@ func (d dirs) display(abs string) string {
 }
 
 func (r *Provider) invokeRead(ctx context.Context, tool string, args map[string]any) (tools.Result, error) {
-	d, err := r.dirs(tools.CallerOf(ctx))
+	d, err := r.dirs(ctx)
 	if err != nil {
 		return tools.Result{}, err
 	}
 	var out any
 	switch tool {
 	case ToolReadFile:
-		out, err = r.readFile(d, args)
+		out, err = readFile(ctx, d, args)
 	case ToolGlob:
-		out, err = r.glob(ctx, d, args)
+		out, err = glob(ctx, d, args)
 	case ToolGrep:
-		out, err = r.grep(ctx, d, args)
+		out, err = grep(ctx, d, args)
 	default:
 		err = fmt.Errorf("workspace: unknown tool %q", tool)
 	}
@@ -219,23 +218,18 @@ func (r *Provider) invokeRead(ctx context.Context, tool string, args map[string]
 	return tools.Result{Output: out}, nil
 }
 
-func (r *Provider) readFile(d dirs, args map[string]any) (ReadFileOutput, error) {
+func readFile(ctx context.Context, d dirs, args map[string]any) (ReadFileOutput, error) {
 	in, err := tools.DecodeArguments[ReadFile](args)
 	if err != nil {
 		return ReadFileOutput{}, err
 	}
-	abs, err := r.readable(d, in.Path)
+	abs, err := readable(ctx, d, in.Path)
 	if err != nil {
 		return ReadFileOutput{}, err
 	}
-	f, err := os.Open(abs)
+	st, err := d.box.Stat(ctx, abs)
 	if err != nil {
 		return ReadFileOutput{}, fmt.Errorf("workspace: %w", err)
-	}
-	defer f.Close()
-	st, err := f.Stat()
-	if err != nil {
-		return ReadFileOutput{}, err
 	}
 	out := ReadFileOutput{Path: d.display(abs), Size: st.Size()}
 	if st.IsDir() {
@@ -244,25 +238,26 @@ func (r *Provider) readFile(d dirs, args map[string]any) (ReadFileOutput, error)
 	if !st.Mode().IsRegular() {
 		return ReadFileOutput{}, fmt.Errorf("workspace: %s is not a regular file", out.Path)
 	}
-	head := make([]byte, binarySniffSize)
-	n, err := io.ReadFull(f, head)
-	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
+	f, err := d.box.Open(ctx, abs)
+	if err != nil {
+		return ReadFileOutput{}, fmt.Errorf("workspace: %w", err)
+	}
+	defer f.Close()
+	br := bufio.NewReaderSize(f, binarySniffSize)
+	head, err := br.Peek(binarySniffSize)
+	if err != nil && !errors.Is(err, io.EOF) {
 		return ReadFileOutput{}, err
 	}
-	if !isText(head[:n]) {
+	if !isText(head) {
 		out.Binary = true
-		out.MimeType, _, _ = strings.Cut(http.DetectContentType(head[:n]), ";")
+		out.MimeType, _, _ = strings.Cut(http.DetectContentType(head), ";")
 		return out, nil
-	}
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		return ReadFileOutput{}, err
 	}
 	start, limit := max(in.Offset, 1), in.Limit
 	if limit <= 0 || limit > maxReadLines {
 		limit = maxReadLines
 	}
 	var text strings.Builder
-	br := bufio.NewReader(f)
 	for {
 		line, err := br.ReadString('\n')
 		if line != "" {
@@ -286,7 +281,7 @@ func (r *Provider) readFile(d dirs, args map[string]any) (ReadFileOutput, error)
 	return out, nil
 }
 
-func (r *Provider) glob(ctx context.Context, d dirs, args map[string]any) (GlobOutput, error) {
+func glob(ctx context.Context, d dirs, args map[string]any) (GlobOutput, error) {
 	in, err := tools.DecodeArguments[Glob](args)
 	if err != nil {
 		return GlobOutput{}, err
@@ -295,7 +290,7 @@ func (r *Provider) glob(ctx context.Context, d dirs, args map[string]any) (GlobO
 	if err != nil {
 		return GlobOutput{}, fmt.Errorf("workspace: %w", err)
 	}
-	dir, err := r.readable(d, in.Path)
+	dir, err := readable(ctx, d, in.Path)
 	if err != nil {
 		return GlobOutput{}, err
 	}
@@ -304,7 +299,7 @@ func (r *Provider) glob(ctx context.Context, d dirs, args map[string]any) (GlobO
 		mod  time.Time
 	}
 	var all []found
-	w := r.walker(dir)
+	w := newWalker(ctx, d.box, dir)
 	err = w.walk(ctx, func(abs string, info fs.FileInfo) error {
 		rel, _ := filepath.Rel(dir, abs)
 		if re.MatchString(filepath.ToSlash(rel)) {
@@ -323,7 +318,7 @@ func (r *Provider) glob(ctx context.Context, d dirs, args map[string]any) (GlobO
 	return out, nil
 }
 
-func (r *Provider) grep(ctx context.Context, d dirs, args map[string]any) (GrepOutput, error) {
+func grep(ctx context.Context, d dirs, args map[string]any) (GrepOutput, error) {
 	in, err := tools.DecodeArguments[Grep](args)
 	if err != nil {
 		return GrepOutput{}, err
@@ -342,7 +337,7 @@ func (r *Provider) grep(ctx context.Context, d dirs, args map[string]any) (GrepO
 			return GrepOutput{}, fmt.Errorf("workspace: include: %w", err)
 		}
 	}
-	path, err := r.readable(d, in.Path)
+	path, err := readable(ctx, d, in.Path)
 	if err != nil {
 		return GrepOutput{}, err
 	}
@@ -362,7 +357,7 @@ func (r *Provider) grep(ctx context.Context, d dirs, args map[string]any) (GrepO
 		if info.Size() > maxGrepBytes {
 			return nil
 		}
-		f, kept, err := grepFile(abs, re, around, in.FilesOnly, maxGrepLines-shown)
+		f, kept, err := grepFile(ctx, d.box, abs, re, around, in.FilesOnly, maxGrepLines-shown)
 		if err != nil || f.Matches == 0 {
 			return nil
 		}
@@ -375,7 +370,7 @@ func (r *Provider) grep(ctx context.Context, d dirs, args map[string]any) (GrepO
 		}
 		return nil
 	}
-	st, err := os.Stat(path)
+	st, err := d.box.Stat(ctx, path)
 	if err != nil {
 		return GrepOutput{}, fmt.Errorf("workspace: %w", err)
 	}
@@ -383,7 +378,7 @@ func (r *Provider) grep(ctx context.Context, d dirs, args map[string]any) (GrepO
 		err = search(path, st)
 		return out, err
 	}
-	w := r.walker(path)
+	w := newWalker(ctx, d.box, path)
 	if err := w.walk(ctx, search); err != nil && !errors.Is(err, errStopWalk) {
 		return GrepOutput{}, err
 	}
@@ -394,8 +389,8 @@ func (r *Provider) grep(ctx context.Context, d dirs, args map[string]any) (GrepO
 // grepFile searches one text file. It reports the file with how many of its lines match and, unless
 // filesOnly, up to room of those lines with their context, and how many matching lines it kept. A file that
 // is not text matches nothing.
-func grepFile(path string, re *regexp.Regexp, around int, filesOnly bool, room int) (GrepFile, int, error) {
-	f, err := os.Open(path)
+func grepFile(ctx context.Context, box sandbox.Box, path string, re *regexp.Regexp, around int, filesOnly bool, room int) (GrepFile, int, error) {
+	f, err := box.Open(ctx, path)
 	if err != nil {
 		return GrepFile{}, 0, err
 	}
@@ -458,7 +453,7 @@ var errStopWalk = errors.New("stop walk")
 // folders, and anything the sandbox does not let be read, counting those; a link to a file is read where it
 // leads, so a link cannot reach a closed path.
 type walker struct {
-	box       *sandbox.Sandbox
+	box       sandbox.Box
 	root      string
 	ignores   *ignores
 	entries   int
@@ -466,12 +461,12 @@ type walker struct {
 	truncated bool
 }
 
-func (r *Provider) walker(root string) *walker {
-	return &walker{box: r.box, root: root, ignores: gitIgnores(root)}
+func newWalker(ctx context.Context, box sandbox.Box, root string) *walker {
+	return &walker{box: box, root: root, ignores: gitIgnores(ctx, box, root)}
 }
 
 func (w *walker) walk(ctx context.Context, visit func(abs string, info fs.FileInfo) error) error {
-	st, err := os.Stat(w.root)
+	st, err := w.box.Stat(ctx, w.root)
 	if err != nil {
 		return fmt.Errorf("workspace: %w", err)
 	}
@@ -482,10 +477,10 @@ func (w *walker) walk(ctx context.Context, visit func(abs string, info fs.FileIn
 }
 
 func (w *walker) dir(ctx context.Context, dir string, visit func(string, fs.FileInfo) error) error {
-	if w.ignores != nil && w.ignores.enter(dir) {
+	if w.ignores != nil && w.ignores.enter(ctx, dir) {
 		defer w.ignores.leave()
 	}
-	entries, err := os.ReadDir(dir)
+	entries, err := w.box.ReadDir(ctx, dir)
 	if err != nil {
 		w.skipped++
 		return nil
@@ -512,7 +507,7 @@ func (w *walker) dir(ctx context.Context, dir string, visit func(string, fs.File
 		}
 		isDir := info.IsDir()
 		if info.Mode()&fs.ModeSymlink != 0 {
-			target, err := filepath.EvalSymlinks(abs)
+			target, err := w.box.Canonical(ctx, abs)
 			if err != nil {
 				continue
 			}
@@ -520,7 +515,7 @@ func (w *walker) dir(ctx context.Context, dir string, visit func(string, fs.File
 				w.skipped++
 				continue
 			}
-			if info, err = os.Stat(target); err != nil || info.IsDir() {
+			if info, err = w.box.Stat(ctx, target); err != nil || info.IsDir() {
 				continue
 			}
 		}

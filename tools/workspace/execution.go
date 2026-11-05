@@ -3,9 +3,6 @@ package workspace
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -14,7 +11,7 @@ import (
 )
 
 func (r *Provider) prepareCommand(ctx context.Context, args map[string]any) (*tools.Prepared, error) {
-	d, err := r.dirs(tools.CallerOf(ctx))
+	d, err := r.dirs(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +31,7 @@ func (r *Provider) prepareCommand(ctx context.Context, args map[string]any) (*to
 			return nil, fmt.Errorf("workspace: argument work_dir must be a non-empty string")
 		}
 	}
-	cwd, err := d.resolve(requested)
+	cwd, err := d.resolve(ctx, requested)
 	if err != nil {
 		return nil, err
 	}
@@ -55,22 +52,22 @@ func (r *Provider) prepareCommand(ctx context.Context, args map[string]any) (*to
 	if err != nil {
 		return nil, err
 	}
-	escalated, justification, err := r.escalation(args)
+	escalated, justification, err := escalation(d.box, args)
 	if err != nil {
 		return nil, err
 	}
-	program, err = resolveExecutable(program, cwd)
+	program, err = d.box.Executable(ctx, program, cwd)
 	if err != nil {
 		return nil, err
 	}
 	return &tools.Prepared{
 		Cwd: cwd, SettingsDigest: r.settingsDigest(d), ArgumentsDigest: digest(args),
 		Program: program, Args: append([]string(nil), argv...), Env: env, TimeoutSec: timeout,
-		Sandboxed: r.box.Enforced() && !escalated, Escalated: escalated, Justification: justification,
+		Sandboxed: d.box.Enforced() && !escalated, Escalated: escalated, Justification: justification,
 	}, nil
 }
 
-func (r *Provider) escalation(args map[string]any) (bool, string, error) {
+func escalation(box sandbox.Box, args map[string]any) (bool, string, error) {
 	mode := sandboxUseDefault
 	if raw, ok := args["sandbox_permissions"]; ok {
 		s, ok := raw.(string)
@@ -90,8 +87,11 @@ func (r *Provider) escalation(args map[string]any) (bool, string, error) {
 	if mode != sandboxRequireEscalated {
 		return false, "", nil
 	}
-	if !r.box.Enforced() {
+	if !box.Enforced() {
 		return false, "", fmt.Errorf("workspace: commands already run without a sandbox here; omit sandbox_permissions")
+	}
+	if !box.CanEscalate() {
+		return false, "", fmt.Errorf("workspace: commands cannot leave this sandbox; omit sandbox_permissions")
 	}
 	if justification == "" {
 		return false, "", fmt.Errorf("workspace: sandbox_permissions %q needs a justification for the user", sandboxRequireEscalated)
@@ -125,38 +125,6 @@ func commandEnvironment(raw any) (map[string]string, error) {
 	return out, nil
 }
 
-func resolveExecutable(program, cwd string) (string, error) {
-	var path string
-	var err error
-	if strings.ContainsRune(program, os.PathSeparator) {
-		path = program
-		if !filepath.IsAbs(path) {
-			path = filepath.Join(cwd, path)
-		}
-	} else {
-		path, err = exec.LookPath(program)
-		if err != nil {
-			return "", fmt.Errorf("workspace: executable %q is not on PATH", program)
-		}
-	}
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return "", err
-	}
-	resolved, err := filepath.EvalSymlinks(abs)
-	if err != nil {
-		return "", fmt.Errorf("workspace: executable %q is unavailable: %w", program, err)
-	}
-	st, err := os.Stat(resolved)
-	if err != nil {
-		return "", err
-	}
-	if st.IsDir() || st.Mode()&0111 == 0 {
-		return "", fmt.Errorf("workspace: %q is not executable", program)
-	}
-	return resolved, nil
-}
-
 type CommandOutput struct {
 	Stdout         string   `json:"stdout"`
 	Stderr         string   `json:"stderr"`
@@ -169,25 +137,25 @@ type CommandOutput struct {
 }
 
 func (r *Provider) runCommand(ctx context.Context, args map[string]any, p *tools.Prepared) (tools.Result, error) {
-	d, err := r.dirs(tools.CallerOf(ctx))
+	d, err := r.dirs(ctx)
 	if err != nil {
 		return tools.Result{}, err
 	}
-	if err := r.validatePrepared(d, p, args); err != nil {
+	if err := r.validatePrepared(ctx, d, p, args); err != nil {
 		return tools.Result{}, err
 	}
 	if p.Program == "" || p.TimeoutSec <= 0 {
 		return tools.Result{}, fmt.Errorf("workspace: incomplete prepared command")
 	}
 
-	current, err := resolveExecutable(p.Program, p.Cwd)
+	current, err := d.box.Executable(ctx, p.Program, p.Cwd)
 	if err != nil {
 		return tools.Result{}, err
 	}
 	if current != p.Program {
 		return tools.Result{}, fmt.Errorf("workspace: approved executable now resolves to a different path")
 	}
-	res, err := r.box.Run(ctx, sandbox.Command{
+	res, err := d.box.Run(ctx, sandbox.Command{
 		Program: p.Program, Args: p.Args, Cwd: p.Cwd, Env: p.Env,
 		Timeout: time.Duration(p.TimeoutSec) * time.Second,
 
@@ -205,7 +173,7 @@ func (r *Provider) runCommand(ctx context.Context, args map[string]any, p *tools
 	return tools.Result{Output: out}, nil
 }
 
-func (r *Provider) validatePrepared(d dirs, p *tools.Prepared, args map[string]any) error {
+func (r *Provider) validatePrepared(ctx context.Context, d dirs, p *tools.Prepared, args map[string]any) error {
 	if p == nil {
 		return fmt.Errorf("workspace: missing prepared command")
 	}
@@ -215,7 +183,7 @@ func (r *Provider) validatePrepared(d dirs, p *tools.Prepared, args map[string]a
 	if p.ArgumentsDigest != digest(args) {
 		return fmt.Errorf("workspace: prepared command arguments changed")
 	}
-	cwd, err := d.resolve(p.Cwd)
+	cwd, err := d.resolve(ctx, p.Cwd)
 	if err != nil {
 		return err
 	}
