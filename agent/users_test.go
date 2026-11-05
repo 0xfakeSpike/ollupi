@@ -290,3 +290,67 @@ func TestTurnsRunOnTheUsersClient(t *testing.T) {
 		t.Errorf("own client took %d requests, shared %d", own.most, shared.most)
 	}
 }
+
+// A second process waits for the shard, takes it when the first stops, and a process whose shard is taken stops.
+func TestAStandbyTakesTheShard(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	srv := httptest.NewServer(&recordingModel{})
+	defer srv.Close()
+	home := t.TempDir()
+	open := func() *repo.DB {
+		db, err := repo.Open(home)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { db.Close() })
+		return db
+	}
+	process := func(db *repo.DB, lost func()) *agent.Agent {
+		return agent.New(agent.Config{
+			Name: "Ollupi", Models: []llm.Model{{Name: "demo", Connection: "fake"}},
+			Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
+			Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
+			DB:          db, Lease: 300 * time.Millisecond, OnLeaseLost: lost,
+		})
+	}
+	first := process(open(), nil)
+	firstCtx, stopFirst := context.WithCancel(ctx)
+	defer stopFirst()
+	if err := first.Start(firstCtx); err != nil {
+		t.Fatal(err)
+	}
+
+	lost := make(chan struct{})
+	second := process(open(), func() { close(lost) })
+	secondCtx, stopSecond := context.WithCancel(ctx)
+	defer stopSecond()
+	started := make(chan error, 1)
+	go func() { started <- second.Start(secondCtx) }()
+	select {
+	case err := <-started:
+		t.Fatalf("started while the shard was held: %v", err)
+	case <-time.After(time.Second):
+	}
+	stopFirst()
+	first.Wait()
+	select {
+	case err := <-started:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("the standby never took the shard")
+	}
+
+	thief := open()
+	if held, err := thief.ClaimShard("thief", time.Now().Add(time.Hour), time.Hour); err != nil || !held {
+		t.Fatal(held, err)
+	}
+	select {
+	case <-lost:
+	case <-ctx.Done():
+		t.Fatal("the process never saw it lost the shard")
+	}
+	second.Wait()
+}

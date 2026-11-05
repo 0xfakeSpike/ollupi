@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"log/slog"
 )
 
 var errStopped = errors.New("agent: the agent is shutting down")
@@ -16,6 +17,11 @@ type slot struct {
 
 func (a *Agent) Wait() {
 	a.done.Wait()
+	if a.owner != "" {
+		if err := a.cfg.DB.ReleaseShard(a.owner); err != nil {
+			slog.Warn("shard lease not released", "err", err)
+		}
+	}
 }
 
 func (a *Agent) loop() {

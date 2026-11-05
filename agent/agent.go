@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/skills"
 	"github.com/0xfakeSpike/ollupi/tools"
@@ -63,6 +64,11 @@ type Config struct {
 	Memory         *memory.Manager
 	DB             *repo.DB
 	OnEvent        func(Event)
+	// Lease makes this process claim the shard before it runs it, waiting for as long as another holds it, and keep
+	// the claim alive; a process that dies leaves its claim for this long. Without it the process trusts it is alone.
+	Lease time.Duration
+	// OnLeaseLost tells the host that another process took the shard: the agent has stopped, and all else on DB must.
+	OnLeaseLost func()
 }
 
 type Agent struct {
@@ -74,6 +80,7 @@ type Agent struct {
 	events       chan func()
 	slotByThread map[string]*slot
 	slotsOfUser  map[string]int
+	owner        string
 	done         sync.WaitGroup
 }
 
@@ -92,7 +99,6 @@ func (a *Agent) Start(ctx context.Context) error {
 	if a.cfg.DB == nil {
 		return fmt.Errorf("agent: a database is required")
 	}
-	a.ctx = ctx
 	if err := a.buildTools(ctx); err != nil {
 		return err
 	}
@@ -109,6 +115,13 @@ func (a *Agent) Start(ctx context.Context) error {
 		a.cfg.UserSlots = a.cfg.Slots
 	}
 	a.events, a.slotByThread, a.slotsOfUser = make(chan func()), map[string]*slot{}, map[string]int{}
+	a.ctx = ctx
+	if a.cfg.Lease > 0 {
+		var err error
+		if a.ctx, err = a.claimShard(ctx); err != nil {
+			return err
+		}
+	}
 	if err := a.recover(); err != nil {
 		return err
 	}
