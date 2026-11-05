@@ -19,6 +19,9 @@ type Options struct {
 	Model    llm.Model
 	Generate bool
 	Use      bool
+	// ClientFor gives the client that extracts a user's memories, so that it runs on the user's own key; the model
+	// passed to New checks the limits. Without it users share that model.
+	ClientFor func(user string) (llm.Client, error)
 }
 
 const (
@@ -178,7 +181,13 @@ func (m *Manager) extract(ctx context.Context, batch *Batch, payload string, rep
 	if settings.Redaction {
 		payload = redactor.Mask(payload)
 	}
-	response, err := m.model.Chat(callCtx, llm.ChatRequest{
+	client := m.model
+	if m.opts.ClientFor != nil {
+		if client, err = m.opts.ClientFor(batch.UserID); err != nil {
+			return nil, failure{repo.MemoryModelRequest, fmt.Errorf("could not get the model client of the user: %w", err)}
+		}
+	}
+	response, err := client.Chat(callCtx, llm.ChatRequest{
 		Model:      m.opts.Model,
 		Messages:   []llm.ChatMessage{{Role: llm.RoleSystem, Content: extractionInstructions}, {Role: llm.RoleUser, Content: payload}},
 		ToolChoice: llm.ToolChoiceNone,

@@ -40,6 +40,13 @@ func (a *Agent) windowFor(m llm.Model) (*contextmanager.Manager, error) {
 	return contextmanager.New(m.Name, limits), nil
 }
 
+func (a *Agent) clientFor(user, connection string) (llm.Client, error) {
+	if a.cfg.ClientFor != nil {
+		return a.cfg.ClientFor(user, connection)
+	}
+	return a.cfg.Connections[connection], nil
+}
+
 func (a *Agent) checkPromptFits() error {
 	checker, err := permission.New(a.layers(repo.WorkspaceRow{}), a.cfg.Tools, a.registry)
 	if err != nil {
