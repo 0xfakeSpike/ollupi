@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
@@ -90,7 +89,7 @@ type fileChange struct {
 }
 
 func (r *Provider) change(ctx context.Context, args map[string]any) (dirs, fileChange, error) {
-	d, err := r.dirs(tools.CallerOf(ctx))
+	d, err := r.dirs(ctx)
 	if err != nil {
 		return dirs{}, fileChange{}, err
 	}
@@ -102,11 +101,11 @@ func (r *Provider) change(ctx context.Context, args map[string]any) (dirs, fileC
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(d.roots[0], path)
 	}
-	abs, err := sandbox.CanonicalPath(path, "")
+	abs, err := d.box.Canonical(ctx, path)
 	if err != nil {
 		return dirs{}, fileChange{}, err
 	}
-	if err := r.box.CheckWrite(d.roots, abs); err != nil {
+	if err := d.box.CheckWrite(d.roots, abs); err != nil {
 		return dirs{}, fileChange{}, err
 	}
 	c := fileChange{abs: abs, mode: 0o644}
@@ -117,7 +116,7 @@ func (r *Provider) change(ctx context.Context, args map[string]any) (dirs, fileC
 		}
 	}
 	c.rel = filepath.ToSlash(c.rel)
-	switch st, err := os.Stat(abs); {
+	switch st, err := d.box.Stat(ctx, abs); {
 	case errors.Is(err, fs.ErrNotExist):
 	case err != nil:
 		return dirs{}, fileChange{}, err
@@ -126,7 +125,7 @@ func (r *Provider) change(ctx context.Context, args map[string]any) (dirs, fileC
 	case st.Size() > maxFileBytes:
 		return dirs{}, fileChange{}, fmt.Errorf("workspace: %s has %d bytes; files over %d bytes are not edited here", c.rel, st.Size(), maxFileBytes)
 	default:
-		body, err := os.ReadFile(abs)
+		body, err := sandbox.ReadFile(ctx, d.box, abs)
 		if err != nil {
 			return dirs{}, fileChange{}, err
 		}
@@ -197,16 +196,16 @@ func (r *Provider) prepareFile(ctx context.Context, args map[string]any) (*tools
 	}
 	return &tools.Prepared{
 		Cwd: d.roots[0], SettingsDigest: r.settingsDigest(d), ArgumentsDigest: digest(args),
-		Sandboxed: r.box.Enforced(), Files: []tools.FileChange{c.frozen()},
+		Sandboxed: d.box.Enforced(), Files: []tools.FileChange{c.frozen()},
 	}, nil
 }
 
 func (r *Provider) runFile(ctx context.Context, args map[string]any, p *tools.Prepared) (tools.Result, error) {
-	d, err := r.dirs(tools.CallerOf(ctx))
+	d, err := r.dirs(ctx)
 	if err != nil {
 		return tools.Result{}, err
 	}
-	if err := r.validatePrepared(d, p, args); err != nil {
+	if err := r.validatePrepared(ctx, d, p, args); err != nil {
 		return tools.Result{}, err
 	}
 	if len(p.Files) != 1 {
@@ -220,22 +219,7 @@ func (r *Provider) runFile(ctx context.Context, args map[string]any, p *tools.Pr
 	if now := c.frozen(); now.Path != want.Path || now.Before != want.Before || now.After != want.After {
 		return tools.Result{}, fmt.Errorf("workspace: %s changed after this edit was prepared, so nothing was written; read it again and redo the edit", want.Path)
 	}
-	if err := os.MkdirAll(filepath.Dir(c.abs), 0o755); err != nil {
-		return tools.Result{}, err
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(c.abs), "."+filepath.Base(c.abs)+".*")
-	if err != nil {
-		return tools.Result{}, err
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.WriteString(c.after); err != nil {
-		tmp.Close()
-		return tools.Result{}, err
-	}
-	if err := errors.Join(tmp.Chmod(c.mode), tmp.Close()); err != nil {
-		return tools.Result{}, err
-	}
-	if err := os.Rename(tmp.Name(), c.abs); err != nil {
+	if err := d.box.WriteFile(ctx, c.abs, []byte(c.after), c.mode); err != nil {
 		return tools.Result{}, err
 	}
 	return tools.Result{Output: FileOutput{Path: want.Path, Created: !c.exists, Added: want.Added, Removed: want.Removed}}, nil

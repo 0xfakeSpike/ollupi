@@ -1,11 +1,13 @@
 package workspace
 
 import (
+	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 )
 
 // compilePattern turns a path pattern into a regexp over slash-separated relative paths: * matches within
@@ -120,16 +122,17 @@ func parseIgnore(base, text string) ignoreFile {
 
 // ignores is what a walk skips under the .gitignore files of the work tree it is in.
 type ignores struct {
+	box   sandbox.Box
 	top   string
 	files []ignoreFile
 }
 
 // gitIgnores finds the work tree dir is in and reads .git/info/exclude and the .gitignore files from the top
 // down to dir's parent; dir's own is read when the walk enters it. Outside a work tree nothing is ignored.
-func gitIgnores(dir string) *ignores {
+func gitIgnores(ctx context.Context, box sandbox.Box, dir string) *ignores {
 	top := dir
 	for {
-		if _, err := os.Stat(filepath.Join(top, ".git")); err == nil {
+		if _, err := box.Stat(ctx, filepath.Join(top, ".git")); err == nil {
 			break
 		}
 		parent := filepath.Dir(top)
@@ -138,12 +141,12 @@ func gitIgnores(dir string) *ignores {
 		}
 		top = parent
 	}
-	g := &ignores{top: top}
-	if body, err := os.ReadFile(filepath.Join(top, ".git", "info", "exclude")); err == nil {
+	g := &ignores{box: box, top: top}
+	if body, err := sandbox.ReadFile(ctx, box, filepath.Join(top, ".git", "info", "exclude")); err == nil {
 		g.files = append(g.files, parseIgnore("", string(body)))
 	}
 	for at := top; at != dir; {
-		g.enter(at)
+		g.enter(ctx, at)
 		rel, _ := filepath.Rel(at, dir)
 		at = filepath.Join(at, strings.SplitN(rel, string(filepath.Separator), 2)[0])
 	}
@@ -151,8 +154,8 @@ func gitIgnores(dir string) *ignores {
 }
 
 // enter reads dir's .gitignore, if it has one, and reports whether it did; leave undoes it.
-func (g *ignores) enter(dir string) bool {
-	body, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+func (g *ignores) enter(ctx context.Context, dir string) bool {
+	body, err := sandbox.ReadFile(ctx, g.box, filepath.Join(dir, ".gitignore"))
 	if err != nil {
 		return false
 	}
