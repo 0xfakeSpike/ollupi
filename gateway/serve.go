@@ -94,11 +94,7 @@ func (s *Server) authorize(r *http.Request) (string, int, string) {
 	if !slices.Contains(s.hosts, strings.Trim(host, "[]")) {
 		return "", http.StatusForbidden, "host not allowed"
 	}
-	got := r.URL.Query().Get("token")
-	if bearer, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
-		got = bearer
-	}
-	user, ok := s.authenticate(got)
+	user, ok := s.authenticate(tokenOf(r))
 	if !ok {
 		return "", http.StatusUnauthorized, "invalid or missing gateway token"
 	}

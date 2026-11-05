@@ -23,6 +23,31 @@ type DB struct {
 
 func Open(homeDir string) (*DB, error) {
 	path := filepath.Join(homeDir, "data", "ollupi.sqlite")
+	g, err := openFile(path)
+	if err != nil {
+		return nil, err
+	}
+	db := &DB{gorm: g}
+	if err := db.applySchema(); err != nil {
+		err = fmt.Errorf("storage: %s: %w", path, err)
+		if cerr := closeGorm(g); cerr != nil {
+			return nil, fmt.Errorf("%w (close: %v)", err, cerr)
+		}
+		return nil, err
+	}
+	return db, nil
+}
+
+func closeGorm(g *gorm.DB) error {
+	conn, err := g.DB()
+	if err != nil {
+		return err
+	}
+	return conn.Close()
+}
+
+// openFile opens a database file on its one connection, making its folder if need be.
+func openFile(path string) (*gorm.DB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("storage: create directory of %s: %w", path, err)
 	}
@@ -46,24 +71,10 @@ func Open(homeDir string) (*DB, error) {
 		return nil, fmt.Errorf("storage: open %s: %w", path, err)
 	}
 	conn.SetMaxOpenConns(1)
-	db := &DB{gorm: g}
-	if err := db.applySchema(); err != nil {
-		err = fmt.Errorf("storage: %s: %w", path, err)
-		if cerr := conn.Close(); cerr != nil {
-			return nil, fmt.Errorf("%w (close: %v)", err, cerr)
-		}
-		return nil, err
-	}
-	return db, nil
+	return g, nil
 }
 
-func (d *DB) Close() error {
-	conn, err := d.gorm.DB()
-	if err != nil {
-		return err
-	}
-	return conn.Close()
-}
+func (d *DB) Close() error { return closeGorm(d.gorm) }
 
 func (d *DB) applySchema() error {
 	if err := d.migrate(); err != nil {
