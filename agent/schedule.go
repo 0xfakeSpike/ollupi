@@ -50,14 +50,14 @@ func (a *Agent) reconcile(threadID string) {
 			return
 		}
 	}
-	if turn.Status != repo.TurnReady || len(a.slotByThread) >= a.cfg.Slots {
+	if turn.Status != repo.TurnReady || len(a.slotByThread) >= a.cfg.Slots || a.slotsOfUser[st.Thread.UserID] >= a.cfg.UserSlots {
 		return
 	}
 	if err := a.cfg.DB.Launch(turn.ID); err != nil {
 		a.halt(threadID, err)
 		return
 	}
-	a.launch(threadID, turn.ID)
+	a.launch(st.Thread.UserID, threadID, turn.ID)
 }
 
 // admit fills the free slots with the threads whose turns are ready, reading no more of them than there are slots.
@@ -66,7 +66,13 @@ func (a *Agent) admit() {
 	if free <= 0 || a.ctx.Err() != nil {
 		return
 	}
-	ids, err := a.cfg.DB.ReadyThreads(free)
+	var full []string
+	for user, held := range a.slotsOfUser {
+		if held >= a.cfg.UserSlots {
+			full = append(full, user)
+		}
+	}
+	ids, err := a.cfg.DB.ReadyThreads(free, full)
 	if err != nil {
 		a.fault("", "", fmt.Errorf("threads ready for a slot could not be listed: %w", err))
 		return

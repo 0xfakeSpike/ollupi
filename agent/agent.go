@@ -48,8 +48,13 @@ type Config struct {
 	Tools    []string
 	Settings permission.Settings
 	Slots    int
+	// UserSlots is the most slots one user may hold, so that one user's turns cannot fill a shard; by default, all.
+	UserSlots int
 
 	Connections map[string]llm.Client
+	// ClientFor gives the client a user's turns call a connection through, so that they run on the user's own key
+	// and quota; it should return the same client each time. Without it users share Connections.
+	ClientFor   func(user, connection string) (llm.Client, error)
 	Providers   []tools.Provider
 	Unavailable []string
 	SkillsDir   string
@@ -68,6 +73,7 @@ type Agent struct {
 
 	events       chan func()
 	slotByThread map[string]*slot
+	slotsOfUser  map[string]int
 	done         sync.WaitGroup
 }
 
@@ -99,7 +105,10 @@ func (a *Agent) Start(ctx context.Context) error {
 	if a.cfg.Slots <= 0 {
 		a.cfg.Slots = defaultSlots
 	}
-	a.events, a.slotByThread = make(chan func()), map[string]*slot{}
+	if a.cfg.UserSlots <= 0 {
+		a.cfg.UserSlots = a.cfg.Slots
+	}
+	a.events, a.slotByThread, a.slotsOfUser = make(chan func()), map[string]*slot{}, map[string]int{}
 	if err := a.recover(); err != nil {
 		return err
 	}
