@@ -1,11 +1,14 @@
 package memory
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
 )
 
@@ -87,5 +90,37 @@ func TestMemorySkipOutlivesSuccess(t *testing.T) {
 func TestFailureOfUnclassified(t *testing.T) {
 	if got := failureOf(errors.New("disk full")); got.Code != repo.MemoryStorage || got.Error != "disk full" {
 		t.Fatalf("got %+v", got)
+	}
+}
+
+type namedClient struct {
+	name  string
+	calls *[]string
+}
+
+func (c namedClient) Chat(context.Context, llm.ChatRequest, func(llm.Delta)) (llm.ChatResponse, error) {
+	*c.calls = append(*c.calls, c.name)
+	return llm.ChatResponse{Message: llm.ChatMessage{Content: `{"operations":[]}`}, FinishReason: "stop"}, nil
+}
+
+func (namedClient) Limits(string) (llm.Limits, error) {
+	return llm.Limits{Context: 32000, Output: 4000}, nil
+}
+
+func TestExtractionRunsOnTheUsersClient(t *testing.T) {
+	m := testManager(t, false)
+	var calls []string
+	m.model = namedClient{"shared", &calls}
+	m.opts.ClientFor = func(user string) (llm.Client, error) { return namedClient{user, &calls}, nil }
+	if _, err := m.extract(context.Background(), scopeBatch(), "{}", &repo.MemoryReport{}); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(calls, []string{repo.DefaultUser}) {
+		t.Errorf("calls went through %v", calls)
+	}
+	m.opts.ClientFor = func(string) (llm.Client, error) { return nil, errors.New("no key") }
+	_, err := m.extract(context.Background(), scopeBatch(), "{}", &repo.MemoryReport{})
+	if failureOf(err).Code != repo.MemoryModelRequest {
+		t.Errorf("no client for the user: %v", err)
 	}
 }

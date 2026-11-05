@@ -3,7 +3,11 @@ package agent_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
 	"net/http/httptest"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -106,5 +110,183 @@ func TestAUserCannotReachAnotherUsersThread(t *testing.T) {
 	}
 	if err := ag.StartScheduledTurn(thread.ID, "scheduled", "job"); err != nil {
 		t.Errorf("a scheduled task in a's thread: %v", err)
+	}
+}
+
+// holdingModel keeps every request open until released, and remembers the most it held at once.
+type holdingModel struct {
+	mu      sync.Mutex
+	held    int
+	most    int
+	release chan struct{}
+}
+
+func (m *holdingModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	m.mu.Lock()
+	m.held++
+	m.most = max(m.most, m.held)
+	m.mu.Unlock()
+	select {
+	case <-m.release:
+	case <-r.Context().Done():
+	}
+	m.mu.Lock()
+	m.held--
+	m.mu.Unlock()
+	w.Header().Set("Content-Type", "text/event-stream")
+	fmt.Fprint(w, `data: {"id":"x","object":"chat.completion.chunk","created":1,"model":"demo","choices":[{"index":0,"delta":{"content":"done"},"finish_reason":"stop"}]}`+"\n\n")
+	fmt.Fprint(w, "data: [DONE]\n\n")
+}
+
+func (m *holdingModel) holding() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.held
+}
+
+// A user at their limit waits while another user's turn takes a free slot, though theirs came first.
+func TestAUserHoldsNoMoreSlotsThanTheirLimit(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	fake := &holdingModel{release: make(chan struct{})}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	db, err := repo.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, user := range []string{"a", "b"} {
+		if err := db.EnsureUser(user); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var ended atomic.Int32
+	ag := agent.New(agent.Config{
+		Name: "Ollupi", Models: []llm.Model{{Name: "demo", Connection: "fake"}},
+		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
+		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", 16, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
+		Slots:       8, UserSlots: 2, DB: db,
+		OnEvent: func(e agent.Event) {
+			if e.Kind == agent.EventTurnCompleted {
+				ended.Add(1)
+			}
+		},
+	})
+	actx, stop := context.WithCancel(ctx)
+	if err := ag.Start(actx); err != nil {
+		t.Fatal(err)
+	}
+	defer ag.Wait()
+	defer stop()
+
+	start := func(user string) {
+		t.Helper()
+		thread, err := ag.StartThread(user, "", "t", permission.Settings{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ag.StartTurn(user, thread.ID, agent.Input{Text: "hello"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	waitFor := func(what string, done func() bool) {
+		t.Helper()
+		for !done() {
+			if ctx.Err() != nil {
+				t.Fatalf("waiting for %s: %d model requests held", what, fake.holding())
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	for range 5 {
+		start("a")
+	}
+	waitFor("a to reach their limit", func() bool { return fake.holding() == 2 })
+	start("b")
+	waitFor("b to get a slot", func() bool { return fake.holding() == 3 })
+	close(fake.release)
+	waitFor("every turn to end", func() bool { return ended.Load() == 6 })
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.most != 3 {
+		t.Errorf("at most %d requests at once, want a's 2 and b's 1", fake.most)
+	}
+}
+
+// Each user's calls go through the client given for them, and a user with none fails only their own turn.
+func TestTurnsRunOnTheUsersClient(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	shared, own := &holdingModel{release: make(chan struct{})}, &holdingModel{release: make(chan struct{})}
+	close(shared.release)
+	close(own.release)
+	sharedSrv, ownSrv := httptest.NewServer(shared), httptest.NewServer(own)
+	defer sharedSrv.Close()
+	defer ownSrv.Close()
+	limits := map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}}
+	db, err := repo.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, user := range []string{"a", "b"} {
+		if err := db.EnsureUser(user); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ownClient := llm.NewOpenAI(ownSrv.URL, "", 4, limits)
+	ended := make(chan repo.TurnRow, 2)
+	ag := agent.New(agent.Config{
+		Name: "Ollupi", Models: []llm.Model{{Name: "demo", Connection: "fake"}},
+		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
+		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(sharedSrv.URL, "", 4, limits)},
+		ClientFor: func(user, connection string) (llm.Client, error) {
+			if user == "a" && connection == "fake" {
+				return ownClient, nil
+			}
+			return nil, errors.New("no key for this user")
+		},
+		DB: db,
+		OnEvent: func(e agent.Event) {
+			if e.Kind == agent.EventTurnCompleted {
+				ended <- e.Turn
+			}
+		},
+	})
+	actx, stop := context.WithCancel(ctx)
+	if err := ag.Start(actx); err != nil {
+		t.Fatal(err)
+	}
+	defer ag.Wait()
+	defer stop()
+	for _, user := range []string{"a", "b"} {
+		thread, err := ag.StartThread(user, "", "t", permission.Settings{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		turn, err := ag.StartTurn(user, thread.ID, agent.Input{Text: "hello"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case got := <-ended:
+			want := repo.TurnCompleted
+			if user == "b" {
+				want = repo.TurnFailed
+			}
+			if got.ID != turn.ID || got.Status != want {
+				t.Errorf("%s's turn: %s %q", user, got.Status, got.Error)
+			}
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		}
+	}
+	shared.mu.Lock()
+	defer shared.mu.Unlock()
+	own.mu.Lock()
+	defer own.mu.Unlock()
+	if own.most != 1 || shared.most != 0 {
+		t.Errorf("own client took %d requests, shared %d", own.most, shared.most)
 	}
 }

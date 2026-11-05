@@ -87,11 +87,14 @@ const (
 )
 
 // ReadyThreads lists up to limit threads whose turn waits for a slot, conversations before subagents
-// and, within each, the turn that started first.
-func (d *DB) ReadyThreads(limit int) ([]string, error) {
+// and, within each, the turn that started first. The users in except are left out: they hold all the slots they may.
+func (d *DB) ReadyThreads(limit int, except []string) ([]string, error) {
 	var ids []string
-	err := d.gorm.Table("turns INDEXED BY turns_ready").Joins("JOIN threads ON threads.id = turns.thread_id").
-		Where("turns."+readyTurn).Order("threads.parent_thread_id IS NOT NULL, turns.started_at, turns.thread_id").
+	q := d.gorm.Table("turns INDEXED BY turns_ready").Joins("JOIN threads ON threads.id = turns.thread_id").Where("turns." + readyTurn)
+	if len(except) > 0 {
+		q = q.Where("threads.user_id NOT IN ?", except)
+	}
+	err := q.Order("threads.parent_thread_id IS NOT NULL, turns.started_at, turns.thread_id").
 		Limit(limit).Pluck("turns.thread_id", &ids).Error
 	return ids, err
 }

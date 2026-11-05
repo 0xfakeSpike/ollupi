@@ -80,7 +80,7 @@ func TestOnlyReadyTurnsWaitForASlot(t *testing.T) {
 	}
 	ready := func(want ...string) {
 		t.Helper()
-		got, err := db.ReadyThreads(10)
+		got, err := db.ReadyThreads(10, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

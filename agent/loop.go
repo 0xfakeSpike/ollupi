@@ -8,6 +8,7 @@ import (
 var errStopped = errors.New("agent: the agent is shutting down")
 
 type slot struct {
+	user   string
 	turnID string
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -52,10 +53,11 @@ func (a *Agent) call(fn func() error) error {
 	}
 }
 
-func (a *Agent) launch(threadID, turnID string) {
+func (a *Agent) launch(user, threadID, turnID string) {
 	ctx, cancel := context.WithCancel(a.ctx)
-	sl := &slot{turnID: turnID, ctx: ctx, cancel: cancel}
+	sl := &slot{user: user, turnID: turnID, ctx: ctx, cancel: cancel}
 	a.slotByThread[threadID] = sl
+	a.slotsOfUser[user]++
 	a.done.Add(1)
 	go func() {
 		defer a.done.Done()
@@ -67,5 +69,8 @@ func (a *Agent) release(threadID string) {
 	if sl, exists := a.slotByThread[threadID]; exists {
 		sl.cancel()
 		delete(a.slotByThread, threadID)
+		if a.slotsOfUser[sl.user]--; a.slotsOfUser[sl.user] == 0 {
+			delete(a.slotsOfUser, sl.user)
+		}
 	}
 }
