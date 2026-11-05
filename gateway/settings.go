@@ -18,5 +18,5 @@ func (c *conn) settingsUpdate(p SettingsUpdateParams) (repo.SettingsRow, func(),
 	if err != nil {
 		return repo.SettingsRow{}, nil, err
 	}
-	return settings, func() { c.s.notify(notifySettingsChanged, settings) }, nil
+	return settings, func() { c.rpc.Notify(notifySettingsChanged, settings) }, nil
 }

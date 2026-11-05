@@ -24,10 +24,10 @@ func threadPage(resume bool) func(*conn, ThreadPageParams) (ThreadPageResult, fu
 		if _, err := c.s.db.ThreadOf(c.user, p.ThreadID); err != nil {
 			return ThreadPageResult{}, nil, err
 		}
-		c.s.deliver.Lock()
+		c.deliver.Lock()
 		view, more, err := c.s.db.ThreadPage(p.ThreadID, p.BeforeSeq, p.Limit)
 		if err != nil {
-			c.s.deliver.Unlock()
+			c.deliver.Unlock()
 			return ThreadPageResult{}, nil, err
 		}
 		size := 0
@@ -40,7 +40,7 @@ func threadPage(resume bool) func(*conn, ThreadPageParams) (ThreadPageResult, fu
 		}
 		view.Turns, view.Items = nonNil(view.Turns), nonNil(view.Items)
 		after := func() {
-			c.s.deliver.Unlock()
+			c.deliver.Unlock()
 			if resume {
 				for _, r := range c.s.agent.PendingRequests(c.user, p.ThreadID) {
 					c.request(r.Thread.ID, r.Item)
