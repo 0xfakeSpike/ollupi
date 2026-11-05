@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os/exec"
 	"strings"
 	"sync"
 
+	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -26,18 +26,27 @@ type Session struct {
 	down error
 }
 
-func connect(ctx context.Context, client *mcp.Client, s Server) (*Session, error) {
+// connect reaches a server within ctx. One with a command runs in the box, for as long as running lasts.
+func connect(ctx, running context.Context, client *mcp.Client, box sandbox.Box, s Server) (*Session, error) {
 	out := &Session{name: s.Name, tools: map[string]*mcp.Tool{}}
 	var transport mcp.Transport
 	if s.Command != "" {
-		cmd := exec.Command(s.Command, s.Args...)
-		cmd.Env = cmd.Environ()
-		for k, v := range s.Env {
-			cmd.Env = append(cmd.Env, k+"="+v)
+		cwd := box.Roots()[0]
+		program, err := box.Executable(ctx, s.Command, cwd)
+		if err != nil {
+			return nil, err
 		}
 		out.stderr = &tail{}
-		cmd.Stderr = out.stderr
-		transport = &mcp.CommandTransport{Command: cmd}
+		process, err := box.Start(running, sandbox.Command{Program: program, Args: s.Args, Cwd: cwd, Env: s.Env}, out.stderr)
+		if err != nil {
+			return nil, err
+		}
+		defer func() {
+			if out.sess == nil {
+				process.Close()
+			}
+		}()
+		transport = &mcp.IOTransport{Reader: process, Writer: process}
 	} else {
 		httpClient := http.DefaultClient
 		if len(s.Headers) > 0 {

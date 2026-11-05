@@ -22,6 +22,13 @@ type Registry struct {
 
 const ProviderSeparator = "__"
 
+// Set is what one user adds to the tools everyone has, with the providers of theirs that could not be reached. The
+// same Set means the same tools.
+type Set struct {
+	Providers   []Provider
+	Unavailable []string
+}
+
 func New(ctx context.Context, unavailable []string, providers ...Provider) (*Registry, error) {
 	r := &Registry{
 		unavailable: slices.Clone(unavailable),
