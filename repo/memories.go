@@ -15,13 +15,15 @@ type MemorySource struct {
 
 type MemoryRow struct {
 	ID                string          `gorm:"primaryKey" json:"id"`
-	Scope             MemoryScope     `gorm:"not null;uniqueIndex:memories_scope_topic,priority:1;index:memories_scope_status,priority:1;check:memories_scope_workspace,(scope = 'workspace') = (workspace_id <> '')" json:"scope"`
-	WorkspaceID       string          `gorm:"not null;default:'';uniqueIndex:memories_scope_topic,priority:2;index:memories_scope_status,priority:2" json:"workspaceId,omitempty"`
+	UserID            string          `gorm:"not null;default:'';uniqueIndex:memories_scope_topic,priority:1;index:memories_scope_status,priority:1" json:"-"`
+	User              *UserRow        `gorm:"foreignKey:UserID;constraint:OnDelete:RESTRICT" json:"-"`
+	Scope             MemoryScope     `gorm:"not null;uniqueIndex:memories_scope_topic,priority:2;index:memories_scope_status,priority:2;check:memories_scope_workspace,(scope = 'workspace') = (workspace_id <> '')" json:"scope"`
+	WorkspaceID       string          `gorm:"not null;default:'';uniqueIndex:memories_scope_topic,priority:3;index:memories_scope_status,priority:3" json:"workspaceId,omitempty"`
 	OriginWorkspaceID string          `gorm:"not null;default:'';check:memories_origin,scope = 'global' OR origin_workspace_id = ''" json:"originWorkspaceId,omitempty"`
-	Topic             string          `gorm:"not null;uniqueIndex:memories_scope_topic,priority:3" json:"topic"`
+	Topic             string          `gorm:"not null;uniqueIndex:memories_scope_topic,priority:4" json:"topic"`
 	Kind              string          `gorm:"not null" json:"kind"`
 	Text              string          `gorm:"not null" json:"text"`
-	Status            MemoryRowStatus `gorm:"not null;index:memories_scope_status,priority:3" json:"status"`
+	Status            MemoryRowStatus `gorm:"not null;index:memories_scope_status,priority:4" json:"status"`
 	UserEdited        bool            `gorm:"not null" json:"userEdited,omitempty"`
 	Sources           []MemorySource  `gorm:"not null;serializer:json;check:memories_sources,json_valid(sources)" json:"sources"`
 	CreatedAt         time.Time       `gorm:"not null;autoCreateTime:false" json:"createdAt"`
@@ -54,20 +56,20 @@ var MemoryScopeValues = []MemoryScope{MemoryGlobal, MemoryGeneral, MemoryWorkspa
 
 func (s MemoryScope) Value() (driver.Value, error) { return enumValue(s, MemoryScopeValues) }
 
-func (d *DB) Memories(scope MemoryScope, workspaceID string, global bool) ([]MemoryRow, error) {
+func (d *DB) Memories(user string, scope MemoryScope, workspaceID string, global bool) ([]MemoryRow, error) {
 	var rows []MemoryRow
-	err := d.gorm.Where("(scope = ? AND workspace_id = ?) OR (? AND scope = ?)", scope, workspaceID, global, MemoryGlobal).Order("updated_at DESC, id").Find(&rows).Error
+	err := d.gorm.Where("user_id = ? AND ((scope = ? AND workspace_id = ?) OR (? AND scope = ?))", user, scope, workspaceID, global, MemoryGlobal).Order("updated_at DESC, id").Find(&rows).Error
 	return rows, err
 }
 
-func (d *DB) AllMemories() ([]MemoryRow, error) {
+func (d *DB) AllMemories(user string) ([]MemoryRow, error) {
 	var rows []MemoryRow
-	return rows, d.gorm.Order("updated_at DESC, id").Find(&rows).Error
+	return rows, d.gorm.Where("user_id = ?", user).Order("updated_at DESC, id").Find(&rows).Error
 }
 
-func (d *DB) Memory(id string) (MemoryRow, error) {
+func (d *DB) Memory(user, id string) (MemoryRow, error) {
 	var row MemoryRow
-	return row, notFound(d.gorm.Where("id = ?", id).Take(&row).Error)
+	return row, notFound(d.gorm.Where("id = ? AND user_id = ?", id, user).Take(&row).Error)
 }
 
 func (d *DB) SaveMemory(m MemoryRow) error {

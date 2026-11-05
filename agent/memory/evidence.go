@@ -13,10 +13,10 @@ var (
 	evidenceStatuses = []repo.ItemStatus{repo.ItemCompleted, repo.ItemFailed, repo.ItemDeclined}
 )
 
-func nextBatch(db *repo.DB, limit int) (*Batch, error) {
+func nextBatch(db *repo.DB, user string, limit int) (*Batch, error) {
 	var batch *Batch
 	err := db.Tx(func(tx *repo.DB) error {
-		state, err := tx.MemoryState()
+		state, err := tx.MemoryState(user)
 		if err != nil {
 			return err
 		}
@@ -35,7 +35,7 @@ func nextBatch(db *repo.DB, limit int) (*Batch, error) {
 			}
 		}
 		if len(items) == 0 {
-			if turn, err = tx.NextEndedTurn(c); errors.Is(err, repo.ErrNotFound) {
+			if turn, err = tx.NextEndedTurn(user, c); errors.Is(err, repo.ErrNotFound) {
 				return nil
 			} else if err != nil {
 				return err
@@ -49,14 +49,14 @@ func nextBatch(db *repo.DB, limit int) (*Batch, error) {
 			return err
 		}
 		b := &Batch{
-			Scope: localScope(string(thread.WorkspaceID)), WorkspaceID: string(thread.WorkspaceID), ThreadID: turn.ThreadID, TurnID: turn.ID,
+			UserID: user, Scope: localScope(string(thread.WorkspaceID)), WorkspaceID: string(thread.WorkspaceID), ThreadID: turn.ThreadID, TurnID: turn.ID,
 			TurnStatus: turn.Status, TurnError: clipMemory(turn.Error, 1000), Facts: []Fact{},
 			Cursor: repo.MemoryCursor{At: turn.CompletedAt, ID: turn.ID}, Entries: len(items),
 		}
 		if len(items) > 0 {
 			b.Cursor.Seq = items[len(items)-1].Seq
 		}
-		if b.Existing, err = tx.Memories(b.Scope, b.WorkspaceID, true); err != nil {
+		if b.Existing, err = tx.Memories(user, b.Scope, b.WorkspaceID, true); err != nil {
 			return err
 		}
 		blocked := forgottenSources(b.Existing)

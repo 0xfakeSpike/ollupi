@@ -14,12 +14,12 @@ import (
 	"github.com/google/uuid"
 )
 
-func (a *Agent) StartThread(workspaceID, title string, settings permission.Settings) (repo.ThreadRow, error) {
+func (a *Agent) StartThread(user, workspaceID, title string, settings permission.Settings) (repo.ThreadRow, error) {
 	title, err := threadTitle(title, false)
 	if err != nil {
 		return repo.ThreadRow{}, err
 	}
-	w, err := a.workspaceOf(repo.Ref(workspaceID))
+	w, err := a.workspaceFor(user, repo.Ref(workspaceID))
 	if err != nil {
 		return repo.ThreadRow{}, err
 	}
@@ -29,11 +29,11 @@ func (a *Agent) StartThread(workspaceID, title string, settings permission.Setti
 	if err := a.validateLayer(a.layers(w), permission.Settings{}, threadLayer(settings)); err != nil {
 		return repo.ThreadRow{}, err
 	}
-	return a.createThread(repo.ThreadRow{Title: title, Settings: settings, WorkspaceID: repo.Ref(workspaceID)})
+	return a.createThread(repo.ThreadRow{UserID: user, Title: title, Settings: settings, WorkspaceID: repo.Ref(workspaceID)})
 }
 
-func (a *Agent) UpdateThreadSettings(threadID string, settings permission.Settings) (repo.ThreadRow, error) {
-	t, err := a.topThread(threadID)
+func (a *Agent) UpdateThreadSettings(user, threadID string, settings permission.Settings) (repo.ThreadRow, error) {
+	t, err := a.topThread(user, threadID)
 	if err != nil {
 		return repo.ThreadRow{}, err
 	}
@@ -63,8 +63,8 @@ func (a *Agent) createThread(t repo.ThreadRow) (repo.ThreadRow, error) {
 	return t, nil
 }
 
-func (a *Agent) ListThreads(f repo.ThreadFilter) ([]repo.ThreadSummary, bool, error) {
-	rows, more, err := a.cfg.DB.ThreadRows(f)
+func (a *Agent) ListThreads(user string, f repo.ThreadFilter) ([]repo.ThreadSummary, bool, error) {
+	rows, more, err := a.cfg.DB.ThreadRows(user, f)
 	if err != nil {
 		return nil, false, err
 	}
@@ -107,14 +107,14 @@ func (a *Agent) threadStatus(id string) repo.ThreadStatus {
 
 const maxTitleRunes = 120
 
-func (a *Agent) RenameThread(id, title string) (repo.ThreadRow, error) {
+func (a *Agent) RenameThread(user, id, title string) (repo.ThreadRow, error) {
 	title, err := threadTitle(title, true)
 	if err != nil {
 		return repo.ThreadRow{}, err
 	}
 	var t repo.ThreadRow
 	err = a.call(func() error {
-		if _, err := a.topThread(id); err != nil {
+		if _, err := a.topThread(user, id); err != nil {
 			return err
 		}
 		row, err := a.cfg.DB.SetThreadTitle(id, title)
@@ -128,10 +128,10 @@ func (a *Agent) RenameThread(id, title string) (repo.ThreadRow, error) {
 	return t, err
 }
 
-func (a *Agent) ArchiveThread(id string, archived bool) (repo.ThreadRow, error) {
+func (a *Agent) ArchiveThread(user, id string, archived bool) (repo.ThreadRow, error) {
 	var t repo.ThreadRow
 	err := a.call(func() error {
-		if _, err := a.topThread(id); err != nil {
+		if _, err := a.topThread(user, id); err != nil {
 			return err
 		}
 		var at *time.Time
@@ -142,7 +142,7 @@ func (a *Agent) ArchiveThread(id string, archived bool) (repo.ThreadRow, error) 
 			now := time.Now().UTC()
 			at = &now
 		}
-		jobs, err := a.cfg.DB.CronJobViews(id)
+		jobs, err := a.cfg.DB.CronJobViews(user, id)
 		if err != nil {
 			return fmt.Errorf("agent: thread %s: %w", id, err)
 		}
@@ -158,16 +158,16 @@ func (a *Agent) ArchiveThread(id string, archived bool) (repo.ThreadRow, error) 
 	return t, err
 }
 
-func (a *Agent) DeleteThread(id string) error {
+func (a *Agent) DeleteThread(user, id string) error {
 	return a.call(func() error {
-		t, err := a.topThread(id)
+		t, err := a.topThread(user, id)
 		if err != nil {
 			return err
 		}
 		if err := a.idle(id); err != nil {
 			return err
 		}
-		jobs, err := a.cfg.DB.CronJobViews(id)
+		jobs, err := a.cfg.DB.CronJobViews(user, id)
 		if err != nil {
 			return fmt.Errorf("agent: thread %s: %w", id, err)
 		}
@@ -201,8 +201,16 @@ func threadTitle(title string, required bool) (string, error) {
 	return title, nil
 }
 
-func (a *Agent) topThread(id string) (repo.ThreadRow, error) {
-	t, err := a.cfg.DB.ThreadRow(id)
+// owned refuses a thread that is not the user's as though it did not exist.
+func (a *Agent) owned(user, id string) error {
+	if _, err := a.cfg.DB.ThreadOf(user, id); err != nil {
+		return fmt.Errorf("agent: thread %s: %w", id, err)
+	}
+	return nil
+}
+
+func (a *Agent) topThread(user, id string) (repo.ThreadRow, error) {
+	t, err := a.cfg.DB.ThreadOf(user, id)
 	if err != nil {
 		return repo.ThreadRow{}, fmt.Errorf("agent: thread %s: %w", id, err)
 	}

@@ -57,7 +57,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ws.SetReadLimit(maxMessageBytes)
-	c := &conn{s: s, ws: ws, rpc: jsonrpc.NewConn(ws), asked: make(map[string]bool)}
+	c := &conn{s: s, user: repo.DefaultUser, ws: ws, rpc: jsonrpc.NewConn(ws), asked: make(map[string]bool)}
 	s.mu.Lock()
 	previous := s.client
 	s.client = c
@@ -113,9 +113,10 @@ func (s *Server) current() *conn {
 }
 
 type conn struct {
-	s   *Server
-	ws  *websocket.Conn
-	rpc *jsonrpc.Conn
+	user string
+	s    *Server
+	ws   *websocket.Conn
+	rpc  *jsonrpc.Conn
 
 	mu          sync.Mutex
 	initialized bool
@@ -156,7 +157,7 @@ func (c *conn) initialize(InitializeParams) (InitializeResult, func(), error) {
 		c.mu.Lock()
 		c.initialized = true
 		c.mu.Unlock()
-		for _, r := range c.s.agent.AllPendingRequests() {
+		for _, r := range c.s.agent.AllPendingRequests(c.user) {
 			c.request(r.Thread.ID, r.Item)
 		}
 	}
@@ -269,13 +270,13 @@ func (c *conn) resolve(threadID string, it repo.ItemRow, result json.RawMessage)
 		if err := json.Unmarshal(result, &r); err != nil {
 			return err
 		}
-		return c.s.agent.AnswerUserInput(threadID, it.ID, r.Answers)
+		return c.s.agent.AnswerUserInput(c.user, threadID, it.ID, r.Answers)
 	}
 	var r ApprovalResponse
 	if err := json.Unmarshal(result, &r); err != nil {
 		return err
 	}
-	return c.s.agent.ResolveApproval(threadID, it.Approval.ID, r.Decision, "gateway")
+	return c.s.agent.ResolveApproval(c.user, threadID, it.Approval.ID, r.Decision, "gateway")
 }
 
 const pageBytes = 4 << 20

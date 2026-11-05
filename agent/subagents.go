@@ -17,6 +17,7 @@ func (a *Agent) settle(parent repo.ThreadRow, turn repo.TurnRow, call repo.ItemR
 	childID := call.Await.ThreadID
 	if childID == "" {
 		child, err := a.createThread(repo.ThreadRow{
+			UserID:         parent.UserID,
 			Title:          clipRunes(req.Description, maxTitleRunes),
 			ParentThreadID: repo.Ref(parent.ID), ParentItemID: repo.Ref(call.ID),
 			WorkspaceID: parent.WorkspaceID,

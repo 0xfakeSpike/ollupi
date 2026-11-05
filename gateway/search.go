@@ -18,13 +18,13 @@ func (c *conn) search(p SearchParams) (SearchResult, func(), error) {
 	if p.Limit < 1 || p.Limit > maxLimit {
 		return SearchResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "limit must be 1 to %d", maxLimit)
 	}
-	found, err := c.s.db.Search(terms, p.WorkspaceID, p.Limit)
+	found, err := c.s.db.Search(c.user, terms, p.WorkspaceID, p.Limit)
 	if err != nil {
 		return SearchResult{}, nil, err
 	}
 	result := SearchResult{Found: found, Memories: []repo.MemoryRow{}}
 	if c.s.memory != nil {
-		if result.Memories, err = c.s.memory.Search(p.Query, p.WorkspaceID, p.Limit); err != nil {
+		if result.Memories, err = c.s.memory.Search(c.user, p.Query, p.WorkspaceID, p.Limit); err != nil {
 			return SearchResult{}, nil, err
 		}
 	}

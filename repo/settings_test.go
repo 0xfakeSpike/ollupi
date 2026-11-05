@@ -10,7 +10,7 @@ func TestRedactionKeyOutlivesTheProcess(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer db.Close()
-		settings, err := db.Settings()
+		settings, err := db.Settings(DefaultUser)
 		if err != nil {
 			t.Fatal(err)
 		}

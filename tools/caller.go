@@ -3,6 +3,7 @@ package tools
 import "context"
 
 type Caller struct {
+	UserID      string
 	ThreadID    string
 	WorkspaceID string
 	Root        string

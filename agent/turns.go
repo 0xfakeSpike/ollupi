@@ -22,34 +22,63 @@ type Input struct {
 	CronJobID   string
 }
 
-func (a *Agent) StartTurn(threadID string, in Input) (repo.TurnRow, error) {
+func (a *Agent) StartTurn(user, threadID string, in Input) (repo.TurnRow, error) {
 	var turn repo.TurnRow
 	err := a.call(func() (err error) {
+		if err := a.owned(user, threadID); err != nil {
+			return err
+		}
 		turn, err = a.startTurn(threadID, in)
 		return err
 	})
 	return turn, err
 }
 
-func (a *Agent) SteerTurn(threadID, expectedTurnID string, in Input) (repo.TurnRow, error) {
+// StartScheduledTurn runs a scheduled task in its thread, whose owner set it; no caller asks for this one.
+func (a *Agent) StartScheduledTurn(threadID, text, jobID string) error {
+	return a.call(func() error {
+		_, err := a.startTurn(threadID, Input{Text: text, CronJobID: jobID})
+		return err
+	})
+}
+
+func (a *Agent) SteerTurn(user, threadID, expectedTurnID string, in Input) (repo.TurnRow, error) {
 	var turn repo.TurnRow
 	err := a.call(func() (err error) {
+		if err := a.owned(user, threadID); err != nil {
+			return err
+		}
 		turn, err = a.steer(threadID, expectedTurnID, in)
 		return err
 	})
 	return turn, err
 }
 
-func (a *Agent) InterruptTurn(threadID, expectedTurnID string) error {
-	return a.call(func() error { return a.interrupt(threadID, expectedTurnID) })
+func (a *Agent) InterruptTurn(user, threadID, expectedTurnID string) error {
+	return a.call(func() error {
+		if err := a.owned(user, threadID); err != nil {
+			return err
+		}
+		return a.interrupt(threadID, expectedTurnID)
+	})
 }
 
-func (a *Agent) ResolveApproval(threadID, approvalID string, decision repo.Decision, decidedBy string) error {
-	return a.call(func() error { return a.resolveApproval(threadID, approvalID, decision, decidedBy) })
+func (a *Agent) ResolveApproval(user, threadID, approvalID string, decision repo.Decision, decidedBy string) error {
+	return a.call(func() error {
+		if err := a.owned(user, threadID); err != nil {
+			return err
+		}
+		return a.resolveApproval(threadID, approvalID, decision, decidedBy)
+	})
 }
 
-func (a *Agent) AnswerUserInput(threadID, itemID string, answers userinput.Answers) error {
-	return a.call(func() error { return a.answerUserInput(threadID, itemID, answers) })
+func (a *Agent) AnswerUserInput(user, threadID, itemID string, answers userinput.Answers) error {
+	return a.call(func() error {
+		if err := a.owned(user, threadID); err != nil {
+			return err
+		}
+		return a.answerUserInput(threadID, itemID, answers)
+	})
 }
 
 func (a *Agent) startTurn(threadID string, in Input) (repo.TurnRow, error) {
@@ -207,14 +236,14 @@ func (a *Agent) allowAlways(threadID string, rules []string) error {
 	}
 	allow := permission.Settings{Rules: permission.Rules{Allow: rules}}
 	if t.WorkspaceID == "" {
-		_, err := a.UpdateThreadSettings(t.ID, permission.Resolve(t.Settings, allow))
+		_, err := a.UpdateThreadSettings(t.UserID, t.ID, permission.Resolve(t.Settings, allow))
 		return err
 	}
 	w, err := a.workspaceOf(t.WorkspaceID)
 	if err != nil {
 		return err
 	}
-	_, err = a.UpdateWorkspaceSettings(w.ID, permission.Resolve(w.Settings, allow))
+	_, err = a.UpdateWorkspaceSettings(t.UserID, w.ID, permission.Resolve(w.Settings, allow))
 	return err
 }
 

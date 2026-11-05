@@ -54,16 +54,16 @@ func ids(entries []repo.MemoryReference) []string {
 
 func TestSnapshotSections(t *testing.T) {
 	m := testManager(t, true,
-		repo.MemoryRow{ID: "g-fact", Topic: "a", Kind: "fact", Text: "The sky is blue."},
-		repo.MemoryRow{ID: "g-pref", Topic: "b", Kind: "preference", Text: "Answers in Chinese."},
-		repo.MemoryRow{ID: "w-fact-old", WorkspaceID: "w", Topic: "c", Kind: "fact", Text: "Uses Go."},
-		repo.MemoryRow{ID: "w-decision", WorkspaceID: "w", Topic: "d", Kind: "decision", Text: "Prefix MCP tools."},
-		repo.MemoryRow{ID: "w-fact-new", WorkspaceID: "w", Topic: "e", Kind: "fact", Text: "Uses gorm."},
-		repo.MemoryRow{ID: "w-retired", WorkspaceID: "w", Topic: "f", Kind: "preference", Text: "Old.", Status: repo.MemoryRetired},
-		repo.MemoryRow{ID: "other", WorkspaceID: "x", Topic: "g", Kind: "preference", Text: "Elsewhere."},
-		repo.MemoryRow{ID: "n-fact", Scope: repo.MemoryGeneral, Topic: "h", Kind: "fact", Text: "Plans a trip."},
+		repo.MemoryRow{UserID: repo.DefaultUser, ID: "g-fact", Topic: "a", Kind: "fact", Text: "The sky is blue."},
+		repo.MemoryRow{UserID: repo.DefaultUser, ID: "g-pref", Topic: "b", Kind: "preference", Text: "Answers in Chinese."},
+		repo.MemoryRow{UserID: repo.DefaultUser, ID: "w-fact-old", WorkspaceID: "w", Topic: "c", Kind: "fact", Text: "Uses Go."},
+		repo.MemoryRow{UserID: repo.DefaultUser, ID: "w-decision", WorkspaceID: "w", Topic: "d", Kind: "decision", Text: "Prefix MCP tools."},
+		repo.MemoryRow{UserID: repo.DefaultUser, ID: "w-fact-new", WorkspaceID: "w", Topic: "e", Kind: "fact", Text: "Uses gorm."},
+		repo.MemoryRow{UserID: repo.DefaultUser, ID: "w-retired", WorkspaceID: "w", Topic: "f", Kind: "preference", Text: "Old.", Status: repo.MemoryRetired},
+		repo.MemoryRow{UserID: repo.DefaultUser, ID: "other", WorkspaceID: "x", Topic: "g", Kind: "preference", Text: "Elsewhere."},
+		repo.MemoryRow{UserID: repo.DefaultUser, ID: "n-fact", Scope: repo.MemoryGeneral, Topic: "h", Kind: "fact", Text: "Plans a trip."},
 	)
-	s, err := m.Snapshot("w", 4000)
+	s, err := m.Snapshot(repo.DefaultUser, "w", 4000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestSnapshotSections(t *testing.T) {
 		t.Errorf("text:\n%s", s.Text)
 	}
 
-	s, err = m.Snapshot("", 4000)
+	s, err = m.Snapshot(repo.DefaultUser, "", 4000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,12 +88,12 @@ func TestSnapshotBudget(t *testing.T) {
 	text := strings.Repeat("word ", 40)
 	var rows []repo.MemoryRow
 	for i := range 10 {
-		rows = append(rows, repo.MemoryRow{ID: fmt.Sprintf("g%d", i), Topic: fmt.Sprintf("g%d", i), Kind: "fact", Text: text})
+		rows = append(rows, repo.MemoryRow{UserID: repo.DefaultUser, ID: fmt.Sprintf("g%d", i), Topic: fmt.Sprintf("g%d", i), Kind: "fact", Text: text})
 	}
-	rows = append(rows, repo.MemoryRow{ID: "w0", WorkspaceID: "w", Topic: "w0", Kind: "fact", Text: text})
+	rows = append(rows, repo.MemoryRow{UserID: repo.DefaultUser, ID: "w0", WorkspaceID: "w", Topic: "w0", Kind: "fact", Text: text})
 	m := testManager(t, true, rows...)
 	const budget = 600
-	s, err := m.Snapshot("w", budget)
+	s, err := m.Snapshot(repo.DefaultUser, "w", budget)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,12 +110,12 @@ func TestSnapshotBudget(t *testing.T) {
 }
 
 func TestSnapshotEmptyAndUnused(t *testing.T) {
-	s, err := testManager(t, true).Snapshot("w", 4000)
+	s, err := testManager(t, true).Snapshot(repo.DefaultUser, "w", 4000)
 	if err != nil || s == nil || s.Text != "" || s.Entries == nil || len(s.Entries) != 0 {
 		t.Errorf("no memories: %+v, %v; want an empty snapshot", s, err)
 	}
-	m := testManager(t, false, repo.MemoryRow{ID: "g", Topic: "a", Kind: "fact", Text: "x"})
-	if s, err := m.Snapshot("w", 4000); s != nil || err != nil {
+	m := testManager(t, false, repo.MemoryRow{UserID: repo.DefaultUser, ID: "g", Topic: "a", Kind: "fact", Text: "x"})
+	if s, err := m.Snapshot(repo.DefaultUser, "w", 4000); s != nil || err != nil {
 		t.Errorf("memory not used: %+v, %v; want no snapshot", s, err)
 	}
 	if specs, _ := m.ToolList(context.Background()); len(specs) != 0 {
@@ -125,14 +125,14 @@ func TestSnapshotEmptyAndUnused(t *testing.T) {
 
 func TestSearch(t *testing.T) {
 	m := testManager(t, true,
-		repo.MemoryRow{ID: "g", Topic: "colors", Kind: "fact", Text: "Likes blue."},
-		repo.MemoryRow{ID: "w", WorkspaceID: "w", Topic: "palette", Kind: "preference", Text: "Blue buttons."},
-		repo.MemoryRow{ID: "other", WorkspaceID: "x", Topic: "colors", Kind: "fact", Text: "Blue too."},
-		repo.MemoryRow{ID: "general", Scope: repo.MemoryGeneral, Topic: "colors", Kind: "fact", Text: "Blue as well."},
-		repo.MemoryRow{ID: "gone", WorkspaceID: "w", Topic: "old", Kind: "fact", Text: "Blue once.", Status: repo.MemoryRetired},
-		repo.MemoryRow{ID: "unrelated", WorkspaceID: "w", Topic: "db", Kind: "fact", Text: "Uses sqlite."},
+		repo.MemoryRow{UserID: repo.DefaultUser, ID: "g", Topic: "colors", Kind: "fact", Text: "Likes blue."},
+		repo.MemoryRow{UserID: repo.DefaultUser, ID: "w", WorkspaceID: "w", Topic: "palette", Kind: "preference", Text: "Blue buttons."},
+		repo.MemoryRow{UserID: repo.DefaultUser, ID: "other", WorkspaceID: "x", Topic: "colors", Kind: "fact", Text: "Blue too."},
+		repo.MemoryRow{UserID: repo.DefaultUser, ID: "general", Scope: repo.MemoryGeneral, Topic: "colors", Kind: "fact", Text: "Blue as well."},
+		repo.MemoryRow{UserID: repo.DefaultUser, ID: "gone", WorkspaceID: "w", Topic: "old", Kind: "fact", Text: "Blue once.", Status: repo.MemoryRetired},
+		repo.MemoryRow{UserID: repo.DefaultUser, ID: "unrelated", WorkspaceID: "w", Topic: "db", Kind: "fact", Text: "Uses sqlite."},
 	)
-	ctx := tools.WithCaller(context.Background(), tools.Caller{WorkspaceID: "w"})
+	ctx := tools.WithCaller(context.Background(), tools.Caller{UserID: repo.DefaultUser, WorkspaceID: "w"})
 	res, err := m.Invoke(ctx, ToolSearch, map[string]any{"query": "blue"})
 	if err != nil {
 		t.Fatal(err)

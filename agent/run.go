@@ -73,7 +73,7 @@ func (a *Agent) runTurn(ctx context.Context, t repo.ThreadRow, turn repo.TurnRow
 		Window:      window,
 		Memory:      a.cfg.Memory,
 		Turn:        turn,
-		Caller:      tools.Caller{ThreadID: t.ID, WorkspaceID: string(t.WorkspaceID), Root: w.RootPath, Subagent: t.ParentThreadID != ""},
+		Caller:      tools.Caller{UserID: t.UserID, ThreadID: t.ID, WorkspaceID: string(t.WorkspaceID), Root: w.RootPath, Subagent: t.ParentThreadID != ""},
 		Prompt:      systemprompt.AgentPrompt(a.cfg.Name, a.cfg.Prompt),
 		Permissions: checker,
 		History:     history,
@@ -95,7 +95,7 @@ func (a *Agent) runTurn(ctx context.Context, t repo.ThreadRow, turn repo.TurnRow
 			return items, checker, err
 		},
 		AttachmentsDir: a.cfg.AttachmentsDir,
-		Settings:       a.cfg.DB.Settings,
+		Settings:       func() (repo.SettingsRow, error) { return a.cfg.DB.Settings(t.UserID) },
 	}
 	return rt.Run(ctx)
 }

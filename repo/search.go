@@ -27,8 +27,8 @@ type Found struct {
 	Tasks    []CronJobView `json:"tasks"`
 }
 
-// Search finds the conversations, messages and scheduled tasks whose text holds every term, newest first.
-func (d *DB) Search(terms []string, workspaceID string, limit int) (Found, error) {
+// Search finds the user's conversations, messages and scheduled tasks whose text holds every term, newest first.
+func (d *DB) Search(user string, terms []string, workspaceID string, limit int) (Found, error) {
 	f := Found{Threads: []ThreadRow{}, Messages: []MessageHit{}, Tasks: []CronJobView{}}
 	inWorkspace := func(q *gorm.DB, column string) *gorm.DB {
 		if workspaceID == "" {
@@ -36,7 +36,7 @@ func (d *DB) Search(terms []string, workspaceID string, limit int) (Found, error
 		}
 		return q.Where("COALESCE("+column+", '') = ?", workspaceID)
 	}
-	q := d.gorm.Where("parent_thread_id IS NULL")
+	q := d.gorm.Where("user_id = ? AND parent_thread_id IS NULL", user)
 	for _, t := range terms {
 		q = q.Where(`title LIKE ? ESCAPE '\'`, likePattern(t))
 	}
@@ -50,7 +50,7 @@ func (d *DB) Search(terms []string, workspaceID string, limit int) (Found, error
 	}
 	q = d.gorm.Table("items AS i").Select("i.id, i.thread_id, i.turn_id, i.seq, i.type, i.text, i.started_at, t.title AS thread_title").
 		Joins("JOIN threads t ON t.id = i.thread_id").
-		Where("t.parent_thread_id IS NULL AND i.type IN ? AND i.status = ?", []ItemType{ItemUserMessage, ItemAgentMessage}, ItemCompleted)
+		Where("t.user_id = ? AND t.parent_thread_id IS NULL AND i.type IN ? AND i.status = ?", user, []ItemType{ItemUserMessage, ItemAgentMessage}, ItemCompleted)
 	for _, t := range terms {
 		// The index takes LIKE only without ESCAPE, so it narrows to a superset, reading % and _ in the term as
 		// wildcards; the escaped LIKE on items then keeps the exact matches.
@@ -64,7 +64,7 @@ func (d *DB) Search(terms []string, workspaceID string, limit int) (Found, error
 			Seq: r.Seq, Type: r.Type, Snippet: snippet(r.Text, terms[0]), At: r.StartedAt})
 	}
 
-	q = d.cronJobViews()
+	q = d.cronJobViews().Where("t.user_id = ?", user)
 	for _, t := range terms {
 		q = q.Where(`(j.name || ' ' || j.prompt) LIKE ? ESCAPE '\'`, likePattern(t))
 	}

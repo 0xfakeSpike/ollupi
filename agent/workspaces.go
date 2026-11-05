@@ -14,7 +14,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func (a *Agent) AddWorkspace(path, name string) (repo.WorkspaceRow, error) {
+func (a *Agent) AddWorkspace(user, path, name string) (repo.WorkspaceRow, error) {
 	root, err := sandbox.CanonicalDirectory(path)
 	if err != nil {
 		return repo.WorkspaceRow{}, fmt.Errorf("agent: %w", err)
@@ -26,7 +26,7 @@ func (a *Agent) AddWorkspace(path, name string) (repo.WorkspaceRow, error) {
 		return repo.WorkspaceRow{}, err
 	}
 	now := time.Now().UTC()
-	w := repo.WorkspaceRow{ID: uuid.NewString(), Name: name, RootPath: root, CreatedAt: now, UpdatedAt: now}
+	w := repo.WorkspaceRow{ID: uuid.NewString(), UserID: user, Name: name, RootPath: root, CreatedAt: now, UpdatedAt: now}
 	w, err = a.cfg.DB.AddWorkspace(w,
 		func(existing repo.WorkspaceRow) bool { return sameDirectory(existing.RootPath, root) },
 		func(existing repo.WorkspaceRow) (repo.WorkspaceRow, bool) {
@@ -43,16 +43,16 @@ func (a *Agent) AddWorkspace(path, name string) (repo.WorkspaceRow, error) {
 	return w, nil
 }
 
-func (a *Agent) RenameWorkspace(id, name string) (repo.WorkspaceRow, error) {
+func (a *Agent) RenameWorkspace(user, id, name string) (repo.WorkspaceRow, error) {
 	name, err := workspaceName(name)
 	if err != nil {
 		return repo.WorkspaceRow{}, err
 	}
-	return a.changeWorkspace(id, func(w *repo.WorkspaceRow) { w.Name = name })
+	return a.changeWorkspace(user, id, func(w *repo.WorkspaceRow) { w.Name = name })
 }
 
-func (a *Agent) ArchiveWorkspace(id string, archived bool) (repo.WorkspaceRow, error) {
-	return a.changeWorkspace(id, func(w *repo.WorkspaceRow) {
+func (a *Agent) ArchiveWorkspace(user, id string, archived bool) (repo.WorkspaceRow, error) {
+	return a.changeWorkspace(user, id, func(w *repo.WorkspaceRow) {
 		w.ArchivedAt = nil
 		if archived {
 			at := w.UpdatedAt
@@ -61,19 +61,19 @@ func (a *Agent) ArchiveWorkspace(id string, archived bool) (repo.WorkspaceRow, e
 	})
 }
 
-func (a *Agent) UpdateWorkspaceSettings(id string, settings permission.Settings) (repo.WorkspaceRow, error) {
-	w, err := a.workspaceOf(repo.Ref(id))
+func (a *Agent) UpdateWorkspaceSettings(user, id string, settings permission.Settings) (repo.WorkspaceRow, error) {
+	w, err := a.workspaceFor(user, repo.Ref(id))
 	if err != nil {
 		return repo.WorkspaceRow{}, err
 	}
 	if err := a.validateLayer(a.layers(repo.WorkspaceRow{}), w.Settings, workspaceLayer(w.Name, settings)); err != nil {
 		return repo.WorkspaceRow{}, err
 	}
-	return a.changeWorkspace(id, func(w *repo.WorkspaceRow) { w.Settings = settings })
+	return a.changeWorkspace(user, id, func(w *repo.WorkspaceRow) { w.Settings = settings })
 }
 
-func (a *Agent) changeWorkspace(id string, change func(*repo.WorkspaceRow)) (repo.WorkspaceRow, error) {
-	w, err := a.cfg.DB.UpdateWorkspace(id, func(w repo.WorkspaceRow) (repo.WorkspaceRow, error) {
+func (a *Agent) changeWorkspace(user, id string, change func(*repo.WorkspaceRow)) (repo.WorkspaceRow, error) {
+	w, err := a.cfg.DB.UpdateWorkspace(user, id, func(w repo.WorkspaceRow) (repo.WorkspaceRow, error) {
 		w.UpdatedAt = time.Now().UTC()
 		change(&w)
 		return w, nil

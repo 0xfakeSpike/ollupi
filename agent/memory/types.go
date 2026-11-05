@@ -12,6 +12,7 @@ type Fact struct {
 }
 
 type Batch struct {
+	UserID      string            `json:"-"`
 	Scope       repo.MemoryScope  `json:"scope"`
 	WorkspaceID string            `json:"workspaceId,omitempty"`
 	ThreadID    string            `json:"threadId"`

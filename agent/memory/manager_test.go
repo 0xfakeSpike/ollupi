@@ -11,12 +11,12 @@ import (
 
 func failingBatch(turnID string, entries int) *Batch {
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	return &Batch{Scope: repo.MemoryGeneral, ThreadID: "thread-" + turnID, TurnID: turnID, Cursor: repo.MemoryCursor{At: &at, ID: turnID, Seq: entries}, Entries: entries}
+	return &Batch{UserID: repo.DefaultUser, Scope: repo.MemoryGeneral, ThreadID: "thread-" + turnID, TurnID: turnID, Cursor: repo.MemoryCursor{At: &at, ID: turnID, Seq: entries}, Entries: entries}
 }
 
 func memoryState(t *testing.T, m *Manager) repo.MemoryStatus {
 	t.Helper()
-	s, err := m.Status()
+	s, err := m.Status(repo.DefaultUser)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -19,6 +19,18 @@ func (a *Agent) workspaceOf(id repo.Ref) (repo.WorkspaceRow, error) {
 	return w, nil
 }
 
+// workspaceFor reads a workspace the user names; one of another user's does not exist for them.
+func (a *Agent) workspaceFor(user string, id repo.Ref) (repo.WorkspaceRow, error) {
+	if id == "" {
+		return repo.WorkspaceRow{}, nil
+	}
+	w, err := a.cfg.DB.WorkspaceOf(user, string(id))
+	if err != nil {
+		return repo.WorkspaceRow{}, fmt.Errorf("agent: workspace %s: %w", id, err)
+	}
+	return w, nil
+}
+
 func (a *Agent) permissions(t repo.ThreadRow) (*permission.Checker, repo.WorkspaceRow, error) {
 	w, err := a.workspaceOf(t.WorkspaceID)
 	if err != nil {

@@ -110,7 +110,7 @@ func TestLoadedToolIsSentWithTheNextRequest(t *testing.T) {
 	}
 	defer db.Close()
 	now := time.Now().UTC()
-	if err := db.SaveMemory(repo.MemoryRow{ID: "mem_1", Scope: repo.MemoryGlobal, Topic: "回复语言", Kind: "preference", Text: "用户希望用中文回复，结论先行。", Status: repo.MemoryActive, Sources: []repo.MemorySource{}, CreatedAt: now, UpdatedAt: now}); err != nil {
+	if err := db.SaveMemory(repo.MemoryRow{UserID: repo.DefaultUser, ID: "mem_1", Scope: repo.MemoryGlobal, Topic: "回复语言", Kind: "preference", Text: "用户希望用中文回复，结论先行。", Status: repo.MemoryActive, Sources: []repo.MemorySource{}, CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
 	mem, err := memory.New(db, nil, memory.Options{Use: true})
@@ -130,11 +130,11 @@ func TestLoadedToolIsSentWithTheNextRequest(t *testing.T) {
 	}
 	defer ag.Wait()
 	defer stop()
-	w, err := ag.AddWorkspace(t.TempDir(), "app")
+	w, err := ag.AddWorkspace(repo.DefaultUser, t.TempDir(), "app")
 	if err != nil {
 		t.Fatal(err)
 	}
-	th, err := ag.StartThread(w.ID, "", permission.Settings{})
+	th, err := ag.StartThread(repo.DefaultUser, w.ID, "", permission.Settings{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestLoadedToolIsSentWithTheNextRequest(t *testing.T) {
 			}
 		}
 	}
-	if _, err := ag.StartTurn(th.ID, agent.Input{Text: "帮我在 GitHub 上提个 issue：登录页在 Safari 上白屏"}); err != nil {
+	if _, err := ag.StartTurn(repo.DefaultUser, th.ID, agent.Input{Text: "帮我在 GitHub 上提个 issue：登录页在 Safari 上白屏"}); err != nil {
 		t.Fatal(err)
 	}
 	wait(3)

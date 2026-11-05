@@ -10,7 +10,8 @@ import (
 
 func scopeBatch(existing ...repo.MemoryRow) *Batch {
 	return &Batch{
-		Scope: repo.MemoryWorkspace, WorkspaceID: "w", TurnID: "t",
+		UserID: repo.DefaultUser,
+		Scope:  repo.MemoryWorkspace, WorkspaceID: "w", TurnID: "t",
 		Facts:    []Fact{{Source: repo.MemorySource{Table: "items", ID: "i1"}, Data: []byte(`{}`)}},
 		Existing: existing,
 	}
@@ -19,7 +20,7 @@ func scopeBatch(existing ...repo.MemoryRow) *Batch {
 func same(s string) string { return s }
 
 func TestExtractionScopes(t *testing.T) {
-	global := repo.MemoryRow{ID: "g", Scope: repo.MemoryGlobal, Topic: "language", Kind: "preference", Status: repo.MemoryActive}
+	global := repo.MemoryRow{UserID: repo.DefaultUser, ID: "g", Scope: repo.MemoryGlobal, Topic: "language", Kind: "preference", Status: repo.MemoryActive}
 	batch := scopeBatch(global)
 	op := func(fields string) string {
 		return `{"operations":[{` + fields + `,"sources":[{"table":"items","id":"i1"}]}]}`
@@ -50,10 +51,10 @@ func TestExtractionScopes(t *testing.T) {
 
 func TestCommitPlacesAddsByScope(t *testing.T) {
 	m := testManager(t, true,
-		repo.MemoryRow{ID: "local-build", WorkspaceID: "w", Topic: "build", Kind: "fact", Text: "Builds with go."},
-		repo.MemoryRow{ID: "other-build", WorkspaceID: "x", Topic: "editor", Kind: "fact", Text: "Elsewhere."},
+		repo.MemoryRow{UserID: repo.DefaultUser, ID: "local-build", WorkspaceID: "w", Topic: "build", Kind: "fact", Text: "Builds with go."},
+		repo.MemoryRow{UserID: repo.DefaultUser, ID: "other-build", WorkspaceID: "x", Topic: "editor", Kind: "fact", Text: "Elsewhere."},
 	)
-	existing, err := m.db.Memories(repo.MemoryWorkspace, "w", true)
+	existing, err := m.db.Memories(repo.DefaultUser, repo.MemoryWorkspace, "w", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +70,7 @@ func TestCommitPlacesAddsByScope(t *testing.T) {
 	if err := commit(m.db, batch, ops, repo.MemoryReport{}); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := m.db.Memories(repo.MemoryWorkspace, "w", true)
+	rows, err := m.db.Memories(repo.DefaultUser, repo.MemoryWorkspace, "w", true)
 	if err != nil {
 		t.Fatal(err)
 	}

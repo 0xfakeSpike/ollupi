@@ -101,7 +101,7 @@ func mix(args []string) {
 		log.Fatal(err)
 	}
 	newThread := func() string {
-		th, err := ag.StartThread("", "bench", permission.Settings{})
+		th, err := ag.StartThread(repo.DefaultUser, "", "bench", permission.Settings{})
 		if err != nil {
 			log.Fatal(err)
 		}

@@ -10,7 +10,7 @@ import (
 
 func commit(db *repo.DB, b *Batch, ops []Operation, report repo.MemoryReport) error {
 	return db.Tx(func(tx *repo.DB) error {
-		current, err := tx.Memories(b.Scope, b.WorkspaceID, true)
+		current, err := tx.Memories(b.UserID, b.Scope, b.WorkspaceID, true)
 		if err != nil {
 			return err
 		}
@@ -25,7 +25,7 @@ func commit(db *repo.DB, b *Batch, ops []Operation, report repo.MemoryReport) er
 		if err := s.apply(ops); err != nil {
 			return err
 		}
-		return tx.AdvanceMemory(b.Cursor, s.now, report)
+		return tx.AdvanceMemory(b.UserID, b.Cursor, s.now, report)
 	})
 }
 
@@ -70,7 +70,7 @@ type topicKey struct {
 func (s *applyState) target(op Operation) (repo.MemoryRow, bool, error) {
 	var e repo.MemoryRow
 	if op.Action == "add" {
-		added := repo.MemoryRow{ID: uuid.NewString(), Scope: s.batch.Scope, WorkspaceID: s.batch.WorkspaceID, Topic: op.Topic, CreatedAt: s.now}
+		added := repo.MemoryRow{ID: uuid.NewString(), UserID: s.batch.UserID, Scope: s.batch.Scope, WorkspaceID: s.batch.WorkspaceID, Topic: op.Topic, CreatedAt: s.now}
 		if op.Scope == scopeGlobal {
 			added.Scope, added.WorkspaceID, added.OriginWorkspaceID = repo.MemoryGlobal, "", s.batch.WorkspaceID
 		}

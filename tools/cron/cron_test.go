@@ -17,7 +17,7 @@ func testJobs(t *testing.T) (*Jobs, *repo.DB) {
 	}
 	t.Cleanup(func() { db.Close() })
 	now := time.Now().UTC()
-	if err := db.CreateThread(repo.ThreadRow{ID: "t", CreatedAt: now, UpdatedAt: now}); err != nil {
+	if err := db.CreateThread(repo.ThreadRow{UserID: repo.DefaultUser, ID: "t", CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
 	return New(db, time.Local, nil), db

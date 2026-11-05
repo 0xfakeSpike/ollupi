@@ -53,7 +53,8 @@ type MemorySkip struct {
 }
 
 type MemoryStateRow struct {
-	ID          int            `gorm:"primaryKey;autoIncrement:false;check:memory_state_one,id = 1" json:"-"`
+	UserID      string         `gorm:"primaryKey" json:"-"`
+	User        *UserRow       `gorm:"foreignKey:UserID;constraint:OnDelete:RESTRICT" json:"-"`
 	Cursor      MemoryCursor   `gorm:"embedded;embeddedPrefix:cursor_" json:"-"`
 	Attempts    int            `gorm:"not null;default:0" json:"attempts,omitempty"`
 	NextAttempt *time.Time     `json:"nextAttempt,omitempty"`
@@ -77,29 +78,32 @@ type MemoryStatus struct {
 // endedTurn is the condition of the turns_ended index, so the queries using it can use the index.
 const endedTurn = "(status = 'completed' OR status = 'failed' OR status = 'interrupted') AND completed_at IS NOT NULL"
 
-func (d *DB) MemoryState() (MemoryStateRow, error) {
+// ofUser keeps the turns of one user's threads.
+const ofUser = "thread_id IN (SELECT id FROM threads WHERE user_id = ?)"
+
+func (d *DB) MemoryState(user string) (MemoryStateRow, error) {
 	var row MemoryStateRow
-	return row, d.gorm.Where("id = 1").Take(&row).Error
+	return row, d.gorm.Where("user_id = ?", user).Take(&row).Error
 }
 
-func (d *DB) MemoryStatus() (MemoryStatus, error) {
+func (d *DB) MemoryStatus(user string) (MemoryStatus, error) {
 	var s MemoryStatus
-	if err := d.gorm.Where("id = 1").Take(&s.MemoryStateRow).Error; err != nil {
+	if err := d.gorm.Where("user_id = ?", user).Take(&s.MemoryStateRow).Error; err != nil {
 		return s, err
 	}
 	c := s.Cursor
-	if err := d.gorm.Model(&TurnRow{}).Where(endedTurn+" AND (completed_at, id) > (?, ?)", c.at(), c.ID).Count(&s.Pending).Error; err != nil {
+	if err := d.gorm.Model(&TurnRow{}).Where(endedTurn+" AND (completed_at, id) > (?, ?) AND "+ofUser, c.at(), c.ID, user).Count(&s.Pending).Error; err != nil {
 		return s, err
 	}
-	if err := d.gorm.Model(&MemoryRow{}).Where("status = ?", MemoryActive).Count(&s.Active).Error; err != nil {
+	if err := d.gorm.Model(&MemoryRow{}).Where("user_id = ? AND status = ?", user, MemoryActive).Count(&s.Active).Error; err != nil {
 		return s, err
 	}
 	return s, nil
 }
 
-func (d *DB) NextEndedTurn(c MemoryCursor) (TurnRow, error) {
+func (d *DB) NextEndedTurn(user string, c MemoryCursor) (TurnRow, error) {
 	var row TurnRow
-	err := d.gorm.Where(endedTurn+" AND (completed_at, id) > (?, ?)", c.at(), c.ID).Order("completed_at, id").Take(&row).Error
+	err := d.gorm.Where(endedTurn+" AND (completed_at, id) > (?, ?) AND "+ofUser, c.at(), c.ID, user).Order("completed_at, id").Take(&row).Error
 	return row, notFound(err)
 }
 
@@ -110,19 +114,19 @@ func (d *DB) TurnItemsAfter(turnID string, seq int, types []ItemType, statuses [
 	return rows, err
 }
 
-func (d *DB) SetMemoryFailure(f MemoryFailure) error {
+func (d *DB) SetMemoryFailure(user string, f MemoryFailure) error {
 	raw, err := json.Marshal(f)
 	if err != nil {
 		return err
 	}
-	return d.gorm.Model(&MemoryStateRow{}).Where("id = 1").Update("last_failure", string(raw)).Error
+	return d.gorm.Model(&MemoryStateRow{}).Where("user_id = ?", user).Update("last_failure", string(raw)).Error
 }
 
 func cursorColumns(c MemoryCursor) map[string]any {
 	return map[string]any{"cursor_at": nullTime(c.At), "cursor_id": c.ID, "cursor_seq": c.Seq}
 }
 
-func (d *DB) AdvanceMemory(c MemoryCursor, now time.Time, report MemoryReport) error {
+func (d *DB) AdvanceMemory(user string, c MemoryCursor, now time.Time, report MemoryReport) error {
 	raw, err := json.Marshal(report)
 	if err != nil {
 		return err
@@ -132,14 +136,14 @@ func (d *DB) AdvanceMemory(c MemoryCursor, now time.Time, report MemoryReport) e
 	cols["last_success"] = now.UTC()
 	cols["last_failure"] = nil
 	cols["last_report"] = string(raw)
-	return checkOne(d.gorm.Model(&MemoryStateRow{}).Where("id = 1").Updates(cols))
+	return checkOne(d.gorm.Model(&MemoryStateRow{}).Where("user_id = ?", user).Updates(cols))
 }
 
 const maxMemoryAttempts = 10
 
-func (d *DB) DeferMemory(skipTo MemoryCursor, skip MemorySkip, now time.Time) (skipped bool, err error) {
+func (d *DB) DeferMemory(user string, skipTo MemoryCursor, skip MemorySkip, now time.Time) (skipped bool, err error) {
 	err = d.Tx(func(tx *DB) error {
-		s, err := tx.MemoryState()
+		s, err := tx.MemoryState(user)
 		if err != nil {
 			return err
 		}
@@ -166,7 +170,7 @@ func (d *DB) DeferMemory(skipTo MemoryCursor, skip MemorySkip, now time.Time) (s
 			cols["attempts"] = s.Attempts + 1
 			cols["next_attempt"] = now.UTC().Add(time.Duration(min(60, 1<<min(s.Attempts, 6))) * time.Minute)
 		}
-		return checkOne(tx.gorm.Model(&MemoryStateRow{}).Where("id = 1").Updates(cols))
+		return checkOne(tx.gorm.Model(&MemoryStateRow{}).Where("user_id = ?", user).Updates(cols))
 	})
 	return skipped, err
 }

@@ -210,7 +210,7 @@ func crashChild(args []string) {
 	answer := func(threadID, itemID string) {
 		go func() {
 			time.Sleep(200 * time.Millisecond)
-			if err := ag.AnswerUserInput(threadID, itemID, userinput.Answers{"pick": {Answers: []string{"A"}}}); err != nil {
+			if err := ag.AnswerUserInput(repo.DefaultUser, threadID, itemID, userinput.Answers{"pick": {Answers: []string{"A"}}}); err != nil {
 				log.Printf("answer %s: %v", itemID, err)
 			}
 		}()
@@ -233,17 +233,17 @@ func crashChild(args []string) {
 		log.Fatal(err)
 	}
 	started := time.Since(startAt)
-	pending := ag.AllPendingRequests()
+	pending := ag.AllPendingRequests(repo.DefaultUser)
 	for _, r := range pending {
 		answer(r.Thread.ID, r.Item.ID)
 	}
 	kinds := []string{kindWork, kindWork, kindWork, kindAsk, kindDelegate}
 	for i := range *submit {
-		th, err := ag.StartThread("", "bench", permission.Settings{})
+		th, err := ag.StartThread(repo.DefaultUser, "", "bench", permission.Settings{})
 		if err != nil {
 			log.Fatal(err)
 		}
-		if _, err := ag.StartTurn(th.ID, agent.Input{Text: kinds[i%len(kinds)]}); err != nil {
+		if _, err := ag.StartTurn(repo.DefaultUser, th.ID, agent.Input{Text: kinds[i%len(kinds)]}); err != nil {
 			log.Fatal(err)
 		}
 	}

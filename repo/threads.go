@@ -8,7 +8,9 @@ import (
 )
 
 type ThreadRow struct {
-	ID          string             `gorm:"primaryKey;index:threads_list,priority:3;index:threads_workspace_list,priority:4" json:"id"`
+	ID          string             `gorm:"primaryKey;index:threads_list,priority:4;index:threads_workspace_list,priority:4" json:"id"`
+	UserID      string             `gorm:"not null;default:'';index:threads_list,priority:1" json:"-"`
+	User        *UserRow           `gorm:"foreignKey:UserID;constraint:OnDelete:RESTRICT" json:"-"`
 	WorkspaceID Ref                `gorm:"index:threads_workspace;index:threads_workspace_list,priority:1" json:"workspaceId,omitempty"`
 	Workspace   *WorkspaceRow      `gorm:"foreignKey:WorkspaceID;constraint:OnDelete:RESTRICT" json:"-"`
 	Title       string             `gorm:"not null" json:"title"`
@@ -17,9 +19,9 @@ type ThreadRow struct {
 	ParentThreadID Ref        `gorm:"index:threads_parent,where:parent_thread_id IS NOT NULL" json:"parentThreadId,omitempty"`
 	Parent         *ThreadRow `gorm:"foreignKey:ParentThreadID;constraint:OnDelete:CASCADE" json:"-"`
 	ParentItemID   Ref        `json:"parentItemId,omitempty"`
-	CreatedAt      time.Time  `gorm:"not null;autoCreateTime:false;index:threads_list,priority:2;index:threads_workspace_list,priority:3" json:"createdAt"`
+	CreatedAt      time.Time  `gorm:"not null;autoCreateTime:false;index:threads_list,priority:3;index:threads_workspace_list,priority:3" json:"createdAt"`
 	// threads_list and threads_workspace_list hold the top-level threads in list order, read backwards for newest first.
-	UpdatedAt  time.Time  `gorm:"not null;autoUpdateTime:false;index:threads_list,priority:1,where:parent_thread_id IS NULL;index:threads_workspace_list,priority:2,where:parent_thread_id IS NULL" json:"updatedAt"`
+	UpdatedAt  time.Time  `gorm:"not null;autoUpdateTime:false;index:threads_list,priority:2,where:parent_thread_id IS NULL;index:threads_workspace_list,priority:2,where:parent_thread_id IS NULL" json:"updatedAt"`
 	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
 }
 
@@ -82,6 +84,12 @@ func (d *DB) ThreadRow(id string) (ThreadRow, error) {
 	return row, notFound(d.gorm.Where("id = ?", id).Take(&row).Error)
 }
 
+// ThreadOf reads a thread for the user who owns it; to anyone else it does not exist.
+func (d *DB) ThreadOf(user, id string) (ThreadRow, error) {
+	var row ThreadRow
+	return row, notFound(d.gorm.Where("id = ? AND user_id = ?", id, user).Take(&row).Error)
+}
+
 type ThreadFilter struct {
 	WorkspaceID *string       `json:"workspaceId,omitempty"`
 	Archived    bool          `json:"archived,omitempty"`
@@ -96,9 +104,9 @@ type ThreadCursor struct {
 	ID        string    `json:"id"`
 }
 
-// ThreadRows lists one page of top-level threads, newest first, and whether more follow it.
-func (d *DB) ThreadRows(f ThreadFilter) ([]ThreadRow, bool, error) {
-	q := d.gorm.Order("updated_at DESC, created_at DESC, id DESC")
+// ThreadRows lists one page of the user's top-level threads, newest first, and whether more follow it.
+func (d *DB) ThreadRows(user string, f ThreadFilter) ([]ThreadRow, bool, error) {
+	q := d.gorm.Where("user_id = ?", user).Order("updated_at DESC, created_at DESC, id DESC")
 	if c := f.After; c != nil {
 		up, created := c.UpdatedAt.UTC(), c.CreatedAt.UTC()
 		q = q.Where("updated_at < ? OR (updated_at = ? AND (created_at < ? OR (created_at = ? AND id < ?)))", up, up, created, created, c.ID)
