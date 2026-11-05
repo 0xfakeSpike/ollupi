@@ -13,7 +13,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
@@ -33,8 +32,7 @@ const (
 	defaultImageToken = 1600
 )
 
-// AttachmentInput is a file sent with a message, on this machine or in the user's sandbox when they have one; the
-// attachment is a copy taken when it is sent.
+// AttachmentInput is a file in the user's sandbox sent with a message; the attachment is a copy taken when it is sent.
 type AttachmentInput struct {
 	Path     string
 	Name     string
@@ -69,11 +67,10 @@ func (a *Agent) storeAttachment(t repo.ThreadRow, in AttachmentInput) (repo.Atta
 	if !filepath.IsAbs(in.Path) {
 		return repo.Attachment{}, fmt.Errorf("agent: %w: attachment path %q is not absolute", ErrInvalidMessage, in.Path)
 	}
-	src, size, done, err := a.attachmentSource(t.UserID, in.Path)
+	src, size, err := a.attachmentSource(t.UserID, in.Path)
 	if err != nil {
 		return repo.Attachment{}, fmt.Errorf("agent: %w: attachment %s: %v", ErrInvalidMessage, in.Path, err)
 	}
-	defer done()
 	name := in.Name
 	if strings.TrimSpace(name) == "" {
 		name = in.Path
@@ -89,37 +86,27 @@ func (a *Agent) storeAttachment(t repo.ThreadRow, in AttachmentInput) (repo.Atta
 	return att, nil
 }
 
-// attachmentSource opens the file a user names. With a sandbox of their own it can only be there: the files of this
-// machine are not theirs to send.
-func (a *Agent) attachmentSource(user, path string) (io.ReadSeeker, int64, func(), error) {
-	if a.cfg.BoxFor == nil {
-		f, err := os.Open(path)
-		if err != nil {
-			return nil, 0, nil, err
-		}
-		info, err := f.Stat()
-		if err != nil || !info.Mode().IsRegular() {
-			f.Close()
-			return nil, 0, nil, errors.New("not a file")
-		}
-		return f, info.Size(), func() { f.Close() }, nil
-	}
+// attachmentSource reads the file a user names, from their sandbox: nothing else is theirs to send.
+func (a *Agent) attachmentSource(user, path string) (io.ReadSeeker, int64, error) {
 	box, err := a.cfg.BoxFor(user)
 	if err != nil {
-		return nil, 0, nil, err
+		return nil, 0, err
 	}
 	info, err := box.Stat(a.ctx, path)
 	if err != nil {
-		return nil, 0, nil, err
+		return nil, 0, err
 	}
-	if !info.Mode().IsRegular() || info.Size() > maxImageBytes {
-		return nil, 0, nil, fmt.Errorf("not a file of at most %d bytes", maxImageBytes)
+	if !info.Mode().IsRegular() {
+		return nil, 0, errors.New("not a file")
+	}
+	if info.Size() > maxImageBytes {
+		return nil, 0, fmt.Errorf("%d bytes; at most %d are accepted", info.Size(), maxImageBytes)
 	}
 	data, err := sandbox.ReadFile(a.ctx, box, path)
 	if err != nil {
-		return nil, 0, nil, err
+		return nil, 0, err
 	}
-	return bytes.NewReader(data), int64(len(data)), func() {}, nil
+	return bytes.NewReader(data), int64(len(data)), nil
 }
 
 // copyAttachment copies exactly the bytes describe measured, so a file that changes meanwhile is refused.

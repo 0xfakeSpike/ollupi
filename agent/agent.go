@@ -57,10 +57,12 @@ type Config struct {
 	Connections map[string]llm.Client
 	// ClientFor gives the client a user's turns call a connection through, so that they run on the user's own key
 	// and quota; it should return the same client each time. Without it users share Connections.
-	ClientFor   func(user, connection string) (llm.Client, error)
-	Providers   []tools.Provider
-	Unavailable []string
-	SkillsDir   string
+	ClientFor func(user, connection string) (llm.Client, error)
+	// Providers are the tools every user has.
+	Providers []tools.Provider
+	// ToolsFor adds the tools one user has, such as their MCP servers.
+	ToolsFor  func(user string) (*tools.Set, error)
+	SkillsDir string
 	// Attachments keeps the images and files sent with messages; without it messages take none.
 	Attachments blobs.Store
 	// AttachmentsDir is a folder on this machine to keep them in, when Attachments is not set.
@@ -71,8 +73,8 @@ type Config struct {
 	// Lease makes this process claim the shard before it runs it, waiting for as long as another holds it, and keep
 	// the claim alive; a process that dies leaves its claim for this long. Without it the process trusts it is alone.
 	Lease time.Duration
-	// BoxFor gives the sandbox a user's files live in, for workspaces to be found there; without it they are on this
-	// machine. The workspace tools take the same function.
+	// BoxFor gives the sandbox a user's files live in, the same one the workspace tools run in. By default it is
+	// sandbox.Here.
 	BoxFor func(user string) (sandbox.Box, error)
 	// OnLeaseLost tells the host that another process took the shard: the agent has stopped, and all else on DB must.
 	OnLeaseLost func()
@@ -84,6 +86,10 @@ type Agent struct {
 	registry *tools.Registry
 	skills   *skills.Catalog
 
+	// providers are what every user's registry starts from.
+	providers  []tools.Provider
+	registries sync.Map
+
 	events       chan func()
 	slotByThread map[string]*slot
 	slotsOfUser  map[string]int
@@ -91,11 +97,44 @@ type Agent struct {
 	done         sync.WaitGroup
 }
 
-func (a *Agent) ListTools() []tools.ToolDescriptor {
-	return a.registry.Descriptors()
+func (a *Agent) ListTools(user string) ([]tools.ToolDescriptor, error) {
+	registry, err := a.registryFor(user)
+	if err != nil {
+		return nil, err
+	}
+	return registry.Descriptors(), nil
+}
+
+// userRegistry is a user's registry and the Set it was built from.
+type userRegistry struct {
+	set      *tools.Set
+	registry *tools.Registry
+}
+
+// registryFor gives the tools a user has. The first call may wait for their servers to connect.
+func (a *Agent) registryFor(user string) (*tools.Registry, error) {
+	if a.cfg.ToolsFor == nil {
+		return a.registry, nil
+	}
+	set, err := a.cfg.ToolsFor(user)
+	if err != nil {
+		return nil, fmt.Errorf("agent: the tools of the user: %w", err)
+	}
+	if built, ok := a.registries.Load(user); ok && built.(userRegistry).set == set {
+		return built.(userRegistry).registry, nil
+	}
+	registry, err := tools.New(a.ctx, set.Unavailable, slices.Concat(a.providers, set.Providers)...)
+	if err != nil {
+		return nil, fmt.Errorf("agent: the tools of the user: %w", err)
+	}
+	a.registries.Store(user, userRegistry{set: set, registry: registry})
+	return registry, nil
 }
 
 func New(cfg Config) *Agent {
+	if cfg.BoxFor == nil {
+		cfg.BoxFor = func(string) (sandbox.Box, error) { return sandbox.Here(), nil }
+	}
 	return &Agent{cfg: cfg}
 }
 
@@ -153,8 +192,9 @@ func (a *Agent) buildTools(ctx context.Context) error {
 		}
 		providers = append(providers, a.skills)
 	}
+	a.providers = providers
 	var err error
-	if a.registry, err = tools.New(ctx, a.cfg.Unavailable, providers...); err != nil {
+	if a.registry, err = tools.New(ctx, nil, providers...); err != nil {
 		return fmt.Errorf("agent: %w", err)
 	}
 	return nil

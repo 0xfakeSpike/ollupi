@@ -45,12 +45,16 @@ type Checker struct {
 type Layer struct {
 	Of       string
 	Settings Settings
+	// Shared settings serve users with different tools, so they may name tools this user lacks.
+	Shared bool
 }
 
 func New(layers []Layer, allowlist []string, registry *tools.Registry) (*Checker, error) {
 	all := make([]Settings, 0, len(layers))
+	shared := false
 	for _, l := range layers {
-		if err := checkLayer(l.Settings, nil, registry); err != nil {
+		shared = shared || l.Shared
+		if err := checkLayer(l, nil, registry); err != nil {
 			return nil, fmt.Errorf("%s: %w", l.Of, err)
 		}
 		all = append(all, l.Settings)
@@ -68,7 +72,7 @@ func New(layers []Layer, allowlist []string, registry *tools.Registry) (*Checker
 		if slices.Contains(allowlist[:i], name) {
 			return nil, fmt.Errorf("the tools allowlist names %q twice", name)
 		}
-		if !registry.Offers(name) && !registry.Unavailable(name) {
+		if !registry.Offers(name) && !registry.Unavailable(name) && !(shared && someonesTool(name, registry)) {
 			return nil, fmt.Errorf("the tools allowlist: %w", unknownTool(fmt.Sprintf("tool %q", name), name, registry))
 		}
 	}
@@ -78,7 +82,14 @@ func New(layers []Layer, allowlist []string, registry *tools.Registry) (*Checker
 	return &Checker{policy: policy, rules: set, tools: visible}, nil
 }
 
-func checkLayer(s Settings, previous *Settings, registry *tools.Registry) error {
+// someonesTool says a tool belongs to a provider this user lacks, which another user may have.
+func someonesTool(tool string, registry *tools.Registry) bool {
+	provider, _, ok := strings.Cut(tool, tools.ProviderSeparator)
+	return ok && !registry.HasProvider(provider)
+}
+
+func checkLayer(l Layer, previous *Settings, registry *tools.Registry) error {
+	s := l.Settings
 	if s.ApprovalPolicy != "" {
 		if err := Policy(s.ApprovalPolicy).Validate(); err != nil {
 			return err
@@ -101,6 +112,7 @@ func checkLayer(s Settings, previous *Settings, registry *tools.Registry) error 
 				provider, _, _ := strings.Cut(r.tool, tools.ProviderSeparator)
 				return fmt.Errorf("permission rule %q: the MCP server %q is not connected, so its tools cannot be checked now; add this rule once it is connected", r.text, provider)
 			}
+		case l.Shared && someonesTool(r.tool, registry):
 		case !registry.Offers(r.tool):
 			return unknownTool(fmt.Sprintf("permission rule %q", r.text), r.tool, registry)
 		case r.pattern != nil && !registry.HasPermissionContent(r.tool):
@@ -120,7 +132,7 @@ func unknownTool(what, tool string, registry *tools.Registry) error {
 var ErrInvalidSettings = errors.New("invalid permission settings")
 
 func ValidateLayer(base []Layer, previous Settings, layer Layer, registry *tools.Registry) error {
-	if err := checkLayer(layer.Settings, &previous, registry); err != nil {
+	if err := checkLayer(layer, &previous, registry); err != nil {
 		return fmt.Errorf("%w: %s: %v", ErrInvalidSettings, layer.Of, err)
 	}
 	if _, err := New(append(slices.Clone(base), layer), nil, registry); err != nil {

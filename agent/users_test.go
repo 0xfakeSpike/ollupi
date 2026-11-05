@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -22,6 +23,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
 )
 
@@ -541,5 +543,84 @@ func TestAttachmentsLiveInTheStore(t *testing.T) {
 	}
 	if store.len() != 0 {
 		t.Errorf("%d objects outlived their thread", store.len())
+	}
+}
+
+// ownTools is a provider one user has.
+type ownTools string
+
+func (o ownTools) Name() (string, string) { return string(o), "A user's own tools." }
+
+func (o ownTools) ToolList(context.Context) ([]*tools.Spec, error) {
+	return []*tools.Spec{{Name: string(o) + tools.ProviderSeparator + "act", InputSchema: map[string]any{"type": "object"}}}, nil
+}
+
+func (ownTools) Invoke(context.Context, string, map[string]any) (tools.Result, error) {
+	return tools.Result{Output: "done"}, nil
+}
+
+// Each user has the shared tools and their own, and a rule on tools only some users have does not stop the others.
+func TestEachUserHasTheirOwnTools(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	srv := httptest.NewServer(&recordingModel{})
+	defer srv.Close()
+	db, err := repo.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, user := range []string{"a", "b"} {
+		if err := db.EnsureUser(user); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var mu sync.Mutex
+	sets := map[string]*tools.Set{"a": {Providers: []tools.Provider{ownTools("github")}}, "b": {}}
+	ag := agent.New(agent.Config{
+		Name: "Ollupi", Models: []llm.Model{{Name: "demo", Connection: "fake"}},
+		Settings: permission.Settings{ApprovalPolicy: string(permission.Never),
+			Rules: permission.Rules{Ask: []string{"github__act"}}},
+		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
+		DB:          db,
+		ToolsFor: func(user string) (*tools.Set, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			return sets[user], nil
+		},
+	})
+	actx, stop := context.WithCancel(ctx)
+	if err := ag.Start(actx); err != nil {
+		t.Fatal(err)
+	}
+	defer ag.Wait()
+	defer stop()
+
+	has := func(user, tool string) bool {
+		t.Helper()
+		list, err := ag.ListTools(user)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return slices.ContainsFunc(list, func(d tools.ToolDescriptor) bool { return d.Name == tool })
+	}
+	if !has("a", "github__act") || has("b", "github__act") {
+		t.Errorf("own tools: a %v, b %v", has("a", "github__act"), has("b", "github__act"))
+	}
+	if !has("b", "request_user_input") {
+		t.Error("b lacks the tools everyone has")
+	}
+	if _, err := ag.StartThread("b", "", "t", permission.Settings{}); err != nil {
+		t.Errorf("a rule on tools b lacks stopped b: %v", err)
+	}
+	if _, err := ag.StartThread("b", "", "t", permission.Settings{Rules: permission.Rules{Allow: []string{"nosuch__act"}}}); err == nil {
+		t.Error("a new rule on a tool b lacks was taken")
+	}
+
+	mu.Lock()
+	sets["b"] = &tools.Set{Providers: []tools.Provider{ownTools("linear")}}
+	mu.Unlock()
+	if !has("b", "linear__act") {
+		t.Error("b's new tools did not reach them")
 	}
 }

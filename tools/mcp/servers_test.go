@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -70,17 +71,28 @@ func TestConnect(t *testing.T) {
 	unreachable := "http://" + closed.Addr().String()
 	closed.Close()
 
-	servers := Connect(ctx, Client{}, []Server{
-		{Name: "local", Command: self, Env: map[string]string{"OLLUPI_MCP_TEST_SERVER": "serve", "GREETING": "from config"}},
-		{Name: "web", URL: web.URL, Headers: map[string]string{"Authorization": "Bearer secret"}},
-		{Name: "no-header", URL: web.URL},
-		{Name: "crashes", Command: self, Env: map[string]string{"OLLUPI_MCP_TEST_SERVER": "fail"}},
-		{Name: "gone", URL: unreachable},
-		{Name: "web", URL: web.URL},
-		{Name: "a__b", URL: web.URL},
-		{Name: "both", Command: self, URL: web.URL},
-	})
-	defer servers.Close()
+	box, err := sandbox.New(sandbox.Config{Mode: "full-access", Roots: []string{t.TempDir()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer box.Close()
+	users := NewUsers(ctx, Client{}, func(string) ([]Server, error) {
+		return []Server{
+			{Name: "local", Command: self, Env: map[string]string{"OLLUPI_MCP_TEST_SERVER": "serve", "GREETING": "from config"}},
+			{Name: "web", URL: web.URL, Headers: map[string]string{"Authorization": "Bearer secret"}},
+			{Name: "no-header", URL: web.URL},
+			{Name: "crashes", Command: self, Env: map[string]string{"OLLUPI_MCP_TEST_SERVER": "fail"}},
+			{Name: "gone", URL: unreachable},
+			{Name: "web", URL: web.URL},
+			{Name: "a__b", URL: web.URL},
+			{Name: "both", Command: self, URL: web.URL},
+		}, nil
+	}, func(string) (sandbox.Box, error) { return box, nil })
+	defer users.Close()
+	servers, err := users.For("someone")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	statuses := servers.Statuses()
 	byName := map[string]ServerStatus{}
@@ -107,15 +119,14 @@ func TestConnect(t *testing.T) {
 		}
 	}
 
-	if got, want := servers.Unavailable(), []string{"no-header", "crashes", "gone", "both"}; !slices.Equal(got, want) {
-		t.Errorf("unavailable servers %q, want %q", got, want)
+	set, err := users.Tools("someone")
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	providers := servers.Providers()
-	if len(providers) != 2 {
-		t.Fatalf("%d providers, want the 2 that connected", len(providers))
+	if len(set.Providers) != 2 {
+		t.Fatalf("%d providers, want the 2 that connected", len(set.Providers))
 	}
-	reg, err := tools.New(ctx, servers.Unavailable(), providers...)
+	reg, err := tools.New(ctx, nil, set.Providers...)
 	if err != nil {
 		t.Fatal(err)
 	}

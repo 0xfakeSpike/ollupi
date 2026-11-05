@@ -10,12 +10,16 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 )
 
 // Box is where a user's commands run and files live: this machine, or a cloud sandbox of their own. The tools reach
 // them only through it. Paths are the box's, and need not exist on this machine.
 type Box interface {
 	Run(ctx context.Context, c Command) (Result, error)
+	// Start leaves a command running until ctx ends or the Process closes. Its Timeout does not apply.
+	Start(ctx context.Context, c Command, stderr io.Writer) (Process, error)
 	// Stat follows links and, like the rest, reports a missing path with an error that is fs.ErrNotExist.
 	Stat(ctx context.Context, path string) (fs.FileInfo, error)
 	ReadDir(ctx context.Context, path string) ([]fs.DirEntry, error)
@@ -28,6 +32,8 @@ type Box interface {
 	Directory(ctx context.Context, path string) (string, error)
 	// Executable finds the program a command would run from cwd.
 	Executable(ctx context.Context, program, cwd string) (string, error)
+	// Same says two canonical paths are one file.
+	Same(ctx context.Context, a, b string) bool
 
 	// Enforced says commands are confined, so they need not ask the user first.
 	Enforced() bool
@@ -41,6 +47,12 @@ type Box interface {
 	CheckRead(path string) error
 	CheckWrite(roots []string, path string) error
 	Close() error
+}
+
+// Process is a command left running: Read takes its output, Write feeds its input, and Close, which may be called more
+// than once, stops it. Read ends when the command does.
+type Process interface {
+	io.ReadWriteCloser
 }
 
 // ReadFile reads a whole file from the box.
@@ -120,6 +132,96 @@ func (s *Sandbox) Executable(_ context.Context, program, cwd string) (string, er
 	return resolved, nil
 }
 
+func (s *Sandbox) Same(_ context.Context, a, b string) bool {
+	if a == b {
+		return true
+	}
+	canonical, err := CanonicalDirectory(a)
+	if err != nil || canonical != a {
+		return false
+	}
+	left, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+	right, err := os.Stat(b)
+	return err == nil && os.SameFile(left, right)
+}
+
+// Here is a Box for reaching files on this machine with no rules of its own: what a user has when nothing else was
+// given them. It runs no commands.
+func Here() Box { return &Sandbox{} }
+
+const stopDelay = 2 * time.Second
+
+func (s *Sandbox) Start(ctx context.Context, c Command, stderr io.Writer) (Process, error) {
+	if c.Program == "" {
+		return nil, errors.New("sandbox: incomplete command")
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	cmd, px, tagID, err := s.command(ctx, c)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	stop := func() {
+		cancel()
+		if px != nil {
+			px.close()
+		}
+		if tagID != "" {
+			s.denials.collect(tagID, false)
+		}
+	}
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		stop()
+		return nil, err
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		stop()
+		return nil, err
+	}
+	cmd.Stderr = stderr
+	tag := runTag(s.runMarker())
+	cmd.Env = append(cmd.Env, tag)
+	ownProcessGroup(cmd, tag)
+	if err := cmd.Start(); err != nil {
+		stop()
+		return nil, fmt.Errorf("sandbox: start %s: %w", c.Program, err)
+	}
+	return &process{ReadCloser: stdout, WriteCloser: stdin, cmd: cmd, stop: stop}, nil
+}
+
+// process is a command of this machine. Closing its input lets it end by itself; one that does not is killed.
+type process struct {
+	io.ReadCloser
+	io.WriteCloser
+	cmd  *exec.Cmd
+	stop func()
+	once sync.Once
+}
+
+func (p *process) Close() error {
+	p.once.Do(func() {
+		p.WriteCloser.Close()
+		ended := make(chan struct{})
+		go func() {
+			p.cmd.Wait()
+			close(ended)
+		}()
+		select {
+		case <-ended:
+			p.stop()
+		case <-time.After(stopDelay):
+			p.stop()
+			<-ended
+		}
+	})
+	return nil
+}
+
 // CanEscalate is true where there is a sandbox to leave: the command then runs on this machine.
 func (s *Sandbox) CanEscalate() bool { return s.Enforced() }
 
@@ -130,6 +232,7 @@ type Machine interface {
 	// Run returns when the command ends, and stops it at c.Timeout or when ctx ends. A command that ran and failed
 	// is a Result with its exit code, not an error.
 	Run(ctx context.Context, c Command) (Result, error)
+	Start(ctx context.Context, c Command, stderr io.Writer) (Process, error)
 	Stat(ctx context.Context, path string) (fs.FileInfo, error)
 	ReadDir(ctx context.Context, path string) ([]fs.DirEntry, error)
 	Open(ctx context.Context, path string) (io.ReadCloser, error)
@@ -158,6 +261,15 @@ func (r *remote) Run(ctx context.Context, c Command) (Result, error) {
 	}
 	return r.Machine.Run(ctx, c)
 }
+
+func (r *remote) Start(ctx context.Context, c Command, stderr io.Writer) (Process, error) {
+	if c.Unsandboxed {
+		return nil, errors.New("sandbox: a command cannot leave this sandbox")
+	}
+	return r.Machine.Start(ctx, c, stderr)
+}
+
+func (r *remote) Same(_ context.Context, a, b string) bool { return a == b }
 
 func (r *remote) Close() error {
 	if r.Machine == nil {

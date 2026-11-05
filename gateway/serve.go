@@ -31,7 +31,7 @@ type Options struct {
 	AllowedHosts []string
 	Memory       *memory.Manager
 	Jobs         *cron.Jobs
-	MCP          *mcp.Servers
+	MCP          *mcp.Users
 }
 
 func NewServer(a *agent.Agent, opts Options) (*Server, error) {

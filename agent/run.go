@@ -58,6 +58,10 @@ func (a *Agent) runTurn(ctx context.Context, t repo.ThreadRow, turn repo.TurnRow
 	if err != nil {
 		return false, repo.Usage{}, fmt.Errorf("agent: the model client of the user: %w", err)
 	}
+	registry, err := a.registryFor(t.UserID)
+	if err != nil {
+		return false, repo.Usage{}, err
+	}
 	checker, w, err := a.permissions(t)
 	if err != nil {
 		return false, repo.Usage{}, err
@@ -72,7 +76,7 @@ func (a *Agent) runTurn(ctx context.Context, t repo.ThreadRow, turn repo.TurnRow
 	}
 	rt := &runtime.Runtime{
 		LLM:         client,
-		Registry:    a.registry,
+		Registry:    registry,
 		Skills:      a.skills,
 		Window:      window,
 		Memory:      a.cfg.Memory,
