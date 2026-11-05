@@ -3,10 +3,15 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"runtime/debug"
 )
 
-var errStopped = errors.New("agent: the agent is shutting down")
+var (
+	errStopped = errors.New("agent: the agent is shutting down")
+	errCrashed = errors.New("agent: an internal error stopped this")
+)
 
 type slot struct {
 	user   string
@@ -31,10 +36,19 @@ func (a *Agent) loop() {
 		case <-a.ctx.Done():
 			return
 		case fn := <-a.events:
-			fn()
-			a.admit()
+			a.step(fn)
 		}
 	}
+}
+
+func (a *Agent) step(fn func()) {
+	defer func() {
+		if p := recover(); p != nil {
+			slog.Error("agent loop step crashed", "panic", fmt.Sprint(p), "stack", string(debug.Stack()))
+		}
+	}()
+	fn()
+	a.admit()
 }
 
 func (a *Agent) post(fn func()) bool {
@@ -48,7 +62,12 @@ func (a *Agent) post(fn func()) bool {
 
 func (a *Agent) call(fn func() error) error {
 	done := make(chan error, 1)
-	if !a.post(func() { done <- fn() }) {
+	posted := a.post(func() {
+		err := errCrashed
+		defer func() { done <- err }()
+		err = fn()
+	})
+	if !posted {
 		return errStopped
 	}
 	select {
@@ -67,6 +86,12 @@ func (a *Agent) launch(user, threadID, turnID string) {
 	a.done.Add(1)
 	go func() {
 		defer a.done.Done()
+		defer func() {
+			if p := recover(); p != nil {
+				slog.Error("turn crashed", "thread", threadID, "turn", turnID, "panic", fmt.Sprint(p), "stack", string(debug.Stack()))
+				a.post(func() { a.afterRun(threadID, sl, false, errCrashed) })
+			}
+		}()
 		a.run(threadID, sl)
 	}()
 }

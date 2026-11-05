@@ -58,7 +58,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "the user could not be made ready", http.StatusInternalServerError)
 		return
 	}
-	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: s.origins})
+	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: s.origins, Subprotocols: []string{tokenProtocol}})
 	if err != nil {
 		slog.Warn("client not accepted", "err", err)
 		return
@@ -165,9 +165,7 @@ func (c *conn) initialize(InitializeParams) (InitializeResult, func(), error) {
 		c.mu.Lock()
 		c.initialized = true
 		c.mu.Unlock()
-		for _, r := range c.s.agent.AllPendingRequests(c.user) {
-			c.request(r.Thread.ID, r.Item)
-		}
+		c.requests(c.s.agent.AllPendingRequests(c.user))
 	}
 	return InitializeResult{ServerInfo: ServerInfo{Name: "ollupi", Version: version()}, ProtocolSHA256: protocolSHA256}, after, nil
 }
@@ -233,6 +231,22 @@ func (c *conn) event(e agent.Event) {
 		c.cronChanged(e.CronJobID, e.Thread.ID)
 	case agent.EventApprovalRequested, agent.EventUserInputRequested:
 		c.request(e.Thread.ID, *e.Item)
+	}
+}
+
+// requests asks the client what is waiting on it. A client that cannot be told would wait without knowing, so one that
+// could not be told is dropped and asked again when it comes back.
+func (c *conn) requests(pending []agent.Request, err error) {
+	if errors.Is(err, repo.ErrNotFound) {
+		return
+	}
+	if err != nil {
+		slog.Error("pending requests not read", "user", c.user, "err", err)
+		go c.ws.Close(websocket.StatusInternalError, "pending requests could not be read")
+		return
+	}
+	for _, r := range pending {
+		c.request(r.Thread.ID, r.Item)
 	}
 }
 
@@ -345,6 +359,7 @@ var errorCodes = []struct {
 	{agent.ErrInvalidAnswer, jsonrpc.CodeInvalidParams},
 	{agent.ErrInvalidDecision, jsonrpc.CodeInvalidParams},
 	{agent.ErrInvalidName, jsonrpc.CodeInvalidParams},
+	{agent.ErrInvalidPath, jsonrpc.CodeInvalidParams},
 	{permission.ErrInvalidSettings, jsonrpc.CodeInvalidParams},
 	{memory.ErrInvalidChange, jsonrpc.CodeInvalidParams},
 	{tools.ErrUnknownTool, jsonrpc.CodeInvalidParams},
@@ -362,7 +377,8 @@ func serverError(err error) *jsonrpc.Error {
 			return jsonrpc.Errorf(e.code, "%v", err)
 		}
 	}
-	return jsonrpc.Errorf(jsonrpc.CodeServerError, "%v", err)
+	slog.Error("request failed", "err", err)
+	return jsonrpc.Errorf(jsonrpc.CodeServerError, "the request could not be completed")
 }
 
 func version() string {

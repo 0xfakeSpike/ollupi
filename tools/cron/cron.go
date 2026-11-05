@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -200,6 +201,11 @@ func (j *Jobs) Run(ctx context.Context, send func(threadID, text, jobID string) 
 }
 
 func (j *Jobs) sendDue(ctx context.Context, send func(threadID, text, jobID string) error) {
+	defer func() {
+		if p := recover(); p != nil {
+			slog.Error("cron tick crashed", "panic", fmt.Sprint(p), "stack", string(debug.Stack()))
+		}
+	}()
 	now := time.Now().UTC()
 	due, err := j.db.DueCronJobs(now)
 	if err != nil {

@@ -21,7 +21,7 @@ func (a *Agent) AddWorkspace(user, path, name string) (repo.WorkspaceRow, error)
 	}
 	root, err := box.Directory(ctx, path)
 	if err != nil {
-		return repo.WorkspaceRow{}, fmt.Errorf("agent: %w", err)
+		return repo.WorkspaceRow{}, fmt.Errorf("agent: %w: %v", ErrInvalidPath, err)
 	}
 	if name == "" {
 		name = filepath.Base(root)

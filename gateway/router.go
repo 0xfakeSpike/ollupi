@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/0xfakeSpike/ollupi/repo"
@@ -90,12 +91,24 @@ func OnShard(shard string, directory Directory, authenticate func(token string) 
 	}
 }
 
-// tokenOf reads the token a client sent, from its header or, for browsers, its query.
+// tokenProtocol is the WebSocket subprotocol a browser, which cannot set Authorization, offers just before its token.
+const tokenProtocol = "ollupi.token"
+
+// tokenOf reads the token a client sent. It stays out of the URL, which access logs keep.
 func tokenOf(r *http.Request) string {
 	if bearer, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
 		return bearer
 	}
-	return r.URL.Query().Get("token")
+	var offered []string
+	for _, header := range r.Header.Values("Sec-WebSocket-Protocol") {
+		for protocol := range strings.SplitSeq(header, ",") {
+			offered = append(offered, strings.TrimSpace(protocol))
+		}
+	}
+	if i := slices.Index(offered, tokenProtocol); i >= 0 && i+1 < len(offered) {
+		return offered[i+1]
+	}
+	return ""
 }
 
 var _ Directory = (*repo.Catalog)(nil)

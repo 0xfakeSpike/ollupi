@@ -104,3 +104,13 @@ func TestALastRunWhoseDateHasPassedIsRefused(t *testing.T) {
 		t.Fatalf("times 0: %v, want ErrInvalidJob", err)
 	}
 }
+
+func TestACrashInATickLeavesTheNextOne(t *testing.T) {
+	jobs, db := testJobs(t)
+	row, err := jobs.Create("t", "crashes", "@daily", "go", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	due(t, db, row.ID)
+	jobs.sendDue(context.Background(), func(string, string, string) error { panic("a crash") })
+}

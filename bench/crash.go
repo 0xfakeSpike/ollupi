@@ -251,7 +251,10 @@ func crashChild(args []string) {
 		log.Fatal(err)
 	}
 	started := time.Since(startAt)
-	pending := ag.AllPendingRequests(repo.DefaultUser)
+	pending, err := ag.AllPendingRequests(repo.DefaultUser)
+	if err != nil {
+		log.Fatal(err)
+	}
 	for _, r := range pending {
 		answer(r.Thread.ID, r.Item.ID)
 	}

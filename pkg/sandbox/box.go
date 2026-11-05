@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,6 +47,8 @@ type Box interface {
 	Check(dir string) error
 	CheckRead(path string) error
 	CheckWrite(roots []string, path string) error
+	// Transport carries the HTTP requests made for the user, such as to their MCP servers.
+	Transport() http.RoundTripper
 	Close() error
 }
 
@@ -64,6 +67,8 @@ func ReadFile(ctx context.Context, b Box, path string) ([]byte, error) {
 	defer f.Close()
 	return io.ReadAll(f)
 }
+
+func (s *Sandbox) Transport() http.RoundTripper { return http.DefaultTransport }
 
 func (s *Sandbox) Stat(_ context.Context, path string) (fs.FileInfo, error) { return os.Stat(path) }
 
@@ -245,15 +250,19 @@ type Machine interface {
 // is closed to them and there is nowhere to escalate to.
 type remote struct {
 	Machine
-	roots   []string
-	summary string
+	roots     []string
+	summary   string
+	transport *http.Transport
 }
 
 // Remote makes a Box of a machine: its commands run in the first of roots, and files are written under them. summary
 // tells the model what the machine allows. A nil machine only describes the tools.
 func Remote(m Machine, roots []string, summary string) Box {
-	return &remote{Machine: m, roots: roots, summary: summary}
+	return &remote{Machine: m, roots: roots, summary: summary, transport: PublicTransport()}
 }
+
+// Transport keeps to public addresses: the requests leave from this process, whose network is not the user's.
+func (r *remote) Transport() http.RoundTripper { return r.transport }
 
 func (r *remote) Run(ctx context.Context, c Command) (Result, error) {
 	if c.Unsandboxed {
@@ -272,6 +281,7 @@ func (r *remote) Start(ctx context.Context, c Command, stderr io.Writer) (Proces
 func (r *remote) Same(_ context.Context, a, b string) bool { return a == b }
 
 func (r *remote) Close() error {
+	r.transport.CloseIdleConnections()
 	if r.Machine == nil {
 		return nil
 	}

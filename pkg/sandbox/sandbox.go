@@ -102,11 +102,12 @@ func New(c Config) (*Sandbox, error) {
 			return nil, err
 		}
 	}
-	home, _ := os.UserHomeDir()
-	if home != "" {
-		if home, err = CanonicalPath(home, ""); err != nil {
-			return nil, err
-		}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("sandbox: the rules name folders in the home directory: %w", err)
+	}
+	if home, err = CanonicalPath(home, ""); err != nil {
+		return nil, err
 	}
 	canonical := func(what string, paths []string) ([]string, error) {
 		out := make([]string, 0, len(paths))

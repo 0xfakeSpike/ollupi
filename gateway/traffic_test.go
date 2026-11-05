@@ -369,6 +369,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 		t.Errorf("the model got the parts %s", parts)
 	}
 	c.refused("turn/start", TurnStartParams{ThreadID: shown.Thread.ID, Input: []UserInput{{Type: "text", Text: "hi"}}, Connection: "fake"}, jsonrpc.CodeInvalidParams, "shows the model images")
+	c.refused("turn/start", TurnStartParams{ThreadID: shown.Thread.ID, Input: []UserInput{{Type: "text", Text: "hi"}}, Connection: "missing"}, jsonrpc.CodeInvalidParams, "unavailable")
 	var page2 ThreadPageResult
 	c.call("thread/read", ThreadPageParams{ThreadID: shown.Thread.ID}, &page2)
 	var atts []repo.Attachment

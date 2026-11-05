@@ -37,7 +37,7 @@ type Options struct {
 func NewServer(a *agent.Agent, opts Options) (*Server, error) {
 	if opts.Authenticate == nil {
 		if strings.TrimSpace(opts.Token) == "" {
-			return nil, errors.New("gateway: a token is required; clients send it as Authorization: Bearer <token>")
+			return nil, errors.New("gateway: a token is required; clients send it as Authorization: Bearer <token> or, from a browser, as the subprotocol after " + tokenProtocol)
 		}
 		opts.Authenticate = func(token string) (string, bool) {
 			return repo.DefaultUser, subtle.ConstantTimeCompare([]byte(token), []byte(opts.Token)) == 1
@@ -63,7 +63,12 @@ func NewServer(a *agent.Agent, opts Options) (*Server, error) {
 func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 	mux := http.NewServeMux()
 	mux.Handle("GET /", s)
-	srv := &http.Server{Handler: mux, BaseContext: func(net.Listener) context.Context { return ctx }}
+	srv := &http.Server{
+		Handler:           mux,
+		BaseContext:       func(net.Listener) context.Context { return ctx },
+		ReadHeaderTimeout: readHeaderTimeout,
+		IdleTimeout:       idleTimeout,
+	}
 	served := make(chan error, 1)
 	go func() { served <- srv.Serve(ln) }()
 	select {
@@ -82,6 +87,11 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 	s.served.Wait()
 	return nil
 }
+
+const (
+	readHeaderTimeout = 5 * time.Second
+	idleTimeout       = 2 * time.Minute
+)
 
 var localHosts = []string{"localhost", "127.0.0.1", "::1"}
 
