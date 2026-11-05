@@ -17,19 +17,24 @@ func (c *conn) cronJobs() (*cron.Jobs, error) {
 }
 
 func (c *conn) cronList(p CronListParams) (CronListResult, func(), error) {
-	c.s.deliver.Lock()
+	c.deliver.Lock()
 	rows, err := c.s.db.CronJobViews(c.user, p.ThreadID)
 	if err != nil {
-		c.s.deliver.Unlock()
+		c.deliver.Unlock()
 		return CronListResult{}, nil, err
 	}
-	return CronListResult{Data: nonNil(rows)}, c.s.deliver.Unlock, nil
+	return CronListResult{Data: nonNil(rows)}, c.deliver.Unlock, nil
 }
 
 func (s *Server) CronChanged(id, threadID string) {
-	s.deliver.Lock()
-	defer s.deliver.Unlock()
-	if c := s.current(); c != nil {
+	t, err := s.db.ThreadRow(threadID)
+	if err != nil {
+		slog.Error("thread of a changed cron task not readable", "job", id, "thread", threadID, "err", err)
+		return
+	}
+	if c := s.current(t.UserID); c != nil {
+		c.deliver.Lock()
+		defer c.deliver.Unlock()
 		c.cronChanged(id, threadID)
 	}
 }

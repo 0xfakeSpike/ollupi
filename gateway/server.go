@@ -31,24 +31,31 @@ const (
 )
 
 type Server struct {
-	agent   *agent.Agent
-	db      *repo.DB
-	memory  *memory.Manager
-	jobs    *cron.Jobs
-	mcp     *mcp.Servers
-	token   string
-	origins []string
-	mu      sync.Mutex
-	deliver sync.Mutex
-	client  *conn
+	agent        *agent.Agent
+	db           *repo.DB
+	memory       *memory.Manager
+	jobs         *cron.Jobs
+	mcp          *mcp.Servers
+	authenticate func(token string) (string, bool)
+	hosts        []string
+	origins      []string
+	mu           sync.Mutex
+	// clients holds each user's connection; a user's newer connection replaces their older one.
+	clients map[string]*conn
 	served  sync.WaitGroup
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.served.Add(1)
 	defer s.served.Done()
-	if status, why := s.authorize(r); status != 0 {
+	user, status, why := s.authorize(r)
+	if status != 0 {
 		http.Error(w, why, status)
+		return
+	}
+	if err := s.db.EnsureUser(user); err != nil {
+		slog.Error("user not ready", "user", user, "err", err)
+		http.Error(w, "the user could not be made ready", http.StatusInternalServerError)
 		return
 	}
 	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: s.origins})
@@ -57,10 +64,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ws.SetReadLimit(maxMessageBytes)
-	c := &conn{s: s, user: repo.DefaultUser, ws: ws, rpc: jsonrpc.NewConn(ws), asked: make(map[string]bool)}
+	c := &conn{s: s, user: user, ws: ws, rpc: jsonrpc.NewConn(ws), asked: make(map[string]bool)}
 	s.mu.Lock()
-	previous := s.client
-	s.client = c
+	previous := s.clients[user]
+	s.clients[user] = c
 	s.mu.Unlock()
 	if previous != nil {
 		slog.Info("client replaced by a newer connection")
@@ -69,8 +76,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	slog.Info("client connected", "origin", r.Header.Get("Origin"))
 	defer func() {
 		s.mu.Lock()
-		if s.client == c {
-			s.client = nil
+		if s.clients[user] == c {
+			delete(s.clients, user)
 		}
 		s.mu.Unlock()
 	}()
@@ -88,23 +95,22 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// Deliver sends an event to the user it belongs to; one that names no user goes to nobody, the log has it.
 func (s *Server) Deliver(e agent.Event) {
-	s.deliver.Lock()
-	defer s.deliver.Unlock()
-	if c := s.current(); c != nil {
+	user := e.Thread.UserID
+	if e.Workspace != nil {
+		user = e.Workspace.UserID
+	}
+	if c := s.current(user); c != nil {
+		c.deliver.Lock()
+		defer c.deliver.Unlock()
 		c.event(e)
 	}
 }
 
-func (s *Server) notify(method string, payload any) {
-	if c := s.current(); c != nil {
-		c.rpc.Notify(method, payload)
-	}
-}
-
-func (s *Server) current() *conn {
+func (s *Server) current(user string) *conn {
 	s.mu.Lock()
-	c := s.client
+	c := s.clients[user]
 	s.mu.Unlock()
 	if c == nil || !c.isInitialized() {
 		return nil
@@ -118,6 +124,8 @@ type conn struct {
 	ws   *websocket.Conn
 	rpc  *jsonrpc.Conn
 
+	// deliver keeps events from passing a view being read, so a client sees each change after the view it changes.
+	deliver     sync.Mutex
 	mu          sync.Mutex
 	initialized bool
 	asked       map[string]bool
