@@ -6,7 +6,7 @@ import (
 )
 
 func (c *conn) settingsRead(Empty) (repo.SettingsRow, func(), error) {
-	settings, err := c.s.db.Settings()
+	settings, err := c.s.db.Settings(c.user)
 	return settings, nil, err
 }
 
@@ -14,7 +14,7 @@ func (c *conn) settingsUpdate(p SettingsUpdateParams) (repo.SettingsRow, func(),
 	if p.Redaction == nil {
 		return repo.SettingsRow{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "redaction is required")
 	}
-	settings, err := c.s.db.SetRedaction(*p.Redaction)
+	settings, err := c.s.db.SetRedaction(c.user, *p.Redaction)
 	if err != nil {
 		return repo.SettingsRow{}, nil, err
 	}

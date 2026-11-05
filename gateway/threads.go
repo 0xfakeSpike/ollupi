@@ -9,7 +9,7 @@ import (
 )
 
 func (c *conn) threadStart(p ThreadStartParams) (ThreadResult, func(), error) {
-	t, err := c.s.agent.StartThread(p.WorkspaceID, p.Title, p.PermissionSettings)
+	t, err := c.s.agent.StartThread(c.user, p.WorkspaceID, p.Title, p.PermissionSettings)
 	return ThreadResult{Thread: t}, nil, err
 }
 
@@ -20,6 +20,9 @@ func threadPage(resume bool) func(*conn, ThreadPageParams) (ThreadPageResult, fu
 		}
 		if p.Limit < 1 || p.Limit > maxItems || p.BeforeSeq < 0 {
 			return ThreadPageResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "limit must be 1 to %d and beforeSeq not negative", maxItems)
+		}
+		if _, err := c.s.db.ThreadOf(c.user, p.ThreadID); err != nil {
+			return ThreadPageResult{}, nil, err
 		}
 		c.s.deliver.Lock()
 		view, more, err := c.s.db.ThreadPage(p.ThreadID, p.BeforeSeq, p.Limit)
@@ -39,7 +42,7 @@ func threadPage(resume bool) func(*conn, ThreadPageParams) (ThreadPageResult, fu
 		after := func() {
 			c.s.deliver.Unlock()
 			if resume {
-				for _, r := range c.s.agent.PendingRequests(p.ThreadID) {
+				for _, r := range c.s.agent.PendingRequests(c.user, p.ThreadID) {
 					c.request(r.Thread.ID, r.Item)
 				}
 			}
@@ -49,12 +52,12 @@ func threadPage(resume bool) func(*conn, ThreadPageParams) (ThreadPageResult, fu
 }
 
 func (c *conn) threadPermissions(p ThreadPermissionsParams) (ThreadResult, func(), error) {
-	t, err := c.s.agent.UpdateThreadSettings(p.ThreadID, p.PermissionSettings)
+	t, err := c.s.agent.UpdateThreadSettings(c.user, p.ThreadID, p.PermissionSettings)
 	return ThreadResult{Thread: t}, nil, err
 }
 
 func (c *conn) threadRename(p ThreadRenameParams) (ThreadResult, func(), error) {
-	t, err := c.s.agent.RenameThread(p.ThreadID, p.Title)
+	t, err := c.s.agent.RenameThread(c.user, p.ThreadID, p.Title)
 	return ThreadResult{Thread: t}, nil, err
 }
 
@@ -62,12 +65,12 @@ func (c *conn) threadArchive(p ThreadArchiveParams) (ThreadResult, func(), error
 	if p.Archived == nil {
 		return ThreadResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "archived is required")
 	}
-	t, err := c.s.agent.ArchiveThread(p.ThreadID, *p.Archived)
+	t, err := c.s.agent.ArchiveThread(c.user, p.ThreadID, *p.Archived)
 	return ThreadResult{Thread: t}, nil, err
 }
 
 func (c *conn) threadDelete(p ThreadDeleteParams) (Empty, func(), error) {
-	return Empty{}, nil, c.s.agent.DeleteThread(p.ThreadID)
+	return Empty{}, nil, c.s.agent.DeleteThread(c.user, p.ThreadID)
 }
 
 func (c *conn) threadList(p repo.ThreadFilter) (ThreadListResult, func(), error) {
@@ -77,7 +80,7 @@ func (c *conn) threadList(p repo.ThreadFilter) (ThreadListResult, func(), error)
 	if p.Limit < 1 || p.Limit > maxLimit {
 		return ThreadListResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "limit must be 1 to %d", maxLimit)
 	}
-	threads, more, err := c.s.agent.ListThreads(p)
+	threads, more, err := c.s.agent.ListThreads(c.user, p)
 	if err != nil {
 		return ThreadListResult{}, nil, err
 	}
@@ -90,7 +93,7 @@ func (c *conn) turnStart(p TurnStartParams) (TurnResult, func(), error) {
 		return TurnResult{}, nil, err
 	}
 	in.Connection = p.Connection
-	turn, err := c.s.agent.StartTurn(p.ThreadID, in)
+	turn, err := c.s.agent.StartTurn(c.user, p.ThreadID, in)
 	if err != nil {
 		return TurnResult{}, nil, err
 	}
@@ -105,7 +108,7 @@ func (c *conn) turnSteer(p TurnSteerParams) (TurnSteerResult, func(), error) {
 	if err != nil {
 		return TurnSteerResult{}, nil, err
 	}
-	turn, err := c.s.agent.SteerTurn(p.ThreadID, p.ExpectedTurnID, in)
+	turn, err := c.s.agent.SteerTurn(c.user, p.ThreadID, p.ExpectedTurnID, in)
 	if err != nil {
 		return TurnSteerResult{}, nil, err
 	}
@@ -116,10 +119,10 @@ func (c *conn) turnInterrupt(p TurnInterruptParams) (Empty, func(), error) {
 	if strings.TrimSpace(p.TurnID) == "" {
 		return Empty{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "turnId is required")
 	}
-	return Empty{}, nil, c.s.agent.InterruptTurn(p.ThreadID, p.TurnID)
+	return Empty{}, nil, c.s.agent.InterruptTurn(c.user, p.ThreadID, p.TurnID)
 }
 
 func (c *conn) attachmentRead(p AttachmentReadParams) (AttachmentReadResult, func(), error) {
-	att, data, err := c.s.agent.ReadAttachment(p.ThreadID, p.AttachmentID)
+	att, data, err := c.s.agent.ReadAttachment(c.user, p.ThreadID, p.AttachmentID)
 	return AttachmentReadResult{Attachment: att, Data: base64.StdEncoding.EncodeToString(data)}, nil, err
 }

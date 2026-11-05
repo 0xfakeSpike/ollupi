@@ -16,7 +16,7 @@ func TestRunItemsCarryOnlyWhatOutlastsACompaction(t *testing.T) {
 	}
 	defer db.Close()
 	at := time.Date(2026, 10, 30, 8, 0, 0, 0, time.UTC)
-	if err := db.CreateThread(ThreadRow{ID: "t", CreatedAt: at, UpdatedAt: at}); err != nil {
+	if err := db.CreateThread(ThreadRow{UserID: DefaultUser, ID: "t", CreatedAt: at, UpdatedAt: at}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.createTurn(TurnRow{ID: "turn", ThreadID: "t", Seq: 1, Status: TurnInProgress, Model: llm.Model{Name: "m", Connection: "c"}, StartedAt: at}); err != nil {
@@ -71,7 +71,7 @@ func TestOnlyReadyTurnsWaitForASlot(t *testing.T) {
 	}
 	defer db.Close()
 	at := time.Date(2026, 11, 2, 8, 0, 0, 0, time.UTC)
-	if err := db.CreateThread(ThreadRow{ID: "t", CreatedAt: at, UpdatedAt: at}); err != nil {
+	if err := db.CreateThread(ThreadRow{UserID: DefaultUser, ID: "t", CreatedAt: at, UpdatedAt: at}); err != nil {
 		t.Fatal(err)
 	}
 	_, turn, _, err := db.SubmitTurn("t", TurnRow{ID: "turn", Input: "hi", Model: llm.Model{Name: "m", Connection: "c"}, StartedAt: at})

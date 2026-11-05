@@ -139,7 +139,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 		{ID: "w1", Scope: repo.MemoryWorkspace, WorkspaceID: workspaceID, Topic: "build", Kind: "fact", Text: "Builds with go."},
 		{ID: "n1", Scope: repo.MemoryGeneral, Topic: "trip", Kind: "fact", Text: "Plans a trip in November."},
 	} {
-		m.Status, m.CreatedAt, m.UpdatedAt = repo.MemoryActive, saved, saved
+		m.UserID, m.Status, m.CreatedAt, m.UpdatedAt = repo.DefaultUser, repo.MemoryActive, saved, saved
 		if err := db.SaveMemory(m); err != nil {
 			t.Fatal(err)
 		}
@@ -272,7 +272,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	go jobs.Run(agentCtx, func(threadID, text, jobID string) error {
-		_, err := ag.StartTurn(threadID, agent.Input{Text: text, CronJobID: jobID})
+		_, err := ag.StartTurn(repo.DefaultUser, threadID, agent.Input{Text: text, CronJobID: jobID})
 		return err
 	})
 	ran := c.await("turn/completed", func(params json.RawMessage) bool {
@@ -431,7 +431,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 		{ID: "m3", Scope: repo.MemoryWorkspace, WorkspaceID: workspaceID, Topic: "editor", Kind: "preference", Text: "Uses vim."},
 		{ID: "m4", Scope: repo.MemoryGlobal, Topic: "editor", Kind: "preference", Text: "Uses emacs."},
 	} {
-		e.Status, e.CreatedAt, e.UpdatedAt = repo.MemoryActive, now, now
+		e.UserID, e.Status, e.CreatedAt, e.UpdatedAt = repo.DefaultUser, repo.MemoryActive, now, now
 		if err := db.SaveMemory(e); err != nil {
 			t.Fatal(err)
 		}
@@ -469,7 +469,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.refused("workspace/updatePermissions", WorkspacePermissionsParams{WorkspaceID: workspaceID,
 		PermissionSettings: repo.PermissionSettings{Rules: repo.PermissionRules{Allow: []string{"broken__creat_issue"}}}},
 		jsonrpc.CodeInvalidParams, `the MCP server "broken" is not connected`)
-	if _, err := db.UpdateWorkspace(workspaceID, func(w repo.WorkspaceRow) (repo.WorkspaceRow, error) {
+	if _, err := db.UpdateWorkspace(repo.DefaultUser, workspaceID, func(w repo.WorkspaceRow) (repo.WorkspaceRow, error) {
 		w.Settings.Rules.Allow = []string{"gitlab__merge"}
 		return w, nil
 	}); err != nil {

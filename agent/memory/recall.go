@@ -21,12 +21,12 @@ const (
 	omittedNote    = "\n\n%d more memories did not fit here; find them with " + ToolSearch + " when they may matter."
 )
 
-func (m *Manager) Snapshot(workspaceID string, budget int) (*Snapshot, error) {
+func (m *Manager) Snapshot(user, workspaceID string, budget int) (*Snapshot, error) {
 	if !m.opts.Use {
 		return nil, nil
 	}
 	scope := localScope(workspaceID)
-	rows, err := m.db.Memories(scope, workspaceID, true)
+	rows, err := m.db.Memories(user, scope, workspaceID, true)
 	if err != nil {
 		return nil, err
 	}

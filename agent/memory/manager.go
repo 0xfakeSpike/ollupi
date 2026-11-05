@@ -68,23 +68,40 @@ func (m *Manager) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
-			err := m.RunOnce(ctx)
-			if err == nil || ctx.Err() != nil {
-				continue
-			}
-			slog.Warn("memory extraction failed", "err", err)
-			if rerr := m.db.SetMemoryFailure(failureOf(err)); rerr != nil {
-				slog.Error("memory failure not recorded", "err", rerr)
+			if err := m.RunOnce(ctx); err != nil && ctx.Err() == nil {
+				slog.Warn("memory extraction not run", "err", err)
 			}
 		}
 	}
 }
 
+// RunOnce takes one batch for each user on the shard; a user whose extraction fails does not hold up the others.
 func (m *Manager) RunOnce(ctx context.Context) error {
 	if !m.opts.Generate {
 		return nil
 	}
-	state, err := m.db.MemoryState()
+	users, err := m.db.Users()
+	if err != nil {
+		return failure{repo.MemoryStorage, fmt.Errorf("could not list the users: %w", err)}
+	}
+	for _, user := range users {
+		err := m.runFor(ctx, user)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err == nil {
+			continue
+		}
+		slog.Warn("memory extraction failed", "user", user, "err", err)
+		if rerr := m.db.SetMemoryFailure(user, failureOf(err)); rerr != nil {
+			slog.Error("memory failure not recorded", "user", user, "err", rerr)
+		}
+	}
+	return nil
+}
+
+func (m *Manager) runFor(ctx context.Context, user string) error {
+	state, err := m.db.MemoryState(user)
 	if err != nil {
 		return failure{repo.MemoryStorage, fmt.Errorf("could not read memory state: %w", err)}
 	}
@@ -92,7 +109,7 @@ func (m *Manager) RunOnce(ctx context.Context) error {
 		return nil
 	}
 	started := time.Now()
-	batch, payload, estimated, err := m.gatherEvidence()
+	batch, payload, estimated, err := m.gatherEvidence(user)
 	if batch == nil {
 		return err
 	}
@@ -131,9 +148,9 @@ func failureOf(err error) repo.MemoryFailure {
 	return repo.MemoryFailure{Code: f.code, Error: clipMemory(err.Error(), 1000)}
 }
 
-func (m *Manager) gatherEvidence() (*Batch, string, int, error) {
+func (m *Manager) gatherEvidence(user string) (*Batch, string, int, error) {
 	for limit := batchSize; ; limit = max(1, limit/2) {
-		batch, err := nextBatch(m.db, limit)
+		batch, err := nextBatch(m.db, user, limit)
 		if err != nil {
 			return nil, "", 0, failure{repo.MemoryEvidence, fmt.Errorf("could not read pending memory evidence: %w", err)}
 		}
@@ -153,7 +170,7 @@ func (m *Manager) gatherEvidence() (*Batch, string, int, error) {
 func (m *Manager) extract(ctx context.Context, batch *Batch, payload string, report *repo.MemoryReport) ([]Operation, error) {
 	callCtx, cancel := context.WithTimeout(ctx, extractTimeout)
 	defer cancel()
-	settings, err := m.db.Settings()
+	settings, err := m.db.Settings(batch.UserID)
 	if err != nil {
 		return nil, failure{repo.MemoryStorage, fmt.Errorf("could not read the redaction setting: %w", err)}
 	}
@@ -183,7 +200,7 @@ func (m *Manager) extract(ctx context.Context, batch *Batch, payload string, rep
 
 func (m *Manager) deferBatch(b *Batch, cause error) error {
 	skip := repo.MemorySkip{Entries: b.Entries, ThreadID: b.ThreadID, TurnID: b.TurnID, MemoryFailure: failureOf(cause)}
-	skipped, err := m.db.DeferMemory(b.Cursor, skip, time.Now())
+	skipped, err := m.db.DeferMemory(b.UserID, b.Cursor, skip, time.Now())
 	if err != nil {
 		return fmt.Errorf("could not defer the memory batch of turn %s (%v): %w", b.TurnID, cause, err)
 	}
@@ -197,11 +214,11 @@ func (m *Manager) deferBatch(b *Batch, cause error) error {
 
 var ErrInvalidChange = errors.New("invalid memory change")
 
-func (m *Manager) List(scope repo.MemoryScope, workspaceID string) ([]repo.MemoryRow, error) {
+func (m *Manager) List(user string, scope repo.MemoryScope, workspaceID string) ([]repo.MemoryRow, error) {
 	if err := checkPlace(scope, workspaceID); err != nil {
 		return nil, err
 	}
-	entries, err := m.db.Memories(scope, workspaceID, false)
+	entries, err := m.db.Memories(user, scope, workspaceID, false)
 	if entries == nil {
 		entries = []repo.MemoryRow{}
 	}
@@ -218,10 +235,10 @@ func checkPlace(scope repo.MemoryScope, workspaceID string) error {
 	return nil
 }
 
-func (m *Manager) Move(id string) (repo.MemoryRow, error) {
+func (m *Manager) Move(user, id string) (repo.MemoryRow, error) {
 	var out repo.MemoryRow
 	err := m.db.Tx(func(tx *repo.DB) error {
-		e, err := tx.Memory(id)
+		e, err := tx.Memory(user, id)
 		if err != nil {
 			return err
 		}
@@ -233,7 +250,7 @@ func (m *Manager) Move(id string) (repo.MemoryRow, error) {
 		} else {
 			e.Scope, e.WorkspaceID, e.OriginWorkspaceID = repo.MemoryGlobal, "", e.WorkspaceID
 		}
-		there, err := tx.Memories(e.Scope, e.WorkspaceID, false)
+		there, err := tx.Memories(user, e.Scope, e.WorkspaceID, false)
 		if err != nil {
 			return err
 		}
@@ -247,20 +264,20 @@ func (m *Manager) Move(id string) (repo.MemoryRow, error) {
 	return out, err
 }
 
-func (m *Manager) Status() (repo.MemoryStatus, error) {
-	s, err := m.db.MemoryStatus()
+func (m *Manager) Status(user string) (repo.MemoryStatus, error) {
+	s, err := m.db.MemoryStatus(user)
 	s.GenerationEnabled, s.UseEnabled = m.opts.Generate, m.opts.Use
 	return s, err
 }
 
-func (m *Manager) Edit(id, text string) (repo.MemoryRow, error) {
+func (m *Manager) Edit(user, id, text string) (repo.MemoryRow, error) {
 	text = strings.TrimSpace(text)
 	if text == "" || utf8.RuneCountInString(text) > maxTextRunes {
 		return repo.MemoryRow{}, fmt.Errorf("%w: memory text must contain 1 to %d characters", ErrInvalidChange, maxTextRunes)
 	}
 	var out repo.MemoryRow
 	err := m.db.Tx(func(tx *repo.DB) error {
-		e, err := tx.Memory(id)
+		e, err := tx.Memory(user, id)
 		if err != nil {
 			return err
 		}
@@ -275,9 +292,9 @@ func (m *Manager) Edit(id, text string) (repo.MemoryRow, error) {
 	return out, err
 }
 
-func (m *Manager) Forget(id string) error {
+func (m *Manager) Forget(user, id string) error {
 	return m.db.Tx(func(tx *repo.DB) error {
-		e, err := tx.Memory(id)
+		e, err := tx.Memory(user, id)
 		if err != nil {
 			return err
 		}

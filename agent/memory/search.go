@@ -55,8 +55,9 @@ func (m *Manager) Invoke(ctx context.Context, _ string, arguments map[string]any
 	if len(terms) == 0 {
 		return tools.Result{}, errors.New("query must contain a word of at least two letters or digits")
 	}
-	workspaceID := tools.CallerOf(ctx).WorkspaceID
-	rows, err := m.db.Memories(localScope(workspaceID), workspaceID, true)
+	caller := tools.CallerOf(ctx)
+	workspaceID := caller.WorkspaceID
+	rows, err := m.db.Memories(caller.UserID, localScope(workspaceID), workspaceID, true)
 	if err != nil {
 		return tools.Result{}, err
 	}
@@ -68,7 +69,7 @@ func (m *Manager) Invoke(ctx context.Context, _ string, arguments map[string]any
 }
 
 // Search finds active memories by words for the user: those of a workspace and the global ones, or with no workspace all of them.
-func (m *Manager) Search(query, workspaceID string, limit int) ([]repo.MemoryRow, error) {
+func (m *Manager) Search(user, query, workspaceID string, limit int) ([]repo.MemoryRow, error) {
 	terms := searchTerms(query)
 	if len(terms) == 0 {
 		return []repo.MemoryRow{}, nil
@@ -76,9 +77,9 @@ func (m *Manager) Search(query, workspaceID string, limit int) ([]repo.MemoryRow
 	var rows []repo.MemoryRow
 	var err error
 	if workspaceID != "" {
-		rows, err = m.db.Memories(repo.MemoryWorkspace, workspaceID, true)
+		rows, err = m.db.Memories(user, repo.MemoryWorkspace, workspaceID, true)
 	} else {
-		rows, err = m.db.AllMemories()
+		rows, err = m.db.AllMemories(user)
 	}
 	if err != nil {
 		return nil, err

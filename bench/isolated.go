@@ -99,7 +99,7 @@ func lone(args []string) {
 	if err := ag.Start(context.Background()); err != nil {
 		log.Fatal(err)
 	}
-	th, err := ag.StartThread("", "bench", permission.Settings{})
+	th, err := ag.StartThread(repo.DefaultUser, "", "bench", permission.Settings{})
 	if err != nil {
 		log.Fatal(err)
 	}

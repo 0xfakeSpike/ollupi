@@ -58,9 +58,9 @@ type CronJobView struct {
 	LastTurnID     string     `json:"lastTurnId,omitempty"`
 }
 
-func (d *DB) CronJobViews(threadID string) ([]CronJobView, error) {
+func (d *DB) CronJobViews(user, threadID string) ([]CronJobView, error) {
 	var rows []CronJobView
-	q := d.cronJobViews().Order("j.thread_id, j.name")
+	q := d.cronJobViews().Where("t.user_id = ?", user).Order("j.thread_id, j.name")
 	if threadID != "" {
 		q = q.Where("j.thread_id = ?", threadID)
 	}
