@@ -26,9 +26,9 @@ ROSE, ROSE_TINT, ROSE_LINE = "#f43f5e", "#fff1f2", "#fecdd3"
 PINK = "#ec4899"
 INK2, MUTED, FAINT = "#334155", "#64748b", "#94a3b8"
 GRID, RULE, BASE, PAPER = "#eef2f6", "#e2e8f0", "#cbd5e1", "#f8fafc"
-FONT = '-apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif'
+FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
 MONO = "ui-monospace, 'SF Mono', Menlo, monospace"
-ENV = "Apple M1 · 8 核 · 8 GB · 单个 SQLite 库 · 模型与工具为模拟"
+ENV = "Apple M1 · 8 cores · 8 GB · one SQLite database · simulated model and tools"
 SOURCE = "github.com/0xfakeSpike/ollupi"
 
 WOLF = re.search(r"<svg[^>]*>(.*)</svg>", open(f"{ROOT}/docs/logo/mark.svg").read(), re.S).group(1)
@@ -36,11 +36,6 @@ WOLF = re.search(r"<svg[^>]*>(.*)</svg>", open(f"{ROOT}/docs/logo/mark.svg").rea
 
 def esc(s):
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-
-def tw(s, size):
-    """Approximate rendered width: CJK at the font size, Latin at a little over half of it."""
-    return sum(size if ord(c) > 0x2e80 else size * 0.56 for c in s)
 
 
 class Figure:
@@ -115,7 +110,7 @@ class Figure:
         """Swatches right-aligned to x: (color, label, dashed)."""
         cx = x
         for color, label, dashed in reversed(entries):
-            cx -= tw(label, 17)
+            cx -= len(label) * 17 * 0.56
             self.text(cx, y + 6, label, "lab")
             if bars:
                 cx -= 28
@@ -135,24 +130,24 @@ class Figure:
 # ---------- diagrams ----------
 
 def architecture():
-    f = Figure(960, "OLLUPI · 架构", "一个进程承载所有会话",
-                "会话、子代理与定时任务在同一个 agent 内调度，状态全部写入 SQLite", "每一步先写入数据库，再执行", SOURCE)
+    f = Figure(960, "OLLUPI · ARCHITECTURE", "One process hosts every session",
+                "Sessions, subagents and scheduled tasks share one agent's scheduler, and all state lives in SQLite", "Every step is written to the database before it runs", SOURCE)
     # clients and gateway
     f.card(560, 196, 480, 60, TINT, LINE)
-    f.text(800, 233, "ollupi-desktop · 其他客户端", "hs", "middle")
+    f.text(800, 233, "ollupi-desktop · other clients", "hs", "middle")
     f.arrow("M800,258 V300")
     f.arrow("M800,300 V258")
     f.text(816, 284, "JSON-RPC 2.0 · WebSocket", "s")
     f.card(360, 302, 880, 64)
     f.text(392, 342, "gateway", "h code")
-    f.text(510, 341, "请求分发 · 事件推送 · 协议契约与方法表同源生成", "b")
+    f.text(510, 341, "Request dispatch · event push · contract and method table from one source", "b")
     f.arrow("M800,368 V404")
     # agent
     f.card(330, 406, 940, 236, TINT, INDIGO, r=18)
     f.text(360, 444, "agent", "h code")
-    mods = [("调度器", ["共享执行池，默认 32 个槽位", "等待时释放槽位", "普通会话先于子代理"]),
-            ("runtime", ["调用模型前自库中重读", "模型调用 → 工具执行", "步骤先写库再执行"]),
-            ("权限 · 脱敏", ["三层权限规则", "Seatbelt 沙箱", "发往模型前替换敏感值"])]
+    mods = [("Scheduler", ["Shared pool, 32 slots by default", "Slots released while waiting", "Sessions before subagents"]),
+            ("runtime", ["Re-reads DB before model calls", "Model call → tool execution", "Steps written before they run"]),
+            ("Permissions · redaction", ["Three layers of permission rules", "Seatbelt sandbox", "Secrets replaced before sending"])]
     for i, (h, lines) in enumerate(mods):
         x = 360 + i * 300
         f.card(x, 466, 280, 156)
@@ -160,8 +155,8 @@ def architecture():
         for j, line in enumerate(lines):
             f.text(x + 22, 540 + j * 26, line, "b")
     # side services
-    for i, (h, lines) in enumerate([("记忆", ["从已结束的 turn 提炼", "全局 · general · 工作区"]),
-                                     ("定时任务", ["到点向会话发送消息", "与其他 turn 同池排队"])]):
+    for i, (h, lines) in enumerate([("Memory", ["Distilled from ended turns", "Global · general · workspace"]),
+                                     ("Scheduled tasks", ["Sends a message when due", "Queues with other turns"])]):
         y = 420 + i * 116
         f.card(72, y, 228, 100)
         f.text(94, y + 36, h, "hs")
@@ -169,18 +164,18 @@ def architecture():
             f.text(94, y + 64 + j * 24, line, "s")
         f.arrow(f"M300,{y + 50} H326")
     f.card(1300, 420, 228, 100)
-    f.text(1322, 456, "模型连接", "hs")
-    f.text(1322, 484, "OpenAI · Anthropic", "s")
-    f.text(1322, 508, "Gemini · 按连接限制并发", "s")
+    f.text(1322, 456, "Model connections", "hs")
+    f.text(1322, 484, "OpenAI · Anthropic · Gemini", "s")
+    f.text(1322, 508, "Concurrency per connection", "s")
     f.arrow("M1272,470 H1296")
     f.card(1300, 552, 228, 90, PAPER, BASE, dash=True)
-    f.text(1322, 590, "模型服务商", "hs")
-    f.text(1322, 618, "只接收占位符", "s")
+    f.text(1322, 590, "Model providers", "hs")
+    f.text(1322, 618, "Receive placeholders only", "s")
     f.arrow("M1414,522 V548")
     # tools
     f.arrow("M800,644 V680")
-    f.text(816, 668, "经权限检查后调用", "s")
-    tools = [("内置工具", "子代理 · 计划 · 提问"), ("run_command", "在沙箱内执行"), ("MCP 服务器", "stdio · HTTP"), ("应用工具", "tools.Provider")]
+    f.text(816, 668, "Called after permission checks", "s")
+    tools = [("Built-in tools", "Subagent · plan · ask"), ("run_command", "Runs in the sandbox"), ("MCP servers", "stdio · HTTP"), ("App tools", "tools.Provider")]
     for i, (h, s) in enumerate(tools):
         x = 360 + i * 226
         f.card(x, 682, 206, 82)
@@ -191,17 +186,17 @@ def architecture():
     f.add(f'<g transform="translate(100,816)" fill="none" stroke="{INDIGO}" stroke-width="3"><ellipse cx="22" cy="10" rx="22" ry="8"/>'
           f'<path d="M0,10 V44 A22,8 0 0 0 44,44 V10"/><path d="M0,27 A22,8 0 0 0 44,27"/></g>')
     f.text(166, 836, "SQLite", "h")
-    f.text(166, 866, "thread · turn · item · 记忆 · 定时任务 · 权限规则 · 消息全文索引", "b")
-    f.text(1500, 836, "先写入，再执行", "hs", "end")
-    f.text(1500, 866, "重启后队列与进行中的 turn 均可恢复", "b", "end")
+    f.text(166, 866, "thread · turn · item · memory · scheduled tasks · permission rules · message full-text index", "b")
+    f.text(1500, 836, "Write first, then run", "hs", "end")
+    f.text(1500, 866, "The queue and in-progress turns recover after a restart", "b", "end")
     f.arrow("M186,638 V792", dash=True)
     f.arrow("M800,766 V792")
     f.save("architecture.svg")
 
 
 def comparison():
-    f = Figure(940, "OLLUPI · 对比", "同样的机器，承载更多会话",
-                "逐个隔离时，等待中的 agent 仍占用一个进程；Ollupi 在等待时释放槽位，由其他 turn 接续", "字母为会话，斜纹为等待", SOURCE)
+    f = Figure(940, "OLLUPI · COMPARISON", "The same machine hosts more sessions",
+                "Isolated, a waiting agent still holds a process; Ollupi releases the slot while waiting, and another turn takes over", "Letters are sessions; hatching is waiting", SOURCE)
     lanes_x, lane_w = 236, 520
 
     def lane(x0, y, label, segs, color):
@@ -217,29 +212,29 @@ def comparison():
             x += ww
 
     for side, x0, title, sub, color, tint, line in [
-            (0, 72, "逐个隔离", "每个 agent 一个虚拟机或容器", ROSE, ROSE_TINT, ROSE_LINE),
-            (1, 816, "Ollupi", "一个进程，一个共享执行池", INDIGO, TINT, LINE)]:
+            (0, 72, "Per-agent isolation", "One VM or container per agent", ROSE, ROSE_TINT, ROSE_LINE),
+            (1, 816, "Ollupi", "One process, one shared execution pool", INDIGO, TINT, LINE)]:
         f.card(x0, 196, 712, 600, tint, line, r=18)
         f.text(x0 + 32, 242, title, "h")
         f.text(x0 + 32, 272, sub, "s")
     lx = 72 + 164
-    lane(lx, 300, "进程 1 · 会话 A", [("run", .28, "A"), ("wait", .44, "等审批"), ("run", .28, "A")], ROSE)
-    lane(lx, 364, "进程 2 · 会话 B", [("run", .2, "B"), ("wait", .3, "等回答"), ("run", .22, "B"), ("wait", .28, "等审批")], ROSE)
-    lane(lx, 428, "进程 3 · 会话 C", [("run", .36, "C"), ("wait", .38, "等回答"), ("run", .26, "C")], ROSE)
-    f.text(lx - 20, 522, "会话 D、E", "lab", "end")
+    lane(lx, 300, "Process 1", [("run", .28, "A"), ("wait", .44, "awaiting approval"), ("run", .28, "A")], ROSE)
+    lane(lx, 364, "Process 2", [("run", .2, "B"), ("wait", .3, "awaiting answer"), ("run", .22, "B"), ("wait", .28, "awaiting approval")], ROSE)
+    lane(lx, 428, "Process 3", [("run", .36, "C"), ("wait", .38, "awaiting answer"), ("run", .26, "C")], ROSE)
+    f.text(lx - 20, 522, "Sessions D, E", "lab", "end")
     f.card(lx, 496, lane_w - 6, 44, "#ffffff", ROSE_LINE, r=8, dash=True)
-    f.text(lx + (lane_w - 6) / 2, 524, "需要新的进程", "s", "middle")
+    f.text(lx + (lane_w - 6) / 2, 524, "Each needs a new process", "s", "middle")
     rx = 816 + 164
-    lane(rx, 300, "槽位 1", [("run", .2, "A"), ("run", .22, "D"), ("run", .2, "定时"), ("run", .2, "A"), ("run", .18, "E")], INDIGO)
-    lane(rx, 364, "槽位 2", [("run", .2, "B"), ("run", .38, "E"), ("run", .2, "B"), ("run", .22, "D")], INDIGO)
-    lane(rx, 428, "槽位 3", [("run", .3, "C"), ("run", .44, "D 的子代理"), ("run", .26, "C")], INDIGO)
-    f.text(rx - 20, 516, "等待中", "lab", "end")
-    f.text(rx - 20, 538, "不占槽位", "s", "end")
-    for i, (x, y, t) in enumerate([(0, 496, "A 等审批"), (.34, 496, "B 等回答"), (.68, 496, "B 等审批"), (.17, 534, "C 等回答")]):
+    lane(rx, 300, "Slot 1", [("run", .2, "A"), ("run", .22, "D"), ("run", .2, "Scheduled"), ("run", .2, "A"), ("run", .18, "E")], INDIGO)
+    lane(rx, 364, "Slot 2", [("run", .2, "B"), ("run", .38, "E"), ("run", .2, "B"), ("run", .22, "D")], INDIGO)
+    lane(rx, 428, "Slot 3", [("run", .3, "C"), ("run", .44, "D's subagent"), ("run", .26, "C")], INDIGO)
+    f.text(rx - 20, 516, "Waiting", "lab", "end")
+    f.text(rx - 20, 538, "No slot held", "s", "end")
+    for i, (x, y, t) in enumerate([(0, 496, "A awaits approval"), (.34, 496, "B awaits answer"), (.68, 496, "B awaits approval"), (.17, 534, "C awaits answer")]):
         f.add(f'<rect x="{rx + x * lane_w:.1f}" y="{y}" width="150" height="30" rx="8" fill="url(#hatch)" stroke="{BASE}" stroke-width="1.5"/>')
         f.text(rx + x * lane_w + 75, y + 21, t, "s", "middle")
-    for side, x0, items in [(0, 72, ["一个进程只承载一个会话", "等待时进程挂起，仍占用内存", "调度状态在内存，进程退出即丢失", "定时任务由外部 cron 唤起进程"]),
-                            (1, 816, ["一个进程运行所有会话、子代理与定时任务", "等待时释放槽位，其他 turn 接续", "调度状态在 SQLite，重启后从中断处继续", "定时任务到点向会话发送消息，同池排队"])]:
+    for side, x0, items in [(0, 72, ["One process hosts only one session", "A waiting process sits suspended, still holding memory", "Scheduling state is in memory, lost when the process exits", "Scheduled tasks need an external cron to start a process"]),
+                            (1, 816, ["One process runs every session, subagent and scheduled task", "A waiting turn releases its slot and another turn takes over", "Scheduling state is in SQLite; a restart resumes where it stopped", "Scheduled tasks message a session when due and share the queue"])]:
         f.add(f'<line x1="{x0 + 32}" y1="608" x2="{x0 + 680}" y2="608" stroke="{ROSE_LINE if side == 0 else LINE}" stroke-width="2"/>')
         for i, t in enumerate(items):
             f.add(f'<rect x="{x0 + 34}" y="{640 + i * 36 - 7}" width="8" height="8" fill="{ROSE if side == 0 else INDIGO}"/>')
@@ -248,9 +243,9 @@ def comparison():
 
 
 def pool():
-    f = Figure(940, "OLLUPI · 执行池", "所有 turn 共用一个执行池",
-                "等待时释放槽位，模型并发只分配给正在调用模型的 turn", "agent 的耗时主要在等待模型；执行池让同时进行的模型调用尽可能多", SOURCE)
-    for i, (h, s) in enumerate([("用户消息", "任意会话"), ("子代理", "普通的会话与 turn"), ("定时任务", "到点向会话发送消息")]):
+    f = Figure(940, "OLLUPI · EXECUTION POOL", "Every turn shares one execution pool",
+                "Waiting turns release their slots, and model concurrency goes only to turns calling the model", "An agent spends most of its time waiting on the model; the pool keeps as many model calls in flight as it can", SOURCE)
+    for i, (h, s) in enumerate([("User messages", "Any session"), ("Subagents", "Plain sessions and turns"), ("Scheduled tasks", "Sends a message when due")]):
         y = 236 + i * 118
         f.card(72, y, 228, 90)
         f.text(96, y + 38, h, "hs")
@@ -258,18 +253,19 @@ def pool():
         f.arrow(f"M300,{y + 45} C340,{y + 45} 340,{392} 372,{392}")
     # queue
     f.card(376, 212, 300, 380, TINT, LINE, r=18)
-    f.text(400, 252, "队列", "h")
-    f.text(400, 280, "数据库中可推进的 turn", "s")
-    for i, t in enumerate(["会话 A · 第 3 轮", "会话 B · 第 1 轮", "子代理 A-1", "子代理 A-2", "定时任务 · 每日汇总"]):
+    f.text(400, 252, "Queue", "h")
+    f.text(400, 280, "Runnable turns in the database", "s")
+    for i, t in enumerate(["Session A · turn 3", "Session B · turn 1", "Subagent A-1", "Subagent A-2", "Scheduled · daily digest"]):
         f.card(400, 300 + i * 54, 252, 42, "#ffffff", LINE, r=10)
         f.text(418, 327 + i * 54, t, "b")
-    f.text(376, 618, "槽位已满时，普通会话先于子代理，", "s")
-    f.text(376, 642, "同类按就绪先后执行", "s")
+    f.text(376, 618, "When slots are full, sessions run", "s")
+    f.text(376, 642, "before subagents; within each kind,", "s")
+    f.text(376, 666, "turns run in ready order", "s")
     f.arrow("M678,402 H716")
     # slots
     f.card(720, 212, 420, 380, "#ffffff", INDIGO, r=18)
-    f.text(744, 252, "槽位", "h")
-    f.text(744, 280, "默认 32 个；一个 turn 占一个，不等人", "s")
+    f.text(744, 252, "Slots", "h")
+    f.text(744, 280, "32 by default; one per turn, released when waiting", "s")
     import random
     random.seed(7)
     states = ["model"] * 13 + ["tool"] * 7 + ["idle"] * 12
@@ -281,38 +277,38 @@ def pool():
             f.add(f'<rect x="{x}" y="{y}" width="38" height="38" rx="8" fill="{PAPER}" stroke="{RULE}" stroke-width="2"/>')
         else:
             f.add(f'<rect x="{x}" y="{y}" width="38" height="38" rx="8" fill="{INDIGO if st == "model" else PINK}"/>')
-    for i, (c, t) in enumerate([(INDIGO, "调用模型"), (PINK, "执行工具"), (None, "空闲")]):
+    for i, (c, t) in enumerate([(INDIGO, "Model call"), (PINK, "Tool call"), (None, "Idle")]):
         x = 744 + i * 128
         if c:
             f.add(f'<rect x="{x}" y="{514}" width="16" height="16" rx="4" fill="{c}"/>')
         else:
             f.add(f'<rect x="{x}" y="{514}" width="16" height="16" rx="4" fill="{PAPER}" stroke="{RULE}" stroke-width="2"/>')
         f.text(x + 24, 528, t, "s")
-    f.text(744, 566, "工具执行期间占用槽位，不占用模型并发", "s")
+    f.text(744, 566, "Tool calls hold a slot but no model concurrency", "s")
     f.arrow("M1142,402 H1180")
     # model concurrency
     f.card(1184, 212, 344, 380, "#ffffff", LINE, r=18)
-    f.text(1208, 252, "模型并发", "h")
-    f.text(1208, 280, "按连接计，默认每个连接 4 个", "s")
-    for j, conn in enumerate(["连接 A", "连接 B"]):
+    f.text(1208, 252, "Model concurrency", "h")
+    f.text(1208, 280, "Per connection, 4 by default", "s")
+    for j, conn in enumerate(["Connection A", "Connection B"]):
         y = 318 + j * 120
         f.text(1208, y, conn, "lab")
         for k in range(4):
             f.add(f'<rect x="{1208 + k * 76}" y="{y + 16}" width="66" height="40" rx="8" fill="{INDIGO}"/>')
-    f.text(1208, 566, "满额时调用排队，不越过账户额度", "s")
+    f.text(1208, 566, "When full, calls queue within quota", "s")
     # waiting
     f.arrow("M930,594 V676")
-    f.text(946, 640, "需要审批、提问或子代理", "s")
+    f.text(946, 640, "Needs an approval, an answer or a subagent", "s")
     f.add(f'<rect x="720" y="680" width="420" height="156" rx="18" fill="url(#hatch)" stroke="{BASE}" stroke-width="2"/>')
     f.add(f'<rect x="740" y="696" width="380" height="124" rx="12" fill="#ffffff"/>')
-    f.text(762, 732, "等待中", "h")
-    f.text(762, 760, "释放槽位，不占用 goroutine 与模型并发", "s")
-    for i, t in enumerate(["等审批", "等回答", "等子代理"]):
+    f.text(762, 732, "Waiting", "h")
+    f.text(762, 760, "Holds no slot, goroutine or model concurrency", "s")
+    for i, t in enumerate(["approval", "answer", "subagent"]):
         f.add(f'<rect x="{762 + i * 116}" y="778" width="104" height="28" rx="14" fill="{TINT}"/>')
         f.text(762 + i * 116 + 52, 797, t, "chip", "middle", f"fill:{INDIGO}")
     f.arrow("M718,758 H652 V596")
-    f.text(636, 700, "回答、审批或子代理结果", "s", "end")
-    f.text(636, 722, "到达后重新就绪", "s", "end")
+    f.text(636, 700, "Ready again once the answer, approval", "s", "end")
+    f.text(636, 722, "or subagent result arrives", "s", "end")
     f.save("execution-pool.svg")
 
 
@@ -378,39 +374,39 @@ CHART_H = 1000
 
 
 def memory():
-    f = Figure(CHART_H, "OLLUPI BENCH · 内存", "会话挂起时只占数据库，不占进程内存",
-               "进程常驻内存（RSS）随会话数的变化，双对数坐标。对照组为每个会话一个 Ollupi 进程，未计容器开销",
+    f = Figure(CHART_H, "OLLUPI BENCH · MEMORY", "A parked session lives in the database, not in process memory",
+               "Resident memory (RSS) by session count, log-log. The control is one Ollupi process per session, not counting container overhead",
                ENV, "go run ./bench parked | steady | isolated")
-    f.kpis([("< 0.3", "KB", "每个挂起会话的内存（5 万个挂起会话实测）"),
-            ("≈ 160", "KB", "每个活跃会话的内存，含其 HTTP 连接"),
-            ("20.0", "MB", "对照组：每个会话一个进程")])
+    f.kpis([("< 0.3", "KB", "per parked session (measured at 50,000 parked)"),
+            ("≈ 160", "KB", "per active session, including its HTTP connection"),
+            ("20.0", "MB", "control: one process per session")])
     p = Plot(f, 190, 470, 1250, 360, (100, 100_000), (10, 2 * 1024 * 1024), xlog=True, ylog=True)
-    p.frame("进程内存", "RSS，对数坐标", [(v, size(v)) for v in (10, 100, 1024, 10 * 1024, 100 * 1024, 1024 * 1024)],
-            [(v, f"{v:,}") for v in (100, 1000, 10_000, 100_000)], "会话数，对数坐标")
+    p.frame("Process memory", "RSS, log scale", [(v, size(v)) for v in (10, 100, 1024, 10 * 1024, 100 * 1024, 1024 * 1024)],
+            [(v, f"{v:,}") for v in (100, 1000, 10_000, 100_000)], "Sessions, log scale")
     p.line([(100, 2000), (100_000, 2_000_000)], ROSE)
-    p.label(30_000, 600_000, "每会话一个进程", "lab", "end", dx=-14, dy=-14)
+    p.label(30_000, 600_000, "One process per session", "lab", "end", dx=-14, dy=-14)
     active = [(512, 132), (1024, 223), (1536, 315), (2048, 407), (3072, 570), (4096, 692)]
     p.line(active, INDIGO)
     p.dots(active, INDIGO)
-    p.label(4096, 692, "Ollupi · 活跃会话", "lab", "start", dx=18, dy=6)
+    p.label(4096, 692, "Ollupi · active sessions", "lab", "start", dx=18, dy=6)
     waiting = [(1000, 28.4), (10_000, 38.6), (50_000, 36.8)]
     p.line(waiting, INDIGO_2)
     p.dots(waiting, INDIGO_2)
-    p.label(50_000, 36.8, "Ollupi · 挂起会话", "lab", "end", dy=-20)
-    f.legend(W - PAD, 422, [(INDIGO, "Ollupi · 活跃会话", False), (INDIGO_2, "Ollupi · 挂起会话", False), (ROSE, "每会话一个进程", False)])
+    p.label(50_000, 36.8, "Ollupi · parked sessions", "lab", "end", dy=-20)
+    f.legend(W - PAD, 422, [(INDIGO, "Ollupi · active sessions", False), (INDIGO_2, "Ollupi · parked sessions", False), (ROSE, "One process per session", False)])
     f.save("bench-memory.svg")
 
 
 def capacity():
     pts = [(512, 17.1, 20.4, 72), (1024, 17.2, 20.5, 147), (1536, 17.3, 20.7, 219), (2048, 17.3, 20.8, 296), (3072, 18.0, 22.5, 416), (4096, 20.9, 26.1, 477)]
-    f = Figure(CHART_H, "OLLUPI BENCH · 容量", "约 3000 个活跃会话以内，turn 耗时与单独运行基本持平",
-               "闭环负载：每个会话在上一个 turn 结束后立即发起下一个。每个 turn 3 次模型调用（5 s ± 2 s）、2 次工具调用（1 s），单独运行约 17 s",
+    f = Figure(CHART_H, "OLLUPI BENCH · CAPACITY", "Up to about 3000 active sessions, turns run about as fast as alone",
+               "Closed loop: each session starts a turn as soon as the last ends. A turn is 3 model calls (5 s ± 2 s) and 2 tool calls (1 s), about 17 s alone",
                ENV, "go run ./bench steady -c 3072")
-    f.kpis([("+6%", "", "3072 个活跃会话时 turn 耗时 p50 的增幅"), ("477", "次/秒", "4096 个活跃会话时的模型调用吞吐"), ("11.6", "KB", "每个 turn 的磁盘占用")])
+    f.kpis([("+6%", "", "increase in turn p50 at 3072 active sessions"), ("477", "calls/s", "model call throughput at 4096 active sessions"), ("11.6", "KB", "disk per turn")])
     left = Plot(f, 160, 470, 600, 360, (0, 4400), (0, 30))
-    left.frame("turn 耗时", "秒", [(v, f"{v}") for v in (0, 10, 20, 30)], [(v, f"{v:,}") for v in (1024, 2048, 3072, 4096)], "同时活跃的会话")
+    left.frame("Turn duration", "seconds", [(v, f"{v}") for v in (0, 10, 20, 30)], [(v, f"{v:,}") for v in (1024, 2048, 3072, 4096)], "Concurrent active sessions")
     left.line([(0, 17), (4400, 17)], FAINT, width=2, dashed=True)
-    left.label(4400, 17, "单独运行 17 s", "cap", "end", dy=30)
+    left.label(4400, 17, "Alone: 17 s", "cap", "end", dy=30)
     left.line([(x[0], x[2]) for x in pts], INDIGO_2)
     left.dots([(x[0], x[2]) for x in pts], INDIGO_2)
     left.line([(x[0], x[1]) for x in pts], INDIGO)
@@ -419,7 +415,7 @@ def capacity():
     left.label(4096, 20.9, "p50", "val", "start", dx=16, dy=6)
     f.legend(760, 422, [(INDIGO, "p50", False), (INDIGO_2, "p95", False)])
     right = Plot(f, 940, 470, 600, 360, (0, 4400), (0, 500))
-    right.frame("模型调用吞吐", "次/秒", [(v, f"{v}") for v in (0, 100, 200, 300, 400, 500)], [(v, f"{v:,}") for v in (1024, 2048, 3072, 4096)], "同时活跃的会话")
+    right.frame("Model call throughput", "calls/s", [(v, f"{v}") for v in (0, 100, 200, 300, 400, 500)], [(v, f"{v:,}") for v in (1024, 2048, 3072, 4096)], "Concurrent active sessions")
     right.line([(x[0], x[3]) for x in pts], INDIGO)
     right.dots([(x[0], x[3]) for x in pts], INDIGO)
     for x in pts:
@@ -431,32 +427,32 @@ def capacity():
 def burst():
     rows = [(float(r["seconds"]), int(r["in_flight"]), int(r["turns_ended"])) for r in csv.DictReader(open(BURST_CSV))]
     end = max(t for t, _, _ in rows)
-    f = Figure(CHART_H, "OLLUPI BENCH · 突发与额度", "突发负载按额度排队，在途请求不超额度，无 429",
-               "一次提交 3000 个 turn；模型连接与服务商均限 256 并发。每个 turn 3 次模型调用（5 s ± 2 s）、2 次工具调用（1 s）",
+    f = Figure(CHART_H, "OLLUPI BENCH · BURST AND QUOTA", "Bursts queue at the quota: in-flight requests stay within it, no 429s",
+               "3000 turns submitted at once; connection and provider both capped at 256 concurrent. A turn is 3 model calls (5 s ± 2 s) and 2 tool calls (1 s)",
                ENV, "go run ./bench burst -n 3000 -slots 512 -calls 256 -latency 5s")
-    f.kpis([("256", "/ 256", "在途请求峰值 / 额度"), ("0", "次", "服务商返回 429"), ("181.5", "s", "全部完成耗时，理论下限 175.8 s")])
+    f.kpis([("256", "/ 256", "peak in-flight requests / quota"), ("0", "", "429s from the provider"), ("181.5", "s", "to finish all; theoretical floor 175.8 s")])
     xt = [(v, f"{v}") for v in range(0, int(end) + 1, 30)]
     left = Plot(f, 160, 470, 600, 360, (0, end), (0, 300))
-    left.frame("在途模型请求", "个", [(v, f"{v}") for v in (0, 100, 200, 300)], xt, "秒")
+    left.frame("In-flight model requests", "requests", [(v, f"{v}") for v in (0, 100, 200, 300)], xt, "seconds")
     left.line([(0, 256), (end, 256)], FAINT, width=2, dashed=True)
-    left.label(end, 256, "额度 256", "cap", "end", dy=-12)
+    left.label(end, 256, "Quota 256", "cap", "end", dy=-12)
     left.line([(0, 0)] + [(t, x) for t, x, _ in rows], INDIGO)
     right = Plot(f, 940, 470, 600, 360, (0, end), (0, 3000))
-    right.frame("已完成 turn", "个", [(v, f"{v:,}") for v in (0, 1000, 2000, 3000)], xt, "秒")
+    right.frame("Turns completed", "turns", [(v, f"{v:,}") for v in (0, 1000, 2000, 3000)], xt, "seconds")
     right.line([(0, 0), (175.8, 3000)], FAINT, width=2, dashed=True)
     right.line([(0, 0)] + [(t, e) for t, _, e in rows], INDIGO)
-    f.legend(W - PAD, 422, [(INDIGO, "实测", False), (FAINT, "理论下限", True)])
+    f.legend(W - PAD, 422, [(INDIGO, "Measured", False), (FAINT, "Theoretical floor", True)])
     f.save("bench-burst.svg")
 
 
 def recovery():
-    f = Figure(CHART_H, "OLLUPI BENCH · 恢复", "进程重启与会话唤醒均在毫秒级完成",
-               "唤醒：向闲置于数据库的会话发送消息，至其模型请求发出的耗时。崩溃：混合负载下随机 kill -9 共 90 次",
+    f = Figure(CHART_H, "OLLUPI BENCH · RECOVERY", "Process restarts and session wake-ups take milliseconds",
+               "Wake-up: from messaging a session idle in the database to its model request going out. Crash: 90 random kill -9s under mixed load",
                ENV, "go run ./bench resume | crash")
-    f.kpis([("0", "/ 960", "kill -9 后丢失的 turn"), ("0", "次", "重复执行的工具调用"), ("448", "ms", "重启耗时：1 万挂起会话 + 500 个运行中 turn")])
-    data = [("10 轮", 5.2, 6.6), ("100 轮", 18.8, 22.5), ("1000 轮", 73.2, 150.4)]
+    f.kpis([("0", "/ 960", "turns lost to kill -9"), ("0", "", "tool calls run twice"), ("448", "ms", "restart: 10,000 parked + 500 running turns")])
+    data = [("10 turns", 5.2, 6.6), ("100 turns", 18.8, 22.5), ("1000 turns", 73.2, 150.4)]
     p = Plot(f, 160, 470, 1368, 360, (0, 3), (0, 160))
-    p.frame("会话唤醒耗时", "毫秒", [(v, f"{v}") for v in (0, 40, 80, 120, 160)], [(i + 0.5, d[0]) for i, d in enumerate(data)], "会话历史长度")
+    p.frame("Session wake-up time", "ms", [(v, f"{v}") for v in (0, 40, 80, 120, 160)], [(i + 0.5, d[0]) for i, d in enumerate(data)], "Session history length")
     for i, (_, p50, p95) in enumerate(data):
         cx = p.px(i + 0.5)
         p.bar(cx - 52, p50, 92, INDIGO)
@@ -481,21 +477,21 @@ def hbars(f, x, y, w, title, unit, rows, top):
 
 
 def compare():
-    f = Figure(CHART_H, "OLLUPI BENCH · 对比", "挂起内存最低，突发全部完成，kill -9 后全部续跑",
-               "同一模拟服务商与负载，各测一次。内存：Ollupi 为常驻内存，其余为 phys_footprint",
-               "pi-coding-agent 1.4.0 · pi-durable 1.4.0（实验性）· DeepSeek Harness 0.2.1-rc.5 · " + ENV, "bench/compare")
-    names = ["Ollupi", "pi（SDK）", "pi-durable", "DeepSeek Harness"]
+    f = Figure(CHART_H, "OLLUPI BENCH · COMPARISON", "Lowest parked memory, bursts complete, turns resume after kill -9",
+               "Same simulated provider and load, one run each. Memory: resident memory for Ollupi, phys_footprint for the others",
+               "pi-coding-agent 1.4.0 · pi-durable 1.4.0 (experimental) · DeepSeek Harness 0.2.1-rc.5 · " + ENV, "bench/compare")
+    names = ["Ollupi", "pi (SDK)", "pi-durable", "DeepSeek Harness"]
 
     def rows(values, labels):
         return [(n, v, l, INDIGO if i == 0 else BASE) for i, (n, v, l) in enumerate(zip(names, values, labels))]
 
-    hbars(f, PAD, 210, 690, "每个挂起会话的内存", "KB，越低越好", rows([0.3, 91, 23, 181], ["0.3", "91", "23", "181"]), 181)
-    hbars(f, 838, 210, 690, "2048 个活跃会话时 turn 耗时 p50 的增幅", "越低越好", rows([2, 2, 314, 77], ["2%", "2%", "314%", "77%"]), 314)
-    hbars(f, PAD, 570, 690, "3000 个 turn 同时提交、额度 256 时完成的 turn", "个，越高越好",
+    hbars(f, PAD, 210, 690, "Memory per parked session", "KB, lower is better", rows([0.3, 91, 23, 181], ["0.3", "91", "23", "181"]), 181)
+    hbars(f, 838, 210, 690, "Increase in turn p50 at 2048 active sessions", "Lower is better", rows([2, 2, 314, 77], ["2%", "2%", "314%", "77%"]), 314)
+    hbars(f, PAD, 570, 690, "Turns completed, 3000 submitted at once with quota 256", "Turns, higher is better",
           rows([3000, 466, 819, 810], ["3000", "466", "819", "810"]), 3000)
-    f.text(838, 570, "运行中 kill -9 之后", "hs")
-    f.text(838, 598, "混合负载，反复重启", "tick")
-    outcomes = [("全部续跑，工具不重复执行", True), ("进行中的 turn 丢失", False), ("全部续跑，工具不重复执行", True), ("turn 标为中断", False)]
+    f.text(838, 570, "After kill -9 mid-run", "hs")
+    f.text(838, 598, "Mixed load, repeated restarts", "tick")
+    outcomes = [("All resume, no tool runs twice", True), ("In-progress turns lost", False), ("All resume, no tool runs twice", True), ("Turns marked interrupted", False)]
     for i, (name, (outcome, kept)) in enumerate(zip(names, outcomes)):
         yy = 628 + i * 62
         f.text(838, yy + 27, name, "lab")
@@ -504,14 +500,14 @@ def compare():
 
 
 def mix():
-    f = Figure(CHART_H, "OLLUPI BENCH · 混合负载", "定时任务高峰按模型额度排队，高峰之外 turn 几乎不等待",
-               "256 个会话持续发送 turn（20% 交给子代理），运行中 1000 个定时任务同时到点；额度 256。扇出：64 个 turn 各派生 8 个子代理，32 个槽位",
+    f = Figure(CHART_H, "OLLUPI BENCH · MIXED LOAD", "Scheduled peaks queue at the model quota; off-peak turns barely wait",
+               "256 sessions send turns (20% to subagents) while 1000 scheduled tasks come due at once; quota 256. Fan-out: 64 turns × 8 subagents, 32 slots",
                ENV, "go run ./bench mix | fanout")
-    f.kpis([("274", "ms", "高峰之外等待的 p99"), ("59.4", "s", "1000 个定时任务排空"), ("0.978", "", "各会话的 Jain 公平性指数"), ("1.11", "×", "扇出耗时 / 理论下限")])
-    data = [("用户 turn · 高峰之外", 7, 274), ("子代理", 5, 4571), ("用户 turn · 高峰期间", 44107, 58608), ("定时任务", 29637, 58276)]
+    f.kpis([("274", "ms", "off-peak wait p99"), ("59.4", "s", "to drain 1000 scheduled tasks"), ("0.978", "", "Jain fairness index across sessions"), ("1.11", "×", "fan-out time / theoretical floor")])
+    data = [("User turns · off-peak", 7, 274), ("Subagents", 5, 4571), ("User turns · during peak", 44107, 58608), ("Scheduled tasks", 29637, 58276)]
     p = Plot(f, 160, 470, 1368, 360, (0, 4), (1, 100_000), ylog=True)
     ticks = [(1, "1 ms"), (10, "10 ms"), (100, "100 ms"), (1000, "1 s"), (10_000, "10 s"), (100_000, "100 s")]
-    p.frame("等待首次模型请求的时间", "对数坐标", ticks, [(i + 0.5, d[0]) for i, d in enumerate(data)], "turn 的类型")
+    p.frame("Wait for the first model request", "Log scale", ticks, [(i + 0.5, d[0]) for i, d in enumerate(data)], "Turn type")
     for i, (_, p50, p99) in enumerate(data):
         cx = p.px(i + 0.5)
         for dx, v, color in ((-52, p50, INDIGO), (52, p99, INDIGO_2)):
@@ -522,13 +518,13 @@ def mix():
 
 
 def faults():
-    f = Figure(CHART_H, "OLLUPI BENCH · 故障与长尾", "模型请求出错或变慢时，turn 变慢但不失败",
-               "故障：5% 的请求返回 500，同账户其他客户端占用最多 256 个额度。长尾：模型延迟为对数正态分布，中位数 5 s，σ = 0.6",
+    f = Figure(CHART_H, "OLLUPI BENCH · FAULTS AND LONG TAIL", "When model requests fail or slow down, turns slow but don't fail",
+               "Faults: 5% of requests return 500, other clients on the account take up to 256 of the quota. Long tail: log-normal model latency, median 5 s, σ = 0.6",
                ENV, "go run ./bench steady -fail 0.05 -others 256 | -sigma 0.6")
-    f.kpis([("0", "/ 3072", "故障下失败的 turn"), ("326 → 0", "", "加入退避重试前后的失败 turn"), ("0", "/ 4608", "长尾下失败的 turn")])
-    data = [("无故障 · 1024 个会话", 17.2, 20.5, 21.6), ("故障 · 1024 个会话", 17.8, 23.3, 28.5), ("长尾 · 1536 个会话", 19.0, 33.0, 42.4)]
+    f.kpis([("0", "/ 3072", "turns failed under faults"), ("326 → 0", "", "failed turns before and after backoff retries"), ("0", "/ 4608", "turns failed under the long tail")])
+    data = [("No faults · 1024 sessions", 17.2, 20.5, 21.6), ("Faults · 1024 sessions", 17.8, 23.3, 28.5), ("Long tail · 1536 sessions", 19.0, 33.0, 42.4)]
     p = Plot(f, 160, 470, 1368, 360, (0, 3), (0, 50))
-    p.frame("turn 耗时", "秒", [(v, f"{v}") for v in (0, 10, 20, 30, 40, 50)], [(i + 0.5, d[0]) for i, d in enumerate(data)], "负载")
+    p.frame("Turn duration", "seconds", [(v, f"{v}") for v in (0, 10, 20, 30, 40, 50)], [(i + 0.5, d[0]) for i, d in enumerate(data)], "Load")
     for i, (_, *values) in enumerate(data):
         cx = p.px(i + 0.5)
         for dx, v, color in zip((-104, 0, 104), values, (INDIGO, INDIGO_2, LINE)):
@@ -541,19 +537,19 @@ def faults():
 def soak():
     rows = list(csv.DictReader(open(SOAK_CSV)))
     history = [int(r["history_turns"]) for r in rows]
-    f = Figure(CHART_H, "OLLUPI BENCH · 长时间运行", "goroutine 与 WAL 不随时间增长，CPU 与内存随会话历史增长",
-               "256 个会话连续运行 8 分钟，共 3.5 万个 turn，每个 turn 都加长所在会话的历史。模型调用 1 s ± 0.2 s，工具调用 0.2 s",
+    f = Figure(CHART_H, "OLLUPI BENCH · LONG RUN", "Goroutines and WAL stay flat; CPU and memory grow with session history",
+               "256 sessions run for 8 minutes, 35,000 turns in all, each lengthening its session's history. Model calls 1 s ± 0.2 s, tool calls 0.2 s",
                ENV, "go run ./bench soak -c 256 -d 8m -every 30s -latency 1s -jitter 200ms -tool 200ms")
-    f.kpis([("≈ 1000", "个", "goroutine，全程稳定"), ("6.1", "MB", "WAL，全程稳定"), ("0.23", "ms", "GC 停顿 p99 的最高值")])
+    f.kpis([("≈ 1000", "", "goroutines, steady throughout"), ("6.1", "MB", "WAL, steady throughout"), ("0.23", "ms", "highest GC pause p99")])
     xt = [(v, f"{v}") for v in (0, 40, 80, 120)]
     left = Plot(f, 160, 470, 600, 360, (0, 145), (0, 40))
-    left.frame("每个 turn 的 CPU", "毫秒", [(v, f"{v}") for v in (0, 10, 20, 30, 40)], xt, "会话历史，轮")
+    left.frame("CPU per turn", "ms", [(v, f"{v}") for v in (0, 10, 20, 30, 40)], xt, "Session history, turns")
     cpu = list(zip(history, (float(r["cpu_ms_per_turn"]) for r in rows)))
     left.line(cpu, INDIGO)
     left.label(*cpu[0], f"{cpu[0][1]:g}", "val", "start", dy=-16)
     left.label(*cpu[-1], f"{cpu[-1][1]:g}", "val", "end", dy=-16)
     right = Plot(f, 940, 470, 600, 360, (0, 145), (0, 400))
-    right.frame("常驻内存", "MB", [(v, f"{v}") for v in (0, 100, 200, 300, 400)], xt, "会话历史，轮")
+    right.frame("Resident memory", "MB", [(v, f"{v}") for v in (0, 100, 200, 300, 400)], xt, "Session history, turns")
     rss = list(zip(history, (float(r["rss_mb"]) for r in rows)))
     right.line(rss, INDIGO)
     right.label(*rss[0], f"{rss[0][1]:g}", "val", "start", dy=-16)

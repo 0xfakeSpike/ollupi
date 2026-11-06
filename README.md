@@ -2,68 +2,68 @@
   <img alt="Ollupi" src="docs/logo/logo.svg" width="240">
 </h1>
 
-Ollupi 是一个 Go agent 框架，供云服务商构建大规模并发的个人 agent 服务。
+Ollupi is a Go agent framework for cloud providers building massively concurrent personal agent services.
 
-Ollupi 不以虚拟机或容器逐个隔离 agent，而是池化 runtime，并将 agent 的运行状态持久化：
+Instead of isolating each agent in its own VM or container, Ollupi pools the runtime and persists each agent's run state:
 
-- **任意时刻可恢复。** 每一步先写入数据库再执行，调度状态不驻留内存。发版、重启或崩溃后，会话从中断处继续。
-- **不活跃的会话不占资源。** 等待用户、审批或子代理的会话退出执行池，仅保留数据库记录，不占用内存与计算。
-- **并发受控。** 执行池按槽位调度，模型调用按连接限流，与服务商的账户额度对应；突发请求排队处理。
+- **Recoverable at any moment.** Every step is written to the database before it runs, and no scheduling state lives in memory. After a release, restart or crash, sessions continue from where they stopped.
+- **Inactive sessions cost nothing.** A session waiting on a user, an approval or a subagent leaves the execution pool and remains only as database records, using no memory or compute.
+- **Controlled concurrency.** The execution pool schedules by slot, and model calls are limited per connection to match the provider's account quota; bursts queue.
 
-会话、子代理和定时任务共用同一个执行池。[ollupi-desktop](https://github.com/0xfakeSpike/ollupi-desktop) 是基于 Ollupi 的桌面端。
+Sessions, subagents and scheduled tasks all share one execution pool. [ollupi-desktop](https://github.com/0xfakeSpike/ollupi-desktop) is the desktop client built on Ollupi.
 
-![Ollupi 架构](docs/images/architecture.svg)
+![Ollupi architecture](docs/images/architecture.svg)
 
-## 与逐个隔离 agent 的区别
+## How it differs from per-agent isolation
 
-| | 每个 agent 一个虚拟机或容器 | Ollupi |
+| | One VM or container per agent | Ollupi |
 |---|---|---|
-| 一个进程 | 一个会话 | 所有会话 |
-| 不活跃的会话 | 进程常驻，或冷启动重建 | 只有数据库记录 |
-| 等待用户、审批时 | 进程挂起，仍占内存 | 退出执行池，不占资源 |
-| 调度状态 | 进程内存 | SQLite |
-| 重启后 | 进行中的任务中断 | 从断点继续 |
-| 子代理 | 特殊机制或子进程 | 普通会话，同池排队 |
-| 定时任务 | 外部 cron 唤起进程 | 到点向会话发送消息，同池排队 |
+| One process hosts | One session | All sessions |
+| Inactive sessions | Process stays up, or is rebuilt with a cold start | Database records only |
+| Waiting on a user or approval | Process sits suspended, still holding memory | Leaves the execution pool, using no resources |
+| Scheduling state | Process memory | SQLite |
+| After a restart | In-progress work is interrupted | Continues from where it stopped |
+| Subagents | Special mechanism or child process | Ordinary sessions, queued in the same pool |
+| Scheduled tasks | External cron starts a process | A message to the session when due, queued in the same pool |
 
-![逐个隔离 agent 与 Ollupi 的对比](docs/images/cli-vs-ollupi.svg)
+![Per-agent isolation compared with Ollupi](docs/images/cli-vs-ollupi.svg)
 
-## 性能实测
+## Benchmarks
 
-以下结果使用模拟的模型与工具，测量调度与持久化，不涉及模型质量。方法、完整数据与复现命令见 [bench](bench/README.md)。
+These results use a simulated model and tools. They measure scheduling and persistence, not model quality. See [bench](bench/README.md) for the method, full data and commands to reproduce them.
 
-![与 pi、DeepSeek Harness 的对比](docs/images/bench-compare.svg)
+![Comparison with pi and DeepSeek Harness](docs/images/bench-compare.svg)
 
-![内存](docs/images/bench-memory.svg)
+![Memory](docs/images/bench-memory.svg)
 
-![容量](docs/images/bench-capacity.svg)
+![Capacity](docs/images/bench-capacity.svg)
 
-![突发与额度](docs/images/bench-burst.svg)
+![Burst and quota](docs/images/bench-burst.svg)
 
-![恢复](docs/images/bench-recovery.svg)
+![Recovery](docs/images/bench-recovery.svg)
 
-![混合负载](docs/images/bench-mix.svg)
+![Mixed load](docs/images/bench-mix.svg)
 
-![故障与长尾](docs/images/bench-faults.svg)
+![Faults and long tail](docs/images/bench-faults.svg)
 
-![长时间运行](docs/images/bench-soak.svg)
+![Long run](docs/images/bench-soak.svg)
 
-## 执行模型
+## Execution model
 
-![共享执行池](docs/images/execution-pool.svg)
+![Shared execution pool](docs/images/execution-pool.svg)
 
-所有会话中可推进的 turn，无论来自用户、子代理还是定时任务，进入同一队列，由固定数量的槽位（默认 32 个）执行。turn 等待用户、审批或子代理时释放槽位，不占用 goroutine 与模型并发额度，等待结束后重新就绪。槽位不足时，普通会话先于子代理，同类按就绪先后执行。模型并发按连接限制（默认每个连接 4 个），工具执行不占用模型额度。模型请求遇到 429、5xx 或连接中断时按退避重试，最多 8 次，等待期间保留槽位与模型额度。
+Every runnable turn in every session, whether it comes from a user, a subagent or a scheduled task, enters one queue and runs on a fixed number of slots (32 by default). A turn waiting on a user, an approval or a subagent releases its slot, holds no goroutine or model concurrency, and becomes ready again when the wait ends. When slots run short, ordinary sessions go before subagents, and turns of the same kind run in the order they became ready. Model concurrency is limited per connection (4 per connection by default), and tool execution uses none of it. Model requests that hit a 429, a 5xx or a dropped connection retry with backoff, up to 8 times, keeping their slot and model concurrency while they wait.
 
-每一步先写入数据库再执行，调度状态不驻留内存，进程重启后由同一调度逻辑恢复进行中的 turn。工具调用区分 `pending`（未执行）与 `inProgress`（可能已生效）：恢复时前者照常执行，后者标记为失败并提示核对，不会重复执行。
+Every step is written to the database before it runs and no scheduling state lives in memory, so after a process restart the same scheduling logic recovers in-progress turns. Tool calls distinguish `pending` (not yet run) from `inProgress` (may have taken effect): on recovery the former run as usual, while the latter are marked failed with a prompt to verify, and are never run twice.
 
-## 多用户与分片
+## Multi-user and shards
 
-一个数据库是一个分片，分片内的用户共用表，按用户隔离。一个分片同一时刻只由一个进程运行，由租约保证；进程退出后，备用进程接管并从断点继续。分片数量决定容量，客户端只连路由，路由把每个用户的连接转发到其所在分片。
+One database is one shard. Users in a shard share tables and are isolated per user. A lease ensures that only one process runs a shard at a time; when that process exits, a standby takes over and continues from where it stopped. The number of shards sets capacity. Clients connect only to the router, which forwards each user's connection to their shard.
 
-用户运行的一切都在自己的沙箱里：命令、文件和 MCP 服务器经 `sandbox.Box` 访问，接入一家云沙箱只需实现 `sandbox.Machine`。云沙箱用户的 HTTP MCP 请求从分片进程发出，只能到达公网地址。模型调用可走用户自己的客户端，附件经 `blobs.Store` 保存。
+Everything a user runs stays in their own sandbox: commands, files and MCP servers are reached through `sandbox.Box`, and integrating a cloud sandbox only takes implementing `sandbox.Machine`. HTTP MCP requests from cloud sandbox users leave from the shard process and can only reach public addresses. Model calls can go through the user's own client, and attachments are stored through `blobs.Store`.
 
-客户端用 `Authorization: Bearer <token>` 认证。浏览器无法设置这个请求头，改为把令牌放在 WebSocket 子协议里：`new WebSocket(url, ["ollupi.token", token])`。令牌不放在 URL 中。
+Clients authenticate with `Authorization: Bearer <token>`. Browsers can't set this header, so they put the token in the WebSocket subprotocol instead: `new WebSocket(url, ["ollupi.token", token])`. Tokens never go in the URL.
 
-## 许可
+## License
 
 [MIT](LICENSE)
