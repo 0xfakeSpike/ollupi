@@ -25,13 +25,25 @@ const (
 type Limits struct {
 	Context int `json:"context"`
 	Output  int `json:"output"`
+	// MaxInput is the most input the model accepts, for models that cap it below the window. Zero means no cap of its own.
+	MaxInput int `json:"input,omitempty"`
 }
 
-func (l Limits) Input() int { return l.Context - l.Output }
+// Input is the room a request has: what the window leaves beside the answer, within the model's own cap.
+func (l Limits) Input() int {
+	room := l.Context - l.Output
+	if l.MaxInput > 0 {
+		return min(room, l.MaxInput)
+	}
+	return room
+}
 
 func (l Limits) check() error {
 	if l.Context <= 0 || l.Output <= 0 || l.Output >= l.Context {
 		return fmt.Errorf("context %d and output %d must be positive, with output below context", l.Context, l.Output)
+	}
+	if l.MaxInput < 0 {
+		return fmt.Errorf("input %d must not be negative", l.MaxInput)
 	}
 	return nil
 }
