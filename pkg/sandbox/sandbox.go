@@ -229,7 +229,7 @@ func (s *Sandbox) Summary() string {
 	default:
 		fs = "Sandbox: writes are allowed only inside the command directories, temp dirs, and npm's download cache; " +
 			"Go, Cargo, pip, Yarn, pnpm and other module/build caches are read-only, so fetching dependencies that are not cached yet fails; " +
-			"git config and hooks, and the settings files that other programs later run (" + protectedSummary(s.policy.ProtectedNames) + "), cannot be created anywhere, temp dirs included, so git init and git clone fail; " +
+			"the settings files that other programs later run (" + protectedSummary(s.policy.ProtectedNames) + ") cannot be created anywhere, temp dirs included; " +
 			"credential and token files (~/.ssh, ~/.aws and other cloud CLIs, ~/.netrc, ~/.npmrc, gh, git, Docker, Maven, Gradle, PostgreSQL credentials, ...) cannot be read"
 	}
 	switch {
