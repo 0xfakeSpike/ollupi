@@ -2846,6 +2846,22 @@
       ],
       "additionalProperties": false
     },
+    "WorkspaceMoveParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "path"
+      ],
+      "additionalProperties": false
+    },
     "WorkspacePermissionsParams": {
       "type": "object",
       "properties": {
@@ -3182,6 +3198,14 @@
       },
       "result": {
         "$ref": "#/$defs/WorkspaceListResult"
+      }
+    },
+    "workspace/move": {
+      "params": {
+        "$ref": "#/$defs/WorkspaceMoveParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WorkspaceResult"
       }
     },
     "workspace/rename": {

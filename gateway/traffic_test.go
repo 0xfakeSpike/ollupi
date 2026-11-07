@@ -498,6 +498,27 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.call("cron/create", CronCreateParams{ThreadID: threadID, Name: "weekly", Spec: "@weekly", Prompt: "weekly check"}, nil)
 	c.call("cron/pause", CronPauseParams{ThreadID: threadID, Name: "weekly", Paused: &paused}, nil)
 	c.call("cron/create", CronCreateParams{ThreadID: general.Thread.ID, Name: "nightly", Spec: "@midnight", Prompt: "nightly check"}, nil)
+	// A workspace moves its folder, and keeps its id: the threads that hang off it do not move with the path.
+	var relocated WorkspaceResult
+	from := t.TempDir()
+	c.call("workspace/add", WorkspaceAddParams{Path: from, Name: "moving"}, &relocated)
+	c.await("workspace/changed", nil)
+	to := t.TempDir()
+	c.call("workspace/move", WorkspaceMoveParams{WorkspaceID: relocated.Workspace.ID, Path: to}, &relocated)
+	c.await("workspace/changed", nil)
+	if want, err := sandbox.CanonicalDirectory(to); err != nil || relocated.Workspace.RootPath != want {
+		t.Errorf("the workspace moved to %q, want %s (%v)", relocated.Workspace.RootPath, want, err)
+	}
+	if _, err := os.Stat(from); !os.IsNotExist(err) {
+		t.Errorf("the old folder is still there: %v", err)
+	}
+	// The folder it moves to has to be empty, or a move would merge two folders.
+	full := t.TempDir()
+	if err := os.WriteFile(filepath.Join(full, "kept.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c.refused("workspace/move", WorkspaceMoveParams{WorkspaceID: relocated.Workspace.ID, Path: full}, jsonrpc.CodeInvalidParams, "is not empty")
+
 	c.call("workspace/archive", WorkspaceArchiveParams{WorkspaceID: workspaceID, Archived: &archived}, nil)
 	var all CronListResult
 	c.call("cron/list", CronListParams{}, &all)

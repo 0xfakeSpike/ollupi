@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/permission"
+	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/google/uuid"
 )
@@ -53,6 +54,67 @@ func (a *Agent) RenameWorkspace(user, id, name string) (repo.WorkspaceRow, error
 		return repo.WorkspaceRow{}, err
 	}
 	return a.changeWorkspace(user, id, func(w *repo.WorkspaceRow) { w.Name = name })
+}
+
+// MoveWorkspace moves the workspace's folder to path, a folder that is there and empty, and points the workspace at
+// it. Every thread, memory and task keeps its workspace id, so nothing else is rewritten. A turn in progress would keep
+// calling tools against the folder it started in, so the move waits until the workspace's conversations are idle.
+func (a *Agent) MoveWorkspace(user, id, path string) (repo.WorkspaceRow, error) {
+	ctx := context.Background()
+	w, err := a.workspaceFor(user, repo.Ref(id))
+	if err != nil {
+		return repo.WorkspaceRow{}, err
+	}
+	if w.ID == "" {
+		return repo.WorkspaceRow{}, fmt.Errorf("agent: workspace %s: %w", id, repo.ErrNotFound)
+	}
+	box, err := a.cfg.BoxFor(user)
+	if err != nil {
+		return repo.WorkspaceRow{}, fmt.Errorf("agent: the sandbox of the user: %w", err)
+	}
+	target, err := box.Directory(ctx, path)
+	if err != nil {
+		return repo.WorkspaceRow{}, fmt.Errorf("agent: %w: %v", ErrInvalidPath, err)
+	}
+	if box.Same(ctx, w.RootPath, target) {
+		return w, nil
+	}
+	if sandbox.Within(w.RootPath, target) {
+		return repo.WorkspaceRow{}, fmt.Errorf("agent: %w: %q is inside the workspace", ErrInvalidPath, target)
+	}
+	busy, err := a.cfg.DB.WorkspaceBusy(user, w.ID)
+	if err != nil {
+		return repo.WorkspaceRow{}, err
+	}
+	if busy {
+		return repo.WorkspaceRow{}, fmt.Errorf("agent: workspace %s: %w", w.Name, ErrWorkspaceBusy)
+	}
+	if entries, err := box.ReadDir(ctx, target); err != nil {
+		return repo.WorkspaceRow{}, fmt.Errorf("agent: %w: %v", ErrInvalidPath, err)
+	} else if len(entries) > 0 {
+		return repo.WorkspaceRow{}, fmt.Errorf("agent: %w: %q is not empty", ErrInvalidPath, target)
+	}
+	rows, err := a.cfg.DB.Workspaces(user)
+	if err != nil {
+		return repo.WorkspaceRow{}, err
+	}
+	for _, other := range rows {
+		if other.ID != w.ID && box.Same(ctx, other.RootPath, target) {
+			return repo.WorkspaceRow{}, fmt.Errorf("agent: %w: %q is the folder of the workspace %s", ErrInvalidPath, target, other.Name)
+		}
+	}
+	if err := box.Move(ctx, w.RootPath, target); err != nil {
+		return repo.WorkspaceRow{}, fmt.Errorf("agent: %w", err)
+	}
+	moved, err := a.cfg.DB.SetWorkspaceRoot(user, w.ID, target, time.Now().UTC())
+	if err != nil {
+		if back := box.Move(ctx, target, w.RootPath); back != nil {
+			return repo.WorkspaceRow{}, fmt.Errorf("agent: the folder is now at %s but the workspace still names %s: %w; moving it back failed too: %v", target, w.RootPath, err, back)
+		}
+		return repo.WorkspaceRow{}, err
+	}
+	a.emit(Event{Kind: EventWorkspaceChanged, Workspace: &moved})
+	return moved, nil
 }
 
 func (a *Agent) ArchiveWorkspace(user, id string, archived bool) (repo.WorkspaceRow, error) {

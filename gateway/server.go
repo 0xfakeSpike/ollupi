@@ -355,6 +355,7 @@ var errorCodes = []struct {
 	{agent.ErrWorkspaceArchived, errWorkspaceArchived},
 	{agent.ErrThreadArchived, errThreadArchived},
 	{agent.ErrThreadBusy, errThreadBusy},
+	{agent.ErrWorkspaceBusy, errThreadBusy},
 	{agent.ErrInvalidMessage, jsonrpc.CodeInvalidParams},
 	{agent.ErrInvalidAnswer, jsonrpc.CodeInvalidParams},
 	{agent.ErrInvalidDecision, jsonrpc.CodeInvalidParams},
