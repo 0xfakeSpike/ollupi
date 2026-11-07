@@ -84,6 +84,7 @@ var protocol = struct {
 		"workspace/list":              handle((*conn).workspaceList),
 		"workspace/add":               handle((*conn).workspaceAdd),
 		"workspace/rename":            handle((*conn).workspaceRename),
+		"workspace/move":              handle((*conn).workspaceMove),
 		"workspace/archive":           handle((*conn).workspaceArchive),
 		"workspace/updatePermissions": handle((*conn).workspacePermissions),
 		"cron/list":                   handle((*conn).cronList),
@@ -349,6 +350,11 @@ type WorkspaceAddParams struct {
 type WorkspaceRenameParams struct {
 	WorkspaceID string `json:"workspaceId"`
 	Name        string `json:"name"`
+}
+
+type WorkspaceMoveParams struct {
+	WorkspaceID string `json:"workspaceId"`
+	Path        string `json:"path"`
 }
 
 type WorkspaceArchiveParams struct {

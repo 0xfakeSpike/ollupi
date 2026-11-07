@@ -37,6 +37,7 @@ var (
 	ErrNoSuchRequest     = errors.New("the thread does not wait on this request")
 	ErrSubagentThread    = errors.New("a subagent thread takes no input; send it to its parent conversation")
 	ErrWorkspaceArchived = errors.New("the workspace is archived; restore it before starting new work")
+	ErrWorkspaceBusy     = errors.New("a conversation in the workspace has a turn in progress or queued; interrupt it first")
 	ErrThreadArchived    = errors.New("the conversation is archived; restore it before starting new work")
 	ErrThreadBusy        = errors.New("the conversation has a turn in progress or queued; interrupt it first")
 	ErrInvalidMessage    = errors.New("invalid message")

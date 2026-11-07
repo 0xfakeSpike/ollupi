@@ -27,6 +27,9 @@ type Box interface {
 	Open(ctx context.Context, path string) (io.ReadCloser, error)
 	// WriteFile makes the folders above path and replaces the file whole, so a reader never sees half of it.
 	WriteFile(ctx context.Context, path string, data []byte, perm fs.FileMode) error
+	// Move renames a folder inside the box; to must not exist or be empty, and afterwards holds what from held. It
+	// fails rather than merge, and across filesystems it fails with the system's error.
+	Move(ctx context.Context, from, to string) error
 	// Canonical resolves path, which need not exist yet, to the one name the rules below are checked against.
 	Canonical(ctx context.Context, path string) (string, error)
 	// Directory is Canonical for a folder that must exist.
@@ -97,6 +100,31 @@ func (s *Sandbox) WriteFile(_ context.Context, path string, data []byte, perm fs
 	return os.Rename(tmp.Name(), path)
 }
 
+func (s *Sandbox) Move(_ context.Context, from, to string) error {
+	if err := os.Rename(from, to); err != nil {
+		// Go refuses to rename onto a folder that is already there, even an empty one, and a user picks the folder
+		// the workspace moves into: an empty one is replaced. Any other failure, such as a move across filesystems
+		// or one the system does not allow, leaves the folder the user picked as it was.
+		if !errors.Is(err, fs.ErrExist) {
+			return fmt.Errorf("sandbox: move %s to %s: %w", from, to, err)
+		}
+		entries, readErr := os.ReadDir(to)
+		if readErr != nil {
+			return fmt.Errorf("sandbox: move %s to %s: %w", from, to, err)
+		}
+		if len(entries) > 0 {
+			return fmt.Errorf("sandbox: move %s to %s: %s is not empty", from, to, to)
+		}
+		if rmErr := os.Remove(to); rmErr != nil {
+			return fmt.Errorf("sandbox: move %s to %s: %w", from, to, rmErr)
+		}
+		if retry := os.Rename(from, to); retry != nil {
+			return fmt.Errorf("sandbox: move %s to %s: %w", from, to, retry)
+		}
+	}
+	return nil
+}
+
 func (s *Sandbox) Canonical(_ context.Context, path string) (string, error) {
 	return CanonicalPath(path, "")
 }
@@ -158,6 +186,9 @@ func (s *Sandbox) Same(_ context.Context, a, b string) bool {
 func Here() Box { return &Sandbox{} }
 
 const stopDelay = 2 * time.Second
+
+// moveTimeout is how long a machine's mv may take: a move of the user's whole folder, not a command of theirs.
+const moveTimeout = 10 * time.Minute
 
 func (s *Sandbox) Start(ctx context.Context, c Command, stderr io.Writer) (Process, error) {
 	if c.Program == "" {
@@ -279,6 +310,42 @@ func (r *remote) Start(ctx context.Context, c Command, stderr io.Writer) (Proces
 }
 
 func (r *remote) Same(_ context.Context, a, b string) bool { return a == b }
+
+// Move goes through the machine's own mv: its files are reached only through its commands. mv puts a folder inside a
+// folder that is already there, so an empty target is removed first and to ends up holding what from held.
+func (r *remote) Move(ctx context.Context, from, to string) error {
+	if r.Machine == nil {
+		return errors.New("sandbox: this box has no machine to move files in")
+	}
+	if st, err := r.Machine.Stat(ctx, to); err == nil && st.IsDir() {
+		entries, err := r.Machine.ReadDir(ctx, to)
+		if err != nil {
+			return fmt.Errorf("sandbox: move %s to %s: %w", from, to, err)
+		}
+		if len(entries) > 0 {
+			return fmt.Errorf("sandbox: move %s to %s: %s is not empty", from, to, to)
+		}
+		if err := r.run(ctx, "rmdir", to); err != nil {
+			return fmt.Errorf("sandbox: move %s to %s: %w", from, to, err)
+		}
+	}
+	if err := r.run(ctx, "mv", "-f", from, to); err != nil {
+		return fmt.Errorf("sandbox: move %s to %s: %w", from, to, err)
+	}
+	return nil
+}
+
+// run is one command of the machine, whose failure is an error of the move.
+func (r *remote) run(ctx context.Context, program string, args ...string) error {
+	res, err := r.Machine.Run(ctx, Command{Program: program, Args: args, Timeout: moveTimeout})
+	if err != nil {
+		return err
+	}
+	if res.ExitCode != 0 {
+		return fmt.Errorf("%s: %s", program, strings.TrimSpace(res.Stderr))
+	}
+	return nil
+}
 
 func (r *remote) Close() error {
 	r.transport.CloseIdleConnections()
