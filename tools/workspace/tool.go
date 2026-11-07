@@ -87,7 +87,7 @@ func (r *Provider) tool() *tools.Spec {
 			"When a command fails because of the sandbox (a write outside the command directories or to a protected file, " +
 			"a host outside the allowed domains, the network, a local socket), " +
 			"retry it with sandbox_permissions \"require_escalated\" and a one-sentence justification: " +
-			"the user is asked, and an approved command runs on the host without the sandbox. " +
+			"the command then runs on the host without the sandbox, and the user is asked first unless the approval policy never asks. " +
 			"Do not escalate to get around a denied path on purpose, and do not escalate commands that work in the sandbox"
 	}
 
@@ -152,7 +152,7 @@ func (r *Provider) inputSchema() map[string]any {
 	props["sandbox_permissions"] = map[string]any{
 		"type":        "string",
 		"enum":        []string{sandboxUseDefault, sandboxRequireEscalated},
-		"description": "use_default (the default) runs in the sandbox without asking; require_escalated asks the user to run this command outside the sandbox",
+		"description": "use_default (the default) runs in the sandbox; require_escalated runs this command outside the sandbox, and its justification is shown to the user",
 	}
 	props["justification"] = map[string]any{
 		"type":        "string",

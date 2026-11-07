@@ -177,34 +177,48 @@ func (c *Checker) Decide(call Call, history []repo.ItemRow) Decision {
 }
 
 func (c *Checker) decide(call Call, history []repo.ItemRow) Decision {
-	if p := call.Prepared; p != nil && p.Escalated && !c.policy.allowsEscalation() {
-		return Decision{Verdict: Deny, Reason: fmt.Sprintf("refused: under the approval policy %q nobody can approve running outside the sandbox; do the work inside the sandbox, or tell the user what needs to run outside it", c.policy)}
-	}
+	// Deny and ask rules speak for the user at every level, so they are read before the policy.
 	switch verdict, rule := c.rules.decide(call.Tool, call.Content, call.HasContent); verdict {
 	case ruleDeny:
 		return Decision{Verdict: Deny, Rule: rule, Reason: fmt.Sprintf("denied by the permission rule %s; do not try it again, find another way or tell the user", rule)}
 	case ruleAsk:
 		return Decision{Verdict: Ask, Rule: rule, Reason: fmt.Sprintf("Your permission rule %s asks before this call.", rule)}
 	case ruleAllow:
-		if p := call.Prepared; p == nil || !p.Escalated {
+		if !c.leavesTheSandbox(call) {
 			return Decision{Verdict: Run, Rule: rule}
 		}
 	case ruleOpaque:
 		if allowedForConversation(call, history) {
 			return Decision{Verdict: Run, Reason: "allowed for this conversation earlier"}
 		}
+		if c.policy == Never {
+			return Decision{Verdict: Run}
+		}
+		if c.leavesTheSandbox(call) {
+			return Decision{Verdict: Ask, Reason: "Runs outside the sandbox: " + call.Prepared.Justification}
+		}
 		return Decision{Verdict: Ask, Reason: "This command cannot be fully checked against your permission rules for " + call.Tool + ", so it needs your approval."}
+	}
+	// Nobody is asked under a policy that never asks, so what the rules left undecided runs, the sandbox's edge included.
+	if c.policy == Never {
+		return Decision{Verdict: Run}
 	}
 	if allowedForConversation(call, history) {
 		return Decision{Verdict: Run, Reason: "allowed for this conversation earlier"}
 	}
-	if p := call.Prepared; p != nil && p.Escalated {
-		return Decision{Verdict: Ask, Reason: "Runs outside the sandbox: " + p.Justification}
+	if c.leavesTheSandbox(call) {
+		return Decision{Verdict: Ask, Reason: "Runs outside the sandbox: " + call.Prepared.Justification}
 	}
 	if c.policy.requiresApproval(call.Annotations, call.Prepared) {
 		return Decision{Verdict: Ask}
 	}
 	return Decision{Verdict: Run}
+}
+
+// leavesTheSandbox says the call was prepared to run outside the sandbox, which someone has to agree to before it runs.
+// The policy that never asks has no one to agree, so there the command runs as prepared.
+func (c *Checker) leavesTheSandbox(call Call) bool {
+	return c.policy != Never && call.Prepared != nil && call.Prepared.Escalated
 }
 
 func (d Decision) Approval(id string, call Call, at time.Time) *repo.Approval {

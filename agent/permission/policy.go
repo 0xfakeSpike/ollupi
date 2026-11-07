@@ -9,6 +9,13 @@ import (
 
 type Policy string
 
+// Policy says when a call asks the user before it runs. Rules come first at every level: a deny rule still denies and
+// an ask rule still asks, whatever the policy.
+//
+//   - Untrusted runs only what changes nothing and stays on this machine; every change and every site asks.
+//   - OnRequest runs what reads, and what the sandbox confines; a change outside the sandbox, and a command prepared to
+//     leave it, asks first.
+//   - Never asks nothing: what the rules leave undecided runs, a command that leaves the sandbox included.
 const (
 	Untrusted Policy = "untrusted"
 	OnRequest Policy = "on-request"
@@ -39,5 +46,3 @@ func (p Policy) requiresApproval(a tools.Annotations, prepared *tools.Prepared) 
 		panic(fmt.Sprintf("permission: unparsed approval policy %q", p))
 	}
 }
-
-func (p Policy) allowsEscalation() bool { return p != Never }

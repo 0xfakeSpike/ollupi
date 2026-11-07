@@ -102,6 +102,63 @@ func command(parts ...string) Call {
 	return Call{Tool: "exec", Content: c, HasContent: true}
 }
 
+// The three policies say what runs without asking, and "never" runs even a command that leaves the sandbox.
+func TestEachPolicyDecidesWhatRunsWithoutAsking(t *testing.T) {
+	registry := testRegistry(t)
+	read := Call{Tool: "touch", Annotations: tools.Annotations{ReadOnlyHint: true, OpenWorldHint: tools.Hint(false)}}
+	confined := Call{Tool: "exec", Prepared: &tools.Prepared{Sandboxed: true}}
+	escalated := command("make install")
+	escalated.Prepared = &tools.Prepared{Sandboxed: true, Escalated: true, Justification: "writes /usr/local"}
+	opaque := command("sh -c $X")
+	opaque.Content.Opaque = true
+
+	for _, tc := range []struct {
+		policy Policy
+		what   string
+		call   Call
+		want   Verdict
+	}{
+		{Untrusted, "a read", read, Run},
+		{Untrusted, "a confined command", confined, Ask},
+		{Untrusted, "a command outside the sandbox", escalated, Ask},
+		{OnRequest, "a read", read, Run},
+		{OnRequest, "a confined command", confined, Run},
+		{OnRequest, "a command outside the sandbox", escalated, Ask},
+		{OnRequest, "a command the rules cannot check", opaque, Ask},
+		{Never, "a confined command", confined, Run},
+		{Never, "a command outside the sandbox", escalated, Run},
+		{Never, "a command the rules cannot check", opaque, Run},
+	} {
+		checker, err := New([]Layer{{Of: "the defaults", Settings: Settings{ApprovalPolicy: string(tc.policy)}}}, nil, registry)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.policy, err)
+		}
+		if d := checker.Decide(tc.call, nil); d.Verdict != tc.want {
+			t.Errorf("%s under %q: verdict %v, want %v (%s)", tc.what, tc.policy, d.Verdict, tc.want, d.Reason)
+		}
+	}
+}
+
+// A deny rule still denies and an ask rule still asks, even where the policy itself never asks.
+func TestRulesSpeakAtEveryLevel(t *testing.T) {
+	registry := testRegistry(t)
+	for _, policy := range PolicyValues {
+		checker, err := New([]Layer{
+			{Of: "the defaults", Settings: Settings{ApprovalPolicy: string(policy)}},
+			{Of: "the workspace", Settings: Settings{Rules: Rules{Deny: []string{"touch"}, Ask: []string{"exec"}}}},
+		}, nil, registry)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d := checker.Decide(Call{Tool: "touch"}, nil); d.Verdict != Deny {
+			t.Errorf("%q: a tool a deny rule names got %v", policy, d.Verdict)
+		}
+		if d := checker.Decide(command("git status --short"), nil); d.Verdict != Ask {
+			t.Errorf("%q: a tool an ask rule names got %v", policy, d.Verdict)
+		}
+	}
+}
+
 func TestSuggestedRulesAllowTheCallNextTime(t *testing.T) {
 	registry := testRegistry(t)
 	checker, err := New([]Layer{defaults}, nil, registry)
