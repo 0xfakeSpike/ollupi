@@ -6,7 +6,7 @@ func TestCheckWrite(t *testing.T) {
 	s := &Sandbox{policy: policy{Mode: ModeWorkspaceWrite, WritableRoots: []string{"/p"}, ReadOnly: []string{"/p/skills"},
 		ProtectedNames: append([]string{"AGENTS.md"}, defaultProtectedNames...)}}
 	for path, ok := range map[string]bool{
-		"/p/src/a.go": true, "/p/b.txt": true, "/q/a.go": false, "/p/.git/config": false, "/p/x/.git/HEAD": false,
+		"/p/src/a.go": true, "/p/b.txt": true, "/q/a.go": false, "/p/.git/config": true, "/p/.git/hooks/pre-commit": true,
 		"/p/AGENTS.md": false, "/p/.vscode/settings.json": false, "/p/skills/x/SKILL.md": false,
 	} {
 		if err := s.CheckWrite([]string{"/p"}, path); (err == nil) != ok {

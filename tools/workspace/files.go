@@ -61,7 +61,7 @@ func (r *Provider) fileTools() []*tools.Spec {
 	annotations := func(title string) *tools.Annotations {
 		return &tools.Annotations{Title: title, DestructiveHint: tools.Hint(true), OpenWorldHint: tools.Hint(false)}
 	}
-	where := "Writes only inside the project (outside a project: inside " + strings.Join(r.box.Roots(), ", ") + "), never to .git or protected settings files. "
+	where := "Writes only inside the project (outside a project: inside " + strings.Join(r.box.Roots(), ", ") + "), never to protected settings files. "
 	return []*tools.Spec{{
 		Name: ToolEditFile,
 		Description: "Edit a text file by exact replacements. Read the file first so old_text matches it exactly. " + where +

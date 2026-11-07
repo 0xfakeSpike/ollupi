@@ -35,20 +35,6 @@ func writeUnixSocketAllows(b *strings.Builder, sockets []string) error {
 	return nil
 }
 
-var seatbeltGitRules = []struct{ op, pattern string }{
-	{"file-write*", `.git/config$`},
-	{"file-write*", `.git/config.worktree$`},
-	{"file-write*", `.git/commondir$`},
-	{"file-write*", `.git/hooks(/|$)`},
-	{"file-write*", `.git/modules/.+/config$`},
-	{"file-write*", `.git/modules/.+/commondir$`},
-	{"file-write*", `.git/modules/.+/hooks(/|$)`},
-	{"file-write*", `.git/worktrees/[^/]+/config.worktree$`},
-	{"file-write*", `.git/worktrees/[^/]+/commondir$`},
-	{"file-write-unlink", `.git$`},
-	{"file-write-data", `.git$`},
-}
-
 func rootRule(op, root, pattern string, fileOnly bool, message string) string {
 	prefix := "/"
 	if quoted, err := seatbeltRegexQuote(root); err == nil {
@@ -196,10 +182,6 @@ func seatbeltProfile(p policy, tempDirs []string) (string, [][2]string, error) {
 			}
 			for _, dir := range dependencyDirs {
 				b.WriteString(strings.Replace(rootRule("file-write*", root, dir+"/", false, ""), "(deny ", "(allow ", 1) + "\n")
-			}
-			for _, rule := range seatbeltGitRules {
-				fileOnly := rule.op == "file-write-data"
-				b.WriteString(rootRule(rule.op, root, rule.pattern, fileOnly, msg) + "\n")
 			}
 		}
 		b.WriteString("(deny file-clone (vnode-type DIRECTORY)" + msg + ")\n")

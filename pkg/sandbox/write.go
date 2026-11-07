@@ -9,6 +9,7 @@ import (
 
 // CheckWrite applies the sandbox's write rules to one file the agent writes itself, without running a command:
 // it must be inside one of roots, and when the sandbox is enforced, outside protected, read-only and credential paths.
+// A repository's .git is the agent's to write like any other folder.
 func (s *Sandbox) CheckWrite(roots []string, path string) error {
 	if s.policy.Mode == ModeReadOnly {
 		return fmt.Errorf("sandbox: files are read-only")
@@ -30,7 +31,7 @@ func (s *Sandbox) CheckWrite(roots []string, path string) error {
 		return err
 	}
 	for part := range strings.SplitSeq(rel, string(filepath.Separator)) {
-		if part == ".git" || slices.Contains(s.policy.ProtectedNames, part) {
+		if slices.Contains(s.policy.ProtectedNames, part) {
 			return fmt.Errorf("sandbox: %q is protected (%s) and cannot be written", path, part)
 		}
 	}
