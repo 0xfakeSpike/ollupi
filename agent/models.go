@@ -63,7 +63,7 @@ func (a *Agent) checkPromptFits() error {
 			return err
 		}
 		offered, deferred := runtime.Offer(descriptors, window, nil)
-		system := systemprompt.Build(systemprompt.Input{Agent: systemprompt.AgentPrompt(a.cfg.Name, a.cfg.Prompt), Skills: catalog, SkillTokens: window.SkillBudget(), Deferred: deferred})
+		system := systemprompt.Build(systemprompt.Input{Agent: systemprompt.AgentPrompt(a.cfg.Name, a.cfg.Prompt), Compact: window.Compact(), Skills: catalog, SkillTokens: window.SkillBudget(), Deferred: deferred})
 		if err := window.Fits(system, runtime.Specs(offered)); err != nil {
 			return err
 		}

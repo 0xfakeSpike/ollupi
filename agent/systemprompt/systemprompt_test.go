@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/0xfakeSpike/ollupi/agent/skills"
+	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
@@ -17,5 +19,20 @@ func TestDeferredToolsAreListedByProvider(t *testing.T) {
 	}
 	if strings.Contains(Build(Input{Agent: "AGENT"}), list) {
 		t.Error("a prompt without deferred tools has a DEFERRED TOOLS section")
+	}
+}
+
+func TestCompactIsShorterAndListsNoSkills(t *testing.T) {
+	catalog := []skills.Skill{{Name: "deploy", Description: "Ship it."}}
+	full := Build(Input{Agent: "AGENT", Skills: catalog, SkillTokens: 1000})
+	compact := Build(Input{Agent: "AGENT", Compact: true, Skills: catalog, SkillTokens: 1000})
+	if !strings.Contains(full, "# AVAILABLE SKILLS") || strings.Contains(compact, "# AVAILABLE SKILLS") {
+		t.Errorf("full:\n%s\ncompact:\n%s", full, compact)
+	}
+	if !strings.HasPrefix(compact, "AGENT\n\n") || !strings.Contains(compact, "# Safety") {
+		t.Errorf("compact:\n%s", compact)
+	}
+	if tokens := llm.EstimateTokens(compact); tokens > 400 {
+		t.Errorf("the compact prompt takes %d tokens", tokens)
 	}
 }
