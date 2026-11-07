@@ -195,9 +195,10 @@ func (m *Manager) extract(ctx context.Context, batch *Batch, payload string, rep
 		}
 	}
 	response, err := client.Chat(callCtx, llm.ChatRequest{
-		Model:      m.opts.Model,
-		Messages:   []llm.ChatMessage{{Role: llm.RoleSystem, Content: extractionInstructions}, {Role: llm.RoleUser, Content: payload}},
-		ToolChoice: llm.ToolChoiceNone,
+		Model:       m.opts.Model,
+		Messages:    []llm.ChatMessage{{Role: llm.RoleSystem, Content: extractionInstructions}, {Role: llm.RoleUser, Content: payload}},
+		ToolChoice:  llm.ToolChoiceNone,
+		InputTokens: llm.EstimateTokens(extractionInstructions) + llm.EstimateTokens(payload),
 	}, nil)
 	if err != nil {
 		return nil, failure{repo.MemoryModelRequest, fmt.Errorf("memory extraction model request failed: %w", err)}

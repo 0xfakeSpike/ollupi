@@ -146,6 +146,7 @@ func (rt *Runtime) send(ctx context.Context, prompt contextmanager.Prompt, choic
 	resp, err := rt.LLM.Chat(ctx, llm.ChatRequest{
 		Model:    rt.Turn.Model,
 		Messages: messages, Tools: Specs(rt.offered), ToolChoice: choice,
+		InputTokens: prompt.Stats.CalibratedTokens,
 	}, restored)
 	if rest := (llm.Delta{Content: content.Flush(), Reasoning: reasoning.Flush()}); onDelta != nil && (rest.Content != "" || rest.Reasoning != "") {
 		onDelta(rest)

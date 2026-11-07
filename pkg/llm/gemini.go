@@ -43,7 +43,7 @@ func (c *Gemini) Chat(ctx context.Context, req ChatRequest, onDelta func(Delta))
 	if err != nil {
 		return ChatResponse{}, err
 	}
-	contents, config, err := geminiRequest(req, limits.Output)
+	contents, config, err := geminiRequest(req, limits.Answer(req.InputTokens))
 	if err != nil {
 		return ChatResponse{}, fmt.Errorf("llm.Gemini: %w", err)
 	}
