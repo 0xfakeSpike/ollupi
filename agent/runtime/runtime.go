@@ -19,6 +19,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/redact"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/0xfakeSpike/ollupi/tools/workspace"
 	"github.com/google/uuid"
 )
 
@@ -79,7 +80,7 @@ func (rt *Runtime) start() error {
 	}
 	rt.offered, rt.deferred = Offer(rt.Permissions.Tools(), rt.Window, slices.Concat(rt.History, rt.Items))
 	rt.system = systemprompt.Build(systemprompt.Input{
-		Agent: rt.Prompt, Subagent: rt.Caller.Subagent, Root: rt.Caller.Root,
+		Agent: rt.Prompt, Compact: rt.Window.Compact(), Subagent: rt.Caller.Subagent, Root: rt.Caller.Root,
 		Skills: catalog, SkillTokens: rt.Window.SkillBudget(), Deferred: rt.deferred,
 	})
 	if hasSnapshot(slices.Concat(rt.History, rt.Items)) {
@@ -128,16 +129,23 @@ func (rt *Runtime) tool(name string) (tools.ToolDescriptor, bool) {
 	return rt.offered[i], true
 }
 
+// compactTools are what a model with a small input is always sent: the rest cost more than it can spare, and it can load them.
+var compactTools = []string{tools.ToolLoadTools, workspace.ToolReadFile, workspace.ToolRunCommand}
+
 // Offer splits the visible tools into the ones sent to the model and the ones only named in DEFERRED TOOLS.
 // Tools of external providers are deferred when all visible tools would take more than the tool budget;
 // the ones a load_tools call loaded follow the others in load order, so the tool list only grows.
 func Offer(visible []tools.ToolDescriptor, window *contextmanager.Manager, items []repo.ItemRow) (offered, deferred []tools.ToolDescriptor) {
 	external := func(d tools.ToolDescriptor) bool { return strings.Contains(d.Name, tools.ProviderSeparator) }
 	loader := func(d tools.ToolDescriptor) bool { return d.Name == tools.ToolLoadTools }
-	deferring := slices.ContainsFunc(visible, loader) && slices.ContainsFunc(visible, external) && !window.ToolsFit(Specs(visible))
+	compact := window.Compact()
+	deferrable := func(d tools.ToolDescriptor) bool {
+		return external(d) || compact && !slices.Contains(compactTools, d.Name)
+	}
+	deferring := slices.ContainsFunc(visible, loader) && (compact || slices.ContainsFunc(visible, external) && !window.ToolsFit(Specs(visible)))
 	for _, d := range visible {
 		switch {
-		case deferring && external(d):
+		case deferring && deferrable(d):
 			deferred = append(deferred, d)
 		case deferring || !loader(d):
 			offered = append(offered, d)

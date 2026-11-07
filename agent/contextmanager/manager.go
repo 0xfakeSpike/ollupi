@@ -30,6 +30,8 @@ const (
 	artifactPercent    = 15
 	toolPercent        = 10
 	sentLayout         = "Mon 2006-01-02 15:04 -07:00"
+	// compactInputTokens is the budget the full prompt and tool list need: about 8k tokens, which Fits holds to half of it.
+	compactInputTokens = 16_384
 )
 
 func share(inputTokens, pct int) int { return max(256, inputTokens*pct/100) }
@@ -132,6 +134,9 @@ func (m *Manager) calibrate(s *repo.ContextStats, items []repo.ItemRow) {
 		return
 	}
 }
+
+// Compact says the model's input is too small for the full prompt and tool list.
+func (m *Manager) Compact() bool { return m.inputTokens < compactInputTokens }
 
 func (m *Manager) SkillBudget() int {
 	return share(m.inputTokens, 4)

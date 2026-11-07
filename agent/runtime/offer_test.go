@@ -10,6 +10,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/0xfakeSpike/ollupi/tools/workspace"
 )
 
 func tool(name, description string) tools.ToolDescriptor {
@@ -30,7 +31,7 @@ func loadCall(status repo.ItemStatus, loaded ...string) repo.ItemRow {
 	return repo.ItemRow{Type: repo.ItemToolCall, Tool: tools.ToolLoadTools, Status: status, Result: &repo.ToolResult{Output: out}}
 }
 
-var window = contextmanager.New("m", llm.Limits{Context: 10000, Output: 1000})
+var window = contextmanager.New("m", llm.Limits{Context: 20000, Output: 2000})
 
 func TestOfferSendsEveryToolWithinTheBudget(t *testing.T) {
 	offered, deferred := Offer([]tools.ToolDescriptor{tool("shell", "run"), tool(tools.ToolLoadTools, "load"), tool("github__issue", "file")}, window, nil)
@@ -58,6 +59,26 @@ func TestOfferDefersExternalToolsOverTheBudget(t *testing.T) {
 
 	without := slices.DeleteFunc(slices.Clone(visible), func(d tools.ToolDescriptor) bool { return d.Name == tools.ToolLoadTools })
 	if offered, deferred := Offer(without, window, nil); len(offered) != 3 || deferred != nil {
+		t.Errorf("without load_tools: offered %q, deferred %q; want everything offered", names(offered), names(deferred))
+	}
+}
+
+func TestOfferKeepsOnlyTheCoreToolsForASmallInput(t *testing.T) {
+	small := contextmanager.New("m", llm.Limits{Context: 8192, Output: 2048})
+	visible := []tools.ToolDescriptor{tool(workspace.ToolReadFile, "read"), tool(workspace.ToolRunCommand, "run"), tool("grep", "search"), tool("github__issue", "file"), tool(tools.ToolLoadTools, "load")}
+	offered, deferred := Offer(visible, small, nil)
+	if want := []string{workspace.ToolReadFile, workspace.ToolRunCommand, tools.ToolLoadTools}; !slices.Equal(names(offered), want) {
+		t.Errorf("offered %q, want %q", names(offered), want)
+	}
+	if want := []string{"grep", "github__issue"}; !slices.Equal(names(deferred), want) {
+		t.Errorf("deferred %q, want %q", names(deferred), want)
+	}
+	offered, _ = Offer(visible, small, []repo.ItemRow{loadCall(repo.ItemCompleted, "grep")})
+	if !slices.Contains(names(offered), "grep") {
+		t.Errorf("a loaded tool is not offered: %q", names(offered))
+	}
+	without := visible[:4]
+	if offered, deferred := Offer(without, small, nil); len(offered) != 4 || deferred != nil {
 		t.Errorf("without load_tools: offered %q, deferred %q; want everything offered", names(offered), names(deferred))
 	}
 }
