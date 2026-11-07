@@ -100,6 +100,8 @@ type ChatRequest struct {
 	Messages   []ChatMessage
 	Tools      []ToolSpec
 	ToolChoice ToolChoice
+	// InputTokens is the caller's estimate of the prompt; clients that must state a longest answer fit it beside this.
+	InputTokens int
 }
 
 type Usage struct {

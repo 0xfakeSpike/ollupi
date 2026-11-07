@@ -39,7 +39,7 @@ func (c *Anthropic) Chat(ctx context.Context, req ChatRequest, onDelta func(Delt
 	if err != nil {
 		return ChatResponse{}, err
 	}
-	params, prefix, err := anthropicParams(req, limits.Output)
+	params, prefix, err := anthropicParams(req, limits.Answer(req.InputTokens))
 	if err != nil {
 		return ChatResponse{}, fmt.Errorf("llm.Anthropic: %w", err)
 	}

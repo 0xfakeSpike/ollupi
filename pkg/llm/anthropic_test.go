@@ -86,6 +86,20 @@ func blocks(body map[string]any) [][]string {
 	return out
 }
 
+func TestAnthropicFitsTheAnswerBesideTheInput(t *testing.T) {
+	fake := &fakeAnthropic{streams: [][]string{anthropicTurn("sigA")}}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	c := NewAnthropic(srv.URL, "key", 1, map[string]Limits{"claude": {Context: 200_000, Output: 128_000}})
+	messages := []ChatMessage{{Role: RoleUser, Content: "find x"}}
+	if _, err := c.Chat(context.Background(), ChatRequest{Model: Model{Name: "claude"}, Messages: messages, ToolChoice: ToolChoiceAuto, InputTokens: 120_000}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := fake.bodies[0]["max_tokens"].(float64); got != 80_000 {
+		t.Errorf("max_tokens %v", got)
+	}
+}
+
 func TestAnthropicReplaysThinkingUntilThePrefixChanges(t *testing.T) {
 	fake := &fakeAnthropic{streams: [][]string{anthropicTurn("sigA", "call1", "call2"), anthropicTurn("sigB"), anthropicTurn("sigC")}}
 	srv := httptest.NewServer(fake)
