@@ -1,0 +1,33 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS runs the Seatbelt sandbox for real; Linux covers everything else.
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      # repo/fts5.go refuses to build without it.
+      GOFLAGS: -tags=sqlite_fts5
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - run: go vet ./...
+
+      # Includes TestProtocolSchema, which fails when protocol.schema.json is
+      # out of date with the dispatch table.
+      - run: go test -race -timeout 10m ./...
