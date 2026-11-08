@@ -8,13 +8,17 @@ import (
 )
 
 type ThreadRow struct {
-	ID          string             `gorm:"primaryKey;index:threads_list,priority:4;index:threads_workspace_list,priority:4" json:"id"`
-	UserID      string             `gorm:"not null;default:'';index:threads_list,priority:1" json:"-"`
-	User        *UserRow           `gorm:"foreignKey:UserID;constraint:OnDelete:RESTRICT" json:"-"`
-	WorkspaceID Ref                `gorm:"index:threads_workspace;index:threads_workspace_list,priority:1" json:"workspaceId,omitempty"`
-	Workspace   *WorkspaceRow      `gorm:"foreignKey:WorkspaceID;constraint:OnDelete:RESTRICT" json:"-"`
-	Title       string             `gorm:"not null" json:"title"`
-	Settings    PermissionSettings `gorm:"not null;default:'{}';serializer:json;check:threads_settings,json_valid(settings)" json:"settings"`
+	ID          string        `gorm:"primaryKey;index:threads_list,priority:4;index:threads_workspace_list,priority:4" json:"id"`
+	UserID      string        `gorm:"not null;default:'';index:threads_list,priority:1" json:"-"`
+	User        *UserRow      `gorm:"foreignKey:UserID;constraint:OnDelete:RESTRICT" json:"-"`
+	WorkspaceID Ref           `gorm:"index:threads_workspace;index:threads_workspace_list,priority:1" json:"workspaceId,omitempty"`
+	Workspace   *WorkspaceRow `gorm:"foreignKey:WorkspaceID;constraint:OnDelete:RESTRICT" json:"-"`
+	// EnvironmentID is where the conversation runs. Empty is the user's environment on this machine, which is what a
+	// conversation from before environments ran in.
+	EnvironmentID Ref                `gorm:"index:threads_environment" json:"environmentId,omitempty"`
+	Environment   *EnvironmentRow    `gorm:"foreignKey:EnvironmentID;constraint:OnDelete:RESTRICT" json:"-"`
+	Title         string             `gorm:"not null" json:"title"`
+	Settings      PermissionSettings `gorm:"not null;default:'{}';serializer:json;check:threads_settings,json_valid(settings)" json:"settings"`
 	// threads_parent finds a thread's subagent threads; top-level threads stay out of it, so lists use threads_list.
 	ParentThreadID Ref        `gorm:"index:threads_parent,where:parent_thread_id IS NOT NULL" json:"parentThreadId,omitempty"`
 	Parent         *ThreadRow `gorm:"foreignKey:ParentThreadID;constraint:OnDelete:CASCADE" json:"-"`

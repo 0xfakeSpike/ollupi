@@ -47,6 +47,7 @@ const (
 	notifyTurnCompleted       = "turn/completed"
 	notifyThreadStatusChanged = "thread/status/changed"
 	notifyWorkspaceChanged    = "workspace/changed"
+	notifyEnvironmentChanged  = "environment/changed"
 	notifyCronChanged         = "cron/changed"
 	notifySettingsChanged     = "settings/changed"
 	notifyError               = "error"
@@ -87,6 +88,10 @@ var protocol = struct {
 		"workspace/move":              handle((*conn).workspaceMove),
 		"workspace/archive":           handle((*conn).workspaceArchive),
 		"workspace/updatePermissions": handle((*conn).workspacePermissions),
+		"environment/list":            handle((*conn).environmentList),
+		"environment/add":             handle((*conn).environmentAdd),
+		"environment/rename":          handle((*conn).environmentRename),
+		"environment/delete":          handle((*conn).environmentDelete),
 		"cron/list":                   handle((*conn).cronList),
 		"cron/create":                 handle((*conn).cronCreate),
 		"cron/pause":                  handle((*conn).cronPause),
@@ -113,6 +118,7 @@ var protocol = struct {
 		notifyTurnCompleted:       reflect.TypeFor[TurnNotification](),
 		notifyThreadStatusChanged: reflect.TypeFor[ThreadStatusNotification](),
 		notifyWorkspaceChanged:    reflect.TypeFor[WorkspaceResult](),
+		notifyEnvironmentChanged:  reflect.TypeFor[EnvironmentChangedNotification](),
 		notifyCronChanged:         reflect.TypeFor[CronChangedNotification](),
 		notifySettingsChanged:     reflect.TypeFor[repo.SettingsRow](),
 		notifyError:               reflect.TypeFor[ErrorNotification](),
@@ -201,7 +207,9 @@ type InitializeResult struct {
 
 type ThreadStartParams struct {
 	WorkspaceID string `json:"workspaceId,omitempty"`
-	Title       string `json:"title,omitempty"`
+	// EnvironmentID is where the conversation runs: one of the user's environments. Empty is the one on this machine.
+	EnvironmentID string `json:"environmentId,omitempty"`
+	Title         string `json:"title,omitempty"`
 	repo.PermissionSettings
 }
 
@@ -369,6 +377,36 @@ type WorkspacePermissionsParams struct {
 
 type WorkspaceResult struct {
 	Workspace repo.WorkspaceRow `json:"workspace"`
+}
+
+type EnvironmentListResult struct {
+	Data []repo.EnvironmentRow `json:"data"`
+}
+
+// EnvironmentAddParams names another place a conversation can run. Kind defaults to "machine": this machine is every
+// user's environment already.
+type EnvironmentAddParams struct {
+	Name string               `json:"name"`
+	Kind repo.EnvironmentKind `json:"kind,omitempty"`
+}
+
+type EnvironmentRenameParams struct {
+	EnvironmentID string `json:"environmentId"`
+	Name          string `json:"name"`
+}
+
+type EnvironmentDeleteParams struct {
+	EnvironmentID string `json:"environmentId"`
+}
+
+type EnvironmentResult struct {
+	Environment repo.EnvironmentRow `json:"environment"`
+}
+
+// EnvironmentChangedNotification reports an environment added or renamed; Environment is nil once it is gone.
+type EnvironmentChangedNotification struct {
+	EnvironmentID string               `json:"environmentId"`
+	Environment   *repo.EnvironmentRow `json:"environment"`
 }
 
 type CronListParams struct {

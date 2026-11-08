@@ -101,6 +101,9 @@ func (s *Server) Deliver(e agent.Event) {
 	if e.Workspace != nil {
 		user = e.Workspace.UserID
 	}
+	if e.Environment != nil {
+		user = e.Environment.UserID
+	}
 	if c := s.current(user); c != nil {
 		c.deliver.Lock()
 		defer c.deliver.Unlock()
@@ -227,6 +230,8 @@ func (c *conn) event(e agent.Event) {
 		c.rpc.Notify(notifyThreadStatusChanged, ThreadStatusNotification{ThreadID: e.Thread.ID, Status: e.Status})
 	case agent.EventWorkspaceChanged:
 		c.rpc.Notify(notifyWorkspaceChanged, WorkspaceResult{Workspace: *e.Workspace})
+	case agent.EventEnvironmentChanged:
+		c.environmentChanged(e.Environment.ID)
 	case agent.EventCronJobChanged:
 		c.cronChanged(e.CronJobID, e.Thread.ID)
 	case agent.EventApprovalRequested, agent.EventUserInputRequested:
@@ -356,6 +361,7 @@ var errorCodes = []struct {
 	{agent.ErrThreadArchived, errThreadArchived},
 	{agent.ErrThreadBusy, errThreadBusy},
 	{agent.ErrWorkspaceBusy, errThreadBusy},
+	{agent.ErrEnvironmentInUse, jsonrpc.CodeInvalidParams},
 	{agent.ErrInvalidMessage, jsonrpc.CodeInvalidParams},
 	{agent.ErrInvalidAnswer, jsonrpc.CodeInvalidParams},
 	{agent.ErrInvalidDecision, jsonrpc.CodeInvalidParams},

@@ -21,7 +21,16 @@ type dirs struct {
 func (r *Provider) dirs(ctx context.Context) (dirs, error) {
 	caller := tools.CallerOf(ctx)
 	box := r.box
-	if r.boxFor != nil {
+	switch {
+	case r.boxIn != nil:
+		var err error
+		if box, err = r.boxIn(caller); err != nil {
+			return dirs{}, fmt.Errorf("workspace: the environment of the conversation: %w", err)
+		}
+		if box == nil {
+			box = r.box
+		}
+	case r.boxFor != nil:
 		var err error
 		if box, err = r.boxFor(caller.UserID); err != nil {
 			return dirs{}, fmt.Errorf("workspace: the sandbox of the user: %w", err)

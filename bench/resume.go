@@ -57,7 +57,7 @@ func resume(args []string) {
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}, done: map[string]chan struct{}{}}
 	ag, cancel, _ := open(m, tr)
 	newThread := func() string {
-		th, err := ag.StartThread(repo.DefaultUser, "", "bench", permission.Settings{})
+		th, err := ag.StartThread(repo.DefaultUser, "", "", "bench", permission.Settings{})
 		if err != nil {
 			log.Fatal(err)
 		}

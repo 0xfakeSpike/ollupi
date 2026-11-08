@@ -70,7 +70,7 @@ var providers = []string{cron.ProviderName, skills.ProviderName, memory.Provider
 
 var enums = []any{
 	repo.ItemTypeValues, repo.ItemStatusValues, repo.TurnStatusValues, repo.ThreadStatusValues,
-	repo.DecisionValues, repo.MemoryRowStatusValues, repo.MemoryScopeValues, repo.MemoryFailureCodeValues, permission.PolicyValues, plan.StatusValues, tools.AwaitByValues, repo.AttachmentKindValues,
+	repo.DecisionValues, repo.MemoryRowStatusValues, repo.MemoryScopeValues, repo.MemoryFailureCodeValues, permission.PolicyValues, plan.StatusValues, tools.AwaitByValues, repo.AttachmentKindValues, repo.EnvironmentKindValues,
 }
 
 var plainStrings = []reflect.Type{reflect.TypeFor[repo.Ref]()}
@@ -93,6 +93,7 @@ var arrays = []field{
 	{reflect.TypeFor[ToolListResult](), "Data"},
 	{reflect.TypeFor[MCPServerListResult](), "Data"},
 	{reflect.TypeFor[WorkspaceListResult](), "Data"},
+	{reflect.TypeFor[EnvironmentListResult](), "Data"},
 	{reflect.TypeFor[CronListResult](), "Data"},
 	{reflect.TypeFor[MemoryListResult](), "Data"},
 	{reflect.TypeFor[repo.MemoryStats](), "IDs"},

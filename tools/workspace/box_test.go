@@ -193,6 +193,65 @@ func TestToolsRunOnTheUsersMachine(t *testing.T) {
 	}
 }
 
+// A call runs in the environment its conversation names: BoxIn has the last word over BoxFor, which serves a
+// conversation that names none.
+func TestACallRunsInTheEnvironmentItNames(t *testing.T) {
+	roots := []string{machineRoot}
+	here := machineWith(map[string]string{"here.txt": "this machine\n"})
+	there := machineWith(map[string]string{"there.txt": "the cloud\n"})
+	r, err := New(Options{
+		Box:    sandbox.Remote(here, roots, "this machine"),
+		BoxFor: func(string) (sandbox.Box, error) { return sandbox.Remote(here, roots, "this machine"), nil },
+		BoxIn: func(c tools.Caller) (sandbox.Box, error) {
+			if c.EnvironmentID == "cloud" {
+				return sandbox.Remote(there, roots, "the cloud"), nil
+			}
+			return sandbox.Remote(here, roots, "this machine"), nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+
+	glob := func(environment string) []string {
+		t.Helper()
+		ctx := tools.WithCaller(context.Background(), tools.Caller{UserID: "a", EnvironmentID: environment})
+		res, err := r.Invoke(ctx, ToolGlob, map[string]any{"pattern": "**/*.txt"})
+		if err != nil {
+			t.Fatalf("glob in %q: %v", environment, err)
+		}
+		return res.Output.(GlobOutput).Files
+	}
+	if files := glob(""); !slices.Equal(files, []string{"here.txt"}) {
+		t.Errorf("a conversation that names no environment saw %v", files)
+	}
+	if files := glob("cloud"); !slices.Equal(files, []string{"there.txt"}) {
+		t.Errorf("a conversation on the cloud saw %v", files)
+	}
+}
+
+// A host that serves this machine with the box the provider was made with answers BoxIn with no box.
+func TestBoxInMayLeaveTheCallInTheProvidersBox(t *testing.T) {
+	here := machineWith(map[string]string{"here.txt": "this machine\n"})
+	r, err := New(Options{
+		Box:   sandbox.Remote(here, []string{machineRoot}, "this machine"),
+		BoxIn: func(tools.Caller) (sandbox.Box, error) { return nil, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	ctx := tools.WithCaller(context.Background(), tools.Caller{UserID: "a", EnvironmentID: "local"})
+	res, err := r.Invoke(ctx, ToolGlob, map[string]any{"pattern": "**/*.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if files := res.Output.(GlobOutput).Files; !slices.Equal(files, []string{"here.txt"}) {
+		t.Errorf("the call ran in %v, want this machine's box", files)
+	}
+}
+
 func TestACommandPreparedOnAMachineIsConfined(t *testing.T) {
 	m := machineWith(map[string]string{"a.txt": "a\n"})
 	r, err := New(Options{Box: sandbox.Remote(m, []string{machineRoot}, "cloud")})

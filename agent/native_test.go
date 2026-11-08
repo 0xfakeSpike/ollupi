@@ -99,7 +99,7 @@ func TestThinkingIsReplayedAcrossTurns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	th, err := ag.StartThread(repo.DefaultUser, w.ID, "", permission.Settings{})
+	th, err := ag.StartThread(repo.DefaultUser, w.ID, "", "", permission.Settings{})
 	if err != nil {
 		t.Fatal(err)
 	}

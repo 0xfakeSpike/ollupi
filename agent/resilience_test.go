@@ -76,11 +76,11 @@ func TestASlowSandboxDoesNotHoldUpOtherThreads(t *testing.T) {
 			return sandbox.Remote(machine, []string{"/cloud"}, "cloud"), nil
 		},
 	}, srv.URL)
-	stuck, err := ag.StartThread(repo.DefaultUser, "", "stuck", permission.Settings{})
+	stuck, err := ag.StartThread(repo.DefaultUser, "", "", "stuck", permission.Settings{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := ag.StartThread(repo.DefaultUser, "", "other", permission.Settings{})
+	other, err := ag.StartThread(repo.DefaultUser, "", "", "other", permission.Settings{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestACrashFailsTheTurnAndNothingElse(t *testing.T) {
 			}
 		},
 	}, srv.URL)
-	thread, err := ag.StartThread(repo.DefaultUser, "", "t", permission.Settings{})
+	thread, err := ag.StartThread(repo.DefaultUser, "", "", "t", permission.Settings{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestATurnStopsAtItsRunLimit(t *testing.T) {
 			}
 		},
 	}, srv.URL)
-	thread, err := ag.StartThread(repo.DefaultUser, "", "t", permission.Settings{})
+	thread, err := ag.StartThread(repo.DefaultUser, "", "", "t", permission.Settings{})
 	if err != nil {
 		t.Fatal(err)
 	}

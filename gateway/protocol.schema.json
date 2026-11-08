@@ -690,6 +690,136 @@
       "type": "object",
       "additionalProperties": false
     },
+    "EnvironmentAddParams": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/EnvironmentKind"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "EnvironmentChangedNotification": {
+      "type": "object",
+      "properties": {
+        "environmentId": {
+          "type": "string"
+        },
+        "environment": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/EnvironmentRow"
+            }
+          ]
+        }
+      },
+      "required": [
+        "environmentId",
+        "environment"
+      ],
+      "additionalProperties": false
+    },
+    "EnvironmentDeleteParams": {
+      "type": "object",
+      "properties": {
+        "environmentId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "environmentId"
+      ],
+      "additionalProperties": false
+    },
+    "EnvironmentKind": {
+      "type": "string",
+      "enum": [
+        "local",
+        "machine"
+      ]
+    },
+    "EnvironmentListResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EnvironmentRow"
+          }
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "EnvironmentRenameParams": {
+      "type": "object",
+      "properties": {
+        "environmentId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "environmentId",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "EnvironmentResult": {
+      "type": "object",
+      "properties": {
+        "environment": {
+          "$ref": "#/$defs/EnvironmentRow"
+        }
+      },
+      "required": [
+        "environment"
+      ],
+      "additionalProperties": false
+    },
+    "EnvironmentRow": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/EnvironmentKind"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "createdAt",
+        "updatedAt"
+      ],
+      "additionalProperties": false
+    },
     "ErrorNotification": {
       "type": "object",
       "properties": {
@@ -2227,6 +2357,9 @@
         "workspaceId": {
           "type": "string"
         },
+        "environmentId": {
+          "type": "string"
+        },
         "title": {
           "type": "string"
         },
@@ -2268,6 +2401,9 @@
       "type": "object",
       "properties": {
         "workspaceId": {
+          "type": "string"
+        },
+        "environmentId": {
           "type": "string"
         },
         "title": {
@@ -2317,6 +2453,9 @@
           "type": "string"
         },
         "workspaceId": {
+          "type": "string"
+        },
+        "environmentId": {
           "type": "string"
         },
         "title": {
@@ -2992,6 +3131,38 @@
         "$ref": "#/$defs/CronJobRow"
       }
     },
+    "environment/add": {
+      "params": {
+        "$ref": "#/$defs/EnvironmentAddParams"
+      },
+      "result": {
+        "$ref": "#/$defs/EnvironmentResult"
+      }
+    },
+    "environment/delete": {
+      "params": {
+        "$ref": "#/$defs/EnvironmentDeleteParams"
+      },
+      "result": {
+        "$ref": "#/$defs/EnvironmentResult"
+      }
+    },
+    "environment/list": {
+      "params": {
+        "$ref": "#/$defs/Empty"
+      },
+      "result": {
+        "$ref": "#/$defs/EnvironmentListResult"
+      }
+    },
+    "environment/rename": {
+      "params": {
+        "$ref": "#/$defs/EnvironmentRenameParams"
+      },
+      "result": {
+        "$ref": "#/$defs/EnvironmentResult"
+      }
+    },
     "initialize": {
       "params": {
         "$ref": "#/$defs/InitializeParams"
@@ -3228,6 +3399,9 @@
   "notifications": {
     "cron/changed": {
       "$ref": "#/$defs/CronChangedNotification"
+    },
+    "environment/changed": {
+      "$ref": "#/$defs/EnvironmentChangedNotification"
     },
     "error": {
       "$ref": "#/$defs/ErrorNotification"

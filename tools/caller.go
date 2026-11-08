@@ -6,8 +6,11 @@ type Caller struct {
 	UserID      string
 	ThreadID    string
 	WorkspaceID string
-	Root        string
-	Subagent    bool
+	// EnvironmentID is where the conversation runs: a Box the host makes. Empty is the user's environment on this
+	// machine.
+	EnvironmentID string
+	Root          string
+	Subagent      bool
 }
 
 type callerKey struct{}

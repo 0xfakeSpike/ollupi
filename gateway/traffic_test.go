@@ -141,6 +141,38 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.call("workspace/updatePermissions", WorkspacePermissionsParams{WorkspaceID: workspaceID,
 		PermissionSettings: repo.PermissionSettings{ApprovalPolicy: string(permission.OnRequest)}}, nil)
 
+	// A conversation runs in one of the user's environments: this machine until they add a cloud sandbox.
+	var envs EnvironmentListResult
+	c.call("environment/list", Empty{}, &envs)
+	if len(envs.Data) != 1 || envs.Data[0].Kind != repo.EnvironmentLocal || envs.Data[0].Name != repo.LocalEnvironmentName {
+		t.Fatalf("environments: %+v", envs.Data)
+	}
+	var cloud EnvironmentResult
+	c.call("environment/add", EnvironmentAddParams{Name: "cloud"}, &cloud)
+	c.await(notifyEnvironmentChanged, nil)
+	if cloud.Environment.Kind != repo.EnvironmentMachine {
+		t.Errorf("an added environment is %q, want %q", cloud.Environment.Kind, repo.EnvironmentMachine)
+	}
+	c.call("environment/rename", EnvironmentRenameParams{EnvironmentID: cloud.Environment.ID, Name: "cloud vm"}, nil)
+	c.await(notifyEnvironmentChanged, nil)
+	c.refused("environment/rename", EnvironmentRenameParams{EnvironmentID: envs.Data[0].ID, Name: "cloud vm"}, jsonrpc.CodeInvalidParams, "already have")
+
+	// A conversation can be started in it, and holds it until it is gone.
+	var elsewhere ThreadResult
+	c.call("thread/start", ThreadStartParams{WorkspaceID: workspaceID, EnvironmentID: cloud.Environment.ID, Title: "on the cloud"}, &elsewhere)
+	c.await("thread/started", nil)
+	if elsewhere.Thread.EnvironmentID != repo.Ref(cloud.Environment.ID) {
+		t.Errorf("the conversation runs in %q, want %q", elsewhere.Thread.EnvironmentID, cloud.Environment.ID)
+	}
+	c.refused("environment/delete", EnvironmentDeleteParams{EnvironmentID: cloud.Environment.ID}, jsonrpc.CodeInvalidParams, "runs in the environment")
+	c.call("thread/delete", ThreadDeleteParams{ThreadID: elsewhere.Thread.ID}, nil)
+	c.call("environment/delete", EnvironmentDeleteParams{EnvironmentID: cloud.Environment.ID}, nil)
+	c.await(notifyEnvironmentChanged, func(params json.RawMessage) bool {
+		var n EnvironmentChangedNotification
+		return json.Unmarshal(params, &n) == nil && n.EnvironmentID == cloud.Environment.ID && n.Environment == nil
+	})
+	c.refused("thread/start", ThreadStartParams{EnvironmentID: cloud.Environment.ID, Title: "gone"}, errNotFound, "not found")
+
 	saved := time.Now().UTC()
 	for _, m := range []repo.MemoryRow{
 		{ID: "g1", Scope: repo.MemoryGlobal, Topic: "style", Kind: "preference", Text: "Answers briefly."},

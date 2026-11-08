@@ -9,7 +9,7 @@ import (
 )
 
 func (c *conn) threadStart(p ThreadStartParams) (ThreadResult, func(), error) {
-	t, err := c.s.agent.StartThread(c.user, p.WorkspaceID, p.Title, p.PermissionSettings)
+	t, err := c.s.agent.StartThread(c.user, p.WorkspaceID, p.EnvironmentID, p.Title, p.PermissionSettings)
 	return ThreadResult{Thread: t}, nil, err
 }
 
