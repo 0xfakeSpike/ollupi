@@ -60,7 +60,7 @@ Every step is written to the database before it runs and no scheduling state liv
 
 One database is one shard. Users in a shard share tables and are isolated per user. A lease ensures that only one process runs a shard at a time; when that process exits, a standby takes over and continues from where it stopped. The number of shards sets capacity. Clients connect only to the router, which forwards each user's connection to their shard.
 
-Everything a user runs stays in their own sandbox: commands, files and MCP servers are reached through `sandbox.Box`, and integrating a cloud sandbox only takes implementing `sandbox.Machine`. HTTP MCP requests from cloud sandbox users leave from the shard process and can only reach public addresses. Model calls can go through the user's own client, and attachments are stored through `blobs.Store`.
+Everything a user runs stays in their own sandbox: commands, files and MCP servers are reached through `sandbox.Box`, and integrating a cloud sandbox only takes implementing `sandbox.Machine`. A user's environments are the boxes a conversation can be started in — this machine, and cloud sandboxes they add — and a conversation keeps the one it was started in (`environment/list`, `thread/start` with `environmentId`). HTTP MCP requests from cloud sandbox users leave from the shard process and can only reach public addresses. Model calls can go through the user's own client, and attachments are stored through `blobs.Store`.
 
 Clients authenticate with `Authorization: Bearer <token>`. Browsers can't set this header, so they put the token in the WebSocket subprotocol instead: `new WebSocket(url, ["ollupi.token", token])`. Tokens never go in the URL.
 

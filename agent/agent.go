@@ -78,8 +78,9 @@ type Config struct {
 	// Lease makes this process claim the shard before it runs it, waiting for as long as another holds it, and keep
 	// the claim alive; a process that dies leaves its claim for this long. Without it the process trusts it is alone.
 	Lease time.Duration
-	// BoxFor gives the sandbox a user's files live in, the same one the workspace tools run in. By default it is
-	// sandbox.Here.
+	// BoxFor gives the sandbox a user's files live in on this machine, which the agent reaches workspaces and
+	// attachments through. A conversation started in another environment reaches its own box: the workspace tools
+	// take that from the call's tools.Caller. By default it is sandbox.Here.
 	BoxFor func(user string) (sandbox.Box, error)
 	// OnLeaseLost tells the host that another process took the shard: the agent has stopped, and all else on DB must.
 	OnLeaseLost func()

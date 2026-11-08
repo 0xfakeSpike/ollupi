@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -20,7 +21,8 @@ type UserRow struct {
 
 func (UserRow) TableName() string { return "users" }
 
-// EnsureUser makes the user with their settings and memory state; a user who exists stays as they are.
+// EnsureUser makes the user with their settings, memory state and environment on this machine; a user who exists
+// stays as they are.
 func (d *DB) EnsureUser(id string) error {
 	if id == "" {
 		return errors.New("storage: a user needs an id")
@@ -34,6 +36,10 @@ func (d *DB) EnsureUser(id string) error {
 		}
 		if err := tx.Attrs(SettingsRow{RedactionKey: rand.Text()}).FirstOrCreate(&SettingsRow{}, SettingsRow{UserID: id}).Error; err != nil {
 			return fmt.Errorf("create settings of %s: %w", id, err)
+		}
+		if err := tx.Attrs(EnvironmentRow{ID: uuid.NewString(), Name: LocalEnvironmentName, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}).
+			FirstOrCreate(&EnvironmentRow{}, EnvironmentRow{UserID: id, Kind: EnvironmentLocal}).Error; err != nil {
+			return fmt.Errorf("create environment of %s: %w", id, err)
 		}
 		return nil
 	})

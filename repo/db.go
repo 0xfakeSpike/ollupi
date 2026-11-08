@@ -112,7 +112,7 @@ func checkOne(res *gorm.DB) error {
 }
 
 var rowTypes = []any{
-	&UserRow{}, &WorkspaceRow{}, &ThreadRow{}, &TurnRow{}, &ItemRow{}, &CronJobRow{},
+	&UserRow{}, &EnvironmentRow{}, &WorkspaceRow{}, &ThreadRow{}, &TurnRow{}, &ItemRow{}, &CronJobRow{},
 	&MemoryRow{}, &MemoryStateRow{}, &SettingsRow{}, &ShardLeaseRow{},
 }
 

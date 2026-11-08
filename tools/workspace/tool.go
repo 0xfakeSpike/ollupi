@@ -24,6 +24,11 @@ type Options struct {
 	// BoxFor gives the box a user's calls run in, connected for them. It keeps a box's lifetime: this package
 	// only closes Box.
 	BoxFor func(user string) (sandbox.Box, error)
+	// BoxIn gives the box a call runs in, for the environment its conversation was started in. It sees the whole
+	// caller, and has the last word over BoxFor: a nil box with no error leaves the call in the box this provider was
+	// made with, for a host that serves an environment with it. It keeps a box's lifetime as BoxFor does; this
+	// package only closes Box.
+	BoxIn func(caller tools.Caller) (sandbox.Box, error)
 }
 
 const (
@@ -34,6 +39,7 @@ const (
 type Provider struct {
 	box           sandbox.Box
 	boxFor        func(user string) (sandbox.Box, error)
+	boxIn         func(caller tools.Caller) (sandbox.Box, error)
 	timeoutSec    int
 	maxTimeoutSec int
 	blacklist     []string
@@ -65,7 +71,7 @@ func New(o Options) (*Provider, error) {
 		}
 		box = local
 	}
-	return &Provider{box: box, boxFor: o.BoxFor, timeoutSec: c.CommandTimeoutSec, maxTimeoutSec: c.MaxCommandTimeoutSec, blacklist: append([]string(nil), c.CommandBlacklist...)}, nil
+	return &Provider{box: box, boxFor: o.BoxFor, boxIn: o.BoxIn, timeoutSec: c.CommandTimeoutSec, maxTimeoutSec: c.MaxCommandTimeoutSec, blacklist: append([]string(nil), c.CommandBlacklist...)}, nil
 }
 
 func (r *Provider) Close() error { return r.box.Close() }
@@ -89,6 +95,9 @@ func (r *Provider) tool() *tools.Spec {
 			"retry it with sandbox_permissions \"require_escalated\" and a one-sentence justification: " +
 			"the command then runs on the host without the sandbox, and the user is asked first unless the approval policy never asks. " +
 			"Do not escalate to get around a denied path on purpose, and do not escalate commands that work in the sandbox"
+	}
+	if r.boxIn != nil {
+		desc += ". A conversation runs in the environment it was started in, whose folders need not be this machine's"
 	}
 
 	return &tools.Spec{

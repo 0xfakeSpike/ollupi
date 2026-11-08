@@ -260,7 +260,7 @@ func crashChild(args []string) {
 	}
 	kinds := []string{kindWork, kindWork, kindWork, kindAsk, kindDelegate}
 	for i := range *submit {
-		th, err := ag.StartThread(repo.DefaultUser, "", "bench", permission.Settings{})
+		th, err := ag.StartThread(repo.DefaultUser, "", "", "bench", permission.Settings{})
 		if err != nil {
 			log.Fatal(err)
 		}

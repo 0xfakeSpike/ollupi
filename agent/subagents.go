@@ -20,7 +20,8 @@ func (a *Agent) settle(parent repo.ThreadRow, turn repo.TurnRow, call repo.ItemR
 			UserID:         parent.UserID,
 			Title:          clipRunes(req.Description, maxTitleRunes),
 			ParentThreadID: repo.Ref(parent.ID), ParentItemID: repo.Ref(call.ID),
-			WorkspaceID: parent.WorkspaceID,
+			WorkspaceID:   parent.WorkspaceID,
+			EnvironmentID: parent.EnvironmentID,
 		})
 		if err != nil {
 			return false, err

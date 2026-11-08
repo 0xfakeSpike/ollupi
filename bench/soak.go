@@ -100,7 +100,7 @@ func soak(args []string) {
 	threads := make([]string, *c)
 	tr.mu.Lock()
 	for i := range threads {
-		th, err := ag.StartThread(repo.DefaultUser, "", "bench", permission.Settings{})
+		th, err := ag.StartThread(repo.DefaultUser, "", "", "bench", permission.Settings{})
 		if err != nil {
 			log.Fatal(err)
 		}

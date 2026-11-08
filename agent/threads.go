@@ -13,8 +13,14 @@ import (
 	"github.com/google/uuid"
 )
 
-func (a *Agent) StartThread(user, workspaceID, title string, settings permission.Settings) (repo.ThreadRow, error) {
+// StartThread starts a conversation in the environment it names, which must be one of the user's: the environment
+// on this machine when it names none. Its workspace is a folder in whichever environment it runs in.
+func (a *Agent) StartThread(user, workspaceID, environmentID, title string, settings permission.Settings) (repo.ThreadRow, error) {
 	title, err := threadTitle(title, false)
+	if err != nil {
+		return repo.ThreadRow{}, err
+	}
+	env, err := a.environmentFor(user, environmentID)
 	if err != nil {
 		return repo.ThreadRow{}, err
 	}
@@ -28,7 +34,7 @@ func (a *Agent) StartThread(user, workspaceID, title string, settings permission
 	if err := a.validateLayer(user, a.layers(w), permission.Settings{}, threadLayer(settings)); err != nil {
 		return repo.ThreadRow{}, err
 	}
-	return a.createThread(repo.ThreadRow{UserID: user, Title: title, Settings: settings, WorkspaceID: repo.Ref(workspaceID)})
+	return a.createThread(repo.ThreadRow{UserID: user, Title: title, Settings: settings, WorkspaceID: repo.Ref(workspaceID), EnvironmentID: repo.Ref(env.ID)})
 }
 
 func (a *Agent) UpdateThreadSettings(user, threadID string, settings permission.Settings) (repo.ThreadRow, error) {

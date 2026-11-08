@@ -68,14 +68,14 @@ func TestAUserCannotReachAnotherUsersThread(t *testing.T) {
 	if theirs.ID == w.ID {
 		t.Fatal("two users share one workspace")
 	}
-	thread, err := ag.StartThread("a", w.ID, "mine", permission.Settings{})
+	thread, err := ag.StartThread("a", w.ID, "", "mine", permission.Settings{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	for name, try := range map[string]func() error{
 		"start a thread in the workspace": func() error {
-			_, err := ag.StartThread("b", w.ID, "x", permission.Settings{})
+			_, err := ag.StartThread("b", w.ID, "", "x", permission.Settings{})
 			return err
 		},
 		"rename the workspace":  func() error { _, err := ag.RenameWorkspace("b", w.ID, "x"); return err },
@@ -191,7 +191,7 @@ func TestAUserHoldsNoMoreSlotsThanTheirLimit(t *testing.T) {
 
 	start := func(user string) {
 		t.Helper()
-		thread, err := ag.StartThread(user, "", "t", permission.Settings{})
+		thread, err := ag.StartThread(user, "", "", "t", permission.Settings{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -270,7 +270,7 @@ func TestTurnsRunOnTheUsersClient(t *testing.T) {
 	defer ag.Wait()
 	defer stop()
 	for _, user := range []string{"a", "b"} {
-		thread, err := ag.StartThread(user, "", "t", permission.Settings{})
+		thread, err := ag.StartThread(user, "", "", "t", permission.Settings{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -500,7 +500,7 @@ func TestAttachmentsLiveInTheStore(t *testing.T) {
 	}
 	defer ag.Wait()
 	defer stop()
-	thread, err := ag.StartThread(repo.DefaultUser, "", "t", permission.Settings{})
+	thread, err := ag.StartThread(repo.DefaultUser, "", "", "t", permission.Settings{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -610,10 +610,10 @@ func TestEachUserHasTheirOwnTools(t *testing.T) {
 	if !has("b", "request_user_input") {
 		t.Error("b lacks the tools everyone has")
 	}
-	if _, err := ag.StartThread("b", "", "t", permission.Settings{}); err != nil {
+	if _, err := ag.StartThread("b", "", "", "t", permission.Settings{}); err != nil {
 		t.Errorf("a rule on tools b lacks stopped b: %v", err)
 	}
-	if _, err := ag.StartThread("b", "", "t", permission.Settings{Rules: permission.Rules{Allow: []string{"nosuch__act"}}}); err == nil {
+	if _, err := ag.StartThread("b", "", "", "t", permission.Settings{Rules: permission.Rules{Allow: []string{"nosuch__act"}}}); err == nil {
 		t.Error("a new rule on a tool b lacks was taken")
 	}
 
