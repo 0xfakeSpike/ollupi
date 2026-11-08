@@ -133,8 +133,16 @@ func (s ruleSet) decide(tool string, content tools.Content, hasContent bool) (ru
 			}
 		}
 	}
-	if hasContent && content.Opaque && slices.ContainsFunc(append(slices.Clone(s.deny), s.ask...), func(r rule) bool { return r.tool == tool && r.pattern != nil }) {
-		return ruleOpaque, ""
+	// A deny or ask rule with a specifier cannot be shown not to apply to content it cannot read. The rule named is a
+	// deny rule that might apply, so that a policy nobody is asked under can refuse the call; with only ask rules, none.
+	if hasContent && content.Opaque {
+		specified := func(r rule) bool { return r.tool == tool && r.pattern != nil }
+		if i := slices.IndexFunc(s.deny, specified); i >= 0 {
+			return ruleOpaque, s.deny[i].text
+		}
+		if slices.ContainsFunc(s.ask, specified) {
+			return ruleOpaque, ""
+		}
 	}
 	for _, r := range s.allow {
 		if r.tool == tool && r.pattern == nil {

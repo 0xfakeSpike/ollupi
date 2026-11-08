@@ -191,8 +191,13 @@ func (c *Checker) decide(call Call, history []repo.ItemRow) Decision {
 		if allowedForConversation(call, history) {
 			return Decision{Verdict: Run, Reason: "allowed for this conversation earlier"}
 		}
+		// Nobody can be asked under "never", so a command a deny rule might name is refused rather than run unread,
+		// and one only an ask rule might name still asks: the user's rules hold whatever the policy.
 		if c.policy == Never {
-			return Decision{Verdict: Run}
+			if rule != "" {
+				return Decision{Verdict: Deny, Rule: rule, Reason: fmt.Sprintf("refused: this command cannot be checked against the permission rule %s, and no one is asked under this approval policy; write the command plainly so the rules can read it, or tell the user", rule)}
+			}
+			return Decision{Verdict: Ask, Reason: "This command cannot be fully checked against your permission rules for " + call.Tool + ", so it needs your approval."}
 		}
 		if c.leavesTheSandbox(call) {
 			return Decision{Verdict: Ask, Reason: "Runs outside the sandbox: " + call.Prepared.Justification}
