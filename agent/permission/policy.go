@@ -15,7 +15,8 @@ type Policy string
 //   - Untrusted runs only what changes nothing and stays on this machine; every change and every site asks.
 //   - OnRequest runs what reads, and what the sandbox confines; a change outside the sandbox, and a command prepared to
 //     leave it, asks first.
-//   - Never asks nothing: what the rules leave undecided runs, a command that leaves the sandbox included.
+//   - Never asks nothing: what the rules leave undecided runs, a command that leaves the sandbox included. A command
+//     the rules cannot read is not undecided when a deny or ask rule might name it: it is refused, or asked about.
 const (
 	Untrusted Policy = "untrusted"
 	OnRequest Policy = "on-request"

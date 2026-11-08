@@ -139,6 +139,43 @@ func TestEachPolicyDecidesWhatRunsWithoutAsking(t *testing.T) {
 	}
 }
 
+// A command the rules cannot read is not let through a deny or ask rule by a policy that never asks: one a deny rule
+// might name is refused, even outside the sandbox, and one an ask rule might name still asks.
+func TestNeverDoesNotRunWhatARuleCannotRead(t *testing.T) {
+	registry := testRegistry(t)
+	opaque := command("sh -c $X")
+	opaque.Content.Opaque = true
+	escalated := opaque
+	escalated.Prepared = &tools.Prepared{Sandboxed: true, Escalated: true, Justification: "writes /usr/local"}
+
+	for _, tc := range []struct {
+		rules Rules
+		call  Call
+		want  Verdict
+	}{
+		{Rules{Deny: []string{"exec(rm:*)"}}, opaque, Deny},
+		{Rules{Deny: []string{"exec(rm:*)"}}, escalated, Deny},
+		{Rules{Deny: []string{"exec(rm:*)"}, Ask: []string{"exec(git push:*)"}}, opaque, Deny},
+		{Rules{Ask: []string{"exec(git push:*)"}}, opaque, Ask},
+		{Rules{}, opaque, Run},
+	} {
+		checker, err := New([]Layer{
+			{Of: "the defaults", Settings: Settings{ApprovalPolicy: string(Never)}},
+			{Of: "the workspace", Settings: Settings{Rules: tc.rules}},
+		}, nil, registry)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d := checker.Decide(tc.call, nil)
+		if d.Verdict != tc.want {
+			t.Errorf("rules %+v, escalated %v: verdict %v, want %v (%s)", tc.rules, tc.call.Prepared != nil, d.Verdict, tc.want, d.Reason)
+		}
+		if d.Verdict == Deny && d.Rule != "exec(rm:*)" {
+			t.Errorf("rules %+v: refused naming %q", tc.rules, d.Rule)
+		}
+	}
+}
+
 // A deny rule still denies and an ask rule still asks, even where the policy itself never asks.
 func TestRulesSpeakAtEveryLevel(t *testing.T) {
 	registry := testRegistry(t)
