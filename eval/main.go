@@ -4,8 +4,8 @@
 // eval answers that no one is there and it should decide for itself.
 //
 // The task comes from the OLLUPI_INSTRUCTION environment variable, a file (-instruction-file) or stdin; the model's
-// key from the variable -key-env names. It prints the agent's last message, writes the turn's items as JSON to -out,
-// and exits 1 when the turn does not complete.
+// key from the variable -key-env names. It prints the agent's last message and exits 1 when the turn does not
+// complete. With -out it keeps the turn and its items in that file as JSON, rewritten as each item completes.
 package main
 
 import (
@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -121,6 +122,9 @@ func main() {
 
 	var ag *agent.Agent
 	ended := make(chan repo.TurnRow, 1)
+	// changed tells the writer below that the turn has a new item, so that -out holds the run so far even when the
+	// harness kills the run at its time limit.
+	changed := make(chan struct{}, 1)
 	ag = agent.New(agent.Config{
 		Name: "ollupi", Prompt: prompt,
 		Models:      []llm.Model{{Name: *model, Connection: "model"}},
@@ -133,6 +137,12 @@ func main() {
 			switch e.Kind {
 			case agent.EventItemCompleted:
 				logItem(e.Item)
+				if e.Thread.ParentThreadID == "" {
+					select {
+					case changed <- struct{}{}:
+					default:
+					}
+				}
 			case agent.EventUserInputRequested:
 				// Answered outside the event, which the agent's loop is delivering.
 				go answer(ag, e.Thread.ID, e.Item)
@@ -154,33 +164,43 @@ func main() {
 		log.Fatalf("eval: %v", err)
 	}
 	startedAt := time.Now()
-	if _, err := ag.StartTurn(repo.DefaultUser, th.ID, agent.Input{Text: instruction}); err != nil {
+	started, err := ag.StartTurn(repo.DefaultUser, th.ID, agent.Input{Text: instruction})
+	if err != nil {
 		log.Fatalf("eval: %v", err)
 	}
-	var turn repo.TurnRow
+	var saving sync.Mutex
+	save := func() (repo.TurnRow, []repo.ItemRow) {
+		saving.Lock()
+		defer saving.Unlock()
+		turn, err := db.Turn(started.ID)
+		if err != nil {
+			log.Fatalf("eval: %v", err)
+		}
+		items, err := db.TurnItems(started.ID)
+		if err != nil {
+			log.Fatalf("eval: %v", err)
+		}
+		if *out != "" {
+			if err := writeItems(*out, turn, items); err != nil {
+				log.Printf("eval: %v", err)
+			}
+		}
+		return turn, items
+	}
+	go func() {
+		for range changed {
+			save()
+		}
+	}()
 	select {
-	case turn = <-ended:
+	case <-ended:
 	case <-ctx.Done():
+		save()
 		log.Print("eval: stopped before the turn ended")
 		ag.Wait()
 		os.Exit(1)
 	}
-	items, err := db.TurnItems(turn.ID)
-	if err != nil {
-		log.Fatalf("eval: %v", err)
-	}
-	if *out != "" {
-		raw, err := json.MarshalIndent(struct {
-			Turn  repo.TurnRow   `json:"turn"`
-			Items []repo.ItemRow `json:"items"`
-		}{turn, items}, "", "  ")
-		if err != nil {
-			log.Fatalf("eval: %v", err)
-		}
-		if err := os.WriteFile(*out, raw, 0o644); err != nil {
-			log.Fatalf("eval: %v", err)
-		}
-	}
+	turn, items := save()
 	for i := len(items) - 1; i >= 0; i-- {
 		if items[i].Type == repo.ItemAgentMessage {
 			fmt.Println(items[i].Text)
@@ -194,6 +214,22 @@ func main() {
 		log.Printf("eval: %s", cmp.Or(turn.Error, "the turn did not complete"))
 		os.Exit(1)
 	}
+}
+
+// writeItems replaces the file whole, so a reader never sees half of it.
+func writeItems(path string, turn repo.TurnRow, items []repo.ItemRow) error {
+	raw, err := json.MarshalIndent(struct {
+		Turn  repo.TurnRow   `json:"turn"`
+		Items []repo.ItemRow `json:"items"`
+	}{turn, items}, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, raw, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 func readInstruction(file string) (string, error) {

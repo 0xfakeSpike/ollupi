@@ -1,0 +1,23 @@
+# Twenty Terminal-Bench 2.0 tasks kept apart from smoke for confirming a change: run them only once a change looks
+# right on smoke, and do not read their trials to steer the next change, or they stop telling whether a change
+# helps tasks it was not shaped on. One easy, sixteen medium and three hard, each needing 2 GB. Picked by hand.
+prove-plus-comm
+build-cython-ext
+crack-7z-hash
+custom-memory-heap-crash
+db-wal-recovery
+git-leak-recovery
+git-multibranch
+headless-terminal
+kv-store-grpc
+large-scale-text-editing
+largest-eigenval
+nginx-request-logging
+polyglot-c-py
+pypi-server
+query-optimize
+sanitize-git-repo
+vulnerable-secret
+configure-git-webserver
+sparql-university
+circuit-fibsqrt
