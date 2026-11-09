@@ -1,11 +1,21 @@
 #!/bin/sh
 # Builds the eval command for the Linux containers benchmark tasks run in, static so that it runs on any of them,
 # into eval/build. ollupi's SQLite driver needs cgo, so the build runs in Docker. Run from anywhere.
+#
+# eval/build/STAMP records the code a build was made from: the commit and a hash of uncommitted changes. With
+# --if-stale the build is skipped when the code has not changed since. ARCHES picks the architectures (default
+# amd64 arm64); Terminal-Bench's images are amd64, which builds slowly under emulation on Apple silicon.
 set -eu
 root=$(cd "$(dirname "$0")/.." && pwd)
 version=$(git -C "$root" describe --tags --always --dirty)
+stamp="$version $( (git -C "$root" diff HEAD; git -C "$root" ls-files --others --exclude-standard | xargs cat 2>/dev/null) | shasum | cut -c1-12)"
+arches=${ARCHES:-amd64 arm64}
+if [ "${1:-}" = "--if-stale" ] && [ "$(cat "$root/eval/build/STAMP" 2>/dev/null)" = "$stamp $arches" ]; then
+	echo "eval/build is up to date ($version)"
+	exit 0
+fi
 mkdir -p "$root/eval/build"
-for arch in ${ARCHES:-amd64 arm64}; do
+for arch in $arches; do
 	docker run --rm --platform "linux/$arch" -v "$root:/src" -v ollupi-eval-gocache:/root/go -w /src golang:1.25-alpine sh -c "
 		apk add --no-cache build-base >/dev/null &&
 		CGO_ENABLED=1 go build -buildvcs=false -tags sqlite_fts5 \
@@ -13,3 +23,4 @@ for arch in ${ARCHES:-amd64 arm64}; do
 			-o eval/build/ollupi-eval-linux-$arch ./eval"
 	echo "eval/build/ollupi-eval-linux-$arch ($version)"
 done
+echo "$stamp $arches" > "$root/eval/build/STAMP"
