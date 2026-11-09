@@ -31,6 +31,8 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
 	"github.com/0xfakeSpike/ollupi/tools/web"
 	"github.com/0xfakeSpike/ollupi/tools/workspace"
+	// Some task images ship no CA certificates; with none on the system, TLS falls back to the roots built in here.
+	_ "golang.org/x/crypto/x509roots/fallback"
 )
 
 // version is set at build time, by build.sh, to the commit it was built from.
