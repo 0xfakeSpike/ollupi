@@ -1,5 +1,6 @@
 #!/bin/sh
-# Runs Terminal-Bench 2.0 tasks through Harbor for one agent, then prints eval/report.py's comparison.
+# Runs Terminal-Bench 2.0 tasks through Harbor for one agent, then compares its last two versions with
+# eval/report.py.
 #
 #   eval/run.sh <agent> [subset] [harbor run flags...]
 #
@@ -85,4 +86,4 @@ cd "$root"
 # shellcheck disable=SC2086
 harbor run -p "$tasks_dir" -m "$model" -a "$harbor_agent" $includes -n "${N:-2}" --max-retries 1 \
 	-o "eval/jobs/$agent" "$@"
-python3 "$root/eval/report.py" "$root/eval/jobs"
+python3 "$root/eval/report.py" --agent "$agent"

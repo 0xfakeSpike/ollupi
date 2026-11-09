@@ -1,57 +1,69 @@
 # Eval
 
-Measures what ollupi gets done with a real model on public benchmarks. [bench](../bench/README.md) measures scheduling and persistence with a simulated model; the two stay apart.
+Measures what ollupi gets done with a real model on public benchmarks, to find what to improve and to tell whether a change helped. [bench](../bench/README.md) measures scheduling and persistence with a simulated model; the two stay apart.
 
-A score belongs to the model and the harness together: the same model scores differently in different harnesses, so a result means something only next to another harness run with the same model on the same tasks. Here the other harness is Harbor's own reference agent, terminus-2, which drives a tmux terminal with keystrokes and has no tools of its own.
+The tasks are Terminal-Bench 2.0's, run in Docker by [Harbor](https://harborframework.com). ollupi is compared with its own earlier versions; how other harnesses do comes from the published leaderboards, not from running them here (see the end).
 
 ## Setup, once
 
 - Docker Desktop, with at least 4 GB for its VM.
-- [Harbor](https://harborframework.com): `uv tool install --python 3.12 harbor==0.25.0`. It installs into `~/.local/bin`, which `run.sh` puts on its `PATH`.
-- A model key: `OLLUPI_API_KEY` and `OLLUPI_BASE_URL` for ollupi, and the provider's own variable, such as `DEEPSEEK_API_KEY`, for Harbor's agents.
+- Harbor: `uv tool install --python 3.12 harbor==0.25.0`. It installs into `~/.local/bin`, which the scripts put on their `PATH`.
+- The model's key and endpoint: `OLLUPI_API_KEY` and `OLLUPI_BASE_URL` (and `OLLUPI_API` for an API other than OpenAI's; see [harbor/ollupi_agent.py](harbor/ollupi_agent.py)).
 
-## Running
+## The loop
 
 ```bash
 export OLLUPI_API_KEY=$DEEPSEEK_API_KEY OLLUPI_BASE_URL=https://api.deepseek.com
-eval/run.sh ollupi                 # the smoke subset, ten tasks
-eval/run.sh terminus-2             # the same tasks with the reference harness
-eval/run.sh ollupi all --n-attempts 5
-eval/run.sh ollupi -i regex-log    # one task again
-python3 eval/report.py             # the comparison, at any time
+eval/run.sh ollupi                                   # 1. run the smoke tasks
+python3 eval/report.py                               # 2. which passed, failed and took long
+python3 eval/trace.py eval/jobs/ollupi/<job>/<trial> # 3. what happened in one of them
+# 4. change ollupi
+eval/run.sh ollupi -i extract-elf --n-attempts 3     # 5. the tasks the change is for, more than once
+eval/run.sh ollupi                                   # 6. all of smoke, for what it broke
+python3 eval/report.py                               #    the change against the version before it
+eval/run.sh ollupi holdout                           # 7. once it looks right, the tasks it was not shaped on
 ```
 
-`run.sh <agent> [subset] [harbor run flags]` takes `ollupi` or any agent Harbor ships, and a subset from [subsets](subsets) or `all` for the 89 tasks of Terminal-Bench 2.0. `MODEL` picks the model (default `deepseek/deepseek-flash`), `N` how many trials run at once (default 2; more needs more memory than Docker's 4 GB). Before it starts, it:
+1. **Run.** `run.sh <agent> [subset] [harbor run flags]` takes a subset from [subsets](subsets) (default `smoke`) or `all` for the 89 tasks. Before it starts it checks that Docker runs and that a container downloads over HTTP and HTTPS, downloads the tasks into `~/harbor-tasks/terminal-bench-2.0` (`TASKS_DIR`) the first time, and rebuilds `eval/build` when the code changed since the last build. The amd64 build takes about ten minutes under emulation on Apple silicon. `MODEL` picks the model (default `deepseek/deepseek-flash`), `N` how many trials run at once (default 2).
+2. **Compare.** [report.py](report.py) gives one column per version of ollupi, the commit eval was built from, with a `-dirty+` hash when changes were not committed, so that two experiments on one commit stay apart. It shows the last two columns, and says which tasks the newer one fixed or broke; `--all` shows every version. A trial counts only when its verifier ran the tests; the others are listed to run again. For each task the latest job that tested it gives the result, so running a task again replaces it.
+3. **Read.** [trace.py](trace.py) shows a trial: the failing tests and their assertions, then the turn as a timeline of model responses (with what the model thought and said) and tool calls (with arguments, time, exit codes), and where the time went. eval keeps `agent/ollupi-items.json` up to date as the turn goes, so a run the harness stopped at its time limit shows up to that point. Sort each failure by cause before changing anything:
+   - the **model** could not do it: a better model would, the harness would not;
+   - the **harness**: a tool that misled, a prompt that pushed the wrong way, context lost, not knowing when to stop. These are the ones to fix;
+   - the **environment**: the network or the image, nothing to do with ollupi.
+4. **Change** one thing at a time, in a way that helps tasks in general. A fix for one task's quirk teaches nothing.
+5. **Check the change** on the tasks it is for, with `--n-attempts 3` or more: one trial of one task passes or fails by chance often enough to mislead.
+6. **Check what it broke** on all of smoke.
+7. **Confirm** on `holdout`. Run it only once a change looks right on smoke, and do not read its trials to steer the next change: it tells whether a change helps tasks it was not shaped on only as long as it was not shaped on them.
 
-- downloads the tasks into `~/harbor-tasks/terminal-bench-2.0` (`TASKS_DIR`) the first time, so later runs need no clone from GitHub;
-- checks that a container downloads over HTTP and HTTPS, which every verifier needs;
-- for ollupi, rebuilds `eval/build` with [build.sh](build.sh) when the code changed since the last build. The amd64 build takes about ten minutes under emulation on Apple silicon.
+Iterate with a cheap model, and confirm with the model ollupi will run on: what helps one model does not always help another.
 
-Each trial keeps its files under `eval/jobs/<agent>/<job>/<task>__<id>/`: `agent/ollupi.txt` (ollupi's log), `agent/ollupi-items.json` (every item of the turn), `verifier/test-stdout.txt` (the tests' output) and `result.json`.
+## Subsets
 
-## Reading the results
+- [smoke](subsets/smoke.txt): ten tasks, two easy, seven medium, one hard. For iterating; read its trials freely.
+- [holdout](subsets/holdout.txt): twenty other tasks, one easy, sixteen medium, three hard. For confirming.
+- `all`: the 89 tasks, for a result to state in public.
 
-[report.py](report.py) puts the agents side by side, one row per task: pass or FAIL, the agent's minutes, and T/O when it ran out of time. It counts a trial only when its verifier ran the tests (`verifier/ctrf.json` exists). A trial without it scored 0 because the tests never ran, and the report lists it to run again. For each task it takes the latest job that tested it, so running a task again replaces its earlier result.
+Both subsets were picked by hand, each task needing 2 GB and none a virtual machine or a large model, so their scores compare versions of ollupi, not ollupi with the leaderboard.
 
-Before changing the harness, read the failed trials' items and sort them by cause: a score alone does not say what to fix.
+## Against other harnesses
 
-A result counts when:
+The leaderboards on Harbor Hub carry the published scores of many harnesses with many models:
 
-- everything is pinned: the dataset version, the model, Harbor's version and ollupi's commit (the report lists the versions each agent ran);
-- each configuration ran more than once, and the report gives the pass rate; Terminal-Bench's leaderboard takes five runs (`--n-attempts 5`) of all 89 tasks;
-- another harness ran the same model on the same tasks.
+```bash
+harbor hub leaderboard show terminal-bench/terminal-bench-2/2-0
+```
 
-The smoke subset was picked by hand, so its scores compare agents with each other, not with the leaderboard.
+A score of ollupi's sits next to them only when it was made the way theirs were: a model that is on the board, all 89 tasks, five attempts each (`--n-attempts 5`), default time limits and resources, and an environment as stable as theirs; a cloud one such as Daytona or Modal rather than a laptop behind a proxy. The board publishes overall scores only, not each task's trials.
 
 ## When something scores 0 that should not
 
-- **The tests never ran.** The report says "not tested"; `verifier/test-stdout.txt` shows why, usually a download that failed. GitHub's release downloads sometimes answer 504 for a while: run the task again later.
-- **Docker behind a proxy.** Docker Desktop sends containers' traffic through the system proxy. A proxy that stalls on large plain-HTTP downloads breaks `apt-get` in every verifier while HTTPS works. In Docker Desktop's proxy settings, set the proxy by hand: none for HTTP, the system proxy for HTTPS.
-- **The model unreachable from a task.** Some task images ship no CA certificates. The eval command carries its own roots for that case; an agent's log that shows "model request failed" on its first call points at the container's network or certificates.
+- **The tests never ran.** The report lists it; `trace.py` shows the end of the verifier's output, usually a download that failed. GitHub's release downloads sometimes answer 504 for a while: run the task again later.
+- **Docker behind a proxy.** Docker Desktop sends containers' traffic through the system proxy. A proxy that stalls on large plain-HTTP downloads breaks `apt-get` in every verifier while HTTPS works. In Docker Desktop's proxy settings, set the proxy by hand: none for HTTP, the system proxy for HTTPS. A model provider that is faster reached directly can be added to the proxy's exclusions.
+- **The model unreachable from a task.** Some task images ship no CA certificates. eval carries its own roots for that case; "model request failed" on the first call points at the container's network or certificates.
 
 ## How ollupi runs a task
 
-`eval` ([main.go](main.go)) runs one task through ollupi's agent and exits: one user, one conversation, one turn, no gateway. The task comes from `OLLUPI_INSTRUCTION`, a file or stdin. It never asks for approval, answers a question the model asks with "decide for yourself", prints the last message, writes the turn's items with `-out`, and exits 1 when the turn does not complete. Commands run with full access, as the task's container is the sandbox; on macOS, `-sandbox workspace-write` confines them to the folder:
+`eval` ([main.go](main.go)) runs one task through ollupi's agent and exits: one user, one conversation, one turn, no gateway. The task comes from `OLLUPI_INSTRUCTION`, a file or stdin. It never asks for approval, answers a question the model asks with "decide for yourself", prints the last message, keeps the turn's items in `-out`, and exits 1 when the turn does not complete. Commands run with full access, as the task's container is the sandbox; on macOS, `-sandbox workspace-write` confines them to the folder:
 
 ```bash
 go build -tags sqlite_fts5 -o ollupi-eval ./eval
@@ -59,4 +71,4 @@ OLLUPI_API_KEY=... OLLUPI_INSTRUCTION='Write primes.py that prints the first 20 
   ./ollupi-eval -sandbox workspace-write -base-url https://api.deepseek.com -model deepseek-flash
 ```
 
-[harbor/ollupi_agent.py](harbor/ollupi_agent.py) is the Harbor agent: it uploads the static Linux build into each task's container and runs the task there, with the key and settings from the host's environment, so no key is on a command line.
+[harbor/ollupi_agent.py](harbor/ollupi_agent.py) is the Harbor agent: it uploads the static Linux build into each task's container and runs the task there, with the key and settings from the host's environment, so no key is on a command line. Each trial keeps `agent/ollupi.txt` (the log), `agent/ollupi-items.json` (the turn), `verifier/test-stdout.txt` and `result.json` under `eval/jobs/ollupi/<job>/<task>__<id>/`.
