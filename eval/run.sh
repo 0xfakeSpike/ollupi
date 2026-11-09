@@ -5,7 +5,8 @@
 #   eval/run.sh <agent> [subset] [harbor run flags...]
 #
 # agent is ollupi or any agent Harbor ships, such as terminus-2. subset names a file in eval/subsets (default
-# smoke), or is all. Further flags go to harbor run, such as --n-attempts 5 or -i one-task to run only that one.
+# smoke), or is all. Further flags go to harbor run, such as --n-attempts 5; with -i the tasks it names run instead
+# of the subset.
 #
 # Before it starts it checks what would otherwise score every task 0 or test the wrong code: that Docker runs,
 # that containers download over both HTTP and HTTPS, and, for ollupi, that eval/build holds the current code.
@@ -57,19 +58,21 @@ for url in ("http://deb.debian.org/debian/dists/bookworm/main/binary-amd64/Packa
             "https://github.com/astral-sh/uv/releases/download/0.9.5/uv-x86_64-unknown-linux-gnu.tar.gz"):
     try:
         with urllib.request.urlopen(url, timeout=30) as r:
-            while r.read(1 << 16):
-                pass
+            r.read(1 << 20)  # a proxy that stalls on large downloads stalls well before 1 MB
     except Exception as e:
         sys.exit(f"{url}: {e}")
 ' || fail "a container could not download what verifiers need; see eval/README.md on networks behind a proxy"
 
-case $subset in
-all) includes= ;;
-*)
+named=
+for arg in "$@"; do
+	case $arg in -i | --include-task-name | --include-task-name=*) named=1 ;; esac
+done
+if [ -n "$named" ] || [ "$subset" = all ]; then
+	includes=
+else
 	[ -f "$root/eval/subsets/$subset.txt" ] || fail "no subset eval/subsets/$subset.txt"
 	includes=$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' -e 's/^/-i /' "$root/eval/subsets/$subset.txt")
-	;;
-esac
+fi
 
 case $agent in
 ollupi)
