@@ -67,7 +67,7 @@ func resume(args []string) {
 		return th.ID
 	}
 	turn := func(id, text string) {
-		tr.start(ag, id, text)
+		tr.start(ag, repo.DefaultUser, id, text)
 		select {
 		case <-tr.done[id]:
 		case <-time.After(time.Minute):
@@ -106,13 +106,13 @@ func resume(args []string) {
 	}
 
 	for range *waiting {
-		tr.start(ag, newThread(), "ASK")
+		tr.start(ag, repo.DefaultUser, newThread(), "ASK")
 	}
 	waitFor("the waiting conversations", func() bool { return tr.asked.Load() >= int64(*waiting) })
 	m.latency.Store(int64(time.Hour))
 	before := m.calls.Load()
 	for range *running {
-		tr.start(ag, newThread(), "work")
+		tr.start(ag, repo.DefaultUser, newThread(), "work")
 	}
 	waitFor("the running turns", func() bool { return m.calls.Load()-before >= int64(*running) })
 	cancel()

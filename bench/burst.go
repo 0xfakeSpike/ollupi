@@ -39,6 +39,9 @@ type provider struct {
 	others int
 	// fail is the share of requests answered at once with a 500.
 	fail float64
+	// keys, when set, gives an API key its own limit, as each user's key has its own quota at the provider; it is
+	// checked before limit, which then stands for the provider as a whole.
+	keys map[string]*quota
 	// fanout is how many calls a response carries when it calls a tool, all of them the same call; one when zero.
 	fanout int
 	// next names the call that answers a request made after the model answered the user's message ask so many times.
@@ -58,7 +61,17 @@ func (p *provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	n := p.inFlight.Add(1)
 	defer p.inFlight.Add(-1)
 	p.requests.Add(1)
-	for old := p.peak.Load(); n > old && !p.peak.CompareAndSwap(old, n); old = p.peak.Load() {
+	raise(&p.peak, n)
+	if q := p.keys[strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")]; q != nil {
+		held := q.inFlight.Add(1)
+		defer q.inFlight.Add(-1)
+		raise(&q.peak, held)
+		if held > q.limit {
+			q.refused.Add(1)
+			p.refused.Add(1)
+			http.Error(w, `{"error":{"message":"too many requests in flight for this key","type":"rate_limit"}}`, http.StatusTooManyRequests)
+			return
+		}
 	}
 	others := 0
 	if p.others > 0 {
@@ -125,6 +138,17 @@ func (p *provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		send(map[string]any{}, "stop")
 	}
 	fmt.Fprint(w, "data: [DONE]\n\n")
+}
+
+// quota is one API key's limit on requests in flight, and what it saw.
+type quota struct {
+	limit                   int64
+	inFlight, peak, refused atomic.Int64
+}
+
+func raise(peak *atomic.Int64, n int64) {
+	for old := peak.Load(); n > old && !peak.CompareAndSwap(old, n); old = peak.Load() {
+	}
 }
 
 // work is a tool that takes latency, as a command or a fetch would; it holds the turn's slot but no model call.
@@ -260,7 +284,7 @@ func burst(args []string) {
 	sampleAt.Store(startAt)
 	turns := make([]string, 0, *n)
 	for _, id := range threads {
-		turns = append(turns, tr.start(ag, id, "work"))
+		turns = append(turns, tr.start(ag, repo.DefaultUser, id, "work"))
 	}
 	submit := time.Since(startAt)
 	if *hold {
@@ -279,7 +303,7 @@ func burst(args []string) {
 			case <-done:
 				return
 			case <-time.After(*probeEvery):
-				id := tr.start(ag, newThread(), "work")
+				id := tr.start(ag, repo.DefaultUser, newThread(), "work")
 				probesMu.Lock()
 				probes = append(probes, id)
 				probesMu.Unlock()

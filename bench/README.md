@@ -18,6 +18,8 @@ go run -tags sqlite_fts5 ./bench isolated -k 20
 go run -tags sqlite_fts5 ./bench steady -c 3072
 go run -tags sqlite_fts5 ./bench steady -c 1024 -fail 0.05 -others 256
 go run -tags sqlite_fts5 ./bench steady -c 1536 -sigma 0.6
+go run -tags sqlite_fts5 ./bench steady -c 1024 -command workspace-write
+go run -tags sqlite_fts5 ./bench steady -c 1024 -command full-access
 go run -tags sqlite_fts5 ./bench burst -n 3000 -slots 512 -calls 256 -latency 5s -jitter 2s -tool 1s
 go run -tags sqlite_fts5 ./bench resume
 go run -tags sqlite_fts5 ./bench crash -n 500 -kills 30
@@ -25,19 +27,23 @@ go run -tags sqlite_fts5 ./bench crash -n 400 -kills 8 -lease 1500ms
 go run -tags sqlite_fts5 ./bench mix
 go run -tags sqlite_fts5 ./bench fanout
 go run -tags sqlite_fts5 ./bench soak -c 256 -d 8m -every 30s -latency 1s -jitter 200ms -tool 200ms
+go run -tags sqlite_fts5 ./bench users
+go run -tags sqlite_fts5 ./bench users -user-slots 64
+go run -tags sqlite_fts5 ./bench users -user-slots 64 -heavy-calls 64 -heavy-limit 32
 ```
 
 | Experiment | What it measures | Raw output |
 |---|---|---|
 | `parked` | Memory and disk of parked sessions, and their effect on active turns | Not kept |
 | `isolated` | Control: one process per session | Not kept |
-| `steady` | Capacity under closed-loop load; `-fail`, `-others` and `-sigma` inject faults and a long tail | `results/steady-*.txt` |
+| `steady` | Capacity under closed-loop load; `-fail`, `-others` and `-sigma` inject faults and a long tail; `-command` runs each tool call as a real `sleep` through `run_command` in a sandbox of that mode | `results/steady-*.txt`; `-command` not yet measured |
 | `burst` | Queueing and quota when many turns are submitted at once | `results/burst.csv` (timeline) |
 | `resume` | Time from waking an idle session to its model request going out | Not kept |
 | `crash` | Recovery after random `kill -9`; with `-lease`, a standby process takes over | Not kept |
 | `mix` | Waiting and fairness when user turns, subagents and scheduled tasks mix | `results/mix.txt` |
 | `fanout` | Whether parent turns give up their slots when subagents outnumber slots | `results/fanout.txt` |
 | `soak` | Latency, memory, goroutines, GC and database growth over a long run | `results/soak.csv` |
+| `users` | Many users on one shard, each on their own key and quota, beside one user who keeps more conversations busy than their key serves; with `-user-slots`, whether `UserSlots` keeps the others' turns from waiting on that user, and with `-heavy-limit`, whether that user's 429s stay theirs | Not yet measured |
 
 The numbers in `results` were measured on 2026-11-04, one run each. `parked`, `isolated`, `burst`, `resume` and `crash` are earlier results that have not been re-measured since. All of these numbers predate the multi-user, shard and sandbox interface changes and have not been re-measured after them.
 

@@ -9,6 +9,7 @@
 //	bench mix     how long user, subagent and scheduled-task turns wait for their first model request, side by side
 //	bench fanout  whether turns that each start many subagents at once, more than there are slots, all end
 //	bench soak    whether turn time, memory, collector pauses and the database stay flat over a long run
+//	bench users   whether one user who keeps more conversations busy than their key serves holds back the other users
 package main
 
 import (
@@ -103,9 +104,9 @@ func (t *tracker) on(e agent.Event) {
 }
 
 // start holds no lock while StartTurn runs: the agent's loop delivers events to on, which takes it.
-func (t *tracker) start(ag *agent.Agent, threadID, text string) string {
+func (t *tracker) start(ag *agent.Agent, user, threadID, text string) string {
 	at := time.Now()
-	turn, err := ag.StartTurn(repo.DefaultUser, threadID, agent.Input{Text: text})
+	turn, err := ag.StartTurn(user, threadID, agent.Input{Text: text})
 	if err != nil {
 		log.Fatalf("start turn: %v", err)
 	}
@@ -142,6 +143,13 @@ func waitFor(what string, done func() bool) {
 func cpu() time.Duration {
 	var ru syscall.Rusage
 	_ = syscall.Getrusage(syscall.RUSAGE_SELF, &ru)
+	return time.Duration(ru.Utime.Nano() + ru.Stime.Nano())
+}
+
+// childCPU is the CPU the commands this process ran and waited for took, the sandbox's launcher included.
+func childCPU() time.Duration {
+	var ru syscall.Rusage
+	_ = syscall.Getrusage(syscall.RUSAGE_CHILDREN, &ru)
 	return time.Duration(ru.Utime.Nano() + ru.Stime.Nano())
 }
 
@@ -185,9 +193,9 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})))
 	// SetDefault routes the log package through slog at Info, below the level kept; the bench's own errors must show.
 	log.SetOutput(os.Stderr)
-	experiments := map[string]func([]string){"parked": parked, "burst": burst, "steady": steady, "crash": crash, "crashchild": crashChild, "provider": providerMain, "isolated": isolated, "lone": lone, "resume": resume, "mix": mix, "fanout": fanout, "soak": soak}
+	experiments := map[string]func([]string){"parked": parked, "burst": burst, "steady": steady, "crash": crash, "crashchild": crashChild, "provider": providerMain, "isolated": isolated, "lone": lone, "resume": resume, "mix": mix, "fanout": fanout, "soak": soak, "users": users}
 	if len(os.Args) < 2 || experiments[os.Args[1]] == nil {
-		log.Fatal("usage: bench parked|burst|steady|crash|isolated|resume|mix|fanout|soak [flags]")
+		log.Fatal("usage: bench parked|burst|steady|crash|isolated|resume|mix|fanout|soak|users [flags]")
 	}
 	experiments[os.Args[1]](os.Args[2:])
 }
@@ -239,7 +247,7 @@ func parked(args []string) {
 		text = "ASK"
 	}
 	for range *parked {
-		tr.start(ag, newThread(), text)
+		tr.start(ag, repo.DefaultUser, newThread(), text)
 	}
 	waitFor("parked conversations", func() bool {
 		if *state == "waiting" {
@@ -283,7 +291,7 @@ func parked(args []string) {
 		go func() {
 			defer wg.Done()
 			for range *rounds {
-				turnID := tr.start(ag, id, "hello")
+				turnID := tr.start(ag, repo.DefaultUser, id, "hello")
 				idsMu.Lock()
 				workload = append(workload, turnID)
 				idsMu.Unlock()

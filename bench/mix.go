@@ -115,7 +115,7 @@ func mix(args []string) {
 		t := &mixTurn{kind: kind, thread: thread, submitted: time.Now()}
 		turns[text] = t
 		mu.Unlock()
-		id := tr.start(ag, thread, text)
+		id := tr.start(ag, repo.DefaultUser, thread, text)
 		mu.Lock()
 		t.turnID = id
 		mu.Unlock()

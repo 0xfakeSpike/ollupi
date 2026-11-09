@@ -109,7 +109,7 @@ func fanout(args []string) {
 	startAt := time.Now()
 	var ids []string
 	for _, th := range threads {
-		ids = append(ids, tr.start(ag, th, "delegate"))
+		ids = append(ids, tr.start(ag, repo.DefaultUser, th, "delegate"))
 	}
 	waitFor("the parents", func() bool { return len(tr.took(ids)) == len(ids) })
 	total := time.Since(startAt)

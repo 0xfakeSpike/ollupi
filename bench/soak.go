@@ -119,7 +119,7 @@ func soak(args []string) {
 		go func() {
 			defer wg.Done()
 			for time.Now().Before(deadline) {
-				turnID := tr.start(ag, id, "work")
+				turnID := tr.start(ag, repo.DefaultUser, id, "work")
 				mu.Lock()
 				ids = append(ids, turnID)
 				mu.Unlock()
