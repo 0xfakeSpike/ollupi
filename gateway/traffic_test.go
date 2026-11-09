@@ -202,9 +202,20 @@ func TestTrafficMatchesContract(t *testing.T) {
 	approval := c.await(requestApproval, nil)
 	queued := c.startTurn(threadID, "and then say hi")
 	c.await("turn/queued", nil)
-	c.call("turn/steer", TurnSteerParams{ThreadID: threadID, ExpectedTurnID: turn, Input: []UserInput{{Type: "text", Text: "thanks"}}}, nil)
-	c.call("thread/resume", ThreadPageParams{ThreadID: threadID}, nil)
+	// A message sent while the call waits for approval answers in its place: the call is declined and the turn goes on.
 	var asked ApprovalRequestParams
+	json.Unmarshal(approval.Params, &asked)
+	c.call("turn/steer", TurnSteerParams{ThreadID: threadID, ExpectedTurnID: turn, Input: []UserInput{{Type: "text", Text: "never mind"}}}, nil)
+	c.await("item/completed", func(params json.RawMessage) bool {
+		var n ItemNotification
+		return json.Unmarshal(params, &n) == nil && n.Item.ID == asked.ItemID && n.Item.Status == repo.ItemDeclined
+	})
+	c.awaitTurnEnd(turn, repo.TurnCompleted)
+	c.awaitTurnEnd(queued, repo.TurnCompleted)
+	c.call("thread/resume", ThreadPageParams{ThreadID: threadID}, nil)
+
+	turn = c.startTurn(threadID, "touch the file after all")
+	approval = c.await(requestApproval, nil)
 	json.Unmarshal(approval.Params, &asked)
 	if !slices.Equal(asked.SuggestedRules, []string{"touch"}) || !slices.Contains(asked.AvailableDecisions, repo.DecisionAcceptAlways) {
 		t.Errorf("approval suggests %q and offers %q, want touch and acceptAlways", asked.SuggestedRules, asked.AvailableDecisions)
@@ -215,7 +226,6 @@ func TestTrafficMatchesContract(t *testing.T) {
 		return json.Unmarshal(params, &n) == nil && n.Workspace.ID == workspaceID && slices.Equal(n.Workspace.Settings.Rules.Allow, []string{"touch"})
 	})
 	c.awaitTurnEnd(turn, repo.TurnCompleted)
-	c.awaitTurnEnd(queued, repo.TurnCompleted)
 	c.awaitTurnEnd(c.startTurn(threadID, "touch it again"), repo.TurnCompleted)
 
 	var tab ThreadResult

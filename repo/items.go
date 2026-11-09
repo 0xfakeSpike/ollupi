@@ -313,6 +313,60 @@ func (d *DB) RecordItem(threadID string, item ItemRow) (ItemRow, bool, error) {
 	return stored, isNew, nil
 }
 
+// Steer writes a user message into the current turn. A turn that waits on the user takes the message in place of
+// what it waits for: the calls of the turn that are still to run, the one awaiting approval or an answer among them,
+// are declined, and the turn is ready again, so its next run reads the message. It returns them as closed.
+func (d *DB) Steer(threadID string, message ItemRow) (ItemRow, []ItemRow, error) {
+	var stored ItemRow
+	var closed []ItemRow
+	err := d.Tx(func(tx *DB) error {
+		active, err := tx.ActiveTurn(threadID)
+		if errors.Is(err, ErrNotFound) || (err == nil && active.ID != message.TurnID) {
+			return fmt.Errorf("message %s belongs to turn %s, which is not in progress", message.ID, message.TurnID)
+		}
+		if err != nil {
+			return err
+		}
+		if message.Type != ItemUserMessage {
+			return fmt.Errorf("item %s is not a user message", message.ID)
+		}
+		if stored, _, err = tx.saveItemOf(threadID, message); err != nil {
+			return err
+		}
+		if active.Status != TurnWaitingOnApproval && active.Status != TurnWaitingOnUserInput {
+			return nil
+		}
+		var open []ItemRow
+		if err := tx.gorm.Where("turn_id = ? AND "+openCalls, active.ID).Order("seq").Find(&open).Error; err != nil {
+			return err
+		}
+		now := time.Now().UTC()
+		for _, it := range open {
+			switch {
+			case it.WaitsForApproval():
+				it.Error = "the user sent a message instead of approving this call, so it did not run"
+			case it.WaitsOnUser():
+				it.Error = "the user sent a message instead of answering"
+			case it.Status == ItemPending:
+				it.Error = "skipped: the user sent a message before this call ran"
+			default:
+				continue
+			}
+			it.Status, it.CompletedAt = ItemDeclined, &now
+			if it, _, err = tx.saveItemOf(threadID, it); err != nil {
+				return err
+			}
+			closed = append(closed, it)
+		}
+		_, err = tx.settleStatus(active.ID, active.Status)
+		return err
+	})
+	if err != nil {
+		return ItemRow{}, nil, fmt.Errorf("storage: steer: %w", err)
+	}
+	return stored, closed, nil
+}
+
 func (d *DB) RecoverItems(threadID string) ([]ItemRow, error) {
 	var closed []ItemRow
 	err := d.Tx(func(tx *DB) error {
