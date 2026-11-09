@@ -103,7 +103,7 @@ func lone(args []string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	tr.start(ag, th.ID, "ASK")
+	tr.start(ag, repo.DefaultUser, th.ID, "ASK")
 	waitFor("the question", func() bool { return tr.asked.Load() == 1 })
 	runtime.GC()
 	fmt.Println("ready")
