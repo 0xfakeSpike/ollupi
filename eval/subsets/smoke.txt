@@ -1,0 +1,13 @@
+# Ten Terminal-Bench 2.0 tasks for checking the setup and comparing harnesses quickly: two easy, seven medium and
+# one hard, each needing 2 GB, none a virtual machine or a large model. Picked by hand, so not a sample of the
+# benchmark: its scores compare agents with each other, not with the leaderboard.
+fix-git
+cobol-modernization
+regex-log
+log-summary-date-ranges
+sqlite-db-truncate
+openssl-selfsigned-cert
+extract-elf
+multi-source-data-merger
+constraints-scheduling
+cancel-async-tasks
