@@ -165,11 +165,18 @@ func (a *Agent) steer(threadID, expectedTurnID string, in Input, atts []repo.Att
 	if err := a.checkImages(threadID, turn.Model, atts); err != nil {
 		return repo.TurnRow{}, err
 	}
-	stored, isNew, err := a.cfg.DB.RecordItem(threadID, repo.NewUserMessage(uuid.NewString(), turn.ID, text, atts, time.Now().UTC()))
+	stored, closed, err := a.cfg.DB.Steer(threadID, repo.NewUserMessage(uuid.NewString(), turn.ID, text, atts, time.Now().UTC()))
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
-	a.emitItem(st.Thread, turn, stored, isNew)
+	a.emitItem(st.Thread, turn, stored, true)
+	for _, it := range closed {
+		a.emitItem(st.Thread, turn, it, false)
+	}
+	if len(closed) > 0 {
+		slog.Info("turn steered out of its wait", "thread", threadID, "turn", turn.ID, "declined", len(closed))
+		a.emitStatus(threadID)
+	}
 	return turn, nil
 }
 
