@@ -26,7 +26,8 @@ import (
 )
 
 const (
-	maxInputRunes   = 4000
+	// maxAnswerRunes is the most an answer to one of the model's questions may say.
+	maxAnswerRunes  = 4000
 	defaultSlots    = 32
 	defaultRunLimit = 4 * time.Hour
 )
