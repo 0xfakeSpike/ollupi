@@ -1,6 +1,6 @@
 #!/bin/sh
-# Runs Terminal-Bench 2.0 tasks through Harbor for one agent, then compares its last two versions with
-# eval/report.py.
+# Runs Terminal-Bench 2.0 tasks through Harbor for one agent, then compares its latest version with what came
+# before, with eval/report.py.
 #
 #   eval/run.sh <agent> [subset] [harbor run flags...]
 #
