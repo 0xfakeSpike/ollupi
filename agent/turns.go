@@ -110,6 +110,9 @@ func (a *Agent) startTurn(threadID string, in Input, atts []repo.Attachment) (re
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
+	if err := a.checkLength(model, text); err != nil {
+		return repo.TurnRow{}, err
+	}
 	if err := a.checkImages(threadID, model, atts); err != nil {
 		return repo.TurnRow{}, err
 	}
@@ -161,6 +164,9 @@ func (a *Agent) steer(threadID, expectedTurnID string, in Input, atts []repo.Att
 	}
 	if turn.ID != expectedTurnID {
 		return repo.TurnRow{}, fmt.Errorf("%w (expected %s, in progress %s)", ErrTurnMismatch, expectedTurnID, turn.ID)
+	}
+	if err := a.checkLength(turn.Model, text); err != nil {
+		return repo.TurnRow{}, err
 	}
 	if err := a.checkImages(threadID, turn.Model, atts); err != nil {
 		return repo.TurnRow{}, err
@@ -255,7 +261,7 @@ func (a *Agent) answerUserInput(threadID, itemID string, answers userinput.Answe
 		if err != nil {
 			return repo.ItemRow{}, err
 		}
-		if err := req.Check(answers, maxInputRunes); err != nil {
+		if err := req.Check(answers, maxAnswerRunes); err != nil {
 			return repo.ItemRow{}, fmt.Errorf("agent: %w: %v", ErrInvalidAnswer, err)
 		}
 		result, _, err := repo.ResultOf(tools.Result{Output: answers})
@@ -300,8 +306,18 @@ func checkMessage(text string, attachments int) (string, error) {
 	if text == "" && attachments == 0 {
 		return "", fmt.Errorf("agent: %w: empty message", ErrInvalidMessage)
 	}
-	if n := len([]rune(text)); n > maxInputRunes {
-		return "", fmt.Errorf("agent: %w: %d characters; at most %d are accepted", ErrInvalidMessage, n, maxInputRunes)
-	}
 	return text, nil
+}
+
+// checkLength holds a message to the share of the model's input one message may take, so that it can always be sent.
+func (a *Agent) checkLength(model llm.Model, text string) error {
+	window, err := a.windowFor(model)
+	if err != nil {
+		return err
+	}
+	if tokens, budget := llm.EstimateTokens(text), window.MessageBudget(); tokens > budget {
+		return fmt.Errorf("agent: %w: the message takes about %d tokens, and model %s takes at most %d in one message; send long text as a file attachment",
+			ErrInvalidMessage, tokens, model.Name, budget)
+	}
+	return nil
 }

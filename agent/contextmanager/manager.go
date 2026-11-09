@@ -29,6 +29,10 @@ const (
 	fixedPercent       = 50
 	artifactPercent    = 15
 	toolPercent        = 10
+	// messagePercent is the most of the input one user message may take: with the system prompt and tools held to
+	// fixedPercent and responsePercent kept for the answer, a message this size is always sent, and compaction makes
+	// room for it in the history.
+	messagePercent = 25
 	sentLayout         = "Mon 2006-01-02 15:04 -07:00"
 	// compactInputTokens is the budget the full prompt and tool list need: about 8k tokens, which Fits holds to half of it.
 	compactInputTokens = 16_384
@@ -140,6 +144,11 @@ func (m *Manager) Compact() bool { return m.inputTokens < compactInputTokens }
 
 func (m *Manager) SkillBudget() int {
 	return share(m.inputTokens, 4)
+}
+
+// MessageBudget is the most tokens one user message may take.
+func (m *Manager) MessageBudget() int {
+	return share(m.inputTokens, messagePercent)
 }
 
 func (m *Manager) MemoryBudget() int {
