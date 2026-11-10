@@ -165,7 +165,7 @@ func (r *Provider) inputSchema() map[string]any {
 	}
 	props["justification"] = map[string]any{
 		"type":        "string",
-		"description": "Required with require_escalated: one sentence telling the user why the command must run outside the sandbox",
+		"description": "Required with require_escalated: one sentence telling the user what the command needs that the sandbox does not allow, such as writing /usr/local or reaching a host",
 	}
 	return schema
 }
