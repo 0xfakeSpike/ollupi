@@ -200,7 +200,7 @@ func (c *Checker) decide(call Call, history []repo.ItemRow) Decision {
 			return Decision{Verdict: Ask, Reason: "This command cannot be fully checked against your permission rules for " + call.Tool + ", so it needs your approval."}
 		}
 		if c.leavesTheSandbox(call) {
-			return Decision{Verdict: Ask, Reason: "Runs outside the sandbox: " + call.Prepared.Justification}
+			return Decision{Verdict: Ask}
 		}
 		return Decision{Verdict: Ask, Reason: "This command cannot be fully checked against your permission rules for " + call.Tool + ", so it needs your approval."}
 	}
@@ -212,7 +212,7 @@ func (c *Checker) decide(call Call, history []repo.ItemRow) Decision {
 		return Decision{Verdict: Run, Reason: "allowed for this conversation earlier"}
 	}
 	if c.leavesTheSandbox(call) {
-		return Decision{Verdict: Ask, Reason: "Runs outside the sandbox: " + call.Prepared.Justification}
+		return Decision{Verdict: Ask}
 	}
 	if c.policy.requiresApproval(call.Annotations, call.Prepared) {
 		return Decision{Verdict: Ask}
@@ -221,7 +221,8 @@ func (c *Checker) decide(call Call, history []repo.ItemRow) Decision {
 }
 
 // leavesTheSandbox says the call was prepared to run outside the sandbox, which someone has to agree to before it runs.
-// The policy that never asks has no one to agree, so there the command runs as prepared.
+// The policy that never asks has no one to agree, so there the command runs as prepared. Its approval gives no reason:
+// the prepared execution says the command escalates and why, and each client words that for its user.
 func (c *Checker) leavesTheSandbox(call Call) bool {
 	return c.policy != Never && call.Prepared != nil && call.Prepared.Escalated
 }
