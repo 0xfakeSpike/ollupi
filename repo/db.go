@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"context"
 	"database/sql/driver"
 	"errors"
 	"fmt"
@@ -19,6 +20,11 @@ import (
 type DB struct {
 	gorm  *gorm.DB
 	owner string
+}
+
+// WithContext is the database for one request: its queries end when ctx does.
+func (d *DB) WithContext(ctx context.Context) *DB {
+	return &DB{gorm: d.gorm.WithContext(ctx), owner: d.owner}
 }
 
 func Open(homeDir string) (*DB, error) {

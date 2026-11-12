@@ -26,6 +26,14 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "$unformatted"
+            exit 1
+          fi
+
       - run: go vet ./...
 
       # Fails on vulnerabilities the code actually reaches, in dependencies or

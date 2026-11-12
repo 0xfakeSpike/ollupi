@@ -143,6 +143,7 @@ func environmentAgent(t *testing.T) (*agent.Agent, *repo.DB) {
 }
 
 func addWorkspace(t *testing.T, ag *agent.Agent, dir string) repo.WorkspaceRow {
+	ctx := context.Background()
 	t.Helper()
 	root, err := sandbox.CanonicalDirectory(dir)
 	if err != nil {
@@ -151,7 +152,7 @@ func addWorkspace(t *testing.T, ag *agent.Agent, dir string) repo.WorkspaceRow {
 	if err := os.MkdirAll(filepath.Join(root, "src"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	w, err := ag.AddWorkspace(repo.DefaultUser, root, "")
+	w, err := ag.AddWorkspace(ctx, repo.DefaultUser, root, "")
 	if err != nil {
 		t.Fatal(err)
 	}

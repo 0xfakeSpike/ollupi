@@ -27,8 +27,10 @@ import (
 
 const (
 	// maxAnswerRunes is the most an answer to one of the model's questions may say.
-	maxAnswerRunes  = 4000
-	defaultSlots    = 32
+	maxAnswerRunes = 4000
+	defaultSlots   = 32
+	// maxQueuedTurns is how many turns one conversation may have waiting behind the one in progress.
+	maxQueuedTurns  = 20
 	defaultRunLimit = 4 * time.Hour
 )
 
@@ -41,6 +43,7 @@ var (
 	ErrWorkspaceBusy     = errors.New("a conversation in the workspace has a turn in progress or queued; interrupt it first")
 	ErrThreadArchived    = errors.New("the conversation is archived; restore it before starting new work")
 	ErrThreadBusy        = errors.New("the conversation has a turn in progress or queued; interrupt it first")
+	ErrQueueFull         = fmt.Errorf("the conversation has %d messages waiting already; send this one once they start", maxQueuedTurns)
 	ErrInvalidMessage    = errors.New("invalid message")
 	ErrInvalidAnswer     = errors.New("invalid answer")
 	ErrInvalidDecision   = errors.New("invalid decision")
@@ -97,6 +100,10 @@ type Agent struct {
 	providers  []tools.Provider
 	registries sync.Map
 
+	// moving holds the workspaces whose folder is being moved, which take no new turn meanwhile.
+	moveMu sync.Mutex
+	moving map[string]bool
+
 	events       chan func()
 	slotByThread map[string]*slot
 	slotsOfUser  map[string]int
@@ -142,7 +149,7 @@ func New(cfg Config) *Agent {
 	if cfg.BoxFor == nil {
 		cfg.BoxFor = func(string) (sandbox.Box, error) { return sandbox.Here(), nil }
 	}
-	return &Agent{cfg: cfg}
+	return &Agent{cfg: cfg, moving: map[string]bool{}}
 }
 
 func (a *Agent) Start(ctx context.Context) error {

@@ -49,7 +49,7 @@ func (a *Agent) UpdateThreadSettings(user, threadID string, settings permission.
 	if err := a.validateLayer(user, a.layers(w), t.Settings, threadLayer(settings)); err != nil {
 		return repo.ThreadRow{}, err
 	}
-	t, err = a.cfg.DB.SetThreadSettings(threadID, settings)
+	t, err = a.cfg.DB.SetThreadSettings(user, threadID, settings)
 	if err != nil {
 		return repo.ThreadRow{}, fmt.Errorf("agent: thread %s: %w", threadID, err)
 	}
@@ -122,7 +122,7 @@ func (a *Agent) RenameThread(user, id, title string) (repo.ThreadRow, error) {
 		if _, err := a.topThread(user, id); err != nil {
 			return err
 		}
-		row, err := a.cfg.DB.SetThreadTitle(id, title)
+		row, err := a.cfg.DB.SetThreadTitle(user, id, title)
 		if err != nil {
 			return fmt.Errorf("agent: thread %s: %w", id, err)
 		}
@@ -141,7 +141,7 @@ func (a *Agent) MarkThreadRead(user, id string) (repo.ThreadRow, error) {
 		if _, err := a.topThread(user, id); err != nil {
 			return err
 		}
-		row, err := a.cfg.DB.MarkThreadRead(id, time.Now())
+		row, err := a.cfg.DB.MarkThreadRead(user, id, time.Now())
 		if err != nil {
 			return fmt.Errorf("agent: thread %s: %w", id, err)
 		}
@@ -170,7 +170,7 @@ func (a *Agent) ArchiveThread(user, id string, archived bool) (repo.ThreadRow, e
 		if err != nil {
 			return fmt.Errorf("agent: thread %s: %w", id, err)
 		}
-		row, err := a.cfg.DB.SetThreadArchived(id, at)
+		row, err := a.cfg.DB.SetThreadArchived(user, id, at)
 		if err != nil {
 			return fmt.Errorf("agent: thread %s: %w", id, err)
 		}
@@ -195,7 +195,7 @@ func (a *Agent) DeleteThread(user, id string) error {
 		if err != nil {
 			return fmt.Errorf("agent: thread %s: %w", id, err)
 		}
-		if err := a.cfg.DB.DeleteThread(id); err != nil {
+		if err := a.cfg.DB.DeleteThread(user, id); err != nil {
 			return fmt.Errorf("agent: thread %s: %w", id, err)
 		}
 		a.emit(Event{Kind: EventThreadDeleted, Thread: t})

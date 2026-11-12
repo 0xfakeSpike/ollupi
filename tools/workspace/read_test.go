@@ -1,12 +1,14 @@
 package workspace
 
 import (
+	"bufio"
 	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/0xfakeSpike/ollupi/tools"
 )
@@ -179,5 +181,28 @@ func TestIgnoreRules(t *testing.T) {
 	}
 	if g.ignored("/r/node_modules", false) {
 		t.Error("a folder-only rule matched a file")
+	}
+}
+
+func TestReadLineKeepsAtMostItsLimit(t *testing.T) {
+	br := bufio.NewReaderSize(strings.NewReader(strings.Repeat("x", 100_000)+"\nnext\n"), 16)
+	line, n, err := readLine(br, 10)
+	if err != nil || line != strings.Repeat("x", 10) || n != 100_001 {
+		t.Fatalf("a long line: %q %d %v", line, n, err)
+	}
+	if line, _, err := readLine(br, 10); err != nil || line != "next\n" {
+		t.Errorf("the next line: %q %v", line, err)
+	}
+}
+
+func TestReadFileShortensALineWithoutBreaks(t *testing.T) {
+	root, call, _ := readFixture(t)
+	if err := os.WriteFile(filepath.Join(root, "one-line.txt"), []byte(strings.Repeat("y", 1<<20)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := call(ToolReadFile, map[string]any{"path": "one-line.txt"})
+	got := out.(ReadFileOutput)
+	if err != nil || got.TotalLines != 1 || utf8.RuneCountInString(got.Text) > maxLineRunes+8 || !strings.HasSuffix(got.Text, "…\n") {
+		t.Errorf("%v: %d lines, %d characters shown", err, got.TotalLines, utf8.RuneCountInString(got.Text))
 	}
 }

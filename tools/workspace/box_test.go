@@ -267,3 +267,37 @@ func TestACommandPreparedOnAMachineIsConfined(t *testing.T) {
 		t.Errorf("prepared %s", fmt.Sprintf("%+v", p))
 	}
 }
+
+// brokenMachine cannot open one of its files, as a sandbox can fail to answer for one.
+type brokenMachine struct {
+	*memoryMachine
+	broken string
+}
+
+func (m brokenMachine) Open(ctx context.Context, p string) (io.ReadCloser, error) {
+	if p == m.broken {
+		return nil, errors.New("the sandbox did not answer")
+	}
+	return m.memoryMachine.Open(ctx, p)
+}
+
+// A file grep cannot read is not a file without matches: a folder search counts it, and a search of it fails.
+func TestGrepReportsWhatItCouldNotRead(t *testing.T) {
+	m := brokenMachine{machineWith(map[string]string{"a.txt": "needle\n", "b.txt": "needle\n"}), machineRoot + "/b.txt"}
+	r, err := New(Options{Box: sandbox.Remote(m, []string{machineRoot}, "cloud")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	ctx := tools.WithCaller(context.Background(), tools.Caller{UserID: "a"})
+	res, err := r.Invoke(ctx, ToolGrep, map[string]any{"pattern": "needle", "files_only": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := res.Output.(GrepOutput); len(got.Files) != 1 || got.Skipped != 1 {
+		t.Errorf("a folder with an unreadable file: %+v", got)
+	}
+	if _, err := r.Invoke(ctx, ToolGrep, map[string]any{"pattern": "needle", "path": "b.txt"}); err == nil {
+		t.Error("an unreadable file searched as one without matches")
+	}
+}

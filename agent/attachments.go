@@ -45,12 +45,12 @@ var imageTypes = map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "i
 
 // attach stores what a message brings, before the message goes through the loop: a sandbox or blob store that is slow
 // there would hold up every thread on the shard.
-func (a *Agent) attach(user, threadID string, ins []AttachmentInput) ([]repo.Attachment, error) {
+func (a *Agent) attach(ctx context.Context, user, threadID string, ins []AttachmentInput) ([]repo.Attachment, error) {
 	t, err := a.topThread(user, threadID)
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(a.ctx, attachmentTimeout)
+	ctx, cancel := context.WithTimeout(ctx, attachmentTimeout)
 	defer cancel()
 	return a.storeAttachments(ctx, t, ins)
 }
@@ -143,8 +143,8 @@ func (a *Agent) copyAttachment(ctx context.Context, src io.ReadSeeker, att repo.
 func describe(src io.ReadSeeker, size int64, name, mime string) (repo.Attachment, error) {
 	head := make([]byte, 512)
 	n, err := io.ReadFull(src, head)
-	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
-		return repo.Attachment{}, fmt.Errorf("attachment %q cannot be read: %v", name, err)
+	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
+		return repo.Attachment{}, fmt.Errorf("attachment %q cannot be read: %w", name, err)
 	}
 	head = head[:n]
 	mime = strings.ToLower(strings.TrimSpace(mime))
@@ -179,7 +179,7 @@ func describe(src io.ReadSeeker, size int64, name, mime string) (repo.Attachment
 	}
 	data, err := io.ReadAll(io.LimitReader(src, maxTextFileBytes+1))
 	if err != nil {
-		return repo.Attachment{}, fmt.Errorf("attachment %q cannot be read: %v", name, err)
+		return repo.Attachment{}, fmt.Errorf("attachment %q cannot be read: %w", name, err)
 	}
 	if !utf8.Valid(data) || bytes.IndexByte(data, 0) >= 0 {
 		return repo.Attachment{}, notText
@@ -252,15 +252,15 @@ func (a *Agent) removeAttachments(atts []repo.Attachment) {
 	}
 }
 
-func (a *Agent) ReadAttachment(user, threadID, id string) (repo.Attachment, []byte, error) {
+func (a *Agent) ReadAttachment(ctx context.Context, user, threadID, id string) (repo.Attachment, []byte, error) {
 	if err := a.owned(user, threadID); err != nil {
 		return repo.Attachment{}, nil, err
 	}
-	att, err := a.cfg.DB.Attachment(threadID, id)
+	att, err := a.cfg.DB.Attachment(user, threadID, id)
 	if err != nil {
 		return repo.Attachment{}, nil, fmt.Errorf("agent: attachment %s: %w", id, err)
 	}
-	ctx, cancel := context.WithTimeout(a.ctx, attachmentTimeout)
+	ctx, cancel := context.WithTimeout(ctx, attachmentTimeout)
 	defer cancel()
 	data, err := a.cfg.Attachments.Get(ctx, att.File)
 	if err != nil {
