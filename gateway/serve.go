@@ -33,6 +33,8 @@ type Options struct {
 	Memory       *memory.Manager
 	Jobs         *cron.Jobs
 	MCP          *mcp.Users
+	// Connections bounds the clients' connections; the zero value takes DefaultConnections.
+	Connections wshub.Options
 }
 
 func NewServer(a *agent.Agent, opts Options) (*Server, error) {
@@ -47,7 +49,10 @@ func NewServer(a *agent.Agent, opts Options) (*Server, error) {
 	if opts.DB == nil {
 		return nil, errors.New("gateway: the agent's database is required")
 	}
-	hub, err := wshub.New[*conn](connections)
+	if opts.Connections == (wshub.Options{}) {
+		opts.Connections = DefaultConnections
+	}
+	hub, err := wshub.New[*conn](opts.Connections)
 	if err != nil {
 		return nil, fmt.Errorf("gateway: %w", err)
 	}
@@ -98,15 +103,18 @@ const (
 	idleTimeout       = 2 * time.Minute
 )
 
-// connections bounds the WebSocket connections a gateway holds. The admission rate is a guess, not yet measured: each
-// new connection sets off database work, so a restarted shard takes its users back a few hundred a second.
-var connections = wshub.Options{
+// DefaultConnections bounds the WebSocket connections a gateway holds unless Options says otherwise. The admission
+// rate is a guess, not yet measured: each new connection sets off database work, so a restarted shard takes its users
+// back a few hundred a second. MaxAge stays under the 24 hours that Google Cloud's global external Application Load
+// Balancer keeps a WebSocket open at most; a deployment behind a balancer that cuts them sooner sets it lower.
+var DefaultConnections = wshub.Options{
 	PerKey:      4,
 	Rate:        200,
 	Burst:       400,
 	RetryWithin: 5 * time.Second,
 	PingEvery:   30 * time.Second,
 	PongWithin:  15 * time.Second,
+	MaxAge:      20 * time.Hour,
 }
 
 var localHosts = []string{"localhost", "127.0.0.1", "::1"}
@@ -120,7 +128,7 @@ func (s *Server) authorize(r *http.Request) (string, int, string) {
 	if !slices.Contains(s.hosts, strings.Trim(host, "[]")) {
 		return "", http.StatusForbidden, "host not allowed"
 	}
-	user, ok := s.authenticate(tokenOf(r))
+	user, ok := s.authenticate(tokenOf(r.Header))
 	if !ok {
 		return "", http.StatusUnauthorized, "invalid or missing gateway token"
 	}

@@ -190,3 +190,15 @@ func TestUsers(t *testing.T) {
 		})
 	}
 }
+
+// A few connections, straight to the shard and through a router, all connect, and all come back after the shard
+// restarts.
+func TestConns(t *testing.T) {
+	for name, extra := range map[string][]string{"shard": nil, "router": {"-router"}} {
+		t.Run(name, func(t *testing.T) {
+			out := bench(t, append([]string{"conns", "-n", "10,20", "-idle", "1s", "-wait", "1m", "-storm"}, extra...)...)
+			want(t, line(t, out, "connected", "20"), "n", "20")
+			want(t, line(t, out, "back", "20"), "all_back", "true")
+		})
+	}
+}

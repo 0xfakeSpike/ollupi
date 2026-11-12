@@ -12,7 +12,7 @@ import (
 	"github.com/coder/websocket"
 )
 
-var quick = Options{PerKey: 2, Rate: 1000, Burst: 100, RetryWithin: 3 * time.Second, PingEvery: 20 * time.Millisecond, PongWithin: 50 * time.Millisecond}
+var quick = Options{PerKey: 2, Rate: 1000, Burst: 100, RetryWithin: 3 * time.Second, PingEvery: 20 * time.Millisecond, PongWithin: 50 * time.Millisecond, MaxAge: time.Hour}
 
 // start serves each connection under key "k", reading it until it fails, and says when each Serve returned.
 func start(t *testing.T, h *Hub[string]) (string, <-chan struct{}) {
@@ -72,6 +72,11 @@ func TestOptionsMustBound(t *testing.T) {
 		t.Error("a hub that holds no connection per key")
 	}
 	bad = quick
+	bad.MaxAge = 0
+	if _, err := New[string](bad); err == nil {
+		t.Error("a hub that keeps connections forever")
+	}
+	bad = quick
 	bad.RetryWithin = time.Millisecond
 	if _, err := New[string](bad); err == nil {
 		t.Error("a Retry-After under a second")
@@ -107,7 +112,11 @@ func TestANewerConnectionTakesTheOldestsPlace(t *testing.T) {
 	}
 	url, _ := start(t, h)
 	first := dial(ctx, t, url, "first")
-	go first.Read(ctx)
+	closed := make(chan error, 1)
+	go func() {
+		_, _, err := first.Read(ctx)
+		closed <- err
+	}()
 	eventually(t, "the first connection was not held", func() bool { return len(held(h)) == 1 })
 	for _, name := range []string{"second", "third"} {
 		ws := dial(ctx, t, url, name)
@@ -123,6 +132,34 @@ func TestANewerConnectionTakesTheOldestsPlace(t *testing.T) {
 		names := held(h)
 		return len(names) == 2 && names[0] == "second" && names[1] == "third"
 	})
+	if status := websocket.CloseStatus(<-closed); status != StatusReplaced {
+		t.Errorf("the oldest connection closed with %v", status)
+	}
+}
+
+func TestAConnectionIsClosedNearItsAge(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	opts := quick
+	opts.MaxAge = 400 * time.Millisecond
+	h, err := New[string](opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	url, _ := start(t, h)
+	at := time.Now()
+	ws := dial(ctx, t, url, "aging")
+	var readErr error
+	for readErr == nil {
+		_, _, readErr = ws.Read(ctx)
+	}
+	lived := time.Since(at)
+	if status := websocket.CloseStatus(readErr); status != websocket.StatusGoingAway {
+		t.Errorf("closed with %v, want going away", readErr)
+	}
+	if lived < opts.MaxAge*3/4 || lived > opts.MaxAge+time.Second {
+		t.Errorf("lived %v with a max age of %v", lived, opts.MaxAge)
+	}
 }
 
 func TestAPeerThatStopsAnsweringPingsIsDropped(t *testing.T) {

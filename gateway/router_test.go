@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -20,14 +21,14 @@ type shardServer struct {
 	http   *httptest.Server
 }
 
-func startShard(t *testing.T, id string, home string, catalog *repo.Catalog, authenticate func(string) (string, bool)) *shardServer {
+func startShard(t *testing.T, id string, home string, locator *Locator) *shardServer {
 	t.Helper()
 	db, err := repo.Open(home)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	s, err := NewServer(agent.New(agent.Config{DB: db}), Options{DB: db, Authenticate: OnShard(id, catalog, authenticate)})
+	s, err := NewServer(agent.New(agent.Config{DB: db}), Options{DB: db, Authenticate: OnShard(id, locator)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,18 +64,18 @@ func TestTheRouterSendsEachUserToTheirShard(t *testing.T) {
 		return user, ok
 	}
 	homes := map[string]string{"one": t.TempDir(), "two": t.TempDir()}
-	one := startShard(t, "one", homes["one"], catalog, authenticate)
-	two := startShard(t, "two", homes["two"], catalog, authenticate)
+	locator, err := NewLocator(authenticate, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	one := startShard(t, "one", homes["one"], locator)
+	two := startShard(t, "two", homes["two"], locator)
 	for id, s := range map[string]*shardServer{"one": one, "two": two} {
 		if err := catalog.Publish(id, s.http.URL, true); err != nil {
 			t.Fatal(err)
 		}
 	}
-	router, err := NewRouter(authenticate, catalog)
-	if err != nil {
-		t.Fatal(err)
-	}
-	front := httptest.NewServer(router)
+	front := httptest.NewServer(NewRouter(locator))
 	defer front.Close()
 
 	get := func(url, token string) int {
@@ -138,7 +139,7 @@ func TestTheRouterSendsEachUserToTheirShard(t *testing.T) {
 	if status := get(front.URL, "token-a"); status != http.StatusServiceUnavailable {
 		t.Errorf("while the shard changes hands: %d", status)
 	}
-	standby := startShard(t, shardA, homes[shardA], catalog, authenticate)
+	standby := startShard(t, shardA, homes[shardA], locator)
 	if err := catalog.Publish(shardA, standby.http.URL, true); err != nil {
 		t.Fatal(err)
 	}
@@ -161,10 +162,11 @@ func TestTheRouterDoesNotWaitOnAShardThatHangs(t *testing.T) {
 	hung := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))
 	defer hung.Close()
 	defer close(release)
-	rt, err := NewRouter(func(string) (string, bool) { return "a", true }, oneShard{hung.URL})
+	locator, err := NewLocator(func(string) (string, bool) { return "a", true }, oneShard{hung.URL})
 	if err != nil {
 		t.Fatal(err)
 	}
+	rt := NewRouter(locator)
 	rt.transport.ResponseHeaderTimeout = 100 * time.Millisecond
 	front := httptest.NewServer(rt)
 	defer front.Close()
@@ -181,5 +183,58 @@ func TestTheRouterDoesNotWaitOnAShardThatHangs(t *testing.T) {
 	res.Body.Close()
 	if res.StatusCode != http.StatusServiceUnavailable {
 		t.Errorf("the router answered %s", res.Status)
+	}
+}
+
+// failing finds each user once: the catalog it stands for went down after that.
+type failing struct {
+	oneShard
+	asked map[string]bool
+}
+
+func (d failing) ShardOf(user string) (string, error) {
+	if d.asked[user] {
+		return "", errors.New("catalog down")
+	}
+	d.asked[user] = true
+	return "s", nil
+}
+
+// A user, once placed, stays on their shard, so the locator finds them again without the directory.
+func TestTheLocatorRemembersWhereUsersAre(t *testing.T) {
+	locator, err := NewLocator(func(token string) (string, bool) { return token, token != "" }, failing{asked: map[string]bool{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if _, shard, err := locator.Locate(http.Header{"Authorization": {"Bearer a"}}); shard != "s" || err != nil {
+			t.Errorf("a on %q: %v", shard, err)
+		}
+	}
+	if _, _, err := locator.Locate(http.Header{}); !errors.Is(err, ErrUnknownToken) {
+		t.Errorf("no token: %v", err)
+	}
+}
+
+func TestHealthChecksNeedNoToken(t *testing.T) {
+	db, err := repo.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	s, err := NewServer(nil, Options{DB: db, Token: "secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	locator, err := NewLocator(func(string) (string, bool) { return "", false }, oneShard{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, h := range map[string]http.Handler{"shard": s, "router": NewRouter(locator)} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "http://10.0.0.7"+healthPath, nil))
+		if w.Code != http.StatusOK {
+			t.Errorf("%s answered its health check %d", name, w.Code)
+		}
 	}
 }
