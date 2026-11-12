@@ -198,7 +198,7 @@ func TestRowsFromBeforeUsersBelongToTheDefaultUser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	all, err := steps()
+	all, err := steps(shardMigrations)
 	if err != nil {
 		t.Fatal(err)
 	}

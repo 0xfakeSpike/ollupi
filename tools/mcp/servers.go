@@ -58,6 +58,7 @@ var (
 const (
 	connectTimeout     = 30 * time.Second
 	defaultCallTimeout = 5 * time.Minute
+	closeTimeout       = 5 * time.Second
 )
 
 // Users keeps each user's servers. They start the first time the user needs them, in the user's own sandbox, and start

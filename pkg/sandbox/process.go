@@ -19,9 +19,14 @@ const defaultMaxOutputBytes = 1 << 20
 const drainDelay = 2 * time.Second
 
 func runTag(marker string) string {
-	b := make([]byte, 16)
+	return marker + "=" + randomHex(16)
+}
+
+func randomHex(n int) string {
+	b := make([]byte, n)
+	// crypto/rand.Read does not return an error: since Go 1.24 it crashes the program instead.
 	_, _ = rand.Read(b)
-	return marker + "=" + hex.EncodeToString(b)
+	return hex.EncodeToString(b)
 }
 
 func runProcess(ctx context.Context, cmd *exec.Cmd, program string, limit time.Duration, maxOutput int, marker string) (Result, error) {

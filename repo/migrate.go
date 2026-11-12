@@ -21,13 +21,20 @@ import (
 // refer to without cascading deletes; before a step commits, the keys of
 // every row are checked, and any that points nowhere fails the step.
 
-//go:embed migrations/*.sql
+//go:embed migrations/*.sql catalog_migrations/*.sql
 var migrationFiles embed.FS
 
-// steps are the migrations' SQL in order; their numbers run from 1 without
-// a gap.
-func steps() ([]string, error) {
-	entries, err := migrationFiles.ReadDir("migrations")
+// shardMigrations are a shard's steps; catalogMigrations, the catalog's, which
+// change the same way.
+const (
+	shardMigrations   = "migrations"
+	catalogMigrations = "catalog_migrations"
+)
+
+// steps are the SQL of the migrations in dir in order; their numbers run from
+// 1 without a gap.
+func steps(dir string) ([]string, error) {
+	entries, err := migrationFiles.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -42,7 +49,7 @@ func steps() ([]string, error) {
 		if n, err := strconv.Atoi(number); !ok || err != nil || n != i+1 || len(number) != 4 || !strings.HasSuffix(name, ".sql") {
 			return nil, fmt.Errorf("migration %s: want %04d_<what>.sql", name, i+1)
 		}
-		sql, err := migrationFiles.ReadFile(path.Join("migrations", name))
+		sql, err := migrationFiles.ReadFile(path.Join(dir, name))
 		if err != nil {
 			return nil, err
 		}
@@ -52,16 +59,13 @@ func steps() ([]string, error) {
 }
 
 func (d *DB) migrate() error {
-	all, err := steps()
+	all, err := steps(shardMigrations)
 	if err != nil {
 		return err
 	}
-	var version int
-	if err := d.gorm.Raw("PRAGMA user_version").Scan(&version).Error; err != nil {
-		return fmt.Errorf("read schema version: %w", err)
-	}
-	if version > len(all) {
-		return fmt.Errorf("the database is at schema version %d, from a newer ollupi; this one knows up to %d", version, len(all))
+	version, err := schemaVersion(d.gorm, len(all))
+	if err != nil {
+		return err
 	}
 	if version == 0 {
 		// A database from before migrations: gorm made its tables, so it is
@@ -82,14 +86,42 @@ func (d *DB) migrate() error {
 			version = 1
 		}
 	}
+	return migrateFrom(d.gorm, all, version)
+}
+
+func migrateCatalog(g *gorm.DB) error {
+	all, err := steps(catalogMigrations)
+	if err != nil {
+		return err
+	}
+	version, err := schemaVersion(g, len(all))
+	if err != nil {
+		return err
+	}
+	return migrateFrom(g, all, version)
+}
+
+func schemaVersion(g *gorm.DB, known int) (int, error) {
+	var version int
+	if err := g.Raw("PRAGMA user_version").Scan(&version).Error; err != nil {
+		return 0, fmt.Errorf("read schema version: %w", err)
+	}
+	if version > known {
+		return 0, fmt.Errorf("the database is at schema version %d, from a newer ollupi; this one knows up to %d", version, known)
+	}
+	return version, nil
+}
+
+// migrateFrom takes the steps after version.
+func migrateFrom(g *gorm.DB, all []string, version int) error {
 	if version == len(all) {
 		return nil
 	}
-	if err := d.gorm.Exec("PRAGMA foreign_keys = OFF").Error; err != nil {
+	if err := g.Exec("PRAGMA foreign_keys = OFF").Error; err != nil {
 		return fmt.Errorf("turn foreign keys off to migrate: %w", err)
 	}
 	for i := version; i < len(all); i++ {
-		if err := d.gorm.Transaction(func(tx *gorm.DB) error {
+		if err := g.Transaction(func(tx *gorm.DB) error {
 			if err := tx.Exec(all[i]).Error; err != nil {
 				return err
 			}
@@ -105,7 +137,7 @@ func (d *DB) migrate() error {
 			return fmt.Errorf("migrate to schema version %d: %w", i+1, err)
 		}
 	}
-	if err := d.gorm.Exec("PRAGMA foreign_keys = ON").Error; err != nil {
+	if err := g.Exec("PRAGMA foreign_keys = ON").Error; err != nil {
 		return fmt.Errorf("turn foreign keys back on after migrating: %w", err)
 	}
 	return nil

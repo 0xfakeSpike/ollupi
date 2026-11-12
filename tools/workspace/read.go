@@ -28,6 +28,7 @@ const (
 
 	maxReadLines    = 2000
 	maxReadBytes    = 256 << 10
+	maxReadScan     = 64 << 20
 	maxLineRunes    = 2000
 	maxGlobFiles    = 500
 	maxGrepLines    = 300
@@ -59,9 +60,11 @@ type ReadFileOutput struct {
 	StartLine  int    `json:"startLine,omitempty"`
 	EndLine    int    `json:"endLine,omitempty"`
 	TotalLines int    `json:"totalLines"`
-	Binary     bool   `json:"binary,omitempty"`
-	MimeType   string `json:"mimeType,omitempty"`
-	Size       int64  `json:"size"`
+	// TotalLinesAtLeast says counting stopped after maxReadScan bytes, past the lines shown: there are more.
+	TotalLinesAtLeast bool   `json:"totalLinesAtLeast,omitempty"`
+	Binary            bool   `json:"binary,omitempty"`
+	MimeType          string `json:"mimeType,omitempty"`
+	Size              int64  `json:"size"`
 }
 
 type Glob struct {
@@ -168,6 +171,23 @@ func (r *Provider) readContent(ctx context.Context, args map[string]any) (tools.
 }
 
 // readable resolves a path the read tools take, following links, and checks that the sandbox lets it be read.
+// readLine reads one line of br and keeps at most limit bytes of it, so a file without line breaks takes no more
+// memory than that. It returns how many bytes it read, the dropped ones included.
+func readLine(br *bufio.Reader, limit int) (string, int, error) {
+	var kept []byte
+	read := 0
+	for {
+		chunk, err := br.ReadSlice('\n')
+		read += len(chunk)
+		if room := limit - len(kept); room > 0 {
+			kept = append(kept, chunk[:min(len(chunk), room)]...)
+		}
+		if !errors.Is(err, bufio.ErrBufferFull) {
+			return strings.ToValidUTF8(string(kept), ""), read, err
+		}
+	}
+}
+
 func readable(ctx context.Context, d dirs, raw string) (string, error) {
 	path := strings.TrimSpace(raw)
 	if path == "" {
@@ -258,8 +278,13 @@ func readFile(ctx context.Context, d dirs, args map[string]any) (ReadFileOutput,
 		limit = maxReadLines
 	}
 	var text strings.Builder
+	scanned := 0
 	for {
-		line, err := br.ReadString('\n')
+		if err := ctx.Err(); err != nil {
+			return ReadFileOutput{}, err
+		}
+		line, n, err := readLine(br, maxLineRunes*utf8.UTFMax)
+		scanned += n
 		if line != "" {
 			out.TotalLines++
 			if n := out.TotalLines; n >= start && n < start+limit && text.Len() < maxReadBytes {
@@ -272,6 +297,10 @@ func readFile(ctx context.Context, d dirs, args map[string]any) (ReadFileOutput,
 		}
 		if err != nil {
 			return ReadFileOutput{}, err
+		}
+		if scanned > maxReadScan && (out.TotalLines >= start+limit-1 || text.Len() >= maxReadBytes) {
+			out.TotalLinesAtLeast = true
+			break
 		}
 	}
 	if out.TotalLines > 0 && start > out.TotalLines {
@@ -343,7 +372,8 @@ func grep(ctx context.Context, d dirs, args map[string]any) (GrepOutput, error) 
 	}
 	out := GrepOutput{Path: d.display(path), Files: []GrepFile{}}
 	around := min(max(in.Context, 0), maxGrepContext)
-	shown := 0
+	shown, unreadable := 0, 0
+	var readErr error
 	search := func(abs string, info fs.FileInfo) error {
 		if out.Truncated {
 			return errStopWalk
@@ -358,7 +388,14 @@ func grep(ctx context.Context, d dirs, args map[string]any) (GrepOutput, error) 
 			return nil
 		}
 		f, kept, err := grepFile(ctx, d.box, abs, re, around, in.FilesOnly, maxGrepLines-shown)
-		if err != nil || f.Matches == 0 {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err != nil {
+			unreadable, readErr = unreadable+1, err
+			return nil
+		}
+		if f.Matches == 0 {
 			return nil
 		}
 		f.Path = d.display(abs)
@@ -375,14 +412,19 @@ func grep(ctx context.Context, d dirs, args map[string]any) (GrepOutput, error) 
 		return GrepOutput{}, fmt.Errorf("workspace: %w", err)
 	}
 	if !st.IsDir() {
-		err = search(path, st)
-		return out, err
+		if err := search(path, st); err != nil {
+			return GrepOutput{}, err
+		}
+		if readErr != nil {
+			return GrepOutput{}, fmt.Errorf("workspace: %s: %w", out.Path, readErr)
+		}
+		return out, nil
 	}
 	w := newWalker(ctx, d.box, path)
 	if err := w.walk(ctx, search); err != nil && !errors.Is(err, errStopWalk) {
 		return GrepOutput{}, err
 	}
-	out.Skipped, out.Truncated = w.skipped, out.Truncated || w.truncated
+	out.Skipped, out.Truncated = w.skipped+unreadable, out.Truncated || w.truncated
 	return out, nil
 }
 
@@ -503,6 +545,7 @@ func (w *walker) dir(ctx context.Context, dir string, visit func(string, fs.File
 		}
 		info, err := e.Info()
 		if err != nil {
+			w.skipped++
 			continue
 		}
 		isDir := info.IsDir()

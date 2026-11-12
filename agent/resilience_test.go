@@ -2,10 +2,16 @@ package agent_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"io/fs"
+	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -182,5 +188,145 @@ func TestPendingRequestsReportStorageThatFails(t *testing.T) {
 	}
 	if got, err := ag.PendingRequests(repo.DefaultUser, "t"); err == nil || errors.Is(err, repo.ErrNotFound) {
 		t.Errorf("a thread's requests: %+v, %v", got, err)
+	}
+}
+
+// cutOffModel first answers with a tool call the output limit cut off, then with an answer.
+type cutOffModel struct {
+	mu    sync.Mutex
+	calls int
+}
+
+func (m *cutOffModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	io.Copy(io.Discard, r.Body)
+	m.mu.Lock()
+	m.calls++
+	n := m.calls
+	m.mu.Unlock()
+	w.Header().Set("Content-Type", "text/event-stream")
+	send := func(delta map[string]any, finish any) {
+		raw, _ := json.Marshal(map[string]any{"id": "x", "object": "chat.completion.chunk", "created": 1, "model": "demo",
+			"choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": finish}}})
+		fmt.Fprintf(w, "data: %s\n\n", raw)
+	}
+	if n == 1 {
+		send(map[string]any{"tool_calls": []any{map[string]any{"index": 0, "id": "call_1", "type": "function",
+			"function": map[string]any{"name": "load_tools", "arguments": `{"names":["git`}}}}, nil)
+		send(map[string]any{}, "length")
+	} else {
+		send(map[string]any{"content": "done"}, nil)
+		send(map[string]any{}, "stop")
+	}
+	fmt.Fprint(w, "data: [DONE]\n\n")
+}
+
+// No call of a response the output limit cut off runs, and the model is told why.
+func TestACutOffResponseRunsNoCall(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	srv := httptest.NewServer(&cutOffModel{})
+	defer srv.Close()
+	ended := make(chan repo.TurnRow, 1)
+	ag, db := started(ctx, t, agent.Config{OnEvent: func(e agent.Event) {
+		if e.Kind == agent.EventTurnCompleted {
+			ended <- e.Turn
+		}
+	}}, srv.URL)
+	thread, err := ag.StartThread(repo.DefaultUser, "", "", "t", permission.Settings{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ag.StartTurn(repo.DefaultUser, thread.ID, agent.Input{Text: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+	if turn := endOf(ctx, t, ended); turn.Status != repo.TurnCompleted {
+		t.Fatalf("the turn: %s %q", turn.Status, turn.Error)
+	}
+	view, err := db.Thread(thread.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range view.Items {
+		if it.IsCall() && (it.Status != repo.ItemFailed || !strings.Contains(it.Error, "output limit")) {
+			t.Errorf("the cut-off call: %s %q", it.Status, it.Error)
+		}
+	}
+}
+
+// slowMove holds a folder's move until released, as a cloud sandbox's mv takes its time.
+type slowMove struct {
+	sandbox.Box
+	moving  chan struct{}
+	release chan struct{}
+}
+
+func (b slowMove) Move(ctx context.Context, from, to string) error {
+	close(b.moving)
+	<-b.release
+	return b.Box.Move(ctx, from, to)
+}
+
+// While a workspace's folder moves, none of its conversations starts a turn in it.
+func TestNoTurnStartsWhileTheWorkspaceMoves(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	srv := httptest.NewServer(&recordingModel{})
+	defer srv.Close()
+	box := slowMove{Box: sandbox.Here(), moving: make(chan struct{}), release: make(chan struct{})}
+	ag, _ := started(ctx, t, agent.Config{BoxFor: func(string) (sandbox.Box, error) { return box, nil }}, srv.URL)
+	from, to := t.TempDir(), t.TempDir()
+	for _, dir := range []*string{&from, &to} {
+		resolved, err := sandbox.CanonicalDirectory(*dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		*dir = resolved
+	}
+	if err := os.WriteFile(from+"/notes.txt", []byte("kept\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w, err := ag.AddWorkspace(repo.DefaultUser, from, "app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	thread, err := ag.StartThread(repo.DefaultUser, w.ID, "", "t", permission.Settings{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved := make(chan error, 1)
+	go func() {
+		_, err := ag.MoveWorkspace(repo.DefaultUser, w.ID, to)
+		moved <- err
+	}()
+	<-box.moving
+	if _, err := ag.StartTurn(repo.DefaultUser, thread.ID, agent.Input{Text: "hello"}); !errors.Is(err, agent.ErrWorkspaceBusy) {
+		t.Errorf("a turn during the move: %v", err)
+	}
+	close(box.release)
+	if err := <-moved; err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A conversation takes only so many turns waiting behind the one in progress.
+func TestAConversationQueuesOnlySoManyTurns(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	fake := &holdingModel{release: make(chan struct{})}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	defer close(fake.release)
+	ag, _ := started(ctx, t, agent.Config{}, srv.URL)
+	thread, err := ag.StartThread(repo.DefaultUser, "", "", "t", permission.Settings{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 21; i++ {
+		if _, err := ag.StartTurn(repo.DefaultUser, thread.ID, agent.Input{Text: fmt.Sprintf("message %d", i)}); err != nil {
+			t.Fatalf("message %d: %v", i, err)
+		}
+	}
+	if _, err := ag.StartTurn(repo.DefaultUser, thread.ID, agent.Input{Text: "one more"}); !errors.Is(err, agent.ErrQueueFull) {
+		t.Errorf("past the queue: %v", err)
 	}
 }

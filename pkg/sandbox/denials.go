@@ -2,8 +2,6 @@ package sandbox
 
 import (
 	"bufio"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"os/exec"
@@ -45,14 +43,6 @@ func newDenialLog() *denialLog {
 		tagRe:   regexp.MustCompile(`OSBX([0-9a-f]{16})_` + suffix),
 		pending: map[string]*denialSet{},
 	}
-}
-
-func randomHex(n int) string {
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		panic(fmt.Sprintf("sandbox: random: %v", err))
-	}
-	return hex.EncodeToString(b)
 }
 
 func (l *denialLog) start() error {

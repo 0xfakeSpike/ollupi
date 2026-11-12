@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/0xfakeSpike/ollupi/repo"
 )
@@ -23,13 +24,20 @@ type Directory interface {
 type Router struct {
 	authenticate func(token string) (string, bool)
 	directory    Directory
+	transport    *http.Transport
 }
+
+// shardAnswerTimeout is how long a shard may take to answer a connection it took: a shard that hangs would otherwise
+// hold the client forever. The WebSocket that follows is not bound by it.
+const shardAnswerTimeout = 30 * time.Second
 
 func NewRouter(authenticate func(token string) (string, bool), directory Directory) (*Router, error) {
 	if authenticate == nil || directory == nil {
 		return nil, errors.New("gateway: a router needs to authenticate users and find their shards")
 	}
-	return &Router{authenticate: authenticate, directory: directory}, nil
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.ResponseHeaderTimeout = shardAnswerTimeout
+	return &Router{authenticate: authenticate, directory: directory, transport: transport}, nil
 }
 
 func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -57,6 +65,7 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	proxy := httputil.ReverseProxy{
+		Transport: rt.transport,
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(target)
 			pr.SetXForwarded()

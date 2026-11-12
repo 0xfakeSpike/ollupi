@@ -187,9 +187,9 @@ func (d *DB) HasImages(threadID string) (bool, error) {
 	return n > 0, err
 }
 
-func (d *DB) Attachment(threadID, id string) (Attachment, error) {
+func (d *DB) Attachment(user, threadID, id string) (Attachment, error) {
 	var rows []ItemRow
-	err := d.gorm.Where("thread_id = ? AND type = 'userMessage' AND EXISTS (SELECT 1 FROM json_each(items.attachments) WHERE json_extract(json_each.value, '$.id') = ?)", threadID, id).Find(&rows).Error
+	err := d.gorm.Where("thread_id = ? AND thread_id IN (SELECT id FROM threads WHERE user_id = ?) AND type = 'userMessage' AND EXISTS (SELECT 1 FROM json_each(items.attachments) WHERE json_extract(json_each.value, '$.id') = ?)", threadID, user, id).Find(&rows).Error
 	if err != nil {
 		return Attachment{}, err
 	}

@@ -65,3 +65,38 @@ func TestCatalogPlacesUsersOnShards(t *testing.T) {
 		t.Errorf("after reopening: %s, %v", shard, err)
 	}
 }
+
+// A catalog from before migrations, which gorm made, takes the first step as it is and keeps its rows.
+func TestACatalogFromBeforeMigrationsKeepsItsRows(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "catalog.sqlite")
+	g, err := openFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sql := range []string{
+		"CREATE TABLE `shards` (`id` text,`address` text NOT NULL,`accepting` numeric NOT NULL,PRIMARY KEY (`id`))",
+		"CREATE TABLE `placements` (`user_id` text,`shard_id` text NOT NULL,PRIMARY KEY (`user_id`))",
+		"CREATE INDEX `idx_placements_shard_id` ON `placements`(`shard_id`)",
+		"INSERT INTO shards VALUES ('s1', 'http://s1', 1)",
+		"INSERT INTO placements VALUES ('a', 's1')",
+	} {
+		if err := g.Exec(sql).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := closeGorm(g); err != nil {
+		t.Fatal(err)
+	}
+	c, err := OpenCatalog(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if shard, err := c.ShardOf("a"); err != nil || shard != "s1" {
+		t.Errorf("a is on %q: %v", shard, err)
+	}
+	var version int
+	if err := c.gorm.Raw("PRAGMA user_version").Scan(&version).Error; err != nil || version != 1 {
+		t.Errorf("schema version %d: %v", version, err)
+	}
+}

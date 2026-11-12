@@ -38,21 +38,27 @@ const (
 func extractionInput(batch *Batch, budget int) (string, int, error) {
 	input := *batch
 	input.Existing = []repo.MemoryRow{}
-	encode := func() (string, int) {
+	encode := func() (string, int, error) {
 		b, err := json.Marshal(input)
 		if err != nil {
-			panic(fmt.Sprintf("memory: encode extraction input: %v", err))
+			return "", 0, fmt.Errorf("memory: encode extraction input: %w", err)
 		}
-		return string(b), llm.EstimateTokens(extractionInstructions) + llm.EstimateTokens(string(b)) + 32
+		return string(b), llm.EstimateTokens(extractionInstructions) + llm.EstimateTokens(string(b)) + 32, nil
 	}
-	payload, used := encode()
+	payload, used, err := encode()
+	if err != nil {
+		return "", 0, err
+	}
 	if used > budget {
 		return "", 0, fmt.Errorf("memory evidence of turn %s needs %d tokens but the extraction budget is %d", batch.TurnID, used, budget)
 	}
 	terms := searchTerms(payload)
 	for _, r := range rank(batch.Existing, func(e repo.MemoryRow) int { return extractionScore(e, terms, payload) }) {
 		input.Existing = append(input.Existing, r.entry)
-		next, count := encode()
+		next, count, err := encode()
+		if err != nil {
+			return "", 0, err
+		}
 		if count > budget {
 			input.Existing = input.Existing[:len(input.Existing)-1]
 			continue

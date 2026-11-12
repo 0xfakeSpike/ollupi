@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -53,7 +55,11 @@ func connect(ctx, running context.Context, client *mcp.Client, box sandbox.Box, 
 		}()
 		transport = &mcp.IOTransport{Reader: process, Writer: process}
 	} else {
-		httpClient := &http.Client{Transport: headers{base: box.Transport(), values: s.Headers}}
+		endpoint, err := url.Parse(s.URL)
+		if err != nil {
+			return nil, fmt.Errorf("mcp: url: %w", err)
+		}
+		httpClient := &http.Client{Transport: serverTransport{base: box.Transport(), host: endpoint.Host, headers: s.Headers}}
 		transport = &mcp.StreamableClientTransport{Endpoint: s.URL, HTTPClient: httpClient}
 	}
 	sess, err := client.Connect(ctx, transport, nil)
@@ -80,7 +86,10 @@ func connect(ctx, running context.Context, client *mcp.Client, box sandbox.Box, 
 	go func() {
 		err := sess.Wait()
 		out.mu.Lock()
-		out.down = out.withStderr(fmt.Errorf("disconnected: %v", err))
+		if err == nil {
+			err = errors.New("closed by the server")
+		}
+		out.down = out.withStderr(fmt.Errorf("disconnected: %w", err))
 		out.mu.Unlock()
 	}()
 	return out, nil
@@ -161,29 +170,71 @@ func (s *Session) Invoke(ctx context.Context, tool string, arguments map[string]
 	return tools.Result{Output: joinTextContent(res.Content)}, nil
 }
 
+// joinTextContent is what the model reads of a result. Content that is not text is named, not dumped: its bytes
+// would fill the model's context with digits.
 func joinTextContent(content []mcp.Content) string {
 	var parts []string
 	for _, c := range content {
-		if tc, ok := c.(*mcp.TextContent); ok {
-			parts = append(parts, tc.Text)
-		} else {
-			parts = append(parts, fmt.Sprint(c))
+		switch c := c.(type) {
+		case *mcp.TextContent:
+			parts = append(parts, c.Text)
+		case *mcp.ImageContent:
+			parts = append(parts, fmt.Sprintf("[image: %s, %d bytes, not shown]", c.MIMEType, len(c.Data)))
+		case *mcp.AudioContent:
+			parts = append(parts, fmt.Sprintf("[audio: %s, %d bytes, not shown]", c.MIMEType, len(c.Data)))
+		case *mcp.ResourceLink:
+			parts = append(parts, fmt.Sprintf("[resource: %s %s]", c.Name, c.URI))
+		case *mcp.EmbeddedResource:
+			if c.Resource != nil && c.Resource.Text != "" {
+				parts = append(parts, c.Resource.Text)
+			} else if c.Resource != nil {
+				parts = append(parts, fmt.Sprintf("[resource: %s, %s, %d bytes, not shown]", c.Resource.URI, c.Resource.MIMEType, len(c.Resource.Blob)))
+			}
+		default:
+			parts = append(parts, fmt.Sprintf("[%T, not shown]", c))
 		}
 	}
 	return strings.Join(parts, "\n")
 }
 
-type headers struct {
-	base   http.RoundTripper
-	values map[string]string
+// serverTransport sends a server's configured headers, its credentials among them, only to the server's own host,
+// so a redirect elsewhere does not carry them.
+type serverTransport struct {
+	base    http.RoundTripper
+	host    string
+	headers map[string]string
 }
 
-func (h headers) RoundTrip(r *http.Request) (*http.Response, error) {
-	r = r.Clone(r.Context())
-	for k, v := range h.values {
-		r.Header.Set(k, v)
+func (t serverTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	ctx, cancel := r.Context(), context.CancelFunc(func() {})
+	if r.Method == http.MethodDelete {
+		// The SDK ends a session with a DELETE that has no deadline: a server that does not answer would hold Close
+		// forever.
+		ctx, cancel = context.WithTimeout(ctx, closeTimeout)
 	}
-	return h.base.RoundTrip(r)
+	r = r.Clone(ctx)
+	if strings.EqualFold(r.URL.Host, t.host) {
+		for k, v := range t.headers {
+			r.Header.Set(k, v)
+		}
+	}
+	res, err := t.base.RoundTrip(r)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	res.Body = cancelOnClose{ReadCloser: res.Body, cancel: cancel}
+	return res, nil
+}
+
+type cancelOnClose struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (b cancelOnClose) Close() error {
+	defer b.cancel()
+	return b.ReadCloser.Close()
 }
 
 type tail struct {
