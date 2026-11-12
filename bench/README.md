@@ -12,7 +12,10 @@ Nothing else should be running on the machine during a measurement, or the laten
 - Quit VMs such as Docker Desktop first, make sure no other project is running tests, and check that the CPU is at least 60% idle.
 - Keep the lid open. Closing it puts the system to sleep, and `caffeinate` won't stop that; discard any result from a run that slept.
 
+[run.sh](run.sh) runs the experiments below one at a time and holds to these rules: before each it waits until Docker Desktop is not running, the lid is open, the CPU is at least 60% idle and no [comparison](compare/README.md) is running, and a run the Mac slept through is thrown away and run again. It keeps each result as `results/<experiment>.txt`, headed by the command, the commit, the time and the machine. `bench/run.sh -l` lists the experiments, and `bench/run.sh steady-1024 crash` runs only those.
+
 ```bash
+bench/run.sh
 go run -tags sqlite_fts5 ./bench parked -n 50000 -state waiting -latency 5s -rounds 3
 go run -tags sqlite_fts5 ./bench isolated -k 20
 go run -tags sqlite_fts5 ./bench steady -c 3072
@@ -34,16 +37,18 @@ go run -tags sqlite_fts5 ./bench users -user-slots 64 -heavy-calls 64 -heavy-lim
 
 | Experiment | What it measures | Raw output |
 |---|---|---|
-| `parked` | Memory and disk of parked sessions, and their effect on active turns | Not kept |
-| `isolated` | Control: one process per session | Not kept |
-| `steady` | Capacity under closed-loop load; `-fail`, `-others` and `-sigma` inject faults and a long tail; `-command` runs each tool call as a real `sleep` through `run_command` in a sandbox of that mode | `results/steady-*.txt`; `-command` not yet measured |
+| `parked` | Memory and disk of parked sessions, and their effect on active turns | `results/parked.txt`, not yet measured with run.sh |
+| `isolated` | Control: one process per session | `results/isolated.txt`, not yet measured with run.sh |
+| `steady` | Capacity under closed-loop load; `-fail`, `-others` and `-sigma` inject faults and a long tail; `-command` runs each tool call as a real `sleep` through `run_command` in a sandbox of that mode | `results/steady-*.txt`; `steady-workspace-write.txt` and `steady-full-access.txt` not yet measured |
 | `burst` | Queueing and quota when many turns are submitted at once | `results/burst.csv` (timeline) |
-| `resume` | Time from waking an idle session to its model request going out | Not kept |
-| `crash` | Recovery after random `kill -9`; with `-lease`, a standby process takes over | Not kept |
+| `resume` | Time from waking an idle session to its model request going out | `results/resume.txt`, not yet measured with run.sh |
+| `crash` | Recovery after random `kill -9`; with `-lease`, a standby process takes over | `results/crash.txt` and `crash-lease.txt`, not yet measured with run.sh |
 | `mix` | Waiting and fairness when user turns, subagents and scheduled tasks mix | `results/mix.txt` |
 | `fanout` | Whether parent turns give up their slots when subagents outnumber slots | `results/fanout.txt` |
 | `soak` | Latency, memory, goroutines, GC and database growth over a long run | `results/soak.csv` |
-| `users` | Many users on one shard, each on their own key and quota, beside one user who keeps more conversations busy than their key serves; with `-user-slots`, whether `UserSlots` keeps the others' turns from waiting on that user, and with `-heavy-limit`, whether that user's 429s stay theirs | Not yet measured |
+| `users` | Many users on one shard, each on their own key and quota, beside one user who keeps more conversations busy than their key serves; with `-user-slots`, whether `UserSlots` keeps the others' turns from waiting on that user, and with `-heavy-limit`, whether that user's 429s stay theirs | `results/users.txt`, `users-slots.txt` and `users-limit.txt`, not yet measured |
+
+`go test -tags sqlite_fts5 ./bench` runs every experiment as its own process at a size that ends in seconds and checks what it exists to show: turns end, none fail, no tool call runs twice, and the users beside a heavy one draw no 429. It measures nothing; `-short` skips it.
 
 The numbers in `results` were measured on 2026-11-04, one run each. `parked`, `isolated`, `burst`, `resume` and `crash` are earlier results that have not been re-measured since. All of these numbers predate the multi-user, shard and sandbox interface changes and have not been re-measured after them.
 
