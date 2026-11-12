@@ -85,9 +85,9 @@ var fieldTypes = map[field]reflect.Type{
 }
 
 var arrays = []field{
-	{reflect.TypeFor[repo.ThreadView](), "Turns"},
-	{reflect.TypeFor[repo.ThreadView](), "Items"},
-	{reflect.TypeFor[repo.MemoryRow](), "Sources"},
+	{reflect.TypeFor[ThreadView](), "Turns"},
+	{reflect.TypeFor[ThreadView](), "Items"},
+	{reflect.TypeFor[MemoryRow](), "Sources"},
 	{reflect.TypeFor[ThreadListResult](), "Data"},
 	{reflect.TypeFor[ModelListResult](), "Data"},
 	{reflect.TypeFor[ToolListResult](), "Data"},

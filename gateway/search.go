@@ -1,13 +1,13 @@
 package gateway
 
 import (
+	"context"
 	"strings"
 
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
-	"github.com/0xfakeSpike/ollupi/repo"
 )
 
-func (c *conn) search(p SearchParams) (SearchResult, func(), error) {
+func (c *conn) search(ctx context.Context, p SearchParams) (SearchResult, func(), error) {
 	terms := strings.Fields(p.Query)
 	if len(terms) == 0 {
 		return SearchResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "query is required")
@@ -18,15 +18,17 @@ func (c *conn) search(p SearchParams) (SearchResult, func(), error) {
 	if p.Limit < 1 || p.Limit > maxLimit {
 		return SearchResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "limit must be 1 to %d", maxLimit)
 	}
-	found, err := c.s.db.Search(c.user, terms, p.WorkspaceID, p.Limit)
+	hits, err := c.s.db.WithContext(ctx).Search(c.user, terms, p.WorkspaceID, p.Limit)
 	if err != nil {
 		return SearchResult{}, nil, err
 	}
-	result := SearchResult{Found: found, Memories: []repo.MemoryRow{}}
+	result := SearchResult{Found: found(hits), Memories: []MemoryRow{}}
 	if c.s.memory != nil {
-		if result.Memories, err = c.s.memory.Search(c.user, p.Query, p.WorkspaceID, p.Limit); err != nil {
+		memories, err := c.s.memory.Search(c.user, p.Query, p.WorkspaceID, p.Limit)
+		if err != nil {
 			return SearchResult{}, nil, err
 		}
+		result.Memories = each(memories, memoryRow)
 	}
 	return result, nil, nil
 }

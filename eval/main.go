@@ -164,7 +164,7 @@ func main() {
 		log.Fatalf("eval: %v", err)
 	}
 	startedAt := time.Now()
-	started, err := ag.StartTurn(repo.DefaultUser, th.ID, agent.Input{Text: instruction})
+	started, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, agent.Input{Text: instruction})
 	if err != nil {
 		log.Fatalf("eval: %v", err)
 	}

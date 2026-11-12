@@ -264,7 +264,7 @@ func crashChild(args []string) {
 		if err != nil {
 			log.Fatal(err)
 		}
-		if _, err := ag.StartTurn(repo.DefaultUser, th.ID, agent.Input{Text: kinds[i%len(kinds)]}); err != nil {
+		if _, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, agent.Input{Text: kinds[i%len(kinds)]}); err != nil {
 			log.Fatal(err)
 		}
 	}

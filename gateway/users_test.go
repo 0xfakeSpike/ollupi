@@ -18,6 +18,7 @@ import (
 
 // The gateway reads some views straight from the database; those keep to the connection's user too.
 func TestAConnectionReadsOnlyItsUsersRows(t *testing.T) {
+	ctx := context.Background()
 	db, err := repo.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -39,24 +40,24 @@ func TestAConnectionReadsOnlyItsUsersRows(t *testing.T) {
 	}
 	c := &conn{s: s, user: "b"}
 
-	if _, _, err := threadPage(false)(c, ThreadPageParams{ThreadID: "t"}); !errors.Is(err, repo.ErrNotFound) {
+	if _, _, err := threadPage(false)(c, ctx, ThreadPageParams{ThreadID: "t"}); !errors.Is(err, repo.ErrNotFound) {
 		t.Errorf("read the thread: %v", err)
 	}
-	if _, _, err := c.cronCreate(CronCreateParams{ThreadID: "t", Name: "x", Spec: "@daily", Prompt: "go"}); !errors.Is(err, repo.ErrNotFound) {
+	if _, _, err := c.cronCreate(ctx, CronCreateParams{ThreadID: "t", Name: "x", Spec: "@daily", Prompt: "go"}); !errors.Is(err, repo.ErrNotFound) {
 		t.Errorf("schedule a task: %v", err)
 	}
 	paused := true
-	if _, _, err := c.cronPause(CronPauseParams{ThreadID: "t", Name: "x", Paused: &paused}); !errors.Is(err, repo.ErrNotFound) {
+	if _, _, err := c.cronPause(ctx, CronPauseParams{ThreadID: "t", Name: "x", Paused: &paused}); !errors.Is(err, repo.ErrNotFound) {
 		t.Errorf("pause a task: %v", err)
 	}
-	if _, _, err := c.cronDelete(CronDeleteParams{ThreadID: "t", Name: "x"}); !errors.Is(err, repo.ErrNotFound) {
+	if _, _, err := c.cronDelete(ctx, CronDeleteParams{ThreadID: "t", Name: "x"}); !errors.Is(err, repo.ErrNotFound) {
 		t.Errorf("delete a task: %v", err)
 	}
 	owner := &conn{s: s, user: "a"}
-	if _, _, err := owner.cronCreate(CronCreateParams{ThreadID: "t", Name: "x", Spec: "@daily", Prompt: "go"}); err != nil {
+	if _, _, err := owner.cronCreate(ctx, CronCreateParams{ThreadID: "t", Name: "x", Spec: "@daily", Prompt: "go"}); err != nil {
 		t.Fatal(err)
 	}
-	list, after, err := c.cronList(CronListParams{})
+	list, after, err := c.cronList(ctx, CronListParams{})
 	if err != nil {
 		t.Fatal(err)
 	}

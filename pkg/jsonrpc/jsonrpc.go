@@ -44,7 +44,8 @@ func Errorf(code int, format string, args ...any) *Error {
 }
 
 type Handler interface {
-	Call(method string, params json.RawMessage) (result any, after func(), err *Error)
+	// Call answers a request; ctx ends when the connection does.
+	Call(ctx context.Context, method string, params json.RawMessage) (result any, after func(), err *Error)
 	Notify(method string, params json.RawMessage)
 }
 
@@ -104,7 +105,7 @@ func (c *Conn) Serve(ctx context.Context, h Handler) error {
 		case m.JSONRPC != "2.0":
 			c.reply(m.ID, nil, Errorf(CodeInvalidRequest, `jsonrpc must be "2.0"`))
 		case m.Method != "" && m.ID != nil:
-			result, after, rerr := h.Call(m.Method, m.Params)
+			result, after, rerr := h.Call(ctx, m.Method, m.Params)
 			c.reply(m.ID, result, rerr)
 			if rerr == nil && after != nil {
 				after()

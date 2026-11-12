@@ -45,12 +45,12 @@ var imageTypes = map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "i
 
 // attach stores what a message brings, before the message goes through the loop: a sandbox or blob store that is slow
 // there would hold up every thread on the shard.
-func (a *Agent) attach(user, threadID string, ins []AttachmentInput) ([]repo.Attachment, error) {
+func (a *Agent) attach(ctx context.Context, user, threadID string, ins []AttachmentInput) ([]repo.Attachment, error) {
 	t, err := a.topThread(user, threadID)
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(a.ctx, attachmentTimeout)
+	ctx, cancel := context.WithTimeout(ctx, attachmentTimeout)
 	defer cancel()
 	return a.storeAttachments(ctx, t, ins)
 }
@@ -252,7 +252,7 @@ func (a *Agent) removeAttachments(atts []repo.Attachment) {
 	}
 }
 
-func (a *Agent) ReadAttachment(user, threadID, id string) (repo.Attachment, []byte, error) {
+func (a *Agent) ReadAttachment(ctx context.Context, user, threadID, id string) (repo.Attachment, []byte, error) {
 	if err := a.owned(user, threadID); err != nil {
 		return repo.Attachment{}, nil, err
 	}
@@ -260,7 +260,7 @@ func (a *Agent) ReadAttachment(user, threadID, id string) (repo.Attachment, []by
 	if err != nil {
 		return repo.Attachment{}, nil, fmt.Errorf("agent: attachment %s: %w", id, err)
 	}
-	ctx, cancel := context.WithTimeout(a.ctx, attachmentTimeout)
+	ctx, cancel := context.WithTimeout(ctx, attachmentTimeout)
 	defer cancel()
 	data, err := a.cfg.Attachments.Get(ctx, att.File)
 	if err != nil {

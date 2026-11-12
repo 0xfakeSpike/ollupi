@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 
@@ -16,14 +17,14 @@ func (c *conn) cronJobs() (*cron.Jobs, error) {
 	return c.s.jobs, nil
 }
 
-func (c *conn) cronList(p CronListParams) (CronListResult, func(), error) {
+func (c *conn) cronList(ctx context.Context, p CronListParams) (CronListResult, func(), error) {
 	c.deliver.Lock()
-	rows, err := c.s.db.CronJobViews(c.user, p.ThreadID)
+	rows, err := c.s.db.WithContext(ctx).CronJobViews(c.user, p.ThreadID)
 	if err != nil {
 		c.deliver.Unlock()
 		return CronListResult{}, nil, err
 	}
-	return CronListResult{Data: nonNil(rows)}, c.deliver.Unlock, nil
+	return CronListResult{Data: each(rows, cronJobView)}, c.deliver.Unlock, nil
 }
 
 func (s *Server) CronChanged(id, threadID string) {
@@ -44,7 +45,8 @@ func (c *conn) cronChanged(id, threadID string) {
 	job, err := c.s.db.CronJobView(id)
 	switch {
 	case err == nil:
-		n.Job = &job
+		view := cronJobView(job)
+		n.Job = &view
 	case !errors.Is(err, repo.ErrNotFound):
 		slog.Error("changed cron task not readable", "job", id, "err", err)
 		return
@@ -52,39 +54,39 @@ func (c *conn) cronChanged(id, threadID string) {
 	c.rpc.Notify(notifyCronChanged, n)
 }
 
-func (c *conn) cronCreate(p CronCreateParams) (repo.CronJobRow, func(), error) {
+func (c *conn) cronCreate(ctx context.Context, p CronCreateParams) (CronJobRow, func(), error) {
 	jobs, err := c.cronJobs()
 	if err != nil {
-		return repo.CronJobRow{}, nil, err
+		return CronJobRow{}, nil, err
 	}
-	if _, err := c.s.db.ThreadOf(c.user, p.ThreadID); err != nil {
-		return repo.CronJobRow{}, nil, err
+	if _, err := c.s.db.WithContext(ctx).ThreadOf(c.user, p.ThreadID); err != nil {
+		return CronJobRow{}, nil, err
 	}
 	row, err := jobs.Create(p.ThreadID, p.Name, p.Spec, p.Prompt, p.Times)
-	return row, nil, err
+	return cronJobRow(row), nil, err
 }
 
-func (c *conn) cronPause(p CronPauseParams) (repo.CronJobRow, func(), error) {
+func (c *conn) cronPause(ctx context.Context, p CronPauseParams) (CronJobRow, func(), error) {
 	jobs, err := c.cronJobs()
 	if err != nil {
-		return repo.CronJobRow{}, nil, err
+		return CronJobRow{}, nil, err
 	}
 	if p.Paused == nil {
-		return repo.CronJobRow{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "paused is required")
+		return CronJobRow{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "paused is required")
 	}
-	if _, err := c.s.db.ThreadOf(c.user, p.ThreadID); err != nil {
-		return repo.CronJobRow{}, nil, err
+	if _, err := c.s.db.WithContext(ctx).ThreadOf(c.user, p.ThreadID); err != nil {
+		return CronJobRow{}, nil, err
 	}
 	row, err := jobs.SetPaused(p.ThreadID, p.Name, *p.Paused)
-	return row, nil, err
+	return cronJobRow(row), nil, err
 }
 
-func (c *conn) cronDelete(p CronDeleteParams) (Empty, func(), error) {
+func (c *conn) cronDelete(ctx context.Context, p CronDeleteParams) (Empty, func(), error) {
 	jobs, err := c.cronJobs()
 	if err != nil {
 		return Empty{}, nil, err
 	}
-	if _, err := c.s.db.ThreadOf(c.user, p.ThreadID); err != nil {
+	if _, err := c.s.db.WithContext(ctx).ThreadOf(c.user, p.ThreadID); err != nil {
 		return Empty{}, nil, err
 	}
 	_, err = jobs.Delete(p.ThreadID, p.Name)

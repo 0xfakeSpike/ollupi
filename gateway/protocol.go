@@ -3,6 +3,7 @@ package gateway
 //go:generate go test -run ^TestProtocolSchema$ . -update
 
 import (
+	"context"
 	"crypto/sha256"
 	_ "embed"
 	"encoding/hex"
@@ -121,7 +122,7 @@ var protocol = struct {
 		notifyWorkspaceChanged:    reflect.TypeFor[WorkspaceResult](),
 		notifyEnvironmentChanged:  reflect.TypeFor[EnvironmentChangedNotification](),
 		notifyCronChanged:         reflect.TypeFor[CronChangedNotification](),
-		notifySettingsChanged:     reflect.TypeFor[repo.SettingsRow](),
+		notifySettingsChanged:     reflect.TypeFor[SettingsRow](),
 		notifyError:               reflect.TypeFor[ErrorNotification](),
 	},
 	serverRequests: map[string]serverRequest{
@@ -152,23 +153,23 @@ var protocol = struct {
 
 type method struct {
 	params, result reflect.Type
-	call           func(c *conn, params json.RawMessage) (any, func(), *jsonrpc.Error)
+	call           func(c *conn, ctx context.Context, params json.RawMessage) (any, func(), *jsonrpc.Error)
 }
 
 type serverRequest struct {
 	params, result reflect.Type
 }
 
-func handle[P, R any](h func(*conn, P) (R, func(), error)) method {
+func handle[P, R any](h func(*conn, context.Context, P) (R, func(), error)) method {
 	return method{
 		params: reflect.TypeFor[P](),
 		result: reflect.TypeFor[R](),
-		call: func(c *conn, raw json.RawMessage) (any, func(), *jsonrpc.Error) {
+		call: func(c *conn, ctx context.Context, raw json.RawMessage) (any, func(), *jsonrpc.Error) {
 			var p P
 			if err := jsonrpc.DecodeParams(raw, &p); err != nil {
 				return nil, nil, err
 			}
-			result, after, err := h(c, p)
+			result, after, err := h(c, ctx, p)
 			if err != nil {
 				return nil, nil, serverError(err)
 			}
@@ -226,12 +227,12 @@ type ThreadPageParams struct {
 }
 
 type ThreadPageResult struct {
-	repo.ThreadView
+	ThreadView
 	HasMore bool `json:"hasMore"`
 }
 
 type ThreadResult struct {
-	Thread repo.ThreadRow `json:"thread"`
+	Thread ThreadRow `json:"thread"`
 }
 
 type ThreadRenameParams struct {
@@ -254,13 +255,13 @@ type ThreadDeleteParams struct {
 }
 
 type ThreadChangedNotification struct {
-	ThreadID string          `json:"threadId"`
-	Thread   *repo.ThreadRow `json:"thread"`
+	ThreadID string     `json:"threadId"`
+	Thread   *ThreadRow `json:"thread"`
 }
 
 type ThreadListResult struct {
-	Data    []repo.ThreadSummary `json:"data"`
-	HasMore bool                 `json:"hasMore"`
+	Data    []ThreadSummary `json:"data"`
+	HasMore bool            `json:"hasMore"`
 }
 
 type ThreadStatusNotification struct {
@@ -323,13 +324,13 @@ type TurnInterruptParams struct {
 }
 
 type TurnResult struct {
-	Turn repo.TurnRow `json:"turn"`
+	Turn TurnRow `json:"turn"`
 }
 
 type TurnNotification struct {
-	ThreadID string         `json:"threadId"`
-	Thread   repo.ThreadRow `json:"thread"`
-	Turn     repo.TurnRow   `json:"turn"`
+	ThreadID string    `json:"threadId"`
+	Thread   ThreadRow `json:"thread"`
+	Turn     TurnRow   `json:"turn"`
 }
 
 type DeltaNotification struct {
@@ -340,9 +341,9 @@ type DeltaNotification struct {
 }
 
 type ItemNotification struct {
-	ThreadID string       `json:"threadId"`
-	TurnID   string       `json:"turnId"`
-	Item     repo.ItemRow `json:"item"`
+	ThreadID string  `json:"threadId"`
+	TurnID   string  `json:"turnId"`
+	Item     ItemRow `json:"item"`
 }
 
 type ErrorNotification struct {
@@ -353,7 +354,7 @@ type ErrorNotification struct {
 }
 
 type WorkspaceListResult struct {
-	Data []repo.WorkspaceRow `json:"data"`
+	Data []WorkspaceRow `json:"data"`
 }
 
 type WorkspaceAddParams struct {
@@ -382,11 +383,11 @@ type WorkspacePermissionsParams struct {
 }
 
 type WorkspaceResult struct {
-	Workspace repo.WorkspaceRow `json:"workspace"`
+	Workspace WorkspaceRow `json:"workspace"`
 }
 
 type EnvironmentListResult struct {
-	Data []repo.EnvironmentRow `json:"data"`
+	Data []EnvironmentRow `json:"data"`
 }
 
 // EnvironmentAddParams names another place a conversation can run. Kind defaults to "machine": this machine is every
@@ -406,13 +407,13 @@ type EnvironmentDeleteParams struct {
 }
 
 type EnvironmentResult struct {
-	Environment repo.EnvironmentRow `json:"environment"`
+	Environment EnvironmentRow `json:"environment"`
 }
 
 // EnvironmentChangedNotification reports an environment added or renamed; Environment is nil once it is gone.
 type EnvironmentChangedNotification struct {
-	EnvironmentID string               `json:"environmentId"`
-	Environment   *repo.EnvironmentRow `json:"environment"`
+	EnvironmentID string          `json:"environmentId"`
+	Environment   *EnvironmentRow `json:"environment"`
 }
 
 type CronListParams struct {
@@ -420,13 +421,13 @@ type CronListParams struct {
 }
 
 type CronListResult struct {
-	Data []repo.CronJobView `json:"data"`
+	Data []CronJobView `json:"data"`
 }
 
 type CronChangedNotification struct {
-	ID       string            `json:"id"`
-	ThreadID string            `json:"threadId"`
-	Job      *repo.CronJobView `json:"job"`
+	ID       string       `json:"id"`
+	ThreadID string       `json:"threadId"`
+	Job      *CronJobView `json:"job"`
 }
 
 type CronCreateParams struct {
@@ -454,7 +455,7 @@ type MemoryListParams struct {
 }
 
 type MemoryListResult struct {
-	Data []repo.MemoryRow `json:"data"`
+	Data []MemoryRow `json:"data"`
 }
 
 type MemoryUpdateParams struct {
@@ -471,7 +472,7 @@ type MemoryForgetParams struct {
 }
 
 type MemoryResult struct {
-	Memory repo.MemoryRow `json:"memory"`
+	Memory MemoryRow `json:"memory"`
 }
 
 type SearchParams struct {
@@ -481,8 +482,8 @@ type SearchParams struct {
 }
 
 type SearchResult struct {
-	repo.Found
-	Memories []repo.MemoryRow `json:"memories"`
+	Found
+	Memories []MemoryRow `json:"memories"`
 }
 
 type SettingsUpdateParams struct {
