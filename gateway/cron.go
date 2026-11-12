@@ -18,13 +18,12 @@ func (c *conn) cronJobs() (*cron.Jobs, error) {
 }
 
 func (c *conn) cronList(ctx context.Context, p CronListParams) (CronListResult, func(), error) {
-	c.deliver.Lock()
+	c.rpc.HoldUntilReplied()
 	rows, err := c.s.db.WithContext(ctx).CronJobViews(c.user, p.ThreadID)
 	if err != nil {
-		c.deliver.Unlock()
 		return CronListResult{}, nil, err
 	}
-	return CronListResult{Data: each(rows, cronJobView)}, c.deliver.Unlock, nil
+	return CronListResult{Data: each(rows, cronJobView)}, nil, nil
 }
 
 func (s *Server) CronChanged(id, threadID string) {
@@ -33,25 +32,29 @@ func (s *Server) CronChanged(id, threadID string) {
 		slog.Error("thread of a changed cron task not readable", "job", id, "thread", threadID, "err", err)
 		return
 	}
-	if c := s.current(t.UserID); c != nil {
-		c.deliver.Lock()
-		defer c.deliver.Unlock()
-		c.cronChanged(id, threadID)
-	}
+	s.cronChanged(t.UserID, id, threadID)
 }
 
-func (c *conn) cronChanged(id, threadID string) {
-	n := CronChangedNotification{ID: id, ThreadID: threadID}
-	job, err := c.s.db.CronJobView(id)
-	switch {
-	case err == nil:
-		view := cronJobView(job)
-		n.Job = &view
-	case !errors.Is(err, repo.ErrNotFound):
-		slog.Error("changed cron task not readable", "job", id, "err", err)
-		return
-	}
-	c.rpc.Notify(notifyCronChanged, n)
+// cronChanged tells the user's connections that a scheduled task changed, or, when it can no longer be read, that it
+// is gone. It reads the task only when a connection is there to tell.
+func (s *Server) cronChanged(user, id, threadID string) {
+	var n *CronChangedNotification
+	s.each(user, func(c *conn) {
+		if n == nil {
+			read := CronChangedNotification{ID: id, ThreadID: threadID}
+			job, err := s.db.CronJobView(id)
+			switch {
+			case err == nil:
+				view := cronJobView(job)
+				read.Job = &view
+			case !errors.Is(err, repo.ErrNotFound):
+				slog.Error("changed cron task not readable", "job", id, "err", err)
+				return
+			}
+			n = &read
+		}
+		c.rpc.Notify(notifyCronChanged, *n)
+	})
 }
 
 func (c *conn) cronCreate(ctx context.Context, p CronCreateParams) (CronJobRow, func(), error) {

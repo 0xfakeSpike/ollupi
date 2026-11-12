@@ -26,10 +26,9 @@ func threadPage(resume bool) func(*conn, context.Context, ThreadPageParams) (Thr
 		if _, err := db.ThreadOf(c.user, p.ThreadID); err != nil {
 			return ThreadPageResult{}, nil, err
 		}
-		c.deliver.Lock()
+		c.rpc.HoldUntilReplied()
 		view, more, err := db.ThreadPage(c.user, p.ThreadID, p.BeforeSeq, p.Limit)
 		if err != nil {
-			c.deliver.Unlock()
 			return ThreadPageResult{}, nil, err
 		}
 		size := 0
@@ -40,11 +39,9 @@ func threadPage(resume bool) func(*conn, context.Context, ThreadPageParams) (Thr
 				break
 			}
 		}
-		after := func() {
-			c.deliver.Unlock()
-			if resume {
-				c.requests(c.s.agent.PendingRequests(c.user, p.ThreadID))
-			}
+		var after func()
+		if resume {
+			after = func() { c.requests(c.s.agent.PendingRequests(c.user, p.ThreadID)) }
 		}
 		return ThreadPageResult{ThreadView: threadView(view), HasMore: more}, after, nil
 	}

@@ -93,7 +93,7 @@ func TestADatabaseFromANewerOllupiIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	db.Close()
-	if _, err := Open(home); err == nil || !strings.Contains(err.Error(), "newer ollupi") {
+	if _, err := Open(home); err == nil || !strings.Contains(err.Error(), "newer version") {
 		t.Fatalf("opening a newer database: %v", err)
 	}
 }
@@ -126,7 +126,7 @@ func userVersion(t *testing.T, g *gorm.DB) int {
 
 func stepCount(t *testing.T) int {
 	t.Helper()
-	all, err := steps(shardMigrations)
+	all, err := shardSteps()
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -10,6 +10,7 @@
 //	bench fanout  whether turns that each start many subagents at once, more than there are slots, all end
 //	bench soak    whether turn time, memory, collector pauses and the database stay flat over a long run
 //	bench users   whether one user who keeps more conversations busy than their key serves holds back the other users
+//	bench conns   what idle client connections cost a shard and a router, and how long clients take to return after a shard restarts
 package main
 
 import (
@@ -190,14 +191,14 @@ func pct(d []time.Duration, p float64) time.Duration {
 }
 
 // experiments are what the first argument names, the processes some of them start among them.
-var experiments = map[string]func([]string){"parked": parked, "burst": burst, "steady": steady, "crash": crash, "crashchild": crashChild, "provider": providerMain, "isolated": isolated, "lone": lone, "resume": resume, "mix": mix, "fanout": fanout, "soak": soak, "users": users}
+var experiments = map[string]func([]string){"parked": parked, "burst": burst, "steady": steady, "crash": crash, "crashchild": crashChild, "provider": providerMain, "isolated": isolated, "lone": lone, "resume": resume, "mix": mix, "fanout": fanout, "soak": soak, "users": users, "conns": conns, "connsshard": connsShard, "connsrouter": connsRouter}
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})))
 	// SetDefault routes the log package through slog at Info, below the level kept; the bench's own errors must show.
 	log.SetOutput(os.Stderr)
 	if len(os.Args) < 2 || experiments[os.Args[1]] == nil {
-		log.Fatal("usage: bench parked|burst|steady|crash|isolated|resume|mix|fanout|soak|users [flags]")
+		log.Fatal("usage: bench parked|burst|steady|crash|isolated|resume|mix|fanout|soak|users|conns [flags]")
 	}
 	experiments[os.Args[1]](os.Args[2:])
 }

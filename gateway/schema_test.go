@@ -40,6 +40,8 @@ type contract struct {
 	ServerRequests      map[string]messageSchemas     `json:"serverRequests"`
 	ClientNotifications map[string]*jsonschema.Schema `json:"clientNotifications"`
 	Errors              map[int]string                `json:"errors"`
+	Closes              map[int]Ending                `json:"closes"`
+	Handshakes          map[int]Ending                `json:"handshakes"`
 	BuiltinTools        map[string]toolSchemas        `json:"builtinTools"`
 	Providers           []string                      `json:"providers"`
 }
@@ -257,6 +259,8 @@ func generateSchema() ([]byte, error) {
 		ServerRequests:      map[string]messageSchemas{},
 		ClientNotifications: map[string]*jsonschema.Schema{},
 		Errors:              protocol.errors,
+		Closes:              protocol.closes,
+		Handshakes:          protocol.handshakes,
 		BuiltinTools:        map[string]toolSchemas{},
 		Providers:           providers,
 	}

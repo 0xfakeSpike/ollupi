@@ -2,7 +2,10 @@ package repo
 
 import (
 	"errors"
+	"fmt"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // ErrShardLost says another process runs this shard now, so this one may write no more.
@@ -30,20 +33,34 @@ func (d *DB) ReleaseShard(owner string) error {
 	return d.gorm.Where("owner = ?", owner).Delete(&ShardLeaseRow{}).Error
 }
 
-// Fence makes every transaction on this handle fail once owner no longer holds the lease, so a process that stalled
-// past its lease cannot write over the one that took the shard.
-func (d *DB) Fence(owner string) { d.owner = owner }
+// Fence makes every write on this handle, and on the handles made from it, fail with ErrShardLost once owner no
+// longer holds the lease, so a process that stalled past its lease cannot write over the one that took the shard.
+func (d *DB) Fence(owner string) { d.owner.Store(&owner) }
 
-func (d *DB) checkFence() error {
-	if d.owner == "" {
-		return nil
+// fenceWrites puts the fence before every create, update and delete, inside the transaction gorm runs each in, so that
+// the lease cannot change hands between the check and the write. SQLite gives that from its one writer: a transaction
+// that read the lease before another process's claim committed cannot write. Postgres would need the read to lock the
+// lease row (FOR SHARE). Exec is not fenced; only the lease and migrations write with it.
+func (d *DB) fenceWrites() error {
+	fence := func(g *gorm.DB) {
+		owner := d.owner.Load()
+		if owner == nil || g.Error != nil || g.Statement.Table == (ShardLeaseRow{}).TableName() {
+			return
+		}
+		var holder string
+		if err := g.Session(&gorm.Session{NewDB: true}).Model(&ShardLeaseRow{}).Where("id = 1").Select("owner").Scan(&holder).Error; err != nil {
+			g.AddError(fmt.Errorf("storage: check the shard lease: %w", err))
+			return
+		}
+		if holder != *owner {
+			g.AddError(ErrShardLost)
+		}
 	}
-	var holder string
-	if err := d.gorm.Model(&ShardLeaseRow{}).Where("id = 1").Select("owner").Scan(&holder).Error; err != nil {
-		return err
-	}
-	if holder != d.owner {
-		return ErrShardLost
-	}
-	return nil
+	const after, name = "gorm:begin_transaction", "repo:fence"
+	cb := d.gorm.Callback()
+	return errors.Join(
+		cb.Create().After(after).Register(name, fence),
+		cb.Update().After(after).Register(name, fence),
+		cb.Delete().After(after).Register(name, fence),
+	)
 }

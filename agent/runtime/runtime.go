@@ -20,7 +20,11 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/workspace"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
 )
+
+// The runtime traces through the global TracerProvider, as the agent does.
+var tracer = otel.Tracer("github.com/0xfakeSpike/ollupi/agent/runtime")
 
 const (
 	maxModelCalls          = 200

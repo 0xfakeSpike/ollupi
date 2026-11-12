@@ -10,6 +10,9 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type callActionKind int
@@ -152,6 +155,10 @@ func (rt *Runtime) runJobs(ctx context.Context, jobs []job) ([]tools.Result, err
 
 func (rt *Runtime) execute(ctx context.Context, j job) tools.Result {
 	it := j.it
+	ctx, span := tracer.Start(ctx, "execute_tool "+it.Tool, trace.WithAttributes(
+		attribute.String("gen_ai.operation.name", "execute_tool"), attribute.String("gen_ai.tool.name", it.Tool),
+		attribute.String("gen_ai.tool.call.id", it.CallID), attribute.String("ollupi.tool.server", it.Server)))
+	defer span.End()
 	started := time.Now()
 	result := rt.Registry.InvokePrepared(ctx, it.Tool, j.args, it.PreparedExecution)
 	if result.Err == nil {
@@ -159,8 +166,12 @@ func (rt *Runtime) execute(ctx context.Context, j job) tools.Result {
 			result = tools.Result{Err: fmt.Errorf("apply tool context: %w", err)}.For(it.Tool)
 		}
 	}
-	// The error stays out of the log with the output: either can quote the files and commands it touched.
-	slog.Info("tool call", "thread", rt.Caller.ThreadID, "turn", rt.Turn.ID, "item", it.ID, "tool", it.Tool,
+	span.SetAttributes(attribute.Bool("ollupi.tool.awaits", result.Await != nil))
+	// The error stays out of the log and the trace with the output: either can quote the files and commands it touched.
+	if result.Err != nil {
+		span.SetStatus(codes.Error, "")
+	}
+	slog.InfoContext(ctx, "tool call", "thread", rt.Caller.ThreadID, "turn", rt.Turn.ID, "item", it.ID, "tool", it.Tool,
 		"ms", time.Since(started).Milliseconds(), "failed", result.Err != nil, "awaits", result.Await != nil)
 	return result
 }

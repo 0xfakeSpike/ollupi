@@ -12,6 +12,9 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func (rt *Runtime) contextInput() contextmanager.Input {
@@ -41,7 +44,7 @@ func (rt *Runtime) respond(ctx context.Context, choice llm.ToolChoice) (llm.Chat
 	started := time.Now()
 	resp, err := rt.send(ctx, prompt, choice, r.delta)
 	r.usage = responseUsage(resp)
-	rt.logModelCall("model call", started, resp, err)
+	rt.logModelCall(ctx, "model call", started, resp, err)
 	if err == nil {
 		err = checkResponse(resp, choice)
 	}
@@ -86,11 +89,19 @@ func checkResponse(resp llm.ChatResponse, choice llm.ToolChoice) error {
 	return nil
 }
 
-func (rt *Runtime) compact(ctx context.Context) error {
+func (rt *Runtime) compact(ctx context.Context) (err error) {
+	ctx, span := tracer.Start(ctx, "ollupi.context.compact")
+	defer func() {
+		if err != nil {
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
 	prompt, err := rt.Window.CompactionPrompt(rt.contextInput())
 	if err != nil {
 		return fmt.Errorf("runtime: %w", err)
 	}
+	span.SetAttributes(attribute.Int("ollupi.context.estimated_tokens", prompt.Stats.EstimatedTokens))
 	it, err := rt.record(repo.ItemRow{
 		ID: uuid.NewString(), TurnID: rt.Turn.ID, Type: repo.ItemContextCompaction, Status: repo.ItemInProgress, StartedAt: time.Now().UTC(),
 		ResponseID: uuid.NewString(), ContextStats: &prompt.Stats,
@@ -101,7 +112,7 @@ func (rt *Runtime) compact(ctx context.Context) error {
 	started := time.Now()
 	resp, err := rt.send(ctx, prompt, llm.ToolChoiceNone, nil)
 	it.Usage = responseUsage(resp)
-	rt.logModelCall("context compaction", started, resp, err)
+	rt.logModelCall(ctx, "context compaction", started, resp, err)
 	summary := strings.TrimSpace(resp.Message.Content)
 	switch {
 	case err != nil:
@@ -145,8 +156,17 @@ func (rt *Runtime) send(ctx context.Context, prompt contextmanager.Prompt, choic
 		}
 		messages = append(messages, message)
 	}
+	ctx, span := tracer.Start(ctx, "chat "+rt.Turn.Model.Name, trace.WithSpanKind(trace.SpanKindClient), trace.WithAttributes(
+		attribute.String("gen_ai.operation.name", "chat"), attribute.String("gen_ai.request.model", rt.Turn.Model.Name),
+		attribute.String("ollupi.connection", rt.Turn.Model.Connection), attribute.Int("ollupi.llm.estimated_input_tokens", prompt.Stats.CalibratedTokens)))
+	defer span.End()
+	started, answering := time.Now(), false
 	content, reasoning := rt.redactor.Stream(), rt.redactor.Stream()
 	restored := func(d llm.Delta) {
+		if !answering && (d.Content != "" || d.Reasoning != "") {
+			answering = true
+			span.SetAttributes(attribute.Int64("ollupi.llm.first_token_ms", time.Since(started).Milliseconds()))
+		}
 		d.Content, d.Reasoning = content.Write(d.Content), reasoning.Write(d.Reasoning)
 		if onDelta != nil && (d.Content != "" || d.Reasoning != "") {
 			onDelta(d)
@@ -167,6 +187,14 @@ func (rt *Runtime) send(ctx context.Context, prompt contextmanager.Prompt, choic
 	}
 	if usage := responseUsage(resp); usage != nil {
 		rt.usage.Add(*usage)
+		span.SetAttributes(attribute.Int64("gen_ai.usage.input_tokens", usage.InputTokens), attribute.Int64("gen_ai.usage.output_tokens", usage.OutputTokens),
+			attribute.Int64("ollupi.llm.cached_input_tokens", usage.CachedInputTokens))
+	}
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+	} else {
+		span.SetAttributes(attribute.StringSlice("gen_ai.response.finish_reasons", []string{resp.FinishReason}),
+			attribute.Int("ollupi.llm.tool_calls", len(resp.Message.ToolCalls)))
 	}
 	return resp, err
 }
@@ -194,13 +222,13 @@ func (rt *Runtime) loadParts(ctx context.Context, parts []llm.ContentPart, mask 
 }
 
 // logModelCall records one model request: its model, duration, tokens and how it ended, never its text.
-func (rt *Runtime) logModelCall(msg string, started time.Time, resp llm.ChatResponse, err error) {
+func (rt *Runtime) logModelCall(ctx context.Context, msg string, started time.Time, resp llm.ChatResponse, err error) {
 	attrs := []any{"thread", rt.Caller.ThreadID, "turn", rt.Turn.ID, "model", rt.Turn.Model.Name, "ms", time.Since(started).Milliseconds()}
 	if err != nil {
-		slog.Warn(msg+" failed", append(attrs, "err", err)...)
+		slog.WarnContext(ctx, msg+" failed", append(attrs, "err", err)...)
 		return
 	}
-	slog.Info(msg, append(attrs, "input", resp.Usage.PromptTokens, "cached", resp.Usage.CachedPromptTokens,
+	slog.InfoContext(ctx, msg, append(attrs, "input", resp.Usage.PromptTokens, "cached", resp.Usage.CachedPromptTokens,
 		"output", resp.Usage.CompletionTokens, "finish", resp.FinishReason, "toolCalls", len(resp.Message.ToolCalls))...)
 }
 
