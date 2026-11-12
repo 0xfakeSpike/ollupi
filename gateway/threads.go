@@ -25,7 +25,7 @@ func threadPage(resume bool) func(*conn, ThreadPageParams) (ThreadPageResult, fu
 			return ThreadPageResult{}, nil, err
 		}
 		c.deliver.Lock()
-		view, more, err := c.s.db.ThreadPage(p.ThreadID, p.BeforeSeq, p.Limit)
+		view, more, err := c.s.db.ThreadPage(c.user, p.ThreadID, p.BeforeSeq, p.Limit)
 		if err != nil {
 			c.deliver.Unlock()
 			return ThreadPageResult{}, nil, err

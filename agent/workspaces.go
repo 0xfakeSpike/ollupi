@@ -14,8 +14,12 @@ import (
 	"github.com/google/uuid"
 )
 
+// workspaceTimeout bounds what adding or moving a workspace asks of the user's sandbox, the move itself aside.
+const workspaceTimeout = time.Minute
+
 func (a *Agent) AddWorkspace(user, path, name string) (repo.WorkspaceRow, error) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), workspaceTimeout)
+	defer cancel()
 	box, err := a.cfg.BoxFor(user)
 	if err != nil {
 		return repo.WorkspaceRow{}, fmt.Errorf("agent: the sandbox of the user: %w", err)
@@ -58,9 +62,11 @@ func (a *Agent) RenameWorkspace(user, id, name string) (repo.WorkspaceRow, error
 
 // MoveWorkspace moves the workspace's folder to path, a folder that is there and empty, and points the workspace at
 // it. Every thread, memory and task keeps its workspace id, so nothing else is rewritten. A turn in progress would keep
-// calling tools against the folder it started in, so the move waits until the workspace's conversations are idle.
+// calling tools against the folder it started in, so the move is refused until the workspace's conversations are
+// idle, and none starts a turn while the folder moves.
 func (a *Agent) MoveWorkspace(user, id, path string) (repo.WorkspaceRow, error) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), workspaceTimeout)
+	defer cancel()
 	w, err := a.workspaceFor(user, repo.Ref(id))
 	if err != nil {
 		return repo.WorkspaceRow{}, err
@@ -82,13 +88,14 @@ func (a *Agent) MoveWorkspace(user, id, path string) (repo.WorkspaceRow, error) 
 	if sandbox.Within(w.RootPath, target) {
 		return repo.WorkspaceRow{}, fmt.Errorf("agent: %w: %q is inside the workspace", ErrInvalidPath, target)
 	}
-	busy, err := a.cfg.DB.WorkspaceBusy(user, w.ID)
-	if err != nil {
+	if err := a.startMove(user, w); err != nil {
 		return repo.WorkspaceRow{}, err
 	}
-	if busy {
-		return repo.WorkspaceRow{}, fmt.Errorf("agent: workspace %s: %w", w.Name, ErrWorkspaceBusy)
-	}
+	defer func() {
+		a.moveMu.Lock()
+		delete(a.moving, w.ID)
+		a.moveMu.Unlock()
+	}()
 	if entries, err := box.ReadDir(ctx, target); err != nil {
 		return repo.WorkspaceRow{}, fmt.Errorf("agent: %w: %v", ErrInvalidPath, err)
 	} else if len(entries) > 0 {
@@ -103,18 +110,37 @@ func (a *Agent) MoveWorkspace(user, id, path string) (repo.WorkspaceRow, error) 
 			return repo.WorkspaceRow{}, fmt.Errorf("agent: %w: %q is the folder of the workspace %s", ErrInvalidPath, target, other.Name)
 		}
 	}
-	if err := box.Move(ctx, w.RootPath, target); err != nil {
+	if err := box.Move(context.Background(), w.RootPath, target); err != nil {
 		return repo.WorkspaceRow{}, fmt.Errorf("agent: %w", err)
 	}
 	moved, err := a.cfg.DB.SetWorkspaceRoot(user, w.ID, target, time.Now().UTC())
 	if err != nil {
-		if back := box.Move(ctx, target, w.RootPath); back != nil {
+		if back := box.Move(context.Background(), target, w.RootPath); back != nil {
 			return repo.WorkspaceRow{}, fmt.Errorf("agent: the folder is now at %s but the workspace still names %s: %w; moving it back failed too: %v", target, w.RootPath, err, back)
 		}
 		return repo.WorkspaceRow{}, err
 	}
 	a.emit(Event{Kind: EventWorkspaceChanged, Workspace: &moved})
 	return moved, nil
+}
+
+// startMove claims the workspace for a move once none of its conversations has a turn open. submit checks the claim
+// under the same lock, so no turn starts between the check and the claim.
+func (a *Agent) startMove(user string, w repo.WorkspaceRow) error {
+	a.moveMu.Lock()
+	defer a.moveMu.Unlock()
+	if a.moving[w.ID] {
+		return fmt.Errorf("agent: workspace %s is moving: %w", w.Name, ErrWorkspaceBusy)
+	}
+	busy, err := a.cfg.DB.WorkspaceBusy(user, w.ID)
+	if err != nil {
+		return err
+	}
+	if busy {
+		return fmt.Errorf("agent: workspace %s: %w", w.Name, ErrWorkspaceBusy)
+	}
+	a.moving[w.ID] = true
+	return nil
 }
 
 func (a *Agent) ArchiveWorkspace(user, id string, archived bool) (repo.WorkspaceRow, error) {

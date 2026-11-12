@@ -121,6 +121,9 @@ func (a *Agent) startTurn(threadID string, in Input, atts []repo.Attachment) (re
 	if st.Thread.ParentThreadID != "" {
 		return repo.TurnRow{}, ErrSubagentThread
 	}
+	if len(st.QueuedTurns()) >= maxQueuedTurns {
+		return repo.TurnRow{}, ErrQueueFull
+	}
 	model, err := a.conversationModel(st.Last, in.Connection)
 	if err != nil {
 		return repo.TurnRow{}, err
@@ -145,6 +148,11 @@ func (a *Agent) submit(t repo.ThreadRow, turn repo.TurnRow, model llm.Model) (re
 		}
 		if err := usable(w); err != nil {
 			return repo.TurnRow{}, err
+		}
+		a.moveMu.Lock()
+		defer a.moveMu.Unlock()
+		if a.moving[w.ID] {
+			return repo.TurnRow{}, fmt.Errorf("agent: workspace %s is moving: %w", w.Name, ErrWorkspaceBusy)
 		}
 	}
 	now := time.Now().UTC()

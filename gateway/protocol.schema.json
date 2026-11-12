@@ -1950,6 +1950,9 @@
         "totalLines": {
           "type": "integer"
         },
+        "totalLinesAtLeast": {
+          "type": "boolean"
+        },
         "binary": {
           "type": "boolean"
         },

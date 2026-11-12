@@ -149,3 +149,37 @@ func TestTheRouterSendsEachUserToTheirShard(t *testing.T) {
 		t.Errorf("a received %q from the new holder", got)
 	}
 }
+
+type oneShard struct{ address string }
+
+func (d oneShard) ShardOf(string) (string, error) { return "s", nil }
+func (d oneShard) Address(string) (string, error) { return d.address, nil }
+
+// A shard that takes a connection and never answers does not hold the client: the router answers in time.
+func TestTheRouterDoesNotWaitOnAShardThatHangs(t *testing.T) {
+	release := make(chan struct{})
+	hung := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))
+	defer hung.Close()
+	defer close(release)
+	rt, err := NewRouter(func(string) (string, bool) { return "a", true }, oneShard{hung.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt.transport.ResponseHeaderTimeout = 100 * time.Millisecond
+	front := httptest.NewServer(rt)
+	defer front.Close()
+	req, err := http.NewRequest(http.MethodGet, front.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer token")
+	client := &http.Client{Timeout: 10 * time.Second}
+	res, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("the router answered %s", res.Status)
+	}
+}

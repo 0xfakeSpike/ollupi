@@ -33,7 +33,7 @@ const (
 	// fixedPercent and responsePercent kept for the answer, a message this size is always sent, and compaction makes
 	// room for it in the history.
 	messagePercent = 25
-	sentLayout         = "Mon 2006-01-02 15:04 -07:00"
+	sentLayout     = "Mon 2006-01-02 15:04 -07:00"
 	// compactInputTokens is the budget the full prompt and tool list need: about 8k tokens, which Fits holds to half of it.
 	compactInputTokens = 16_384
 )

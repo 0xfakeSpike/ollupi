@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -87,11 +88,49 @@ func TestAThreadIsUnreadFromATurnsEndUntilMarkedRead(t *testing.T) {
 	unread(false)
 	turn("one")
 	unread(true)
-	if row, err := db.MarkThreadRead("t", time.Now()); err != nil || row.Unread() {
+	if row, err := db.MarkThreadRead(DefaultUser, "t", time.Now()); err != nil || row.Unread() {
 		t.Fatalf("marked read: unread %v, %v", row.Unread(), err)
 	}
 	unread(false)
 	time.Sleep(2 * time.Millisecond)
 	turn("two")
 	unread(true)
+}
+
+// A thread named by id is its user's alone: to anyone else each of these finds nothing and changes nothing.
+func TestAThreadByIDIsItsUsersAlone(t *testing.T) {
+	db, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, user := range []string{"a", "b"} {
+		if err := db.EnsureUser(user); err != nil {
+			t.Fatal(err)
+		}
+	}
+	at := time.Now().UTC()
+	if err := db.CreateThread(ThreadRow{UserID: "a", ID: "t", Title: "mine", CreatedAt: at, UpdatedAt: at}); err != nil {
+		t.Fatal(err)
+	}
+	for name, try := range map[string]func() error{
+		"page":    func() error { _, _, err := db.ThreadPage("b", "t", 0, 10); return err },
+		"rename":  func() error { _, err := db.SetThreadTitle("b", "t", "theirs"); return err },
+		"read":    func() error { _, err := db.MarkThreadRead("b", "t", at); return err },
+		"archive": func() error { _, err := db.SetThreadArchived("b", "t", &at); return err },
+		"settings": func() error {
+			_, err := db.SetThreadSettings("b", "t", PermissionSettings{})
+			return err
+		},
+		"attachment": func() error { _, err := db.Attachment("b", "t", "file"); return err },
+		"delete":     func() error { return db.DeleteThread("b", "t") },
+	} {
+		if err := try(); !errors.Is(err, ErrNotFound) {
+			t.Errorf("b tried to %s: %v", name, err)
+		}
+	}
+	row, err := db.ThreadOf("a", "t")
+	if err != nil || row.Title != "mine" || row.ArchivedAt != nil || row.ReadAt != nil {
+		t.Errorf("a's thread after b's tries: %+v %v", row, err)
+	}
 }
