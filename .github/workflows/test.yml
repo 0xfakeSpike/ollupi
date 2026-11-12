@@ -28,6 +28,10 @@ jobs:
 
       - run: go vet ./...
 
+      # Fails on vulnerabilities the code actually reaches, in dependencies or
+      # in the Go toolchain that setup-go installed from go.mod.
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+
       # Includes TestProtocolSchema, which fails when protocol.schema.json is
       # out of date with the dispatch table.
       - run: go test -race -timeout 10m ./...

@@ -24,7 +24,7 @@ if [ "${1:-}" = "--if-stale" ] && [ "$(cat "$root/eval/build/STAMP" 2>/dev/null)
 fi
 mkdir -p "$root/eval/build"
 for arch in $arches; do
-	docker run --rm --platform "linux/$arch" -v "$root:/src" -v ollupi-eval-gocache:/root/go -w /src golang:1.25-alpine sh -c "
+	docker run --rm --platform "linux/$arch" -v "$root:/src" -v ollupi-eval-gocache:/root/go -w /src golang:1.26-alpine sh -c "
 		apk add --no-cache build-base >/dev/null &&
 		CGO_ENABLED=1 go build -buildvcs=false -tags sqlite_fts5 \
 			-ldflags '-s -w -linkmode external -extldflags -static -X main.version=$version' \
