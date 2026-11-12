@@ -12,6 +12,7 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
+	"github.com/0xfakeSpike/ollupi/pkg/wshub"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
 	"github.com/coder/websocket"
@@ -182,10 +183,10 @@ func TestEachUserHasTheirOwnConnectionAndEvents(t *testing.T) {
 
 	// Beyond the most a user may hold, the newest connection takes the oldest's place.
 	var newer *websocket.Conn
-	for range connections.PerKey - 1 {
+	for range DefaultConnections.PerKey - 1 {
 		newer = userClient(ctx, t, gw.URL, "token-a")
 	}
-	if _, _, err := a.Read(ctx); websocket.CloseStatus(err) != websocket.StatusPolicyViolation {
+	if _, _, err := a.Read(ctx); websocket.CloseStatus(err) != wshub.StatusReplaced {
 		t.Errorf("a's oldest connection: %v", err)
 	}
 	s.Deliver(changed("b", "still-b"))

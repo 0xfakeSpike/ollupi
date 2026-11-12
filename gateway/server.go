@@ -41,11 +41,17 @@ type Server struct {
 	hosts        []string
 	origins      []string
 	// hub holds the users' connections, keyed by user.
-	hub    *wshub.Hub[*conn]
+	hub *wshub.Hub[*conn]
+	// ready holds the users EnsureUser has made ready, so that their reconnections write nothing; no user is removed.
+	ready  sync.Map
 	served sync.WaitGroup
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == healthPath {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 	s.served.Add(1)
 	defer s.served.Done()
 	user, status, why := s.authorize(r)
@@ -56,10 +62,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !s.hub.Admit(w) {
 		return
 	}
-	if err := s.db.EnsureUser(user); err != nil {
-		slog.Error("user not ready", "user", user, "err", err)
-		http.Error(w, "the user could not be made ready", http.StatusInternalServerError)
-		return
+	if _, ok := s.ready.Load(user); !ok {
+		if err := s.db.EnsureUser(user); err != nil {
+			slog.Error("user not ready", "user", user, "err", err)
+			http.Error(w, "the user could not be made ready", http.StatusInternalServerError)
+			return
+		}
+		s.ready.Store(user, struct{}{})
 	}
 	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: s.origins, Subprotocols: []string{tokenProtocol}})
 	if err != nil {

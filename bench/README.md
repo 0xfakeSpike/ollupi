@@ -33,6 +33,8 @@ go run -tags sqlite_fts5 ./bench soak -c 256 -d 8m -every 30s -latency 1s -jitte
 go run -tags sqlite_fts5 ./bench users
 go run -tags sqlite_fts5 ./bench users -user-slots 64
 go run -tags sqlite_fts5 ./bench users -user-slots 64 -heavy-calls 64 -heavy-limit 32
+go run -tags sqlite_fts5 ./bench conns -n 1000,2000,4000,8000 -storm
+go run -tags sqlite_fts5 ./bench conns -n 1000,2000,4000 -router -storm
 ```
 
 | Experiment | What it measures | Raw output |
@@ -47,6 +49,9 @@ go run -tags sqlite_fts5 ./bench users -user-slots 64 -heavy-calls 64 -heavy-lim
 | `fanout` | Whether parent turns give up their slots when subagents outnumber slots | `results/fanout.txt` |
 | `soak` | Latency, memory, goroutines, GC and database growth over a long run | `results/soak.csv` |
 | `users` | Many users on one shard, each on their own key and quota, beside one user who keeps more conversations busy than their key serves; with `-user-slots`, whether `UserSlots` keeps the others' turns from waiting on that user, and with `-heavy-limit`, whether that user's 429s stay theirs | `results/users.txt`, `users-slots.txt` and `users-limit.txt`, not yet measured |
+| `conns` | Idle client connections, one user each, held on a shard straight or, with `-router`, through a router, each of the two a process of its own: per connection, the resident memory, heap, goroutines and file descriptors they add, and the CPU the pings take while nothing else happens; with `-storm`, the shard is then killed and started again, and the clients, each reconnecting as the main README says, are timed until all are back | `results/conns.txt` and `conns-router.txt`, not yet measured |
+
+`conns` runs the clients on the same machine, so the operating system's limits stop it before ollupi does. Every connection takes a descriptor in the client and in the shard, and through a router two more in the router, which also dials the shard from one local address, using one ephemeral port for each connection. On macOS a process may hold `kern.maxfilesperproc` descriptors (10,240 on the test machine), and the ephemeral ports of one address are `net.inet.ip.portrange.first` to `.last` (16,384); on Linux they are `ulimit -n` and `net.ipv4.ip_local_port_range`. That is why run.sh takes the router to 4000 connections and the shard to 8000. Beyond them, raise these limits or run on Linux; `-sources` spreads the clients over more local addresses, which on macOS must first be added to `lo0`. A step that a limit stops prints `stopped=not_all_connected`, its `failed` count, and on stderr the last error.
 
 `go test -tags sqlite_fts5 ./bench` runs every experiment as its own process at a size that ends in seconds and checks what it exists to show: turns end, none fail, no tool call runs twice, and the users beside a heavy one draw no 429. It measures nothing; `-short` skips it.
 
