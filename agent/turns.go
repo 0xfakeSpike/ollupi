@@ -15,6 +15,8 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type Input struct {
@@ -35,6 +37,11 @@ func (a *Agent) StartTurn(ctx context.Context, user, threadID string, in Input) 
 		return err
 	})
 	a.dropUnsent(atts, err)
+	if err == nil {
+		span := trace.SpanFromContext(ctx)
+		span.SetAttributes(attribute.String("ollupi.turn.id", turn.ID))
+		span.AddLink(trace.Link{SpanContext: turnTrace(turn.ID)})
+	}
 	return turn, err
 }
 
@@ -57,6 +64,11 @@ func (a *Agent) SteerTurn(ctx context.Context, user, threadID, expectedTurnID st
 		return err
 	})
 	a.dropUnsent(atts, err)
+	if err == nil {
+		span := trace.SpanFromContext(ctx)
+		span.SetAttributes(attribute.String("ollupi.turn.id", turn.ID))
+		span.AddLink(trace.Link{SpanContext: turnTrace(turn.ID)})
+	}
 	return turn, err
 }
 

@@ -12,6 +12,9 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/systemprompt"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func (a *Agent) run(threadID string, sl *slot) {
@@ -40,15 +43,28 @@ func (a *Agent) run(threadID string, sl *slot) {
 		})
 		return
 	}
+	parent := trace.ContextWithRemoteSpanContext(sl.ctx, turnTrace(turn.ID))
+	attrs := trace.WithAttributes(
+		attribute.String("ollupi.user.id", t.UserID), attribute.String("ollupi.thread.id", t.ID), attribute.String("ollupi.turn.id", turn.ID),
+		attribute.Bool("ollupi.thread.subagent", t.ParentThreadID != ""),
+		attribute.String("gen_ai.request.model", turn.Model.Name), attribute.String("ollupi.connection", turn.Model.Connection))
+	_, wait := tracer.Start(parent, "ollupi.turn.wait", attrs, trace.WithTimestamp(readySince(turn, items)))
+	wait.End()
+	ctx, span := tracer.Start(parent, "ollupi.turn.run", attrs)
+	defer span.End()
 	limit := fmt.Errorf("agent: the turn reached its time limit of %s", a.cfg.RunLimit)
-	ctx, cancel := context.WithTimeoutCause(sl.ctx, a.cfg.RunLimit, limit)
+	ctx, cancel := context.WithTimeoutCause(ctx, a.cfg.RunLimit, limit)
 	defer cancel()
 	started := time.Now()
 	final, usage, err := a.runTurn(ctx, t, turn, items)
 	if err != nil && context.Cause(ctx) == limit {
 		err = limit
 	}
-	slog.Info("run ended", "thread", threadID, "turn", turn.ID, "ms", time.Since(started).Milliseconds(), "final", final, "items", len(items))
+	span.SetAttributes(attribute.Bool("ollupi.run.final", final))
+	if err != nil && sl.ctx.Err() == nil {
+		span.SetStatus(codes.Error, err.Error())
+	}
+	slog.InfoContext(ctx, "run ended", "thread", threadID, "turn", turn.ID, "ms", time.Since(started).Milliseconds(), "final", final, "items", len(items))
 	if err := a.cfg.DB.AddUsage(threadID, turn.ID, usage); err != nil {
 		slog.Error("turn usage not recorded", "thread", threadID, "turn", turn.ID, "err", err)
 	}
