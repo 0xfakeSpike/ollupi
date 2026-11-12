@@ -8,14 +8,17 @@ import (
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
+	"net/http"
 	"reflect"
 
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
+	"github.com/0xfakeSpike/ollupi/pkg/wshub"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/mcp"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
+	"github.com/coder/websocket"
 )
 
 const (
@@ -59,12 +62,41 @@ const (
 	requestUserInput = "item/tool/requestUserInput"
 )
 
+// Reconnect is what a client does after its connection ends, or its handshake is refused, in a given way.
+type Reconnect string
+
+const (
+	// ReconnectNever: not on its own, but when the user acts, such as signing in again or bringing the client back
+	// to the front.
+	ReconnectNever Reconnect = "never"
+	// ReconnectSoon: after a random wait of up to 10 seconds, so that the clients of a whole shard do not come back at
+	// once.
+	ReconnectSoon Reconnect = "soon"
+	// ReconnectBackoff: after a wait that starts at 1 second and doubles with each failed try up to 60 seconds, a
+	// random point under each bound.
+	ReconnectBackoff Reconnect = "backoff"
+	// ReconnectRetryAfter: after the seconds the response's Retry-After header gives, or as ReconnectBackoff when it
+	// gives none, as when a load balancer refuses for a shard that is changing hands.
+	ReconnectRetryAfter Reconnect = "retryAfter"
+)
+
+// Ending is one way a connection ends, or its handshake is refused, and what the client does then. Once a connection
+// is back, the client reads again what it shows with thread/read, since it heard nothing meanwhile.
+type Ending struct {
+	Name      string    `json:"name"`
+	Reconnect Reconnect `json:"reconnect"`
+}
+
 var protocol = struct {
 	methods             map[string]method
 	notifications       map[string]reflect.Type
 	serverRequests      map[string]serverRequest
 	clientNotifications map[string]reflect.Type
 	errors              map[int]string
+	// closes are the WebSocket close codes a connection ends with; handshakes the HTTP statuses a handshake is
+	// refused with.
+	closes     map[int]Ending
+	handshakes map[int]Ending
 }{
 	methods: map[string]method{
 		methodInitialize:              handle((*conn).initialize),
@@ -148,6 +180,26 @@ var protocol = struct {
 		errWorkspaceArchived:       "workspaceArchived",
 		errThreadArchived:          "threadArchived",
 		errThreadBusy:              "threadBusy",
+	},
+	closes: map[int]Ending{
+		// The server is stopping, or the connection reached its age.
+		int(websocket.StatusGoingAway): {"goingAway", ReconnectSoon},
+		// No close frame came: the network dropped, or the server gave up on a peer that stopped answering pings.
+		int(websocket.StatusAbnormalClosure): {"abnormal", ReconnectBackoff},
+		// The client read too slowly and the server's queue for it filled.
+		int(websocket.StatusPolicyViolation): {"policyViolation", ReconnectBackoff},
+		int(websocket.StatusMessageTooBig):   {"messageTooBig", ReconnectBackoff},
+		int(websocket.StatusInternalError):   {"internalError", ReconnectBackoff},
+		// The user opened more connections than they may hold, and this was the oldest. Reconnecting on its own
+		// would take the place of another of theirs, which would do the same.
+		int(wshub.StatusReplaced): {"replaced", ReconnectNever},
+	},
+	handshakes: map[int]Ending{
+		http.StatusUnauthorized:        {"unauthorized", ReconnectNever},
+		http.StatusForbidden:           {"forbidden", ReconnectNever},
+		http.StatusInternalServerError: {"internalError", ReconnectBackoff},
+		// Too many connections are starting, or the user's shard cannot be reached now.
+		http.StatusServiceUnavailable: {"unavailable", ReconnectRetryAfter},
 	},
 }
 

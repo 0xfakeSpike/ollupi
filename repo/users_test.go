@@ -2,9 +2,11 @@ package repo
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -198,7 +200,7 @@ func TestRowsFromBeforeUsersBelongToTheDefaultUser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	all, err := steps(shardMigrations)
+	all, err := shardSteps()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,14 +300,34 @@ func TestAFencedHandleStopsWritingOnceTheShardIsTaken(t *testing.T) {
 		t.Fatal(held, err)
 	}
 	db.Fence("first")
-	write := func() error { return db.Tx(func(tx *DB) error { return tx.EnsureUser("a") }) }
-	if err := write(); err != nil {
-		t.Fatal(err)
+	writes := map[string]func(n int) error{
+		"in a transaction": func(n int) error {
+			return db.Tx(func(tx *DB) error { return tx.EnsureUser(fmt.Sprint("tx", n)) })
+		},
+		"on its own":            func(n int) error { return db.EnsureUser(fmt.Sprint("own", n)) },
+		"on a request's handle": func(n int) error { return db.WithContext(t.Context()).EnsureUser(fmt.Sprint("ctx", n)) },
+	}
+	for name, write := range writes {
+		if err := write(1); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
 	}
 	if held, err := db.ClaimShard("second", at.Add(time.Hour), time.Minute); err != nil || !held {
 		t.Fatal(held, err)
 	}
-	if err := write(); !errors.Is(err, ErrShardLost) {
-		t.Errorf("writing after the shard was taken: %v", err)
+	for name, write := range writes {
+		if err := write(2); !errors.Is(err, ErrShardLost) {
+			t.Errorf("writing %s after the shard was taken: %v", name, err)
+		}
+	}
+	users, err := db.Users()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.ContainsFunc(users, func(u string) bool { return strings.HasSuffix(u, "2") }) {
+		t.Errorf("a fenced write went through: %v", users)
+	}
+	if err := db.ReleaseShard("first"); err != nil {
+		t.Errorf("giving up a lease already lost: %v", err)
 	}
 }

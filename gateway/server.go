@@ -14,13 +14,21 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
+	"github.com/0xfakeSpike/ollupi/pkg/wshub"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
 	"github.com/0xfakeSpike/ollupi/tools/mcp"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
 	"github.com/coder/websocket"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
+
+// Requests are traced through the global TracerProvider, which the host sets up.
+var tracer = otel.Tracer("github.com/0xfakeSpike/ollupi/gateway")
 
 const (
 	maxMessageBytes = 32 << 20
@@ -37,15 +45,28 @@ type Server struct {
 	jobs         *cron.Jobs
 	mcp          *mcp.Users
 	authenticate func(token string) (string, bool)
+	shard        string
+	placements   Placements
+	load         Load
 	hosts        []string
 	origins      []string
-	mu           sync.Mutex
-	// clients holds each user's connection; a user's newer connection replaces their older one.
-	clients map[string]*conn
-	served  sync.WaitGroup
+	// hub holds the users' connections, keyed by user.
+	hub *wshub.Hub[*conn]
+	// ready holds the users found on this shard and made ready by EnsureUser, so that their reconnections ask and write
+	// nothing: a user stays on their shard, and none is removed.
+	ready  sync.Map
+	served sync.WaitGroup
 }
 
+// HealthPath answers 200 while the process serves, for a load balancer's health check: a shard serves only once it
+// holds its lease, so the check sends a shard's connections to the process that holds it.
+const HealthPath = "/healthz"
+
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == HealthPath {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 	s.served.Add(1)
 	defer s.served.Done()
 	user, status, why := s.authorize(r)
@@ -53,10 +74,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, why, status)
 		return
 	}
-	if err := s.db.EnsureUser(user); err != nil {
-		slog.Error("user not ready", "user", user, "err", err)
-		http.Error(w, "the user could not be made ready", http.StatusInternalServerError)
+	if !s.hub.Admit(w) {
 		return
+	}
+	if _, ok := s.ready.Load(user); !ok {
+		if !s.mine(w, r, user) {
+			return
+		}
+		if err := s.db.EnsureUser(user); err != nil {
+			slog.Error("user not ready", "user", user, "err", err)
+			http.Error(w, "the user could not be made ready", http.StatusInternalServerError)
+			return
+		}
+		s.ready.Store(user, struct{}{})
 	}
 	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: s.origins, Subprotocols: []string{tokenProtocol}})
 	if err != nil {
@@ -65,37 +95,31 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	ws.SetReadLimit(maxMessageBytes)
 	c := &conn{s: s, user: user, ws: ws, rpc: jsonrpc.NewConn(ws), asked: make(map[string]bool)}
-	s.mu.Lock()
-	previous := s.clients[user]
-	s.clients[user] = c
-	s.mu.Unlock()
-	if previous != nil {
-		slog.Info("client replaced by a newer connection")
-		go previous.ws.Close(websocket.StatusPolicyViolation, "replaced by a newer connection")
-	}
 	slog.Info("client connected", "origin", r.Header.Get("Origin"))
-	defer func() {
-		s.mu.Lock()
-		if s.clients[user] == c {
-			delete(s.clients, user)
-		}
-		s.mu.Unlock()
-	}()
-
-	stop := context.AfterFunc(r.Context(), func() { ws.Close(websocket.StatusGoingAway, "server shutting down") })
-	defer stop()
-	err = c.rpc.Serve(r.Context(), c)
-	switch status := websocket.CloseStatus(err); {
-	case status == websocket.StatusNormalClosure || status == websocket.StatusGoingAway || r.Context().Err() != nil:
-		slog.Info("client disconnected")
-		ws.Close(websocket.StatusNormalClosure, "")
-	default:
-		slog.Warn("client connection failed", "err", err)
-		ws.Close(websocket.StatusInternalError, "connection error")
-	}
+	s.hub.Serve(r.Context(), user, ws, c, func(ctx context.Context) error { return c.rpc.Serve(ctx, c) })
 }
 
-// Deliver sends an event to the user it belongs to; one that names no user goes to nobody, the log has it.
+// mine says whether user is on this shard, and when not, refuses the connection for now: the router placed it by what
+// it knew, and a client that comes back reaches the right shard once that is put right.
+func (s *Server) mine(w http.ResponseWriter, r *http.Request, user string) bool {
+	if s.placements == nil {
+		return true
+	}
+	shard, err := s.placements.ShardOf(r.Context(), user)
+	switch {
+	case err != nil:
+		slog.Error("user's shard not found", "user", user, "err", err)
+	case shard != s.shard:
+		slog.Warn("connection refused on the wrong shard", "user", user, "shard", s.shard, "theirs", shard)
+	default:
+		return true
+	}
+	s.hub.Refuse(w, "this user is not on this shard now; try again")
+	return false
+}
+
+// Deliver sends an event to the connections of the user it belongs to; one that names no user goes to nobody, the
+// log has it.
 func (s *Server) Deliver(e agent.Event) {
 	user := e.Thread.UserID
 	if e.Workspace != nil {
@@ -104,21 +128,23 @@ func (s *Server) Deliver(e agent.Event) {
 	if e.Environment != nil {
 		user = e.Environment.UserID
 	}
-	if c := s.current(user); c != nil {
-		c.deliver.Lock()
-		defer c.deliver.Unlock()
-		c.event(e)
+	switch e.Kind {
+	case agent.EventEnvironmentChanged:
+		s.environmentChanged(user, e.Environment.ID)
+	case agent.EventCronJobChanged:
+		s.cronChanged(user, e.CronJobID, e.Thread.ID)
+	default:
+		s.each(user, func(c *conn) { c.event(e) })
 	}
 }
 
-func (s *Server) current(user string) *conn {
-	s.mu.Lock()
-	c := s.clients[user]
-	s.mu.Unlock()
-	if c == nil || !c.isInitialized() {
-		return nil
-	}
-	return c
+// each calls fn with each of the user's connections that has been initialized.
+func (s *Server) each(user string, fn func(*conn)) {
+	s.hub.Each(user, func(c *conn) {
+		if c.isInitialized() {
+			fn(c)
+		}
+	})
 }
 
 type conn struct {
@@ -127,8 +153,6 @@ type conn struct {
 	ws   *websocket.Conn
 	rpc  *jsonrpc.Conn
 
-	// deliver keeps events from passing a view being read, so a client sees each change after the view it changes.
-	deliver     sync.Mutex
 	mu          sync.Mutex
 	initialized bool
 	asked       map[string]bool
@@ -160,7 +184,20 @@ func (c *conn) Call(ctx context.Context, method string, params json.RawMessage) 
 	if !ok {
 		return nil, nil, jsonrpc.Errorf(jsonrpc.CodeMethodNotFound, "method %q not found", method)
 	}
-	return m.call(c, ctx, params)
+	// Each request starts a trace of its own, linked to whatever traced the connection: a connection lasts for hours,
+	// and what its client sends is not trusted to name a parent.
+	ctx, span := tracer.Start(ctx, method, trace.WithNewRoot(), trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithLinks(trace.LinkFromContext(ctx)), trace.WithAttributes(
+			attribute.String("rpc.system", "jsonrpc"), attribute.String("rpc.method", method), attribute.String("ollupi.user.id", c.user)))
+	defer span.End()
+	result, after, rerr := m.call(c, ctx, params)
+	if rerr != nil {
+		span.SetAttributes(attribute.Int("rpc.jsonrpc.error_code", rerr.Code))
+		if rerr.Code == jsonrpc.CodeServerError || rerr.Code == jsonrpc.CodeInternalError {
+			span.SetStatus(codes.Error, rerr.Message)
+		}
+	}
+	return result, after, rerr
 }
 
 func (c *conn) initialize(ctx context.Context, _ InitializeParams) (InitializeResult, func(), error) {
@@ -231,10 +268,6 @@ func (c *conn) event(e agent.Event) {
 		c.rpc.Notify(notifyThreadStatusChanged, ThreadStatusNotification{ThreadID: e.Thread.ID, Status: e.Status})
 	case agent.EventWorkspaceChanged:
 		c.rpc.Notify(notifyWorkspaceChanged, WorkspaceResult{Workspace: workspaceRow(*e.Workspace)})
-	case agent.EventEnvironmentChanged:
-		c.environmentChanged(e.Environment.ID)
-	case agent.EventCronJobChanged:
-		c.cronChanged(e.CronJobID, e.Thread.ID)
 	case agent.EventApprovalRequested, agent.EventUserInputRequested:
 		c.request(e.Thread.ID, *e.Item)
 	}

@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
+	"github.com/0xfakeSpike/ollupi/pkg/wshub"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
 	"github.com/coder/websocket"
@@ -38,7 +40,7 @@ func TestAConnectionReadsOnlyItsUsersRows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c := &conn{s: s, user: "b"}
+	c := &conn{s: s, user: "b", rpc: jsonrpc.NewConn(nil)}
 
 	if _, _, err := threadPage(false)(c, ctx, ThreadPageParams{ThreadID: "t"}); !errors.Is(err, repo.ErrNotFound) {
 		t.Errorf("read the thread: %v", err)
@@ -53,15 +55,14 @@ func TestAConnectionReadsOnlyItsUsersRows(t *testing.T) {
 	if _, _, err := c.cronDelete(ctx, CronDeleteParams{ThreadID: "t", Name: "x"}); !errors.Is(err, repo.ErrNotFound) {
 		t.Errorf("delete a task: %v", err)
 	}
-	owner := &conn{s: s, user: "a"}
+	owner := &conn{s: s, user: "a", rpc: jsonrpc.NewConn(nil)}
 	if _, _, err := owner.cronCreate(ctx, CronCreateParams{ThreadID: "t", Name: "x", Spec: "@daily", Prompt: "go"}); err != nil {
 		t.Fatal(err)
 	}
-	list, after, err := c.cronList(ctx, CronListParams{})
+	list, _, err := c.cronList(ctx, CronListParams{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	after()
 	if len(list.Data) != 0 {
 		t.Errorf("b lists tasks: %+v", list.Data)
 	}
@@ -171,9 +172,22 @@ func TestEachUserHasTheirOwnConnectionAndEvents(t *testing.T) {
 		t.Errorf("b received an event of %q", got)
 	}
 
-	newer := userClient(ctx, t, gw.URL, "token-a")
-	if _, _, err := a.Read(ctx); websocket.CloseStatus(err) != websocket.StatusPolicyViolation {
-		t.Errorf("a's older connection: %v", err)
+	// a's second device hears a's events beside the first.
+	second := userClient(ctx, t, gw.URL, "token-a")
+	s.Deliver(changed("a", "both-a"))
+	for i, ws := range []*websocket.Conn{a, second} {
+		if got := nextThread(ctx, t, ws); got != "both-a" {
+			t.Errorf("a's connection %d received %q", i, got)
+		}
+	}
+
+	// Beyond the most a user may hold, the newest connection takes the oldest's place.
+	var newer *websocket.Conn
+	for range DefaultConnections.PerKey - 1 {
+		newer = userClient(ctx, t, gw.URL, "token-a")
+	}
+	if _, _, err := a.Read(ctx); websocket.CloseStatus(err) != wshub.StatusReplaced {
+		t.Errorf("a's oldest connection: %v", err)
 	}
 	s.Deliver(changed("b", "still-b"))
 	if got := nextThread(ctx, t, b); got != "still-b" {

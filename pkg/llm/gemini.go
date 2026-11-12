@@ -26,7 +26,7 @@ type Gemini struct {
 
 func NewGemini(baseURL, apiKey string, calls int, limits map[string]Limits) (*Gemini, error) {
 	// Without RetryOptions the client sends a request once; these retry as the other providers' clients do.
-	cfg := &genai.ClientConfig{APIKey: apiKey, Backend: genai.BackendGeminiAPI, HTTPOptions: genai.HTTPOptions{BaseURL: baseURL,
+	cfg := &genai.ClientConfig{APIKey: apiKey, Backend: genai.BackendGeminiAPI, HTTPClient: httpClient, HTTPOptions: genai.HTTPOptions{BaseURL: baseURL,
 		RetryOptions: &genai.HTTPRetryOptions{Attempts: genai.Ptr[int32](retries + 1), InitialDelay: genai.Ptr(0.5), MaxDelay: genai.Ptr(8.0)}}}
 	client, err := genai.NewClient(context.Background(), cfg)
 	if err != nil {

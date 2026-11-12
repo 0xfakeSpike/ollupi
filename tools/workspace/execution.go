@@ -3,12 +3,20 @@ package workspace
 import (
 	"context"
 	"fmt"
+	"path"
 	"strings"
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/tools"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
+
+// Commands are traced through the global TracerProvider, as the agent's runs are.
+var tracer = otel.Tracer("github.com/0xfakeSpike/ollupi/tools/workspace")
 
 func (r *Provider) prepareCommand(ctx context.Context, args map[string]any) (*tools.Prepared, error) {
 	d, err := r.dirs(ctx)
@@ -155,6 +163,11 @@ func (r *Provider) runCommand(ctx context.Context, args map[string]any, p *tools
 	if current != p.Program {
 		return tools.Result{}, fmt.Errorf("workspace: approved executable now resolves to a different path")
 	}
+	// Only the program's name goes into the trace: its path and arguments can name the user's files.
+	ctx, span := tracer.Start(ctx, "ollupi.sandbox.run", trace.WithAttributes(
+		attribute.String("process.executable.name", path.Base(p.Program)), attribute.Bool("ollupi.sandbox.escalated", p.Escalated),
+		attribute.Bool("ollupi.sandbox.enforced", d.box.Enforced())))
+	defer span.End()
 	res, err := d.box.Run(ctx, sandbox.Command{
 		Program: p.Program, Args: p.Args, Cwd: p.Cwd, Env: p.Env,
 		Timeout: time.Duration(p.TimeoutSec) * time.Second,
@@ -163,8 +176,11 @@ func (r *Provider) runCommand(ctx context.Context, args map[string]any, p *tools
 		Unsandboxed: p.Escalated,
 	})
 	if err != nil {
+		span.SetStatus(codes.Error, "")
 		return tools.Result{}, err
 	}
+	span.SetAttributes(attribute.Int("process.exit.code", res.ExitCode), attribute.Int("ollupi.sandbox.denials", len(res.Denials)),
+		attribute.Bool("ollupi.sandbox.truncated", res.Truncated))
 	out := CommandOutput{Stdout: res.Stdout, Stderr: res.Stderr, ExitCode: res.ExitCode, WorkDir: p.Cwd,
 		Signal: res.Signal, Truncated: res.Truncated, SandboxDenials: res.Denials}
 	if p.Escalated {

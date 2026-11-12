@@ -3540,6 +3540,50 @@
     "-32603": "internalError",
     "-32700": "parseError"
   },
+  "closes": {
+    "1001": {
+      "name": "goingAway",
+      "reconnect": "soon"
+    },
+    "1006": {
+      "name": "abnormal",
+      "reconnect": "backoff"
+    },
+    "1008": {
+      "name": "policyViolation",
+      "reconnect": "backoff"
+    },
+    "1009": {
+      "name": "messageTooBig",
+      "reconnect": "backoff"
+    },
+    "1011": {
+      "name": "internalError",
+      "reconnect": "backoff"
+    },
+    "4000": {
+      "name": "replaced",
+      "reconnect": "never"
+    }
+  },
+  "handshakes": {
+    "401": {
+      "name": "unauthorized",
+      "reconnect": "never"
+    },
+    "403": {
+      "name": "forbidden",
+      "reconnect": "never"
+    },
+    "500": {
+      "name": "internalError",
+      "reconnect": "backoff"
+    },
+    "503": {
+      "name": "unavailable",
+      "reconnect": "retryAfter"
+    }
+  },
   "builtinTools": {
     "Agent": {
       "arguments": {

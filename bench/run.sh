@@ -16,7 +16,7 @@ locks=$root/bench/compare/.locks
 
 all="parked isolated steady-512 steady-1024 steady-1536 steady-2048 steady-3072 steady-4096 steady-faults
 steady-lognormal steady-workspace-write steady-full-access burst resume crash crash-lease mix fanout soak users
-users-slots users-limit"
+users-slots users-limit conns conns-router"
 
 # args prints what an experiment runs as; experiments that keep a timeline write it beside their output.
 args() {
@@ -38,6 +38,8 @@ args() {
 	users) echo "users" ;;
 	users-slots) echo "users -user-slots 64" ;;
 	users-limit) echo "users -user-slots 64 -heavy-calls 64 -heavy-limit 32" ;;
+	conns) echo "conns -n 1000,2000,4000,8000 -storm" ;;
+	conns-router) echo "conns -n 1000,2000,4000 -router -storm" ;;
 	*) return 1 ;;
 	esac
 }

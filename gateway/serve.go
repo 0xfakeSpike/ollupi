@@ -10,10 +10,12 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/agent/memory"
+	"github.com/0xfakeSpike/ollupi/pkg/wshub"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
 	"github.com/0xfakeSpike/ollupi/tools/mcp"
@@ -32,6 +34,14 @@ type Options struct {
 	Memory       *memory.Manager
 	Jobs         *cron.Jobs
 	MCP          *mcp.Users
+	// Connections bounds the clients' connections; the zero value takes DefaultConnections.
+	Connections wshub.Options
+	// Shard is the shard this gateway serves, and Placements where it finds which users are on it. Without them the
+	// gateway serves every user Authenticate knows, as where there is one shard.
+	Shard      string
+	Placements Placements
+	// Load reports how busy this shard is to the router, for placing new users; it needs Shard.
+	Load Load
 }
 
 func NewServer(a *agent.Agent, opts Options) (*Server, error) {
@@ -46,6 +56,23 @@ func NewServer(a *agent.Agent, opts Options) (*Server, error) {
 	if opts.DB == nil {
 		return nil, errors.New("gateway: the agent's database is required")
 	}
+	if (opts.Shard == "") != (opts.Placements == nil) {
+		return nil, errors.New("gateway: Shard and Placements go together")
+	}
+	load, err := opts.Load.withDefaults()
+	if err != nil {
+		return nil, err
+	}
+	if load.Reporter != nil && opts.Shard == "" {
+		return nil, errors.New("gateway: a gateway reports its load as a shard, so Load needs Shard")
+	}
+	if opts.Connections == (wshub.Options{}) {
+		opts.Connections = DefaultConnections
+	}
+	hub, err := wshub.New[*conn](opts.Connections)
+	if err != nil {
+		return nil, fmt.Errorf("gateway: %w", err)
+	}
 	s := &Server{
 		agent:        a,
 		db:           opts.DB,
@@ -53,14 +80,24 @@ func NewServer(a *agent.Agent, opts Options) (*Server, error) {
 		jobs:         opts.Jobs,
 		mcp:          opts.MCP,
 		authenticate: opts.Authenticate,
+		shard:        opts.Shard,
+		placements:   opts.Placements,
+		load:         load,
 		hosts:        append(slices.Clone(localHosts), opts.AllowedHosts...),
 		origins:      append([]string{"localhost:*", "127.0.0.1:*", "[::1]:*"}, opts.AllowedOrigins...),
-		clients:      map[string]*conn{},
+		hub:          hub,
 	}
 	return s, nil
 }
 
 func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
+	var reporting sync.WaitGroup
+	defer reporting.Wait()
+	ctx, stop := context.WithCancel(ctx)
+	defer stop()
+	if s.load.Reporter != nil {
+		reporting.Go(func() { s.reportLoad(ctx) })
+	}
 	mux := http.NewServeMux()
 	mux.Handle("GET /", s)
 	srv := &http.Server{
@@ -93,7 +130,41 @@ const (
 	idleTimeout       = 2 * time.Minute
 )
 
+// DefaultConnections bounds the WebSocket connections a gateway holds unless Options says otherwise. The admission
+// rate is a guess, not yet measured: each new connection sets off database work, so a restarted shard takes its users
+// back a few hundred a second. MaxAge stays under the 24 hours that Google Cloud's global external Application Load
+// Balancer keeps a WebSocket open at most; a deployment behind a balancer that cuts them sooner sets it lower.
+var DefaultConnections = wshub.Options{
+	PerKey:      4,
+	Rate:        200,
+	Burst:       400,
+	RetryWithin: 5 * time.Second,
+	PingEvery:   30 * time.Second,
+	PongWithin:  15 * time.Second,
+	MaxAge:      20 * time.Hour,
+}
+
 var localHosts = []string{"localhost", "127.0.0.1", "::1"}
+
+// tokenProtocol is the WebSocket subprotocol a browser, which cannot set Authorization, offers just before its token.
+const tokenProtocol = "ollupi.token"
+
+// TokenOf reads the token a client sent. It stays out of the URL, which access logs keep.
+func TokenOf(header http.Header) string {
+	if bearer, ok := strings.CutPrefix(header.Get("Authorization"), "Bearer "); ok {
+		return bearer
+	}
+	var offered []string
+	for _, header := range header.Values("Sec-WebSocket-Protocol") {
+		for protocol := range strings.SplitSeq(header, ",") {
+			offered = append(offered, strings.TrimSpace(protocol))
+		}
+	}
+	if i := slices.Index(offered, tokenProtocol); i >= 0 && i+1 < len(offered) {
+		return offered[i+1]
+	}
+	return ""
+}
 
 // authorize says whose request this is, or the status and reason to refuse it with.
 func (s *Server) authorize(r *http.Request) (string, int, string) {
@@ -104,7 +175,7 @@ func (s *Server) authorize(r *http.Request) (string, int, string) {
 	if !slices.Contains(s.hosts, strings.Trim(host, "[]")) {
 		return "", http.StatusForbidden, "host not allowed"
 	}
-	user, ok := s.authenticate(tokenOf(r))
+	user, ok := s.authenticate(TokenOf(r.Header))
 	if !ok {
 		return "", http.StatusUnauthorized, "invalid or missing gateway token"
 	}
