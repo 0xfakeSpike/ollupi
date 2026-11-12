@@ -14,6 +14,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
+	"github.com/0xfakeSpike/ollupi/pkg/wshub"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
@@ -39,10 +40,9 @@ type Server struct {
 	authenticate func(token string) (string, bool)
 	hosts        []string
 	origins      []string
-	mu           sync.Mutex
-	// clients holds each user's connection; a user's newer connection replaces their older one.
-	clients map[string]*conn
-	served  sync.WaitGroup
+	// hub holds the users' connections, keyed by user.
+	hub    *wshub.Hub[*conn]
+	served sync.WaitGroup
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -51,6 +51,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	user, status, why := s.authorize(r)
 	if status != 0 {
 		http.Error(w, why, status)
+		return
+	}
+	if !s.hub.Admit(w) {
 		return
 	}
 	if err := s.db.EnsureUser(user); err != nil {
@@ -65,37 +68,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	ws.SetReadLimit(maxMessageBytes)
 	c := &conn{s: s, user: user, ws: ws, rpc: jsonrpc.NewConn(ws), asked: make(map[string]bool)}
-	s.mu.Lock()
-	previous := s.clients[user]
-	s.clients[user] = c
-	s.mu.Unlock()
-	if previous != nil {
-		slog.Info("client replaced by a newer connection")
-		go previous.ws.Close(websocket.StatusPolicyViolation, "replaced by a newer connection")
-	}
 	slog.Info("client connected", "origin", r.Header.Get("Origin"))
-	defer func() {
-		s.mu.Lock()
-		if s.clients[user] == c {
-			delete(s.clients, user)
-		}
-		s.mu.Unlock()
-	}()
-
-	stop := context.AfterFunc(r.Context(), func() { ws.Close(websocket.StatusGoingAway, "server shutting down") })
-	defer stop()
-	err = c.rpc.Serve(r.Context(), c)
-	switch status := websocket.CloseStatus(err); {
-	case status == websocket.StatusNormalClosure || status == websocket.StatusGoingAway || r.Context().Err() != nil:
-		slog.Info("client disconnected")
-		ws.Close(websocket.StatusNormalClosure, "")
-	default:
-		slog.Warn("client connection failed", "err", err)
-		ws.Close(websocket.StatusInternalError, "connection error")
-	}
+	s.hub.Serve(r.Context(), user, ws, c, func(ctx context.Context) error { return c.rpc.Serve(ctx, c) })
 }
 
-// Deliver sends an event to the user it belongs to; one that names no user goes to nobody, the log has it.
+// Deliver sends an event to the connections of the user it belongs to; one that names no user goes to nobody, the
+// log has it.
 func (s *Server) Deliver(e agent.Event) {
 	user := e.Thread.UserID
 	if e.Workspace != nil {
@@ -104,21 +82,23 @@ func (s *Server) Deliver(e agent.Event) {
 	if e.Environment != nil {
 		user = e.Environment.UserID
 	}
-	if c := s.current(user); c != nil {
-		c.deliver.Lock()
-		defer c.deliver.Unlock()
-		c.event(e)
+	switch e.Kind {
+	case agent.EventEnvironmentChanged:
+		s.environmentChanged(user, e.Environment.ID)
+	case agent.EventCronJobChanged:
+		s.cronChanged(user, e.CronJobID, e.Thread.ID)
+	default:
+		s.each(user, func(c *conn) { c.event(e) })
 	}
 }
 
-func (s *Server) current(user string) *conn {
-	s.mu.Lock()
-	c := s.clients[user]
-	s.mu.Unlock()
-	if c == nil || !c.isInitialized() {
-		return nil
-	}
-	return c
+// each calls fn with each of the user's connections that has been initialized.
+func (s *Server) each(user string, fn func(*conn)) {
+	s.hub.Each(user, func(c *conn) {
+		if c.isInitialized() {
+			fn(c)
+		}
+	})
 }
 
 type conn struct {
@@ -127,8 +107,6 @@ type conn struct {
 	ws   *websocket.Conn
 	rpc  *jsonrpc.Conn
 
-	// deliver keeps events from passing a view being read, so a client sees each change after the view it changes.
-	deliver     sync.Mutex
 	mu          sync.Mutex
 	initialized bool
 	asked       map[string]bool
@@ -231,10 +209,6 @@ func (c *conn) event(e agent.Event) {
 		c.rpc.Notify(notifyThreadStatusChanged, ThreadStatusNotification{ThreadID: e.Thread.ID, Status: e.Status})
 	case agent.EventWorkspaceChanged:
 		c.rpc.Notify(notifyWorkspaceChanged, WorkspaceResult{Workspace: workspaceRow(*e.Workspace)})
-	case agent.EventEnvironmentChanged:
-		c.environmentChanged(e.Environment.ID)
-	case agent.EventCronJobChanged:
-		c.cronChanged(e.CronJobID, e.Thread.ID)
 	case agent.EventApprovalRequested, agent.EventUserInputRequested:
 		c.request(e.Thread.ID, *e.Item)
 	}
