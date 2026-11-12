@@ -68,6 +68,8 @@ Building and testing need SQLite's FTS5: `go test -tags sqlite_fts5 ./...`, or s
 
 Clients authenticate with `Authorization: Bearer <token>`. Browsers can't set this header, so they put the token in the WebSocket subprotocol instead: `new WebSocket(url, ["ollupi.token", token])`. Tokens never go in the URL.
 
+A user may hold up to four connections at once, one per device, and each hears all of the user's events; a fifth takes the oldest's place. The gateway pings each connection every 30 seconds and drops one whose peer has not answered within 15. Connections are admitted at a bounded rate, so after a restart a client may be refused with 503 and a `Retry-After` in seconds: wait that long, then reconnect with backoff.
+
 ## License
 
 [MIT](LICENSE)

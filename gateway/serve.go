@@ -14,6 +14,7 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/agent/memory"
+	"github.com/0xfakeSpike/ollupi/pkg/wshub"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
 	"github.com/0xfakeSpike/ollupi/tools/mcp"
@@ -46,6 +47,10 @@ func NewServer(a *agent.Agent, opts Options) (*Server, error) {
 	if opts.DB == nil {
 		return nil, errors.New("gateway: the agent's database is required")
 	}
+	hub, err := wshub.New[*conn](connections)
+	if err != nil {
+		return nil, fmt.Errorf("gateway: %w", err)
+	}
 	s := &Server{
 		agent:        a,
 		db:           opts.DB,
@@ -55,7 +60,7 @@ func NewServer(a *agent.Agent, opts Options) (*Server, error) {
 		authenticate: opts.Authenticate,
 		hosts:        append(slices.Clone(localHosts), opts.AllowedHosts...),
 		origins:      append([]string{"localhost:*", "127.0.0.1:*", "[::1]:*"}, opts.AllowedOrigins...),
-		clients:      map[string]*conn{},
+		hub:          hub,
 	}
 	return s, nil
 }
@@ -92,6 +97,17 @@ const (
 	readHeaderTimeout = 5 * time.Second
 	idleTimeout       = 2 * time.Minute
 )
+
+// connections bounds the WebSocket connections a gateway holds. The admission rate is a guess, not yet measured: each
+// new connection sets off database work, so a restarted shard takes its users back a few hundred a second.
+var connections = wshub.Options{
+	PerKey:      4,
+	Rate:        200,
+	Burst:       400,
+	RetryWithin: 5 * time.Second,
+	PingEvery:   30 * time.Second,
+	PongWithin:  15 * time.Second,
+}
 
 var localHosts = []string{"localhost", "127.0.0.1", "::1"}
 

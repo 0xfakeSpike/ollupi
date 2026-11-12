@@ -47,17 +47,24 @@ func environmentResult(env repo.EnvironmentRow, err error) (EnvironmentResult, f
 	return EnvironmentResult{Environment: environmentRow(env)}, nil, err
 }
 
-// environmentChanged tells the client an environment changed, or, when it can no longer be read, that it is gone.
-func (c *conn) environmentChanged(id string) {
-	n := EnvironmentChangedNotification{EnvironmentID: id}
-	env, err := c.s.db.EnvironmentOf(c.user, id)
-	switch {
-	case err == nil:
-		row := environmentRow(env)
-		n.Environment = &row
-	case !errors.Is(err, repo.ErrNotFound):
-		slog.Error("changed environment not readable", "environment", id, "err", err)
-		return
-	}
-	c.rpc.Notify(notifyEnvironmentChanged, n)
+// environmentChanged tells the user's connections that an environment changed, or, when it can no longer be read,
+// that it is gone. It reads the environment only when a connection is there to tell.
+func (s *Server) environmentChanged(user, id string) {
+	var n *EnvironmentChangedNotification
+	s.each(user, func(c *conn) {
+		if n == nil {
+			read := EnvironmentChangedNotification{EnvironmentID: id}
+			env, err := s.db.EnvironmentOf(user, id)
+			switch {
+			case err == nil:
+				row := environmentRow(env)
+				read.Environment = &row
+			case !errors.Is(err, repo.ErrNotFound):
+				slog.Error("changed environment not readable", "environment", id, "err", err)
+				return
+			}
+			n = &read
+		}
+		c.rpc.Notify(notifyEnvironmentChanged, *n)
+	})
 }

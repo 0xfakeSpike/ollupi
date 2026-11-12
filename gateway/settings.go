@@ -19,5 +19,5 @@ func (c *conn) settingsUpdate(ctx context.Context, p SettingsUpdateParams) (Sett
 		return SettingsRow{}, nil, err
 	}
 	row := settingsRow(settings)
-	return row, func() { c.rpc.Notify(notifySettingsChanged, row) }, nil
+	return row, func() { c.s.each(c.user, func(o *conn) { o.rpc.Notify(notifySettingsChanged, row) }) }, nil
 }

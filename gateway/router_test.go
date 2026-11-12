@@ -130,7 +130,7 @@ func TestTheRouterSendsEachUserToTheirShard(t *testing.T) {
 
 	// a's shard changes hands: the old process goes, clients fail for now, and the new one publishes itself.
 	old := homeOf[shardA]
-	old.server.current("a").ws.CloseNow() // A process that dies takes its sockets with it; this one lives on in the test.
+	old.server.each("a", func(c *conn) { c.ws.CloseNow() }) // A process that dies takes its sockets with it; this one lives on in the test.
 	old.http.Close()
 	if _, _, err := a.Read(ctx); err == nil {
 		t.Error("a's connection outlived its shard")
