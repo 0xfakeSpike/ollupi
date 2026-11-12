@@ -94,6 +94,21 @@ func (a *Agent) AnswerUserInput(user, threadID, itemID string, answers userinput
 	})
 }
 
+// SkipUserInput declines a question the agent asked: the call ends declined, telling the model the user chose not to
+// answer, and the turn goes on.
+func (a *Agent) SkipUserInput(user, threadID, itemID string) error {
+	return a.call(func() error {
+		if err := a.owned(user, threadID); err != nil {
+			return err
+		}
+		return a.respond(threadID, func(it repo.ItemRow) bool { return it.ID == itemID && !it.WaitsForApproval() }, func(it repo.ItemRow) (repo.ItemRow, error) {
+			now := time.Now().UTC()
+			it.Status, it.Error, it.CompletedAt = repo.ItemDeclined, "the user skipped these questions; go on without their answers", &now
+			return it, nil
+		})
+	})
+}
+
 func (a *Agent) startTurn(threadID string, in Input, atts []repo.Attachment) (repo.TurnRow, error) {
 	text, err := checkMessage(in.Text, len(in.Attachments))
 	if err != nil {

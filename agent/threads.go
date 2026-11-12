@@ -133,6 +133,25 @@ func (a *Agent) RenameThread(user, id, title string) (repo.ThreadRow, error) {
 	return t, err
 }
 
+// MarkThreadRead records that the user has read a thread as it is now, so it is no longer unread until another turn
+// ends. Other clients hear of it as a thread change.
+func (a *Agent) MarkThreadRead(user, id string) (repo.ThreadRow, error) {
+	var t repo.ThreadRow
+	err := a.call(func() error {
+		if _, err := a.topThread(user, id); err != nil {
+			return err
+		}
+		row, err := a.cfg.DB.MarkThreadRead(id, time.Now())
+		if err != nil {
+			return fmt.Errorf("agent: thread %s: %w", id, err)
+		}
+		t = row
+		a.emit(Event{Kind: EventThreadChanged, Thread: t})
+		return nil
+	})
+	return t, err
+}
+
 func (a *Agent) ArchiveThread(user, id string, archived bool) (repo.ThreadRow, error) {
 	var t repo.ThreadRow
 	err := a.call(func() error {

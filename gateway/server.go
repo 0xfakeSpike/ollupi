@@ -305,6 +305,9 @@ func (c *conn) resolve(threadID string, it repo.ItemRow, result json.RawMessage)
 		if err := json.Unmarshal(result, &r); err != nil {
 			return err
 		}
+		if r.Skipped {
+			return c.s.agent.SkipUserInput(c.user, threadID, it.ID)
+		}
 		return c.s.agent.AnswerUserInput(c.user, threadID, it.ID, r.Answers)
 	}
 	var r ApprovalResponse

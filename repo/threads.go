@@ -27,9 +27,19 @@ type ThreadRow struct {
 	// threads_list and threads_workspace_list hold the top-level threads in list order, read backwards for newest first.
 	UpdatedAt  time.Time  `gorm:"not null;autoUpdateTime:false;index:threads_list,priority:2,where:parent_thread_id IS NULL;index:threads_workspace_list,priority:2,where:parent_thread_id IS NULL" json:"updatedAt"`
 	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
+	// RepliedAt is when a turn of the thread last ended, with something new to read: an answer, a failure, a stop.
+	// It is unset before the first turn ends.
+	RepliedAt *time.Time `json:"repliedAt,omitempty"`
+	// ReadAt is when the user last read the thread (thread/markRead). The thread is unread while RepliedAt is later.
+	ReadAt *time.Time `json:"readAt,omitempty"`
 }
 
 func (ThreadRow) TableName() string { return "threads" }
+
+// Unread reports whether a turn ended after the user last read the thread.
+func (t ThreadRow) Unread() bool {
+	return t.RepliedAt != nil && (t.ReadAt == nil || t.RepliedAt.After(*t.ReadAt))
+}
 
 func (d *DB) Thread(id string) (ThreadView, error) {
 	var out ThreadView
@@ -155,6 +165,20 @@ func (d *DB) SetThreadTitle(id, title string) (ThreadRow, error) {
 	var row ThreadRow
 	err := d.Tx(func(tx *DB) error {
 		if err := checkOne(tx.gorm.Model(&ThreadRow{}).Where("id = ?", id).Update("title", title)); err != nil {
+			return fmt.Errorf("thread %s: %w", id, err)
+		}
+		var err error
+		row, err = tx.ThreadRow(id)
+		return err
+	})
+	return row, err
+}
+
+// MarkThreadRead records that the user has read the thread up to at.
+func (d *DB) MarkThreadRead(id string, at time.Time) (ThreadRow, error) {
+	var row ThreadRow
+	err := d.Tx(func(tx *DB) error {
+		if err := checkOne(tx.gorm.Model(&ThreadRow{}).Where("id = ?", id).Update("read_at", at.UTC())); err != nil {
 			return fmt.Errorf("thread %s: %w", id, err)
 		}
 		var err error
