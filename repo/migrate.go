@@ -3,67 +3,33 @@ package repo
 import (
 	"embed"
 	"fmt"
-	"path"
-	"slices"
-	"strconv"
-	"strings"
+	"io/fs"
 
+	"github.com/0xfakeSpike/ollupi/pkg/sqlitedb"
 	"gorm.io/gorm"
 )
 
-// The schema changes by numbered steps, migrations/NNNN_<what>.sql, each
-// run once, in order, in its own transaction. 0001_init.sql is the schema
-// as it was when they began. A database records how many steps it has taken
-// in PRAGMA user_version; one taken further than this ollupi knows, by a
-// newer ollupi, is refused rather than used. Steps only go forward.
-//
-// Steps run with foreign keys off, so one can rebuild a table the others
-// refer to without cascading deletes; before a step commits, the keys of
-// every row are checked, and any that points nowhere fails the step.
+// The shard's schema changes by the numbered steps in migrations/, as pkg/sqlitedb runs them. 0001_init.sql is the
+// schema as it was when they began.
 
-//go:embed migrations/*.sql catalog_migrations/*.sql
+//go:embed migrations/*.sql
 var migrationFiles embed.FS
 
-// shardMigrations are a shard's steps; catalogMigrations, the catalog's, which
-// change the same way.
-const (
-	shardMigrations   = "migrations"
-	catalogMigrations = "catalog_migrations"
-)
-
-// steps are the SQL of the migrations in dir in order; their numbers run from
-// 1 without a gap.
-func steps(dir string) ([]string, error) {
-	entries, err := migrationFiles.ReadDir(dir)
+// shardSteps are the SQL of the shard's migrations in order.
+func shardSteps() ([]string, error) {
+	dir, err := fs.Sub(migrationFiles, "migrations")
 	if err != nil {
 		return nil, err
 	}
-	names := make([]string, 0, len(entries))
-	for _, e := range entries {
-		names = append(names, e.Name())
-	}
-	slices.Sort(names)
-	out := make([]string, 0, len(names))
-	for i, name := range names {
-		number, _, ok := strings.Cut(name, "_")
-		if n, err := strconv.Atoi(number); !ok || err != nil || n != i+1 || len(number) != 4 || !strings.HasSuffix(name, ".sql") {
-			return nil, fmt.Errorf("migration %s: want %04d_<what>.sql", name, i+1)
-		}
-		sql, err := migrationFiles.ReadFile(path.Join(dir, name))
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, string(sql))
-	}
-	return out, nil
+	return sqlitedb.Steps(dir)
 }
 
 func (d *DB) migrate() error {
-	all, err := steps(shardMigrations)
+	all, err := shardSteps()
 	if err != nil {
 		return err
 	}
-	version, err := schemaVersion(d.gorm, len(all))
+	version, err := sqlitedb.Version(d.gorm, len(all))
 	if err != nil {
 		return err
 	}
@@ -86,59 +52,5 @@ func (d *DB) migrate() error {
 			version = 1
 		}
 	}
-	return migrateFrom(d.gorm, all, version)
-}
-
-func migrateCatalog(g *gorm.DB) error {
-	all, err := steps(catalogMigrations)
-	if err != nil {
-		return err
-	}
-	version, err := schemaVersion(g, len(all))
-	if err != nil {
-		return err
-	}
-	return migrateFrom(g, all, version)
-}
-
-func schemaVersion(g *gorm.DB, known int) (int, error) {
-	var version int
-	if err := g.Raw("PRAGMA user_version").Scan(&version).Error; err != nil {
-		return 0, fmt.Errorf("read schema version: %w", err)
-	}
-	if version > known {
-		return 0, fmt.Errorf("the database is at schema version %d, from a newer ollupi; this one knows up to %d", version, known)
-	}
-	return version, nil
-}
-
-// migrateFrom takes the steps after version.
-func migrateFrom(g *gorm.DB, all []string, version int) error {
-	if version == len(all) {
-		return nil
-	}
-	if err := g.Exec("PRAGMA foreign_keys = OFF").Error; err != nil {
-		return fmt.Errorf("turn foreign keys off to migrate: %w", err)
-	}
-	for i := version; i < len(all); i++ {
-		if err := g.Transaction(func(tx *gorm.DB) error {
-			if err := tx.Exec(all[i]).Error; err != nil {
-				return err
-			}
-			var broken []struct{ Table string }
-			if err := tx.Raw("PRAGMA foreign_key_check").Scan(&broken).Error; err != nil {
-				return err
-			}
-			if len(broken) > 0 {
-				return fmt.Errorf("%d rows of %s refer to rows that do not exist", len(broken), broken[0].Table)
-			}
-			return tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", i+1)).Error
-		}); err != nil {
-			return fmt.Errorf("migrate to schema version %d: %w", i+1, err)
-		}
-	}
-	if err := g.Exec("PRAGMA foreign_keys = ON").Error; err != nil {
-		return fmt.Errorf("turn foreign keys back on after migrating: %w", err)
-	}
-	return nil
+	return sqlitedb.Migrate(d.gorm, all, version)
 }

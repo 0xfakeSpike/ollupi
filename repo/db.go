@@ -5,17 +5,14 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
-	"net/url"
-	"os"
 	"path/filepath"
 	"slices"
 	"sync/atomic"
 	"time"
 
-	"gorm.io/driver/sqlite"
+	"github.com/0xfakeSpike/ollupi/pkg/sqlitedb"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"gorm.io/gorm/logger"
 )
 
 type DB struct {
@@ -31,7 +28,7 @@ func (d *DB) WithContext(ctx context.Context) *DB {
 
 func Open(homeDir string) (*DB, error) {
 	path := filepath.Join(homeDir, "data", "ollupi.sqlite")
-	g, err := openFile(path)
+	g, err := sqlitedb.Open(path)
 	if err != nil {
 		return nil, err
 	}
@@ -42,7 +39,7 @@ func Open(homeDir string) (*DB, error) {
 	}
 	if err != nil {
 		err = fmt.Errorf("storage: %s: %w", path, err)
-		if cerr := closeGorm(g); cerr != nil {
+		if cerr := sqlitedb.Close(g); cerr != nil {
 			return nil, fmt.Errorf("%w (close: %v)", err, cerr)
 		}
 		return nil, err
@@ -50,42 +47,7 @@ func Open(homeDir string) (*DB, error) {
 	return db, nil
 }
 
-func closeGorm(g *gorm.DB) error {
-	conn, err := g.DB()
-	if err != nil {
-		return err
-	}
-	return conn.Close()
-}
-
-// openFile opens a database file on its one connection, making its folder if need be.
-func openFile(path string) (*gorm.DB, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, fmt.Errorf("storage: create directory of %s: %w", path, err)
-	}
-
-	dsn := (&url.URL{
-		Scheme:   "file",
-		Path:     filepath.ToSlash(path),
-		RawQuery: "_busy_timeout=5000&_journal_mode=WAL&_foreign_keys=on",
-	}).String()
-	g, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-
-		NowFunc: func() time.Time { return time.Now().UTC() },
-	})
-	if err != nil {
-		return nil, fmt.Errorf("storage: open %s: %w", path, err)
-	}
-	conn, err := g.DB()
-	if err != nil {
-		return nil, fmt.Errorf("storage: open %s: %w", path, err)
-	}
-	conn.SetMaxOpenConns(1)
-	return g, nil
-}
-
-func (d *DB) Close() error { return closeGorm(d.gorm) }
+func (d *DB) Close() error { return sqlitedb.Close(d.gorm) }
 
 func (d *DB) applySchema() error {
 	if err := d.migrate(); err != nil {

@@ -3,16 +3,18 @@
 // ext_proc filter do. The load balancer then holds the connections: it sends the handshake's headers to the callout,
 // which sets ShardHeader to the user's shard, and routes on that header to the shard's backend. A handshake the
 // callout cannot place, a token that is no one's among them, goes without the header to the load balancer's default
-// backend, where a gateway.Router answers it. Either way the shard checks the user again with gateway.OnShard.
+// backend, where a router.Router answers it. Either way the shard checks the user again, through
+// gateway.Options.Placements.
 package extproc
 
 import (
+	"context"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 
-	"github.com/0xfakeSpike/ollupi/gateway"
+	"github.com/0xfakeSpike/ollupi/router"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	extprocv3 "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 )
@@ -24,10 +26,10 @@ const ShardHeader = "x-ollupi-shard"
 // Callout is the external processor; register it on a gRPC server with extprocv3.RegisterExternalProcessorServer.
 type Callout struct {
 	extprocv3.UnimplementedExternalProcessorServer
-	locator *gateway.Locator
+	locator *router.Locator
 }
 
-func New(locator *gateway.Locator) *Callout {
+func New(locator *router.Locator) *Callout {
 	return &Callout{locator: locator}
 }
 
@@ -45,7 +47,7 @@ func (c *Callout) Process(stream extprocv3.ExternalProcessor_ProcessServer) erro
 		var res extprocv3.ProcessingResponse
 		switch r := req.Request.(type) {
 		case *extprocv3.ProcessingRequest_RequestHeaders:
-			res.Response = &extprocv3.ProcessingResponse_RequestHeaders{RequestHeaders: &extprocv3.HeadersResponse{Response: c.place(r.RequestHeaders.GetHeaders())}}
+			res.Response = &extprocv3.ProcessingResponse_RequestHeaders{RequestHeaders: &extprocv3.HeadersResponse{Response: c.place(stream.Context(), r.RequestHeaders.GetHeaders())}}
 		case *extprocv3.ProcessingRequest_ResponseHeaders:
 			res.Response = &extprocv3.ProcessingResponse_ResponseHeaders{ResponseHeaders: &extprocv3.HeadersResponse{}}
 		case *extprocv3.ProcessingRequest_RequestBody:
@@ -66,7 +68,7 @@ func (c *Callout) Process(stream extprocv3.ExternalProcessor_ProcessServer) erro
 }
 
 // place sets ShardHeader to the shard of the user whose token the headers carry, or removes it.
-func (c *Callout) place(headers *corev3.HeaderMap) *extprocv3.CommonResponse {
+func (c *Callout) place(ctx context.Context, headers *corev3.HeaderMap) *extprocv3.CommonResponse {
 	header := http.Header{}
 	for _, h := range headers.GetHeaders() {
 		value := h.GetValue()
@@ -75,9 +77,9 @@ func (c *Callout) place(headers *corev3.HeaderMap) *extprocv3.CommonResponse {
 		}
 		header.Add(h.GetKey(), value)
 	}
-	user, shard, err := c.locator.Locate(header)
+	user, shard, err := c.locator.Locate(ctx, header)
 	if err != nil {
-		if !errors.Is(err, gateway.ErrUnknownToken) {
+		if !errors.Is(err, router.ErrUnknownToken) {
 			slog.Error("user not placed on a shard; the router takes the connection", "user", user, "err", err)
 		}
 		return &extprocv3.CommonResponse{HeaderMutation: &extprocv3.HeaderMutation{RemoveHeaders: []string{ShardHeader}}}
