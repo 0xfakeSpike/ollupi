@@ -197,6 +197,16 @@ func TestTrafficMatchesContract(t *testing.T) {
 
 	turn := c.startTurn(threadID, "hello")
 	c.awaitTurnEnd(turn, repo.TurnCompleted)
+	// The answer is unread until the user reads it; reading it tells every client.
+	var seen ThreadResult
+	c.call("thread/markRead", ThreadMarkReadParams{ThreadID: threadID}, &seen)
+	if seen.Thread.RepliedAt == nil || seen.Thread.Unread() {
+		t.Errorf("after thread/markRead: replied %v, read %v; want a reply that is read", seen.Thread.RepliedAt, seen.Thread.ReadAt)
+	}
+	c.await(notifyThreadChanged, func(params json.RawMessage) bool {
+		var n ThreadChangedNotification
+		return json.Unmarshal(params, &n) == nil && n.ThreadID == threadID && n.Thread != nil && n.Thread.ReadAt != nil
+	})
 
 	turn = c.startTurn(threadID, "please touch the file")
 	approval := c.await(requestApproval, nil)
@@ -260,6 +270,18 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.await("error", nil)
 	question = c.await(requestUserInput, nil)
 	c.respond(question, UserInputResponse{Answers: userinput.Answers{"color": {Answers: []string{"blue"}}}})
+	c.awaitTurnEnd(turn, repo.TurnCompleted)
+
+	// Skipping a question declines its call, and the turn goes on without the answer.
+	turn = c.startTurn(threadID, "ask me again")
+	question = c.await(requestUserInput, nil)
+	var skipped UserInputRequestParams
+	json.Unmarshal(question.Params, &skipped)
+	c.respond(question, UserInputResponse{Answers: userinput.Answers{}, Skipped: true})
+	c.await("item/completed", func(params json.RawMessage) bool {
+		var n ItemNotification
+		return json.Unmarshal(params, &n) == nil && n.Item.ID == skipped.ItemID && n.Item.Status == repo.ItemDeclined
+	})
 	c.awaitTurnEnd(turn, repo.TurnCompleted)
 
 	turn = c.startTurn(threadID, "delegate this")

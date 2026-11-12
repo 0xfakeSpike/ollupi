@@ -337,8 +337,12 @@ func (d *DB) EndTurn(threadID string, turn TurnRow) (ThreadRow, TurnRow, []ItemR
 		if thread, err = tx.ThreadRow(threadID); err != nil {
 			return err
 		}
-		thread.UpdatedAt = now
-		return tx.touchThread(threadID, now)
+		// The turn's end is news to whoever has not read the thread since.
+		thread.UpdatedAt, thread.RepliedAt = now, &now
+		if err := checkOne(tx.gorm.Model(&ThreadRow{}).Where("id = ?", threadID).Updates(map[string]any{"updated_at": now, "replied_at": now})); err != nil {
+			return fmt.Errorf("thread %s: %w", threadID, err)
+		}
+		return nil
 	})
 	if err != nil {
 		return ThreadRow{}, TurnRow{}, nil, fmt.Errorf("storage: end turn: %w", err)

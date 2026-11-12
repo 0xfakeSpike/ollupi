@@ -2253,6 +2253,18 @@
       ],
       "additionalProperties": false
     },
+    "ThreadMarkReadParams": {
+      "type": "object",
+      "properties": {
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "additionalProperties": false
+    },
     "ThreadPageParams": {
       "type": "object",
       "properties": {
@@ -2386,6 +2398,20 @@
             "string"
           ],
           "format": "date-time"
+        },
+        "repliedAt": {
+          "type": [
+            "null",
+            "string"
+          ],
+          "format": "date-time"
+        },
+        "readAt": {
+          "type": [
+            "null",
+            "string"
+          ],
+          "format": "date-time"
         }
       },
       "required": [
@@ -2479,6 +2505,20 @@
           "format": "date-time"
         },
         "archivedAt": {
+          "type": [
+            "null",
+            "string"
+          ],
+          "format": "date-time"
+        },
+        "repliedAt": {
+          "type": [
+            "null",
+            "string"
+          ],
+          "format": "date-time"
+        },
+        "readAt": {
           "type": [
             "null",
             "string"
@@ -2929,6 +2969,9 @@
       "properties": {
         "answers": {
           "$ref": "#/$defs/UserInputAnswers"
+        },
+        "skipped": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -3273,6 +3316,14 @@
       },
       "result": {
         "$ref": "#/$defs/ThreadListResult"
+      }
+    },
+    "thread/markRead": {
+      "params": {
+        "$ref": "#/$defs/ThreadMarkReadParams"
+      },
+      "result": {
+        "$ref": "#/$defs/ThreadResult"
       }
     },
     "thread/read": {

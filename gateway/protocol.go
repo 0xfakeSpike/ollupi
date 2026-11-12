@@ -74,6 +74,7 @@ var protocol = struct {
 		"thread/updatePermissions":    handle((*conn).threadPermissions),
 		"thread/rename":               handle((*conn).threadRename),
 		"thread/archive":              handle((*conn).threadArchive),
+		"thread/markRead":             handle((*conn).threadMarkRead),
 		"thread/delete":               handle((*conn).threadDelete),
 		"turn/start":                  handle((*conn).turnStart),
 		"turn/steer":                  handle((*conn).turnSteer),
@@ -236,6 +237,11 @@ type ThreadResult struct {
 type ThreadRenameParams struct {
 	ThreadID string `json:"threadId"`
 	Title    string `json:"title"`
+}
+
+// ThreadMarkReadParams names the thread the user has read: it is no longer unread until another of its turns ends.
+type ThreadMarkReadParams struct {
+	ThreadID string `json:"threadId"`
 }
 
 type ThreadArchiveParams struct {
@@ -511,4 +517,7 @@ type UserInputRequestParams struct {
 
 type UserInputResponse struct {
 	Answers userinput.Answers `json:"answers"`
+	// Skipped declines the questions without answers (send answers as {}): the call ends declined and the agent goes
+	// on without them.
+	Skipped bool `json:"skipped,omitempty"`
 }

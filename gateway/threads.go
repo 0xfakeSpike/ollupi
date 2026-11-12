@@ -59,6 +59,11 @@ func (c *conn) threadRename(p ThreadRenameParams) (ThreadResult, func(), error) 
 	return ThreadResult{Thread: t}, nil, err
 }
 
+func (c *conn) threadMarkRead(p ThreadMarkReadParams) (ThreadResult, func(), error) {
+	t, err := c.s.agent.MarkThreadRead(c.user, p.ThreadID)
+	return ThreadResult{Thread: t}, nil, err
+}
+
 func (c *conn) threadArchive(p ThreadArchiveParams) (ThreadResult, func(), error) {
 	if p.Archived == nil {
 		return ThreadResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "archived is required")

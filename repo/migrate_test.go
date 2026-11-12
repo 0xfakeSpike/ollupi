@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -54,6 +55,10 @@ func TestADatabaseFromBeforeMigrationsKeepsItsRows(t *testing.T) {
 	if err := old.Create(&ThreadRow{UserID: DefaultUser, ID: "kept", Title: "kept", CreatedAt: at, UpdatedAt: at}).Error; err != nil {
 		t.Fatal(err)
 	}
+	done := at.Add(time.Minute)
+	if err := old.Create(&TurnRow{ID: "said", ThreadID: "kept", Seq: 1, Status: TurnCompleted, Model: llm.Model{Name: "m", Connection: "c"}, CreatedAt: at, StartedAt: at, CompletedAt: &done}).Error; err != nil {
+		t.Fatal(err)
+	}
 	closeRaw(t, old)
 
 	db, err := Open(home)
@@ -67,6 +72,14 @@ func TestADatabaseFromBeforeMigrationsKeepsItsRows(t *testing.T) {
 	var n int64
 	if err := db.gorm.Model(&ThreadRow{}).Where("id = ?", "kept").Count(&n).Error; err != nil || n != 1 {
 		t.Fatalf("the thread from before: %d rows, %v", n, err)
+	}
+	// What it said before counts as read: the step does not wake a database up with every thread unread.
+	kept, err := db.ThreadRow("kept")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kept.RepliedAt == nil || kept.Unread() {
+		t.Errorf("the thread from before is unread (replied %v, read %v)", kept.RepliedAt, kept.ReadAt)
 	}
 }
 
