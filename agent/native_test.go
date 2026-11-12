@@ -95,7 +95,7 @@ func TestThinkingIsReplayedAcrossTurns(t *testing.T) {
 	}
 	defer ag.Wait()
 	defer stop()
-	w, err := ag.AddWorkspace(repo.DefaultUser, t.TempDir(), "app")
+	w, err := ag.AddWorkspace(ctx, repo.DefaultUser, t.TempDir(), "app")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestThinkingIsReplayedAcrossTurns(t *testing.T) {
 	}
 	ask := func(text string, requests int) {
 		t.Helper()
-		turn, err := ag.StartTurn(repo.DefaultUser, th.ID, agent.Input{Text: text})
+		turn, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, agent.Input{Text: text})
 		if err != nil {
 			t.Fatal(err)
 		}

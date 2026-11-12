@@ -1,22 +1,23 @@
 package gateway
 
 import (
+	"context"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
-	"github.com/0xfakeSpike/ollupi/repo"
 )
 
-func (c *conn) settingsRead(Empty) (repo.SettingsRow, func(), error) {
-	settings, err := c.s.db.Settings(c.user)
-	return settings, nil, err
+func (c *conn) settingsRead(ctx context.Context, _ Empty) (SettingsRow, func(), error) {
+	settings, err := c.s.db.WithContext(ctx).Settings(c.user)
+	return settingsRow(settings), nil, err
 }
 
-func (c *conn) settingsUpdate(p SettingsUpdateParams) (repo.SettingsRow, func(), error) {
+func (c *conn) settingsUpdate(ctx context.Context, p SettingsUpdateParams) (SettingsRow, func(), error) {
 	if p.Redaction == nil {
-		return repo.SettingsRow{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "redaction is required")
+		return SettingsRow{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "redaction is required")
 	}
-	settings, err := c.s.db.SetRedaction(c.user, *p.Redaction)
+	settings, err := c.s.db.WithContext(ctx).SetRedaction(c.user, *p.Redaction)
 	if err != nil {
-		return repo.SettingsRow{}, nil, err
+		return SettingsRow{}, nil, err
 	}
-	return settings, func() { c.rpc.Notify(notifySettingsChanged, settings) }, nil
+	row := settingsRow(settings)
+	return row, func() { c.rpc.Notify(notifySettingsChanged, row) }, nil
 }

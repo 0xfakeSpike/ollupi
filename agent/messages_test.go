@@ -30,11 +30,11 @@ func TestAMessageIsHeldToAShareOfTheModelsInput(t *testing.T) {
 
 	// The model takes 28,000 tokens of input, so a message gets 7,000.
 	tooLong := strings.Repeat("The build log goes on. ", 2000)
-	if _, err := ag.StartTurn(repo.DefaultUser, thread.ID, agent.Input{Text: tooLong}); !errors.Is(err, agent.ErrInvalidMessage) || !strings.Contains(err.Error(), "attachment") {
+	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, agent.Input{Text: tooLong}); !errors.Is(err, agent.ErrInvalidMessage) || !strings.Contains(err.Error(), "attachment") {
 		t.Errorf("a message over the model's share: %v", err)
 	}
 	long := strings.Repeat("The task says more. ", 500)
-	if _, err := ag.StartTurn(repo.DefaultUser, thread.ID, agent.Input{Text: long}); err != nil {
+	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, agent.Input{Text: long}); err != nil {
 		t.Errorf("a %d-character message: %v", len(long), err)
 	}
 }

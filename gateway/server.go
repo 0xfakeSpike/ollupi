@@ -84,7 +84,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	stop := context.AfterFunc(r.Context(), func() { ws.Close(websocket.StatusGoingAway, "server shutting down") })
 	defer stop()
-	err = c.rpc.Serve(context.Background(), c)
+	err = c.rpc.Serve(r.Context(), c)
 	switch status := websocket.CloseStatus(err); {
 	case status == websocket.StatusNormalClosure || status == websocket.StatusGoingAway || r.Context().Err() != nil:
 		slog.Info("client disconnected")
@@ -146,7 +146,7 @@ func (c *conn) Notify(method string, _ json.RawMessage) {
 	}
 }
 
-func (c *conn) Call(method string, params json.RawMessage) (any, func(), *jsonrpc.Error) {
+func (c *conn) Call(ctx context.Context, method string, params json.RawMessage) (any, func(), *jsonrpc.Error) {
 	c.mu.Lock()
 	initialized := c.initialized
 	c.mu.Unlock()
@@ -160,10 +160,10 @@ func (c *conn) Call(method string, params json.RawMessage) (any, func(), *jsonrp
 	if !ok {
 		return nil, nil, jsonrpc.Errorf(jsonrpc.CodeMethodNotFound, "method %q not found", method)
 	}
-	return m.call(c, params)
+	return m.call(c, ctx, params)
 }
 
-func (c *conn) initialize(InitializeParams) (InitializeResult, func(), error) {
+func (c *conn) initialize(ctx context.Context, _ InitializeParams) (InitializeResult, func(), error) {
 	after := func() {
 		c.mu.Lock()
 		c.initialized = true
@@ -173,12 +173,12 @@ func (c *conn) initialize(InitializeParams) (InitializeResult, func(), error) {
 	return InitializeResult{ServerInfo: ServerInfo{Name: "ollupi", Version: version()}, ProtocolSHA256: protocolSHA256}, after, nil
 }
 
-func (c *conn) modelList(Empty) (ModelListResult, func(), error) {
+func (c *conn) modelList(ctx context.Context, _ Empty) (ModelListResult, func(), error) {
 	models, fallback := c.s.agent.ListModels()
 	return ModelListResult{Data: nonNil(models), Default: fallback}, nil, nil
 }
 
-func (c *conn) toolList(Empty) (ToolListResult, func(), error) {
+func (c *conn) toolList(ctx context.Context, _ Empty) (ToolListResult, func(), error) {
 	list, err := c.s.agent.ListTools(c.user)
 	if err != nil {
 		return ToolListResult{}, nil, err
@@ -186,7 +186,7 @@ func (c *conn) toolList(Empty) (ToolListResult, func(), error) {
 	return ToolListResult{Data: nonNil(list)}, nil, nil
 }
 
-func (c *conn) mcpServerList(Empty) (MCPServerListResult, func(), error) {
+func (c *conn) mcpServerList(ctx context.Context, _ Empty) (MCPServerListResult, func(), error) {
 	var servers []mcp.ServerStatus
 	if c.s.mcp != nil {
 		mine, err := c.s.mcp.For(c.user)
@@ -201,21 +201,22 @@ func (c *conn) mcpServerList(Empty) (MCPServerListResult, func(), error) {
 func (c *conn) event(e agent.Event) {
 	switch e.Kind {
 	case agent.EventThreadStarted:
-		c.rpc.Notify(notifyThreadStarted, ThreadResult{Thread: e.Thread})
+		c.rpc.Notify(notifyThreadStarted, ThreadResult{Thread: threadRow(e.Thread)})
 	case agent.EventThreadChanged:
-		c.rpc.Notify(notifyThreadChanged, ThreadChangedNotification{ThreadID: e.Thread.ID, Thread: &e.Thread})
+		changed := threadRow(e.Thread)
+		c.rpc.Notify(notifyThreadChanged, ThreadChangedNotification{ThreadID: e.Thread.ID, Thread: &changed})
 	case agent.EventThreadDeleted:
 		c.rpc.Notify(notifyThreadChanged, ThreadChangedNotification{ThreadID: e.Thread.ID})
 	case agent.EventTurnQueued:
-		c.rpc.Notify(notifyTurnQueued, TurnNotification{ThreadID: e.Thread.ID, Thread: e.Thread, Turn: e.Turn})
+		c.rpc.Notify(notifyTurnQueued, TurnNotification{ThreadID: e.Thread.ID, Thread: threadRow(e.Thread), Turn: turnRow(e.Turn)})
 	case agent.EventTurnStarted:
-		c.rpc.Notify(notifyTurnStarted, TurnNotification{ThreadID: e.Thread.ID, Thread: e.Thread, Turn: e.Turn})
+		c.rpc.Notify(notifyTurnStarted, TurnNotification{ThreadID: e.Thread.ID, Thread: threadRow(e.Thread), Turn: turnRow(e.Turn)})
 	case agent.EventItemStarted:
-		c.rpc.Notify(notifyItemStarted, ItemNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Item: *e.Item})
+		c.rpc.Notify(notifyItemStarted, ItemNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Item: itemRow(*e.Item)})
 	case agent.EventItemUpdated:
-		c.rpc.Notify(notifyItemUpdated, ItemNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Item: *e.Item})
+		c.rpc.Notify(notifyItemUpdated, ItemNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Item: itemRow(*e.Item)})
 	case agent.EventItemCompleted:
-		c.rpc.Notify(notifyItemCompleted, ItemNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Item: *e.Item})
+		c.rpc.Notify(notifyItemCompleted, ItemNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Item: itemRow(*e.Item)})
 	case agent.EventItemDelta:
 		method := notifyAgentMessageDelta
 		if e.Item.Type == repo.ItemReasoning {
@@ -223,13 +224,13 @@ func (c *conn) event(e agent.Event) {
 		}
 		c.rpc.Notify(method, DeltaNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, ItemID: e.Item.ID, Delta: e.Delta})
 	case agent.EventTurnCompleted:
-		c.rpc.Notify(notifyTurnCompleted, TurnNotification{ThreadID: e.Thread.ID, Thread: e.Thread, Turn: e.Turn})
+		c.rpc.Notify(notifyTurnCompleted, TurnNotification{ThreadID: e.Thread.ID, Thread: threadRow(e.Thread), Turn: turnRow(e.Turn)})
 	case agent.EventError:
 		c.rpc.Notify(notifyError, ErrorNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Message: e.Error})
 	case agent.EventThreadStatusChanged:
 		c.rpc.Notify(notifyThreadStatusChanged, ThreadStatusNotification{ThreadID: e.Thread.ID, Status: e.Status})
 	case agent.EventWorkspaceChanged:
-		c.rpc.Notify(notifyWorkspaceChanged, WorkspaceResult{Workspace: *e.Workspace})
+		c.rpc.Notify(notifyWorkspaceChanged, WorkspaceResult{Workspace: workspaceRow(*e.Workspace)})
 	case agent.EventEnvironmentChanged:
 		c.environmentChanged(e.Environment.ID)
 	case agent.EventCronJobChanged:
@@ -273,7 +274,7 @@ func (c *conn) request(threadID string, it repo.ItemRow) {
 		}
 		if err := c.resolve(threadID, it, result); err != nil {
 			slog.Warn("client response not applied", "item", it.ID, "err", err)
-			c.rpc.Notify(notifyError, ErrorNotification{ThreadID: threadID, TurnID: it.TurnID, ItemID: it.ID, Message: err.Error()})
+			c.rpc.Notify(notifyError, ErrorNotification{ThreadID: threadID, TurnID: it.TurnID, ItemID: it.ID, Message: serverError(err).Message})
 			if !errors.Is(err, agent.ErrNoSuchRequest) {
 				c.request(threadID, it)
 			}

@@ -92,7 +92,7 @@ func TestASlowSandboxDoesNotHoldUpOtherThreads(t *testing.T) {
 	}
 	sent := make(chan error, 1)
 	go func() {
-		_, err := ag.StartTurn(repo.DefaultUser, stuck.ID, agent.Input{Text: "read", Attachments: []agent.AttachmentInput{{Path: "/cloud/note.txt"}}})
+		_, err := ag.StartTurn(ctx, repo.DefaultUser, stuck.ID, agent.Input{Text: "read", Attachments: []agent.AttachmentInput{{Path: "/cloud/note.txt"}}})
 		sent <- err
 	}()
 	<-machine.asked
@@ -134,7 +134,7 @@ func TestACrashFailsTheTurnAndNothingElse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ag.StartTurn(repo.DefaultUser, thread.ID, agent.Input{Text: "hello"}); err != nil {
+	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, agent.Input{Text: "hello"}); err != nil {
 		t.Fatal(err)
 	}
 	turn := endOf(ctx, t, ended)
@@ -166,7 +166,7 @@ func TestATurnStopsAtItsRunLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ag.StartTurn(repo.DefaultUser, thread.ID, agent.Input{Text: "hello"}); err != nil {
+	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, agent.Input{Text: "hello"}); err != nil {
 		t.Fatal(err)
 	}
 	if turn := endOf(ctx, t, ended); turn.Status != repo.TurnFailed || !strings.Contains(turn.Error, "time limit") {
@@ -236,7 +236,7 @@ func TestACutOffResponseRunsNoCall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ag.StartTurn(repo.DefaultUser, thread.ID, agent.Input{Text: "hello"}); err != nil {
+	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, agent.Input{Text: "hello"}); err != nil {
 		t.Fatal(err)
 	}
 	if turn := endOf(ctx, t, ended); turn.Status != repo.TurnCompleted {
@@ -285,7 +285,7 @@ func TestNoTurnStartsWhileTheWorkspaceMoves(t *testing.T) {
 	if err := os.WriteFile(from+"/notes.txt", []byte("kept\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	w, err := ag.AddWorkspace(repo.DefaultUser, from, "app")
+	w, err := ag.AddWorkspace(ctx, repo.DefaultUser, from, "app")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,11 +295,11 @@ func TestNoTurnStartsWhileTheWorkspaceMoves(t *testing.T) {
 	}
 	moved := make(chan error, 1)
 	go func() {
-		_, err := ag.MoveWorkspace(repo.DefaultUser, w.ID, to)
+		_, err := ag.MoveWorkspace(ctx, repo.DefaultUser, w.ID, to)
 		moved <- err
 	}()
 	<-box.moving
-	if _, err := ag.StartTurn(repo.DefaultUser, thread.ID, agent.Input{Text: "hello"}); !errors.Is(err, agent.ErrWorkspaceBusy) {
+	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, agent.Input{Text: "hello"}); !errors.Is(err, agent.ErrWorkspaceBusy) {
 		t.Errorf("a turn during the move: %v", err)
 	}
 	close(box.release)
@@ -322,11 +322,11 @@ func TestAConversationQueuesOnlySoManyTurns(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := 0; i < 21; i++ {
-		if _, err := ag.StartTurn(repo.DefaultUser, thread.ID, agent.Input{Text: fmt.Sprintf("message %d", i)}); err != nil {
+		if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, agent.Input{Text: fmt.Sprintf("message %d", i)}); err != nil {
 			t.Fatalf("message %d: %v", i, err)
 		}
 	}
-	if _, err := ag.StartTurn(repo.DefaultUser, thread.ID, agent.Input{Text: "one more"}); !errors.Is(err, agent.ErrQueueFull) {
+	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, agent.Input{Text: "one more"}); !errors.Is(err, agent.ErrQueueFull) {
 		t.Errorf("past the queue: %v", err)
 	}
 }

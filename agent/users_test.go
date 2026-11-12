@@ -57,11 +57,11 @@ func TestAUserCannotReachAnotherUsersThread(t *testing.T) {
 	defer stop()
 
 	root := t.TempDir()
-	w, err := ag.AddWorkspace("a", root, "app")
+	w, err := ag.AddWorkspace(ctx, "a", root, "app")
 	if err != nil {
 		t.Fatal(err)
 	}
-	theirs, err := ag.AddWorkspace("b", root, "app")
+	theirs, err := ag.AddWorkspace(ctx, "b", root, "app")
 	if err != nil {
 		t.Fatalf("the same path for a second user: %v", err)
 	}
@@ -92,17 +92,17 @@ func TestAUserCannotReachAnotherUsersThread(t *testing.T) {
 		"archive the thread": func() error { _, err := ag.ArchiveThread("b", thread.ID, true); return err },
 		"delete the thread":  func() error { return ag.DeleteThread("b", thread.ID) },
 		"start a turn": func() error {
-			_, err := ag.StartTurn("b", thread.ID, agent.Input{Text: "hello"})
+			_, err := ag.StartTurn(ctx, "b", thread.ID, agent.Input{Text: "hello"})
 			return err
 		},
 		"steer": func() error {
-			_, err := ag.SteerTurn("b", thread.ID, "turn", agent.Input{Text: "hello"})
+			_, err := ag.SteerTurn(ctx, "b", thread.ID, "turn", agent.Input{Text: "hello"})
 			return err
 		},
 		"interrupt":   func() error { return ag.InterruptTurn("b", thread.ID, "") },
 		"approve":     func() error { return ag.ResolveApproval("b", thread.ID, "approval", repo.DecisionAccept, "b") },
 		"answer":      func() error { return ag.AnswerUserInput("b", thread.ID, "item", userinput.Answers{}) },
-		"read a file": func() error { _, _, err := ag.ReadAttachment("b", thread.ID, "file"); return err },
+		"read a file": func() error { _, _, err := ag.ReadAttachment(ctx, "b", thread.ID, "file"); return err },
 	} {
 		if err := try(); !errors.Is(err, repo.ErrNotFound) {
 			t.Errorf("b tried to %s: %v", name, err)
@@ -195,7 +195,7 @@ func TestAUserHoldsNoMoreSlotsThanTheirLimit(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := ag.StartTurn(user, thread.ID, agent.Input{Text: "hello"}); err != nil {
+		if _, err := ag.StartTurn(ctx, user, thread.ID, agent.Input{Text: "hello"}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -274,7 +274,7 @@ func TestTurnsRunOnTheUsersClient(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		turn, err := ag.StartTurn(user, thread.ID, agent.Input{Text: "hello"})
+		turn, err := ag.StartTurn(ctx, user, thread.ID, agent.Input{Text: "hello"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -375,6 +375,7 @@ func (stubMachine) Stat(_ context.Context, path string) (fs.FileInfo, error) {
 }
 
 func TestAWorkspaceIsFoundInTheUsersSandbox(t *testing.T) {
+	ctx := context.Background()
 	srv := httptest.NewServer(&recordingModel{})
 	defer srv.Close()
 	db, err := repo.Open(t.TempDir())
@@ -388,18 +389,18 @@ func TestAWorkspaceIsFoundInTheUsersSandbox(t *testing.T) {
 			return sandbox.Remote(stubMachine{}, []string{"/cloud"}, "cloud"), nil
 		},
 	})
-	w, err := ag.AddWorkspace(repo.DefaultUser, "/cloud/app/", "app")
+	w, err := ag.AddWorkspace(ctx, repo.DefaultUser, "/cloud/app/", "app")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if w.RootPath != "/cloud/app" {
 		t.Errorf("root %q", w.RootPath)
 	}
-	again, err := ag.AddWorkspace(repo.DefaultUser, "/cloud/app", "app")
+	again, err := ag.AddWorkspace(ctx, repo.DefaultUser, "/cloud/app", "app")
 	if err != nil || again.ID != w.ID {
 		t.Errorf("the same folder again: %+v, %v", again, err)
 	}
-	if _, err := ag.AddWorkspace(repo.DefaultUser, "/cloud/missing", "x"); err == nil {
+	if _, err := ag.AddWorkspace(ctx, repo.DefaultUser, "/cloud/missing", "x"); err == nil {
 		t.Error("a folder the sandbox does not have was added")
 	}
 }
@@ -508,10 +509,10 @@ func TestAttachmentsLiveInTheStore(t *testing.T) {
 	if err := os.WriteFile(onHost, []byte("of this machine"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ag.StartTurn(repo.DefaultUser, thread.ID, agent.Input{Text: "read", Attachments: []agent.AttachmentInput{{Path: onHost}}}); err == nil {
+	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, agent.Input{Text: "read", Attachments: []agent.AttachmentInput{{Path: onHost}}}); err == nil {
 		t.Fatal("a user with a sandbox attached a file of this machine")
 	}
-	if _, err := ag.StartTurn(repo.DefaultUser, thread.ID, agent.Input{Text: "read", Attachments: []agent.AttachmentInput{{Path: "/cloud/note.txt"}}}); err != nil {
+	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, agent.Input{Text: "read", Attachments: []agent.AttachmentInput{{Path: "/cloud/note.txt"}}}); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -535,7 +536,7 @@ func TestAttachmentsLiveInTheStore(t *testing.T) {
 			id = it.Attachments[0].ID
 		}
 	}
-	if _, data, err := ag.ReadAttachment(repo.DefaultUser, thread.ID, id); err != nil || string(data) != "a note" {
+	if _, data, err := ag.ReadAttachment(ctx, repo.DefaultUser, thread.ID, id); err != nil || string(data) != "a note" {
 		t.Errorf("the attachment: %q, %v", data, err)
 	}
 	if err := ag.DeleteThread(repo.DefaultUser, thread.ID); err != nil {

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -23,8 +24,8 @@ type Input struct {
 	CronJobID   string
 }
 
-func (a *Agent) StartTurn(user, threadID string, in Input) (repo.TurnRow, error) {
-	atts, err := a.attach(user, threadID, in.Attachments)
+func (a *Agent) StartTurn(ctx context.Context, user, threadID string, in Input) (repo.TurnRow, error) {
+	atts, err := a.attach(ctx, user, threadID, in.Attachments)
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
@@ -45,8 +46,8 @@ func (a *Agent) StartScheduledTurn(threadID, text, jobID string) error {
 	})
 }
 
-func (a *Agent) SteerTurn(user, threadID, expectedTurnID string, in Input) (repo.TurnRow, error) {
-	atts, err := a.attach(user, threadID, in.Attachments)
+func (a *Agent) SteerTurn(ctx context.Context, user, threadID, expectedTurnID string, in Input) (repo.TurnRow, error) {
+	atts, err := a.attach(ctx, user, threadID, in.Attachments)
 	if err != nil {
 		return repo.TurnRow{}, err
 	}

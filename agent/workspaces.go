@@ -17,8 +17,8 @@ import (
 // workspaceTimeout bounds what adding or moving a workspace asks of the user's sandbox, the move itself aside.
 const workspaceTimeout = time.Minute
 
-func (a *Agent) AddWorkspace(user, path, name string) (repo.WorkspaceRow, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), workspaceTimeout)
+func (a *Agent) AddWorkspace(ctx context.Context, user, path, name string) (repo.WorkspaceRow, error) {
+	ctx, cancel := context.WithTimeout(ctx, workspaceTimeout)
 	defer cancel()
 	box, err := a.cfg.BoxFor(user)
 	if err != nil {
@@ -64,8 +64,10 @@ func (a *Agent) RenameWorkspace(user, id, name string) (repo.WorkspaceRow, error
 // it. Every thread, memory and task keeps its workspace id, so nothing else is rewritten. A turn in progress would keep
 // calling tools against the folder it started in, so the move is refused until the workspace's conversations are
 // idle, and none starts a turn while the folder moves.
-func (a *Agent) MoveWorkspace(user, id, path string) (repo.WorkspaceRow, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), workspaceTimeout)
+func (a *Agent) MoveWorkspace(ctx context.Context, user, id, path string) (repo.WorkspaceRow, error) {
+	// The move itself outlives the request: a folder left half moved because a client went away helps no one.
+	move := context.WithoutCancel(ctx)
+	ctx, cancel := context.WithTimeout(ctx, workspaceTimeout)
 	defer cancel()
 	w, err := a.workspaceFor(user, repo.Ref(id))
 	if err != nil {
@@ -110,12 +112,12 @@ func (a *Agent) MoveWorkspace(user, id, path string) (repo.WorkspaceRow, error) 
 			return repo.WorkspaceRow{}, fmt.Errorf("agent: %w: %q is the folder of the workspace %s", ErrInvalidPath, target, other.Name)
 		}
 	}
-	if err := box.Move(context.Background(), w.RootPath, target); err != nil {
+	if err := box.Move(move, w.RootPath, target); err != nil {
 		return repo.WorkspaceRow{}, fmt.Errorf("agent: %w", err)
 	}
 	moved, err := a.cfg.DB.SetWorkspaceRoot(user, w.ID, target, time.Now().UTC())
 	if err != nil {
-		if back := box.Move(context.Background(), target, w.RootPath); back != nil {
+		if back := box.Move(move, target, w.RootPath); back != nil {
 			return repo.WorkspaceRow{}, fmt.Errorf("agent: the folder is now at %s but the workspace still names %s: %w; moving it back failed too: %v", target, w.RootPath, err, back)
 		}
 		return repo.WorkspaceRow{}, err

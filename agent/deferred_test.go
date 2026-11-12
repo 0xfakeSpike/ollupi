@@ -130,7 +130,7 @@ func TestLoadedToolIsSentWithTheNextRequest(t *testing.T) {
 	}
 	defer ag.Wait()
 	defer stop()
-	w, err := ag.AddWorkspace(repo.DefaultUser, t.TempDir(), "app")
+	w, err := ag.AddWorkspace(ctx, repo.DefaultUser, t.TempDir(), "app")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestLoadedToolIsSentWithTheNextRequest(t *testing.T) {
 			}
 		}
 	}
-	if _, err := ag.StartTurn(repo.DefaultUser, th.ID, agent.Input{Text: "帮我在 GitHub 上提个 issue：登录页在 Safari 上白屏"}); err != nil {
+	if _, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, agent.Input{Text: "帮我在 GitHub 上提个 issue：登录页在 Safari 上白屏"}); err != nil {
 		t.Fatal(err)
 	}
 	wait(3)
