@@ -27,6 +27,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/gateway"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/router"
 	"github.com/coder/websocket"
 )
 
@@ -430,8 +431,8 @@ func connsShard(args []string) {
 // oneShard places every user on the one shard at its address.
 type oneShard string
 
-func (oneShard) ShardOf(string) (string, error)   { return "s", nil }
-func (s oneShard) Address(string) (string, error) { return string(s), nil }
+func (oneShard) Assign(context.Context, string) (string, error)    { return "s", nil }
+func (s oneShard) Address(context.Context, string) (string, error) { return string(s), nil }
 
 // connsRouter is a router in front of one shard, as conns starts it.
 func connsRouter(args []string) {
@@ -440,17 +441,17 @@ func connsRouter(args []string) {
 	shard := fs.String("shard", "", "the shard's URL")
 	fs.Parse(args)
 	quiet()
-	locator, err := gateway.NewLocator(benchUser, oneShard(*shard))
+	locator, err := router.NewLocator(benchUser, oneShard(*shard))
 	if err != nil {
 		log.Fatal(err)
 	}
-	router := gateway.NewRouter(locator)
+	front := router.NewRouter(locator)
 	ln, err := net.Listen("tcp", *addr)
 	if err != nil {
 		log.Fatal(err)
 	}
 	go func() {
-		srv := &http.Server{Handler: router, ReadHeaderTimeout: 5 * time.Second}
+		srv := &http.Server{Handler: front, ReadHeaderTimeout: 5 * time.Second}
 		if err := srv.Serve(ln); err != nil {
 			log.Fatal(err)
 		}

@@ -38,17 +38,25 @@ type Server struct {
 	jobs         *cron.Jobs
 	mcp          *mcp.Users
 	authenticate func(token string) (string, bool)
+	shard        string
+	placements   Placements
+	load         Load
 	hosts        []string
 	origins      []string
 	// hub holds the users' connections, keyed by user.
 	hub *wshub.Hub[*conn]
-	// ready holds the users EnsureUser has made ready, so that their reconnections write nothing; no user is removed.
+	// ready holds the users found on this shard and made ready by EnsureUser, so that their reconnections ask and write
+	// nothing: a user stays on their shard, and none is removed.
 	ready  sync.Map
 	served sync.WaitGroup
 }
 
+// HealthPath answers 200 while the process serves, for a load balancer's health check: a shard serves only once it
+// holds its lease, so the check sends a shard's connections to the process that holds it.
+const HealthPath = "/healthz"
+
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == healthPath {
+	if r.URL.Path == HealthPath {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
@@ -63,6 +71,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, ok := s.ready.Load(user); !ok {
+		if !s.mine(w, r, user) {
+			return
+		}
 		if err := s.db.EnsureUser(user); err != nil {
 			slog.Error("user not ready", "user", user, "err", err)
 			http.Error(w, "the user could not be made ready", http.StatusInternalServerError)
@@ -79,6 +90,25 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c := &conn{s: s, user: user, ws: ws, rpc: jsonrpc.NewConn(ws), asked: make(map[string]bool)}
 	slog.Info("client connected", "origin", r.Header.Get("Origin"))
 	s.hub.Serve(r.Context(), user, ws, c, func(ctx context.Context) error { return c.rpc.Serve(ctx, c) })
+}
+
+// mine says whether user is on this shard, and when not, refuses the connection for now: the router placed it by what
+// it knew, and a client that comes back reaches the right shard once that is put right.
+func (s *Server) mine(w http.ResponseWriter, r *http.Request, user string) bool {
+	if s.placements == nil {
+		return true
+	}
+	shard, err := s.placements.ShardOf(r.Context(), user)
+	switch {
+	case err != nil:
+		slog.Error("user's shard not found", "user", user, "err", err)
+	case shard != s.shard:
+		slog.Warn("connection refused on the wrong shard", "user", user, "shard", s.shard, "theirs", shard)
+	default:
+		return true
+	}
+	s.hub.Refuse(w, "this user is not on this shard now; try again")
+	return false
 }
 
 // Deliver sends an event to the connections of the user it belongs to; one that names no user goes to nobody, the

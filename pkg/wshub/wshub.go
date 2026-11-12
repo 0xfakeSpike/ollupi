@@ -68,10 +68,15 @@ func (h *Hub[T]) Admit(w http.ResponseWriter) bool {
 	if h.admit.Allow() {
 		return true
 	}
+	h.Refuse(w, "too many connections are starting; try again")
+	return false
+}
+
+// Refuse answers w 503 with a Retry-After, for a connection that may start later but not now.
+func (h *Hub[T]) Refuse(w http.ResponseWriter, why string) {
 	seconds := 1 + rand.IntN(int(h.opts.RetryWithin/time.Second))
 	w.Header().Set("Retry-After", strconv.Itoa(seconds))
-	http.Error(w, "too many connections are starting; try again", http.StatusServiceUnavailable)
-	return false
+	http.Error(w, why, http.StatusServiceUnavailable)
 }
 
 // Serve holds ws as one of key's connections, carrying value, while serve runs on it, and closes it when serve
@@ -106,6 +111,17 @@ func (h *Hub[T]) Serve(ctx context.Context, key string, ws *websocket.Conn, valu
 		slog.Warn("client connection failed", "err", err)
 		ws.Close(websocket.StatusInternalError, "connection error")
 	}
+}
+
+// Count is how many connections the hub holds.
+func (h *Hub[T]) Count() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	n := 0
+	for _, held := range h.held {
+		n += len(held)
+	}
+	return n
 }
 
 // Each calls fn with each connection key holds, oldest first.

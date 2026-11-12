@@ -5,7 +5,7 @@ import (
 	"net"
 	"testing"
 
-	"github.com/0xfakeSpike/ollupi/gateway"
+	"github.com/0xfakeSpike/ollupi/router"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	extprocv3 "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	"google.golang.org/grpc"
@@ -15,13 +15,13 @@ import (
 
 type shards map[string]string
 
-func (s shards) ShardOf(user string) (string, error) { return s[user], nil }
-func (shards) Address(string) (string, error)        { return "", nil }
+func (s shards) Assign(_ context.Context, user string) (string, error) { return s[user], nil }
+func (shards) Address(context.Context, string) (string, error)         { return "", nil }
 
 // callout runs the callout on a gRPC server in memory and opens one stream to it, as a load balancer would.
 func callout(t *testing.T) extprocv3.ExternalProcessor_ProcessClient {
 	t.Helper()
-	locator, err := gateway.NewLocator(func(token string) (string, bool) {
+	locator, err := router.NewLocator(func(token string) (string, bool) {
 		user, ok := map[string]string{"token-a": "a"}[token]
 		return user, ok
 	}, shards{"a": "17"})
