@@ -189,11 +189,13 @@ func pct(d []time.Duration, p float64) time.Duration {
 	return d[min(len(d)-1, int(float64(len(d))*p))]
 }
 
+// experiments are what the first argument names, the processes some of them start among them.
+var experiments = map[string]func([]string){"parked": parked, "burst": burst, "steady": steady, "crash": crash, "crashchild": crashChild, "provider": providerMain, "isolated": isolated, "lone": lone, "resume": resume, "mix": mix, "fanout": fanout, "soak": soak, "users": users}
+
 func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})))
 	// SetDefault routes the log package through slog at Info, below the level kept; the bench's own errors must show.
 	log.SetOutput(os.Stderr)
-	experiments := map[string]func([]string){"parked": parked, "burst": burst, "steady": steady, "crash": crash, "crashchild": crashChild, "provider": providerMain, "isolated": isolated, "lone": lone, "resume": resume, "mix": mix, "fanout": fanout, "soak": soak, "users": users}
 	if len(os.Args) < 2 || experiments[os.Args[1]] == nil {
 		log.Fatal("usage: bench parked|burst|steady|crash|isolated|resume|mix|fanout|soak|users [flags]")
 	}
