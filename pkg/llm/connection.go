@@ -5,10 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/http"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/openai/openai-go"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/genai"
 )
 
@@ -58,6 +63,10 @@ func (l Limits) check() error {
 	return nil
 }
 
+// httpClient sends every provider request, each try of a retried one in a span of its own under the model call's.
+// It sends no trace context: the providers are not ours to tell how our requests are traced.
+var httpClient = &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport, otelhttp.WithPropagators(propagation.NewCompositeTextMapPropagator()))}
+
 // connection holds what every provider client shares: the declared model limits and the concurrent call slots.
 type connection struct {
 	limits map[string]Limits
@@ -85,11 +94,13 @@ func (c connection) Limits(model string) (Limits, error) {
 // acquire takes a call slot and bounds the call with the default timeout unless ctx has a deadline;
 // the returned function frees both.
 func (c connection) acquire(ctx context.Context) (context.Context, func(), error) {
+	waited := time.Now()
 	select {
 	case c.calls <- struct{}{}:
 	case <-ctx.Done():
 		return nil, nil, ctx.Err()
 	}
+	trace.SpanFromContext(ctx).SetAttributes(attribute.Int64("ollupi.llm.slot_wait_ms", time.Since(waited).Milliseconds()))
 	cancel := context.CancelFunc(func() {})
 	if _, ok := ctx.Deadline(); !ok {
 		ctx, cancel = context.WithTimeout(ctx, defaultChatTimeout)

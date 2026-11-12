@@ -21,7 +21,14 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools/mcp"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
 	"github.com/coder/websocket"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
+
+// Requests are traced through the global TracerProvider, which the host sets up.
+var tracer = otel.Tracer("github.com/0xfakeSpike/ollupi/gateway")
 
 const (
 	maxMessageBytes = 32 << 20
@@ -177,7 +184,20 @@ func (c *conn) Call(ctx context.Context, method string, params json.RawMessage) 
 	if !ok {
 		return nil, nil, jsonrpc.Errorf(jsonrpc.CodeMethodNotFound, "method %q not found", method)
 	}
-	return m.call(c, ctx, params)
+	// Each request starts a trace of its own, linked to whatever traced the connection: a connection lasts for hours,
+	// and what its client sends is not trusted to name a parent.
+	ctx, span := tracer.Start(ctx, method, trace.WithNewRoot(), trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithLinks(trace.LinkFromContext(ctx)), trace.WithAttributes(
+			attribute.String("rpc.system", "jsonrpc"), attribute.String("rpc.method", method), attribute.String("ollupi.user.id", c.user)))
+	defer span.End()
+	result, after, rerr := m.call(c, ctx, params)
+	if rerr != nil {
+		span.SetAttributes(attribute.Int("rpc.jsonrpc.error_code", rerr.Code))
+		if rerr.Code == jsonrpc.CodeServerError || rerr.Code == jsonrpc.CodeInternalError {
+			span.SetStatus(codes.Error, rerr.Message)
+		}
+	}
+	return result, after, rerr
 }
 
 func (c *conn) initialize(ctx context.Context, _ InitializeParams) (InitializeResult, func(), error) {
