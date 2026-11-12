@@ -71,7 +71,7 @@ func TestSearchFindsMessagesBySubstring(t *testing.T) {
 	}
 	indexed(2)
 
-	if err := db.DeleteThread("t"); err != nil {
+	if err := db.DeleteThread(DefaultUser, "t"); err != nil {
 		t.Fatal(err)
 	}
 	found("池化")

@@ -200,7 +200,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 	// The answer is unread until the user reads it; reading it tells every client.
 	var seen ThreadResult
 	c.call("thread/markRead", ThreadMarkReadParams{ThreadID: threadID}, &seen)
-	if seen.Thread.RepliedAt == nil || seen.Thread.Unread() {
+	if seen.Thread.RepliedAt == nil || (repo.ThreadRow{RepliedAt: seen.Thread.RepliedAt, ReadAt: seen.Thread.ReadAt}).Unread() {
 		t.Errorf("after thread/markRead: replied %v, read %v; want a reply that is read", seen.Thread.RepliedAt, seen.Thread.ReadAt)
 	}
 	c.await(notifyThreadChanged, func(params json.RawMessage) bool {
@@ -331,20 +331,20 @@ func TestTrafficMatchesContract(t *testing.T) {
 
 	var daily repo.CronJobRow
 	c.call("cron/create", CronCreateParams{ThreadID: threadID, Name: "daily", Spec: "@daily", Prompt: "daily check"}, &daily)
-	c.cronChanged(daily.ID, func(j *repo.CronJobView) bool { return j != nil && j.Name == "daily" && j.ThreadTitle == "hello" })
+	c.cronChanged(daily.ID, func(j *CronJobView) bool { return j != nil && j.Name == "daily" && j.ThreadTitle == "hello" })
 	c.call("cron/list", CronListParams{ThreadID: threadID}, nil)
 	paused := true
 	c.call("cron/pause", CronPauseParams{ThreadID: threadID, Name: "daily", Paused: &paused}, nil)
-	c.cronChanged(daily.ID, func(j *repo.CronJobView) bool { return j != nil && j.Paused })
+	c.cronChanged(daily.ID, func(j *CronJobView) bool { return j != nil && j.Paused })
 	c.call("cron/delete", CronDeleteParams{ThreadID: threadID, Name: "daily"}, nil)
-	c.cronChanged(daily.ID, func(j *repo.CronJobView) bool { return j == nil })
+	c.cronChanged(daily.ID, func(j *CronJobView) bool { return j == nil })
 	now := time.Now().UTC()
 	if err := db.CreateCronJob(repo.CronJobRow{ID: "due", ThreadID: threadID, Name: "due", Spec: "@hourly", Prompt: "scheduled check",
 		NextRunAt: now.Add(-time.Minute), CreatedAt: now}, 10); err != nil {
 		t.Fatal(err)
 	}
 	go jobs.Run(agentCtx, func(threadID, text, jobID string) error {
-		_, err := ag.StartTurn(repo.DefaultUser, threadID, agent.Input{Text: text, CronJobID: jobID})
+		_, err := ag.StartTurn(ctx, repo.DefaultUser, threadID, agent.Input{Text: text, CronJobID: jobID})
 		return err
 	})
 	ran := c.await("turn/completed", func(params json.RawMessage) bool {
@@ -353,7 +353,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 	})
 	var ranTurn TurnNotification
 	json.Unmarshal(ran.Params, &ranTurn)
-	c.cronChanged("due", func(j *repo.CronJobView) bool {
+	c.cronChanged("due", func(j *CronJobView) bool {
 		return j != nil && j.LastTurnID == ranTurn.Turn.ID && j.LastRunAt != nil && j.NextRunAt.After(now)
 	})
 
@@ -586,7 +586,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.call("workspace/archive", WorkspaceArchiveParams{WorkspaceID: workspaceID, Archived: &archived}, nil)
 	var all CronListResult
 	c.call("cron/list", CronListParams{}, &all)
-	byName := map[string]repo.CronJobView{}
+	byName := map[string]CronJobView{}
 	for _, j := range all.Data {
 		byName[j.Name] = j
 	}
@@ -665,7 +665,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 	}
 }
 
-func checkMemory(t *testing.T, items []repo.ItemRow, local string) (prompts int, searched bool) {
+func checkMemory(t *testing.T, items []ItemRow, local string) (prompts int, searched bool) {
 	t.Helper()
 	snapshots := 0
 	for _, it := range items {
@@ -1094,7 +1094,7 @@ func (c *client) awaitAny(what string, match func(jsonrpc.Message) bool) jsonrpc
 
 func (c *client) validateToolCall(params json.RawMessage) {
 	var n ItemNotification
-	if err := json.Unmarshal(params, &n); err != nil || !n.Item.IsCall() {
+	if err := json.Unmarshal(params, &n); err != nil || n.Item.Type != repo.ItemToolCall {
 		return
 	}
 	it := n.Item
@@ -1162,7 +1162,7 @@ func checkToolSchemas(t *testing.T, offered []tools.ToolDescriptor) {
 	}
 }
 
-func (c *client) cronChanged(id string, ok func(*repo.CronJobView) bool) {
+func (c *client) cronChanged(id string, ok func(*CronJobView) bool) {
 	c.t.Helper()
 	c.await(notifyCronChanged, func(params json.RawMessage) bool {
 		var n CronChangedNotification

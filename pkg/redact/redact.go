@@ -43,7 +43,10 @@ var detectors = []detector{
 	{category: catPhone, priority: 88, match: regexp.MustCompile(`\b1[3-9]\d{9}\b`)},
 	{category: catEmail, priority: 80, match: regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b`)},
 	{category: catIP, priority: 70, match: regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`), validate: validIPv4},
-	{category: catMAC, priority: 70, match: regexp.MustCompile(`\b[0-9A-Fa-f]{2}(?:[:-][0-9A-Fa-f]{2}){5}\b`)},
+	// A run of hex pairs is matched whole, so that six pairs inside a longer run, such as a certificate's
+	// fingerprint, are not taken for a MAC address.
+	{category: catMAC, priority: 70, match: regexp.MustCompile(`\b[0-9A-Fa-f]{2}(?:[:-][0-9A-Fa-f]{2}){5,}\b`),
+		validate: func(s string) bool { return len(s) == len("00:00:00:00:00:00") }},
 }
 
 type Redactor struct {
@@ -248,7 +251,13 @@ func validIDCard(s string) bool {
 	return check[sum%11] == last
 }
 
+// validBankCard passes a number that could be a payment card: its first digit names a card network, and it passes
+// the Luhn check. No card starts with 0, which is where zero-padded addresses and offsets start (readelf's
+// 0000000000401000), or with 1, where millisecond and nanosecond Unix times start; a tenth of those pass Luhn alone.
 func validBankCard(s string) bool {
+	if s[0] == '0' || s[0] == '1' {
+		return false
+	}
 	sum := 0
 	double := false
 	for i := len(s) - 1; i >= 0; i-- {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -107,8 +106,7 @@ func (rt *Runtime) loadMemory() error {
 	}
 	snapshot, err := rt.Memory.Snapshot(rt.Caller.UserID, rt.Caller.WorkspaceID, rt.Window.MemoryBudget())
 	if err != nil {
-		slog.Warn("memory snapshot not loaded", "thread", rt.Caller.ThreadID, "turn", rt.Turn.ID, "err", err)
-		return nil
+		return fmt.Errorf("runtime: load memory: %w", err)
 	}
 	if snapshot == nil {
 		return nil
@@ -210,6 +208,11 @@ func (rt *Runtime) run(ctx context.Context) (bool, error) {
 		}
 		rt.Items, rt.Permissions = items, permissions
 		rt.offered, rt.deferred = Offer(permissions.Tools(), rt.Window, slices.Concat(rt.History, rt.Items))
+		if resp.FinishReason == "length" && len(resp.Message.ToolCalls) > 0 {
+			if halt := rt.haltAfterFailures(cutOffCall); halt != "" {
+				return true, rt.finish(ctx, halt)
+			}
+		}
 		if len(resp.Message.ToolCalls) == 0 && !slices.ContainsFunc(rt.Items, func(it repo.ItemRow) bool { return it.Type == repo.ItemUserMessage && it.Seq > seen }) {
 			return true, nil
 		}

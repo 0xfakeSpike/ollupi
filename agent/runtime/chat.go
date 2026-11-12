@@ -51,15 +51,24 @@ func (rt *Runtime) respond(ctx context.Context, choice llm.ToolChoice) (llm.Chat
 	if err := r.finish(resp); err != nil {
 		return llm.ChatResponse{}, err
 	}
+	cutOff := resp.FinishReason == "length"
 	for _, call := range resp.Message.ToolCalls {
 		it := rt.callItem(r.id, call)
 		r.carry(&it, resp.Message.Native)
+		if cutOff {
+			now := time.Now().UTC()
+			it.Status, it.Error, it.CompletedAt = repo.ItemFailed, cutOffCall, &now
+		}
 		if _, err := rt.record(it); err != nil {
 			return llm.ChatResponse{}, err
 		}
 	}
 	return resp, nil
 }
+
+// cutOffCall is why no call of a response the output limit cut off runs: the last may be incomplete, and the model
+// would read a missing piece as a failed call instead of a request too long for one response.
+const cutOffCall = "not run: the response reached the model's output limit before it was complete; do this in smaller steps, such as a long file written in parts"
 
 func checkResponse(resp llm.ChatResponse, choice llm.ToolChoice) error {
 	if len(resp.Message.ToolCalls) > 0 {

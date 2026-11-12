@@ -63,11 +63,11 @@ func (d *DB) Thread(id string) (ThreadView, error) {
 	return out, nil
 }
 
-func (d *DB) ThreadPage(id string, before, limit int) (ThreadView, bool, error) {
+func (d *DB) ThreadPage(user, id string, before, limit int) (ThreadView, bool, error) {
 	var out ThreadView
 	more := false
 	err := d.Tx(func(tx *DB) error {
-		if err := notFound(tx.gorm.Where("id = ?", id).Take(&out.Thread).Error); err != nil {
+		if err := notFound(tx.gorm.Where("id = ? AND user_id = ?", id, user).Take(&out.Thread).Error); err != nil {
 			return err
 		}
 		if err := tx.gorm.Where("thread_id = ?", id).Order("seq").Find(&out.Turns).Error; err != nil {
@@ -161,9 +161,12 @@ func (d *DB) touchThread(id string, at time.Time) error {
 	return nil
 }
 
-func (d *DB) SetThreadTitle(id, title string) (ThreadRow, error) {
+func (d *DB) SetThreadTitle(user, id, title string) (ThreadRow, error) {
 	var row ThreadRow
 	err := d.Tx(func(tx *DB) error {
+		if _, err := tx.ThreadOf(user, id); err != nil {
+			return err
+		}
 		if err := checkOne(tx.gorm.Model(&ThreadRow{}).Where("id = ?", id).Update("title", title)); err != nil {
 			return fmt.Errorf("thread %s: %w", id, err)
 		}
@@ -175,9 +178,12 @@ func (d *DB) SetThreadTitle(id, title string) (ThreadRow, error) {
 }
 
 // MarkThreadRead records that the user has read the thread up to at.
-func (d *DB) MarkThreadRead(id string, at time.Time) (ThreadRow, error) {
+func (d *DB) MarkThreadRead(user, id string, at time.Time) (ThreadRow, error) {
 	var row ThreadRow
 	err := d.Tx(func(tx *DB) error {
+		if _, err := tx.ThreadOf(user, id); err != nil {
+			return err
+		}
 		if err := checkOne(tx.gorm.Model(&ThreadRow{}).Where("id = ?", id).Update("read_at", at.UTC())); err != nil {
 			return fmt.Errorf("thread %s: %w", id, err)
 		}
@@ -188,9 +194,12 @@ func (d *DB) MarkThreadRead(id string, at time.Time) (ThreadRow, error) {
 	return row, err
 }
 
-func (d *DB) SetThreadArchived(id string, at *time.Time) (ThreadRow, error) {
+func (d *DB) SetThreadArchived(user, id string, at *time.Time) (ThreadRow, error) {
 	var row ThreadRow
 	err := d.Tx(func(tx *DB) error {
+		if _, err := tx.ThreadOf(user, id); err != nil {
+			return err
+		}
 		if err := checkOne(tx.gorm.Model(&ThreadRow{}).Where("id = ?", id).Update("archived_at", nullTime(at))); err != nil {
 			return fmt.Errorf("thread %s: %w", id, err)
 		}
@@ -201,8 +210,8 @@ func (d *DB) SetThreadArchived(id string, at *time.Time) (ThreadRow, error) {
 	return row, err
 }
 
-func (d *DB) DeleteThread(id string) error {
-	res := d.gorm.Delete(&ThreadRow{}, "id = ?", id)
+func (d *DB) DeleteThread(user, id string) error {
+	res := d.gorm.Delete(&ThreadRow{}, "id = ? AND user_id = ?", id, user)
 	if res.Error != nil {
 		return res.Error
 	}
@@ -212,14 +221,14 @@ func (d *DB) DeleteThread(id string) error {
 	return nil
 }
 
-func (d *DB) SetThreadSettings(id string, settings PermissionSettings) (ThreadRow, error) {
+func (d *DB) SetThreadSettings(user, id string, settings PermissionSettings) (ThreadRow, error) {
 	raw, err := json.Marshal(settings)
 	if err != nil {
 		return ThreadRow{}, fmt.Errorf("thread %s: encode settings: %w", id, err)
 	}
 	var row ThreadRow
 	err = d.Tx(func(tx *DB) error {
-		res := tx.gorm.Model(&ThreadRow{}).Where("id = ?", id).Update("settings", string(raw))
+		res := tx.gorm.Model(&ThreadRow{}).Where("id = ? AND user_id = ?", id, user).Update("settings", string(raw))
 		if res.Error != nil {
 			return res.Error
 		}

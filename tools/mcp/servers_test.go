@@ -10,6 +10,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -161,7 +162,6 @@ func TestACallThatGetsNoAnswerEnds(t *testing.T) {
 	users := NewUsers(ctx, Client{}, func(string) ([]Server, error) {
 		return []Server{{Name: "slow", URL: web.URL, Timeout: 100 * time.Millisecond}}, nil
 	}, func(string) (sandbox.Box, error) { return sandbox.Here(), nil })
-	defer users.Close()
 	defer close(release)
 	servers, err := users.For("someone")
 	if err != nil {
@@ -173,6 +173,47 @@ func TestACallThatGetsNoAnswerEnds(t *testing.T) {
 	_, err = servers.sessions[0].Invoke(ctx, "slow"+tools.ProviderSeparator+"hang", map[string]any{})
 	if err == nil || !strings.Contains(err.Error(), "may still have taken effect") {
 		t.Errorf("the call: %v", err)
+	}
+	closed := make(chan struct{})
+	go func() {
+		users.Close()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+	case <-time.After(3 * closeTimeout):
+		t.Error("closing waits on the server's hung call")
+	}
+}
+
+// A server's headers go to its own host: a redirect elsewhere does not carry its credentials.
+func TestHeadersStayWithTheirServer(t *testing.T) {
+	var mu sync.Mutex
+	reached, leaked := false, ""
+	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return testServer() }, nil)
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		reached = true
+		leaked += r.Header.Get("Authorization")
+		mu.Unlock()
+		mcpHandler.ServeHTTP(w, r)
+	}))
+	defer other.Close()
+	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL, http.StatusTemporaryRedirect)
+	}))
+	defer front.Close()
+	users := NewUsers(context.Background(), Client{}, func(string) ([]Server, error) {
+		return []Server{{Name: "moved", URL: front.URL, Headers: map[string]string{"Authorization": "Bearer secret"}}}, nil
+	}, func(string) (sandbox.Box, error) { return sandbox.Here(), nil })
+	defer users.Close()
+	if _, err := users.For("someone"); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !reached || leaked != "" {
+		t.Errorf("the other host was reached %v and got %q", reached, leaked)
 	}
 }
 
@@ -189,5 +230,16 @@ func TestARemoteUserCannotReachThisNetwork(t *testing.T) {
 	}
 	if st := servers.Statuses()[0]; st.Connected || !strings.Contains(st.Error, sandbox.ErrLocalAddress.Error()) {
 		t.Errorf("%+v", st)
+	}
+}
+
+func TestContentThatIsNotTextIsNamedNotDumped(t *testing.T) {
+	got := joinTextContent([]mcp.Content{
+		&mcp.TextContent{Text: "done"},
+		&mcp.ImageContent{MIMEType: "image/png", Data: []byte{1, 2, 3}},
+		&mcp.EmbeddedResource{Resource: &mcp.ResourceContents{URI: "file:///a.txt", Text: "inside"}},
+	})
+	if got != "done\n[image: image/png, 3 bytes, not shown]\ninside" {
+		t.Errorf("%q", got)
 	}
 }

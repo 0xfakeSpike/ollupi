@@ -317,7 +317,13 @@ func (r *remote) Move(ctx context.Context, from, to string) error {
 	if r.Machine == nil {
 		return errors.New("sandbox: this box has no machine to move files in")
 	}
-	if st, err := r.Machine.Stat(ctx, to); err == nil && st.IsDir() {
+	st, err := r.Machine.Stat(ctx, to)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+	case err != nil:
+		// mv puts a folder inside one that is there, so a target it cannot see is not known to be absent.
+		return fmt.Errorf("sandbox: move %s to %s: %w", from, to, err)
+	case st.IsDir():
 		entries, err := r.Machine.ReadDir(ctx, to)
 		if err != nil {
 			return fmt.Errorf("sandbox: move %s to %s: %w", from, to, err)

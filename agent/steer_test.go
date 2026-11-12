@@ -101,7 +101,7 @@ func TestAMessageTakesThePlaceOfWhatTheTurnWaitsFor(t *testing.T) {
 			}
 			defer ag.Wait()
 			defer stop()
-			w, err := ag.AddWorkspace(repo.DefaultUser, t.TempDir(), "app")
+			w, err := ag.AddWorkspace(ctx, repo.DefaultUser, t.TempDir(), "app")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -109,7 +109,7 @@ func TestAMessageTakesThePlaceOfWhatTheTurnWaitsFor(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			turn, err := ag.StartTurn(repo.DefaultUser, th.ID, agent.Input{Text: "记一下买牛奶"})
+			turn, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, agent.Input{Text: "记一下买牛奶"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -127,7 +127,7 @@ func TestAMessageTakesThePlaceOfWhatTheTurnWaitsFor(t *testing.T) {
 				}
 			}
 			until(tc.waits)
-			if _, err := ag.SteerTurn(repo.DefaultUser, th.ID, turn.ID, agent.Input{Text: "算了，先别记"}); err != nil {
+			if _, err := ag.SteerTurn(ctx, repo.DefaultUser, th.ID, turn.ID, agent.Input{Text: "算了，先别记"}); err != nil {
 				t.Fatal(err)
 			}
 			until(repo.TurnCompleted)

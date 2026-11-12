@@ -39,7 +39,7 @@ func OpenCatalog(path string) (*Catalog, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := g.AutoMigrate(&ShardRow{}, &PlacementRow{}); err != nil {
+	if err := migrateCatalog(g); err != nil {
 		err = fmt.Errorf("storage: %s: %w", path, err)
 		if cerr := closeGorm(g); cerr != nil {
 			return nil, fmt.Errorf("%w (close: %v)", err, cerr)

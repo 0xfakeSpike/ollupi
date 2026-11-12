@@ -71,3 +71,27 @@ func TestMoveReplacesAnEmptyFolderAndRefusesAFullOne(t *testing.T) {
 		t.Errorf("the empty folder the user picked was taken away: %v", err)
 	}
 }
+
+// blindMachine cannot say what is at a path, and records the commands it is asked to run.
+type blindMachine struct {
+	Machine
+	ran *[]string
+}
+
+func (blindMachine) Stat(context.Context, string) (fs.FileInfo, error) {
+	return nil, errors.New("the sandbox did not answer")
+}
+
+func (m blindMachine) Run(_ context.Context, c Command) (Result, error) {
+	*m.ran = append(*m.ran, c.Program)
+	return Result{}, nil
+}
+
+// A target the machine cannot see is not taken as absent: mv would put the folder inside one that is there.
+func TestARemoteMoveStopsWhenItCannotSeeTheTarget(t *testing.T) {
+	var ran []string
+	box := Remote(blindMachine{ran: &ran}, []string{"/cloud"}, "cloud")
+	if err := box.Move(context.Background(), "/cloud/app", "/cloud/moved"); err == nil || len(ran) > 0 {
+		t.Errorf("moved without seeing the target: %v, ran %v", err, ran)
+	}
+}

@@ -126,7 +126,7 @@ func userVersion(t *testing.T, g *gorm.DB) int {
 
 func stepCount(t *testing.T) int {
 	t.Helper()
-	all, err := steps()
+	all, err := steps(shardMigrations)
 	if err != nil {
 		t.Fatal(err)
 	}

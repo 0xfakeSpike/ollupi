@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"strings"
@@ -10,22 +11,22 @@ import (
 )
 
 // environmentList lists where the user's conversations can run; the first is where one that names none runs.
-func (c *conn) environmentList(Empty) (EnvironmentListResult, func(), error) {
+func (c *conn) environmentList(ctx context.Context, _ Empty) (EnvironmentListResult, func(), error) {
 	rows, err := c.s.agent.Environments(c.user)
 	if err != nil {
 		return EnvironmentListResult{}, nil, err
 	}
-	return EnvironmentListResult{Data: nonNil(rows)}, nil, nil
+	return EnvironmentListResult{Data: each(rows, environmentRow)}, nil, nil
 }
 
-func (c *conn) environmentAdd(p EnvironmentAddParams) (EnvironmentResult, func(), error) {
+func (c *conn) environmentAdd(ctx context.Context, p EnvironmentAddParams) (EnvironmentResult, func(), error) {
 	if strings.TrimSpace(p.Name) == "" {
 		return EnvironmentResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "name is required")
 	}
 	return environmentResult(c.s.agent.AddEnvironment(c.user, p.Name, p.Kind))
 }
 
-func (c *conn) environmentRename(p EnvironmentRenameParams) (EnvironmentResult, func(), error) {
+func (c *conn) environmentRename(ctx context.Context, p EnvironmentRenameParams) (EnvironmentResult, func(), error) {
 	if strings.TrimSpace(p.EnvironmentID) == "" {
 		return EnvironmentResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "environmentId is required")
 	}
@@ -35,7 +36,7 @@ func (c *conn) environmentRename(p EnvironmentRenameParams) (EnvironmentResult, 
 	return environmentResult(c.s.agent.RenameEnvironment(c.user, p.EnvironmentID, p.Name))
 }
 
-func (c *conn) environmentDelete(p EnvironmentDeleteParams) (EnvironmentResult, func(), error) {
+func (c *conn) environmentDelete(ctx context.Context, p EnvironmentDeleteParams) (EnvironmentResult, func(), error) {
 	if strings.TrimSpace(p.EnvironmentID) == "" {
 		return EnvironmentResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "environmentId is required")
 	}
@@ -43,7 +44,7 @@ func (c *conn) environmentDelete(p EnvironmentDeleteParams) (EnvironmentResult, 
 }
 
 func environmentResult(env repo.EnvironmentRow, err error) (EnvironmentResult, func(), error) {
-	return EnvironmentResult{Environment: env}, nil, err
+	return EnvironmentResult{Environment: environmentRow(env)}, nil, err
 }
 
 // environmentChanged tells the client an environment changed, or, when it can no longer be read, that it is gone.
@@ -52,7 +53,8 @@ func (c *conn) environmentChanged(id string) {
 	env, err := c.s.db.EnvironmentOf(c.user, id)
 	switch {
 	case err == nil:
-		n.Environment = &env
+		row := environmentRow(env)
+		n.Environment = &row
 	case !errors.Is(err, repo.ErrNotFound):
 		slog.Error("changed environment not readable", "environment", id, "err", err)
 		return
