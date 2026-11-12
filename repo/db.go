@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sync/atomic"
 	"time"
 
 	"gorm.io/driver/sqlite"
@@ -18,8 +19,9 @@ import (
 )
 
 type DB struct {
-	gorm  *gorm.DB
-	owner string
+	gorm *gorm.DB
+	// owner is the lease Fence holds this handle to, shared by every handle made from it; nil before Fence.
+	owner *atomic.Pointer[string]
 }
 
 // WithContext is the database for one request: its queries end when ctx does.
@@ -33,8 +35,12 @@ func Open(homeDir string) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	db := &DB{gorm: g}
-	if err := db.applySchema(); err != nil {
+	db := &DB{gorm: g, owner: new(atomic.Pointer[string])}
+	err = db.fenceWrites()
+	if err == nil {
+		err = db.applySchema()
+	}
+	if err != nil {
 		err = fmt.Errorf("storage: %s: %w", path, err)
 		if cerr := closeGorm(g); cerr != nil {
 			return nil, fmt.Errorf("%w (close: %v)", err, cerr)
@@ -66,8 +72,7 @@ func openFile(path string) (*gorm.DB, error) {
 	g, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 
-		NowFunc:                func() time.Time { return time.Now().UTC() },
-		SkipDefaultTransaction: true,
+		NowFunc: func() time.Time { return time.Now().UTC() },
 	})
 	if err != nil {
 		return nil, fmt.Errorf("storage: open %s: %w", path, err)
@@ -91,11 +96,7 @@ func (d *DB) applySchema() error {
 
 func (d *DB) Tx(fn func(*DB) error) error {
 	return d.gorm.Transaction(func(tx *gorm.DB) error {
-		t := &DB{gorm: tx, owner: d.owner}
-		if err := t.checkFence(); err != nil {
-			return err
-		}
-		return fn(t)
+		return fn(&DB{gorm: tx, owner: d.owner})
 	})
 }
 
