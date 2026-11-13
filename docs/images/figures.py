@@ -1,9 +1,9 @@
 """Ollupi figures: every README image in one visual system.
 
-Each figure is 1600 wide on white. A header carries the pixel wolf, an eyebrow, a title that states the point and a
-line of context; a footer carries the conditions or the source. Indigo is Ollupi (the wolf's fur and outline), rose is
-the per-agent isolation it replaces (the wolf's nose), pink is tool execution (its ears), slate is neutral; waiting is
-hatched. Text never takes a series color.
+Each figure is 1600 wide on white. A header carries the emblem (the little wolf by the moon), an eyebrow, a title
+that states the point and a line of context; a footer carries the conditions or the source. The colours are the
+desktop app's stone and moss: moss is Ollupi, rose is the per-agent isolation it replaces, the wolf's tan is tool
+execution, warm grey is neutral; waiting is hatched. Text never takes a series color.
 
 Run from anywhere: python3 docs/images/figures.py. The charts' numbers are the bench's output, written in below; the
 burst timeline and the soak are read from bench/results, where the raw output is kept. After a new measurement, update
@@ -20,12 +20,12 @@ BURST_CSV = f"{ROOT}/bench/results/burst.csv"
 SOAK_CSV = f"{ROOT}/bench/results/soak.csv"
 W, PAD = 1600, 72
 
-INDIGO, INDIGO_2, INDIGO_DEEP = "#4f46e5", "#818cf8", "#1e1b4b"
-TINT, TINT_2, LINE = "#eef2ff", "#e0e7ff", "#c7d2fe"
+INDIGO, INDIGO_2, INDIGO_DEEP = "#2f5d47", "#94b59f", "#22252a"  # moss, light moss, ink
+TINT, TINT_2, LINE = "#eef3ec", "#dfe9db", "#c3d3bd"
 ROSE, ROSE_TINT, ROSE_LINE = "#f43f5e", "#fff1f2", "#fecdd3"
-PINK = "#ec4899"
-INK2, MUTED, FAINT = "#334155", "#64748b", "#94a3b8"
-GRID, RULE, BASE, PAPER = "#eef2f6", "#e2e8f0", "#cbd5e1", "#f8fafc"
+PINK = "#c89a69"  # the wolf's tan
+INK2, MUTED, FAINT = "#3d4148", "#5b5f66", "#8e928f"
+GRID, RULE, BASE, PAPER = "#f1f0ec", "#e6e4de", "#cfccc3", "#f8f7f4"
 FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
 MONO = "ui-monospace, 'SF Mono', Menlo, monospace"
 ENV = "Apple M1 · 8 cores · 8 GB · one SQLite database · simulated model and tools"
@@ -67,7 +67,7 @@ class Figure:
             f' .chip {{ font-size: 15px; font-weight: 600; }}'
             f' .foot {{ font-size: 15px; fill: {FAINT}; }}</style>',
             f'<rect width="{W}" height="{h}" fill="#ffffff"/>',
-            f'<svg x="{PAD}" y="40" width="68" height="68" viewBox="0 0 240 240">{WOLF}</svg>',
+            f'<svg x="{PAD}" y="40" width="68" height="68" viewBox="0 0 100 100">{WOLF}</svg>',
             f'<text class="eyebrow" x="{PAD + 92}" y="62">{esc(eyebrow)}</text>',
             f'<text class="title" x="{PAD + 92}" y="104">{esc(title)}</text>',
             f'<text class="sub" x="{PAD}" y="152">{esc(sub)}</text>',
