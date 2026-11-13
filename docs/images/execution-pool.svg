@@ -1,113 +1,113 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 940" width="1600" height="940">
-<defs><pattern id="hatch" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="10" height="10" fill="#f8fafc"/><line x1="0" y1="0" x2="0" y2="10" stroke="#cbd5e1" stroke-width="4"/></pattern><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="#94a3b8"/></marker></defs>
-<style>text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; fill: #1e1b4b; } .eyebrow { font-size: 16px; font-weight: 600; letter-spacing: 3px; fill: #4f46e5; } .title { font-size: 36px; font-weight: 700; } .sub { font-size: 19px; fill: #64748b; } .kpi { font-size: 44px; font-weight: 700; letter-spacing: -0.5px; } .unit { font-size: 21px; font-weight: 600; fill: #334155; } .cap { font-size: 17px; fill: #64748b; } .h { font-size: 22px; font-weight: 700; } .hs { font-size: 19px; font-weight: 600; } .b { font-size: 17px; fill: #334155; } .s { font-size: 15px; fill: #64748b; } .code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-weight: 700; fill: #4f46e5; } .tick { font-size: 16px; fill: #64748b; } .lab { font-size: 17px; fill: #334155; } .val { font-size: 17px; font-weight: 600; } .chip { font-size: 15px; font-weight: 600; } .foot { font-size: 15px; fill: #94a3b8; }</style>
+<defs><pattern id="hatch" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="10" height="10" fill="#f8f7f4"/><line x1="0" y1="0" x2="0" y2="10" stroke="#cfccc3" stroke-width="4"/></pattern><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="#8e928f"/></marker></defs>
+<style>text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; fill: #22252a; } .eyebrow { font-size: 16px; font-weight: 600; letter-spacing: 3px; fill: #2f5d47; } .title { font-size: 36px; font-weight: 700; } .sub { font-size: 19px; fill: #5b5f66; } .kpi { font-size: 44px; font-weight: 700; letter-spacing: -0.5px; } .unit { font-size: 21px; font-weight: 600; fill: #3d4148; } .cap { font-size: 17px; fill: #5b5f66; } .h { font-size: 22px; font-weight: 700; } .hs { font-size: 19px; font-weight: 600; } .b { font-size: 17px; fill: #3d4148; } .s { font-size: 15px; fill: #5b5f66; } .code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-weight: 700; fill: #2f5d47; } .tick { font-size: 16px; fill: #5b5f66; } .lab { font-size: 17px; fill: #3d4148; } .val { font-size: 17px; font-weight: 600; } .chip { font-size: 15px; font-weight: 600; } .foot { font-size: 15px; fill: #8e928f; }</style>
 <rect width="1600" height="940" fill="#ffffff"/>
-<svg x="72" y="40" width="68" height="68" viewBox="0 0 240 240"><g shape-rendering="crispEdges"><rect x="36" y="6" width="12" height="12" fill="#1e1b4b"/><rect x="192" y="6" width="12" height="12" fill="#1e1b4b"/><rect x="24" y="18" width="12" height="12" fill="#1e1b4b"/><rect x="36" y="18" width="12" height="12" fill="#a5b4fc"/><rect x="48" y="18" width="12" height="12" fill="#1e1b4b"/><rect x="180" y="18" width="12" height="12" fill="#1e1b4b"/><rect x="192" y="18" width="12" height="12" fill="#a5b4fc"/><rect x="204" y="18" width="12" height="12" fill="#1e1b4b"/><rect x="24" y="30" width="12" height="12" fill="#1e1b4b"/><rect x="36" y="30" width="24" height="12" fill="#a5b4fc"/><rect x="60" y="30" width="12" height="12" fill="#1e1b4b"/><rect x="168" y="30" width="12" height="12" fill="#1e1b4b"/><rect x="180" y="30" width="24" height="12" fill="#a5b4fc"/><rect x="204" y="30" width="12" height="12" fill="#1e1b4b"/><rect x="24" y="42" width="12" height="12" fill="#1e1b4b"/><rect x="36" y="42" width="12" height="12" fill="#a5b4fc"/><rect x="48" y="42" width="12" height="12" fill="#f9a8d4"/><rect x="60" y="42" width="12" height="12" fill="#a5b4fc"/><rect x="72" y="42" width="12" height="12" fill="#1e1b4b"/><rect x="156" y="42" width="12" height="12" fill="#1e1b4b"/><rect x="168" y="42" width="12" height="12" fill="#a5b4fc"/><rect x="180" y="42" width="12" height="12" fill="#f9a8d4"/><rect x="192" y="42" width="12" height="12" fill="#a5b4fc"/><rect x="204" y="42" width="12" height="12" fill="#1e1b4b"/><rect x="24" y="54" width="12" height="12" fill="#1e1b4b"/><rect x="36" y="54" width="12" height="12" fill="#a5b4fc"/><rect x="48" y="54" width="24" height="12" fill="#f9a8d4"/><rect x="72" y="54" width="12" height="12" fill="#a5b4fc"/><rect x="84" y="54" width="72" height="12" fill="#1e1b4b"/><rect x="156" y="54" width="12" height="12" fill="#a5b4fc"/><rect x="168" y="54" width="24" height="12" fill="#f9a8d4"/><rect x="192" y="54" width="12" height="12" fill="#a5b4fc"/><rect x="204" y="54" width="12" height="12" fill="#1e1b4b"/><rect x="12" y="66" width="12" height="12" fill="#1e1b4b"/><rect x="24" y="66" width="24" height="12" fill="#a5b4fc"/><rect x="48" y="66" width="24" height="12" fill="#f9a8d4"/><rect x="72" y="66" width="96" height="12" fill="#a5b4fc"/><rect x="168" y="66" width="24" height="12" fill="#f9a8d4"/><rect x="192" y="66" width="24" height="12" fill="#a5b4fc"/><rect x="216" y="66" width="12" height="12" fill="#1e1b4b"/><rect x="12" y="78" width="12" height="12" fill="#1e1b4b"/><rect x="24" y="78" width="84" height="12" fill="#a5b4fc"/><rect x="108" y="78" width="24" height="12" fill="#eef2ff"/><rect x="132" y="78" width="84" height="12" fill="#a5b4fc"/><rect x="216" y="78" width="12" height="12" fill="#1e1b4b"/><rect x="12" y="90" width="12" height="12" fill="#1e1b4b"/><rect x="24" y="90" width="36" height="12" fill="#a5b4fc"/><rect x="60" y="90" width="12" height="12" fill="#ffffff"/><rect x="72" y="90" width="12" height="12" fill="#1e1b4b"/><rect x="84" y="90" width="24" height="12" fill="#a5b4fc"/><rect x="108" y="90" width="24" height="12" fill="#eef2ff"/><rect x="132" y="90" width="24" height="12" fill="#a5b4fc"/><rect x="156" y="90" width="12" height="12" fill="#ffffff"/><rect x="168" y="90" width="12" height="12" fill="#1e1b4b"/><rect x="180" y="90" width="36" height="12" fill="#a5b4fc"/><rect x="216" y="90" width="12" height="12" fill="#1e1b4b"/><rect x="0" y="102" width="12" height="12" fill="#1e1b4b"/><rect x="12" y="102" width="48" height="12" fill="#a5b4fc"/><rect x="60" y="102" width="24" height="12" fill="#1e1b4b"/><rect x="84" y="102" width="12" height="12" fill="#a5b4fc"/><rect x="96" y="102" width="48" height="12" fill="#eef2ff"/><rect x="144" y="102" width="12" height="12" fill="#a5b4fc"/><rect x="156" y="102" width="24" height="12" fill="#1e1b4b"/><rect x="180" y="102" width="48" height="12" fill="#a5b4fc"/><rect x="228" y="102" width="12" height="12" fill="#1e1b4b"/><rect x="0" y="114" width="12" height="12" fill="#1e1b4b"/><rect x="12" y="114" width="12" height="12" fill="#a5b4fc"/><rect x="24" y="114" width="36" height="12" fill="#eef2ff"/><rect x="60" y="114" width="24" height="12" fill="#1e1b4b"/><rect x="84" y="114" width="72" height="12" fill="#eef2ff"/><rect x="156" y="114" width="24" height="12" fill="#1e1b4b"/><rect x="180" y="114" width="36" height="12" fill="#eef2ff"/><rect x="216" y="114" width="12" height="12" fill="#a5b4fc"/><rect x="228" y="114" width="12" height="12" fill="#1e1b4b"/><rect x="0" y="126" width="12" height="12" fill="#1e1b4b"/><rect x="12" y="126" width="12" height="12" fill="#eef2ff"/><rect x="24" y="126" width="24" height="12" fill="#f9a8d4"/><rect x="48" y="126" width="48" height="12" fill="#eef2ff"/><rect x="96" y="126" width="48" height="12" fill="#1e1b4b"/><rect x="144" y="126" width="48" height="12" fill="#eef2ff"/><rect x="192" y="126" width="24" height="12" fill="#f9a8d4"/><rect x="216" y="126" width="12" height="12" fill="#eef2ff"/><rect x="228" y="126" width="12" height="12" fill="#1e1b4b"/><rect x="12" y="138" width="12" height="12" fill="#1e1b4b"/><rect x="24" y="138" width="84" height="12" fill="#eef2ff"/><rect x="108" y="138" width="24" height="12" fill="#1e1b4b"/><rect x="132" y="138" width="84" height="12" fill="#eef2ff"/><rect x="216" y="138" width="12" height="12" fill="#1e1b4b"/><rect x="0" y="150" width="12" height="12" fill="#1e1b4b"/><rect x="12" y="150" width="216" height="12" fill="#eef2ff"/><rect x="228" y="150" width="12" height="12" fill="#1e1b4b"/><rect x="12" y="162" width="12" height="12" fill="#1e1b4b"/><rect x="24" y="162" width="84" height="12" fill="#eef2ff"/><rect x="108" y="162" width="24" height="12" fill="#1e1b4b"/><rect x="132" y="162" width="84" height="12" fill="#eef2ff"/><rect x="216" y="162" width="12" height="12" fill="#1e1b4b"/><rect x="24" y="174" width="12" height="12" fill="#1e1b4b"/><rect x="36" y="174" width="60" height="12" fill="#eef2ff"/><rect x="96" y="174" width="12" height="12" fill="#1e1b4b"/><rect x="108" y="174" width="24" height="12" fill="#fb7185"/><rect x="132" y="174" width="12" height="12" fill="#1e1b4b"/><rect x="144" y="174" width="60" height="12" fill="#eef2ff"/><rect x="204" y="174" width="12" height="12" fill="#1e1b4b"/><rect x="36" y="186" width="12" height="12" fill="#1e1b4b"/><rect x="48" y="186" width="48" height="12" fill="#eef2ff"/><rect x="96" y="186" width="12" height="12" fill="#1e1b4b"/><rect x="108" y="186" width="24" height="12" fill="#fb7185"/><rect x="132" y="186" width="12" height="12" fill="#1e1b4b"/><rect x="144" y="186" width="48" height="12" fill="#eef2ff"/><rect x="192" y="186" width="12" height="12" fill="#1e1b4b"/><rect x="48" y="198" width="24" height="12" fill="#1e1b4b"/><rect x="72" y="198" width="36" height="12" fill="#eef2ff"/><rect x="108" y="198" width="24" height="12" fill="#1e1b4b"/><rect x="132" y="198" width="36" height="12" fill="#eef2ff"/><rect x="168" y="198" width="24" height="12" fill="#1e1b4b"/><rect x="72" y="210" width="24" height="12" fill="#1e1b4b"/><rect x="96" y="210" width="48" height="12" fill="#eef2ff"/><rect x="144" y="210" width="24" height="12" fill="#1e1b4b"/><rect x="96" y="222" width="48" height="12" fill="#1e1b4b"/></g></svg>
+<svg x="72" y="40" width="68" height="68" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#2b2541"/><circle cx="54" cy="44" r="31" fill="#efe6d2"/><g transform="translate(14 12) scale(.8)"><clipPath id="ollupi-body"><path d="M30 95 C18 95 13 83 19 73 C23 65 31 59 39 55 C43 47 45 39 46 31 L44.5 7 C44.5 4.5 47.5 4 48.5 6.5 L54.5 19.5 L58 5.5 C58.5 3 61.5 3 62 5.5 L63.5 22 C68 23.5 71.5 26 74 29 L86 34.5 C89 35.8 88.6 40 85.5 40.2 L74 41.5 C70.5 44 68.5 48 67.5 54 C66.5 62 68 72 69 82 L70 92 C70.2 94 69 95.3 67 95.3 L63.5 95.3 C61.5 95.3 61 93.8 61 92.5 L60 82 L58.5 92.5 C58.3 94.3 57 95.3 55 95.3 L50 95.3 Z"/></clipPath><path d="M30 95 C18 95 13 83 19 73 C23 65 31 59 39 55 C43 47 45 39 46 31 L44.5 7 C44.5 4.5 47.5 4 48.5 6.5 L54.5 19.5 L58 5.5 C58.5 3 61.5 3 62 5.5 L63.5 22 C68 23.5 71.5 26 74 29 L86 34.5 C89 35.8 88.6 40 85.5 40.2 L74 41.5 C70.5 44 68.5 48 67.5 54 C66.5 62 68 72 69 82 L70 92 C70.2 94 69 95.3 67 95.3 L63.5 95.3 C61.5 95.3 61 93.8 61 92.5 L60 82 L58.5 92.5 C58.3 94.3 57 95.3 55 95.3 L50 95.3 Z" fill="#c89a69"/><g clip-path="url(#ollupi-body)"><path d="M92 44 L72.5 44.5 C69.2 47.5 66.8 51.5 65.7 56.5 C64.8 61.5 65.6 68 69.2 76 L92 76 Z" fill="#ead2ab"/><path d="M8 92 L8 40 L30 40 L46.8 33 C48.4 44 44.5 52.5 37 59.5 C30 65.5 24.5 72 21.8 82 Z" fill="#3b3350"/></g><path d="M47.4 11.5 L51.4 19.8 L48.6 20.4 Z M59.9 10.2 L61 20.4 L58.6 19.4 Z" fill="#ead2ab"/><path d="M21 80 C8 84 8 99 24 99.5 C36 100 46 99 54 96.8 C57 96 57 92.5 54 92.5 C44 94 34 94 27 90 C23.5 88 22 84.5 21 80 Z" fill="#c89a69" stroke="#2b2541" stroke-width="1.6" paint-order="stroke"/><path d="M45 94.6 C49 94.4 51.5 93.8 54 92.5 C57 92.5 57 96 54 96.8 C51 97.6 48 98.2 45 98.5 C43.5 97 43.5 95.6 45 94.6 Z" fill="#3b3350"/><circle cx="70.5" cy="31" r="2.3" fill="#2b2541"/></g></svg>
 <text class="eyebrow" x="164" y="62">OLLUPI · EXECUTION POOL</text>
 <text class="title" x="164" y="104">Every turn shares one execution pool</text>
 <text class="sub" x="72" y="152">Waiting turns release their slots, and model concurrency goes only to turns calling the model</text>
-<line x1="72" y1="880" x2="1528" y2="880" stroke="#e2e8f0" stroke-width="2"/>
+<line x1="72" y1="880" x2="1528" y2="880" stroke="#e6e4de" stroke-width="2"/>
 <text class="foot" x="72" y="912">An agent spends most of its time waiting on the model; the pool keeps as many model calls in flight as it can</text>
 <text class="foot" x="1528" y="912" text-anchor="end" style="font-family: ui-monospace, 'SF Mono', Menlo, monospace">github.com/0xfakeSpike/ollupi</text>
-<rect x="72" y="236" width="228" height="90" rx="14" fill="#ffffff" stroke="#c7d2fe" stroke-width="2"/>
+<rect x="72" y="236" width="228" height="90" rx="14" fill="#ffffff" stroke="#c3d3bd" stroke-width="2"/>
 <text class="hs" x="96.0" y="274.0" text-anchor="start">User messages</text>
 <text class="s" x="96.0" y="302.0" text-anchor="start">Any session</text>
-<path d="M300,281 C340,281 340,392 372,392" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>
-<rect x="72" y="354" width="228" height="90" rx="14" fill="#ffffff" stroke="#c7d2fe" stroke-width="2"/>
+<path d="M300,281 C340,281 340,392 372,392" fill="none" stroke="#8e928f" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="72" y="354" width="228" height="90" rx="14" fill="#ffffff" stroke="#c3d3bd" stroke-width="2"/>
 <text class="hs" x="96.0" y="392.0" text-anchor="start">Subagents</text>
 <text class="s" x="96.0" y="420.0" text-anchor="start">Plain sessions and turns</text>
-<path d="M300,399 C340,399 340,392 372,392" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>
-<rect x="72" y="472" width="228" height="90" rx="14" fill="#ffffff" stroke="#c7d2fe" stroke-width="2"/>
+<path d="M300,399 C340,399 340,392 372,392" fill="none" stroke="#8e928f" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="72" y="472" width="228" height="90" rx="14" fill="#ffffff" stroke="#c3d3bd" stroke-width="2"/>
 <text class="hs" x="96.0" y="510.0" text-anchor="start">Scheduled tasks</text>
 <text class="s" x="96.0" y="538.0" text-anchor="start">Sends a message when due</text>
-<path d="M300,517 C340,517 340,392 372,392" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>
-<rect x="376" y="212" width="300" height="380" rx="18" fill="#eef2ff" stroke="#c7d2fe" stroke-width="2"/>
+<path d="M300,517 C340,517 340,392 372,392" fill="none" stroke="#8e928f" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="376" y="212" width="300" height="380" rx="18" fill="#eef3ec" stroke="#c3d3bd" stroke-width="2"/>
 <text class="h" x="400.0" y="252.0" text-anchor="start">Queue</text>
 <text class="s" x="400.0" y="280.0" text-anchor="start">Runnable turns in the database</text>
-<rect x="400" y="300" width="252" height="42" rx="10" fill="#ffffff" stroke="#c7d2fe" stroke-width="2"/>
+<rect x="400" y="300" width="252" height="42" rx="10" fill="#ffffff" stroke="#c3d3bd" stroke-width="2"/>
 <text class="b" x="418.0" y="327.0" text-anchor="start">Session A · turn 3</text>
-<rect x="400" y="354" width="252" height="42" rx="10" fill="#ffffff" stroke="#c7d2fe" stroke-width="2"/>
+<rect x="400" y="354" width="252" height="42" rx="10" fill="#ffffff" stroke="#c3d3bd" stroke-width="2"/>
 <text class="b" x="418.0" y="381.0" text-anchor="start">Session B · turn 1</text>
-<rect x="400" y="408" width="252" height="42" rx="10" fill="#ffffff" stroke="#c7d2fe" stroke-width="2"/>
+<rect x="400" y="408" width="252" height="42" rx="10" fill="#ffffff" stroke="#c3d3bd" stroke-width="2"/>
 <text class="b" x="418.0" y="435.0" text-anchor="start">Subagent A-1</text>
-<rect x="400" y="462" width="252" height="42" rx="10" fill="#ffffff" stroke="#c7d2fe" stroke-width="2"/>
+<rect x="400" y="462" width="252" height="42" rx="10" fill="#ffffff" stroke="#c3d3bd" stroke-width="2"/>
 <text class="b" x="418.0" y="489.0" text-anchor="start">Subagent A-2</text>
-<rect x="400" y="516" width="252" height="42" rx="10" fill="#ffffff" stroke="#c7d2fe" stroke-width="2"/>
+<rect x="400" y="516" width="252" height="42" rx="10" fill="#ffffff" stroke="#c3d3bd" stroke-width="2"/>
 <text class="b" x="418.0" y="543.0" text-anchor="start">Scheduled · daily digest</text>
 <text class="s" x="376.0" y="618.0" text-anchor="start">When slots are full, sessions run</text>
 <text class="s" x="376.0" y="642.0" text-anchor="start">before subagents; within each kind,</text>
 <text class="s" x="376.0" y="666.0" text-anchor="start">turns run in ready order</text>
-<path d="M678,402 H716" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>
-<rect x="720" y="212" width="420" height="380" rx="18" fill="#ffffff" stroke="#4f46e5" stroke-width="2"/>
+<path d="M678,402 H716" fill="none" stroke="#8e928f" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="720" y="212" width="420" height="380" rx="18" fill="#ffffff" stroke="#2f5d47" stroke-width="2"/>
 <text class="h" x="744.0" y="252.0" text-anchor="start">Slots</text>
 <text class="s" x="744.0" y="280.0" text-anchor="start">32 by default; one per turn, released when waiting</text>
-<rect x="744" y="304" width="38" height="38" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2"/>
-<rect x="790" y="304" width="38" height="38" rx="8" fill="#4f46e5"/>
-<rect x="836" y="304" width="38" height="38" rx="8" fill="#ec4899"/>
-<rect x="882" y="304" width="38" height="38" rx="8" fill="#4f46e5"/>
-<rect x="928" y="304" width="38" height="38" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2"/>
-<rect x="974" y="304" width="38" height="38" rx="8" fill="#4f46e5"/>
-<rect x="1020" y="304" width="38" height="38" rx="8" fill="#4f46e5"/>
-<rect x="1066" y="304" width="38" height="38" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2"/>
-<rect x="744" y="350" width="38" height="38" rx="8" fill="#4f46e5"/>
-<rect x="790" y="350" width="38" height="38" rx="8" fill="#ec4899"/>
-<rect x="836" y="350" width="38" height="38" rx="8" fill="#4f46e5"/>
-<rect x="882" y="350" width="38" height="38" rx="8" fill="#ec4899"/>
-<rect x="928" y="350" width="38" height="38" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2"/>
-<rect x="974" y="350" width="38" height="38" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2"/>
-<rect x="1020" y="350" width="38" height="38" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2"/>
-<rect x="1066" y="350" width="38" height="38" rx="8" fill="#ec4899"/>
-<rect x="744" y="396" width="38" height="38" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2"/>
-<rect x="790" y="396" width="38" height="38" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2"/>
-<rect x="836" y="396" width="38" height="38" rx="8" fill="#4f46e5"/>
-<rect x="882" y="396" width="38" height="38" rx="8" fill="#ec4899"/>
-<rect x="928" y="396" width="38" height="38" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2"/>
-<rect x="974" y="396" width="38" height="38" rx="8" fill="#ec4899"/>
-<rect x="1020" y="396" width="38" height="38" rx="8" fill="#4f46e5"/>
-<rect x="1066" y="396" width="38" height="38" rx="8" fill="#4f46e5"/>
-<rect x="744" y="442" width="38" height="38" rx="8" fill="#ec4899"/>
-<rect x="790" y="442" width="38" height="38" rx="8" fill="#4f46e5"/>
-<rect x="836" y="442" width="38" height="38" rx="8" fill="#4f46e5"/>
-<rect x="882" y="442" width="38" height="38" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2"/>
-<rect x="928" y="442" width="38" height="38" rx="8" fill="#4f46e5"/>
-<rect x="974" y="442" width="38" height="38" rx="8" fill="#4f46e5"/>
-<rect x="1020" y="442" width="38" height="38" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2"/>
-<rect x="1066" y="442" width="38" height="38" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2"/>
-<rect x="744" y="514" width="16" height="16" rx="4" fill="#4f46e5"/>
+<rect x="744" y="304" width="38" height="38" rx="8" fill="#f8f7f4" stroke="#e6e4de" stroke-width="2"/>
+<rect x="790" y="304" width="38" height="38" rx="8" fill="#2f5d47"/>
+<rect x="836" y="304" width="38" height="38" rx="8" fill="#c89a69"/>
+<rect x="882" y="304" width="38" height="38" rx="8" fill="#2f5d47"/>
+<rect x="928" y="304" width="38" height="38" rx="8" fill="#f8f7f4" stroke="#e6e4de" stroke-width="2"/>
+<rect x="974" y="304" width="38" height="38" rx="8" fill="#2f5d47"/>
+<rect x="1020" y="304" width="38" height="38" rx="8" fill="#2f5d47"/>
+<rect x="1066" y="304" width="38" height="38" rx="8" fill="#f8f7f4" stroke="#e6e4de" stroke-width="2"/>
+<rect x="744" y="350" width="38" height="38" rx="8" fill="#2f5d47"/>
+<rect x="790" y="350" width="38" height="38" rx="8" fill="#c89a69"/>
+<rect x="836" y="350" width="38" height="38" rx="8" fill="#2f5d47"/>
+<rect x="882" y="350" width="38" height="38" rx="8" fill="#c89a69"/>
+<rect x="928" y="350" width="38" height="38" rx="8" fill="#f8f7f4" stroke="#e6e4de" stroke-width="2"/>
+<rect x="974" y="350" width="38" height="38" rx="8" fill="#f8f7f4" stroke="#e6e4de" stroke-width="2"/>
+<rect x="1020" y="350" width="38" height="38" rx="8" fill="#f8f7f4" stroke="#e6e4de" stroke-width="2"/>
+<rect x="1066" y="350" width="38" height="38" rx="8" fill="#c89a69"/>
+<rect x="744" y="396" width="38" height="38" rx="8" fill="#f8f7f4" stroke="#e6e4de" stroke-width="2"/>
+<rect x="790" y="396" width="38" height="38" rx="8" fill="#f8f7f4" stroke="#e6e4de" stroke-width="2"/>
+<rect x="836" y="396" width="38" height="38" rx="8" fill="#2f5d47"/>
+<rect x="882" y="396" width="38" height="38" rx="8" fill="#c89a69"/>
+<rect x="928" y="396" width="38" height="38" rx="8" fill="#f8f7f4" stroke="#e6e4de" stroke-width="2"/>
+<rect x="974" y="396" width="38" height="38" rx="8" fill="#c89a69"/>
+<rect x="1020" y="396" width="38" height="38" rx="8" fill="#2f5d47"/>
+<rect x="1066" y="396" width="38" height="38" rx="8" fill="#2f5d47"/>
+<rect x="744" y="442" width="38" height="38" rx="8" fill="#c89a69"/>
+<rect x="790" y="442" width="38" height="38" rx="8" fill="#2f5d47"/>
+<rect x="836" y="442" width="38" height="38" rx="8" fill="#2f5d47"/>
+<rect x="882" y="442" width="38" height="38" rx="8" fill="#f8f7f4" stroke="#e6e4de" stroke-width="2"/>
+<rect x="928" y="442" width="38" height="38" rx="8" fill="#2f5d47"/>
+<rect x="974" y="442" width="38" height="38" rx="8" fill="#2f5d47"/>
+<rect x="1020" y="442" width="38" height="38" rx="8" fill="#f8f7f4" stroke="#e6e4de" stroke-width="2"/>
+<rect x="1066" y="442" width="38" height="38" rx="8" fill="#f8f7f4" stroke="#e6e4de" stroke-width="2"/>
+<rect x="744" y="514" width="16" height="16" rx="4" fill="#2f5d47"/>
 <text class="s" x="768.0" y="528.0" text-anchor="start">Model call</text>
-<rect x="872" y="514" width="16" height="16" rx="4" fill="#ec4899"/>
+<rect x="872" y="514" width="16" height="16" rx="4" fill="#c89a69"/>
 <text class="s" x="896.0" y="528.0" text-anchor="start">Tool call</text>
-<rect x="1000" y="514" width="16" height="16" rx="4" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2"/>
+<rect x="1000" y="514" width="16" height="16" rx="4" fill="#f8f7f4" stroke="#e6e4de" stroke-width="2"/>
 <text class="s" x="1024.0" y="528.0" text-anchor="start">Idle</text>
 <text class="s" x="744.0" y="566.0" text-anchor="start">Tool calls hold a slot but no model concurrency</text>
-<path d="M1142,402 H1180" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>
-<rect x="1184" y="212" width="344" height="380" rx="18" fill="#ffffff" stroke="#c7d2fe" stroke-width="2"/>
+<path d="M1142,402 H1180" fill="none" stroke="#8e928f" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="1184" y="212" width="344" height="380" rx="18" fill="#ffffff" stroke="#c3d3bd" stroke-width="2"/>
 <text class="h" x="1208.0" y="252.0" text-anchor="start">Model concurrency</text>
 <text class="s" x="1208.0" y="280.0" text-anchor="start">Per connection, 4 by default</text>
 <text class="lab" x="1208.0" y="318.0" text-anchor="start">Connection A</text>
-<rect x="1208" y="334" width="66" height="40" rx="8" fill="#4f46e5"/>
-<rect x="1284" y="334" width="66" height="40" rx="8" fill="#4f46e5"/>
-<rect x="1360" y="334" width="66" height="40" rx="8" fill="#4f46e5"/>
-<rect x="1436" y="334" width="66" height="40" rx="8" fill="#4f46e5"/>
+<rect x="1208" y="334" width="66" height="40" rx="8" fill="#2f5d47"/>
+<rect x="1284" y="334" width="66" height="40" rx="8" fill="#2f5d47"/>
+<rect x="1360" y="334" width="66" height="40" rx="8" fill="#2f5d47"/>
+<rect x="1436" y="334" width="66" height="40" rx="8" fill="#2f5d47"/>
 <text class="lab" x="1208.0" y="438.0" text-anchor="start">Connection B</text>
-<rect x="1208" y="454" width="66" height="40" rx="8" fill="#4f46e5"/>
-<rect x="1284" y="454" width="66" height="40" rx="8" fill="#4f46e5"/>
-<rect x="1360" y="454" width="66" height="40" rx="8" fill="#4f46e5"/>
-<rect x="1436" y="454" width="66" height="40" rx="8" fill="#4f46e5"/>
+<rect x="1208" y="454" width="66" height="40" rx="8" fill="#2f5d47"/>
+<rect x="1284" y="454" width="66" height="40" rx="8" fill="#2f5d47"/>
+<rect x="1360" y="454" width="66" height="40" rx="8" fill="#2f5d47"/>
+<rect x="1436" y="454" width="66" height="40" rx="8" fill="#2f5d47"/>
 <text class="s" x="1208.0" y="566.0" text-anchor="start">When full, calls queue within quota</text>
-<path d="M930,594 V676" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M930,594 V676" fill="none" stroke="#8e928f" stroke-width="2" marker-end="url(#arrow)"/>
 <text class="s" x="946.0" y="640.0" text-anchor="start">Needs an approval, an answer or a subagent</text>
-<rect x="720" y="680" width="420" height="156" rx="18" fill="url(#hatch)" stroke="#cbd5e1" stroke-width="2"/>
+<rect x="720" y="680" width="420" height="156" rx="18" fill="url(#hatch)" stroke="#cfccc3" stroke-width="2"/>
 <rect x="740" y="696" width="380" height="124" rx="12" fill="#ffffff"/>
 <text class="h" x="762.0" y="732.0" text-anchor="start">Waiting</text>
 <text class="s" x="762.0" y="760.0" text-anchor="start">Holds no slot, goroutine or model concurrency</text>
-<rect x="762" y="778" width="104" height="28" rx="14" fill="#eef2ff"/>
-<text class="chip" x="814.0" y="797.0" text-anchor="middle" style="fill:#4f46e5">approval</text>
-<rect x="878" y="778" width="104" height="28" rx="14" fill="#eef2ff"/>
-<text class="chip" x="930.0" y="797.0" text-anchor="middle" style="fill:#4f46e5">answer</text>
-<rect x="994" y="778" width="104" height="28" rx="14" fill="#eef2ff"/>
-<text class="chip" x="1046.0" y="797.0" text-anchor="middle" style="fill:#4f46e5">subagent</text>
-<path d="M718,758 H652 V596" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="762" y="778" width="104" height="28" rx="14" fill="#eef3ec"/>
+<text class="chip" x="814.0" y="797.0" text-anchor="middle" style="fill:#2f5d47">approval</text>
+<rect x="878" y="778" width="104" height="28" rx="14" fill="#eef3ec"/>
+<text class="chip" x="930.0" y="797.0" text-anchor="middle" style="fill:#2f5d47">answer</text>
+<rect x="994" y="778" width="104" height="28" rx="14" fill="#eef3ec"/>
+<text class="chip" x="1046.0" y="797.0" text-anchor="middle" style="fill:#2f5d47">subagent</text>
+<path d="M718,758 H652 V596" fill="none" stroke="#8e928f" stroke-width="2" marker-end="url(#arrow)"/>
 <text class="s" x="636.0" y="700.0" text-anchor="end">Ready again once the answer, approval</text>
 <text class="s" x="636.0" y="722.0" text-anchor="end">or subagent result arrives</text>
 </svg>
