@@ -66,7 +66,7 @@ func (o *Orchestrator) runTurn(ctx context.Context, t db.ThreadRow, turn db.Turn
 		return false, db.Usage{}, err
 	}
 	rt := &runtime.Runtime{
-		DB: o.cfg.DB, Attachments: o.cfg.Attachments,
+		DB: o.cfg.DB, Attachments: o.cfg.Attachments, Memory: o.cfg.Memory,
 		LLM: client, Registry: registry, Window: window,
 		Host: turnHost{o: o, t: t, turn: turn, registry: registry},
 		Config: runtime.Config{
