@@ -1,5 +1,7 @@
 package role
 
+import "github.com/0xfakeSpike/ollupi/tools"
+
 const (
 	// BrowserSub is the name of the browser subagent.
 	BrowserSub Name = "browser-sub-agent"
@@ -10,7 +12,8 @@ const (
 )
 
 var browserSub = Role{
-	Name: BrowserSub, Rules: browserSubRules, Provider: BrowserProvider,
+	Name: BrowserSub, Rules: browserSubRules,
+	offers: func(d tools.ToolDescriptor) bool { return d.Provider == BrowserProvider }, send: sendFitting,
 	Launcher: &Launcher{
 		Tool:  BrowserSubTool,
 		Title: "Browser subagent",
