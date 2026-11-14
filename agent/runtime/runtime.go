@@ -44,7 +44,6 @@ type Runtime struct {
 
 	offered  []tools.ToolDescriptor
 	deferred []tools.ToolDescriptor
-	system   string
 	redactor *redact.Redactor
 	usage    db.Usage
 }
@@ -67,11 +66,6 @@ func (rt *Runtime) start() error {
 	}
 	rt.redactor = redact.New(settings.RedactionKey)
 	rt.offer()
-	if rt.system, err = rt.Role.System(role.Input{
-		Deployment: rt.Deployment, Root: rt.Caller.Root, SkillTokens: rt.Window.SkillBudget(), Deferred: rt.deferred,
-	}); err != nil {
-		return fmt.Errorf("runtime: %w", err)
-	}
 	if !rt.Role.Memory || hasSnapshot(slices.Concat(rt.History, rt.Items)) {
 		return nil
 	}
