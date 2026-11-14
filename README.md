@@ -1,5 +1,8 @@
 <h1>
-  <img alt="Ollupi" src="docs/logo/logo.svg" width="240">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/0xfakeSpike/ollupi-desktop/main/assets/brand/logo-dark.svg">
+    <img alt="Ollupi" src="https://raw.githubusercontent.com/0xfakeSpike/ollupi-desktop/main/assets/brand/logo.svg" width="240">
+  </picture>
 </h1>
 
 Ollupi is a Go agent framework for cloud providers building massively concurrent personal agent services.
