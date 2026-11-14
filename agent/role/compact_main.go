@@ -5,6 +5,14 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools/workspace"
 )
 
+const (
+	// CompactMain is the name of the compact main agent.
+	CompactMain Name = "compact-main-agent"
+	// compactBelow is the input below which a model gets the compact main agent: about 8k tokens are what the full main
+	// agent's prompt and tool list need, which the context window holds to half of it.
+	compactBelow = 16_384
+)
+
 // compactMain is the main agent for a model with a small input: shorter rules, and no skills, as their tools are
 // deferred.
 var compactMain = Role{

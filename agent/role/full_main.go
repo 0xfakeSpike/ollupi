@@ -1,5 +1,8 @@
 package role
 
+// FullMain is the name of the full main agent.
+const FullMain Name = "full-main-agent"
+
 // fullMain is the main agent for a model whose input holds the whole prompt and tool list.
 var fullMain = Role{Name: FullMain, Persona: true, Rules: fullMainRules, Skills: true, Memory: true}
 
