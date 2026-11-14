@@ -82,7 +82,7 @@ func checkOne(res *gorm.DB) error {
 
 var rowTypes = []any{
 	&UserRow{}, &EnvironmentRow{}, &WorkspaceRow{}, &ThreadRow{}, &TurnRow{}, &ItemRow{}, &CronJobRow{},
-	&MemoryRow{}, &MemoryStateRow{}, &SettingsRow{}, &ShardLeaseRow{},
+	&MemoryRow{}, &MemoryStateRow{}, &SettingsRow{}, &ShardLeaseRow{}, &BackgroundCallRow{},
 }
 
 var ErrNotFound = errors.New("storage: not found")
