@@ -9,7 +9,7 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/agent/runtime"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -22,12 +22,12 @@ func (o *Orchestrator) run(threadID string, sl *slot) {
 		return
 	}
 	turn, err := o.cfg.DB.Turn(sl.turnID)
-	if errors.Is(err, repo.ErrNotFound) || err == nil && turn.Status != repo.TurnInProgress {
+	if errors.Is(err, db.ErrNotFound) || err == nil && turn.Status != db.TurnInProgress {
 		o.post(func() { o.release(threadID) })
 		return
 	}
-	var t repo.ThreadRow
-	var items []repo.ItemRow
+	var t db.ThreadRow
+	var items []db.ItemRow
 	if err == nil {
 		t, err = o.cfg.DB.ThreadRow(threadID)
 	}
@@ -38,7 +38,7 @@ func (o *Orchestrator) run(threadID string, sl *slot) {
 		slog.Error("thread not readable to run", "thread", threadID, "turn", sl.turnID, "err", err)
 		o.post(func() {
 			o.release(threadID)
-			o.failTurn(sl.turnID, repo.TurnFailed, "the thread could not be read from storage")
+			o.failTurn(sl.turnID, db.TurnFailed, "the thread could not be read from storage")
 		})
 		return
 	}
@@ -70,28 +70,28 @@ func (o *Orchestrator) run(threadID string, sl *slot) {
 	o.post(func() { o.afterRun(threadID, sl, final, err) })
 }
 
-func (o *Orchestrator) runTurn(ctx context.Context, t repo.ThreadRow, turn repo.TurnRow, thread []repo.ItemRow) (bool, repo.Usage, error) {
+func (o *Orchestrator) runTurn(ctx context.Context, t db.ThreadRow, turn db.TurnRow, thread []db.ItemRow) (bool, db.Usage, error) {
 	window, err := o.windowFor(turn.Model)
 	if err != nil {
-		return false, repo.Usage{}, err
+		return false, db.Usage{}, err
 	}
 	client, err := o.clientFor(t.UserID, turn.Model.Connection)
 	if err != nil {
-		return false, repo.Usage{}, fmt.Errorf("orchestrator: the model client of the user: %w", err)
+		return false, db.Usage{}, fmt.Errorf("orchestrator: the model client of the user: %w", err)
 	}
 	registry, err := o.registryFor(t.UserID)
 	if err != nil {
-		return false, repo.Usage{}, err
+		return false, db.Usage{}, err
 	}
 	r, ok := role.Of(role.Name(turn.Agent))
 	if !ok {
-		return false, repo.Usage{}, fmt.Errorf("orchestrator: turn %s names role %q, which is none of %q", turn.ID, turn.Agent, role.NameValues)
+		return false, db.Usage{}, fmt.Errorf("orchestrator: turn %s names role %q, which is none of %q", turn.ID, turn.Agent, role.NameValues)
 	}
 	checker, w, err := o.permissions(t, r)
 	if err != nil {
-		return false, repo.Usage{}, err
+		return false, db.Usage{}, err
 	}
-	var history, items []repo.ItemRow
+	var history, items []db.ItemRow
 	for _, it := range thread {
 		if it.TurnID == turn.ID {
 			items = append(items, it)
@@ -126,9 +126,9 @@ func (o *Orchestrator) afterRun(threadID string, sl *slot, final bool, runErr er
 	if err != nil {
 		slog.Error("thread not readable after its run", "thread", threadID, "turn", sl.turnID, "err", err)
 		if interrupted {
-			o.failTurn(sl.turnID, repo.TurnInterrupted, "interrupted by the user")
+			o.failTurn(sl.turnID, db.TurnInterrupted, "interrupted by the user")
 		} else {
-			o.failTurn(sl.turnID, repo.TurnFailed, "the thread could not be read from storage after its run")
+			o.failTurn(sl.turnID, db.TurnFailed, "the thread could not be read from storage after its run")
 		}
 		return
 	}
@@ -141,9 +141,9 @@ func (o *Orchestrator) afterRun(threadID string, sl *slot, final bool, runErr er
 		slog.Info("turn left in progress at shutdown", "thread", threadID, "turn", turn.ID, "err", runErr)
 		return
 	case interrupted:
-		turn.Status, turn.Error = repo.TurnInterrupted, "interrupted by the user"
+		turn.Status, turn.Error = db.TurnInterrupted, "interrupted by the user"
 	case runErr != nil:
-		turn.Status, turn.Error = repo.TurnFailed, runErr.Error()
+		turn.Status, turn.Error = db.TurnFailed, runErr.Error()
 		slog.Warn("turn failed", "thread", threadID, "turn", turn.ID, "err", runErr)
 	case final:
 		more, err := o.cfg.DB.InputAfterAnswer(turn.ID)
@@ -158,10 +158,10 @@ func (o *Orchestrator) afterRun(threadID string, sl *slot, final bool, runErr er
 			}
 		}
 		if !more {
-			turn.Status = repo.TurnCompleted
+			turn.Status = db.TurnCompleted
 		}
 	}
-	if turn.Status != repo.TurnInProgress {
+	if turn.Status != db.TurnInProgress {
 		o.endTurn(turn)
 		return
 	}
@@ -179,7 +179,7 @@ func (o *Orchestrator) afterRun(threadID string, sl *slot, final bool, runErr er
 	}
 }
 
-func (o *Orchestrator) endTurn(turn repo.TurnRow) {
+func (o *Orchestrator) endTurn(turn db.TurnRow) {
 	st, err := o.cfg.DB.ThreadState(turn.ThreadID)
 	if err != nil {
 		o.fault(turn.ThreadID, turn.ID, fmt.Errorf("the turn could not be ended: %w", err))
@@ -218,9 +218,9 @@ func (o *Orchestrator) stopSubagent(threadID string) {
 		return
 	}
 	turn, err := o.cfg.DB.ActiveTurn(threadID)
-	if errors.Is(err, repo.ErrNotFound) {
+	if errors.Is(err, db.ErrNotFound) {
 		// A subagent whose turn is still queued never started: its turn starts, to end as stopped.
-		var st repo.ThreadState
+		var st db.ThreadState
 		if st, err = o.cfg.DB.ThreadState(threadID); err == nil {
 			if len(st.QueuedTurns()) == 0 {
 				return
@@ -232,7 +232,7 @@ func (o *Orchestrator) stopSubagent(threadID string) {
 		o.fault(threadID, "", fmt.Errorf("the subagent could not be stopped: %w", err))
 		return
 	}
-	turn.Status = repo.TurnInterrupted
+	turn.Status = db.TurnInterrupted
 	turn.Error = "stopped with the turn that launched it"
 	o.endTurn(turn)
 }
@@ -244,11 +244,11 @@ func (o *Orchestrator) halt(threadID string, cause error) {
 		o.fault(threadID, "", fmt.Errorf("the thread could not advance: %w", cause))
 		return
 	}
-	turn.Status, turn.Error = repo.TurnFailed, "the agent could not advance this turn: "+cause.Error()
+	turn.Status, turn.Error = db.TurnFailed, "the agent could not advance this turn: "+cause.Error()
 	o.endTurn(turn)
 }
 
-func (o *Orchestrator) failTurn(turnID string, status repo.TurnStatus, reason string) {
+func (o *Orchestrator) failTurn(turnID string, status db.TurnStatus, reason string) {
 	turn, err := o.cfg.DB.Turn(turnID)
 	if err != nil {
 		o.fault("", turnID, fmt.Errorf("the turn could not be read to end it (%s): %w", reason, err))

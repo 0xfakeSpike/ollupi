@@ -15,7 +15,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/pkg/wshub"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
 	"github.com/0xfakeSpike/ollupi/tools/mcp"
@@ -40,7 +40,7 @@ const (
 
 type Server struct {
 	orchestrator *orchestrator.Orchestrator
-	db           *repo.DB
+	db           *db.DB
 	memory       *memory.Manager
 	jobs         *cron.Jobs
 	mcp          *mcp.Users
@@ -256,7 +256,7 @@ func (c *conn) event(e orchestrator.Event) {
 		c.rpc.Notify(notifyItemCompleted, ItemNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Item: itemRow(*e.Item)})
 	case orchestrator.EventItemDelta:
 		method := notifyAgentMessageDelta
-		if e.Item.Type == repo.ItemReasoning {
+		if e.Item.Type == db.ItemReasoning {
 			method = notifyReasoningDelta
 		}
 		c.rpc.Notify(method, DeltaNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, ItemID: e.Item.ID, Delta: e.Delta})
@@ -276,7 +276,7 @@ func (c *conn) event(e orchestrator.Event) {
 // requests asks the client what is waiting on it. A client that cannot be told would wait without knowing, so one that
 // could not be told is dropped and asked again when it comes back.
 func (c *conn) requests(pending []orchestrator.Request, err error) {
-	if errors.Is(err, repo.ErrNotFound) {
+	if errors.Is(err, db.ErrNotFound) {
 		return
 	}
 	if err != nil {
@@ -289,7 +289,7 @@ func (c *conn) requests(pending []orchestrator.Request, err error) {
 	}
 }
 
-func (c *conn) request(threadID string, it repo.ItemRow) {
+func (c *conn) request(threadID string, it db.ItemRow) {
 	c.mu.Lock()
 	if c.asked[it.ID] {
 		c.mu.Unlock()
@@ -333,7 +333,7 @@ func (c *conn) request(threadID string, it repo.ItemRow) {
 	}, answered)
 }
 
-func (c *conn) resolve(threadID string, it repo.ItemRow, result json.RawMessage) error {
+func (c *conn) resolve(threadID string, it db.ItemRow, result json.RawMessage) error {
 	if !it.WaitsForApproval() {
 		var r UserInputResponse
 		if err := json.Unmarshal(result, &r); err != nil {
@@ -353,7 +353,7 @@ func (c *conn) resolve(threadID string, it repo.ItemRow, result json.RawMessage)
 
 const pageBytes = 4 << 20
 
-func itemBytes(it repo.ItemRow) int {
+func itemBytes(it db.ItemRow) int {
 	raw, err := json.Marshal(it)
 	if err != nil {
 		return pageBytes
@@ -389,7 +389,7 @@ var errorCodes = []struct {
 	err  error
 	code int
 }{
-	{repo.ErrNotFound, errNotFound},
+	{db.ErrNotFound, errNotFound},
 	{orchestrator.ErrNoActiveTurn, errNoActiveTurn},
 	{orchestrator.ErrTurnMismatch, errTurnMismatch},
 	{orchestrator.ErrNoSuchRequest, errNoSuchRequest},

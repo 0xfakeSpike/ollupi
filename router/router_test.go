@@ -15,13 +15,13 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/gateway"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/coder/websocket"
 )
 
 // shard is one shard's process: its gateway on its own database, serving until stop.
 type shard struct {
-	db     *repo.DB
+	db     *db.DB
 	server *gateway.Server
 	url    string
 	stop   context.CancelFunc
@@ -29,12 +29,12 @@ type shard struct {
 
 func startShard(t *testing.T, id, home string, authenticate func(string) (string, bool), placements gateway.Placements) *shard {
 	t.Helper()
-	db, err := repo.Open(home)
+	store, err := db.Open(home)
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := gateway.NewServer(orchestrator.New(orchestrator.Config{DB: db}), gateway.Options{
-		DB: db, Authenticate: authenticate, Shard: id, Placements: placements,
+	s, err := gateway.NewServer(orchestrator.New(orchestrator.Config{DB: store}), gateway.Options{
+		DB: store, Authenticate: authenticate, Shard: id, Placements: placements,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -52,14 +52,14 @@ func startShard(t *testing.T, id, home string, authenticate func(string) (string
 	t.Cleanup(func() {
 		stop()
 		<-served
-		db.Close()
+		store.Close()
 	})
-	return &shard{db: db, server: s, url: "http://" + ln.Addr().String(), stop: stop}
+	return &shard{db: store, server: s, url: "http://" + ln.Addr().String(), stop: stop}
 }
 
-func hasUser(t *testing.T, db *repo.DB, user string) bool {
+func hasUser(t *testing.T, store *db.DB, user string) bool {
 	t.Helper()
-	users, err := db.Users()
+	users, err := store.Users()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,11 +165,11 @@ func TestTheRouterSendsEachUserToTheirShard(t *testing.T) {
 	if !hasUser(t, shards[shardA].db, "a") || hasUser(t, shards[shardB].db, "a") {
 		t.Error("a is not on their shard alone")
 	}
-	shards[shardB].server.Deliver(orchestrator.Event{Kind: orchestrator.EventThreadDeleted, Thread: repo.ThreadRow{ID: "of-b", UserID: "b"}})
+	shards[shardB].server.Deliver(orchestrator.Event{Kind: orchestrator.EventThreadDeleted, Thread: db.ThreadRow{ID: "of-b", UserID: "b"}})
 	if got := nextThread(ctx, t, b); got != "of-b" {
 		t.Errorf("b received %q through the router", got)
 	}
-	shards[shardA].server.Deliver(orchestrator.Event{Kind: orchestrator.EventThreadDeleted, Thread: repo.ThreadRow{ID: "of-a", UserID: "a"}})
+	shards[shardA].server.Deliver(orchestrator.Event{Kind: orchestrator.EventThreadDeleted, Thread: db.ThreadRow{ID: "of-a", UserID: "a"}})
 	if got := nextThread(ctx, t, a); got != "of-a" {
 		t.Errorf("a received %q through the router", got)
 	}
@@ -187,7 +187,7 @@ func TestTheRouterSendsEachUserToTheirShard(t *testing.T) {
 		t.Fatal(err)
 	}
 	back := connect(ctx, t, front.URL, "token-a")
-	standby.server.Deliver(orchestrator.Event{Kind: orchestrator.EventThreadDeleted, Thread: repo.ThreadRow{ID: "after", UserID: "a"}})
+	standby.server.Deliver(orchestrator.Event{Kind: orchestrator.EventThreadDeleted, Thread: db.ThreadRow{ID: "after", UserID: "a"}})
 	if got := nextThread(ctx, t, back); got != "after" {
 		t.Errorf("a received %q from the new holder", got)
 	}

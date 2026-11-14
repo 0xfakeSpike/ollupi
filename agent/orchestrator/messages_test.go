@@ -10,7 +10,7 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
 // A message may take a quarter of the model's input: far more than a few thousand characters, and never more than
@@ -23,18 +23,18 @@ func TestAMessageIsHeldToAShareOfTheModelsInput(t *testing.T) {
 	defer srv.Close()
 	defer close(fake.release)
 	ag, _ := started(ctx, t, orchestrator.Config{}, srv.URL)
-	thread, err := ag.StartThread(repo.DefaultUser, "", "", "t", permission.Settings{})
+	thread, err := ag.StartThread(db.DefaultUser, "", "", "t", permission.Settings{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// The model takes 28,000 tokens of input, so a message gets 7,000.
 	tooLong := strings.Repeat("The build log goes on. ", 2000)
-	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, orchestrator.Input{Text: tooLong}); !errors.Is(err, orchestrator.ErrInvalidMessage) || !strings.Contains(err.Error(), "attachment") {
+	if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, orchestrator.Input{Text: tooLong}); !errors.Is(err, orchestrator.ErrInvalidMessage) || !strings.Contains(err.Error(), "attachment") {
 		t.Errorf("a message over the model's share: %v", err)
 	}
 	long := strings.Repeat("The task says more. ", 500)
-	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, orchestrator.Input{Text: long}); err != nil {
+	if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, orchestrator.Input{Text: long}); err != nil {
 		t.Errorf("a %d-character message: %v", len(long), err)
 	}
 }

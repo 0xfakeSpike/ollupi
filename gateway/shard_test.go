@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
 // placements is where users are, counting each time it is asked; "down" fails.
@@ -37,14 +37,14 @@ func (p *placements) ShardOf(_ context.Context, user string) (string, error) {
 func TestAShardServesOnlyItsOwnUsers(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	db, err := repo.Open(t.TempDir())
+	store, err := db.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer store.Close()
 	where := &placements{on: map[string]string{"a": "one", "b": "two"}}
-	s, err := NewServer(orchestrator.New(orchestrator.Config{DB: db}), Options{
-		DB: db, Authenticate: func(token string) (string, bool) { return token, token != "" }, Shard: "one", Placements: where,
+	s, err := NewServer(orchestrator.New(orchestrator.Config{DB: store}), Options{
+		DB: store, Authenticate: func(token string) (string, bool) { return token, token != "" }, Shard: "one", Placements: where,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -69,7 +69,7 @@ func TestAShardServesOnlyItsOwnUsers(t *testing.T) {
 	}
 	userClient(ctx, t, h.URL, "a")
 	userClient(ctx, t, h.URL, "a")
-	users, err := db.Users()
+	users, err := store.Users()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,12 +82,12 @@ func TestAShardServesOnlyItsOwnUsers(t *testing.T) {
 }
 
 func TestAShardNeedsBothItsNameAndPlacements(t *testing.T) {
-	db, err := repo.Open(t.TempDir())
+	store, err := db.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
-	for _, opts := range []Options{{DB: db, Token: "t", Shard: "one"}, {DB: db, Token: "t", Placements: &placements{}}} {
+	defer store.Close()
+	for _, opts := range []Options{{DB: store, Token: "t", Shard: "one"}, {DB: store, Token: "t", Placements: &placements{}}} {
 		if _, err := NewServer(nil, opts); err == nil {
 			t.Errorf("a gateway with only one of Shard and Placements: %+v", opts)
 		}
@@ -95,12 +95,12 @@ func TestAShardNeedsBothItsNameAndPlacements(t *testing.T) {
 }
 
 func TestAShardsHealthCheckNeedsNoToken(t *testing.T) {
-	db, err := repo.Open(t.TempDir())
+	store, err := db.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
-	s, err := NewServer(nil, Options{DB: db, Token: "secret"})
+	defer store.Close()
+	s, err := NewServer(nil, Options{DB: store, Token: "secret"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,14 +135,14 @@ func (r *reports) of(shard string) (int64, bool) {
 func TestAShardReportsItsLoadWhileItServes(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	db, err := repo.Open(t.TempDir())
+	store, err := db.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer store.Close()
 	got := &reports{last: map[string]int64{}}
-	s, err := NewServer(orchestrator.New(orchestrator.Config{DB: db}), Options{
-		DB: db, Authenticate: func(token string) (string, bool) { return token, token != "" },
+	s, err := NewServer(orchestrator.New(orchestrator.Config{DB: store}), Options{
+		DB: store, Authenticate: func(token string) (string, bool) { return token, token != "" },
 		Shard: "one", Placements: &placements{on: map[string]string{"a": "one", "b": "one"}},
 		Load: Load{Reporter: got, Measure: LoadConnections, Every: 20 * time.Millisecond},
 	})
@@ -183,22 +183,22 @@ func TestAShardReportsItsLoadWhileItServes(t *testing.T) {
 }
 
 func TestALoadNeedsAShardAndAKnownMeasure(t *testing.T) {
-	db, err := repo.Open(t.TempDir())
+	store, err := db.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer store.Close()
 	on := &placements{}
 	for name, opts := range map[string]Options{
-		"no shard":        {DB: db, Token: "t", Load: Load{Reporter: &reports{}}},
-		"unknown measure": {DB: db, Token: "t", Shard: "one", Placements: on, Load: Load{Reporter: &reports{}, Measure: "cpu"}},
-		"negative":        {DB: db, Token: "t", Shard: "one", Placements: on, Load: Load{Reporter: &reports{}, Every: -time.Second}},
+		"no shard":        {DB: store, Token: "t", Load: Load{Reporter: &reports{}}},
+		"unknown measure": {DB: store, Token: "t", Shard: "one", Placements: on, Load: Load{Reporter: &reports{}, Measure: "cpu"}},
+		"negative":        {DB: store, Token: "t", Shard: "one", Placements: on, Load: Load{Reporter: &reports{}, Every: -time.Second}},
 	} {
 		if _, err := NewServer(nil, opts); err == nil {
 			t.Errorf("%s: no error", name)
 		}
 	}
-	s, err := NewServer(nil, Options{DB: db, Token: "t", Shard: "one", Placements: on, Load: Load{Reporter: &reports{}}})
+	s, err := NewServer(nil, Options{DB: store, Token: "t", Shard: "one", Placements: on, Load: Load{Reporter: &reports{}}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
@@ -222,7 +222,7 @@ func TestSuggestedRulesAllowTheCallNextTime(t *testing.T) {
 			t.Errorf("%q: verdict %v suggests %q, want ask with %q", tc.call.Content.Text, d.Verdict, d.Suggested, tc.want)
 			continue
 		}
-		if a := d.Approval("a", tc.call, time.Time{}); !slices.Contains(a.AvailableDecisions(), repo.DecisionAcceptAlways) {
+		if a := d.Approval("a", tc.call, time.Time{}); !slices.Contains(a.AvailableDecisions(), db.DecisionAcceptAlways) {
 			t.Errorf("%q: offers %q", tc.call.Content.Text, a.AvailableDecisions())
 		}
 		allowed, err := New([]Layer{defaults, layer(d.Suggested...)}, nil, registry)
@@ -257,7 +257,7 @@ func TestNoSuggestionWhereAnAllowRuleWouldNotHelp(t *testing.T) {
 		if d.Verdict != Ask || d.Suggested != nil {
 			t.Errorf("%s: verdict %v suggests %q", what, d.Verdict, d.Suggested)
 		}
-		if a := d.Approval("a", call, time.Time{}); slices.Contains(a.AvailableDecisions(), repo.DecisionAcceptAlways) {
+		if a := d.Approval("a", call, time.Time{}); slices.Contains(a.AvailableDecisions(), db.DecisionAcceptAlways) {
 			t.Errorf("%s: offers %q", what, a.AvailableDecisions())
 		}
 	}

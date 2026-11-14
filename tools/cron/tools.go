@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/google/jsonschema-go/jsonschema"
 )
@@ -51,7 +51,7 @@ type Deleted struct {
 }
 
 type JobList struct {
-	Jobs []repo.CronJobView `json:"jobs"`
+	Jobs []db.CronJobView `json:"jobs"`
 }
 
 func (j *Jobs) ToolList(context.Context) ([]*tools.Spec, error) {
@@ -128,7 +128,7 @@ func (j *Jobs) Invoke(ctx context.Context, caller tools.Caller, tool string, arg
 			return tools.Result{}, err
 		}
 		if jobs == nil {
-			jobs = []repo.CronJobView{}
+			jobs = []db.CronJobView{}
 		}
 		return tools.Result{Output: JobList{Jobs: jobs}}, nil
 	default:

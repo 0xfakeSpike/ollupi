@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
-type Settings = repo.PermissionSettings
+type Settings = db.PermissionSettings
 
 func Resolve(layers ...Settings) Settings {
 	var out Settings
@@ -178,7 +178,7 @@ type Decision struct {
 	Suggested []string
 }
 
-func (c *Checker) Decide(call Call, history []repo.ItemRow) Decision {
+func (c *Checker) Decide(call Call, history []db.ItemRow) Decision {
 	d := c.decide(call, history)
 	if d.Verdict == Ask && d.Rule == "" {
 		d.Suggested = suggest(call)
@@ -186,7 +186,7 @@ func (c *Checker) Decide(call Call, history []repo.ItemRow) Decision {
 	return d
 }
 
-func (c *Checker) decide(call Call, history []repo.ItemRow) Decision {
+func (c *Checker) decide(call Call, history []db.ItemRow) Decision {
 	// Deny and ask rules speak for the user at every level, so they are read before the policy.
 	switch verdict, rule := c.rules.decide(call.Tool, call.Content, call.HasContent); verdict {
 	case ruleDeny:
@@ -237,17 +237,17 @@ func (c *Checker) leavesTheSandbox(call Call) bool {
 	return c.policy != Never && call.Prepared != nil && call.Prepared.Escalated
 }
 
-func (d Decision) Approval(id string, call Call, at time.Time) *repo.Approval {
-	a := &repo.Approval{ID: id, RequestedAt: at, Reason: d.Reason, Rule: d.Rule, Suggested: d.Suggested}
+func (d Decision) Approval(id string, call Call, at time.Time) *db.Approval {
+	a := &db.Approval{ID: id, RequestedAt: at, Reason: d.Reason, Rule: d.Rule, Suggested: d.Suggested}
 	if call.HasContent {
 		a.Content = call.Content.Text
 	}
 	return a
 }
 
-func allowedForConversation(call Call, history []repo.ItemRow) bool {
+func allowedForConversation(call Call, history []db.ItemRow) bool {
 	for _, it := range history {
-		if !it.IsCall() || it.Tool != call.Tool || it.Approval == nil || it.Approval.Decision != repo.DecisionAcceptForSession {
+		if !it.IsCall() || it.Tool != call.Tool || it.Approval == nil || it.Approval.Decision != db.DecisionAcceptForSession {
 			continue
 		}
 		if !reflect.DeepEqual(it.PreparedExecution, call.Prepared) {

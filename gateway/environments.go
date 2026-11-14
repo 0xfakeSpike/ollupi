@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
 // environmentList lists where the user's conversations can run; the first is where one that names none runs.
@@ -43,7 +43,7 @@ func (c *conn) environmentDelete(ctx context.Context, p EnvironmentDeleteParams)
 	return environmentResult(c.s.orchestrator.DeleteEnvironment(c.user, p.EnvironmentID))
 }
 
-func environmentResult(env repo.EnvironmentRow, err error) (EnvironmentResult, func(), error) {
+func environmentResult(env db.EnvironmentRow, err error) (EnvironmentResult, func(), error) {
 	return EnvironmentResult{Environment: environmentRow(env)}, nil, err
 }
 
@@ -59,7 +59,7 @@ func (s *Server) environmentChanged(user, id string) {
 			case err == nil:
 				row := environmentRow(env)
 				read.Environment = &row
-			case !errors.Is(err, repo.ErrNotFound):
+			case !errors.Is(err, db.ErrNotFound):
 				slog.Error("changed environment not readable", "environment", id, "err", err)
 				return
 			}

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/google/jsonschema-go/jsonschema"
 )
@@ -64,7 +64,7 @@ func (b backgroundTools) Invoke(ctx context.Context, caller tools.Caller, tool s
 		return tools.Result{}, err
 	}
 	call, err := b.o.cfg.DB.BackgroundCall(args.Background)
-	if errors.Is(err, repo.ErrNotFound) || err == nil && call.ThreadID != caller.ThreadID {
+	if errors.Is(err, db.ErrNotFound) || err == nil && call.ThreadID != caller.ThreadID {
 		return tools.Result{}, fmt.Errorf("this conversation has no background call %q", args.Background)
 	}
 	if err != nil {
@@ -78,7 +78,7 @@ func (b backgroundTools) Invoke(ctx context.Context, caller tools.Caller, tool s
 		ended, _ := b.o.cfg.DB.BackgroundCall(call.ID)
 		return tools.Result{}, fmt.Errorf("background call %s already ended: %s", call.ID, ended.Status)
 	}
-	return tools.Result{Output: map[string]any{"background": call.ID, "status": string(repo.BackgroundCancelled)}}, nil
+	return tools.Result{Output: map[string]any{"background": call.ID, "status": string(db.BackgroundCancelled)}}, nil
 }
 
 func (b backgroundTools) wait(caller tools.Caller, arguments map[string]any) (tools.Result, error) {
@@ -88,7 +88,7 @@ func (b backgroundTools) wait(caller tools.Caller, arguments map[string]any) (to
 	}
 	for _, id := range args.Background {
 		call, err := b.o.cfg.DB.BackgroundCall(id)
-		if errors.Is(err, repo.ErrNotFound) || err == nil && call.ThreadID != caller.ThreadID {
+		if errors.Is(err, db.ErrNotFound) || err == nil && call.ThreadID != caller.ThreadID {
 			return tools.Result{}, fmt.Errorf("this conversation has no background call %q", id)
 		}
 		if err != nil {

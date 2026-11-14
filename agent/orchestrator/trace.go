@@ -3,7 +3,7 @@ package orchestrator
 import (
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
@@ -29,7 +29,7 @@ func turnTrace(turnID string) trace.SpanContext {
 
 // readySince is when the turn last became ready to run: when it became its thread's current turn, or when the last of
 // its items, such as a decided approval or a subagent's answer, changed after that.
-func readySince(turn repo.TurnRow, items []repo.ItemRow) time.Time {
+func readySince(turn db.TurnRow, items []db.ItemRow) time.Time {
 	since := turn.StartedAt
 	for _, it := range items {
 		if it.TurnID != turn.ID {

@@ -7,14 +7,14 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
 
 // Offer splits the visible tools into the ones sent to the model and the ones only named in DEFERRED TOOLS, as the
 // role sends them. The ones a load_tools call loaded follow the others in load order, so the tool list only grows.
-func (r Role) Offer(visible []tools.ToolDescriptor, window *contextmanager.Manager, items []repo.ItemRow) (offered, deferred []tools.ToolDescriptor) {
+func (r Role) Offer(visible []tools.ToolDescriptor, window *contextmanager.Manager, items []db.ItemRow) (offered, deferred []tools.ToolDescriptor) {
 	offered, deferred = r.send(launchable(visible), window)
 	for _, name := range loadedTools(items) {
 		i := slices.IndexFunc(deferred, func(d tools.ToolDescriptor) bool { return d.Name == name })
@@ -78,10 +78,10 @@ func sendOnly(core ...string) func([]tools.ToolDescriptor, *contextmanager.Manag
 	}
 }
 
-func loadedTools(items []repo.ItemRow) []string {
+func loadedTools(items []db.ItemRow) []string {
 	var names []string
 	for _, it := range items {
-		if it.Tool != tools.ToolLoadTools || it.Status != repo.ItemCompleted || it.Result == nil {
+		if it.Tool != tools.ToolLoadTools || it.Status != db.ItemCompleted || it.Result == nil {
 			continue
 		}
 		var out struct {

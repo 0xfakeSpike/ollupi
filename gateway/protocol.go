@@ -14,7 +14,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/wshub"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/mcp"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
@@ -264,12 +264,12 @@ type ThreadStartParams struct {
 	// EnvironmentID is where the conversation runs: one of the user's environments. Empty is the one on this machine.
 	EnvironmentID string `json:"environmentId,omitempty"`
 	Title         string `json:"title,omitempty"`
-	repo.PermissionSettings
+	db.PermissionSettings
 }
 
 type ThreadPermissionsParams struct {
 	ThreadID string `json:"threadId"`
-	repo.PermissionSettings
+	db.PermissionSettings
 }
 
 type ThreadPageParams struct {
@@ -317,8 +317,8 @@ type ThreadListResult struct {
 }
 
 type ThreadStatusNotification struct {
-	ThreadID string            `json:"threadId"`
-	Status   repo.ThreadStatus `json:"status"`
+	ThreadID string          `json:"threadId"`
+	Status   db.ThreadStatus `json:"status"`
 }
 
 type ModelListResult struct {
@@ -350,8 +350,8 @@ type AttachmentReadParams struct {
 }
 
 type AttachmentReadResult struct {
-	Attachment repo.Attachment `json:"attachment"`
-	Data       string          `json:"data"`
+	Attachment db.Attachment `json:"attachment"`
+	Data       string        `json:"data"`
 }
 
 type TurnStartParams struct {
@@ -431,7 +431,7 @@ type WorkspaceArchiveParams struct {
 
 type WorkspacePermissionsParams struct {
 	WorkspaceID string `json:"workspaceId"`
-	repo.PermissionSettings
+	db.PermissionSettings
 }
 
 type WorkspaceResult struct {
@@ -445,8 +445,8 @@ type EnvironmentListResult struct {
 // EnvironmentAddParams names another place a conversation can run. Kind defaults to "machine": this machine is every
 // user's environment already.
 type EnvironmentAddParams struct {
-	Name string               `json:"name"`
-	Kind repo.EnvironmentKind `json:"kind,omitempty"`
+	Name string             `json:"name"`
+	Kind db.EnvironmentKind `json:"kind,omitempty"`
 }
 
 type EnvironmentRenameParams struct {
@@ -502,8 +502,8 @@ type CronDeleteParams struct {
 }
 
 type MemoryListParams struct {
-	Scope       repo.MemoryScope `json:"scope"`
-	WorkspaceID string           `json:"workspaceId,omitempty"`
+	Scope       db.MemoryScope `json:"scope"`
+	WorkspaceID string         `json:"workspaceId,omitempty"`
 }
 
 type MemoryListResult struct {
@@ -554,11 +554,11 @@ type ApprovalRequestParams struct {
 	Reason             string          `json:"reason,omitempty"`
 	Content            string          `json:"content,omitempty"`
 	SuggestedRules     []string        `json:"suggestedRules,omitempty"`
-	AvailableDecisions []repo.Decision `json:"availableDecisions"`
+	AvailableDecisions []db.Decision   `json:"availableDecisions"`
 }
 
 type ApprovalResponse struct {
-	Decision repo.Decision `json:"decision"`
+	Decision db.Decision `json:"decision"`
 }
 
 type UserInputRequestParams struct {

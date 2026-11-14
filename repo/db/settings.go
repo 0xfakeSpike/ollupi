@@ -1,4 +1,4 @@
-package repo
+package db
 
 type SettingsRow struct {
 	UserID    string   `gorm:"primaryKey" json:"-"`

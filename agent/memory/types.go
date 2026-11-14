@@ -3,39 +3,39 @@ package memory
 import (
 	"encoding/json"
 
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
 type Fact struct {
-	Source repo.MemorySource `json:"source"`
-	Data   json.RawMessage   `json:"data"`
+	Source db.MemorySource `json:"source"`
+	Data   json.RawMessage `json:"data"`
 }
 
 type Batch struct {
-	UserID      string            `json:"-"`
-	Scope       repo.MemoryScope  `json:"scope"`
-	WorkspaceID string            `json:"workspaceId,omitempty"`
-	ThreadID    string            `json:"threadId"`
-	TurnID      string            `json:"turnId"`
-	TurnStatus  repo.TurnStatus   `json:"turnStatus"`
-	TurnError   string            `json:"turnError,omitempty"`
-	Facts       []Fact            `json:"facts"`
-	Existing    []repo.MemoryRow  `json:"existing"`
-	Cursor      repo.MemoryCursor `json:"-"`
-	Entries     int               `json:"-"`
+	UserID      string          `json:"-"`
+	Scope       db.MemoryScope  `json:"scope"`
+	WorkspaceID string          `json:"workspaceId,omitempty"`
+	ThreadID    string          `json:"threadId"`
+	TurnID      string          `json:"turnId"`
+	TurnStatus  db.TurnStatus   `json:"turnStatus"`
+	TurnError   string          `json:"turnError,omitempty"`
+	Facts       []Fact          `json:"facts"`
+	Existing    []db.MemoryRow  `json:"existing"`
+	Cursor      db.MemoryCursor `json:"-"`
+	Entries     int             `json:"-"`
 }
 
 type Operation struct {
-	Action  string              `json:"action"`
-	Scope   string              `json:"scope,omitempty"`
-	ID      string              `json:"id,omitempty"`
-	Topic   string              `json:"topic,omitempty"`
-	Kind    string              `json:"kind,omitempty"`
-	Text    string              `json:"text,omitempty"`
-	Sources []repo.MemorySource `json:"sources"`
+	Action  string            `json:"action"`
+	Scope   string            `json:"scope,omitempty"`
+	ID      string            `json:"id,omitempty"`
+	Topic   string            `json:"topic,omitempty"`
+	Kind    string            `json:"kind,omitempty"`
+	Text    string            `json:"text,omitempty"`
+	Sources []db.MemorySource `json:"sources"`
 }
 
 type Snapshot struct {
-	Entries []repo.MemoryReference
+	Entries []db.MemoryReference
 	Text    string
 }

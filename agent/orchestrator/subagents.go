@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
 // settle reports to the parent the subagent that its call launched, once the subagent's turn ended. Until then it
 // starts that turn, which the call queued, as a thread starts a queued turn: the orchestrator runs it when a slot is
 // free. It reports whether it reported.
-func (o *Orchestrator) settle(parent repo.ThreadRow, turn repo.TurnRow, call repo.ItemRow) (bool, error) {
+func (o *Orchestrator) settle(parent db.ThreadRow, turn db.TurnRow, call db.ItemRow) (bool, error) {
 	childID := call.Await.Handle
 	child, err := o.cfg.DB.ThreadState(childID)
 	if err != nil {
@@ -40,24 +40,24 @@ func (o *Orchestrator) settle(parent repo.ThreadRow, turn repo.TurnRow, call rep
 	return true, nil
 }
 
-func (o *Orchestrator) report(call repo.ItemRow, childID string, ended repo.TurnRow) (repo.ItemRow, error) {
+func (o *Orchestrator) report(call db.ItemRow, childID string, ended db.TurnRow) (db.ItemRow, error) {
 	now := time.Now().UTC()
 	call.CompletedAt = &now
 	switch ended.Status {
-	case repo.TurnCompleted:
+	case db.TurnCompleted:
 		answer, err := o.cfg.DB.FinalAnswer(childID, ended.ID)
 		if err != nil {
-			return repo.ItemRow{}, fmt.Errorf("orchestrator: subagent %s completed turn %s without a final answer: %w", childID, ended.ID, err)
+			return db.ItemRow{}, fmt.Errorf("orchestrator: subagent %s completed turn %s without a final answer: %w", childID, ended.ID, err)
 		}
-		result, _, err := repo.ResultOf(tools.Result{Output: answer})
+		result, _, err := db.ResultOf(tools.Result{Output: answer})
 		if err != nil {
-			return repo.ItemRow{}, err
+			return db.ItemRow{}, err
 		}
-		call.Status, call.Result = repo.ItemCompleted, result
-	case repo.TurnInterrupted:
-		call.Status, call.Error = repo.ItemFailed, "the subagent was stopped: "+ended.Error
+		call.Status, call.Result = db.ItemCompleted, result
+	case db.TurnInterrupted:
+		call.Status, call.Error = db.ItemFailed, "the subagent was stopped: "+ended.Error
 	default:
-		call.Status, call.Error = repo.ItemFailed, "the subagent failed: "+ended.Error
+		call.Status, call.Error = db.ItemFailed, "the subagent failed: "+ended.Error
 	}
 	return call, nil
 }

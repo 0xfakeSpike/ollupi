@@ -16,7 +16,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
@@ -79,15 +79,15 @@ func users(args []string) {
 		log.Fatal(err)
 	}
 	defer os.RemoveAll(dir)
-	db, err := repo.Open(dir)
+	store, err := db.Open(dir)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
+	defer store.Close()
 	limits := map[string]llm.Limits{"fake": {Context: 200_000, Output: 32_000}}
 	clients := map[string]llm.Client{heavyUser: llm.NewOpenAI(srv.URL, heavyUser, *heavyCalls, limits)}
 	for _, u := range ids {
-		if err := db.EnsureUser(u); err != nil {
+		if err := store.EnsureUser(u); err != nil {
 			log.Fatal(err)
 		}
 		if u != heavyUser {
@@ -107,9 +107,9 @@ func users(args []string) {
 		},
 		Providers: []tools.Provider{work{latency: *toolLatency}},
 		Settings:  permission.Settings{ApprovalPolicy: string(permission.Never)},
-		Slots:     *slots, UserSlots: *userSlots, DB: db,
+		Slots:     *slots, UserSlots: *userSlots, DB: store,
 		OnEvent: func(e orchestrator.Event) {
-			if e.Kind == orchestrator.EventTurnCompleted && e.Turn.Status != repo.TurnCompleted {
+			if e.Kind == orchestrator.EventTurnCompleted && e.Turn.Status != db.TurnCompleted {
 				count, _ := failed.LoadOrStore(e.Thread.UserID, new(atomic.Int64))
 				count.(*atomic.Int64).Add(1)
 			}

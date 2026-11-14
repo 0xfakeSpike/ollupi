@@ -8,19 +8,19 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/google/uuid"
 )
 
 // startBackground starts a call of the thread in the background and returns at once with what the model is told: the
 // call's id, under which its result comes back when it ends.
-func (o *Orchestrator) startBackground(t repo.ThreadRow, caller tools.Caller, registry *tools.Registry, it repo.ItemRow, args map[string]any) tools.Result {
+func (o *Orchestrator) startBackground(t db.ThreadRow, caller tools.Caller, registry *tools.Registry, it db.ItemRow, args map[string]any) tools.Result {
 	raw, err := json.Marshal(args)
 	if err != nil {
 		return tools.Result{Err: fmt.Errorf("encode the arguments: %w", err)}.For(it.Tool)
 	}
-	call := repo.BackgroundCallRow{ID: uuid.NewString(), ThreadID: t.ID, ItemID: it.ID, Tool: it.Tool, Arguments: string(raw), StartedAt: time.Now()}
+	call := db.BackgroundCallRow{ID: uuid.NewString(), ThreadID: t.ID, ItemID: it.ID, Tool: it.Tool, Arguments: string(raw), StartedAt: time.Now()}
 	if err := o.cfg.DB.StartBackgroundCall(t.UserID, call, o.cfg.BackgroundCalls); err != nil {
 		return tools.Result{Err: err}.For(it.Tool)
 	}
@@ -37,28 +37,28 @@ func (o *Orchestrator) startBackground(t repo.ThreadRow, caller tools.Caller, re
 		o.endBackground(ctx, call, limit, registry.InvokePrepared(ctx, caller, it.Tool, args, it.PreparedExecution))
 	}()
 	return tools.Result{Output: map[string]any{
-		"background": call.ID, "status": string(repo.BackgroundRunning),
+		"background": call.ID, "status": string(db.BackgroundRunning),
 		"note": "It runs in the background; its result comes back to this conversation when it ends.",
 	}}
 }
 
-func (o *Orchestrator) endBackground(ctx context.Context, call repo.BackgroundCallRow, limit error, result tools.Result) {
-	status, failure := repo.BackgroundCompleted, ""
-	var stored *repo.ToolResult
+func (o *Orchestrator) endBackground(ctx context.Context, call db.BackgroundCallRow, limit error, result tools.Result) {
+	status, failure := db.BackgroundCompleted, ""
+	var stored *db.ToolResult
 	switch {
 	case o.ctx.Err() != nil:
-		status, failure = repo.BackgroundInterrupted, "the process stopped before the call ended"
+		status, failure = db.BackgroundInterrupted, "the process stopped before the call ended"
 	case errors.Is(context.Cause(ctx), limit):
-		status, failure = repo.BackgroundFailed, limit.Error()
+		status, failure = db.BackgroundFailed, limit.Error()
 	case result.Err == nil && result.Await != nil:
-		status, failure = repo.BackgroundFailed, "a call that waits on an answer cannot run in the background"
+		status, failure = db.BackgroundFailed, "a call that waits on an answer cannot run in the background"
 	default:
 		var err error
-		if stored, failure, err = repo.ResultOf(result); err != nil {
+		if stored, failure, err = db.ResultOf(result); err != nil {
 			stored, failure = nil, fmt.Sprintf("tool output cannot be recorded: %v", err)
 		}
 		if failure != "" {
-			status = repo.BackgroundFailed
+			status = db.BackgroundFailed
 		}
 	}
 	ended, err := o.cfg.DB.EndBackgroundCall(call.ID, status, stored, failure, time.Now())
@@ -67,7 +67,7 @@ func (o *Orchestrator) endBackground(ctx context.Context, call repo.BackgroundCa
 		return
 	}
 	slog.Info("background call ended", "thread", call.ThreadID, "background", call.ID, "status", status, "recorded", ended)
-	if ended && status != repo.BackgroundInterrupted {
+	if ended && status != db.BackgroundInterrupted {
 		o.post(func() {
 			o.deliverBackground(call.ThreadID)
 			o.reconcile(call.ThreadID)
@@ -88,7 +88,7 @@ func (o *Orchestrator) forgetBackground(id string) {
 // cancelBackground ends a running call as cancelled before it stops it, so that the result its tool may still return
 // does not take the cancellation's place. It reports false for a call that had already ended.
 func (o *Orchestrator) cancelBackground(id, why string) (bool, error) {
-	ended, err := o.cfg.DB.EndBackgroundCall(id, repo.BackgroundCancelled, nil, why, time.Now())
+	ended, err := o.cfg.DB.EndBackgroundCall(id, db.BackgroundCancelled, nil, why, time.Now())
 	if err != nil || !ended {
 		return false, err
 	}

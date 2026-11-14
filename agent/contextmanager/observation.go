@@ -9,7 +9,7 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/redact"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
@@ -123,7 +123,7 @@ func newObservations() *observations {
 	return &observations{results: map[string]tools.Result{}, texts: map[string]string{}, spans: map[string][][2]int{}, rendered: map[observationKey]string{}}
 }
 
-func (o *observations) callResult(it *repo.ItemRow, outputBudget int) (string, error) {
+func (o *observations) callResult(it *db.ItemRow, outputBudget int) (string, error) {
 	switch {
 	case it.Result != nil:
 		key := observationKey{it.ID, outputBudget}
@@ -135,7 +135,7 @@ func (o *observations) callResult(it *repo.ItemRow, outputBudget int) (string, e
 			o.rendered[key] = text
 		}
 		return text, err
-	case it.Status == repo.ItemFailed || it.Status == repo.ItemDeclined:
+	case it.Status == db.ItemFailed || it.Status == db.ItemDeclined:
 		return "error: " + clipText(it.Error, outputBudget), nil
 	default:
 		return "error: the call did not finish", nil
@@ -147,7 +147,7 @@ const (
 	minOutputTokens      = 256
 )
 
-func (o *observations) render(it *repo.ItemRow, budget int) (string, error) {
+func (o *observations) render(it *db.ItemRow, budget int) (string, error) {
 	result, ok := o.results[it.ID]
 	if !ok {
 		var err error

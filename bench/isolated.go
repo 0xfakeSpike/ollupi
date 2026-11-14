@@ -17,7 +17,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
 // isolated is the baseline the pool is measured against: one process for each conversation, each waiting on its
@@ -85,7 +85,7 @@ func lone(args []string) {
 	fs := flag.NewFlagSet("lone", flag.ExitOnError)
 	dir := fs.String("dir", "", "home of the database")
 	fs.Parse(args)
-	db, err := repo.Open(*dir)
+	store, err := db.Open(*dir)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -94,16 +94,16 @@ func lone(args []string) {
 		Name: "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": &model{}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
-		DB:          db, OnEvent: tr.on,
+		DB:          store, OnEvent: tr.on,
 	})
 	if err := ag.Start(context.Background()); err != nil {
 		log.Fatal(err)
 	}
-	th, err := ag.StartThread(repo.DefaultUser, "", "", "bench", permission.Settings{})
+	th, err := ag.StartThread(db.DefaultUser, "", "", "bench", permission.Settings{})
 	if err != nil {
 		log.Fatal(err)
 	}
-	tr.start(ag, repo.DefaultUser, th.ID, "ASK")
+	tr.start(ag, db.DefaultUser, th.ID, "ASK")
 	waitFor("the question", func() bool { return tr.asked.Load() == 1 })
 	runtime.GC()
 	fmt.Println("ready")

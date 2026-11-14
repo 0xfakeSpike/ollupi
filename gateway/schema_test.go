@@ -21,7 +21,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/agent/skills"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
 	"github.com/0xfakeSpike/ollupi/tools/plan"
@@ -73,11 +73,11 @@ var builtinTools = map[string]struct{ arguments, output reflect.Type }{
 var providers = []string{cron.ProviderName, skills.ProviderName, memory.ProviderName}
 
 var enums = []any{
-	repo.ItemTypeValues, repo.ItemStatusValues, repo.TurnStatusValues, repo.ThreadStatusValues,
-	repo.DecisionValues, repo.MemoryRowStatusValues, repo.MemoryScopeValues, repo.MemoryFailureCodeValues, permission.PolicyValues, role.NameValues, plan.StatusValues, tools.AwaitByValues, repo.AttachmentKindValues, repo.EnvironmentKindValues,
+	db.ItemTypeValues, db.ItemStatusValues, db.TurnStatusValues, db.ThreadStatusValues,
+	db.DecisionValues, db.MemoryRowStatusValues, db.MemoryScopeValues, db.MemoryFailureCodeValues, permission.PolicyValues, role.NameValues, plan.StatusValues, tools.AwaitByValues, db.AttachmentKindValues, db.EnvironmentKindValues,
 }
 
-var plainStrings = []reflect.Type{reflect.TypeFor[repo.Ref]()}
+var plainStrings = []reflect.Type{reflect.TypeFor[db.Ref]()}
 
 type field struct {
 	owner reflect.Type
@@ -85,7 +85,7 @@ type field struct {
 }
 
 var fieldTypes = map[field]reflect.Type{
-	{reflect.TypeFor[repo.PermissionSettings](), "ApprovalPolicy"}: reflect.TypeFor[permission.Policy](),
+	{reflect.TypeFor[db.PermissionSettings](), "ApprovalPolicy"}: reflect.TypeFor[permission.Policy](),
 }
 
 var arrays = []field{
@@ -100,7 +100,7 @@ var arrays = []field{
 	{reflect.TypeFor[EnvironmentListResult](), "Data"},
 	{reflect.TypeFor[CronListResult](), "Data"},
 	{reflect.TypeFor[MemoryListResult](), "Data"},
-	{reflect.TypeFor[repo.MemoryStats](), "IDs"},
+	{reflect.TypeFor[db.MemoryStats](), "IDs"},
 	{reflect.TypeFor[plan.Plan](), "Steps"},
 	{reflect.TypeFor[userinput.Request](), "Questions"},
 	{reflect.TypeFor[userinput.Question](), "Options"},

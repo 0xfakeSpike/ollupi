@@ -16,7 +16,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
 )
@@ -71,11 +71,11 @@ func (m *callingModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func TestAMessageTakesThePlaceOfWhatTheTurnWaitsFor(t *testing.T) {
 	for _, tc := range []struct {
 		name, tool, args string
-		waits            repo.TurnStatus
+		waits            db.TurnStatus
 		reason           string
 	}{
-		{"approval", "notes__write", `{"text":"buy milk"}`, repo.TurnWaitingOnApproval, "instead of approving"},
-		{"question", userinput.Tool, `{"questions":[{"id":"color","header":"Color","question":"Which color?","options":[{"label":"Red"},{"label":"Blue"}]}]}`, repo.TurnWaitingOnUserInput, "instead of answering"},
+		{"approval", "notes__write", `{"text":"buy milk"}`, db.TurnWaitingOnApproval, "instead of approving"},
+		{"question", userinput.Tool, `{"questions":[{"id":"color","header":"Color","question":"Which color?","options":[{"label":"Red"},{"label":"Blue"}]}]}`, db.TurnWaitingOnUserInput, "instead of answering"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -83,17 +83,17 @@ func TestAMessageTakesThePlaceOfWhatTheTurnWaitsFor(t *testing.T) {
 			fake := &callingModel{tool: tc.tool, args: tc.args}
 			srv := httptest.NewServer(fake)
 			defer srv.Close()
-			db, err := repo.Open(t.TempDir())
+			store, err := db.Open(t.TempDir())
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer db.Close()
+			defer store.Close()
 			writes := &atomic.Int32{}
 			ag := orchestrator.New(orchestrator.Config{
 				Name: "Ollupi", Models: []llm.Model{{Name: "demo", Connection: "fake"}},
 				Settings:    permission.Settings{ApprovalPolicy: string(permission.Untrusted)},
 				Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
-				Providers:   []tools.Provider{noteTools{writes}}, DB: db,
+				Providers:   []tools.Provider{noteTools{writes}}, DB: store,
 			})
 			actx, stop := context.WithCancel(ctx)
 			if err := ag.Start(actx); err != nil {
@@ -101,21 +101,21 @@ func TestAMessageTakesThePlaceOfWhatTheTurnWaitsFor(t *testing.T) {
 			}
 			defer ag.Wait()
 			defer stop()
-			w, err := ag.AddWorkspace(ctx, repo.DefaultUser, t.TempDir(), "app")
+			w, err := ag.AddWorkspace(ctx, db.DefaultUser, t.TempDir(), "app")
 			if err != nil {
 				t.Fatal(err)
 			}
-			th, err := ag.StartThread(repo.DefaultUser, w.ID, "", "", permission.Settings{})
+			th, err := ag.StartThread(db.DefaultUser, w.ID, "", "", permission.Settings{})
 			if err != nil {
 				t.Fatal(err)
 			}
-			turn, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, orchestrator.Input{Text: "记一下买牛奶"})
+			turn, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, orchestrator.Input{Text: "记一下买牛奶"})
 			if err != nil {
 				t.Fatal(err)
 			}
-			until := func(want repo.TurnStatus) {
+			until := func(want db.TurnStatus) {
 				for {
-					row, err := db.Turn(turn.ID)
+					row, err := store.Turn(turn.ID)
 					if err == nil && row.Status == want {
 						return
 					}
@@ -127,23 +127,23 @@ func TestAMessageTakesThePlaceOfWhatTheTurnWaitsFor(t *testing.T) {
 				}
 			}
 			until(tc.waits)
-			if _, err := ag.SteerTurn(ctx, repo.DefaultUser, th.ID, turn.ID, orchestrator.Input{Text: "算了，先别记"}); err != nil {
+			if _, err := ag.SteerTurn(ctx, db.DefaultUser, th.ID, turn.ID, orchestrator.Input{Text: "算了，先别记"}); err != nil {
 				t.Fatal(err)
 			}
-			until(repo.TurnCompleted)
+			until(db.TurnCompleted)
 
 			if n := writes.Load(); n != 0 {
 				t.Errorf("the tool ran %d times after the user steered away from it", n)
 			}
-			if reqs, err := ag.PendingRequests(repo.DefaultUser, th.ID); err != nil || len(reqs) != 0 {
+			if reqs, err := ag.PendingRequests(db.DefaultUser, th.ID); err != nil || len(reqs) != 0 {
 				t.Errorf("pending requests after the steer: %d, %v", len(reqs), err)
 			}
-			items, err := db.TurnItems(turn.ID)
+			items, err := store.TurnItems(turn.ID)
 			if err != nil {
 				t.Fatal(err)
 			}
 			for _, it := range items {
-				if it.IsCall() && (it.Status != repo.ItemDeclined || !strings.Contains(it.Error, tc.reason)) {
+				if it.IsCall() && (it.Status != db.ItemDeclined || !strings.Contains(it.Error, tc.reason)) {
 					t.Errorf("the call it waited on ended %s: %q", it.Status, it.Error)
 				}
 			}

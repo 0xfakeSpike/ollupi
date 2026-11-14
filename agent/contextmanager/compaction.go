@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
@@ -60,18 +60,18 @@ func (m *Manager) CompactionPrompt(in Input) (Prompt, error) {
 	}
 }
 
-func latestCompaction(items []repo.ItemRow) int {
+func latestCompaction(items []db.ItemRow) int {
 	for i := len(items) - 1; i >= 0; i-- {
-		if items[i].Type == repo.ItemContextCompaction && items[i].Status == repo.ItemCompleted {
+		if items[i].Type == db.ItemContextCompaction && items[i].Status == db.ItemCompleted {
 			return i
 		}
 	}
 	return -1
 }
 
-func hasItemsAfterCompaction(items []repo.ItemRow) bool {
+func hasItemsAfterCompaction(items []db.ItemRow) bool {
 	for _, it := range items[latestCompaction(items)+1:] {
-		if it.Type != repo.ItemContextCompaction && it.Type != repo.ItemMemoryContext {
+		if it.Type != db.ItemContextCompaction && it.Type != db.ItemMemoryContext {
 			return true
 		}
 	}
@@ -80,10 +80,10 @@ func hasItemsAfterCompaction(items []repo.ItemRow) bool {
 
 const summaryPrefix = "Another language model started this conversation and produced the summary below. Use it to continue the work without repeating what was already done."
 
-func (m *Manager) compactedHistory(before []repo.ItemRow, summary string) string {
+func (m *Manager) compactedHistory(before []db.ItemRow, summary string) string {
 	var b strings.Builder
 	for i := len(before) - 1; i >= 0; i-- {
-		if it := before[i]; it.Type == repo.ItemUserMessage && !it.StartedAt.IsZero() {
+		if it := before[i]; it.Type == db.ItemUserMessage && !it.StartedAt.IsZero() {
 			b.WriteString("Latest user message before this summary: [sent " + it.StartedAt.In(time.Local).Format(sentLayout) + "]\n\n")
 			break
 		}
@@ -125,11 +125,11 @@ func recentArtifacts(active []tools.ContextArtifact, budget int) (kept, dropped 
 	return kept, dropped
 }
 
-func recentUserMessages(items []repo.ItemRow, budget int) []string {
+func recentUserMessages(items []db.ItemRow, budget int) []string {
 	var out []string
 	used := 0
 	for i := len(items) - 1; i >= 0; i-- {
-		if items[i].Type != repo.ItemUserMessage {
+		if items[i].Type != db.ItemUserMessage {
 			continue
 		}
 		cost := llm.EstimateTokens(items[i].Text) + 4

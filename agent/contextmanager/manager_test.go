@@ -7,19 +7,19 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
-func user(text string) repo.ItemRow {
-	return repo.ItemRow{Type: repo.ItemUserMessage, Status: repo.ItemCompleted, Text: text}
+func user(text string) db.ItemRow {
+	return db.ItemRow{Type: db.ItemUserMessage, Status: db.ItemCompleted, Text: text}
 }
 
-func answer(response, text string) repo.ItemRow {
-	return repo.ItemRow{Type: repo.ItemAgentMessage, Status: repo.ItemCompleted, ResponseID: response, Text: text}
+func answer(response, text string) db.ItemRow {
+	return db.ItemRow{Type: db.ItemAgentMessage, Status: db.ItemCompleted, ResponseID: response, Text: text}
 }
 
-func memory(text string, entries ...repo.MemoryReference) repo.ItemRow {
-	return repo.ItemRow{Type: repo.ItemMemoryContext, Status: repo.ItemCompleted, Text: text, Memory: entries}
+func memory(text string, entries ...db.MemoryReference) db.ItemRow {
+	return db.ItemRow{Type: db.ItemMemoryContext, Status: db.ItemCompleted, Text: text, Memory: entries}
 }
 
 func contents(messages []llm.ChatMessage) []string {
@@ -30,7 +30,7 @@ func contents(messages []llm.ChatMessage) []string {
 	return out
 }
 
-func build(t *testing.T, items ...repo.ItemRow) Prompt {
+func build(t *testing.T, items ...db.ItemRow) Prompt {
 	t.Helper()
 	p, err := New("m", llm.Limits{Context: 100000, Output: 10000}).Build(Input{Items: items, System: "system"})
 	if err != nil {
@@ -41,8 +41,8 @@ func build(t *testing.T, items ...repo.ItemRow) Prompt {
 
 func TestSnapshotLeadsThePrompt(t *testing.T) {
 	snapshot := memory("SNAPSHOT",
-		repo.MemoryReference{MemoryNote: repo.MemoryNote{ID: "g", Text: "global"}, Scope: repo.MemoryGlobal},
-		repo.MemoryReference{MemoryNote: repo.MemoryNote{ID: "w", Text: "workspace"}, Scope: repo.MemoryWorkspace, WorkspaceID: "ws"})
+		db.MemoryReference{MemoryNote: db.MemoryNote{ID: "g", Text: "global"}, Scope: db.MemoryGlobal},
+		db.MemoryReference{MemoryNote: db.MemoryNote{ID: "w", Text: "workspace"}, Scope: db.MemoryWorkspace, WorkspaceID: "ws"})
 	p := build(t, user("q1"), snapshot, answer("r1", "a1"), user("q2"), answer("r2", "a2"), user("q3"))
 	if got, want := contents(p.Messages), []string{"SNAPSHOT", "q1", "a1", "q2", "a2", "q3"}; !slices.Equal(got, want) {
 		t.Errorf("messages %q, want %q", got, want)
@@ -72,7 +72,7 @@ func TestCompactedHistoryKeepsTheLatestSendTime(t *testing.T) {
 	at := time.Date(2026, 10, 29, 2, 15, 0, 0, time.UTC)
 	huge := user(strings.Repeat("word ", 20000))
 	huge.StartedAt = at
-	compaction := repo.ItemRow{Type: repo.ItemContextCompaction, Status: repo.ItemCompleted, ResponseID: "c", Text: "SUMMARY"}
+	compaction := db.ItemRow{Type: db.ItemContextCompaction, Status: db.ItemCompleted, ResponseID: "c", Text: "SUMMARY"}
 	got := contents(build(t, user("q1"), huge, compaction, answer("r2", "a2")).Messages)
 	want := "Latest user message before this summary: [sent " + at.In(time.Local).Format(sentLayout) + "]\n\n"
 	if len(got) != 2 || !strings.HasPrefix(got[0], want) || strings.Contains(got[0], "word word") {
@@ -81,8 +81,8 @@ func TestCompactedHistoryKeepsTheLatestSendTime(t *testing.T) {
 }
 
 func TestCompactionRefreshesTheSnapshot(t *testing.T) {
-	compaction := repo.ItemRow{Type: repo.ItemContextCompaction, Status: repo.ItemCompleted, ResponseID: "c", Text: "SUMMARY"}
-	items := []repo.ItemRow{user("q1"), memory("OLD"), answer("r1", "a1"), user("q2"), compaction, memory("NEW"), answer("r2", "a2")}
+	compaction := db.ItemRow{Type: db.ItemContextCompaction, Status: db.ItemCompleted, ResponseID: "c", Text: "SUMMARY"}
+	items := []db.ItemRow{user("q1"), memory("OLD"), answer("r1", "a1"), user("q2"), compaction, memory("NEW"), answer("r2", "a2")}
 	got := contents(build(t, items...).Messages)
 	if len(got) != 3 || got[0] != "NEW" || !strings.Contains(got[1], "SUMMARY") || got[2] != "a2" || strings.Contains(strings.Join(got, "\n"), "OLD") {
 		t.Errorf("messages %q", got)

@@ -23,7 +23,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/workspace"
 )
@@ -86,12 +86,12 @@ func steady(args []string) {
 		log.Fatal(err)
 	}
 	defer os.RemoveAll(dir)
-	db, err := repo.Open(dir)
+	store, err := db.Open(dir)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
-	dbs := watchDB(db)
+	defer store.Close()
+	dbs := watchDB(store)
 	providers := []tools.Provider{work{latency: *toolLatency}}
 	if *command != "" {
 		folder := filepath.Join(dir, "work")
@@ -112,7 +112,7 @@ func steady(args []string) {
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(url, "", *calls, map[string]llm.Limits{"fake": {Context: 200_000, Output: 32_000}})},
 		Providers:   providers,
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
-		Slots:       *slots, DB: db, OnEvent: tr.on,
+		Slots:       *slots, DB: store, OnEvent: tr.on,
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := ag.Start(ctx); err != nil {
@@ -121,7 +121,7 @@ func steady(args []string) {
 	threads := make([]string, *c)
 	tr.mu.Lock()
 	for i := range threads {
-		th, err := ag.StartThread(repo.DefaultUser, "", "", "bench", permission.Settings{})
+		th, err := ag.StartThread(db.DefaultUser, "", "", "bench", permission.Settings{})
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -170,7 +170,7 @@ func steady(args []string) {
 		go func() {
 			defer wg.Done()
 			for range *turns {
-				turnID := tr.start(ag, repo.DefaultUser, id, "work")
+				turnID := tr.start(ag, db.DefaultUser, id, "work")
 				mu.Lock()
 				ids = append(ids, turnID)
 				mu.Unlock()

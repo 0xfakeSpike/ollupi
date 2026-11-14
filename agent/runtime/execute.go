@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -27,7 +27,7 @@ const (
 
 type callAction struct {
 	kind   callActionKind
-	item   repo.ItemRow
+	item   db.ItemRow
 	job    *job
 	reason string
 }
@@ -137,7 +137,7 @@ func (rt *Runtime) executePlan(ctx context.Context, plan []callAction) (bool, er
 func (rt *Runtime) runJobs(ctx context.Context, jobs []job) ([]tools.Result, error) {
 	ctx = context.WithValue(ctx, deferredKey{}, rt.deferred)
 	for i := range jobs {
-		jobs[i].it.Status = repo.ItemInProgress
+		jobs[i].it.Status = db.ItemInProgress
 		stored, err := rt.record(jobs[i].it)
 		if err != nil {
 			return nil, err
@@ -187,33 +187,33 @@ func (rt *Runtime) finishTool(j job, result tools.Result) (string, error) {
 		_, err := rt.record(it)
 		return "", err
 	}
-	stored, errText, err := repo.ResultOf(result)
+	stored, errText, err := db.ResultOf(result)
 	if err != nil {
-		stored, errText, err = repo.ResultOf(tools.Result{Err: fmt.Errorf("tool output cannot be recorded: %w", err)}.For(it.Tool))
+		stored, errText, err = db.ResultOf(tools.Result{Err: fmt.Errorf("tool output cannot be recorded: %w", err)}.For(it.Tool))
 		if err != nil {
 			return "", err
 		}
 	}
 	it.Result, it.Error = stored, errText
-	status := repo.ItemCompleted
+	status := db.ItemCompleted
 	if errText != "" {
-		status = repo.ItemFailed
+		status = db.ItemFailed
 	}
 	if _, err := rt.complete(it, status); err != nil {
 		return "", err
 	}
-	if status == repo.ItemCompleted {
+	if status == db.ItemCompleted {
 		return "", nil
 	}
 	return rt.haltAfterFailures(errText), nil
 }
 
-func (rt *Runtime) fail(it repo.ItemRow, reason string) error {
-	_, err := rt.complete(withError(it, reason), repo.ItemFailed)
+func (rt *Runtime) fail(it db.ItemRow, reason string) error {
+	_, err := rt.complete(withError(it, reason), db.ItemFailed)
 	return err
 }
 
-func (rt *Runtime) refuse(it repo.ItemRow, reason string) (string, error) {
+func (rt *Runtime) refuse(it db.ItemRow, reason string) (string, error) {
 	if err := rt.fail(it, reason); err != nil {
 		return "", err
 	}

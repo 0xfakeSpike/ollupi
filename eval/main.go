@@ -27,7 +27,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
 	"github.com/0xfakeSpike/ollupi/tools/web"
@@ -108,11 +108,11 @@ func main() {
 		log.Fatalf("eval: unknown -api %q", *api)
 	}
 
-	db, err := repo.Open(*home)
+	store, err := db.Open(*home)
 	if err != nil {
 		log.Fatalf("eval: %v", err)
 	}
-	defer db.Close()
+	defer store.Close()
 	runner, err := workspace.New(workspace.Options{Config: workspace.Config{WorkspaceDirs: []string{*dir}, SandboxMode: *mode},
 		Agent: workspace.AgentFiles{Home: *home}})
 	if err != nil {
@@ -121,7 +121,7 @@ func main() {
 	defer runner.Close()
 
 	var ag *orchestrator.Orchestrator
-	ended := make(chan repo.TurnRow, 1)
+	ended := make(chan db.TurnRow, 1)
 	// changed tells the writer below that the turn has a new item, so that -out holds the run so far even when the
 	// harness kills the run at its time limit.
 	changed := make(chan struct{}, 1)
@@ -132,7 +132,7 @@ func main() {
 		Providers:   []tools.Provider{runner, web.New(web.Options{})},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 		RunLimit:    *runLimit,
-		DB:          db,
+		DB:          store,
 		OnEvent: func(e orchestrator.Event) {
 			switch e.Kind {
 			case orchestrator.EventItemCompleted:
@@ -159,24 +159,24 @@ func main() {
 	if err := ag.Start(ctx); err != nil {
 		log.Fatalf("eval: %v", err)
 	}
-	th, err := ag.StartThread(repo.DefaultUser, "", "", "eval", permission.Settings{})
+	th, err := ag.StartThread(db.DefaultUser, "", "", "eval", permission.Settings{})
 	if err != nil {
 		log.Fatalf("eval: %v", err)
 	}
 	startedAt := time.Now()
-	started, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, orchestrator.Input{Text: instruction})
+	started, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, orchestrator.Input{Text: instruction})
 	if err != nil {
 		log.Fatalf("eval: %v", err)
 	}
 	var saving sync.Mutex
-	save := func() (repo.TurnRow, []repo.ItemRow) {
+	save := func() (db.TurnRow, []db.ItemRow) {
 		saving.Lock()
 		defer saving.Unlock()
-		turn, err := db.Turn(started.ID)
+		turn, err := store.Turn(started.ID)
 		if err != nil {
 			log.Fatalf("eval: %v", err)
 		}
-		items, err := db.TurnItems(started.ID)
+		items, err := store.TurnItems(started.ID)
 		if err != nil {
 			log.Fatalf("eval: %v", err)
 		}
@@ -202,7 +202,7 @@ func main() {
 	}
 	turn, items := save()
 	for i := len(items) - 1; i >= 0; i-- {
-		if items[i].Type == repo.ItemAgentMessage {
+		if items[i].Type == db.ItemAgentMessage {
 			fmt.Println(items[i].Text)
 			break
 		}
@@ -210,17 +210,17 @@ func main() {
 	log.Printf("eval: turn %s after %s, %d items", turn.Status, time.Since(startedAt).Round(time.Second), len(items))
 	stop()
 	ag.Wait()
-	if turn.Status != repo.TurnCompleted {
+	if turn.Status != db.TurnCompleted {
 		log.Printf("eval: %s", cmp.Or(turn.Error, "the turn did not complete"))
 		os.Exit(1)
 	}
 }
 
 // writeItems replaces the file whole, so a reader never sees half of it.
-func writeItems(path string, turn repo.TurnRow, items []repo.ItemRow) error {
+func writeItems(path string, turn db.TurnRow, items []db.ItemRow) error {
 	raw, err := json.MarshalIndent(struct {
-		Turn  repo.TurnRow   `json:"turn"`
-		Items []repo.ItemRow `json:"items"`
+		Turn  db.TurnRow   `json:"turn"`
+		Items []db.ItemRow `json:"items"`
 	}{turn, items}, "", "  ")
 	if err != nil {
 		return err
@@ -253,21 +253,21 @@ func readInstruction(file string) (string, error) {
 }
 
 // logItem writes a line for each tool call and message as it completes, so the harness's log shows the run.
-func logItem(it *repo.ItemRow) {
+func logItem(it *db.ItemRow) {
 	if it == nil {
 		return
 	}
 	switch it.Type {
-	case repo.ItemToolCall:
+	case db.ItemToolCall:
 		log.Printf("tool %s %s: %s", it.Tool, it.Status, clip(it.Arguments, 200))
-	case repo.ItemAgentMessage:
+	case db.ItemAgentMessage:
 		log.Printf("message: %s", clip(it.Text, 200))
-	case repo.ItemError:
+	case db.ItemError:
 		log.Printf("error: %s", clip(cmp.Or(it.Error, it.Text), 400))
 	}
 }
 
-func answer(ag *orchestrator.Orchestrator, threadID string, it *repo.ItemRow) {
+func answer(ag *orchestrator.Orchestrator, threadID string, it *db.ItemRow) {
 	if it == nil {
 		return
 	}
@@ -280,7 +280,7 @@ func answer(ag *orchestrator.Orchestrator, threadID string, it *repo.ItemRow) {
 	for _, q := range req.Questions {
 		answers[q.ID] = userinput.Answer{Answers: []string{noOneThere}}
 	}
-	if err := ag.AnswerUserInput(repo.DefaultUser, threadID, it.ID, answers); err != nil {
+	if err := ag.AnswerUserInput(db.DefaultUser, threadID, it.ID, answers); err != nil {
 		log.Printf("eval: the question could not be answered: %v", err)
 	}
 }

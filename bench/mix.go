@@ -17,7 +17,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
@@ -75,18 +75,18 @@ func mix(args []string) {
 		log.Fatal(err)
 	}
 	defer os.RemoveAll(dir)
-	db, err := repo.Open(dir)
+	store, err := db.Open(dir)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
+	defer store.Close()
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}, done: map[string]chan struct{}{}}
 	ag := orchestrator.New(orchestrator.Config{
 		Name: "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", *calls, map[string]llm.Limits{"fake": {Context: 200_000, Output: 32_000}})},
 		Providers:   []tools.Provider{work{latency: *toolLatency}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
-		Slots:       *slots, DB: db,
+		Slots:       *slots, DB: store,
 		OnEvent: func(e orchestrator.Event) {
 			if e.Kind == orchestrator.EventTurnStarted && e.Thread.ParentThreadID != "" {
 				mu.Lock()
@@ -101,7 +101,7 @@ func mix(args []string) {
 		log.Fatal(err)
 	}
 	newThread := func() string {
-		th, err := ag.StartThread(repo.DefaultUser, "", "", "bench", permission.Settings{})
+		th, err := ag.StartThread(db.DefaultUser, "", "", "bench", permission.Settings{})
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -115,7 +115,7 @@ func mix(args []string) {
 		t := &mixTurn{kind: kind, thread: thread, submitted: time.Now()}
 		turns[text] = t
 		mu.Unlock()
-		id := tr.start(ag, repo.DefaultUser, thread, text)
+		id := tr.start(ag, db.DefaultUser, thread, text)
 		mu.Lock()
 		t.turnID = id
 		mu.Unlock()

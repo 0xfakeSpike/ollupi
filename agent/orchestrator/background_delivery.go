@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/google/uuid"
 )
@@ -20,7 +20,7 @@ func (o *Orchestrator) deliverBackground(threadID string) {
 		slog.Error("background results not delivered", "thread", threadID, "err", err)
 		return
 	}
-	var next *repo.TurnRow
+	var next *db.TurnRow
 	if st.Thread.ParentThreadID == "" {
 		model, err := o.conversationModel(st.Last, "")
 		if err != nil {
@@ -32,7 +32,7 @@ func (o *Orchestrator) deliverBackground(threadID string) {
 			slog.Error("background results not delivered", "thread", threadID, "err", err)
 			return
 		}
-		next = &repo.TurnRow{ID: uuid.NewString(), Model: model.Clone(), Agent: string(main.Name)}
+		next = &db.TurnRow{ID: uuid.NewString(), Model: model.Clone(), Agent: string(main.Name)}
 	}
 	thread, turn, items, started, err := o.cfg.DB.DeliverBackgroundCalls(threadID, next)
 	if err != nil {
@@ -54,7 +54,7 @@ func (o *Orchestrator) deliverBackground(threadID string) {
 
 // fulfil completes a call that waits for background calls once they have all ended, with how each ended; their
 // results come back to the turn as backgroundResult items. It reports whether it did.
-func (o *Orchestrator) fulfil(t repo.ThreadRow, turn repo.TurnRow, call repo.ItemRow) (bool, error) {
+func (o *Orchestrator) fulfil(t db.ThreadRow, turn db.TurnRow, call db.ItemRow) (bool, error) {
 	var req waitForBackground
 	if err := json.Unmarshal(call.Await.Request, &req); err != nil {
 		return false, fmt.Errorf("orchestrator: wait %s: %w", call.ID, err)
@@ -65,17 +65,17 @@ func (o *Orchestrator) fulfil(t repo.ThreadRow, turn repo.TurnRow, call repo.Ite
 		if err != nil {
 			return false, fmt.Errorf("orchestrator: background call %s: %w", id, err)
 		}
-		if bc.Status == repo.BackgroundRunning {
+		if bc.Status == db.BackgroundRunning {
 			return false, nil
 		}
 		ended[id] = string(bc.Status)
 	}
-	result, _, err := repo.ResultOf(tools.Result{Output: map[string]any{"ended": ended}})
+	result, _, err := db.ResultOf(tools.Result{Output: map[string]any{"ended": ended}})
 	if err != nil {
 		return false, err
 	}
 	now := time.Now().UTC()
-	call.Status, call.Result, call.CompletedAt = repo.ItemCompleted, result, &now
+	call.Status, call.Result, call.CompletedAt = db.ItemCompleted, result, &now
 	stored, _, err := o.cfg.DB.RecordItem(t.ID, call)
 	if err != nil {
 		return false, err
@@ -87,7 +87,7 @@ func (o *Orchestrator) fulfil(t repo.ThreadRow, turn repo.TurnRow, call repo.Ite
 // waitBeforeReport keeps a subagent from reporting while background calls of its own still run: it waits for them in
 // the subagent's place, as a wait_for_background call of its own response, so that the subagent goes on with their
 // results and reports with them. It reports whether the turn waits.
-func (o *Orchestrator) waitBeforeReport(t repo.ThreadRow, turn repo.TurnRow) (bool, error) {
+func (o *Orchestrator) waitBeforeReport(t db.ThreadRow, turn db.TurnRow) (bool, error) {
 	running, err := o.cfg.DB.RunningBackgroundCalls(t.ID)
 	if err != nil || len(running) == 0 {
 		return false, err
@@ -96,8 +96,8 @@ func (o *Orchestrator) waitBeforeReport(t repo.ThreadRow, turn repo.TurnRow) (bo
 	if err != nil {
 		return false, err
 	}
-	call := repo.ItemRow{
-		ID: uuid.NewString(), TurnID: turn.ID, Type: repo.ItemToolCall, Status: repo.ItemInProgress,
+	call := db.ItemRow{
+		ID: uuid.NewString(), TurnID: turn.ID, Type: db.ItemToolCall, Status: db.ItemInProgress,
 		CallID: "wait_" + uuid.NewString(), ResponseID: uuid.NewString(), Tool: ToolWaitForBackground, Arguments: string(request),
 		Await: &tools.Await{By: tools.AwaitBackground, Request: request}, StartedAt: time.Now().UTC(),
 	}

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
@@ -17,10 +17,10 @@ const (
 )
 
 type Outputs struct {
-	db *repo.DB
+	db *db.DB
 }
 
-func NewOutputs(db *repo.DB) *Outputs { return &Outputs{db: db} }
+func NewOutputs(store *db.DB) *Outputs { return &Outputs{db: store} }
 
 // OutputsProvider is the provider of ToolReadOutput.
 const OutputsProvider = "context"
@@ -62,7 +62,7 @@ func (o *Outputs) Invoke(ctx context.Context, caller tools.Caller, _ string, arg
 		return tools.Result{}, fmt.Errorf("offset must be at least 0 and length between 1 and %d", maxReadRunes)
 	}
 	it, err := o.db.Item(id)
-	if errors.Is(err, repo.ErrNotFound) || err == nil && (it.ThreadID != caller.ThreadID || !it.IsCall() && it.Type != repo.ItemBackgroundResult || it.Result == nil) {
+	if errors.Is(err, db.ErrNotFound) || err == nil && (it.ThreadID != caller.ThreadID || !it.IsCall() && it.Type != db.ItemBackgroundResult || it.Result == nil) {
 		return tools.Result{}, fmt.Errorf("this conversation has no tool output %q", id)
 	}
 	if err != nil {

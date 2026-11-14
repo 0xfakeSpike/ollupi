@@ -16,14 +16,14 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/pkg/wshub"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
 	"github.com/0xfakeSpike/ollupi/tools/mcp"
 )
 
 type Options struct {
 	// DB is the orchestrator's database; the gateway reads it for views that need no orchestration.
-	DB *repo.DB
+	DB *db.DB
 	// Token is the default user's, for a gateway with one user; Authenticate takes its place for many.
 	Token string
 	// Authenticate says whose token this is. Logging in happens before ollupi: it only checks what that gave out.
@@ -50,7 +50,7 @@ func NewServer(a *orchestrator.Orchestrator, opts Options) (*Server, error) {
 			return nil, errors.New("gateway: a token is required; clients send it as Authorization: Bearer <token> or, from a browser, as the subprotocol after " + tokenProtocol)
 		}
 		opts.Authenticate = func(token string) (string, bool) {
-			return repo.DefaultUser, subtle.ConstantTimeCompare([]byte(token), []byte(opts.Token)) == 1
+			return db.DefaultUser, subtle.ConstantTimeCompare([]byte(token), []byte(opts.Token)) == 1
 		}
 	}
 	if opts.DB == nil {

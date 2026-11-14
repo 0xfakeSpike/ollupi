@@ -9,7 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
 const extractionInstructions = `Maintain long-term memory from one slice of a finished conversation turn: its user messages, assistant messages, tool calls with their results, and errors, in order, together with the existing global memories and those of the batch's own scope.
@@ -37,7 +37,7 @@ const (
 
 func extractionInput(batch *Batch, budget int) (string, int, error) {
 	input := *batch
-	input.Existing = []repo.MemoryRow{}
+	input.Existing = []db.MemoryRow{}
 	encode := func() (string, int, error) {
 		b, err := json.Marshal(input)
 		if err != nil {
@@ -53,7 +53,7 @@ func extractionInput(batch *Batch, budget int) (string, int, error) {
 		return "", 0, fmt.Errorf("memory evidence of turn %s needs %d tokens but the extraction budget is %d", batch.TurnID, used, budget)
 	}
 	terms := searchTerms(payload)
-	for _, r := range rank(batch.Existing, func(e repo.MemoryRow) int { return extractionScore(e, terms, payload) }) {
+	for _, r := range rank(batch.Existing, func(e db.MemoryRow) int { return extractionScore(e, terms, payload) }) {
 		input.Existing = append(input.Existing, r.entry)
 		next, count, err := encode()
 		if err != nil {
@@ -71,14 +71,14 @@ func extractionInput(batch *Batch, budget int) (string, int, error) {
 	return payload, used, nil
 }
 
-func extractionScore(e repo.MemoryRow, terms []string, payload string) int {
+func extractionScore(e db.MemoryRow, terms []string, payload string) int {
 	score := termScore(e, terms) + kindPriority(e)
 	for _, s := range e.Sources {
 		if s.ID != "" && strings.Contains(payload, s.ID) {
 			score += 100
 		}
 	}
-	if e.Status == repo.MemoryForgotten {
+	if e.Status == db.MemoryForgotten {
 		score += 20
 	}
 	return score
@@ -104,8 +104,8 @@ func parseOperations(content string, batch *Batch, restore func(string) string) 
 	if decoder.Decode(&trailing) != io.EOF || result.Operations == nil || len(result.Operations) > maxOperations {
 		return nil, errors.New("memory extraction returned an invalid operation list")
 	}
-	existing := map[string]repo.MemoryRow{}
-	sources := map[string]repo.MemorySource{}
+	existing := map[string]db.MemoryRow{}
+	sources := map[string]db.MemorySource{}
 	fresh := map[string]bool{}
 	for _, e := range batch.Existing {
 		existing[e.ID] = e
@@ -132,14 +132,14 @@ func parseOperations(content string, batch *Batch, restore func(string) string) 
 			op.Topic = normalizeTopic(op.Topic)
 		case "update", "retire":
 			e, ok := existing[op.ID]
-			if !ok || e.Status == repo.MemoryForgotten || touched[op.ID] {
+			if !ok || e.Status == db.MemoryForgotten || touched[op.ID] {
 				return nil, errors.New("memory extraction targeted an unavailable record")
 			}
 			if op.Topic != "" && normalizeTopic(op.Topic) != e.Topic {
 				return nil, errors.New("memory topic is immutable; update the existing stable topic")
 			}
 			op.Scope = scopeLocal
-			if e.Scope == repo.MemoryGlobal {
+			if e.Scope == db.MemoryGlobal {
 				op.Scope = scopeGlobal
 			}
 			if e.UserEdited {
@@ -166,7 +166,7 @@ func parseOperations(content string, batch *Batch, restore func(string) string) 
 		if len(op.Sources) > maxSourcesPerNote {
 			return nil, errors.New("memory extraction cited too many sources")
 		}
-		cited := make([]repo.MemorySource, 0, len(op.Sources))
+		cited := make([]db.MemorySource, 0, len(op.Sources))
 		seen := map[string]bool{}
 		hasFresh := false
 		for _, s := range op.Sources {
@@ -190,7 +190,7 @@ func parseOperations(content string, batch *Batch, restore func(string) string) 
 	return accepted, nil
 }
 
-func sourceKey(s repo.MemorySource) string { return s.Table + "/" + s.ID }
+func sourceKey(s db.MemorySource) string { return s.Table + "/" + s.ID }
 
 func normalizeTopic(topic string) string {
 	return strings.ToLower(strings.Join(strings.Fields(topic), " "))

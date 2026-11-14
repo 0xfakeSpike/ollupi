@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
 func (c *conn) workspaceList(ctx context.Context, _ Empty) (WorkspaceListResult, func(), error) {
@@ -49,6 +49,6 @@ func (c *conn) workspacePermissions(ctx context.Context, p WorkspacePermissionsP
 	return workspaceResult(c.s.orchestrator.UpdateWorkspaceSettings(c.user, p.WorkspaceID, p.PermissionSettings))
 }
 
-func workspaceResult(w repo.WorkspaceRow, err error) (WorkspaceResult, func(), error) {
+func workspaceResult(w db.WorkspaceRow, err error) (WorkspaceResult, func(), error) {
 	return WorkspaceResult{Workspace: workspaceRow(w)}, nil, err
 }

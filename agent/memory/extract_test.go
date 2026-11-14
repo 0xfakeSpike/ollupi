@@ -5,14 +5,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
-func scopeBatch(existing ...repo.MemoryRow) *Batch {
+func scopeBatch(existing ...db.MemoryRow) *Batch {
 	return &Batch{
-		UserID: repo.DefaultUser,
-		Scope:  repo.MemoryWorkspace, WorkspaceID: "w", TurnID: "t",
-		Facts:    []Fact{{Source: repo.MemorySource{Table: "items", ID: "i1"}, Data: []byte(`{}`)}},
+		UserID: db.DefaultUser,
+		Scope:  db.MemoryWorkspace, WorkspaceID: "w", TurnID: "t",
+		Facts:    []Fact{{Source: db.MemorySource{Table: "items", ID: "i1"}, Data: []byte(`{}`)}},
 		Existing: existing,
 	}
 }
@@ -20,7 +20,7 @@ func scopeBatch(existing ...repo.MemoryRow) *Batch {
 func same(s string) string { return s }
 
 func TestExtractionScopes(t *testing.T) {
-	global := repo.MemoryRow{UserID: repo.DefaultUser, ID: "g", Scope: repo.MemoryGlobal, Topic: "language", Kind: "preference", Status: repo.MemoryActive}
+	global := db.MemoryRow{UserID: db.DefaultUser, ID: "g", Scope: db.MemoryGlobal, Topic: "language", Kind: "preference", Status: db.MemoryActive}
 	batch := scopeBatch(global)
 	op := func(fields string) string {
 		return `{"operations":[{` + fields + `,"sources":[{"table":"items","id":"i1"}]}]}`
@@ -51,10 +51,10 @@ func TestExtractionScopes(t *testing.T) {
 
 func TestCommitPlacesAddsByScope(t *testing.T) {
 	m := testManager(t, true,
-		repo.MemoryRow{UserID: repo.DefaultUser, ID: "local-build", WorkspaceID: "w", Topic: "build", Kind: "fact", Text: "Builds with go."},
-		repo.MemoryRow{UserID: repo.DefaultUser, ID: "other-build", WorkspaceID: "x", Topic: "editor", Kind: "fact", Text: "Elsewhere."},
+		db.MemoryRow{UserID: db.DefaultUser, ID: "local-build", WorkspaceID: "w", Topic: "build", Kind: "fact", Text: "Builds with go."},
+		db.MemoryRow{UserID: db.DefaultUser, ID: "other-build", WorkspaceID: "x", Topic: "editor", Kind: "fact", Text: "Elsewhere."},
 	)
-	existing, err := m.db.Memories(repo.DefaultUser, repo.MemoryWorkspace, "w", true)
+	existing, err := m.db.Memories(db.DefaultUser, db.MemoryWorkspace, "w", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,10 +67,10 @@ func TestCommitPlacesAddsByScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := commit(m.db, batch, ops, repo.MemoryReport{}); err != nil {
+	if err := commit(m.db, batch, ops, db.MemoryReport{}); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := m.db.Memories(repo.DefaultUser, repo.MemoryWorkspace, "w", true)
+	rows, err := m.db.Memories(db.DefaultUser, db.MemoryWorkspace, "w", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,10 +83,10 @@ func TestCommitPlacesAddsByScope(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Errorf("memories\n%q\nwant\n%q", got, want)
 	}
-	for _, bad := range []repo.MemoryRow{
-		{ID: "b1", Scope: repo.MemoryGlobal, WorkspaceID: "w", Topic: "b1", Kind: "fact", Text: "x", Status: repo.MemoryActive},
-		{ID: "b2", Scope: repo.MemoryWorkspace, Topic: "b2", Kind: "fact", Text: "x", Status: repo.MemoryActive},
-		{ID: "b3", Scope: repo.MemoryWorkspace, WorkspaceID: "w", OriginWorkspaceID: "x", Topic: "b3", Kind: "fact", Text: "x", Status: repo.MemoryActive},
+	for _, bad := range []db.MemoryRow{
+		{ID: "b1", Scope: db.MemoryGlobal, WorkspaceID: "w", Topic: "b1", Kind: "fact", Text: "x", Status: db.MemoryActive},
+		{ID: "b2", Scope: db.MemoryWorkspace, Topic: "b2", Kind: "fact", Text: "x", Status: db.MemoryActive},
+		{ID: "b3", Scope: db.MemoryWorkspace, WorkspaceID: "w", OriginWorkspaceID: "x", Topic: "b3", Kind: "fact", Text: "x", Status: db.MemoryActive},
 	} {
 		if err := m.db.SaveMemory(bad); err == nil {
 			t.Errorf("the database took a %s memory with workspace %q", bad.Scope, bad.WorkspaceID)

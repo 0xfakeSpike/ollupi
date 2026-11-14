@@ -14,7 +14,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
@@ -78,16 +78,16 @@ func TestThinkingIsReplayedAcrossTurns(t *testing.T) {
 	fake := &anthropicModel{}
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
-	db, err := repo.Open(t.TempDir())
+	store, err := db.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer store.Close()
 	ag := orchestrator.New(orchestrator.Config{
 		Name: "Ollupi", Models: []llm.Model{{Name: "claude", Connection: "anthropic"}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 		Connections: map[string]llm.Client{"anthropic": llm.NewAnthropic(srv.URL, "key", 4, map[string]llm.Limits{"claude": {Context: 200_000, Output: 32_000}})},
-		Providers:   []tools.Provider{githubTools{}}, DB: db,
+		Providers:   []tools.Provider{githubTools{}}, DB: store,
 	})
 	actx, stop := context.WithCancel(ctx)
 	if err := ag.Start(actx); err != nil {
@@ -95,22 +95,22 @@ func TestThinkingIsReplayedAcrossTurns(t *testing.T) {
 	}
 	defer ag.Wait()
 	defer stop()
-	w, err := ag.AddWorkspace(ctx, repo.DefaultUser, t.TempDir(), "app")
+	w, err := ag.AddWorkspace(ctx, db.DefaultUser, t.TempDir(), "app")
 	if err != nil {
 		t.Fatal(err)
 	}
-	th, err := ag.StartThread(repo.DefaultUser, w.ID, "", "", permission.Settings{})
+	th, err := ag.StartThread(db.DefaultUser, w.ID, "", "", permission.Settings{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ask := func(text string, requests int) {
 		t.Helper()
-		turn, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, orchestrator.Input{Text: text})
+		turn, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, orchestrator.Input{Text: text})
 		if err != nil {
 			t.Fatal(err)
 		}
 		for {
-			v, err := db.Thread(th.ID)
+			v, err := store.Thread(th.ID)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -6,12 +6,12 @@ import (
 	"sort"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
 type Request struct {
-	Thread repo.ThreadRow
-	Item   repo.ItemRow
+	Thread db.ThreadRow
+	Item   db.ItemRow
 }
 
 func (o *Orchestrator) PendingRequests(user, threadID string) ([]Request, error) {
@@ -42,7 +42,7 @@ func (o *Orchestrator) AllPendingRequests(user string) ([]Request, error) {
 	for _, id := range ids {
 		st, err := o.cfg.DB.ThreadState(id)
 		switch {
-		case errors.Is(err, repo.ErrNotFound):
+		case errors.Is(err, db.ErrNotFound):
 		case err != nil:
 			return nil, fmt.Errorf("orchestrator: thread %s: %w", id, err)
 		default:
@@ -52,7 +52,7 @@ func (o *Orchestrator) AllPendingRequests(user string) ([]Request, error) {
 	return byRequestTime(out), nil
 }
 
-func requestsOf(st repo.ThreadState) []Request {
+func requestsOf(st db.ThreadState) []Request {
 	var out []Request
 	for _, it := range st.PendingRequests() {
 		out = append(out, Request{Thread: st.Thread, Item: it})
@@ -65,7 +65,7 @@ func byRequestTime(requests []Request) []Request {
 	return requests
 }
 
-func requestedAt(it repo.ItemRow) time.Time {
+func requestedAt(it db.ItemRow) time.Time {
 	if it.Approval != nil {
 		return it.Approval.RequestedAt
 	}

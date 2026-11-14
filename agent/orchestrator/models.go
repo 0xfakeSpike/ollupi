@@ -10,7 +10,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/agent/skills"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
 func (o *Orchestrator) checkModels() error {
@@ -56,7 +56,7 @@ func (o *Orchestrator) clientFor(user, connection string) (llm.Client, error) {
 }
 
 func (o *Orchestrator) checkPromptFits() error {
-	checker, err := permission.New(o.layers(repo.WorkspaceRow{}), o.cfg.Tools, o.registry)
+	checker, err := permission.New(o.layers(db.WorkspaceRow{}), o.cfg.Tools, o.registry)
 	if err != nil {
 		return err
 	}
@@ -96,7 +96,7 @@ func (o *Orchestrator) modelOn(connection string) (llm.Model, error) {
 	return o.cfg.Models[i].Clone(), nil
 }
 
-func (o *Orchestrator) conversationModel(last *repo.TurnRow, requested string) (llm.Model, error) {
+func (o *Orchestrator) conversationModel(last *db.TurnRow, requested string) (llm.Model, error) {
 	connection := strings.TrimSpace(requested)
 	if connection == "" && last != nil {
 		connection = last.Model.Connection

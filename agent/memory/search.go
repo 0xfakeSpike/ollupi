@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/google/jsonschema-go/jsonschema"
 )
@@ -25,7 +25,7 @@ func (SearchArgs) Constrain(s *jsonschema.Schema) {
 }
 
 type SearchResult struct {
-	Memories []repo.MemoryReference `json:"memories"`
+	Memories []db.MemoryReference `json:"memories"`
 }
 
 func (*Manager) Name() (string, string) {
@@ -60,7 +60,7 @@ func (m *Manager) Invoke(ctx context.Context, caller tools.Caller, _ string, arg
 	if err != nil {
 		return tools.Result{}, err
 	}
-	out := SearchResult{Memories: []repo.MemoryReference{}}
+	out := SearchResult{Memories: []db.MemoryReference{}}
 	for _, e := range best(rows, terms, maxSearchResults) {
 		out.Memories = append(out.Memories, e.Reference())
 	}
@@ -68,15 +68,15 @@ func (m *Manager) Invoke(ctx context.Context, caller tools.Caller, _ string, arg
 }
 
 // Search finds active memories by words for the user: those of a workspace and the global ones, or with no workspace all of them.
-func (m *Manager) Search(user, query, workspaceID string, limit int) ([]repo.MemoryRow, error) {
+func (m *Manager) Search(user, query, workspaceID string, limit int) ([]db.MemoryRow, error) {
 	terms := searchTerms(query)
 	if len(terms) == 0 {
-		return []repo.MemoryRow{}, nil
+		return []db.MemoryRow{}, nil
 	}
-	var rows []repo.MemoryRow
+	var rows []db.MemoryRow
 	var err error
 	if workspaceID != "" {
-		rows, err = m.db.Memories(user, repo.MemoryWorkspace, workspaceID, true)
+		rows, err = m.db.Memories(user, db.MemoryWorkspace, workspaceID, true)
 	} else {
 		rows, err = m.db.AllMemories(user)
 	}
@@ -86,10 +86,10 @@ func (m *Manager) Search(user, query, workspaceID string, limit int) ([]repo.Mem
 	return best(rows, terms, limit), nil
 }
 
-func best(rows []repo.MemoryRow, terms []string, limit int) []repo.MemoryRow {
-	out := []repo.MemoryRow{}
-	for _, r := range rank(rows, func(e repo.MemoryRow) int {
-		if score := termScore(e, terms); score > 0 && e.Status == repo.MemoryActive {
+func best(rows []db.MemoryRow, terms []string, limit int) []db.MemoryRow {
+	out := []db.MemoryRow{}
+	for _, r := range rank(rows, func(e db.MemoryRow) int {
+		if score := termScore(e, terms); score > 0 && e.Status == db.MemoryActive {
 			return score + kindPriority(e)
 		}
 		return 0

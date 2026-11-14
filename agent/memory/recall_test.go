@@ -9,42 +9,42 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
-func testManager(t *testing.T, use bool, rows ...repo.MemoryRow) *Manager {
+func testManager(t *testing.T, use bool, rows ...db.MemoryRow) *Manager {
 	t.Helper()
-	db, err := repo.Open(t.TempDir())
+	store, err := db.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { store.Close() })
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	for i, r := range rows {
 		if r.Status == "" {
-			r.Status = repo.MemoryActive
+			r.Status = db.MemoryActive
 		}
 		if r.Scope == "" {
-			r.Scope = repo.MemoryGlobal
+			r.Scope = db.MemoryGlobal
 			if r.WorkspaceID != "" {
-				r.Scope = repo.MemoryWorkspace
+				r.Scope = db.MemoryWorkspace
 			}
 		}
 		r.CreatedAt = base
 		r.UpdatedAt = base.Add(time.Duration(i) * time.Minute)
-		if err := db.SaveMemory(r); err != nil {
+		if err := store.SaveMemory(r); err != nil {
 			t.Fatal(err)
 		}
 	}
-	m, err := New(db, nil, Options{Use: use})
+	m, err := New(store, nil, Options{Use: use})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return m
 }
 
-func ids(entries []repo.MemoryReference) []string {
+func ids(entries []db.MemoryReference) []string {
 	out := []string{}
 	for _, e := range entries {
 		out = append(out, e.ID)
@@ -54,16 +54,16 @@ func ids(entries []repo.MemoryReference) []string {
 
 func TestSnapshotSections(t *testing.T) {
 	m := testManager(t, true,
-		repo.MemoryRow{UserID: repo.DefaultUser, ID: "g-fact", Topic: "a", Kind: "fact", Text: "The sky is blue."},
-		repo.MemoryRow{UserID: repo.DefaultUser, ID: "g-pref", Topic: "b", Kind: "preference", Text: "Answers in Chinese."},
-		repo.MemoryRow{UserID: repo.DefaultUser, ID: "w-fact-old", WorkspaceID: "w", Topic: "c", Kind: "fact", Text: "Uses Go."},
-		repo.MemoryRow{UserID: repo.DefaultUser, ID: "w-decision", WorkspaceID: "w", Topic: "d", Kind: "decision", Text: "Prefix MCP tools."},
-		repo.MemoryRow{UserID: repo.DefaultUser, ID: "w-fact-new", WorkspaceID: "w", Topic: "e", Kind: "fact", Text: "Uses gorm."},
-		repo.MemoryRow{UserID: repo.DefaultUser, ID: "w-retired", WorkspaceID: "w", Topic: "f", Kind: "preference", Text: "Old.", Status: repo.MemoryRetired},
-		repo.MemoryRow{UserID: repo.DefaultUser, ID: "other", WorkspaceID: "x", Topic: "g", Kind: "preference", Text: "Elsewhere."},
-		repo.MemoryRow{UserID: repo.DefaultUser, ID: "n-fact", Scope: repo.MemoryGeneral, Topic: "h", Kind: "fact", Text: "Plans a trip."},
+		db.MemoryRow{UserID: db.DefaultUser, ID: "g-fact", Topic: "a", Kind: "fact", Text: "The sky is blue."},
+		db.MemoryRow{UserID: db.DefaultUser, ID: "g-pref", Topic: "b", Kind: "preference", Text: "Answers in Chinese."},
+		db.MemoryRow{UserID: db.DefaultUser, ID: "w-fact-old", WorkspaceID: "w", Topic: "c", Kind: "fact", Text: "Uses Go."},
+		db.MemoryRow{UserID: db.DefaultUser, ID: "w-decision", WorkspaceID: "w", Topic: "d", Kind: "decision", Text: "Prefix MCP tools."},
+		db.MemoryRow{UserID: db.DefaultUser, ID: "w-fact-new", WorkspaceID: "w", Topic: "e", Kind: "fact", Text: "Uses gorm."},
+		db.MemoryRow{UserID: db.DefaultUser, ID: "w-retired", WorkspaceID: "w", Topic: "f", Kind: "preference", Text: "Old.", Status: db.MemoryRetired},
+		db.MemoryRow{UserID: db.DefaultUser, ID: "other", WorkspaceID: "x", Topic: "g", Kind: "preference", Text: "Elsewhere."},
+		db.MemoryRow{UserID: db.DefaultUser, ID: "n-fact", Scope: db.MemoryGeneral, Topic: "h", Kind: "fact", Text: "Plans a trip."},
 	)
-	s, err := m.Snapshot(repo.DefaultUser, "w", 4000)
+	s, err := m.Snapshot(db.DefaultUser, "w", 4000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestSnapshotSections(t *testing.T) {
 		t.Errorf("text:\n%s", s.Text)
 	}
 
-	s, err = m.Snapshot(repo.DefaultUser, "", 4000)
+	s, err = m.Snapshot(db.DefaultUser, "", 4000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,14 +86,14 @@ func TestSnapshotSections(t *testing.T) {
 
 func TestSnapshotBudget(t *testing.T) {
 	text := strings.Repeat("word ", 40)
-	var rows []repo.MemoryRow
+	var rows []db.MemoryRow
 	for i := range 10 {
-		rows = append(rows, repo.MemoryRow{UserID: repo.DefaultUser, ID: fmt.Sprintf("g%d", i), Topic: fmt.Sprintf("g%d", i), Kind: "fact", Text: text})
+		rows = append(rows, db.MemoryRow{UserID: db.DefaultUser, ID: fmt.Sprintf("g%d", i), Topic: fmt.Sprintf("g%d", i), Kind: "fact", Text: text})
 	}
-	rows = append(rows, repo.MemoryRow{UserID: repo.DefaultUser, ID: "w0", WorkspaceID: "w", Topic: "w0", Kind: "fact", Text: text})
+	rows = append(rows, db.MemoryRow{UserID: db.DefaultUser, ID: "w0", WorkspaceID: "w", Topic: "w0", Kind: "fact", Text: text})
 	m := testManager(t, true, rows...)
 	const budget = 600
-	s, err := m.Snapshot(repo.DefaultUser, "w", budget)
+	s, err := m.Snapshot(db.DefaultUser, "w", budget)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,12 +110,12 @@ func TestSnapshotBudget(t *testing.T) {
 }
 
 func TestSnapshotEmptyAndUnused(t *testing.T) {
-	s, err := testManager(t, true).Snapshot(repo.DefaultUser, "w", 4000)
+	s, err := testManager(t, true).Snapshot(db.DefaultUser, "w", 4000)
 	if err != nil || s == nil || s.Text != "" || s.Entries == nil || len(s.Entries) != 0 {
 		t.Errorf("no memories: %+v, %v; want an empty snapshot", s, err)
 	}
-	m := testManager(t, false, repo.MemoryRow{UserID: repo.DefaultUser, ID: "g", Topic: "a", Kind: "fact", Text: "x"})
-	if s, err := m.Snapshot(repo.DefaultUser, "w", 4000); s != nil || err != nil {
+	m := testManager(t, false, db.MemoryRow{UserID: db.DefaultUser, ID: "g", Topic: "a", Kind: "fact", Text: "x"})
+	if s, err := m.Snapshot(db.DefaultUser, "w", 4000); s != nil || err != nil {
 		t.Errorf("memory not used: %+v, %v; want no snapshot", s, err)
 	}
 	if specs, _ := m.ToolList(context.Background()); len(specs) != 0 {
@@ -125,14 +125,14 @@ func TestSnapshotEmptyAndUnused(t *testing.T) {
 
 func TestSearch(t *testing.T) {
 	m := testManager(t, true,
-		repo.MemoryRow{UserID: repo.DefaultUser, ID: "g", Topic: "colors", Kind: "fact", Text: "Likes blue."},
-		repo.MemoryRow{UserID: repo.DefaultUser, ID: "w", WorkspaceID: "w", Topic: "palette", Kind: "preference", Text: "Blue buttons."},
-		repo.MemoryRow{UserID: repo.DefaultUser, ID: "other", WorkspaceID: "x", Topic: "colors", Kind: "fact", Text: "Blue too."},
-		repo.MemoryRow{UserID: repo.DefaultUser, ID: "general", Scope: repo.MemoryGeneral, Topic: "colors", Kind: "fact", Text: "Blue as well."},
-		repo.MemoryRow{UserID: repo.DefaultUser, ID: "gone", WorkspaceID: "w", Topic: "old", Kind: "fact", Text: "Blue once.", Status: repo.MemoryRetired},
-		repo.MemoryRow{UserID: repo.DefaultUser, ID: "unrelated", WorkspaceID: "w", Topic: "db", Kind: "fact", Text: "Uses sqlite."},
+		db.MemoryRow{UserID: db.DefaultUser, ID: "g", Topic: "colors", Kind: "fact", Text: "Likes blue."},
+		db.MemoryRow{UserID: db.DefaultUser, ID: "w", WorkspaceID: "w", Topic: "palette", Kind: "preference", Text: "Blue buttons."},
+		db.MemoryRow{UserID: db.DefaultUser, ID: "other", WorkspaceID: "x", Topic: "colors", Kind: "fact", Text: "Blue too."},
+		db.MemoryRow{UserID: db.DefaultUser, ID: "general", Scope: db.MemoryGeneral, Topic: "colors", Kind: "fact", Text: "Blue as well."},
+		db.MemoryRow{UserID: db.DefaultUser, ID: "gone", WorkspaceID: "w", Topic: "old", Kind: "fact", Text: "Blue once.", Status: db.MemoryRetired},
+		db.MemoryRow{UserID: db.DefaultUser, ID: "unrelated", WorkspaceID: "w", Topic: "db", Kind: "fact", Text: "Uses sqlite."},
 	)
-	ctx, caller := context.Background(), tools.Caller{UserID: repo.DefaultUser, WorkspaceID: "w"}
+	ctx, caller := context.Background(), tools.Caller{UserID: db.DefaultUser, WorkspaceID: "w"}
 	res, err := m.Invoke(ctx, caller, ToolSearch, map[string]any{"query": "blue"})
 	if err != nil {
 		t.Fatal(err)

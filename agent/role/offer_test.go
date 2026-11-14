@@ -8,7 +8,7 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
 	"github.com/0xfakeSpike/ollupi/tools/workspace"
@@ -27,9 +27,9 @@ func names(ds []tools.ToolDescriptor) []string {
 	return out
 }
 
-func loadCall(status repo.ItemStatus, loaded ...string) repo.ItemRow {
+func loadCall(status db.ItemStatus, loaded ...string) db.ItemRow {
 	out, _ := json.Marshal(map[string]any{"loaded": loaded})
-	return repo.ItemRow{Type: repo.ItemToolCall, Tool: tools.ToolLoadTools, Status: status, Result: &repo.ToolResult{Output: out}}
+	return db.ItemRow{Type: db.ItemToolCall, Tool: tools.ToolLoadTools, Status: status, Result: &db.ToolResult{Output: out}}
 }
 
 var window = contextmanager.New("m", llm.Limits{Context: 20000, Output: 2000})
@@ -52,7 +52,7 @@ func TestOfferDefersExternalToolsOverTheBudget(t *testing.T) {
 		t.Errorf("deferred %q, want %q", got, want)
 	}
 
-	items := []repo.ItemRow{loadCall(repo.ItemCompleted, "github__pr", "shell"), loadCall(repo.ItemFailed, "github__issue"), loadCall(repo.ItemCompleted, "github__pr")}
+	items := []db.ItemRow{loadCall(db.ItemCompleted, "github__pr", "shell"), loadCall(db.ItemFailed, "github__issue"), loadCall(db.ItemCompleted, "github__pr")}
 	offered, deferred = fullMain.Offer(visible, window, items)
 	if got, want := names(offered), []string{"shell", tools.ToolLoadTools, "github__pr"}; !slices.Equal(got, want) || len(deferred) != 2 {
 		t.Errorf("after loading: offered %q, deferred %q", got, names(deferred))
@@ -74,7 +74,7 @@ func TestOfferKeepsOnlyTheCoreToolsForASmallInput(t *testing.T) {
 	if want := []string{"grep", "github__issue"}; !slices.Equal(names(deferred), want) {
 		t.Errorf("deferred %q, want %q", names(deferred), want)
 	}
-	offered, _ = compactMain.Offer(visible, small, []repo.ItemRow{loadCall(repo.ItemCompleted, "grep")})
+	offered, _ = compactMain.Offer(visible, small, []db.ItemRow{loadCall(db.ItemCompleted, "grep")})
 	if !slices.Contains(names(offered), "grep") {
 		t.Errorf("a loaded tool is not offered: %q", names(offered))
 	}

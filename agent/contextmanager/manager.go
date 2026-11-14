@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
@@ -47,7 +47,7 @@ func (m *Manager) Fits(system string, tools any) error {
 }
 
 type Input struct {
-	Items  []repo.ItemRow
+	Items  []db.ItemRow
 	System string
 	Tools  any
 }
@@ -56,7 +56,7 @@ type Prompt struct {
 	System          string
 	Messages        []llm.ChatMessage
 	NeedsCompaction bool
-	Stats           repo.ContextStats
+	Stats           db.ContextStats
 }
 
 func (m *Manager) Build(in Input) (Prompt, error) {
@@ -99,15 +99,15 @@ func (m *Manager) fitted(build func(limit int) (Prompt, error)) (Prompt, error) 
 	}
 }
 
-func scaled(s repo.ContextStats, tokens int) int {
+func scaled(s db.ContextStats, tokens int) int {
 	if s.EstimatedTokens > 0 && s.CalibratedTokens > s.EstimatedTokens {
 		return tokens * s.CalibratedTokens / s.EstimatedTokens
 	}
 	return tokens
 }
 
-func (m *Manager) stats(system string, messages []llm.ChatMessage, tools any) repo.ContextStats {
-	s := repo.ContextStats{
+func (m *Manager) stats(system string, messages []llm.ChatMessage, tools any) db.ContextStats {
+	s := db.ContextStats{
 		Model:           m.model,
 		BudgetTokens:    m.inputTokens,
 		CompactAtTokens: m.inputTokens * autoCompactPercent / 100,
@@ -120,7 +120,7 @@ func (m *Manager) stats(system string, messages []llm.ChatMessage, tools any) re
 	return s
 }
 
-func (m *Manager) calibrate(s *repo.ContextStats, items []repo.ItemRow) {
+func (m *Manager) calibrate(s *db.ContextStats, items []db.ItemRow) {
 	from := latestCompaction(items)
 	for i := len(items) - 1; i >= 0; i-- {
 		it := items[i]
@@ -128,7 +128,7 @@ func (m *Manager) calibrate(s *repo.ContextStats, items []repo.ItemRow) {
 		if it.ResponseID == "" || ref == nil || usage == nil || usage.InputTokens <= 0 || ref.EstimatedTokens <= 0 || ref.Model != m.model {
 			continue
 		}
-		if i > from && it.Type != repo.ItemContextCompaction {
+		if i > from && it.Type != db.ItemContextCompaction {
 			s.CalibratedTokens = max(0, int(usage.InputTokens)+s.EstimatedTokens-ref.EstimatedTokens)
 		} else {
 			s.CalibratedTokens = max(s.EstimatedTokens, int(int64(s.EstimatedTokens)*usage.InputTokens/int64(ref.EstimatedTokens)))
@@ -185,20 +185,20 @@ func (m *Manager) CheckArtifacts(artifacts []tools.ContextArtifact) error {
 	return nil
 }
 
-func snapshot(items []repo.ItemRow) *repo.ItemRow {
+func snapshot(items []db.ItemRow) *db.ItemRow {
 	for i := len(items) - 1; i >= 0; i-- {
-		if it := &items[i]; it.Type == repo.ItemMemoryContext && it.Status == repo.ItemCompleted {
+		if it := &items[i]; it.Type == db.ItemMemoryContext && it.Status == db.ItemCompleted {
 			return it
 		}
 	}
 	return nil
 }
 
-func memorySection(entries []repo.MemoryReference, global bool) *repo.MemoryStats {
-	s := &repo.MemoryStats{IDs: []string{}}
-	var shown []repo.MemoryNote
+func memorySection(entries []db.MemoryReference, global bool) *db.MemoryStats {
+	s := &db.MemoryStats{IDs: []string{}}
+	var shown []db.MemoryNote
 	for _, e := range entries {
-		if (e.Scope == repo.MemoryGlobal) == global {
+		if (e.Scope == db.MemoryGlobal) == global {
 			s.IDs = append(s.IDs, e.ID)
 			shown = append(shown, e.MemoryNote)
 		}
@@ -213,7 +213,7 @@ func (m *Manager) observationBudget(calls, limit int) int {
 	return min(limit, max(minPooledTokens, min(m.inputTokens/8, share(m.inputTokens, responsePercent)/max(1, calls))))
 }
 
-func (m *Manager) transcript(obs *observations, items []repo.ItemRow, limit int, compacting bool) ([]llm.ChatMessage, int, error) {
+func (m *Manager) transcript(obs *observations, items []db.ItemRow, limit int, compacting bool) ([]llm.ChatMessage, int, error) {
 	var out []llm.ChatMessage
 	latest := ""
 	if !compacting {
@@ -231,17 +231,17 @@ func (m *Manager) transcript(obs *observations, items []repo.ItemRow, limit int,
 	for i := start; i < len(items); {
 		it := items[i]
 		switch {
-		case it.Type == repo.ItemError && it.ContextStats != nil:
+		case it.Type == db.ItemError && it.ContextStats != nil:
 
 			i++
-		case it.Type == repo.ItemUserMessage || it.Type == repo.ItemError:
+		case it.Type == db.ItemUserMessage || it.Type == db.ItemError:
 			content := it.Text
-			if it.Type == repo.ItemUserMessage && !it.StartedAt.IsZero() {
+			if it.Type == db.ItemUserMessage && !it.StartedAt.IsZero() {
 				content = "[sent " + it.StartedAt.In(time.Local).Format(sentLayout) + "]\n" + content
 			}
 			out = append(out, llm.ChatMessage{Role: llm.RoleUser, Content: content, Parts: attachmentParts(it.Attachments)})
 			i++
-		case it.Type == repo.ItemBackgroundResult:
+		case it.Type == db.ItemBackgroundResult:
 			// Like the memory snapshot, it goes as a message with no [sent ...] line: data, not the user's words.
 			content, err := obs.callResult(&items[i], m.observationBudget(1, maxObservationTokens))
 			if err != nil {
@@ -250,7 +250,7 @@ func (m *Manager) transcript(obs *observations, items []repo.ItemRow, limit int,
 			header := fmt.Sprintf("[background call %s of %s ended: %s]\n", it.BackgroundID, it.Tool, it.Text)
 			out = append(out, llm.ChatMessage{Role: llm.RoleUser, Content: header + content})
 			i++
-		case it.Type == repo.ItemMemoryContext || it.Type == repo.ItemContextCompaction:
+		case it.Type == db.ItemMemoryContext || it.Type == db.ItemContextCompaction:
 
 			i++
 		case it.ResponseID != "":
@@ -274,12 +274,12 @@ func (m *Manager) transcript(obs *observations, items []repo.ItemRow, limit int,
 					assistant.Native = part.Native
 				}
 				switch {
-				case part.Type == repo.ItemReasoning || part.Type == repo.ItemAgentMessage:
+				case part.Type == db.ItemReasoning || part.Type == db.ItemAgentMessage:
 
-					if part.Status != repo.ItemCompleted {
+					if part.Status != db.ItemCompleted {
 						continue
 					}
-					if part.Type == repo.ItemReasoning {
+					if part.Type == db.ItemReasoning {
 						assistant.ReasoningContent += part.Text
 					} else {
 						assistant.Content += part.Text
@@ -312,11 +312,11 @@ func (m *Manager) transcript(obs *observations, items []repo.ItemRow, limit int,
 	return out, fixedTokens, nil
 }
 
-func attachmentParts(atts []repo.Attachment) []llm.ContentPart {
+func attachmentParts(atts []db.Attachment) []llm.ContentPart {
 	var parts []llm.ContentPart
 	for _, att := range atts {
 		kind := llm.PartText
-		if att.Kind == repo.AttachmentImage {
+		if att.Kind == db.AttachmentImage {
 			kind = llm.PartImage
 		}
 		parts = append(parts, llm.ContentPart{Type: kind, Name: att.Name, MimeType: att.MimeType, Tokens: att.Tokens, Path: att.File})
@@ -324,19 +324,19 @@ func attachmentParts(atts []repo.Attachment) []llm.ContentPart {
 	return parts
 }
 
-func latestResponse(items []repo.ItemRow) string {
+func latestResponse(items []db.ItemRow) string {
 	for i := len(items) - 1; i >= 0; i-- {
-		if it := items[i]; it.ResponseID != "" && (it.IsCall() || it.Type == repo.ItemReasoning || it.Type == repo.ItemAgentMessage) {
+		if it := items[i]; it.ResponseID != "" && (it.IsCall() || it.Type == db.ItemReasoning || it.Type == db.ItemAgentMessage) {
 			return it.ResponseID
 		}
 	}
 	return ""
 }
 
-func activeArtifacts(items []repo.ItemRow) []tools.ContextArtifact {
+func activeArtifacts(items []db.ItemRow) []tools.ContextArtifact {
 	var out []tools.ContextArtifact
 	for _, it := range items {
-		if !it.IsCall() || it.Status != repo.ItemCompleted || it.Result == nil {
+		if !it.IsCall() || it.Status != db.ItemCompleted || it.Result == nil {
 			continue
 		}
 		for _, artifact := range it.Result.Artifacts {

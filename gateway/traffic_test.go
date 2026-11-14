@@ -28,7 +28,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
 	"github.com/0xfakeSpike/ollupi/tools/mcp"
@@ -49,13 +49,13 @@ func TestTrafficMatchesContract(t *testing.T) {
 	fake := &fakeModel{}
 	model := httptest.NewServer(fake)
 	defer model.Close()
-	db, err := repo.Open(t.TempDir())
+	store, err := db.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer store.Close()
 	var server *Server
-	jobs := cron.New(db, time.UTC, func(id, threadID string) { server.CronChanged(id, threadID) })
+	jobs := cron.New(store, time.UTC, func(id, threadID string) { server.CronChanged(id, threadID) })
 	remote := httptest.NewServer(sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server {
 		s := sdk.NewServer(&sdk.Implementation{Name: "remote", Version: "1"}, nil)
 		sdk.AddTool(s, &sdk.Tool{Name: "lookup", Description: "Looks a thing up."}, func(context.Context, *sdk.CallToolRequest, struct{}) (*sdk.CallToolResult, any, error) {
@@ -73,7 +73,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 		return []mcp.Server{{Name: "remote", URL: remote.URL}, {Name: "broken", Command: "/nonexistent/mcp-server"}}, nil
 	}, func(string) (sandbox.Box, error) { return box, nil })
 	defer servers.Close()
-	mem, err := memory.New(db, nil, memory.Options{Use: true})
+	mem, err := memory.New(store, nil, memory.Options{Use: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,10 +96,10 @@ func TestTrafficMatchesContract(t *testing.T) {
 		Providers:      []tools.Provider{touchTool{}, browser, jobs, runner, web.New(web.Options{Transport: http.DefaultTransport})},
 		ToolsFor:       servers.Tools,
 		Memory:         mem,
-		DB:             db,
+		DB:             store,
 		OnEvent:        func(e orchestrator.Event) { server.Deliver(e) },
 	})
-	if server, err = NewServer(ag, Options{DB: db, Token: "secret", Memory: mem, Jobs: jobs, MCP: servers}); err != nil {
+	if server, err = NewServer(ag, Options{DB: store, Token: "secret", Memory: mem, Jobs: jobs, MCP: servers}); err != nil {
 		t.Fatal(err)
 	}
 	agentCtx, stop := context.WithCancel(ctx)
@@ -131,7 +131,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 		t.Errorf("mcpServer/list: %+v", mcpServers.Data)
 	}
 	c.call("workspace/list", Empty{}, nil)
-	c.call("thread/list", repo.ThreadFilter{}, nil)
+	c.call("thread/list", db.ThreadFilter{}, nil)
 
 	var ws WorkspaceResult
 	c.call("workspace/add", WorkspaceAddParams{Path: t.TempDir(), Name: "project"}, &ws)
@@ -139,19 +139,19 @@ func TestTrafficMatchesContract(t *testing.T) {
 	workspaceID := ws.Workspace.ID
 	c.call("workspace/rename", WorkspaceRenameParams{WorkspaceID: workspaceID, Name: "renamed"}, nil)
 	c.call("workspace/updatePermissions", WorkspacePermissionsParams{WorkspaceID: workspaceID,
-		PermissionSettings: repo.PermissionSettings{ApprovalPolicy: string(permission.OnRequest)}}, nil)
+		PermissionSettings: db.PermissionSettings{ApprovalPolicy: string(permission.OnRequest)}}, nil)
 
 	// A conversation runs in one of the user's environments: this machine until they add a cloud sandbox.
 	var envs EnvironmentListResult
 	c.call("environment/list", Empty{}, &envs)
-	if len(envs.Data) != 1 || envs.Data[0].Kind != repo.EnvironmentLocal || envs.Data[0].Name != repo.LocalEnvironmentName {
+	if len(envs.Data) != 1 || envs.Data[0].Kind != db.EnvironmentLocal || envs.Data[0].Name != db.LocalEnvironmentName {
 		t.Fatalf("environments: %+v", envs.Data)
 	}
 	var cloud EnvironmentResult
 	c.call("environment/add", EnvironmentAddParams{Name: "cloud"}, &cloud)
 	c.await(notifyEnvironmentChanged, nil)
-	if cloud.Environment.Kind != repo.EnvironmentMachine {
-		t.Errorf("an added environment is %q, want %q", cloud.Environment.Kind, repo.EnvironmentMachine)
+	if cloud.Environment.Kind != db.EnvironmentMachine {
+		t.Errorf("an added environment is %q, want %q", cloud.Environment.Kind, db.EnvironmentMachine)
 	}
 	c.call("environment/rename", EnvironmentRenameParams{EnvironmentID: cloud.Environment.ID, Name: "cloud vm"}, nil)
 	c.await(notifyEnvironmentChanged, nil)
@@ -161,7 +161,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 	var elsewhere ThreadResult
 	c.call("thread/start", ThreadStartParams{WorkspaceID: workspaceID, EnvironmentID: cloud.Environment.ID, Title: "on the cloud"}, &elsewhere)
 	c.await("thread/started", nil)
-	if elsewhere.Thread.EnvironmentID != repo.Ref(cloud.Environment.ID) {
+	if elsewhere.Thread.EnvironmentID != db.Ref(cloud.Environment.ID) {
 		t.Errorf("the conversation runs in %q, want %q", elsewhere.Thread.EnvironmentID, cloud.Environment.ID)
 	}
 	c.refused("environment/delete", EnvironmentDeleteParams{EnvironmentID: cloud.Environment.ID}, jsonrpc.CodeInvalidParams, "runs in the environment")
@@ -174,13 +174,13 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.refused("thread/start", ThreadStartParams{EnvironmentID: cloud.Environment.ID, Title: "gone"}, errNotFound, "not found")
 
 	saved := time.Now().UTC()
-	for _, m := range []repo.MemoryRow{
-		{ID: "g1", Scope: repo.MemoryGlobal, Topic: "style", Kind: "preference", Text: "Answers briefly."},
-		{ID: "w1", Scope: repo.MemoryWorkspace, WorkspaceID: workspaceID, Topic: "build", Kind: "fact", Text: "Builds with go."},
-		{ID: "n1", Scope: repo.MemoryGeneral, Topic: "trip", Kind: "fact", Text: "Plans a trip in November."},
+	for _, m := range []db.MemoryRow{
+		{ID: "g1", Scope: db.MemoryGlobal, Topic: "style", Kind: "preference", Text: "Answers briefly."},
+		{ID: "w1", Scope: db.MemoryWorkspace, WorkspaceID: workspaceID, Topic: "build", Kind: "fact", Text: "Builds with go."},
+		{ID: "n1", Scope: db.MemoryGeneral, Topic: "trip", Kind: "fact", Text: "Plans a trip in November."},
 	} {
-		m.UserID, m.Status, m.CreatedAt, m.UpdatedAt = repo.DefaultUser, repo.MemoryActive, saved, saved
-		if err := db.SaveMemory(m); err != nil {
+		m.UserID, m.Status, m.CreatedAt, m.UpdatedAt = db.DefaultUser, db.MemoryActive, saved, saved
+		if err := store.SaveMemory(m); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -196,11 +196,11 @@ func TestTrafficMatchesContract(t *testing.T) {
 	})
 
 	turn := c.startTurn(threadID, "hello")
-	c.awaitTurnEnd(turn, repo.TurnCompleted)
+	c.awaitTurnEnd(turn, db.TurnCompleted)
 	// The answer is unread until the user reads it; reading it tells every client.
 	var seen ThreadResult
 	c.call("thread/markRead", ThreadMarkReadParams{ThreadID: threadID}, &seen)
-	if seen.Thread.RepliedAt == nil || (repo.ThreadRow{RepliedAt: seen.Thread.RepliedAt, ReadAt: seen.Thread.ReadAt}).Unread() {
+	if seen.Thread.RepliedAt == nil || (db.ThreadRow{RepliedAt: seen.Thread.RepliedAt, ReadAt: seen.Thread.ReadAt}).Unread() {
 		t.Errorf("after thread/markRead: replied %v, read %v; want a reply that is read", seen.Thread.RepliedAt, seen.Thread.ReadAt)
 	}
 	c.await(notifyThreadChanged, func(params json.RawMessage) bool {
@@ -218,32 +218,32 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.call("turn/steer", TurnSteerParams{ThreadID: threadID, ExpectedTurnID: turn, Input: []UserInput{{Type: "text", Text: "never mind"}}}, nil)
 	c.await("item/completed", func(params json.RawMessage) bool {
 		var n ItemNotification
-		return json.Unmarshal(params, &n) == nil && n.Item.ID == asked.ItemID && n.Item.Status == repo.ItemDeclined
+		return json.Unmarshal(params, &n) == nil && n.Item.ID == asked.ItemID && n.Item.Status == db.ItemDeclined
 	})
-	c.awaitTurnEnd(turn, repo.TurnCompleted)
-	c.awaitTurnEnd(queued, repo.TurnCompleted)
+	c.awaitTurnEnd(turn, db.TurnCompleted)
+	c.awaitTurnEnd(queued, db.TurnCompleted)
 	c.call("thread/resume", ThreadPageParams{ThreadID: threadID}, nil)
 
 	turn = c.startTurn(threadID, "touch the file after all")
 	approval = c.await(requestApproval, nil)
 	json.Unmarshal(approval.Params, &asked)
-	if !slices.Equal(asked.SuggestedRules, []string{"touch"}) || !slices.Contains(asked.AvailableDecisions, repo.DecisionAcceptAlways) {
+	if !slices.Equal(asked.SuggestedRules, []string{"touch"}) || !slices.Contains(asked.AvailableDecisions, db.DecisionAcceptAlways) {
 		t.Errorf("approval suggests %q and offers %q, want touch and acceptAlways", asked.SuggestedRules, asked.AvailableDecisions)
 	}
-	c.respond(approval, ApprovalResponse{Decision: repo.DecisionAcceptAlways})
+	c.respond(approval, ApprovalResponse{Decision: db.DecisionAcceptAlways})
 	c.await("workspace/changed", func(params json.RawMessage) bool {
 		var n WorkspaceResult
 		return json.Unmarshal(params, &n) == nil && n.Workspace.ID == workspaceID && slices.Equal(n.Workspace.Settings.Rules.Allow, []string{"touch"})
 	})
-	c.awaitTurnEnd(turn, repo.TurnCompleted)
-	c.awaitTurnEnd(c.startTurn(threadID, "touch it again"), repo.TurnCompleted)
+	c.awaitTurnEnd(turn, db.TurnCompleted)
+	c.awaitTurnEnd(c.startTurn(threadID, "touch it again"), db.TurnCompleted)
 
 	var tab ThreadResult
 	c.call("thread/start", ThreadStartParams{WorkspaceID: workspaceID,
-		PermissionSettings: repo.PermissionSettings{Rules: repo.PermissionRules{Allow: []string{"click(example.com)"}}}}, &tab)
+		PermissionSettings: db.PermissionSettings{Rules: db.PermissionRules{Allow: []string{"click(example.com)"}}}}, &tab)
 	c.await("thread/started", nil)
 	browser.open(tab.Thread.ID, "example.com")
-	c.awaitTurnEnd(c.startTurn(tab.Thread.ID, "click the link"), repo.TurnCompleted)
+	c.awaitTurnEnd(c.startTurn(tab.Thread.ID, "click the link"), db.TurnCompleted)
 	browser.open(tab.Thread.ID, "other.org")
 	turn = c.startTurn(tab.Thread.ID, "click the link")
 	approval = c.await(requestApproval, nil)
@@ -252,14 +252,14 @@ func TestTrafficMatchesContract(t *testing.T) {
 		t.Errorf("approval shows %q and suggests %q", asked.Content, asked.SuggestedRules)
 	}
 	browser.open(tab.Thread.ID, "evil.test")
-	c.respond(approval, ApprovalResponse{Decision: repo.DecisionAccept})
+	c.respond(approval, ApprovalResponse{Decision: db.DecisionAccept})
 	approval = c.await(requestApproval, nil)
 	json.Unmarshal(approval.Params, &asked)
 	if asked.Content != "click Learn more — evil.test" || !strings.Contains(asked.Reason, "click Learn more — other.org") {
 		t.Errorf("approval after the page moved shows %q because %q", asked.Content, asked.Reason)
 	}
-	c.respond(approval, ApprovalResponse{Decision: repo.DecisionAccept})
-	c.awaitTurnEnd(turn, repo.TurnCompleted)
+	c.respond(approval, ApprovalResponse{Decision: db.DecisionAccept})
+	c.awaitTurnEnd(turn, db.TurnCompleted)
 	if clicked := browser.clicked(); !slices.Equal(clicked, []string{"example.com", "evil.test"}) {
 		t.Errorf("clicked on %q, want example.com and evil.test", clicked)
 	}
@@ -270,7 +270,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.await("error", nil)
 	question = c.await(requestUserInput, nil)
 	c.respond(question, UserInputResponse{Answers: userinput.Answers{"color": {Answers: []string{"blue"}}}})
-	c.awaitTurnEnd(turn, repo.TurnCompleted)
+	c.awaitTurnEnd(turn, db.TurnCompleted)
 
 	// Skipping a question declines its call, and the turn goes on without the answer.
 	turn = c.startTurn(threadID, "ask me again")
@@ -280,17 +280,17 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.respond(question, UserInputResponse{Answers: userinput.Answers{}, Skipped: true})
 	c.await("item/completed", func(params json.RawMessage) bool {
 		var n ItemNotification
-		return json.Unmarshal(params, &n) == nil && n.Item.ID == skipped.ItemID && n.Item.Status == repo.ItemDeclined
+		return json.Unmarshal(params, &n) == nil && n.Item.ID == skipped.ItemID && n.Item.Status == db.ItemDeclined
 	})
-	c.awaitTurnEnd(turn, repo.TurnCompleted)
+	c.awaitTurnEnd(turn, db.TurnCompleted)
 
 	turn = c.startTurn(threadID, "delegate this")
-	c.awaitTurnEnd(turn, repo.TurnCompleted)
+	c.awaitTurnEnd(turn, db.TurnCompleted)
 
 	turn = c.startTurn(threadID, "browse this")
-	c.awaitTurnEnd(turn, repo.TurnCompleted)
-	if v, err := db.Thread(threadID); err != nil || !slices.ContainsFunc(v.Items, func(it repo.ItemRow) bool {
-		return it.Tool == subagent.Browser && it.Status == repo.ItemCompleted
+	c.awaitTurnEnd(turn, db.TurnCompleted)
+	if v, err := store.Thread(threadID); err != nil || !slices.ContainsFunc(v.Items, func(it db.ItemRow) bool {
+		return it.Tool == subagent.Browser && it.Status == db.ItemCompleted
 	}) {
 		t.Errorf("the browser subagent did not report back (%v)", err)
 	}
@@ -308,9 +308,9 @@ func TestTrafficMatchesContract(t *testing.T) {
 	fake.mu.Unlock()
 
 	turn = c.startTurn(threadID, "recall how to answer")
-	c.awaitTurnEnd(turn, repo.TurnCompleted)
+	c.awaitTurnEnd(turn, db.TurnCompleted)
 
-	c.awaitTurnEnd(c.startTurn(threadID, "make a plan"), repo.TurnCompleted)
+	c.awaitTurnEnd(c.startTurn(threadID, "make a plan"), db.TurnCompleted)
 	for _, words := range []string{"write notes", "edit notes"} {
 		c.toolTurn(threadID, words)
 	}
@@ -319,9 +319,9 @@ func TestTrafficMatchesContract(t *testing.T) {
 	}
 	// The read tools ask nobody: a turn that waited for an approval would not end.
 	for _, words := range []string{"read notes", "find notes", "search notes"} {
-		c.awaitTurnEnd(c.startTurn(threadID, words), repo.TurnCompleted)
+		c.awaitTurnEnd(c.startTurn(threadID, words), db.TurnCompleted)
 	}
-	if v, err := db.Thread(threadID); err != nil || !slices.ContainsFunc(v.Items, func(it repo.ItemRow) bool {
+	if v, err := store.Thread(threadID); err != nil || !slices.ContainsFunc(v.Items, func(it db.ItemRow) bool {
 		return it.Tool == workspace.ToolReadFile && it.Result != nil && strings.Contains(string(it.Result.Output), `1\tHello there.`)
 	}) {
 		t.Errorf("read_file did not return the numbered notes (%v)", err)
@@ -341,9 +341,9 @@ func TestTrafficMatchesContract(t *testing.T) {
 	if asked.Content != site.URL+"/docs" || !slices.Equal(asked.SuggestedRules, []string{"web_fetch(127.0.0.1)"}) {
 		t.Errorf("web_fetch approval shows %q and suggests %q", asked.Content, asked.SuggestedRules)
 	}
-	c.respond(approval, ApprovalResponse{Decision: repo.DecisionAccept})
-	c.awaitTurnEnd(turn, repo.TurnCompleted)
-	if v, err := db.Thread(threadID); err != nil || !slices.ContainsFunc(v.Items, func(it repo.ItemRow) bool {
+	c.respond(approval, ApprovalResponse{Decision: db.DecisionAccept})
+	c.awaitTurnEnd(turn, db.TurnCompleted)
+	if v, err := store.Thread(threadID); err != nil || !slices.ContainsFunc(v.Items, func(it db.ItemRow) bool {
 		return it.Tool == web.Tool && it.Result != nil && strings.Contains(string(it.Result.Output), "# Welcome")
 	}) {
 		t.Errorf("web_fetch did not return the page text (%v)", err)
@@ -357,22 +357,22 @@ func TestTrafficMatchesContract(t *testing.T) {
 	if asked.Content != site.URL+"/docs" {
 		t.Errorf("the background fetch's approval shows %q", asked.Content)
 	}
-	c.respond(approval, ApprovalResponse{Decision: repo.DecisionAccept})
+	c.respond(approval, ApprovalResponse{Decision: db.DecisionAccept})
 	result := c.await("item/completed", func(params json.RawMessage) bool {
 		var n ItemNotification
-		return json.Unmarshal(params, &n) == nil && n.Item.Type == repo.ItemBackgroundResult
+		return json.Unmarshal(params, &n) == nil && n.Item.Type == db.ItemBackgroundResult
 	})
 	var came ItemNotification
 	json.Unmarshal(result.Params, &came)
 	if came.Item.BackgroundID == "" || came.Item.Result == nil || !strings.Contains(string(came.Item.Result.Output), "# Welcome") {
 		t.Errorf("the background fetch came back as %+v", came.Item)
 	}
-	c.awaitTurnEnd(turn, repo.TurnCompleted)
+	c.awaitTurnEnd(turn, db.TurnCompleted)
 	if came.TurnID != turn {
-		c.awaitTurnEnd(came.TurnID, repo.TurnCompleted)
+		c.awaitTurnEnd(came.TurnID, db.TurnCompleted)
 	}
 
-	var daily repo.CronJobRow
+	var daily db.CronJobRow
 	c.call("cron/create", CronCreateParams{ThreadID: threadID, Name: "daily", Spec: "@daily", Prompt: "daily check"}, &daily)
 	c.cronChanged(daily.ID, func(j *CronJobView) bool { return j != nil && j.Name == "daily" && j.ThreadTitle == "hello" })
 	c.call("cron/list", CronListParams{ThreadID: threadID}, nil)
@@ -382,12 +382,12 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.call("cron/delete", CronDeleteParams{ThreadID: threadID, Name: "daily"}, nil)
 	c.cronChanged(daily.ID, func(j *CronJobView) bool { return j == nil })
 	now := time.Now().UTC()
-	if err := db.CreateCronJob(repo.CronJobRow{ID: "due", ThreadID: threadID, Name: "due", Spec: "@hourly", Prompt: "scheduled check",
+	if err := store.CreateCronJob(db.CronJobRow{ID: "due", ThreadID: threadID, Name: "due", Spec: "@hourly", Prompt: "scheduled check",
 		NextRunAt: now.Add(-time.Minute), CreatedAt: now}, 10); err != nil {
 		t.Fatal(err)
 	}
 	go jobs.Run(agentCtx, func(threadID, text, jobID string) error {
-		_, err := ag.StartTurn(ctx, repo.DefaultUser, threadID, orchestrator.Input{Text: text, CronJobID: jobID})
+		_, err := ag.StartTurn(ctx, db.DefaultUser, threadID, orchestrator.Input{Text: text, CronJobID: jobID})
 		return err
 	})
 	ran := c.await("turn/completed", func(params json.RawMessage) bool {
@@ -403,7 +403,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 	turn = c.startTurn(threadID, "ask again")
 	c.await(requestUserInput, nil)
 	c.call("turn/interrupt", TurnInterruptParams{ThreadID: threadID, TurnID: turn}, nil)
-	c.awaitTurnEnd(turn, repo.TurnInterrupted)
+	c.awaitTurnEnd(turn, db.TurnInterrupted)
 
 	var page ThreadPageResult
 	c.call("thread/read", ThreadPageParams{ThreadID: threadID}, &page)
@@ -414,33 +414,33 @@ func TestTrafficMatchesContract(t *testing.T) {
 	var general ThreadResult
 	c.call("thread/start", ThreadStartParams{Title: "hello"}, &general)
 	c.await("thread/started", nil)
-	c.awaitTurnEnd(c.startTurn(general.Thread.ID, "hello"), repo.TurnCompleted)
+	c.awaitTurnEnd(c.startTurn(general.Thread.ID, "hello"), db.TurnCompleted)
 	c.call("thread/read", ThreadPageParams{ThreadID: general.Thread.ID}, &page)
 	if prompts, _ := checkMemory(t, page.Items, "n1"); prompts != 1 {
 		t.Errorf("%d prompts reported memory in the general thread, want 1", prompts)
 	}
 	turn = c.startTurn(general.Thread.ID, "please touch the file")
-	c.respond(c.await(requestApproval, nil), ApprovalResponse{Decision: repo.DecisionAcceptAlways})
-	c.awaitTurnEnd(turn, repo.TurnCompleted)
-	if row, err := db.ThreadRow(general.Thread.ID); err != nil || !slices.Equal(row.Settings.Rules.Allow, []string{"touch"}) {
+	c.respond(c.await(requestApproval, nil), ApprovalResponse{Decision: db.DecisionAcceptAlways})
+	c.awaitTurnEnd(turn, db.TurnCompleted)
+	if row, err := store.ThreadRow(general.Thread.ID); err != nil || !slices.Equal(row.Settings.Rules.Allow, []string{"touch"}) {
 		t.Errorf("the general thread allows %q (%v), want touch", row.Settings.Rules.Allow, err)
 	}
-	c.awaitTurnEnd(c.startTurn(general.Thread.ID, "touch it again"), repo.TurnCompleted)
+	c.awaitTurnEnd(c.startTurn(general.Thread.ID, "touch it again"), db.TurnCompleted)
 
-	var settings repo.SettingsRow
+	var settings db.SettingsRow
 	c.call("settings/read", Empty{}, &settings)
 	if !settings.Redaction {
 		t.Error("redaction is off by default")
 	}
-	c.awaitTurnEnd(c.startTurn(general.Thread.ID, "mail alice@example.com"), repo.TurnCompleted)
+	c.awaitTurnEnd(c.startTurn(general.Thread.ID, "mail alice@example.com"), db.TurnCompleted)
 	c.refused("settings/update", SettingsUpdateParams{}, jsonrpc.CodeInvalidParams, "redaction")
 	off := false
 	c.call("settings/update", SettingsUpdateParams{Redaction: &off}, nil)
 	c.await("settings/changed", func(params json.RawMessage) bool {
-		var n repo.SettingsRow
+		var n db.SettingsRow
 		return json.Unmarshal(params, &n) == nil && !n.Redaction
 	})
-	c.awaitTurnEnd(c.startTurn(general.Thread.ID, "mail bob@example.com"), repo.TurnCompleted)
+	c.awaitTurnEnd(c.startTurn(general.Thread.ID, "mail bob@example.com"), db.TurnCompleted)
 	fake.mu.Lock()
 	sent := strings.Join(fake.prompts, "\n")
 	fake.mu.Unlock()
@@ -448,7 +448,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 		t.Errorf("the model was sent:\n%s", sent)
 	}
 	c.call("thread/read", ThreadPageParams{ThreadID: threadID, Limit: 2, BeforeSeq: 4}, nil)
-	c.call("thread/list", repo.ThreadFilter{WorkspaceID: &workspaceID}, nil)
+	c.call("thread/list", db.ThreadFilter{WorkspaceID: &workspaceID}, nil)
 
 	var pic bytes.Buffer
 	png.Encode(&pic, image.NewRGBA(image.Rect(0, 0, 2, 2)))
@@ -468,7 +468,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.await("thread/started", nil)
 	var started TurnResult
 	c.call("turn/start", TurnStartParams{ThreadID: shown.Thread.ID, Input: pictured, Connection: "vision"}, &started)
-	c.awaitTurnEnd(started.Turn.ID, repo.TurnCompleted)
+	c.awaitTurnEnd(started.Turn.ID, db.TurnCompleted)
 	fake.mu.Lock()
 	parts := strings.Join(fake.parts, ",")
 	fake.mu.Unlock()
@@ -479,11 +479,11 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.refused("turn/start", TurnStartParams{ThreadID: shown.Thread.ID, Input: []UserInput{{Type: "text", Text: "hi"}}, Connection: "missing"}, jsonrpc.CodeInvalidParams, "unavailable")
 	var page2 ThreadPageResult
 	c.call("thread/read", ThreadPageParams{ThreadID: shown.Thread.ID}, &page2)
-	var atts []repo.Attachment
+	var atts []db.Attachment
 	for _, it := range page2.Items {
 		atts = append(atts, it.Attachments...)
 	}
-	if len(atts) != 2 || atts[0].Kind != repo.AttachmentImage || atts[0].Width != 2 || atts[0].Name != "dot.png" || atts[1].Kind != repo.AttachmentFile || atts[1].Name != "Notes.md" {
+	if len(atts) != 2 || atts[0].Kind != db.AttachmentImage || atts[0].Width != 2 || atts[0].Name != "dot.png" || atts[1].Kind != db.AttachmentFile || atts[1].Name != "Notes.md" {
 		t.Fatalf("attachments %+v", atts)
 	}
 	var read AttachmentReadResult
@@ -512,7 +512,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 	})
 	c.refused("turn/start", TurnStartParams{ThreadID: general.Thread.ID, Input: []UserInput{{Type: "text", Text: "hi"}}}, errThreadArchived, "archived")
 	var shelf ThreadListResult
-	c.call("thread/list", repo.ThreadFilter{Archived: true}, &shelf)
+	c.call("thread/list", db.ThreadFilter{Archived: true}, &shelf)
 	if len(shelf.Data) != 1 || shelf.Data[0].ID != general.Thread.ID {
 		t.Errorf("archived threads %+v", shelf.Data)
 	}
@@ -527,7 +527,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.await(requestUserInput, nil)
 	c.refused("thread/delete", ThreadDeleteParams{ThreadID: doomed.Thread.ID}, errThreadBusy, "interrupt")
 	c.call("turn/interrupt", TurnInterruptParams{ThreadID: doomed.Thread.ID, TurnID: turn}, nil)
-	c.awaitTurnEnd(turn, repo.TurnInterrupted)
+	c.awaitTurnEnd(turn, db.TurnInterrupted)
 	c.call("thread/delete", ThreadDeleteParams{ThreadID: doomed.Thread.ID}, nil)
 	c.await(notifyThreadChanged, func(params json.RawMessage) bool {
 		var n ThreadChangedNotification
@@ -537,31 +537,31 @@ func TestTrafficMatchesContract(t *testing.T) {
 		var n CronChangedNotification
 		return json.Unmarshal(params, &n) == nil && n.ThreadID == doomed.Thread.ID && n.Job == nil
 	})
-	if _, err := db.ThreadRow(doomed.Thread.ID); !errors.Is(err, repo.ErrNotFound) {
+	if _, err := store.ThreadRow(doomed.Thread.ID); !errors.Is(err, db.ErrNotFound) {
 		t.Errorf("the deleted thread is still stored: %v", err)
 	}
 
-	for _, e := range []repo.MemoryRow{
-		{ID: "m1", Scope: repo.MemoryGeneral, Topic: "colors", Kind: "preference", Text: "Likes blue."},
-		{ID: "m2", Scope: repo.MemoryWorkspace, WorkspaceID: workspaceID, Topic: "shell", Kind: "preference", Text: "Uses zsh."},
-		{ID: "m3", Scope: repo.MemoryWorkspace, WorkspaceID: workspaceID, Topic: "editor", Kind: "preference", Text: "Uses vim."},
-		{ID: "m4", Scope: repo.MemoryGlobal, Topic: "editor", Kind: "preference", Text: "Uses emacs."},
+	for _, e := range []db.MemoryRow{
+		{ID: "m1", Scope: db.MemoryGeneral, Topic: "colors", Kind: "preference", Text: "Likes blue."},
+		{ID: "m2", Scope: db.MemoryWorkspace, WorkspaceID: workspaceID, Topic: "shell", Kind: "preference", Text: "Uses zsh."},
+		{ID: "m3", Scope: db.MemoryWorkspace, WorkspaceID: workspaceID, Topic: "editor", Kind: "preference", Text: "Uses vim."},
+		{ID: "m4", Scope: db.MemoryGlobal, Topic: "editor", Kind: "preference", Text: "Uses emacs."},
 	} {
-		e.UserID, e.Status, e.CreatedAt, e.UpdatedAt = repo.DefaultUser, repo.MemoryActive, now, now
-		if err := db.SaveMemory(e); err != nil {
+		e.UserID, e.Status, e.CreatedAt, e.UpdatedAt = db.DefaultUser, db.MemoryActive, now, now
+		if err := store.SaveMemory(e); err != nil {
 			t.Fatal(err)
 		}
 	}
 	var listed MemoryListResult
-	c.call("memory/list", MemoryListParams{Scope: repo.MemoryGeneral}, &listed)
+	c.call("memory/list", MemoryListParams{Scope: db.MemoryGeneral}, &listed)
 	if len(listed.Data) != 2 {
 		t.Errorf("general memories %+v, want n1 and m1", listed.Data)
 	}
-	c.refused("memory/list", MemoryListParams{Scope: repo.MemoryWorkspace}, jsonrpc.CodeInvalidParams, "workspaceId")
+	c.refused("memory/list", MemoryListParams{Scope: db.MemoryWorkspace}, jsonrpc.CodeInvalidParams, "workspaceId")
 	var moved MemoryResult
-	for _, want := range []repo.MemoryRow{
-		{Scope: repo.MemoryGlobal},
-		{Scope: repo.MemoryGeneral},
+	for _, want := range []db.MemoryRow{
+		{Scope: db.MemoryGlobal},
+		{Scope: db.MemoryGeneral},
 	} {
 		c.call("memory/move", MemoryMoveParams{ID: "m1"}, &moved)
 		if moved.Memory.Scope != want.Scope || moved.Memory.WorkspaceID != "" || moved.Memory.OriginWorkspaceID != "" {
@@ -570,12 +570,12 @@ func TestTrafficMatchesContract(t *testing.T) {
 	}
 	c.refused("memory/move", MemoryMoveParams{ID: "m3"}, jsonrpc.CodeInvalidParams, "already there")
 	c.call("memory/move", MemoryMoveParams{ID: "m2"}, &moved)
-	if moved.Memory.Scope != repo.MemoryGlobal || moved.Memory.OriginWorkspaceID != workspaceID {
+	if moved.Memory.Scope != db.MemoryGlobal || moved.Memory.OriginWorkspaceID != workspaceID {
 		t.Errorf("m2 moved to %s from %q", moved.Memory.Scope, moved.Memory.OriginWorkspaceID)
 	}
 	moved = MemoryResult{}
 	c.call("memory/move", MemoryMoveParams{ID: "m2"}, &moved)
-	if moved.Memory.Scope != repo.MemoryWorkspace || moved.Memory.WorkspaceID != workspaceID || moved.Memory.OriginWorkspaceID != "" {
+	if moved.Memory.Scope != db.MemoryWorkspace || moved.Memory.WorkspaceID != workspaceID || moved.Memory.OriginWorkspaceID != "" {
 		t.Errorf("m2 moved back to %s %q", moved.Memory.Scope, moved.Memory.WorkspaceID)
 	}
 	c.call("memory/status", Empty{}, nil)
@@ -583,9 +583,9 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.call("memory/forget", MemoryForgetParams{ID: "m1"}, nil)
 
 	c.refused("workspace/updatePermissions", WorkspacePermissionsParams{WorkspaceID: workspaceID,
-		PermissionSettings: repo.PermissionSettings{Rules: repo.PermissionRules{Allow: []string{"broken__creat_issue"}}}},
+		PermissionSettings: db.PermissionSettings{Rules: db.PermissionRules{Allow: []string{"broken__creat_issue"}}}},
 		jsonrpc.CodeInvalidParams, `the MCP server "broken" is not connected`)
-	if _, err := db.UpdateWorkspace(repo.DefaultUser, workspaceID, func(w repo.WorkspaceRow) (repo.WorkspaceRow, error) {
+	if _, err := store.UpdateWorkspace(db.DefaultUser, workspaceID, func(w db.WorkspaceRow) (db.WorkspaceRow, error) {
 		w.Settings.Rules.Allow = []string{"gitlab__merge"}
 		return w, nil
 	}); err != nil {
@@ -598,7 +598,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 	})
 	var ended TurnNotification
 	json.Unmarshal(failed.Params, &ended)
-	if ended.Turn.Status != repo.TurnFailed || !strings.Contains(ended.Turn.Error, `workspace "renamed"`) || !strings.Contains(ended.Turn.Error, `no tool provider is named "gitlab"`) {
+	if ended.Turn.Status != db.TurnFailed || !strings.Contains(ended.Turn.Error, `workspace "renamed"`) || !strings.Contains(ended.Turn.Error, `no tool provider is named "gitlab"`) {
 		t.Errorf("turn with a rule for a removed server ended %s: %s", ended.Turn.Status, ended.Turn.Error)
 	}
 
@@ -643,11 +643,11 @@ func TestTrafficMatchesContract(t *testing.T) {
 		t.Errorf("task that ran %+v", j)
 	}
 
-	c.awaitTurnEnd(c.startTurn(general.Thread.ID, "请检查数据库连接是否正常"), repo.TurnCompleted)
+	c.awaitTurnEnd(c.startTurn(general.Thread.ID, "请检查数据库连接是否正常"), db.TurnCompleted)
 	var found SearchResult
 	c.call("search", SearchParams{Query: "数据库"}, &found)
 	if len(found.Messages) != 1 || found.Messages[0].ThreadID != general.Thread.ID || found.Messages[0].ThreadTitle != "Mail" ||
-		found.Messages[0].Type != repo.ItemUserMessage || found.Messages[0].Snippet != "请检查数据库连接是否正常" {
+		found.Messages[0].Type != db.ItemUserMessage || found.Messages[0].Snippet != "请检查数据库连接是否正常" {
 		t.Errorf("search 数据库 found messages %+v", found.Messages)
 	}
 	c.call("search", SearchParams{Query: "weekly check"}, &found)
@@ -713,13 +713,13 @@ func checkMemory(t *testing.T, items []ItemRow, local string) (prompts int, sear
 	snapshots := 0
 	for _, it := range items {
 		switch {
-		case it.Type == repo.ItemMemoryContext:
+		case it.Type == db.ItemMemoryContext:
 			snapshots++
-			if len(it.Memory) != 2 || it.Memory[0].ID != "g1" || it.Memory[0].Scope != repo.MemoryGlobal || it.Memory[1].ID != local {
+			if len(it.Memory) != 2 || it.Memory[0].ID != "g1" || it.Memory[0].Scope != db.MemoryGlobal || it.Memory[1].ID != local {
 				t.Errorf("snapshot %+v, want g1 then %s", it.Memory, local)
 			}
 		case it.Tool == memory.ToolSearch:
-			searched = it.Status == repo.ItemCompleted && it.Result != nil && strings.Contains(string(it.Result.Output), `"g1"`)
+			searched = it.Status == db.ItemCompleted && it.Result != nil && strings.Contains(string(it.Result.Output), `"g1"`)
 		}
 		if s := it.ContextStats; s != nil && s.GlobalMemory != nil {
 			prompts++
@@ -1155,7 +1155,7 @@ func (c *client) awaitAny(what string, match func(jsonrpc.Message) bool) jsonrpc
 
 func (c *client) validateToolCall(params json.RawMessage) {
 	var n ItemNotification
-	if err := json.Unmarshal(params, &n); err != nil || n.Item.Type != repo.ItemToolCall {
+	if err := json.Unmarshal(params, &n); err != nil || n.Item.Type != db.ItemToolCall {
 		return
 	}
 	it := n.Item
@@ -1167,7 +1167,7 @@ func (c *client) validateToolCall(params json.RawMessage) {
 		c.validate("arguments of "+it.Tool, tool.Arguments, json.RawMessage(it.Arguments))
 		c.seen["arguments "+it.Tool] = true
 	}
-	if tool.Output != nil && it.Status == repo.ItemCompleted && it.Error == "" && it.Result != nil {
+	if tool.Output != nil && it.Status == db.ItemCompleted && it.Error == "" && it.Result != nil {
 		c.validate("output of "+it.Tool, tool.Output, it.Result.Output)
 		c.seen["output "+it.Tool] = true
 	}
@@ -1185,12 +1185,12 @@ func (c *client) toolTurn(threadID, text string) {
 			return m.Method == "turn/completed" && json.Unmarshal(m.Params, &n) == nil && n.Turn.ID == turn
 		})
 		if m.Method == requestApproval {
-			c.respond(m, ApprovalResponse{Decision: repo.DecisionAccept})
+			c.respond(m, ApprovalResponse{Decision: db.DecisionAccept})
 			continue
 		}
 		var n TurnNotification
 		json.Unmarshal(m.Params, &n)
-		if n.Turn.Status != repo.TurnCompleted {
+		if n.Turn.Status != db.TurnCompleted {
 			c.t.Fatalf("%q: the turn ended %s: %s", text, n.Turn.Status, n.Turn.Error)
 		}
 		return
@@ -1238,7 +1238,7 @@ func (c *client) startTurn(threadID, text string) string {
 	return r.Turn.ID
 }
 
-func (c *client) awaitTurnEnd(turnID string, status repo.TurnStatus) {
+func (c *client) awaitTurnEnd(turnID string, status db.TurnStatus) {
 	c.t.Helper()
 	m := c.await("turn/completed", func(params json.RawMessage) bool {
 		var n TurnNotification
