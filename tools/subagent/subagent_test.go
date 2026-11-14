@@ -24,7 +24,7 @@ func TestACallQueuesTheSubagentsConversationAndWaitsOnIt(t *testing.T) {
 	if _, _, _, err := db.SubmitTurn("main", repo.TurnRow{ID: "asked", Model: model, Agent: "full-main-agent", Input: "go", CreatedAt: at, StartedAt: at}); err != nil {
 		t.Fatal(err)
 	}
-	launch := New(db, []Kind{{Tool: "BrowserAgent", Title: "Browser subagent", Description: "Browse.", Role: "browser-sub-agent"}})
+	launch := New(db, map[string]Kind{"BrowserAgent": {Title: "Browser subagent", Description: "Browse.", Role: "browser-sub-agent"}})
 	ctx, caller := context.Background(), tools.Caller{UserID: repo.DefaultUser, ThreadID: "main", Item: "call"}
 	args := map[string]any{"description": "Look it up", "prompt": "Find the page and report."}
 

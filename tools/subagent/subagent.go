@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/0xfakeSpike/ollupi/repo"
@@ -18,9 +17,9 @@ import (
 // ProviderName is the provider of the tools that launch subagents.
 const ProviderName = "subagents"
 
-// A Kind is a kind of subagent: the tool that launches it, as the launching agent sees it, and the role it runs as.
+// A Kind is a kind of subagent: how the tool that launches it shows to the launching agent, and the role it runs as.
 type Kind struct {
-	Tool, Title string
+	Title string
 	// Description tells the launching agent when to launch the kind; the tool adds how launching works.
 	Description string
 	Role        string
@@ -39,11 +38,12 @@ func (Call) Constrain(s *jsonschema.Schema) {
 
 // Tools provides a tool for each kind of subagent.
 type Tools struct {
-	db    *repo.DB
-	kinds []Kind
+	db *repo.DB
+	// kinds are the kinds of subagent by the name of the tool that launches them.
+	kinds map[string]Kind
 }
 
-func New(db *repo.DB, kinds []Kind) *Tools { return &Tools{db: db, kinds: kinds} }
+func New(db *repo.DB, kinds map[string]Kind) *Tools { return &Tools{db: db, kinds: kinds} }
 
 func (*Tools) Name() (string, string) { return ProviderName, "Launches subagents." }
 
@@ -52,9 +52,9 @@ const launching = "It knows nothing of this conversation: put everything it need
 
 func (t *Tools) ToolList(context.Context) ([]*tools.Spec, error) {
 	specs := make([]*tools.Spec, 0, len(t.kinds))
-	for _, k := range t.kinds {
+	for name, k := range t.kinds {
 		specs = append(specs, &tools.Spec{
-			Name:        k.Tool,
+			Name:        name,
 			Description: k.Description + " " + launching,
 			InputSchema: tools.InputSchema[Call](),
 			Annotations: &tools.Annotations{Title: k.Title, ReadOnlyHint: true, OpenWorldHint: tools.Hint(false)},
@@ -65,8 +65,8 @@ func (t *Tools) ToolList(context.Context) ([]*tools.Spec, error) {
 
 // Invoke queues the subagent of the kind whose tool was called, and waits on its conversation.
 func (t *Tools) Invoke(ctx context.Context, caller tools.Caller, name string, arguments map[string]any) (tools.Result, error) {
-	i := slices.IndexFunc(t.kinds, func(k Kind) bool { return k.Tool == name })
-	if i < 0 {
+	kind, ok := t.kinds[name]
+	if !ok {
 		return tools.Result{}, fmt.Errorf("%q launches no subagent", name)
 	}
 	c, err := tools.DecodeArguments[Call](arguments)
@@ -80,7 +80,7 @@ func (t *Tools) Invoke(ctx context.Context, caller tools.Caller, name string, ar
 	if item == "" {
 		return tools.Result{}, fmt.Errorf("a subagent is launched only by a call of a turn")
 	}
-	child, err := t.db.QueueSubagent(caller.ThreadID, item, c.Description, repo.TurnRow{Input: c.Prompt, Agent: t.kinds[i].Role})
+	child, err := t.db.QueueSubagent(caller.ThreadID, item, c.Description, repo.TurnRow{Input: c.Prompt, Agent: kind.Role})
 	if err != nil {
 		return tools.Result{}, err
 	}

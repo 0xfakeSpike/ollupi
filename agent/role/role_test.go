@@ -2,7 +2,6 @@ package role
 
 import (
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
-	"slices"
 	"testing"
 
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
@@ -61,15 +60,17 @@ func TestEachRolesPermissionKeepsItsTools(t *testing.T) {
 }
 
 func TestEachSubagentRoleIsAKindOfSubagent(t *testing.T) {
-	var roles []string
-	for _, k := range Subagents() {
-		r, ok := Of(Name(k.Role))
-		if !ok || r.LaunchedBy == nil || r.LaunchedBy.Name != k.Tool || k.Description != r.LaunchedBy.Description {
-			t.Errorf("%s launches %q", k.Tool, k.Role)
-		}
-		roles = append(roles, k.Role)
+	kinds := Subagents()
+	if len(kinds) != 2 {
+		t.Fatalf("the kinds of subagent are %+v", kinds)
 	}
-	if !slices.Equal(roles, []string{string(GeneralSub), string(BrowserSub)}) {
-		t.Errorf("the kinds of subagent are %q", roles)
+	for _, r := range all {
+		if r.LaunchedBy == nil {
+			continue
+		}
+		k, ok := kinds[r.LaunchedBy.Name]
+		if !ok || k.Role != string(r.Name) || k.Title != r.LaunchedBy.Title || k.Description != r.LaunchedBy.Description {
+			t.Errorf("%s is launched as %+v", r.Name, k)
+		}
 	}
 }
