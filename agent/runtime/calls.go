@@ -135,7 +135,7 @@ func (rt *Runtime) handleCall(ctx context.Context, it db.ItemRow) (string, bool,
 		if _, err := rt.record(it); err != nil {
 			return "", false, nil, err
 		}
-		slog.Info("approval requested", "thread", rt.Caller.ThreadID, "turn", rt.Turn.ID, "item", it.ID, "tool", it.Tool)
+		slog.Info("approval requested", "thread", rt.Thread.ID, "turn", rt.Turn.ID, "item", it.ID, "tool", it.Tool)
 		return "", true, nil, nil
 	}
 	return "", false, &job{it: it, args: args, background: background}, nil

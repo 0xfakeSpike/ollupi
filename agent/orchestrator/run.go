@@ -10,7 +10,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/agent/runtime"
 	"github.com/0xfakeSpike/ollupi/repo/db"
-	"github.com/0xfakeSpike/ollupi/tools"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -99,14 +98,14 @@ func (o *Orchestrator) runTurn(ctx context.Context, t db.ThreadRow, turn db.Turn
 			history = append(history, it)
 		}
 	}
-	caller := tools.Caller{UserID: t.UserID, ThreadID: t.ID, WorkspaceID: string(t.WorkspaceID), EnvironmentID: string(t.EnvironmentID), Root: w.RootPath, Subagent: t.ParentThreadID != "", Role: string(r.Name)}
 	rt := &runtime.Runtime{
 		LLM:         client,
 		Registry:    registry,
 		Window:      window,
-		Host:        turnHost{o: o, t: t, turn: turn, role: r, caller: caller, registry: registry},
+		Host:        turnHost{o: o, t: t, turn: turn, role: r, registry: registry},
 		Turn:        turn,
-		Caller:      caller,
+		Thread:      t,
+		Workspace:   w,
 		Role:        r,
 		Deployment:  role.Deployment{Name: o.cfg.Name, Prompt: o.cfg.Prompt, SkillsDir: o.cfg.SkillsDir},
 		Permissions: checker,

@@ -22,7 +22,7 @@ import (
 // tools, as they are now.
 func (rt *Runtime) contextInput() (contextmanager.Input, error) {
 	system, err := rt.Role.System(role.Input{
-		Deployment: rt.Deployment, Root: rt.Caller.Root, SkillTokens: rt.Window.SkillBudget(), Deferred: rt.deferred,
+		Deployment: rt.Deployment, Root: rt.Workspace.RootPath, SkillTokens: rt.Window.SkillBudget(), Deferred: rt.deferred,
 	})
 	if err != nil {
 		return contextmanager.Input{}, fmt.Errorf("runtime: %w", err)
@@ -236,7 +236,7 @@ func (rt *Runtime) loadParts(ctx context.Context, parts []llm.ContentPart, mask 
 
 // logModelCall records one model request: its model, duration, tokens and how it ended, never its text.
 func (rt *Runtime) logModelCall(ctx context.Context, msg string, started time.Time, resp llm.ChatResponse, err error) {
-	attrs := []any{"thread", rt.Caller.ThreadID, "turn", rt.Turn.ID, "model", rt.Turn.Model.Name, "ms", time.Since(started).Milliseconds()}
+	attrs := []any{"thread", rt.Thread.ID, "turn", rt.Turn.ID, "model", rt.Turn.Model.Name, "ms", time.Since(started).Milliseconds()}
 	if err != nil {
 		slog.WarnContext(ctx, msg+" failed", append(attrs, "err", err)...)
 		return

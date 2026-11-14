@@ -18,7 +18,6 @@ type turnHost struct {
 	t        db.ThreadRow
 	turn     db.TurnRow
 	role     role.Role
-	caller   tools.Caller
 	registry *tools.Registry
 }
 
@@ -64,6 +63,6 @@ func (h turnHost) Attachment(ctx context.Context, path string) ([]byte, error) {
 	return h.o.cfg.Attachments.Get(ctx, path)
 }
 
-func (h turnHost) Background(it db.ItemRow, args map[string]any) tools.Result {
-	return h.o.startBackground(h.t, h.caller, h.registry, it, args)
+func (h turnHost) Background(caller tools.Caller, it db.ItemRow, args map[string]any) tools.Result {
+	return h.o.startBackground(h.t, caller, h.registry, it, args)
 }
