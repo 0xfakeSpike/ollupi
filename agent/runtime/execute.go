@@ -162,7 +162,7 @@ func (rt *Runtime) execute(ctx context.Context, j job) tools.Result {
 	started := time.Now()
 	if j.background {
 		span.SetAttributes(attribute.Bool("ollupi.tool.background", true))
-		return rt.Host.Background(it, j.args)
+		return rt.Host.Background(rt.caller(it), it, j.args)
 	}
 	result := rt.Registry.InvokePrepared(ctx, rt.caller(it), it.Tool, j.args, it.PreparedExecution)
 	if result.Err == nil {
@@ -175,7 +175,7 @@ func (rt *Runtime) execute(ctx context.Context, j job) tools.Result {
 	if result.Err != nil {
 		span.SetStatus(codes.Error, "")
 	}
-	slog.InfoContext(ctx, "tool call", "thread", rt.Caller.ThreadID, "turn", rt.Turn.ID, "item", it.ID, "tool", it.Tool,
+	slog.InfoContext(ctx, "tool call", "thread", rt.Thread.ID, "turn", rt.Turn.ID, "item", it.ID, "tool", it.Tool,
 		"ms", time.Since(started).Milliseconds(), "failed", result.Err != nil, "awaits", result.Await != nil)
 	return result
 }

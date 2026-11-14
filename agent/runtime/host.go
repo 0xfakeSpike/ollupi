@@ -24,6 +24,7 @@ type Host interface {
 	Memory(budget int) (*memory.Snapshot, error)
 	// Attachment reads a file attached to a message of the thread.
 	Attachment(ctx context.Context, path string) ([]byte, error)
-	// Background starts a call that asked for it in the background and returns at once with what the model is told.
-	Background(it db.ItemRow, args map[string]any) tools.Result
+	// Background starts a call that asked for it in the background, as caller makes it, and returns at once with what
+	// the model is told.
+	Background(caller tools.Caller, it db.ItemRow, args map[string]any) tools.Result
 }

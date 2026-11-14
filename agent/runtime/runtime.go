@@ -32,8 +32,10 @@ type Runtime struct {
 	Window   *contextmanager.Manager
 	Host     Host
 
-	Turn   db.TurnRow
-	Caller tools.Caller
+	Turn db.TurnRow
+	// Thread is the turn's conversation, and Workspace the workspace it works in, if any.
+	Thread    db.ThreadRow
+	Workspace db.WorkspaceRow
 	// Role is the role of agent the turn names, which the run is.
 	Role role.Role
 	// Deployment is what the run's system prompt takes from the configuration.
@@ -200,9 +202,11 @@ func (rt *Runtime) waiting() bool {
 	return slices.ContainsFunc(rt.Items, func(it db.ItemRow) bool { return it.WaitsOnUser() || it.Awaits() })
 }
 
-// caller is the run's caller for the call that it records.
+// caller is who makes the call that the item records: the run's role, in its conversation.
 func (rt *Runtime) caller(it db.ItemRow) tools.Caller {
-	c := rt.Caller
-	c.Item = it.ID
-	return c
+	t := rt.Thread
+	return tools.Caller{
+		UserID: t.UserID, ThreadID: t.ID, WorkspaceID: string(t.WorkspaceID), EnvironmentID: string(t.EnvironmentID),
+		Root: rt.Workspace.RootPath, Subagent: t.ParentThreadID != "", Role: string(rt.Role.Name), Item: it.ID,
+	}
 }
