@@ -18,6 +18,8 @@ import (
 type job struct {
 	it   repo.ItemRow
 	args map[string]any
+	// background is what the call asked with ArgBackground.
+	background bool
 }
 
 func (rt *Runtime) planCalls(ctx context.Context) ([]callAction, error) {
@@ -79,7 +81,7 @@ func (rt *Runtime) handleCall(ctx context.Context, it repo.ItemRow) (string, boo
 		h, err := rt.refuse(it, reason)
 		return h, false, nil, err
 	}
-	args, err := callArguments(it)
+	args, background, err := rt.arguments(it)
 	if err != nil {
 		h, err := rt.refuse(it, err.Error())
 		return h, false, nil, err
@@ -136,14 +138,14 @@ func (rt *Runtime) handleCall(ctx context.Context, it repo.ItemRow) (string, boo
 		slog.Info("approval requested", "thread", rt.Caller.ThreadID, "turn", rt.Turn.ID, "item", it.ID, "tool", it.Tool)
 		return "", true, nil, nil
 	}
-	return "", false, &job{it: it, args: args}, nil
+	return "", false, &job{it: it, args: args, background: background}, nil
 }
 
 func (rt *Runtime) changedSinceApproval(ctx context.Context, it repo.ItemRow) (bool, error) {
 	if it.Approval.Decision == repo.DecisionDecline {
 		return false, nil
 	}
-	args, err := callArguments(it)
+	args, _, err := rt.arguments(it)
 	if err != nil {
 		return false, nil
 	}
@@ -157,12 +159,12 @@ func (rt *Runtime) changedSinceApproval(ctx context.Context, it repo.ItemRow) (b
 func (rt *Runtime) decided(it repo.ItemRow) (string, bool, *job, error) {
 	switch it.Approval.Decision {
 	case repo.DecisionAccept, repo.DecisionAcceptForSession, repo.DecisionAcceptAlways:
-		args, err := callArguments(it)
+		args, background, err := rt.arguments(it)
 		if err != nil {
 			h, err := rt.refuse(it, fmt.Sprintf("the approved call has invalid arguments: %v", err))
 			return h, false, nil, err
 		}
-		return "", false, &job{it: it, args: args}, nil
+		return "", false, &job{it: it, args: args, background: background}, nil
 	case repo.DecisionDecline:
 		if _, err := rt.complete(withError(it, "the user declined this call"), repo.ItemDeclined); err != nil {
 			return "", false, nil, err
@@ -171,6 +173,28 @@ func (rt *Runtime) decided(it repo.ItemRow) (string, bool, *job, error) {
 	default:
 		return "", false, nil, fmt.Errorf("runtime: call %s has no approval decision", it.ID)
 	}
+}
+
+// arguments are the call's arguments for its tool and whether it asked to run in the background. ArgBackground is the
+// runtime's to read: it is taken out for a tool that may run in the background, and left to any other tool as its own.
+func (rt *Runtime) arguments(it repo.ItemRow) (map[string]any, bool, error) {
+	args, err := callArguments(it)
+	if err != nil {
+		return nil, false, err
+	}
+	if d, _ := rt.tool(it.Tool); !d.Background {
+		return args, false, nil
+	}
+	v, given := args[tools.ArgBackground]
+	delete(args, tools.ArgBackground)
+	if !given {
+		return args, false, nil
+	}
+	background, ok := v.(bool)
+	if !ok {
+		return nil, false, fmt.Errorf("%s must be true or false", tools.ArgBackground)
+	}
+	return args, background, nil
 }
 
 func callArguments(it repo.ItemRow) (map[string]any, error) {

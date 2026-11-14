@@ -82,3 +82,18 @@ func TestOfferKeepsOnlyTheCoreToolsForASmallInput(t *testing.T) {
 		t.Errorf("without load_tools: offered %q, deferred %q; want everything offered", names(offered), names(deferred))
 	}
 }
+
+func TestABackgroundToolTakesRunInBackground(t *testing.T) {
+	schema := map[string]any{"type": "object", "properties": map[string]any{"cmd": map[string]any{"type": "string"}}, "additionalProperties": false}
+	specs := Specs([]tools.ToolDescriptor{{Name: "slow", InputSchema: schema, Background: true}, {Name: "quick", InputSchema: schema}})
+	slow, quick := specs[0].Parameters, specs[1].Parameters
+	if _, ok := slow["properties"].(map[string]any)[tools.ArgBackground]; !ok {
+		t.Errorf("the background tool's schema: %v", slow)
+	}
+	if _, ok := quick["properties"].(map[string]any)[tools.ArgBackground]; ok {
+		t.Errorf("a foreground tool's schema has %s: %v", tools.ArgBackground, quick)
+	}
+	if _, ok := schema["properties"].(map[string]any)[tools.ArgBackground]; ok {
+		t.Error("the tool's own schema was changed")
+	}
+}

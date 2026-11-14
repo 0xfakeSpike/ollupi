@@ -89,6 +89,7 @@ func (p *Provider) ToolList(context.Context) ([]*tools.Spec, error) {
 		// Not read-only: a URL can carry data to the site, so each new site is approved unless a rule allows it.
 		Annotations:       &tools.Annotations{Title: "Fetch web page", DestructiveHint: tools.Hint(false), OpenWorldHint: tools.Hint(true)},
 		PermissionContent: permissionContent,
+		Background:        true,
 	}}, nil
 }
 

@@ -80,7 +80,7 @@ func (r *Registry) buildDescriptors() ([]ToolDescriptor, error) {
 			return nil, fmt.Errorf("tool registry: tool %q input schema: %w", name, err)
 		}
 		id, _ := r.owner[name].Name()
-		descriptor := ToolDescriptor{Provider: id, Name: name, Description: spec.Description, InputSchema: schema, Serial: spec.Serial}
+		descriptor := ToolDescriptor{Provider: id, Name: name, Description: spec.Description, InputSchema: schema, Serial: spec.Serial, Background: spec.Background}
 		if spec.Annotations != nil {
 			descriptor.Annotations = *spec.Annotations
 		}

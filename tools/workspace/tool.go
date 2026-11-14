@@ -108,6 +108,7 @@ func (r *Provider) tool() *tools.Spec {
 
 		PermissionContent: permissionContent,
 		Local:             &tools.Local{Prepare: r.prepareCommand, Run: r.runCommand},
+		Background:        true,
 	}
 }
 

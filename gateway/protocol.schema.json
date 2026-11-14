@@ -2569,6 +2569,9 @@
         "input_schema": {
           "type": "object",
           "additionalProperties": true
+        },
+        "background": {
+          "type": "boolean"
         }
       },
       "required": [

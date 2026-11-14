@@ -21,7 +21,13 @@ type Spec struct {
 	PermissionContent func(ctx context.Context, arguments map[string]any) (Content, error) `json:"-"`
 	Local             *Local                                                               `json:"-"`
 	Serial            bool                                                                 `json:"-"`
+	// Background says a call may run in the background, as its ArgBackground argument asks.
+	Background bool `json:"-"`
 }
+
+// ArgBackground is the argument a call of a Background tool asks to run in the background with. The runtime adds it to
+// the tool's schema and takes it out of the arguments before the tool sees them.
+const ArgBackground = "run_in_background"
 
 type Content struct {
 	Text   string
@@ -42,6 +48,7 @@ type ToolDescriptor struct {
 	Annotations Annotations    `json:"annotations"`
 	InputSchema map[string]any `json:"input_schema"`
 	Serial      bool           `json:"-"`
+	Background  bool           `json:"background,omitempty"`
 }
 
 func OpenWorld(a Annotations) bool {
