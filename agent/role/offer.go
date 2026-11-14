@@ -2,6 +2,7 @@ package role
 
 import (
 	"encoding/json"
+	"maps"
 	"slices"
 	"strings"
 
@@ -55,11 +56,31 @@ func loadedTools(items []repo.ItemRow) []string {
 	return names
 }
 
-// Specs are the tools as the model is sent them.
+// Specs are the tools as the model is sent them. A tool that may run in the background takes ArgBackground besides its
+// own arguments.
 func Specs(descriptors []tools.ToolDescriptor) []llm.ToolSpec {
 	specs := make([]llm.ToolSpec, 0, len(descriptors))
 	for _, d := range descriptors {
-		specs = append(specs, llm.ToolSpec{Name: d.Name, Description: strings.TrimSpace(d.Description), Parameters: d.InputSchema})
+		parameters := d.InputSchema
+		if d.Background {
+			parameters = withBackground(parameters)
+		}
+		specs = append(specs, llm.ToolSpec{Name: d.Name, Description: strings.TrimSpace(d.Description), Parameters: parameters})
 	}
 	return specs
+}
+
+func withBackground(schema map[string]any) map[string]any {
+	properties := map[string]any{}
+	if own, ok := schema["properties"].(map[string]any); ok {
+		properties = maps.Clone(own)
+	}
+	properties[tools.ArgBackground] = map[string]any{
+		"type": "boolean",
+		"description": "Run the call in the background: it returns at once with a background call id, and its result comes back " +
+			"to the conversation when it ends. Leave it out for a quick call, or one whose result you need before going on.",
+	}
+	out := maps.Clone(schema)
+	out["properties"] = properties
+	return out
 }
