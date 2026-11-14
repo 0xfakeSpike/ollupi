@@ -32,6 +32,9 @@ const (
 	// maxQueuedTurns is how many turns one conversation may have waiting behind the one in progress.
 	maxQueuedTurns  = 20
 	defaultRunLimit = 4 * time.Hour
+	// defaultBackgroundCalls and defaultBackgroundLimit bound the calls one user runs in the background.
+	defaultBackgroundCalls = 4
+	defaultBackgroundLimit = 4 * time.Hour
 )
 
 var (
@@ -62,6 +65,11 @@ type Config struct {
 	UserSlots int
 	// RunLimit is how long a turn may run in its slot before it fails; by default, four hours.
 	RunLimit time.Duration
+	// BackgroundCalls is the most calls one user may run in the background at once; by default, four. A background
+	// call holds no slot.
+	BackgroundCalls int
+	// BackgroundLimit is how long a background call may run before it fails; by default, four hours.
+	BackgroundLimit time.Duration
 
 	Connections map[string]llm.Client
 	// ClientFor gives the client a user's turns call a connection through, so that they run on the user's own key
@@ -99,6 +107,10 @@ type Agent struct {
 	// providers are what every user's registry starts from.
 	providers  []tools.Provider
 	registries sync.Map
+
+	// backgroundCancels stop the background calls running on this process, by id.
+	backgroundMu      sync.Mutex
+	backgroundCancels map[string]context.CancelFunc
 
 	// moving holds the workspaces whose folder is being moved, which take no new turn meanwhile.
 	moveMu sync.Mutex
@@ -149,7 +161,7 @@ func New(cfg Config) *Agent {
 	if cfg.BoxFor == nil {
 		cfg.BoxFor = func(string) (sandbox.Box, error) { return sandbox.Here(), nil }
 	}
-	return &Agent{cfg: cfg, moving: map[string]bool{}}
+	return &Agent{cfg: cfg, moving: map[string]bool{}, backgroundCancels: map[string]context.CancelFunc{}}
 }
 
 func (a *Agent) Start(ctx context.Context) error {
@@ -177,6 +189,12 @@ func (a *Agent) Start(ctx context.Context) error {
 	if a.cfg.RunLimit <= 0 {
 		a.cfg.RunLimit = defaultRunLimit
 	}
+	if a.cfg.BackgroundCalls <= 0 {
+		a.cfg.BackgroundCalls = defaultBackgroundCalls
+	}
+	if a.cfg.BackgroundLimit <= 0 {
+		a.cfg.BackgroundLimit = defaultBackgroundLimit
+	}
 	if a.cfg.Attachments == nil && a.cfg.AttachmentsDir != "" {
 		a.cfg.Attachments = blobs.Dir(a.cfg.AttachmentsDir)
 	}
@@ -191,6 +209,9 @@ func (a *Agent) Start(ctx context.Context) error {
 	if err := a.recover(); err != nil {
 		return err
 	}
+	if _, err := a.cfg.DB.InterruptBackgroundCalls(time.Now()); err != nil {
+		return fmt.Errorf("agent: end the background calls of a process that stopped: %w", err)
+	}
 	a.done.Add(1)
 	go a.loop()
 	slog.Info("agent started", "name", a.cfg.Name, "slots", a.cfg.Slots, "models", len(a.cfg.Models), "tools", len(a.registry.Descriptors()))
@@ -198,7 +219,7 @@ func (a *Agent) Start(ctx context.Context) error {
 }
 
 func (a *Agent) buildTools(ctx context.Context) error {
-	providers := append(slices.Clone(a.cfg.Providers), plan.New(), role.Launchers{}, userinput.New(), contextmanager.NewOutputs(a.cfg.DB), runtime.Loader{})
+	providers := append(slices.Clone(a.cfg.Providers), plan.New(), role.Launchers{}, userinput.New(), contextmanager.NewOutputs(a.cfg.DB), runtime.Loader{}, backgroundTools{a})
 	if a.cfg.Memory != nil {
 		providers = append(providers, a.cfg.Memory)
 	}

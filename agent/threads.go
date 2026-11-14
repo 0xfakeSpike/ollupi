@@ -163,6 +163,9 @@ func (a *Agent) ArchiveThread(user, id string, archived bool) (repo.ThreadRow, e
 			if err := a.idle(id); err != nil {
 				return err
 			}
+			if err := a.cancelBackgroundOf(id, "the conversation was archived"); err != nil {
+				return err
+			}
 			now := time.Now().UTC()
 			at = &now
 		}
@@ -189,6 +192,9 @@ func (a *Agent) DeleteThread(user, id string) error {
 			return err
 		}
 		if err := a.idle(id); err != nil {
+			return err
+		}
+		if err := a.cancelBackgroundOf(id, "the conversation was deleted"); err != nil {
 			return err
 		}
 		jobs, err := a.cfg.DB.CronJobViews(user, id)

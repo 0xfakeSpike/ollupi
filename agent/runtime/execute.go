@@ -160,6 +160,10 @@ func (rt *Runtime) execute(ctx context.Context, j job) tools.Result {
 		attribute.String("gen_ai.tool.call.id", it.CallID), attribute.String("ollupi.tool.server", it.Server)))
 	defer span.End()
 	started := time.Now()
+	if j.background && rt.Background != nil {
+		span.SetAttributes(attribute.Bool("ollupi.tool.background", true))
+		return rt.Background(it, j.args)
+	}
 	result := rt.Registry.InvokePrepared(ctx, it.Tool, j.args, it.PreparedExecution)
 	if result.Err == nil {
 		if err := rt.Window.CheckArtifacts(result.Artifacts); err != nil {
