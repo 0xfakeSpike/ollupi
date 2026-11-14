@@ -220,6 +220,10 @@ func (it ItemRow) waitsOnAgent() bool {
 	return it.Awaits() && it.Await.By == tools.AwaitAgent
 }
 
+func (it ItemRow) waitsOnBackground() bool {
+	return it.Awaits() && it.Await.By == tools.AwaitBackground
+}
+
 func (it ItemRow) WaitsOnUser() bool {
 	return it.WaitsForApproval() || (it.Awaits() && it.Await.By == tools.AwaitUser)
 }
@@ -307,7 +311,7 @@ func (d *DB) RecordItem(threadID string, item ItemRow) (ItemRow, bool, error) {
 		}
 		// A call answered, approved or reported may be the last one its waiting turn awaited.
 		switch active.Status {
-		case TurnWaitingOnApproval, TurnWaitingOnUserInput, TurnWaitingOnAgent:
+		case TurnWaitingOnApproval, TurnWaitingOnUserInput, TurnWaitingOnAgent, TurnWaitingOnBackground:
 			_, err = tx.settleStatus(active.ID, active.Status)
 		}
 		return err

@@ -340,6 +340,17 @@ func (s ThreadState) AgentCalls() []ItemRow {
 	return out
 }
 
+// BackgroundWaits are the open calls that wait for background calls to end.
+func (s ThreadState) BackgroundWaits() []ItemRow {
+	var out []ItemRow
+	for _, it := range s.OpenCalls {
+		if it.waitsOnBackground() {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
 func activeTurn(turns []TurnRow) (TurnRow, bool) {
 	for i := len(turns) - 1; i >= 0; i-- {
 		if turns[i].Status.Active() {

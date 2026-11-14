@@ -273,7 +273,8 @@
       "type": "string",
       "enum": [
         "user",
-        "agent"
+        "agent",
+        "background"
       ]
     },
     "ClientInfo": {
@@ -2771,6 +2772,7 @@
         "waitingOnApproval",
         "waitingOnUserInput",
         "waitingOnAgent",
+        "waitingOnBackground",
         "completed",
         "interrupted",
         "failed"

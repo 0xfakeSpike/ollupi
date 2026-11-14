@@ -206,11 +206,11 @@ func (a *Agent) Start(ctx context.Context) error {
 			return err
 		}
 	}
-	if err := a.recover(); err != nil {
-		return err
-	}
 	if _, err := a.cfg.DB.InterruptBackgroundCalls(time.Now()); err != nil {
 		return fmt.Errorf("agent: end the background calls of a process that stopped: %w", err)
+	}
+	if err := a.recover(); err != nil {
+		return err
 	}
 	a.done.Add(1)
 	go a.loop()
