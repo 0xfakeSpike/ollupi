@@ -32,6 +32,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
@@ -85,11 +86,11 @@ type tracker struct {
 	done map[string]chan struct{}
 }
 
-func (t *tracker) on(e orchestrator.Event) {
+func (t *tracker) on(e event.Event) {
 	switch e.Kind {
-	case orchestrator.EventUserInputRequested:
+	case event.UserInputRequested:
 		t.asked.Add(1)
-	case orchestrator.EventTurnCompleted:
+	case event.TurnCompleted:
 		t.ended.Add(1)
 		if e.Turn.Status != db.TurnCompleted {
 			t.failed.Add(1)

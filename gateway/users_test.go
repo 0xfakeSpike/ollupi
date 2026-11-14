@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/pkg/wshub"
@@ -159,11 +160,11 @@ func TestEachUserHasTheirOwnConnectionAndEvents(t *testing.T) {
 	if users, err := store.Users(); err != nil || len(users) != 3 {
 		t.Errorf("users after connecting: %v, %v", users, err)
 	}
-	changed := func(user, thread string) orchestrator.Event {
-		return orchestrator.Event{Kind: orchestrator.EventThreadDeleted, Thread: db.ThreadRow{ID: thread, UserID: user}}
+	changed := func(user, thread string) event.Event {
+		return event.Event{Kind: event.ThreadDeleted, Thread: db.ThreadRow{ID: thread, UserID: user}}
 	}
 	s.Deliver(changed("b", "of-b"))
-	s.Deliver(orchestrator.Event{Kind: orchestrator.EventError, Thread: db.ThreadRow{ID: "of-nobody"}, Error: "internal"})
+	s.Deliver(event.Event{Kind: event.Error, Thread: db.ThreadRow{ID: "of-nobody"}, Error: "internal"})
 	s.Deliver(changed("a", "of-a"))
 	if got := nextThread(ctx, t, a); got != "of-a" {
 		t.Errorf("a received an event of %q", got)

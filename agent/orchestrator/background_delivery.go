@@ -40,12 +40,12 @@ func (o *Orchestrator) deliverBackground(threadID string) {
 		return
 	}
 	if started {
-		o.startedTurn(thread, turn)
+		o.ev.TurnStarted(thread, turn)
 	}
 	for _, it := range items {
-		o.emitItem(thread, turn, it, true)
+		o.ev.Item(thread, turn, it, true)
 	}
-	o.emitStatus(threadID)
+	o.ev.Status(threadID)
 	slog.Info("background results delivered", "thread", threadID, "turn", turn.ID, "results", len(items), "started", started)
 }
 
@@ -60,7 +60,7 @@ func (o *Orchestrator) fulfil(t db.ThreadRow, turn db.TurnRow, call db.ItemRow) 
 	if err != nil {
 		return false, err
 	}
-	o.emitItem(t, turn, stored, false)
+	o.ev.Item(t, turn, stored, false)
 	return true, nil
 }
 
@@ -75,7 +75,7 @@ func (o *Orchestrator) waitBeforeReport(t db.ThreadRow, turn db.TurnRow) (bool, 
 	if err != nil {
 		return false, err
 	}
-	o.emitItem(t, turn, stored, true)
+	o.ev.Item(t, turn, stored, true)
 	slog.Info("subagent waits for its background calls before it reports", "thread", t.ID, "turn", turn.ID, "call", stored.ID)
 	return true, nil
 }

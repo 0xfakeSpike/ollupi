@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
@@ -97,7 +98,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 		ToolsFor:       servers.Tools,
 		Memory:         mem,
 		DB:             store,
-		OnEvent:        func(e orchestrator.Event) { server.Deliver(e) },
+		OnEvent:        func(e event.Event) { server.Deliver(e) },
 	})
 	if server, err = NewServer(ag, Options{DB: store, Token: "secret", Memory: mem, Jobs: jobs, MCP: servers}); err != nil {
 		t.Fatal(err)

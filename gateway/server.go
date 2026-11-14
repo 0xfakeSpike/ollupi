@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
@@ -120,7 +121,7 @@ func (s *Server) mine(w http.ResponseWriter, r *http.Request, user string) bool 
 
 // Deliver sends an event to the connections of the user it belongs to; one that names no user goes to nobody, the
 // log has it.
-func (s *Server) Deliver(e orchestrator.Event) {
+func (s *Server) Deliver(e event.Event) {
 	user := e.Thread.UserID
 	if e.Workspace != nil {
 		user = e.Workspace.UserID
@@ -129,9 +130,9 @@ func (s *Server) Deliver(e orchestrator.Event) {
 		user = e.Environment.UserID
 	}
 	switch e.Kind {
-	case orchestrator.EventEnvironmentChanged:
+	case event.EnvironmentChanged:
 		s.environmentChanged(user, e.Environment.ID)
-	case orchestrator.EventCronJobChanged:
+	case event.CronJobChanged:
 		s.cronChanged(user, e.CronJobID, e.Thread.ID)
 	default:
 		s.each(user, func(c *conn) { c.event(e) })
@@ -235,40 +236,40 @@ func (c *conn) mcpServerList(ctx context.Context, _ Empty) (MCPServerListResult,
 	return MCPServerListResult{Data: nonNil(servers)}, nil, nil
 }
 
-func (c *conn) event(e orchestrator.Event) {
+func (c *conn) event(e event.Event) {
 	switch e.Kind {
-	case orchestrator.EventThreadStarted:
+	case event.ThreadStarted:
 		c.rpc.Notify(notifyThreadStarted, ThreadResult{Thread: threadRow(e.Thread)})
-	case orchestrator.EventThreadChanged:
+	case event.ThreadChanged:
 		changed := threadRow(e.Thread)
 		c.rpc.Notify(notifyThreadChanged, ThreadChangedNotification{ThreadID: e.Thread.ID, Thread: &changed})
-	case orchestrator.EventThreadDeleted:
+	case event.ThreadDeleted:
 		c.rpc.Notify(notifyThreadChanged, ThreadChangedNotification{ThreadID: e.Thread.ID})
-	case orchestrator.EventTurnQueued:
+	case event.TurnQueued:
 		c.rpc.Notify(notifyTurnQueued, TurnNotification{ThreadID: e.Thread.ID, Thread: threadRow(e.Thread), Turn: turnRow(e.Turn)})
-	case orchestrator.EventTurnStarted:
+	case event.TurnStarted:
 		c.rpc.Notify(notifyTurnStarted, TurnNotification{ThreadID: e.Thread.ID, Thread: threadRow(e.Thread), Turn: turnRow(e.Turn)})
-	case orchestrator.EventItemStarted:
+	case event.ItemStarted:
 		c.rpc.Notify(notifyItemStarted, ItemNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Item: itemRow(*e.Item)})
-	case orchestrator.EventItemUpdated:
+	case event.ItemUpdated:
 		c.rpc.Notify(notifyItemUpdated, ItemNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Item: itemRow(*e.Item)})
-	case orchestrator.EventItemCompleted:
+	case event.ItemCompleted:
 		c.rpc.Notify(notifyItemCompleted, ItemNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Item: itemRow(*e.Item)})
-	case orchestrator.EventItemDelta:
+	case event.ItemDelta:
 		method := notifyAgentMessageDelta
 		if e.Item.Type == db.ItemReasoning {
 			method = notifyReasoningDelta
 		}
 		c.rpc.Notify(method, DeltaNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, ItemID: e.Item.ID, Delta: e.Delta})
-	case orchestrator.EventTurnCompleted:
+	case event.TurnCompleted:
 		c.rpc.Notify(notifyTurnCompleted, TurnNotification{ThreadID: e.Thread.ID, Thread: threadRow(e.Thread), Turn: turnRow(e.Turn)})
-	case orchestrator.EventError:
+	case event.Error:
 		c.rpc.Notify(notifyError, ErrorNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Message: e.Error})
-	case orchestrator.EventThreadStatusChanged:
+	case event.ThreadStatusChanged:
 		c.rpc.Notify(notifyThreadStatusChanged, ThreadStatusNotification{ThreadID: e.Thread.ID, Status: e.Status})
-	case orchestrator.EventWorkspaceChanged:
+	case event.WorkspaceChanged:
 		c.rpc.Notify(notifyWorkspaceChanged, WorkspaceResult{Workspace: workspaceRow(*e.Workspace)})
-	case orchestrator.EventApprovalRequested, orchestrator.EventUserInputRequested:
+	case event.ApprovalRequested, event.UserInputRequested:
 		c.request(e.Thread.ID, *e.Item)
 	}
 }

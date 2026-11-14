@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
@@ -125,8 +126,8 @@ func TestACrashFailsTheTurnAndNothingElse(t *testing.T) {
 	ended := make(chan db.TurnRow, 1)
 	ag, _ := started(ctx, t, orchestrator.Config{
 		ClientFor: func(string, string) (llm.Client, error) { panic("the secret detail") },
-		OnEvent: func(e orchestrator.Event) {
-			if e.Kind == orchestrator.EventTurnCompleted {
+		OnEvent: func(e event.Event) {
+			if e.Kind == event.TurnCompleted {
 				ended <- e.Turn
 			}
 		},
@@ -157,8 +158,8 @@ func TestATurnStopsAtItsRunLimit(t *testing.T) {
 	ended := make(chan db.TurnRow, 1)
 	ag, _ := started(ctx, t, orchestrator.Config{
 		RunLimit: 200 * time.Millisecond,
-		OnEvent: func(e orchestrator.Event) {
-			if e.Kind == orchestrator.EventTurnCompleted {
+		OnEvent: func(e event.Event) {
+			if e.Kind == event.TurnCompleted {
 				ended <- e.Turn
 			}
 		},
@@ -228,8 +229,8 @@ func TestACutOffResponseRunsNoCall(t *testing.T) {
 	srv := httptest.NewServer(&cutOffModel{})
 	defer srv.Close()
 	ended := make(chan db.TurnRow, 1)
-	ag, store := started(ctx, t, orchestrator.Config{OnEvent: func(e orchestrator.Event) {
-		if e.Kind == orchestrator.EventTurnCompleted {
+	ag, store := started(ctx, t, orchestrator.Config{OnEvent: func(e event.Event) {
+		if e.Kind == event.TurnCompleted {
 			ended <- e.Turn
 		}
 	}}, srv.URL)

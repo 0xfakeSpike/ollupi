@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
@@ -15,7 +16,7 @@ func (o *Orchestrator) settle(parent db.ThreadRow, turn db.TurnRow, call db.Item
 	}
 	switch progress {
 	case subagent.Queued:
-		o.emit(Event{Kind: EventThreadStarted, Thread: child})
+		o.ev.Emit(event.Event{Kind: event.ThreadStarted, Thread: child})
 		o.reconcile(child.ID)
 		return false, nil
 	case subagent.Running:
@@ -25,6 +26,6 @@ func (o *Orchestrator) settle(parent db.ThreadRow, turn db.TurnRow, call db.Item
 	if err != nil {
 		return false, err
 	}
-	o.emitItem(parent, turn, stored, false)
+	o.ev.Item(parent, turn, stored, false)
 	return true, nil
 }

@@ -26,9 +26,9 @@ func (o *Orchestrator) reconcile(threadID string) {
 			o.halt(threadID, err)
 			return
 		}
-		o.startedTurn(st.Thread, turn)
-		o.emitItem(st.Thread, turn, message, true)
-		o.emitStatus(threadID)
+		o.ev.TurnStarted(st.Thread, turn)
+		o.ev.Item(st.Thread, turn, message, true)
+		o.ev.Status(threadID)
 	}
 	if _, err := o.res.Model(turn.Model.Connection); err != nil {
 		turn.Status, turn.Error = db.TurnFailed, err.Error()
@@ -85,7 +85,7 @@ func (o *Orchestrator) admit() {
 	}
 	ids, err := o.cfg.DB.ReadyThreads(free, full)
 	if err != nil {
-		o.fault("", "", fmt.Errorf("threads ready for a slot could not be listed: %w", err))
+		o.ev.Fault("", "", fmt.Errorf("threads ready for a slot could not be listed: %w", err))
 		return
 	}
 	for _, id := range ids {

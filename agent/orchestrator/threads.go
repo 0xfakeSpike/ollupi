@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"log/slog"
 	"strings"
 	"time"
@@ -53,7 +54,7 @@ func (o *Orchestrator) UpdateThreadSettings(user, threadID string, settings perm
 	if err != nil {
 		return db.ThreadRow{}, fmt.Errorf("orchestrator: thread %s: %w", threadID, err)
 	}
-	o.emit(Event{Kind: EventThreadChanged, Thread: t})
+	o.ev.Emit(event.Event{Kind: event.ThreadChanged, Thread: t})
 	return t, nil
 }
 
@@ -64,7 +65,7 @@ func (o *Orchestrator) createThread(t db.ThreadRow) (db.ThreadRow, error) {
 	if err := o.cfg.DB.CreateThread(t); err != nil {
 		return db.ThreadRow{}, fmt.Errorf("orchestrator: create: %w", err)
 	}
-	o.emit(Event{Kind: EventThreadStarted, Thread: t})
+	o.ev.Emit(event.Event{Kind: event.ThreadStarted, Thread: t})
 	return t, nil
 }
 
@@ -75,7 +76,7 @@ func (o *Orchestrator) ListThreads(user string, f db.ThreadFilter) ([]db.ThreadS
 	}
 	out := make([]db.ThreadSummary, 0, len(rows))
 	for _, r := range rows {
-		status := o.threadStatus(r.ID)
+		status := event.ThreadStatus(o.cfg.DB, r.ID)
 		out = append(out, db.ThreadSummary{ThreadRow: r, Status: status})
 	}
 	return out, more, nil
@@ -102,7 +103,7 @@ func (o *Orchestrator) threadStatus(id string) db.ThreadStatus {
 			return ""
 		}
 		for _, call := range st.AgentCalls() {
-			if cs := o.threadStatus(call.Await.Handle); cs == db.ThreadWaitingOnApproval || cs == db.ThreadWaitingOnUserInput {
+			if cs := event.ThreadStatus(o.cfg.DB, call.Await.Handle); cs == db.ThreadWaitingOnApproval || cs == db.ThreadWaitingOnUserInput {
 				return cs
 			}
 		}
@@ -127,7 +128,7 @@ func (o *Orchestrator) RenameThread(user, id, title string) (db.ThreadRow, error
 			return fmt.Errorf("orchestrator: thread %s: %w", id, err)
 		}
 		t = row
-		o.emit(Event{Kind: EventThreadChanged, Thread: t})
+		o.ev.Emit(event.Event{Kind: event.ThreadChanged, Thread: t})
 		return nil
 	})
 	return t, err
@@ -146,7 +147,7 @@ func (o *Orchestrator) MarkThreadRead(user, id string) (db.ThreadRow, error) {
 			return fmt.Errorf("orchestrator: thread %s: %w", id, err)
 		}
 		t = row
-		o.emit(Event{Kind: EventThreadChanged, Thread: t})
+		o.ev.Emit(event.Event{Kind: event.ThreadChanged, Thread: t})
 		return nil
 	})
 	return t, err
@@ -178,7 +179,7 @@ func (o *Orchestrator) ArchiveThread(user, id string, archived bool) (db.ThreadR
 			return fmt.Errorf("orchestrator: thread %s: %w", id, err)
 		}
 		t = row
-		o.emit(Event{Kind: EventThreadChanged, Thread: t})
+		o.ev.Emit(event.Event{Kind: event.ThreadChanged, Thread: t})
 		o.emitCronJobs(t, jobs)
 		return nil
 	})
@@ -204,7 +205,7 @@ func (o *Orchestrator) DeleteThread(user, id string) error {
 		if err := o.cfg.DB.DeleteThread(user, id); err != nil {
 			return fmt.Errorf("orchestrator: thread %s: %w", id, err)
 		}
-		o.emit(Event{Kind: EventThreadDeleted, Thread: t})
+		o.ev.Emit(event.Event{Kind: event.ThreadDeleted, Thread: t})
 		o.emitCronJobs(t, jobs)
 		return nil
 	})
@@ -223,7 +224,7 @@ func (o *Orchestrator) DeleteThread(user, id string) error {
 // tasks, so a thread's own tasks are all of them.
 func (o *Orchestrator) emitCronJobs(t db.ThreadRow, jobs []db.CronJobView) {
 	for _, j := range jobs {
-		o.emit(Event{Kind: EventCronJobChanged, Thread: t, CronJobID: j.ID})
+		o.ev.Emit(event.Event{Kind: event.CronJobChanged, Thread: t, CronJobID: j.ID})
 	}
 }
 

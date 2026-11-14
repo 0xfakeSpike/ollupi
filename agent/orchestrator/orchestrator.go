@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/resources"
@@ -91,7 +92,7 @@ type Config struct {
 	AttachmentsDir string
 	Memory         *memory.Manager
 	DB             *db.DB
-	OnEvent        func(Event)
+	OnEvent        func(event.Event)
 	// Lease makes this process claim the shard before it runs it, waiting for as long as another holds it, and keep
 	// the claim alive; a process that dies leaves its claim for this long. Without it the process trusts it is alone.
 	Lease time.Duration
@@ -109,6 +110,7 @@ type Orchestrator struct {
 	cfg Config
 	ctx context.Context
 	res *resources.Resources
+	ev  event.Emitter
 
 	// backgroundCancels stop the background calls running on this process, by id.
 	backgroundMu      sync.Mutex
@@ -137,7 +139,7 @@ func New(cfg Config) *Orchestrator {
 	if cfg.BoxFor == nil {
 		cfg.BoxFor = func(string) (sandbox.Box, error) { return sandbox.Here(), nil }
 	}
-	return &Orchestrator{cfg: cfg, moving: map[string]bool{}, backgroundCancels: map[string]context.CancelFunc{}}
+	return &Orchestrator{cfg: cfg, ev: event.Emitter{DB: cfg.DB, OnEvent: cfg.OnEvent}, moving: map[string]bool{}, backgroundCancels: map[string]context.CancelFunc{}}
 }
 
 func (o *Orchestrator) Start(ctx context.Context) error {
