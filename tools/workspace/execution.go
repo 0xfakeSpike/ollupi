@@ -18,8 +18,8 @@ import (
 // Commands are traced through the global TracerProvider, as the agent's runs are.
 var tracer = otel.Tracer("github.com/0xfakeSpike/ollupi/tools/workspace")
 
-func (r *Provider) prepareCommand(ctx context.Context, args map[string]any) (*tools.Prepared, error) {
-	d, err := r.dirs(ctx)
+func (r *Provider) prepareCommand(ctx context.Context, caller tools.Caller, args map[string]any) (*tools.Prepared, error) {
+	d, err := r.dirs(ctx, caller)
 	if err != nil {
 		return nil, err
 	}
@@ -144,8 +144,8 @@ type CommandOutput struct {
 	Sandbox        string   `json:"sandbox,omitempty"`
 }
 
-func (r *Provider) runCommand(ctx context.Context, args map[string]any, p *tools.Prepared) (tools.Result, error) {
-	d, err := r.dirs(ctx)
+func (r *Provider) runCommand(ctx context.Context, caller tools.Caller, args map[string]any, p *tools.Prepared) (tools.Result, error) {
+	d, err := r.dirs(ctx, caller)
 	if err != nil {
 		return tools.Result{}, err
 	}

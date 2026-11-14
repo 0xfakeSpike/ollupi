@@ -34,7 +34,7 @@ func (githubTools) ToolList(context.Context) ([]*tools.Spec, error) {
 		{Name: "github__list_pulls", Description: "List pull requests. " + long, InputSchema: schema, Annotations: &tools.Annotations{ReadOnlyHint: true}},
 	}, nil
 }
-func (githubTools) Invoke(context.Context, string, map[string]any) (tools.Result, error) {
+func (githubTools) Invoke(context.Context, tools.Caller, string, map[string]any) (tools.Result, error) {
 	return tools.Result{Output: map[string]any{"number": 42, "url": "https://github.com/acme/app/issues/42"}}, nil
 }
 

@@ -55,16 +55,16 @@ func (backgroundTools) ToolList(context.Context) ([]*tools.Spec, error) {
 	}}, nil
 }
 
-func (b backgroundTools) Invoke(ctx context.Context, tool string, arguments map[string]any) (tools.Result, error) {
+func (b backgroundTools) Invoke(ctx context.Context, caller tools.Caller, tool string, arguments map[string]any) (tools.Result, error) {
 	if tool == ToolWaitForBackground {
-		return b.wait(ctx, arguments)
+		return b.wait(caller, arguments)
 	}
 	args, err := tools.DecodeArguments[cancelBackground](arguments)
 	if err != nil {
 		return tools.Result{}, err
 	}
 	call, err := b.o.cfg.DB.BackgroundCall(args.Background)
-	if errors.Is(err, repo.ErrNotFound) || err == nil && call.ThreadID != tools.CallerOf(ctx).ThreadID {
+	if errors.Is(err, repo.ErrNotFound) || err == nil && call.ThreadID != caller.ThreadID {
 		return tools.Result{}, fmt.Errorf("this conversation has no background call %q", args.Background)
 	}
 	if err != nil {
@@ -81,14 +81,14 @@ func (b backgroundTools) Invoke(ctx context.Context, tool string, arguments map[
 	return tools.Result{Output: map[string]any{"background": call.ID, "status": string(repo.BackgroundCancelled)}}, nil
 }
 
-func (b backgroundTools) wait(ctx context.Context, arguments map[string]any) (tools.Result, error) {
+func (b backgroundTools) wait(caller tools.Caller, arguments map[string]any) (tools.Result, error) {
 	args, err := tools.DecodeArguments[waitForBackground](arguments)
 	if err != nil {
 		return tools.Result{}, err
 	}
 	for _, id := range args.Background {
 		call, err := b.o.cfg.DB.BackgroundCall(id)
-		if errors.Is(err, repo.ErrNotFound) || err == nil && call.ThreadID != tools.CallerOf(ctx).ThreadID {
+		if errors.Is(err, repo.ErrNotFound) || err == nil && call.ThreadID != caller.ThreadID {
 			return tools.Result{}, fmt.Errorf("this conversation has no background call %q", id)
 		}
 		if err != nil {

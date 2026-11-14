@@ -20,9 +20,9 @@ type Spec struct {
 	InputSchema any          `json:"inputSchema"`
 	Annotations *Annotations `json:"annotations,omitempty"`
 
-	PermissionContent func(ctx context.Context, arguments map[string]any) (Content, error) `json:"-"`
-	Local             *Local                                                               `json:"-"`
-	Serial            bool                                                                 `json:"-"`
+	PermissionContent func(ctx context.Context, caller Caller, arguments map[string]any) (Content, error) `json:"-"`
+	Local             *Local                                                                              `json:"-"`
+	Serial            bool                                                                                `json:"-"`
 	// Background says a call may run in the background, as its ArgBackground argument asks.
 	Background bool `json:"-"`
 }
@@ -39,8 +39,8 @@ type Content struct {
 }
 
 type Local struct {
-	Prepare func(ctx context.Context, arguments map[string]any) (*Prepared, error)
-	Run     func(ctx context.Context, arguments map[string]any, p *Prepared) (Result, error)
+	Prepare func(ctx context.Context, caller Caller, arguments map[string]any) (*Prepared, error)
+	Run     func(ctx context.Context, caller Caller, arguments map[string]any, p *Prepared) (Result, error)
 }
 
 type ToolDescriptor struct {

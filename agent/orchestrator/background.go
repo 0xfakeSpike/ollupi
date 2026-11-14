@@ -25,7 +25,7 @@ func (o *Orchestrator) startBackground(t repo.ThreadRow, caller tools.Caller, re
 		return tools.Result{Err: err}.For(it.Tool)
 	}
 	limit := fmt.Errorf("the background call reached its time limit of %s", o.cfg.BackgroundLimit)
-	ctx, cancel := context.WithTimeoutCause(tools.WithCaller(o.ctx, caller), o.cfg.BackgroundLimit, limit)
+	ctx, cancel := context.WithTimeoutCause(o.ctx, o.cfg.BackgroundLimit, limit)
 	o.backgroundMu.Lock()
 	o.backgroundCancels[call.ID] = cancel
 	o.backgroundMu.Unlock()
@@ -34,7 +34,7 @@ func (o *Orchestrator) startBackground(t repo.ThreadRow, caller tools.Caller, re
 		defer o.done.Done()
 		defer o.forgetBackground(call.ID)
 		slog.Info("background call started", "thread", t.ID, "item", it.ID, "background", call.ID, "tool", it.Tool)
-		o.endBackground(ctx, call, limit, registry.InvokePrepared(ctx, it.Tool, args, it.PreparedExecution))
+		o.endBackground(ctx, call, limit, registry.InvokePrepared(ctx, caller, it.Tool, args, it.PreparedExecution))
 	}()
 	return tools.Result{Output: map[string]any{
 		"background": call.ID, "status": string(repo.BackgroundRunning),

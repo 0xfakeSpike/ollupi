@@ -19,7 +19,7 @@ var (
 	errProgram = errors.New(`workspace: argument "program" must be non-empty string`)
 )
 
-func permissionContent(_ context.Context, arguments map[string]any) (tools.Content, error) {
+func permissionContent(_ context.Context, _ tools.Caller, arguments map[string]any) (tools.Content, error) {
 	program, ok := arguments["program"].(string)
 	if program = strings.TrimSpace(program); !ok || program == "" {
 		return tools.Content{}, errProgram

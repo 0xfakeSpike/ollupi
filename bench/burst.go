@@ -166,7 +166,7 @@ func (work) ToolList(context.Context) ([]*tools.Spec, error) {
 		Annotations: &tools.Annotations{ReadOnlyHint: true}}}, nil
 }
 
-func (w work) Invoke(ctx context.Context, _ string, args map[string]any) (tools.Result, error) {
+func (w work) Invoke(ctx context.Context, _ tools.Caller, _ string, args map[string]any) (tools.Result, error) {
 	if w.log != nil {
 		if _, err := fmt.Fprintln(w.log, args["token"]); err != nil {
 			return tools.Result{}, err

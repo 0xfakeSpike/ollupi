@@ -36,7 +36,7 @@ func (Loader) ToolList(context.Context) ([]*tools.Spec, error) {
 	}}, nil
 }
 
-func (Loader) Invoke(ctx context.Context, _ string, arguments map[string]any) (tools.Result, error) {
+func (Loader) Invoke(ctx context.Context, _ tools.Caller, _ string, arguments map[string]any) (tools.Result, error) {
 	args, err := tools.DecodeArguments[loadArgs](arguments)
 	if err != nil {
 		return tools.Result{}, err

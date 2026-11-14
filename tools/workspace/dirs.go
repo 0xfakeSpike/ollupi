@@ -18,8 +18,7 @@ type dirs struct {
 	roots []string
 }
 
-func (r *Provider) dirs(ctx context.Context) (dirs, error) {
-	caller := tools.CallerOf(ctx)
+func (r *Provider) dirs(ctx context.Context, caller tools.Caller) (dirs, error) {
 	box := r.box
 	switch {
 	case r.boxIn != nil:

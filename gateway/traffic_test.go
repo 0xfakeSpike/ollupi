@@ -747,7 +747,7 @@ func (touchTool) ToolList(context.Context) ([]*tools.Spec, error) {
 	}}, nil
 }
 
-func (touchTool) Invoke(context.Context, string, map[string]any) (tools.Result, error) {
+func (touchTool) Invoke(context.Context, tools.Caller, string, map[string]any) (tools.Result, error) {
 	return tools.Result{Output: map[string]any{"touched": true}}, nil
 }
 
@@ -765,8 +765,8 @@ func (p *pageTool) ToolList(context.Context) ([]*tools.Spec, error) {
 		Description: "Clicks a link on the current page.",
 		InputSchema: map[string]any{"type": "object", "properties": map[string]any{}, "additionalProperties": false},
 		Annotations: &tools.Annotations{Title: "Click"},
-		PermissionContent: func(ctx context.Context, _ map[string]any) (tools.Content, error) {
-			host := p.page(tools.CallerOf(ctx).ThreadID)
+		PermissionContent: func(_ context.Context, caller tools.Caller, _ map[string]any) (tools.Content, error) {
+			host := p.page(caller.ThreadID)
 			if host == "" {
 				return tools.Content{}, errors.New("no page is open in this thread")
 			}
@@ -775,8 +775,8 @@ func (p *pageTool) ToolList(context.Context) ([]*tools.Spec, error) {
 	}}, nil
 }
 
-func (p *pageTool) Invoke(ctx context.Context, _ string, _ map[string]any) (tools.Result, error) {
-	host := p.page(tools.CallerOf(ctx).ThreadID)
+func (p *pageTool) Invoke(ctx context.Context, caller tools.Caller, _ string, _ map[string]any) (tools.Result, error) {
+	host := p.page(caller.ThreadID)
 	p.mu.Lock()
 	p.clicks = append(p.clicks, host)
 	p.mu.Unlock()

@@ -88,8 +88,8 @@ type fileChange struct {
 	after    string
 }
 
-func (r *Provider) change(ctx context.Context, args map[string]any) (dirs, fileChange, error) {
-	d, err := r.dirs(ctx)
+func (r *Provider) change(ctx context.Context, caller tools.Caller, args map[string]any) (dirs, fileChange, error) {
+	d, err := r.dirs(ctx, caller)
 	if err != nil {
 		return dirs{}, fileChange{}, err
 	}
@@ -181,16 +181,16 @@ func (c fileChange) frozen() tools.FileChange {
 	return f
 }
 
-func (r *Provider) fileContent(ctx context.Context, args map[string]any) (tools.Content, error) {
-	_, c, err := r.change(ctx, args)
+func (r *Provider) fileContent(ctx context.Context, caller tools.Caller, args map[string]any) (tools.Content, error) {
+	_, c, err := r.change(ctx, caller, args)
 	if err != nil {
 		return tools.Content{}, err
 	}
 	return tools.Content{Text: c.frozen().Diff, Match: strings.ToLower(c.rel)}, nil
 }
 
-func (r *Provider) prepareFile(ctx context.Context, args map[string]any) (*tools.Prepared, error) {
-	d, c, err := r.change(ctx, args)
+func (r *Provider) prepareFile(ctx context.Context, caller tools.Caller, args map[string]any) (*tools.Prepared, error) {
+	d, c, err := r.change(ctx, caller, args)
 	if err != nil {
 		return nil, err
 	}
@@ -200,8 +200,8 @@ func (r *Provider) prepareFile(ctx context.Context, args map[string]any) (*tools
 	}, nil
 }
 
-func (r *Provider) runFile(ctx context.Context, args map[string]any, p *tools.Prepared) (tools.Result, error) {
-	d, err := r.dirs(ctx)
+func (r *Provider) runFile(ctx context.Context, caller tools.Caller, args map[string]any, p *tools.Prepared) (tools.Result, error) {
+	d, err := r.dirs(ctx, caller)
 	if err != nil {
 		return tools.Result{}, err
 	}
@@ -211,7 +211,7 @@ func (r *Provider) runFile(ctx context.Context, args map[string]any, p *tools.Pr
 	if len(p.Files) != 1 {
 		return tools.Result{}, fmt.Errorf("workspace: incomplete prepared file change")
 	}
-	_, c, err := r.change(ctx, args)
+	_, c, err := r.change(ctx, caller, args)
 	if err != nil {
 		return tools.Result{}, fmt.Errorf("%w; the file changed after this edit was prepared, so nothing was written", err)
 	}

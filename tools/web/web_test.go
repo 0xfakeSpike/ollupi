@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/0xfakeSpike/ollupi/tools"
 	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
@@ -113,7 +114,7 @@ func TestFetchRefusesLocalAddressesAndOddURLs(t *testing.T) {
 			t.Errorf("%s was fetched", raw)
 		}
 	}
-	c, err := permissionContent(context.Background(), map[string]any{"url": "https://Docs.Example.com:8443/a?q=1#top"})
+	c, err := permissionContent(context.Background(), tools.Caller{}, map[string]any{"url": "https://Docs.Example.com:8443/a?q=1#top"})
 	if err != nil || c.Match != "docs.example.com" || c.Text != "https://Docs.Example.com:8443/a?q=1" {
 		t.Errorf("permission content %+v, %v", c, err)
 	}

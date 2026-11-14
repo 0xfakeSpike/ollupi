@@ -87,8 +87,7 @@ func (j *Jobs) ToolList(context.Context) ([]*tools.Spec, error) {
 	}, nil
 }
 
-func (j *Jobs) Invoke(ctx context.Context, tool string, arguments map[string]any) (tools.Result, error) {
-	caller := tools.CallerOf(ctx)
+func (j *Jobs) Invoke(ctx context.Context, caller tools.Caller, tool string, arguments map[string]any) (tools.Result, error) {
 	switch tool {
 	case ToolCreateJob:
 		if caller.ThreadID == "" {
