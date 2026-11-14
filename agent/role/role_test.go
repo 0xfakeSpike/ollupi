@@ -2,6 +2,7 @@ package role
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
@@ -65,16 +66,21 @@ func TestLaunchToolsLaunchEverySubagentRole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var names []string
+	var launched []Name
 	for _, s := range specs {
-		r, ok := LaunchedBy(s.Name)
-		if !ok || !strings.HasPrefix(s.Description, r.LaunchedBy.Description) {
-			t.Errorf("%s launches no role", s.Name)
+		res, err := LaunchTools{}.Invoke(context.Background(), s.Name, map[string]any{"description": "Read the docs", "prompt": "Summarize docs/"})
+		if err != nil || res.Await == nil {
+			t.Fatalf("%s: %+v %v", s.Name, res, err)
 		}
-		names = append(names, string(r.Name))
+		launch, err := Decode(res.Await.Request)
+		r, ok := Of(launch.Role)
+		if err != nil || !ok || r.LaunchedBy.Name != s.Name || !strings.HasPrefix(s.Description, r.LaunchedBy.Description) {
+			t.Errorf("%s launches %q (%v)", s.Name, launch.Role, err)
+		}
+		launched = append(launched, launch.Role)
 	}
-	if strings.Join(names, " ") != string(GeneralSub)+" "+string(BrowserSub) {
-		t.Errorf("the launch tools launch %q", names)
+	if !slices.Equal(launched, []Name{GeneralSub, BrowserSub}) {
+		t.Errorf("the launch tools launch %q", launched)
 	}
 }
 

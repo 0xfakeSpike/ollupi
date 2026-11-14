@@ -53,15 +53,6 @@ func Of(name Name) (Role, bool) {
 	return all[i], true
 }
 
-// LaunchedBy is the role that the tool launches.
-func LaunchedBy(tool string) (Role, bool) {
-	i := slices.IndexFunc(all, func(r Role) bool { return r.LaunchedBy != nil && r.LaunchedBy.Name == tool })
-	if i < 0 {
-		return Role{}, false
-	}
-	return all[i], true
-}
-
 // ForMain is the main role for a model that takes inputTokens of input.
 func ForMain(inputTokens int) Role {
 	if inputTokens < compactBelow {

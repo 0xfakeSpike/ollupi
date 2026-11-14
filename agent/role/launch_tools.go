@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
+// A Call is what a launch tool is called with: the task for the subagent.
 type Call struct {
 	Description string `json:"description" jsonschema:"A short (3-5 word) description of the task, shown to the user."`
 	Prompt      string `json:"prompt" jsonschema:"The complete task for the subagent, self-contained."`
@@ -20,12 +22,18 @@ func (Call) Constrain(s *jsonschema.Schema) {
 	s.Properties["prompt"].MinLength, s.Properties["prompt"].MaxLength = jsonschema.Ptr(1), jsonschema.Ptr(20000)
 }
 
-func Decode(raw json.RawMessage) (Call, error) {
-	var c Call
-	if err := json.Unmarshal(raw, &c); err != nil {
-		return Call{}, fmt.Errorf("agent call: %w", err)
+// A Launch is what a launch tool's call waits on: the role it launches, with the task.
+type Launch struct {
+	Role Name `json:"role"`
+	Call
+}
+
+func Decode(raw json.RawMessage) (Launch, error) {
+	var l Launch
+	if err := json.Unmarshal(raw, &l); err != nil {
+		return Launch{}, fmt.Errorf("launch: %w", err)
 	}
-	return c, nil
+	return l, nil
 }
 
 // LaunchTools provides the tools that launch the subagent roles.
@@ -55,7 +63,13 @@ func (LaunchTools) ToolList(context.Context) ([]*tools.Spec, error) {
 	return specs, nil
 }
 
-func (LaunchTools) Invoke(_ context.Context, _ string, arguments map[string]any) (tools.Result, error) {
+// Invoke waits on the launch of the role whose tool was called. The role is named in what the call waits on, so that
+// whoever launches the subagent goes by the role, never by the tool.
+func (LaunchTools) Invoke(_ context.Context, name string, arguments map[string]any) (tools.Result, error) {
+	i := slices.IndexFunc(all, func(r Role) bool { return r.LaunchedBy != nil && r.LaunchedBy.Name == name })
+	if i < 0 {
+		return tools.Result{}, fmt.Errorf("%q launches no role", name)
+	}
 	c, err := tools.DecodeArguments[Call](arguments)
 	if err != nil {
 		return tools.Result{}, err
@@ -63,5 +77,5 @@ func (LaunchTools) Invoke(_ context.Context, _ string, arguments map[string]any)
 	if strings.TrimSpace(c.Prompt) == "" || strings.TrimSpace(c.Description) == "" {
 		return tools.Result{}, fmt.Errorf("description and prompt must not be blank")
 	}
-	return tools.Awaiting(tools.AwaitAgent, c)
+	return tools.Awaiting(tools.AwaitAgent, Launch{Role: all[i].Name, Call: c})
 }
