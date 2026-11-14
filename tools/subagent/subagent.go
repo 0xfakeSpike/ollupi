@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
@@ -107,4 +108,54 @@ func (t *Tools) Invoke(ctx context.Context, caller tools.Caller, name string, ar
 		return tools.Result{}, err
 	}
 	return tools.Result{Await: &tools.Await{By: tools.AwaitAgent, Request: request, Handle: child.ID}}, nil
+}
+
+// A Progress is where a subagent that a call launched stands.
+type Progress int
+
+const (
+	// Queued is a subagent whose turn waits to start.
+	Queued Progress = iota
+	// Running is a subagent whose turn has started and not ended.
+	Running
+	// Ended is a subagent whose turn ended: completed with a final answer, failed or stopped.
+	Ended
+)
+
+// Report is where the subagent the call launched stands, with its conversation, and once it ended the call completed
+// with its report: the subagent's final answer, or why it has none.
+func Report(store *db.DB, call db.ItemRow) (db.ItemRow, Progress, db.ThreadRow, error) {
+	child, err := store.ThreadState(call.Await.Handle)
+	if err != nil {
+		return db.ItemRow{}, 0, db.ThreadRow{}, fmt.Errorf("subagent: thread %s: %w", call.Await.Handle, err)
+	}
+	if _, active := child.ActiveTurn(); active {
+		return db.ItemRow{}, Running, child.Thread, nil
+	}
+	if len(child.QueuedTurns()) > 0 {
+		return db.ItemRow{}, Queued, child.Thread, nil
+	}
+	if child.Last == nil {
+		return db.ItemRow{}, 0, child.Thread, fmt.Errorf("subagent: thread %s has no turn", child.Thread.ID)
+	}
+	ended := *child.Last
+	now := time.Now().UTC()
+	call.CompletedAt = &now
+	switch ended.Status {
+	case db.TurnCompleted:
+		answer, err := store.FinalAnswer(child.Thread.ID, ended.ID)
+		if err != nil {
+			return db.ItemRow{}, 0, child.Thread, fmt.Errorf("subagent: %s completed turn %s without a final answer: %w", child.Thread.ID, ended.ID, err)
+		}
+		result, _, err := db.ResultOf(tools.Result{Output: answer})
+		if err != nil {
+			return db.ItemRow{}, 0, child.Thread, err
+		}
+		call.Status, call.Result = db.ItemCompleted, result
+	case db.TurnInterrupted:
+		call.Status, call.Error = db.ItemFailed, "the subagent was stopped: "+ended.Error
+	default:
+		call.Status, call.Error = db.ItemFailed, "the subagent failed: "+ended.Error
+	}
+	return call, Ended, child.Thread, nil
 }
