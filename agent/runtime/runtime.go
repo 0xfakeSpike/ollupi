@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -16,6 +17,9 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // The runtime traces through the global TracerProvider, as the agent does.
@@ -68,15 +72,53 @@ type Runtime struct {
 	usage    db.Usage
 }
 
+// Run runs the turn until it ends with the final answer, which it reports, or waits. In the trace of ctx it records
+// how long the turn waited to run, and the run.
 func (rt *Runtime) Run(ctx context.Context) (bool, db.Usage, error) {
 	if err := rt.load(); err != nil {
 		return false, db.Usage{}, err
 	}
-	if err := rt.start(); err != nil {
-		return false, db.Usage{}, err
+	t := rt.thread
+	attrs := trace.WithAttributes(
+		attribute.String("ollupi.user.id", t.UserID), attribute.String("ollupi.thread.id", t.ID), attribute.String("ollupi.turn.id", rt.turn.ID),
+		attribute.Bool("ollupi.thread.subagent", t.ParentThreadID != ""),
+		attribute.String("gen_ai.request.model", rt.turn.Model.Name), attribute.String("ollupi.connection", rt.turn.Model.Connection))
+	_, wait := tracer.Start(ctx, "ollupi.turn.wait", attrs, trace.WithTimestamp(readySince(rt.turn, rt.items)))
+	wait.End()
+	runCtx, span := tracer.Start(ctx, "ollupi.turn.run", attrs)
+	defer span.End()
+	var final bool
+	err := rt.start()
+	if err == nil {
+		final, err = rt.run(runCtx)
 	}
-	final, err := rt.run(ctx)
+	span.SetAttributes(attribute.Bool("ollupi.run.final", final))
+	// A run its slot stopped did not fail; one past its time limit did, for the limit's reason.
+	if cause := context.Cause(ctx); err != nil && !errors.Is(cause, context.Canceled) {
+		if cause == nil {
+			cause = err
+		}
+		span.SetStatus(codes.Error, cause.Error())
+	}
 	return final, rt.usage, err
+}
+
+// readySince is when the turn last became ready to run: when it became its thread's current turn, or when the last of
+// its items, such as a decided approval or a subagent's answer, changed after that.
+func readySince(turn db.TurnRow, items []db.ItemRow) time.Time {
+	since := turn.StartedAt
+	for _, it := range items {
+		changes := []*time.Time{&it.StartedAt, it.CompletedAt}
+		if it.Approval != nil {
+			changes = append(changes, it.Approval.DecidedAt)
+		}
+		for _, changed := range changes {
+			if changed != nil && changed.After(since) {
+				since = *changed
+			}
+		}
+	}
+	return since
 }
 
 // load reads the turn, its conversation and the items of the conversation's turns, and makes the permissions of the

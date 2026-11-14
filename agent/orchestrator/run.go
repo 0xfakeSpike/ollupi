@@ -9,8 +9,6 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent/runtime"
 	"github.com/0xfakeSpike/ollupi/repo/db"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -25,12 +23,8 @@ func (o *Orchestrator) run(threadID string, sl *slot) {
 		return
 	}
 	var t db.ThreadRow
-	var items []db.ItemRow
 	if err == nil {
 		t, err = o.cfg.DB.ThreadRow(threadID)
-	}
-	if err == nil {
-		items, err = o.cfg.DB.RunItems(threadID)
 	}
 	if err != nil {
 		slog.Error("thread not readable to run", "thread", threadID, "turn", sl.turnID, "err", err)
@@ -40,28 +34,16 @@ func (o *Orchestrator) run(threadID string, sl *slot) {
 		})
 		return
 	}
-	parent := trace.ContextWithRemoteSpanContext(sl.ctx, turnTrace(turn.ID))
-	attrs := trace.WithAttributes(
-		attribute.String("ollupi.user.id", t.UserID), attribute.String("ollupi.thread.id", t.ID), attribute.String("ollupi.turn.id", turn.ID),
-		attribute.Bool("ollupi.thread.subagent", t.ParentThreadID != ""),
-		attribute.String("gen_ai.request.model", turn.Model.Name), attribute.String("ollupi.connection", turn.Model.Connection))
-	_, wait := tracer.Start(parent, "ollupi.turn.wait", attrs, trace.WithTimestamp(readySince(turn, items)))
-	wait.End()
-	ctx, span := tracer.Start(parent, "ollupi.turn.run", attrs)
-	defer span.End()
+	// The run joins the turn's trace, and holds its slot no longer than the time limit.
 	limit := fmt.Errorf("orchestrator: the turn reached its time limit of %s", o.cfg.RunLimit)
-	ctx, cancel := context.WithTimeoutCause(ctx, o.cfg.RunLimit, limit)
+	ctx, cancel := context.WithTimeoutCause(trace.ContextWithRemoteSpanContext(sl.ctx, turnTrace(turn.ID)), o.cfg.RunLimit, limit)
 	defer cancel()
 	started := time.Now()
 	final, usage, err := o.runTurn(ctx, t, turn)
 	if err != nil && context.Cause(ctx) == limit {
 		err = limit
 	}
-	span.SetAttributes(attribute.Bool("ollupi.run.final", final))
-	if err != nil && sl.ctx.Err() == nil {
-		span.SetStatus(codes.Error, err.Error())
-	}
-	slog.InfoContext(ctx, "run ended", "thread", threadID, "turn", turn.ID, "ms", time.Since(started).Milliseconds(), "final", final, "items", len(items))
+	slog.InfoContext(ctx, "run ended", "thread", threadID, "turn", turn.ID, "ms", time.Since(started).Milliseconds(), "final", final)
 	if err := o.cfg.DB.AddUsage(threadID, turn.ID, usage); err != nil {
 		slog.Error("turn usage not recorded", "thread", threadID, "turn", turn.ID, "err", err)
 	}
