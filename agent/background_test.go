@@ -37,6 +37,12 @@ func (s slowTools) Invoke(ctx context.Context, _ string, args map[string]any) (t
 
 func backgroundTurn(ctx context.Context, t *testing.T, cfg agent.Config) (*agent.Agent, *repo.DB, repo.ThreadRow, repo.ItemRow) {
 	t.Helper()
+	ag, db, th, call, _ := backgroundTurnOf(ctx, t, cfg)
+	return ag, db, th, call
+}
+
+func backgroundTurnOf(ctx context.Context, t *testing.T, cfg agent.Config) (*agent.Agent, *repo.DB, repo.ThreadRow, repo.ItemRow, *callingModel) {
+	t.Helper()
 	fake := &callingModel{tool: "files__download", args: `{"url":"https://example.com/big.iso","run_in_background":true}`}
 	srv := httptest.NewServer(fake)
 	t.Cleanup(srv.Close)
@@ -66,11 +72,11 @@ func backgroundTurn(ctx context.Context, t *testing.T, cfg agent.Config) (*agent
 	}
 	for _, it := range v.Items {
 		if it.Tool == "files__download" {
-			return ag, db, th, it
+			return ag, db, th, it, fake
 		}
 	}
 	t.Fatal("the turn made no download call")
-	return nil, nil, repo.ThreadRow{}, repo.ItemRow{}
+	return nil, nil, repo.ThreadRow{}, repo.ItemRow{}, nil
 }
 
 func backgroundID(t *testing.T, call repo.ItemRow) string {
@@ -97,11 +103,11 @@ func until(ctx context.Context, t *testing.T, db *repo.DB, id string, want repo.
 	}
 }
 
-func TestABackgroundCallLetsItsTurnEndAndEndsLater(t *testing.T) {
+func TestABackgroundCallLetsItsTurnEndAndComesBackLater(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	slow := slowTools{release: make(chan struct{}), stopped: make(chan struct{})}
-	_, db, _, call := backgroundTurn(ctx, t, agent.Config{Providers: []tools.Provider{slow}})
+	_, db, th, call, fake := backgroundTurnOf(ctx, t, agent.Config{Providers: []tools.Provider{slow}})
 	id := backgroundID(t, call)
 	if row, err := db.BackgroundCall(id); err != nil || row.Status != repo.BackgroundRunning || row.Arguments != `{"url":"https://example.com/big.iso"}` {
 		t.Fatalf("the call while its turn has ended: %+v %v", row, err)
@@ -110,6 +116,46 @@ func TestABackgroundCallLetsItsTurnEndAndEndsLater(t *testing.T) {
 	if ended := until(ctx, t, db, id, repo.BackgroundCompleted); ended.Result == nil || !strings.Contains(string(ended.Result.Output), "big.iso") {
 		t.Errorf("the ended call: %+v", ended)
 	}
+	// The idle conversation takes the result in a turn it starts, and the model reads it as data.
+	for {
+		v, err := db.Thread(th.ID)
+		if err == nil && len(v.Turns) == 2 && v.Turns[1].Status == repo.TurnCompleted {
+			if first := itemsOf(v, v.Turns[1].ID); len(first) == 0 || first[0].Type != repo.ItemBackgroundResult || first[0].BackgroundID != id {
+				t.Errorf("the turn the result started begins with %+v", first)
+			}
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("the result never came back to the conversation")
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	reqs := fake.requests()
+	last := string(reqs[len(reqs)-1])
+	if !strings.Contains(last, "[background call "+id+" of files__download ended: completed]") || !strings.Contains(last, "big.iso") {
+		t.Errorf("the model was not sent the result: %s", last)
+	}
+	var sent struct {
+		Messages []struct{ Role, Content string }
+	}
+	if json.Unmarshal(reqs[len(reqs)-1], &sent) == nil {
+		for _, m := range sent.Messages {
+			if strings.Contains(m.Content, "[background call") && strings.Contains(m.Content, "[sent ") {
+				t.Errorf("the result was sent as the user's own words: %q", m.Content)
+			}
+		}
+	}
+}
+
+func itemsOf(v repo.ThreadView, turnID string) []repo.ItemRow {
+	var out []repo.ItemRow
+	for _, it := range v.Items {
+		if it.TurnID == turnID {
+			out = append(out, it)
+		}
+	}
+	return out
 }
 
 func TestArchivingAConversationCancelsItsBackgroundCalls(t *testing.T) {

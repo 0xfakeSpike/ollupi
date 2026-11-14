@@ -239,7 +239,7 @@ func TestTurnsFromBeforeRolesTakeTheRoleOfTheirThread(t *testing.T) {
 	create := func(rows ...any) {
 		t.Helper()
 		for _, row := range rows {
-			if err := old.Omit("Agent").Create(row).Error; err != nil {
+			if err := old.Omit("Agent", "BackgroundID").Create(row).Error; err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -288,7 +288,7 @@ func TestAWaitFromBeforeHandlesKeepsItsSubagentThread(t *testing.T) {
 		&TurnRow{ID: "asked", ThreadID: "main", Seq: 1, Status: TurnWaitingOnAgent, Model: llm.Model{Name: "m", Connection: "c"}, Agent: "full-main-agent", CreatedAt: at, StartedAt: at},
 		&ItemRow{ID: "call", ThreadID: "main", TurnID: "asked", Seq: 1, Type: ItemToolCall, Status: ItemInProgress, Tool: "Agent", StartedAt: at},
 	} {
-		if err := old.Create(row).Error; err != nil {
+		if err := old.Omit("BackgroundID").Create(row).Error; err != nil {
 			t.Fatal(err)
 		}
 	}

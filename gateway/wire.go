@@ -89,6 +89,7 @@ type ItemRow struct {
 	ContextStats      *repo.ContextStats     `json:"contextStats,omitempty"`
 	Memory            []repo.MemoryReference `json:"memory,omitempty"`
 	Attachments       []repo.Attachment      `json:"attachments,omitempty"`
+	BackgroundID      string                 `json:"backgroundId,omitempty"`
 	Text              string                 `json:"text,omitempty"`
 	Arguments         string                 `json:"arguments,omitempty"`
 	PreparedExecution *tools.Prepared        `json:"preparedExecution,omitempty"`
@@ -100,7 +101,7 @@ func itemRow(it repo.ItemRow) ItemRow {
 		ID: it.ID, TurnID: it.TurnID, Seq: it.Seq, Type: it.Type, Status: it.Status, CallID: it.CallID, Tool: it.Tool,
 		Server: it.Server, ResponseID: it.ResponseID, Error: it.Error, StartedAt: it.StartedAt, CompletedAt: it.CompletedAt,
 		Approval: it.Approval, Await: it.Await, Annotations: it.Annotations, Usage: it.Usage, ContextStats: it.ContextStats,
-		Memory: it.Memory, Attachments: it.Attachments, Text: it.Text, Arguments: it.Arguments,
+		Memory: it.Memory, Attachments: it.Attachments, BackgroundID: it.BackgroundID, Text: it.Text, Arguments: it.Arguments,
 		PreparedExecution: it.PreparedExecution, Result: it.Result,
 	}
 }

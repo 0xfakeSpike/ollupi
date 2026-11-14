@@ -241,6 +241,15 @@ func (m *Manager) transcript(obs *observations, items []repo.ItemRow, limit int,
 			}
 			out = append(out, llm.ChatMessage{Role: llm.RoleUser, Content: content, Parts: attachmentParts(it.Attachments)})
 			i++
+		case it.Type == repo.ItemBackgroundResult:
+			// Like the memory snapshot, it goes as a message with no [sent ...] line: data, not the user's words.
+			content, err := obs.callResult(&items[i], m.observationBudget(1, maxObservationTokens))
+			if err != nil {
+				return nil, 0, err
+			}
+			header := fmt.Sprintf("[background call %s of %s ended: %s]\n", it.BackgroundID, it.Tool, it.Text)
+			out = append(out, llm.ChatMessage{Role: llm.RoleUser, Content: header + content})
+			i++
 		case it.Type == repo.ItemMemoryContext || it.Type == repo.ItemContextCompaction:
 
 			i++

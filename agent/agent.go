@@ -214,6 +214,13 @@ func (a *Agent) Start(ctx context.Context) error {
 	}
 	a.done.Add(1)
 	go a.loop()
+	undelivered, err := a.cfg.DB.UndeliveredBackgroundThreads()
+	if err != nil {
+		return fmt.Errorf("agent: background results to deliver: %w", err)
+	}
+	for _, id := range undelivered {
+		a.post(func() { a.deliverBackground(id) })
+	}
 	slog.Info("agent started", "name", a.cfg.Name, "slots", a.cfg.Slots, "models", len(a.cfg.Models), "tools", len(a.registry.Descriptors()))
 	return nil
 }

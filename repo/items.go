@@ -39,6 +39,8 @@ type ItemRow struct {
 	ContextStats *ContextStats      `gorm:"serializer:json" json:"contextStats,omitempty"`
 	Memory       []MemoryReference  `gorm:"serializer:json" json:"memory,omitempty"`
 	Attachments  []Attachment       `gorm:"serializer:json" json:"attachments,omitempty"`
+	// BackgroundID is the background call a backgroundResult is the end of.
+	BackgroundID string `gorm:"not null;default:''" json:"backgroundId,omitempty"`
 	// The columns that can be large come last, so reading the ones above does not walk their overflow pages.
 	Text              string          `gorm:"not null;default:''" json:"text,omitempty"`
 	Arguments         string          `gorm:"not null;default:''" json:"arguments,omitempty"`
@@ -61,9 +63,12 @@ const (
 	ItemContextCompaction ItemType = "contextCompaction"
 	ItemMemoryContext     ItemType = "memoryContext"
 	ItemError             ItemType = "error"
+	// ItemBackgroundResult is how a background call ended, come back to its thread. It is a tool's output: data, as
+	// any other.
+	ItemBackgroundResult ItemType = "backgroundResult"
 )
 
-var ItemTypeValues = []ItemType{ItemUserMessage, ItemAgentMessage, ItemReasoning, ItemToolCall, ItemContextCompaction, ItemMemoryContext, ItemError}
+var ItemTypeValues = []ItemType{ItemUserMessage, ItemAgentMessage, ItemReasoning, ItemToolCall, ItemContextCompaction, ItemMemoryContext, ItemError, ItemBackgroundResult}
 
 func (t ItemType) Value() (driver.Value, error) { return enumValue(t, ItemTypeValues) }
 
