@@ -18,7 +18,7 @@ func (a *Agent) settle(parent repo.ThreadRow, turn repo.TurnRow, call repo.ItemR
 	if !ok {
 		return false, fmt.Errorf("agent: call %s of %q launches no subagent role", call.ID, call.Tool)
 	}
-	childID := call.Await.ThreadID
+	childID := call.Await.Handle
 	if childID == "" {
 		child, err := a.createThread(repo.ThreadRow{
 			UserID:         parent.UserID,
@@ -30,7 +30,7 @@ func (a *Agent) settle(parent repo.ThreadRow, turn repo.TurnRow, call repo.ItemR
 		if err != nil {
 			return false, err
 		}
-		call.Await.ThreadID = child.ID
+		call.Await.Handle = child.ID
 		stored, _, err := a.cfg.DB.RecordItem(parent.ID, call)
 		if err != nil {
 			return false, err

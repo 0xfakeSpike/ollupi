@@ -23,9 +23,10 @@ const (
 var AwaitByValues = []AwaitBy{AwaitUser, AwaitAgent}
 
 type Await struct {
-	By       AwaitBy         `json:"by"`
-	Request  json.RawMessage `json:"request"`
-	ThreadID string          `json:"threadId,omitempty"`
+	By      AwaitBy         `json:"by"`
+	Request json.RawMessage `json:"request"`
+	// Handle names what fulfils the wait once it has started: a subagent's thread.
+	Handle string `json:"handle,omitempty"`
 }
 
 func Awaiting(by AwaitBy, request any) (Result, error) {

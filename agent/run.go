@@ -225,7 +225,7 @@ func (a *Agent) endTurn(turn repo.TurnRow) {
 	a.emit(Event{Kind: EventTurnCompleted, Thread: thread, Turn: ended})
 	a.emitStatus(turn.ThreadID)
 	for _, call := range st.AgentCalls() {
-		a.stopSubagent(call.Await.ThreadID)
+		a.stopSubagent(call.Await.Handle)
 	}
 	a.reconcile(turn.ThreadID)
 	if st.Thread.ParentThreadID != "" {
