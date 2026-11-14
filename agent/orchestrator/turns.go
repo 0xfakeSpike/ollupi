@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"log/slog"
 	"slices"
 	"strings"
@@ -179,12 +180,12 @@ func (o *Orchestrator) submit(t db.ThreadRow, turn db.TurnRow, model llm.Model) 
 		return db.TurnRow{}, err
 	}
 	if message != nil {
-		o.startedTurn(t, turn)
-		o.emitItem(t, turn, *message, true)
-		o.emitStatus(t.ID)
+		o.ev.TurnStarted(t, turn)
+		o.ev.Item(t, turn, *message, true)
+		o.ev.Status(t.ID)
 	} else {
 		slog.Info("turn queued", "thread", t.ID, "turn", turn.ID)
-		o.emit(Event{Kind: EventTurnQueued, Thread: t, Turn: turn})
+		o.ev.Emit(event.Event{Kind: event.TurnQueued, Thread: t, Turn: turn})
 	}
 	return turn, nil
 }
@@ -215,13 +216,13 @@ func (o *Orchestrator) steer(threadID, expectedTurnID string, in Input, atts []d
 	if err != nil {
 		return db.TurnRow{}, err
 	}
-	o.emitItem(st.Thread, turn, stored, true)
+	o.ev.Item(st.Thread, turn, stored, true)
 	for _, it := range closed {
-		o.emitItem(st.Thread, turn, it, false)
+		o.ev.Item(st.Thread, turn, it, false)
 	}
 	if len(closed) > 0 {
 		slog.Info("turn steered out of its wait", "thread", threadID, "turn", turn.ID, "declined", len(closed))
-		o.emitStatus(threadID)
+		o.ev.Status(threadID)
 	}
 	return turn, nil
 }
@@ -337,8 +338,8 @@ func (o *Orchestrator) respond(threadID string, match func(db.ItemRow) bool, app
 	if err != nil {
 		return err
 	}
-	o.emitItem(st.Thread, activeTurn, stored, false)
-	o.emitStatus(threadID)
+	o.ev.Item(st.Thread, activeTurn, stored, false)
+	o.ev.Status(threadID)
 	return nil
 }
 

@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
@@ -108,8 +109,8 @@ func users(args []string) {
 		Providers: []tools.Provider{work{latency: *toolLatency}},
 		Settings:  permission.Settings{ApprovalPolicy: string(permission.Never)},
 		Slots:     *slots, UserSlots: *userSlots, DB: store,
-		OnEvent: func(e orchestrator.Event) {
-			if e.Kind == orchestrator.EventTurnCompleted && e.Turn.Status != db.TurnCompleted {
+		OnEvent: func(e event.Event) {
+			if e.Kind == event.TurnCompleted && e.Turn.Status != db.TurnCompleted {
 				count, _ := failed.LoadOrStore(e.Thread.UserID, new(atomic.Int64))
 				count.(*atomic.Int64).Add(1)
 			}

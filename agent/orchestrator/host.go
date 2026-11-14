@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 )
@@ -13,10 +14,10 @@ type turnHost struct {
 	registry *tools.Registry
 }
 
-func (h turnHost) Notify(it db.ItemRow, isNew bool) { h.o.emitItem(h.t, h.turn, it, isNew) }
+func (h turnHost) Notify(it db.ItemRow, isNew bool) { h.o.ev.Item(h.t, h.turn, it, isNew) }
 
 func (h turnHost) Delta(it db.ItemRow, text string) {
-	h.o.emit(Event{Kind: EventItemDelta, Thread: h.t, Turn: h.turn, Item: &it, Delta: text})
+	h.o.ev.Emit(event.Event{Kind: event.ItemDelta, Thread: h.t, Turn: h.turn, Item: &it, Delta: text})
 }
 
 func (h turnHost) Background(caller tools.Caller, it db.ItemRow, args map[string]any) tools.Result {

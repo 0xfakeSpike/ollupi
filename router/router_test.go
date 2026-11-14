@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/gateway"
 	"github.com/0xfakeSpike/ollupi/repo/catalog"
@@ -166,11 +167,11 @@ func TestTheRouterSendsEachUserToTheirShard(t *testing.T) {
 	if !hasUser(t, shards[shardA].db, "a") || hasUser(t, shards[shardB].db, "a") {
 		t.Error("a is not on their shard alone")
 	}
-	shards[shardB].server.Deliver(orchestrator.Event{Kind: orchestrator.EventThreadDeleted, Thread: db.ThreadRow{ID: "of-b", UserID: "b"}})
+	shards[shardB].server.Deliver(event.Event{Kind: event.ThreadDeleted, Thread: db.ThreadRow{ID: "of-b", UserID: "b"}})
 	if got := nextThread(ctx, t, b); got != "of-b" {
 		t.Errorf("b received %q through the router", got)
 	}
-	shards[shardA].server.Deliver(orchestrator.Event{Kind: orchestrator.EventThreadDeleted, Thread: db.ThreadRow{ID: "of-a", UserID: "a"}})
+	shards[shardA].server.Deliver(event.Event{Kind: event.ThreadDeleted, Thread: db.ThreadRow{ID: "of-a", UserID: "a"}})
 	if got := nextThread(ctx, t, a); got != "of-a" {
 		t.Errorf("a received %q through the router", got)
 	}
@@ -188,7 +189,7 @@ func TestTheRouterSendsEachUserToTheirShard(t *testing.T) {
 		t.Fatal(err)
 	}
 	back := connect(ctx, t, front.URL, "token-a")
-	standby.server.Deliver(orchestrator.Event{Kind: orchestrator.EventThreadDeleted, Thread: db.ThreadRow{ID: "after", UserID: "a"}})
+	standby.server.Deliver(event.Event{Kind: event.ThreadDeleted, Thread: db.ThreadRow{ID: "after", UserID: "a"}})
 	if got := nextThread(ctx, t, back); got != "after" {
 		t.Errorf("a received %q from the new holder", got)
 	}

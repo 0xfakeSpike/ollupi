@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"log/slog"
 	"time"
 
@@ -134,8 +135,8 @@ func (o *Orchestrator) afterRun(threadID string, sl *slot, final bool, runErr er
 	o.reconcile(threadID)
 	if n := len(st.PendingRequests()); n > 0 {
 		slog.Info("turn waiting", "thread", threadID, "turn", turn.ID, "on", "user", "requests", n)
-		o.emitRequests(st)
-		o.emitStatus(threadID)
+		o.ev.Requests(st)
+		o.ev.Status(threadID)
 	} else if n := len(st.AgentCalls()); n > 0 {
 		slog.Info("turn waiting", "thread", threadID, "turn", turn.ID, "on", "subagents", "subagents", n)
 	}
@@ -144,24 +145,24 @@ func (o *Orchestrator) afterRun(threadID string, sl *slot, final bool, runErr er
 func (o *Orchestrator) endTurn(turn db.TurnRow) {
 	st, err := o.cfg.DB.ThreadState(turn.ThreadID)
 	if err != nil {
-		o.fault(turn.ThreadID, turn.ID, fmt.Errorf("the turn could not be ended: %w", err))
+		o.ev.Fault(turn.ThreadID, turn.ID, fmt.Errorf("the turn could not be ended: %w", err))
 		return
 	}
 	thread, ended, closed, err := o.cfg.DB.EndTurn(turn.ThreadID, turn)
 	if err != nil {
-		o.fault(turn.ThreadID, turn.ID, fmt.Errorf("the end of the turn could not be recorded: %w", err))
+		o.ev.Fault(turn.ThreadID, turn.ID, fmt.Errorf("the end of the turn could not be recorded: %w", err))
 		return
 	}
 	for _, it := range closed {
-		o.emitItem(thread, ended, it, false)
+		o.ev.Item(thread, ended, it, false)
 	}
 	attrs := []any{"thread", thread.ID, "turn", ended.ID, "status", ended.Status, "input", ended.Usage.InputTokens, "output", ended.Usage.OutputTokens}
 	if ended.CompletedAt != nil {
 		attrs = append(attrs, "ms", ended.CompletedAt.Sub(ended.StartedAt).Milliseconds())
 	}
 	slog.Info("turn ended", attrs...)
-	o.emit(Event{Kind: EventTurnCompleted, Thread: thread, Turn: ended})
-	o.emitStatus(turn.ThreadID)
+	o.ev.Emit(event.Event{Kind: event.TurnCompleted, Thread: thread, Turn: ended})
+	o.ev.Status(turn.ThreadID)
 	for _, call := range st.AgentCalls() {
 		o.stopSubagent(call.Await.Handle)
 	}
@@ -173,7 +174,7 @@ func (o *Orchestrator) endTurn(turn db.TurnRow) {
 
 func (o *Orchestrator) stopSubagent(threadID string) {
 	if err := o.cancelBackgroundOf(threadID, "the subagent was stopped"); err != nil {
-		o.fault(threadID, "", err)
+		o.ev.Fault(threadID, "", err)
 	}
 	if sl, ok := o.slotByThread[threadID]; ok {
 		sl.cancel()
@@ -191,7 +192,7 @@ func (o *Orchestrator) stopSubagent(threadID string) {
 		}
 	}
 	if err != nil {
-		o.fault(threadID, "", fmt.Errorf("the subagent could not be stopped: %w", err))
+		o.ev.Fault(threadID, "", fmt.Errorf("the subagent could not be stopped: %w", err))
 		return
 	}
 	turn.Status = db.TurnInterrupted
@@ -203,7 +204,7 @@ func (o *Orchestrator) halt(threadID string, cause error) {
 	slog.Error("thread cannot advance", "thread", threadID, "err", cause)
 	turn, err := o.cfg.DB.ActiveTurn(threadID)
 	if err != nil {
-		o.fault(threadID, "", fmt.Errorf("the thread could not advance: %w", cause))
+		o.ev.Fault(threadID, "", fmt.Errorf("the thread could not advance: %w", cause))
 		return
 	}
 	turn.Status, turn.Error = db.TurnFailed, "the agent could not advance this turn: "+cause.Error()
@@ -213,7 +214,7 @@ func (o *Orchestrator) halt(threadID string, cause error) {
 func (o *Orchestrator) failTurn(turnID string, status db.TurnStatus, reason string) {
 	turn, err := o.cfg.DB.Turn(turnID)
 	if err != nil {
-		o.fault("", turnID, fmt.Errorf("the turn could not be read to end it (%s): %w", reason, err))
+		o.ev.Fault("", turnID, fmt.Errorf("the turn could not be read to end it (%s): %w", reason, err))
 		return
 	}
 	if turn.Status.Ended() {
