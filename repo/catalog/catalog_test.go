@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/0xfakeSpike/ollupi/pkg/sqlitedb"
+	"github.com/0xfakeSpike/ollupi/repo/sqlitedb"
 )
 
 func TestCatalogPlacesUsersOnShards(t *testing.T) {

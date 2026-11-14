@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-
 )
 
 // A skill's resource stays inside its folder: no path, link or parent reaches a file beside it.
