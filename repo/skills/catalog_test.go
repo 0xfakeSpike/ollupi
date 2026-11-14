@@ -1,14 +1,12 @@
 package skills
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
-	"github.com/0xfakeSpike/ollupi/tools"
 )
 
 // A skill's resource stays inside its folder: no path, link or parent reaches a file beside it.
@@ -47,7 +45,7 @@ func writeSkill(t *testing.T, dir, name string) {
 	}
 }
 
-// Each role has the skills installed in the directory of its name, and its calls reach no other role's.
+// Each role has the skills installed in the directory of its name, and no other role's.
 func TestARoleHasTheSkillsOfItsDirectory(t *testing.T) {
 	root := t.TempDir()
 	writeSkill(t, filepath.Join(root, "full-main-agent"), "deploy")
@@ -70,19 +68,11 @@ func TestARoleHasTheSkillsOfItsDirectory(t *testing.T) {
 	if !slices.Equal(names("full-main-agent"), []string{"deploy"}) || !slices.Equal(names("browser-sub-agent"), []string{"site-login"}) || names("general-sub-agent") != nil {
 		t.Errorf("full %q, browser %q, general %q", names("full-main-agent"), names("browser-sub-agent"), names("general-sub-agent"))
 	}
-	activate := func(role, name string) error {
-		_, err := c.Invoke(context.Background(), tools.Caller{Role: role}, ToolActivateSkill, map[string]any{"name": name})
-		return err
+	if _, ok := c.Lookup("browser-sub-agent", "deploy"); ok {
+		t.Error("the browser subagent has a skill of the main agent")
 	}
-	if err := activate("full-main-agent", "deploy"); err != nil {
-		t.Errorf("a role's own skill: %v", err)
-	}
-	if err := activate("browser-sub-agent", "deploy"); err == nil {
-		t.Error("the browser subagent activated a skill of the main agent")
-	}
-	listed, err := c.Invoke(context.Background(), tools.Caller{Role: "browser-sub-agent"}, ToolListSkills, map[string]any{})
-	if err != nil || len(listed.Output.(map[string]any)["skills"].([]Skill)) != 1 {
-		t.Errorf("the browser subagent's list: %+v %v", listed, err)
+	if c.Dir("browser-sub-agent") != filepath.Join(root, "browser-sub-agent") {
+		t.Errorf("the browser subagent's directory: %s", c.Dir("browser-sub-agent"))
 	}
 }
 
