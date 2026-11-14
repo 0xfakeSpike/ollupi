@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"io/fs"
 
-	"github.com/0xfakeSpike/ollupi/pkg/sqlitedb"
+	"github.com/0xfakeSpike/ollupi/repo/sqlitedb"
 	"gorm.io/gorm"
 )
 
-// The shard's schema changes by the numbered steps in migrations/, as pkg/sqlitedb runs them. 0001_init.sql is the
+// The shard's schema changes by the numbered steps in migrations/, as repo/sqlitedb runs them. 0001_init.sql is the
 // schema as it was when they began.
 
 //go:embed migrations/*.sql

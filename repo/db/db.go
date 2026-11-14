@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/pkg/sqlitedb"
+	"github.com/0xfakeSpike/ollupi/repo/sqlitedb"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
