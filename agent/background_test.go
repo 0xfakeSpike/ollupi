@@ -41,13 +41,13 @@ func (s slowTools) Invoke(ctx context.Context, _ string, args map[string]any) (t
 	}
 }
 
-func backgroundTurn(ctx context.Context, t *testing.T, cfg agent.Config) (*agent.Agent, *repo.DB, repo.ThreadRow, repo.ItemRow) {
+func backgroundTurn(ctx context.Context, t *testing.T, cfg agent.Config) (*agent.Orchestrator, *repo.DB, repo.ThreadRow, repo.ItemRow) {
 	t.Helper()
 	ag, db, th, call, _ := backgroundTurnOf(ctx, t, cfg)
 	return ag, db, th, call
 }
 
-func backgroundTurnOf(ctx context.Context, t *testing.T, cfg agent.Config) (*agent.Agent, *repo.DB, repo.ThreadRow, repo.ItemRow, *callingModel) {
+func backgroundTurnOf(ctx context.Context, t *testing.T, cfg agent.Config) (*agent.Orchestrator, *repo.DB, repo.ThreadRow, repo.ItemRow, *callingModel) {
 	t.Helper()
 	fake := &callingModel{tool: "files__download", args: `{"url":"https://example.com/big.iso","run_in_background":true}`}
 	srv := httptest.NewServer(fake)
@@ -381,7 +381,7 @@ func TestABackgroundCallCutOffByARestartComesBackAsInterrupted(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	start := func(slow slowTools) (*agent.Agent, context.CancelFunc) {
+	start := func(slow slowTools) (*agent.Orchestrator, context.CancelFunc) {
 		ag := agent.New(agent.Config{
 			Name: "Ollupi", DB: db, Models: []llm.Model{{Name: "demo", Connection: "fake"}},
 			Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},

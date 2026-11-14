@@ -17,10 +17,10 @@ import (
 // workspaceTimeout bounds what adding or moving a workspace asks of the user's sandbox, the move itself aside.
 const workspaceTimeout = time.Minute
 
-func (a *Agent) AddWorkspace(ctx context.Context, user, path, name string) (repo.WorkspaceRow, error) {
+func (o *Orchestrator) AddWorkspace(ctx context.Context, user, path, name string) (repo.WorkspaceRow, error) {
 	ctx, cancel := context.WithTimeout(ctx, workspaceTimeout)
 	defer cancel()
-	box, err := a.cfg.BoxFor(user)
+	box, err := o.cfg.BoxFor(user)
 	if err != nil {
 		return repo.WorkspaceRow{}, fmt.Errorf("agent: the sandbox of the user: %w", err)
 	}
@@ -36,7 +36,7 @@ func (a *Agent) AddWorkspace(ctx context.Context, user, path, name string) (repo
 	}
 	now := time.Now().UTC()
 	w := repo.WorkspaceRow{ID: uuid.NewString(), UserID: user, Name: name, RootPath: root, CreatedAt: now, UpdatedAt: now}
-	w, err = a.cfg.DB.AddWorkspace(w,
+	w, err = o.cfg.DB.AddWorkspace(w,
 		func(existing repo.WorkspaceRow) bool { return box.Same(ctx, existing.RootPath, root) },
 		func(existing repo.WorkspaceRow) (repo.WorkspaceRow, bool) {
 			if existing.ArchivedAt == nil {
@@ -48,35 +48,35 @@ func (a *Agent) AddWorkspace(ctx context.Context, user, path, name string) (repo
 	if err != nil {
 		return repo.WorkspaceRow{}, err
 	}
-	a.emit(Event{Kind: EventWorkspaceChanged, Workspace: &w})
+	o.emit(Event{Kind: EventWorkspaceChanged, Workspace: &w})
 	return w, nil
 }
 
-func (a *Agent) RenameWorkspace(user, id, name string) (repo.WorkspaceRow, error) {
+func (o *Orchestrator) RenameWorkspace(user, id, name string) (repo.WorkspaceRow, error) {
 	name, err := workspaceName(name)
 	if err != nil {
 		return repo.WorkspaceRow{}, err
 	}
-	return a.changeWorkspace(user, id, func(w *repo.WorkspaceRow) { w.Name = name })
+	return o.changeWorkspace(user, id, func(w *repo.WorkspaceRow) { w.Name = name })
 }
 
 // MoveWorkspace moves the workspace's folder to path, a folder that is there and empty, and points the workspace at
 // it. Every thread, memory and task keeps its workspace id, so nothing else is rewritten. A turn in progress would keep
 // calling tools against the folder it started in, so the move is refused until the workspace's conversations are
 // idle, and none starts a turn while the folder moves.
-func (a *Agent) MoveWorkspace(ctx context.Context, user, id, path string) (repo.WorkspaceRow, error) {
+func (o *Orchestrator) MoveWorkspace(ctx context.Context, user, id, path string) (repo.WorkspaceRow, error) {
 	// The move itself outlives the request: a folder left half moved because a client went away helps no one.
 	move := context.WithoutCancel(ctx)
 	ctx, cancel := context.WithTimeout(ctx, workspaceTimeout)
 	defer cancel()
-	w, err := a.workspaceFor(user, repo.Ref(id))
+	w, err := o.workspaceFor(user, repo.Ref(id))
 	if err != nil {
 		return repo.WorkspaceRow{}, err
 	}
 	if w.ID == "" {
 		return repo.WorkspaceRow{}, fmt.Errorf("agent: workspace %s: %w", id, repo.ErrNotFound)
 	}
-	box, err := a.cfg.BoxFor(user)
+	box, err := o.cfg.BoxFor(user)
 	if err != nil {
 		return repo.WorkspaceRow{}, fmt.Errorf("agent: the sandbox of the user: %w", err)
 	}
@@ -90,20 +90,20 @@ func (a *Agent) MoveWorkspace(ctx context.Context, user, id, path string) (repo.
 	if sandbox.Within(w.RootPath, target) {
 		return repo.WorkspaceRow{}, fmt.Errorf("agent: %w: %q is inside the workspace", ErrInvalidPath, target)
 	}
-	if err := a.startMove(user, w); err != nil {
+	if err := o.startMove(user, w); err != nil {
 		return repo.WorkspaceRow{}, err
 	}
 	defer func() {
-		a.moveMu.Lock()
-		delete(a.moving, w.ID)
-		a.moveMu.Unlock()
+		o.moveMu.Lock()
+		delete(o.moving, w.ID)
+		o.moveMu.Unlock()
 	}()
 	if entries, err := box.ReadDir(ctx, target); err != nil {
 		return repo.WorkspaceRow{}, fmt.Errorf("agent: %w: %v", ErrInvalidPath, err)
 	} else if len(entries) > 0 {
 		return repo.WorkspaceRow{}, fmt.Errorf("agent: %w: %q is not empty", ErrInvalidPath, target)
 	}
-	rows, err := a.cfg.DB.Workspaces(user)
+	rows, err := o.cfg.DB.Workspaces(user)
 	if err != nil {
 		return repo.WorkspaceRow{}, err
 	}
@@ -115,38 +115,38 @@ func (a *Agent) MoveWorkspace(ctx context.Context, user, id, path string) (repo.
 	if err := box.Move(move, w.RootPath, target); err != nil {
 		return repo.WorkspaceRow{}, fmt.Errorf("agent: %w", err)
 	}
-	moved, err := a.cfg.DB.SetWorkspaceRoot(user, w.ID, target, time.Now().UTC())
+	moved, err := o.cfg.DB.SetWorkspaceRoot(user, w.ID, target, time.Now().UTC())
 	if err != nil {
 		if back := box.Move(move, target, w.RootPath); back != nil {
 			return repo.WorkspaceRow{}, fmt.Errorf("agent: the folder is now at %s but the workspace still names %s: %w; moving it back failed too: %v", target, w.RootPath, err, back)
 		}
 		return repo.WorkspaceRow{}, err
 	}
-	a.emit(Event{Kind: EventWorkspaceChanged, Workspace: &moved})
+	o.emit(Event{Kind: EventWorkspaceChanged, Workspace: &moved})
 	return moved, nil
 }
 
 // startMove claims the workspace for a move once none of its conversations has a turn open. submit checks the claim
 // under the same lock, so no turn starts between the check and the claim.
-func (a *Agent) startMove(user string, w repo.WorkspaceRow) error {
-	a.moveMu.Lock()
-	defer a.moveMu.Unlock()
-	if a.moving[w.ID] {
+func (o *Orchestrator) startMove(user string, w repo.WorkspaceRow) error {
+	o.moveMu.Lock()
+	defer o.moveMu.Unlock()
+	if o.moving[w.ID] {
 		return fmt.Errorf("agent: workspace %s is moving: %w", w.Name, ErrWorkspaceBusy)
 	}
-	busy, err := a.cfg.DB.WorkspaceBusy(user, w.ID)
+	busy, err := o.cfg.DB.WorkspaceBusy(user, w.ID)
 	if err != nil {
 		return err
 	}
 	if busy {
 		return fmt.Errorf("agent: workspace %s: %w", w.Name, ErrWorkspaceBusy)
 	}
-	a.moving[w.ID] = true
+	o.moving[w.ID] = true
 	return nil
 }
 
-func (a *Agent) ArchiveWorkspace(user, id string, archived bool) (repo.WorkspaceRow, error) {
-	return a.changeWorkspace(user, id, func(w *repo.WorkspaceRow) {
+func (o *Orchestrator) ArchiveWorkspace(user, id string, archived bool) (repo.WorkspaceRow, error) {
+	return o.changeWorkspace(user, id, func(w *repo.WorkspaceRow) {
 		w.ArchivedAt = nil
 		if archived {
 			at := w.UpdatedAt
@@ -155,19 +155,19 @@ func (a *Agent) ArchiveWorkspace(user, id string, archived bool) (repo.Workspace
 	})
 }
 
-func (a *Agent) UpdateWorkspaceSettings(user, id string, settings permission.Settings) (repo.WorkspaceRow, error) {
-	w, err := a.workspaceFor(user, repo.Ref(id))
+func (o *Orchestrator) UpdateWorkspaceSettings(user, id string, settings permission.Settings) (repo.WorkspaceRow, error) {
+	w, err := o.workspaceFor(user, repo.Ref(id))
 	if err != nil {
 		return repo.WorkspaceRow{}, err
 	}
-	if err := a.validateLayer(user, a.layers(repo.WorkspaceRow{}), w.Settings, workspaceLayer(w.Name, settings)); err != nil {
+	if err := o.validateLayer(user, o.layers(repo.WorkspaceRow{}), w.Settings, workspaceLayer(w.Name, settings)); err != nil {
 		return repo.WorkspaceRow{}, err
 	}
-	return a.changeWorkspace(user, id, func(w *repo.WorkspaceRow) { w.Settings = settings })
+	return o.changeWorkspace(user, id, func(w *repo.WorkspaceRow) { w.Settings = settings })
 }
 
-func (a *Agent) changeWorkspace(user, id string, change func(*repo.WorkspaceRow)) (repo.WorkspaceRow, error) {
-	w, err := a.cfg.DB.UpdateWorkspace(user, id, func(w repo.WorkspaceRow) (repo.WorkspaceRow, error) {
+func (o *Orchestrator) changeWorkspace(user, id string, change func(*repo.WorkspaceRow)) (repo.WorkspaceRow, error) {
+	w, err := o.cfg.DB.UpdateWorkspace(user, id, func(w repo.WorkspaceRow) (repo.WorkspaceRow, error) {
 		w.UpdatedAt = time.Now().UTC()
 		change(&w)
 		return w, nil
@@ -178,15 +178,15 @@ func (a *Agent) changeWorkspace(user, id string, change func(*repo.WorkspaceRow)
 	if err != nil {
 		return repo.WorkspaceRow{}, err
 	}
-	a.emit(Event{Kind: EventWorkspaceChanged, Workspace: &w})
+	o.emit(Event{Kind: EventWorkspaceChanged, Workspace: &w})
 	return w, nil
 }
 
-func (a *Agent) validateLayer(user string, base []permission.Layer, previous permission.Settings, layer permission.Layer) error {
-	if a.registry == nil {
+func (o *Orchestrator) validateLayer(user string, base []permission.Layer, previous permission.Settings, layer permission.Layer) error {
+	if o.registry == nil {
 		return fmt.Errorf("agent: the tool registry is not ready")
 	}
-	registry, err := a.registryFor(user)
+	registry, err := o.registryFor(user)
 	if err != nil {
 		return err
 	}

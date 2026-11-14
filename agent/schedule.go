@@ -7,13 +7,13 @@ import (
 	"github.com/0xfakeSpike/ollupi/repo"
 )
 
-func (a *Agent) reconcile(threadID string) {
-	if _, busy := a.slotByThread[threadID]; busy || a.ctx.Err() != nil {
+func (o *Orchestrator) reconcile(threadID string) {
+	if _, busy := o.slotByThread[threadID]; busy || o.ctx.Err() != nil {
 		return
 	}
-	st, err := a.cfg.DB.ThreadState(threadID)
+	st, err := o.cfg.DB.ThreadState(threadID)
 	if err != nil {
-		a.halt(threadID, err)
+		o.halt(threadID, err)
 		return
 	}
 	turn, active := st.ActiveTurn()
@@ -22,99 +22,99 @@ func (a *Agent) reconcile(threadID string) {
 			return
 		}
 		var message repo.ItemRow
-		if st.Thread, turn, message, err = a.cfg.DB.StartQueuedTurn(threadID); err != nil {
-			a.halt(threadID, err)
+		if st.Thread, turn, message, err = o.cfg.DB.StartQueuedTurn(threadID); err != nil {
+			o.halt(threadID, err)
 			return
 		}
-		a.startedTurn(st.Thread, turn)
-		a.emitItem(st.Thread, turn, message, true)
-		a.emitStatus(threadID)
+		o.startedTurn(st.Thread, turn)
+		o.emitItem(st.Thread, turn, message, true)
+		o.emitStatus(threadID)
 	}
-	if _, err := a.modelOn(turn.Model.Connection); err != nil {
+	if _, err := o.modelOn(turn.Model.Connection); err != nil {
 		turn.Status, turn.Error = repo.TurnFailed, err.Error()
-		a.endTurn(turn)
+		o.endTurn(turn)
 		return
 	}
 	reported := false
 	for _, call := range st.AgentCalls() {
-		settled, err := a.settle(st.Thread, turn, call)
+		settled, err := o.settle(st.Thread, turn, call)
 		if err != nil {
-			a.halt(threadID, err)
+			o.halt(threadID, err)
 			return
 		}
 		reported = reported || settled
 	}
 	if waits := st.BackgroundWaits(); len(waits) > 0 {
-		a.deliverBackground(threadID)
+		o.deliverBackground(threadID)
 		for _, call := range waits {
-			fulfilled, err := a.fulfil(st.Thread, turn, call)
+			fulfilled, err := o.fulfil(st.Thread, turn, call)
 			if err != nil {
-				a.halt(threadID, err)
+				o.halt(threadID, err)
 				return
 			}
 			reported = reported || fulfilled
 		}
 	}
 	if reported {
-		if turn, err = a.cfg.DB.Turn(turn.ID); err != nil {
-			a.halt(threadID, err)
+		if turn, err = o.cfg.DB.Turn(turn.ID); err != nil {
+			o.halt(threadID, err)
 			return
 		}
 	}
-	if turn.Status != repo.TurnReady || len(a.slotByThread) >= a.cfg.Slots || a.slotsOfUser[st.Thread.UserID] >= a.cfg.UserSlots {
+	if turn.Status != repo.TurnReady || len(o.slotByThread) >= o.cfg.Slots || o.slotsOfUser[st.Thread.UserID] >= o.cfg.UserSlots {
 		return
 	}
-	if err := a.cfg.DB.Launch(turn.ID); err != nil {
-		a.halt(threadID, err)
+	if err := o.cfg.DB.Launch(turn.ID); err != nil {
+		o.halt(threadID, err)
 		return
 	}
-	a.launch(st.Thread.UserID, threadID, turn.ID)
+	o.launch(st.Thread.UserID, threadID, turn.ID)
 }
 
 // admit fills the free slots with the threads whose turns are ready, reading no more of them than there are slots.
-func (a *Agent) admit() {
-	free := a.cfg.Slots - len(a.slotByThread)
-	if free <= 0 || a.ctx.Err() != nil {
+func (o *Orchestrator) admit() {
+	free := o.cfg.Slots - len(o.slotByThread)
+	if free <= 0 || o.ctx.Err() != nil {
 		return
 	}
 	var full []string
-	for user, held := range a.slotsOfUser {
-		if held >= a.cfg.UserSlots {
+	for user, held := range o.slotsOfUser {
+		if held >= o.cfg.UserSlots {
 			full = append(full, user)
 		}
 	}
-	ids, err := a.cfg.DB.ReadyThreads(free, full)
+	ids, err := o.cfg.DB.ReadyThreads(free, full)
 	if err != nil {
-		a.fault("", "", fmt.Errorf("threads ready for a slot could not be listed: %w", err))
+		o.fault("", "", fmt.Errorf("threads ready for a slot could not be listed: %w", err))
 		return
 	}
 	for _, id := range ids {
-		a.reconcile(id)
+		o.reconcile(id)
 	}
 }
 
 // recover puts right what a stopped process left: the turns it was running leave their slots,
 // and each thread it may have stranded is reconciled once.
-func (a *Agent) recover() error {
-	stranded, err := a.cfg.DB.StrandedThreads()
+func (o *Orchestrator) recover() error {
+	stranded, err := o.cfg.DB.StrandedThreads()
 	if err != nil {
 		return fmt.Errorf("agent: stranded threads: %w", err)
 	}
 	for _, id := range stranded {
-		closed, err := a.cfg.DB.RecoverItems(id)
+		closed, err := o.cfg.DB.RecoverItems(id)
 		if err != nil {
 			return fmt.Errorf("agent: recover thread %s: %w", id, err)
 		}
 		if len(closed) > 0 {
 			slog.Warn("items cut off by the restart closed", "thread", id, "items", len(closed))
 		}
-		if turn, err := a.cfg.DB.ActiveTurn(id); err == nil && turn.Status == repo.TurnInProgress {
-			if _, err := a.cfg.DB.Park(turn.ID); err != nil {
+		if turn, err := o.cfg.DB.ActiveTurn(id); err == nil && turn.Status == repo.TurnInProgress {
+			if _, err := o.cfg.DB.Park(turn.ID); err != nil {
 				return fmt.Errorf("agent: recover thread %s: %w", id, err)
 			}
 		}
-		a.reconcile(id)
+		o.reconcile(id)
 	}
-	a.admit()
+	o.admit()
 	return nil
 }

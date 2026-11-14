@@ -9,11 +9,11 @@ import (
 	"github.com/0xfakeSpike/ollupi/repo"
 )
 
-func (a *Agent) workspaceOf(id repo.Ref) (repo.WorkspaceRow, error) {
+func (o *Orchestrator) workspaceOf(id repo.Ref) (repo.WorkspaceRow, error) {
 	if id == "" {
 		return repo.WorkspaceRow{}, nil
 	}
-	w, err := a.cfg.DB.Workspace(string(id))
+	w, err := o.cfg.DB.Workspace(string(id))
 	if err != nil {
 		return repo.WorkspaceRow{}, fmt.Errorf("agent: workspace %s: %w", id, err)
 	}
@@ -21,33 +21,33 @@ func (a *Agent) workspaceOf(id repo.Ref) (repo.WorkspaceRow, error) {
 }
 
 // workspaceFor reads a workspace the user names; one of another user's does not exist for them.
-func (a *Agent) workspaceFor(user string, id repo.Ref) (repo.WorkspaceRow, error) {
+func (o *Orchestrator) workspaceFor(user string, id repo.Ref) (repo.WorkspaceRow, error) {
 	if id == "" {
 		return repo.WorkspaceRow{}, nil
 	}
-	w, err := a.cfg.DB.WorkspaceOf(user, string(id))
+	w, err := o.cfg.DB.WorkspaceOf(user, string(id))
 	if err != nil {
 		return repo.WorkspaceRow{}, fmt.Errorf("agent: workspace %s: %w", id, err)
 	}
 	return w, nil
 }
 
-func (a *Agent) permissions(t repo.ThreadRow, r role.Role) (*permission.Checker, repo.WorkspaceRow, error) {
-	w, err := a.workspaceOf(t.WorkspaceID)
+func (o *Orchestrator) permissions(t repo.ThreadRow, r role.Role) (*permission.Checker, repo.WorkspaceRow, error) {
+	w, err := o.workspaceOf(t.WorkspaceID)
 	if err != nil {
 		return nil, repo.WorkspaceRow{}, err
 	}
-	layers, err := a.threadLayers(t, w)
+	layers, err := o.threadLayers(t, w)
 	if err != nil {
 		return nil, repo.WorkspaceRow{}, err
 	}
-	registry, err := a.registryFor(t.UserID)
+	registry, err := o.registryFor(t.UserID)
 	if err != nil {
 		return nil, repo.WorkspaceRow{}, err
 	}
 	allowlist := []string{}
 	for _, d := range registry.Descriptors() {
-		if r.Offers(d) && (a.cfg.Tools == nil || slices.Contains(a.cfg.Tools, d.Name)) {
+		if r.Offers(d) && (o.cfg.Tools == nil || slices.Contains(o.cfg.Tools, d.Name)) {
 			allowlist = append(allowlist, d.Name)
 		}
 	}
@@ -58,8 +58,8 @@ func (a *Agent) permissions(t repo.ThreadRow, r role.Role) (*permission.Checker,
 	return checker, w, nil
 }
 
-func (a *Agent) layers(w repo.WorkspaceRow) []permission.Layer {
-	out := []permission.Layer{{Of: "the default permission settings", Settings: a.cfg.Settings, Shared: a.cfg.ToolsFor != nil}}
+func (o *Orchestrator) layers(w repo.WorkspaceRow) []permission.Layer {
+	out := []permission.Layer{{Of: "the default permission settings", Settings: o.cfg.Settings, Shared: o.cfg.ToolsFor != nil}}
 	if w.ID != "" {
 		out = append(out, workspaceLayer(w.Name, w.Settings))
 	}
@@ -75,13 +75,13 @@ func threadLayer(s permission.Settings) permission.Layer {
 	return permission.Layer{Of: "this conversation's permission settings", Settings: s}
 }
 
-func (a *Agent) threadLayers(t repo.ThreadRow, w repo.WorkspaceRow) ([]permission.Layer, error) {
+func (o *Orchestrator) threadLayers(t repo.ThreadRow, w repo.WorkspaceRow) ([]permission.Layer, error) {
 	if t.ParentThreadID == "" {
-		return append(a.layers(w), threadLayer(t.Settings)), nil
+		return append(o.layers(w), threadLayer(t.Settings)), nil
 	}
-	parent, err := a.cfg.DB.ThreadRow(string(t.ParentThreadID))
+	parent, err := o.cfg.DB.ThreadRow(string(t.ParentThreadID))
 	if err != nil {
 		return nil, fmt.Errorf("agent: parent thread %s: %w", t.ParentThreadID, err)
 	}
-	return append(a.layers(w), permission.Layer{Of: "the parent conversation's permission settings", Settings: parent.Settings}), nil
+	return append(o.layers(w), permission.Layer{Of: "the parent conversation's permission settings", Settings: parent.Settings}), nil
 }

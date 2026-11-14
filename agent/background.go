@@ -15,26 +15,26 @@ import (
 
 // startBackground starts a call of the thread in the background and returns at once with what the model is told: the
 // call's id, under which its result comes back when it ends.
-func (a *Agent) startBackground(t repo.ThreadRow, caller tools.Caller, registry *tools.Registry, it repo.ItemRow, args map[string]any) tools.Result {
+func (o *Orchestrator) startBackground(t repo.ThreadRow, caller tools.Caller, registry *tools.Registry, it repo.ItemRow, args map[string]any) tools.Result {
 	raw, err := json.Marshal(args)
 	if err != nil {
 		return tools.Result{Err: fmt.Errorf("encode the arguments: %w", err)}.For(it.Tool)
 	}
 	call := repo.BackgroundCallRow{ID: uuid.NewString(), ThreadID: t.ID, ItemID: it.ID, Tool: it.Tool, Arguments: string(raw), StartedAt: time.Now()}
-	if err := a.cfg.DB.StartBackgroundCall(t.UserID, call, a.cfg.BackgroundCalls); err != nil {
+	if err := o.cfg.DB.StartBackgroundCall(t.UserID, call, o.cfg.BackgroundCalls); err != nil {
 		return tools.Result{Err: err}.For(it.Tool)
 	}
-	limit := fmt.Errorf("the background call reached its time limit of %s", a.cfg.BackgroundLimit)
-	ctx, cancel := context.WithTimeoutCause(tools.WithCaller(a.ctx, caller), a.cfg.BackgroundLimit, limit)
-	a.backgroundMu.Lock()
-	a.backgroundCancels[call.ID] = cancel
-	a.backgroundMu.Unlock()
-	a.done.Add(1)
+	limit := fmt.Errorf("the background call reached its time limit of %s", o.cfg.BackgroundLimit)
+	ctx, cancel := context.WithTimeoutCause(tools.WithCaller(o.ctx, caller), o.cfg.BackgroundLimit, limit)
+	o.backgroundMu.Lock()
+	o.backgroundCancels[call.ID] = cancel
+	o.backgroundMu.Unlock()
+	o.done.Add(1)
 	go func() {
-		defer a.done.Done()
-		defer a.forgetBackground(call.ID)
+		defer o.done.Done()
+		defer o.forgetBackground(call.ID)
 		slog.Info("background call started", "thread", t.ID, "item", it.ID, "background", call.ID, "tool", it.Tool)
-		a.endBackground(ctx, call, limit, registry.InvokePrepared(ctx, it.Tool, args, it.PreparedExecution))
+		o.endBackground(ctx, call, limit, registry.InvokePrepared(ctx, it.Tool, args, it.PreparedExecution))
 	}()
 	return tools.Result{Output: map[string]any{
 		"background": call.ID, "status": string(repo.BackgroundRunning),
@@ -42,11 +42,11 @@ func (a *Agent) startBackground(t repo.ThreadRow, caller tools.Caller, registry 
 	}}
 }
 
-func (a *Agent) endBackground(ctx context.Context, call repo.BackgroundCallRow, limit error, result tools.Result) {
+func (o *Orchestrator) endBackground(ctx context.Context, call repo.BackgroundCallRow, limit error, result tools.Result) {
 	status, failure := repo.BackgroundCompleted, ""
 	var stored *repo.ToolResult
 	switch {
-	case a.ctx.Err() != nil:
+	case o.ctx.Err() != nil:
 		status, failure = repo.BackgroundInterrupted, "the process stopped before the call ended"
 	case errors.Is(context.Cause(ctx), limit):
 		status, failure = repo.BackgroundFailed, limit.Error()
@@ -61,25 +61,25 @@ func (a *Agent) endBackground(ctx context.Context, call repo.BackgroundCallRow, 
 			status = repo.BackgroundFailed
 		}
 	}
-	ended, err := a.cfg.DB.EndBackgroundCall(call.ID, status, stored, failure, time.Now())
+	ended, err := o.cfg.DB.EndBackgroundCall(call.ID, status, stored, failure, time.Now())
 	if err != nil {
 		slog.Error("background call not ended", "thread", call.ThreadID, "background", call.ID, "err", err)
 		return
 	}
 	slog.Info("background call ended", "thread", call.ThreadID, "background", call.ID, "status", status, "recorded", ended)
 	if ended && status != repo.BackgroundInterrupted {
-		a.post(func() {
-			a.deliverBackground(call.ThreadID)
-			a.reconcile(call.ThreadID)
+		o.post(func() {
+			o.deliverBackground(call.ThreadID)
+			o.reconcile(call.ThreadID)
 		})
 	}
 }
 
-func (a *Agent) forgetBackground(id string) {
-	a.backgroundMu.Lock()
-	cancel := a.backgroundCancels[id]
-	delete(a.backgroundCancels, id)
-	a.backgroundMu.Unlock()
+func (o *Orchestrator) forgetBackground(id string) {
+	o.backgroundMu.Lock()
+	cancel := o.backgroundCancels[id]
+	delete(o.backgroundCancels, id)
+	o.backgroundMu.Unlock()
 	if cancel != nil {
 		cancel()
 	}
@@ -87,24 +87,24 @@ func (a *Agent) forgetBackground(id string) {
 
 // cancelBackground ends a running call as cancelled before it stops it, so that the result its tool may still return
 // does not take the cancellation's place. It reports false for a call that had already ended.
-func (a *Agent) cancelBackground(id, why string) (bool, error) {
-	ended, err := a.cfg.DB.EndBackgroundCall(id, repo.BackgroundCancelled, nil, why, time.Now())
+func (o *Orchestrator) cancelBackground(id, why string) (bool, error) {
+	ended, err := o.cfg.DB.EndBackgroundCall(id, repo.BackgroundCancelled, nil, why, time.Now())
 	if err != nil || !ended {
 		return false, err
 	}
-	a.forgetBackground(id)
+	o.forgetBackground(id)
 	return true, nil
 }
 
 // cancelBackgroundOf cancels the calls still running in a thread and its subagents' threads, as one that is archived
 // or deleted needs none of them.
-func (a *Agent) cancelBackgroundOf(threadID, why string) error {
-	ids, err := a.cfg.DB.RunningBackgroundCalls(threadID)
+func (o *Orchestrator) cancelBackgroundOf(threadID, why string) error {
+	ids, err := o.cfg.DB.RunningBackgroundCalls(threadID)
 	if err != nil {
 		return fmt.Errorf("agent: background calls of thread %s: %w", threadID, err)
 	}
 	for _, id := range ids {
-		if _, err := a.cancelBackground(id, why); err != nil {
+		if _, err := o.cancelBackground(id, why); err != nil {
 			return fmt.Errorf("agent: cancel background call %s: %w", id, err)
 		}
 	}

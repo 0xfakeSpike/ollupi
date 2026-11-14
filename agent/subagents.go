@@ -9,7 +9,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
-func (a *Agent) settle(parent repo.ThreadRow, turn repo.TurnRow, call repo.ItemRow) (bool, error) {
+func (o *Orchestrator) settle(parent repo.ThreadRow, turn repo.TurnRow, call repo.ItemRow) (bool, error) {
 	req, err := role.Decode(call.Await.Request)
 	if err != nil {
 		return false, err
@@ -20,7 +20,7 @@ func (a *Agent) settle(parent repo.ThreadRow, turn repo.TurnRow, call repo.ItemR
 	}
 	childID := call.Await.Handle
 	if childID == "" {
-		child, err := a.createThread(repo.ThreadRow{
+		child, err := o.createThread(repo.ThreadRow{
 			UserID:         parent.UserID,
 			Title:          clipRunes(req.Description, maxTitleRunes),
 			ParentThreadID: repo.Ref(parent.ID), ParentItemID: repo.Ref(call.ID),
@@ -31,45 +31,45 @@ func (a *Agent) settle(parent repo.ThreadRow, turn repo.TurnRow, call repo.ItemR
 			return false, err
 		}
 		call.Await.Handle = child.ID
-		stored, _, err := a.cfg.DB.RecordItem(parent.ID, call)
+		stored, _, err := o.cfg.DB.RecordItem(parent.ID, call)
 		if err != nil {
 			return false, err
 		}
-		a.emitItem(parent, turn, stored, false)
+		o.emitItem(parent, turn, stored, false)
 		childID = child.ID
 	}
-	child, err := a.cfg.DB.ThreadState(childID)
+	child, err := o.cfg.DB.ThreadState(childID)
 	if err != nil {
 		return false, fmt.Errorf("agent: subagent thread %s: %w", childID, err)
 	}
 	if child.Last == nil {
-		if _, err := a.submit(child.Thread, repo.TurnRow{Input: req.Prompt, Agent: string(launched.Name)}, turn.Model); err != nil {
+		if _, err := o.submit(child.Thread, repo.TurnRow{Input: req.Prompt, Agent: string(launched.Name)}, turn.Model); err != nil {
 			return false, err
 		}
-		a.reconcile(childID)
+		o.reconcile(childID)
 		return false, nil
 	}
 	if _, active := child.ActiveTurn(); active {
 		return false, nil
 	}
-	report, err := a.report(call, childID, *child.Last)
+	report, err := o.report(call, childID, *child.Last)
 	if err != nil {
 		return false, err
 	}
-	stored, _, err := a.cfg.DB.RecordItem(parent.ID, report)
+	stored, _, err := o.cfg.DB.RecordItem(parent.ID, report)
 	if err != nil {
 		return false, err
 	}
-	a.emitItem(parent, turn, stored, false)
+	o.emitItem(parent, turn, stored, false)
 	return true, nil
 }
 
-func (a *Agent) report(call repo.ItemRow, childID string, ended repo.TurnRow) (repo.ItemRow, error) {
+func (o *Orchestrator) report(call repo.ItemRow, childID string, ended repo.TurnRow) (repo.ItemRow, error) {
 	now := time.Now().UTC()
 	call.CompletedAt = &now
 	switch ended.Status {
 	case repo.TurnCompleted:
-		answer, err := a.cfg.DB.FinalAnswer(childID, ended.ID)
+		answer, err := o.cfg.DB.FinalAnswer(childID, ended.ID)
 		if err != nil {
 			return repo.ItemRow{}, fmt.Errorf("agent: subagent %s completed turn %s without a final answer: %w", childID, ended.ID, err)
 		}

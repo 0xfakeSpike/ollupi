@@ -9,7 +9,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
-// The protocol's own records. They carry what a client reads of the rows the agent keeps, by the names the schema has
+// The protocol's own records. They carry what a client reads of the rows the orchestrator keeps, by the names the schema has
 // always given them, so that a column the storage adds does not reach clients unless it is added here.
 
 type ThreadRow struct {

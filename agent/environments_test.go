@@ -137,12 +137,12 @@ func TestAConversationOnlyRunsInItsOwnUsersEnvironments(t *testing.T) {
 	}
 }
 
-func environmentAgent(t *testing.T) (*agent.Agent, *repo.DB) {
+func environmentAgent(t *testing.T) (*agent.Orchestrator, *repo.DB) {
 	t.Helper()
 	return started(context.Background(), t, agent.Config{}, "http://127.0.0.1:1")
 }
 
-func addWorkspace(t *testing.T, ag *agent.Agent, dir string) repo.WorkspaceRow {
+func addWorkspace(t *testing.T, ag *agent.Orchestrator, dir string) repo.WorkspaceRow {
 	ctx := context.Background()
 	t.Helper()
 	root, err := sandbox.CanonicalDirectory(dir)

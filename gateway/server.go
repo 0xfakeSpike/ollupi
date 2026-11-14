@@ -39,7 +39,7 @@ const (
 )
 
 type Server struct {
-	agent        *agent.Agent
+	orchestrator *agent.Orchestrator
 	db           *repo.DB
 	memory       *memory.Manager
 	jobs         *cron.Jobs
@@ -205,18 +205,18 @@ func (c *conn) initialize(ctx context.Context, _ InitializeParams) (InitializeRe
 		c.mu.Lock()
 		c.initialized = true
 		c.mu.Unlock()
-		c.requests(c.s.agent.AllPendingRequests(c.user))
+		c.requests(c.s.orchestrator.AllPendingRequests(c.user))
 	}
 	return InitializeResult{ServerInfo: ServerInfo{Name: "ollupi", Version: version()}, ProtocolSHA256: protocolSHA256}, after, nil
 }
 
 func (c *conn) modelList(ctx context.Context, _ Empty) (ModelListResult, func(), error) {
-	models, fallback := c.s.agent.ListModels()
+	models, fallback := c.s.orchestrator.ListModels()
 	return ModelListResult{Data: nonNil(models), Default: fallback}, nil, nil
 }
 
 func (c *conn) toolList(ctx context.Context, _ Empty) (ToolListResult, func(), error) {
-	list, err := c.s.agent.ListTools(c.user)
+	list, err := c.s.orchestrator.ListTools(c.user)
 	if err != nil {
 		return ToolListResult{}, nil, err
 	}
@@ -340,15 +340,15 @@ func (c *conn) resolve(threadID string, it repo.ItemRow, result json.RawMessage)
 			return err
 		}
 		if r.Skipped {
-			return c.s.agent.SkipUserInput(c.user, threadID, it.ID)
+			return c.s.orchestrator.SkipUserInput(c.user, threadID, it.ID)
 		}
-		return c.s.agent.AnswerUserInput(c.user, threadID, it.ID, r.Answers)
+		return c.s.orchestrator.AnswerUserInput(c.user, threadID, it.ID, r.Answers)
 	}
 	var r ApprovalResponse
 	if err := json.Unmarshal(result, &r); err != nil {
 		return err
 	}
-	return c.s.agent.ResolveApproval(c.user, threadID, it.Approval.ID, r.Decision, "gateway")
+	return c.s.orchestrator.ResolveApproval(c.user, threadID, it.Approval.ID, r.Decision, "gateway")
 }
 
 const pageBytes = 4 << 20

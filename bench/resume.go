@@ -39,7 +39,7 @@ func resume(args []string) {
 	}
 	defer db.Close()
 	answer := strings.Repeat("A paragraph of an answer, about as long as a short reply in a chat. ", 6)
-	open := func(m *model, tr *tracker) (*agent.Agent, context.CancelFunc, time.Duration) {
+	open := func(m *model, tr *tracker) (*agent.Orchestrator, context.CancelFunc, time.Duration) {
 		ag := agent.New(agent.Config{
 			Name: "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 			Connections: map[string]llm.Client{"fake": m},

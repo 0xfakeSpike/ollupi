@@ -22,7 +22,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/repo"
 )
 
-func started(ctx context.Context, t *testing.T, cfg agent.Config, url string) (*agent.Agent, *repo.DB) {
+func started(ctx context.Context, t *testing.T, cfg agent.Config, url string) (*agent.Orchestrator, *repo.DB) {
 	t.Helper()
 	db, err := repo.Open(t.TempDir())
 	if err != nil {
