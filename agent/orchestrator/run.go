@@ -219,7 +219,14 @@ func (o *Orchestrator) stopSubagent(threadID string) {
 	}
 	turn, err := o.cfg.DB.ActiveTurn(threadID)
 	if errors.Is(err, repo.ErrNotFound) {
-		return
+		// A subagent whose turn is still queued never started: its turn starts, to end as stopped.
+		var st repo.ThreadState
+		if st, err = o.cfg.DB.ThreadState(threadID); err == nil {
+			if len(st.QueuedTurns()) == 0 {
+				return
+			}
+			_, turn, _, err = o.cfg.DB.StartQueuedTurn(threadID)
+		}
 	}
 	if err != nil {
 		o.fault(threadID, "", fmt.Errorf("the subagent could not be stopped: %w", err))

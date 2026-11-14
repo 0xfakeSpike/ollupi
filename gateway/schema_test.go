@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/0xfakeSpike/ollupi/tools/subagent"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -58,8 +59,8 @@ type toolSchemas struct {
 
 var builtinTools = map[string]struct{ arguments, output reflect.Type }{
 	plan.Tool:                {arguments: reflect.TypeFor[plan.Plan]()},
-	role.GeneralSubTool:      {arguments: reflect.TypeFor[role.Call]()},
-	role.BrowserSubTool:      {arguments: reflect.TypeFor[role.Call]()},
+	role.GeneralSubTool:      {arguments: reflect.TypeFor[subagent.Call]()},
+	role.BrowserSubTool:      {arguments: reflect.TypeFor[subagent.Call]()},
 	userinput.Tool:           {arguments: reflect.TypeFor[userinput.Request](), output: reflect.TypeFor[userinput.Answers]()},
 	workspace.ToolRunCommand: {output: reflect.TypeFor[workspace.CommandOutput]()},
 	workspace.ToolEditFile:   {output: reflect.TypeFor[workspace.FileOutput]()},
@@ -112,7 +113,7 @@ var defNames = map[reflect.Type]string{
 	reflect.TypeFor[role.Name]():          "AgentRole",
 	reflect.TypeFor[plan.Step]():          "PlanStep",
 	reflect.TypeFor[plan.Status]():        "PlanStepStatus",
-	reflect.TypeFor[role.Call]():          "SubagentCall",
+	reflect.TypeFor[subagent.Call]():      "SubagentCall",
 	reflect.TypeFor[userinput.Request]():  "UserInputRequest",
 	reflect.TypeFor[userinput.Question](): "UserInputQuestion",
 	reflect.TypeFor[userinput.Option]():   "UserInputOption",

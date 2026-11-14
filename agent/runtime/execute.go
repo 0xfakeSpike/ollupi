@@ -155,6 +155,7 @@ func (rt *Runtime) runJobs(ctx context.Context, jobs []job) ([]tools.Result, err
 
 func (rt *Runtime) execute(ctx context.Context, j job) tools.Result {
 	it := j.it
+	ctx = tools.WithItem(ctx, it.ID)
 	ctx, span := tracer.Start(ctx, "execute_tool "+it.Tool, trace.WithAttributes(
 		attribute.String("gen_ai.operation.name", "execute_tool"), attribute.String("gen_ai.tool.name", it.Tool),
 		attribute.String("gen_ai.tool.call.id", it.CallID), attribute.String("ollupi.tool.server", it.Server)))
