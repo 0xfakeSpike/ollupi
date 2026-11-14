@@ -18,17 +18,25 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-func (rt *Runtime) contextInput() contextmanager.Input {
-	return contextmanager.Input{
-		Items:  slices.Concat(rt.History, rt.Items),
-		System: rt.system,
-		Tools:  role.Specs(rt.offered),
+// contextInput is what the next request is built from: the run's items, the role's system prompt and the offered
+// tools, as they are now.
+func (rt *Runtime) contextInput() (contextmanager.Input, error) {
+	system, err := rt.Role.System(role.Input{
+		Deployment: rt.Deployment, Root: rt.Caller.Root, SkillTokens: rt.Window.SkillBudget(), Deferred: rt.deferred,
+	})
+	if err != nil {
+		return contextmanager.Input{}, fmt.Errorf("runtime: %w", err)
 	}
+	return contextmanager.Input{Items: slices.Concat(rt.History, rt.Items), System: system, Tools: role.Specs(rt.offered)}, nil
 }
 
 func (rt *Runtime) respond(ctx context.Context, choice llm.ToolChoice) (llm.ChatResponse, error) {
 	rt.offer()
-	prompt, err := rt.Window.Build(rt.contextInput())
+	in, err := rt.contextInput()
+	if err != nil {
+		return llm.ChatResponse{}, err
+	}
+	prompt, err := rt.Window.Build(in)
 	if err != nil {
 		return llm.ChatResponse{}, fmt.Errorf("runtime: %w", err)
 	}
@@ -36,7 +44,10 @@ func (rt *Runtime) respond(ctx context.Context, choice llm.ToolChoice) (llm.Chat
 		if err := rt.compact(ctx); err != nil {
 			return llm.ChatResponse{}, err
 		}
-		if prompt, err = rt.Window.Build(rt.contextInput()); err != nil {
+		if in, err = rt.contextInput(); err != nil {
+			return llm.ChatResponse{}, err
+		}
+		if prompt, err = rt.Window.Build(in); err != nil {
 			return llm.ChatResponse{}, fmt.Errorf("runtime: after compaction: %w", err)
 		}
 	}
@@ -98,7 +109,11 @@ func (rt *Runtime) compact(ctx context.Context) (err error) {
 		}
 		span.End()
 	}()
-	prompt, err := rt.Window.CompactionPrompt(rt.contextInput())
+	in, err := rt.contextInput()
+	if err != nil {
+		return err
+	}
+	prompt, err := rt.Window.CompactionPrompt(in)
 	if err != nil {
 		return fmt.Errorf("runtime: %w", err)
 	}
