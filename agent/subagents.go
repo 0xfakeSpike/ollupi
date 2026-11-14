@@ -4,15 +4,19 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
-	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
 
 func (a *Agent) settle(parent repo.ThreadRow, turn repo.TurnRow, call repo.ItemRow) (bool, error) {
-	req, err := subagent.Decode(call.Await.Request)
+	req, err := role.Decode(call.Await.Request)
 	if err != nil {
 		return false, err
+	}
+	launched, ok := role.Launched(call.Tool)
+	if !ok {
+		return false, fmt.Errorf("agent: call %s of %q launches no subagent role", call.ID, call.Tool)
 	}
 	childID := call.Await.ThreadID
 	if childID == "" {
@@ -39,7 +43,7 @@ func (a *Agent) settle(parent repo.ThreadRow, turn repo.TurnRow, call repo.ItemR
 		return false, fmt.Errorf("agent: subagent thread %s: %w", childID, err)
 	}
 	if child.Last == nil {
-		if _, err := a.submit(child.Thread, repo.TurnRow{Input: req.Prompt}, turn.Model); err != nil {
+		if _, err := a.submit(child.Thread, repo.TurnRow{Input: req.Prompt, Agent: string(launched.Name)}, turn.Model); err != nil {
 			return false, err
 		}
 		a.reconcile(childID)
@@ -80,20 +84,4 @@ func (a *Agent) report(call repo.ItemRow, childID string, ended repo.TurnRow) (r
 		call.Status, call.Error = repo.ItemFailed, "the subagent failed: "+ended.Error
 	}
 	return call, nil
-}
-
-// kind is the kind of subagent the thread is, nil for a top-level thread.
-func (a *Agent) kind(t repo.ThreadRow) (*subagent.Kind, error) {
-	if t.ParentItemID == "" {
-		return nil, nil
-	}
-	call, err := a.cfg.DB.Item(string(t.ParentItemID))
-	if err != nil {
-		return nil, fmt.Errorf("agent: the call that launched subagent %s: %w", t.ID, err)
-	}
-	k, ok := subagent.KindOf(call.Tool)
-	if !ok {
-		return nil, fmt.Errorf("agent: subagent %s was launched by %q, which launches no kind of subagent", t.ID, call.Tool)
-	}
-	return &k, nil
 }

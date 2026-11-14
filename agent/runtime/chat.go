@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
-	"github.com/0xfakeSpike/ollupi/agent/profile"
+	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/google/uuid"
@@ -22,7 +22,7 @@ func (rt *Runtime) contextInput() contextmanager.Input {
 	return contextmanager.Input{
 		Items:  slices.Concat(rt.History, rt.Items),
 		System: rt.system,
-		Tools:  profile.Specs(rt.offered),
+		Tools:  role.Specs(rt.offered),
 	}
 }
 
@@ -175,7 +175,7 @@ func (rt *Runtime) send(ctx context.Context, prompt contextmanager.Prompt, choic
 	}
 	resp, err := rt.LLM.Chat(ctx, llm.ChatRequest{
 		Model:    rt.Turn.Model,
-		Messages: messages, Tools: profile.Specs(rt.offered), ToolChoice: choice,
+		Messages: messages, Tools: role.Specs(rt.offered), ToolChoice: choice,
 		InputTokens: prompt.Stats.CalibratedTokens,
 	}, restored)
 	if rest := (llm.Delta{Content: content.Flush(), Reasoning: reasoning.Flush()}); onDelta != nil && (rest.Content != "" || rest.Reasoning != "") {

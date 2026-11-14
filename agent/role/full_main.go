@@ -1,9 +1,9 @@
-package profile
+package role
 
-// Full is for a model whose input holds the whole prompt and tool list.
-var Full = Profile{Rules: fullRules, Skills: true}
+// fullMain is the main agent for a model whose input holds the whole prompt and tool list.
+var fullMain = Role{Name: FullMain, Persona: true, Rules: fullMainRules, Skills: true, Memory: true}
 
-const fullRules = `You complete the user's request by calling tools in a loop. Every tool result comes back to you as an observation. Keep working until the request is done, then reply to the user without calling any tool; that reply is shown to the user as the final answer.
+const fullMainRules = `You complete the user's request by calling tools in a loop. Every tool result comes back to you as an observation. Keep working until the request is done, then reply to the user without calling any tool; that reply is shown to the user as the final answer.
 
 # Working rules
 - Work out what the user actually wants before acting. Ask only when the answer would change the result and no tool can find it out, or before an action that Safety says to ask about; otherwise make a sensible assumption, say it in a few words, and go ahead.

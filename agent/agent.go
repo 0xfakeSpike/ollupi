@@ -7,6 +7,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
+	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/agent/runtime"
 	"github.com/0xfakeSpike/ollupi/pkg/blobs"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
@@ -21,7 +22,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/skills"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/plan"
-	"github.com/0xfakeSpike/ollupi/tools/subagent"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
 )
 
@@ -198,7 +198,7 @@ func (a *Agent) Start(ctx context.Context) error {
 }
 
 func (a *Agent) buildTools(ctx context.Context) error {
-	providers := append(slices.Clone(a.cfg.Providers), plan.New(), subagent.New(), userinput.New(), contextmanager.NewOutputs(a.cfg.DB), runtime.Loader{})
+	providers := append(slices.Clone(a.cfg.Providers), plan.New(), role.Launchers{}, userinput.New(), contextmanager.NewOutputs(a.cfg.DB), runtime.Loader{})
 	if a.cfg.Memory != nil {
 		providers = append(providers, a.cfg.Memory)
 	}

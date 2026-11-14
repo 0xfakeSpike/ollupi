@@ -7,9 +7,8 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
-	"github.com/0xfakeSpike/ollupi/agent/profile"
+	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/agent/skills"
-	"github.com/0xfakeSpike/ollupi/agent/systemprompt"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
 )
@@ -62,10 +61,10 @@ func (a *Agent) checkPromptFits() error {
 		if err != nil {
 			return err
 		}
-		p := profile.For(window.InputTokens())
-		offered, deferred := p.Offer(descriptors, window, nil)
-		system := systemprompt.Build(systemprompt.Input{Agent: systemprompt.AgentPrompt(a.cfg.Name, a.cfg.Prompt), Profile: p, Skills: catalog, SkillTokens: window.SkillBudget(), Deferred: deferred})
-		if err := window.Fits(system, profile.Specs(offered)); err != nil {
+		main := role.ForMain(window.InputTokens())
+		offered, deferred := main.Offer(descriptors, window, nil)
+		system := main.System(role.Input{Agent: role.AgentPrompt(a.cfg.Name, a.cfg.Prompt), Skills: catalog, SkillTokens: window.SkillBudget(), Deferred: deferred})
+		if err := window.Fits(system, role.Specs(offered)); err != nil {
 			return err
 		}
 	}
