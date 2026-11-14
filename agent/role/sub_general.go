@@ -3,6 +3,7 @@ package role
 import (
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
+	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
 
 const (
@@ -16,7 +17,7 @@ var generalSub = Role{
 	Name: GeneralSub, Persona: true, Rules: generalSubRules, Skills: true, Memory: true,
 	send: sendFitting,
 	// A subagent cannot launch another or schedule tasks, which would come back to its thread after it reported.
-	Permission: permission.Layer{Of: "the general subagent's role", Without: []string{LaunchToolsProvider, cron.ProviderName}},
+	Permission: permission.Layer{Of: "the general subagent's role", Without: []string{subagent.ProviderName, cron.ProviderName}},
 	LaunchedBy: &LaunchTool{
 		Name:  GeneralSubTool,
 		Title: "Subagent",

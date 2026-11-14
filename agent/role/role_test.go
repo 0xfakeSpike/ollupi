@@ -1,9 +1,8 @@
 package role
 
 import (
-	"context"
+	"github.com/0xfakeSpike/ollupi/tools/subagent"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
@@ -36,7 +35,7 @@ func TestEachRolesPermissionKeepsItsTools(t *testing.T) {
 	page := tools.ToolDescriptor{Provider: BrowserProvider, Name: "navigate"}
 	job := tools.ToolDescriptor{Provider: cron.ProviderName, Name: cron.ToolCreateJob}
 	output := tools.ToolDescriptor{Provider: contextmanager.OutputsProvider, Name: contextmanager.ToolReadOutput}
-	launchTools := []tools.ToolDescriptor{{Provider: LaunchToolsProvider, Name: GeneralSubTool}, {Provider: LaunchToolsProvider, Name: BrowserSubTool}}
+	launchTools := []tools.ToolDescriptor{{Provider: subagent.ProviderName, Name: GeneralSubTool}, {Provider: subagent.ProviderName, Name: BrowserSubTool}}
 	for _, r := range all {
 		main := r.LaunchedBy == nil
 		for _, l := range launchTools {
@@ -61,39 +60,16 @@ func TestEachRolesPermissionKeepsItsTools(t *testing.T) {
 	}
 }
 
-func TestLaunchToolsLaunchEverySubagentRole(t *testing.T) {
-	specs, err := LaunchTools{}.ToolList(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	var launched []Name
-	for _, s := range specs {
-		res, err := LaunchTools{}.Invoke(context.Background(), s.Name, map[string]any{"description": "Read the docs", "prompt": "Summarize docs/"})
-		if err != nil || res.Await == nil {
-			t.Fatalf("%s: %+v %v", s.Name, res, err)
+func TestEachSubagentRoleIsAKindOfSubagent(t *testing.T) {
+	var roles []string
+	for _, k := range Subagents() {
+		r, ok := Of(Name(k.Role))
+		if !ok || r.LaunchedBy == nil || r.LaunchedBy.Name != k.Tool || k.Description != r.LaunchedBy.Description {
+			t.Errorf("%s launches %q", k.Tool, k.Role)
 		}
-		launch, err := Decode(res.Await.Request)
-		r, ok := Of(launch.Role)
-		if err != nil || !ok || r.LaunchedBy.Name != s.Name || !strings.HasPrefix(s.Description, r.LaunchedBy.Description) {
-			t.Errorf("%s launches %q (%v)", s.Name, launch.Role, err)
-		}
-		launched = append(launched, launch.Role)
+		roles = append(roles, k.Role)
 	}
-	if !slices.Equal(launched, []Name{GeneralSub, BrowserSub}) {
-		t.Errorf("the launch tools launch %q", launched)
-	}
-}
-
-func TestASubagentNeedsATaskToDo(t *testing.T) {
-	res, err := LaunchTools{}.Invoke(context.Background(), GeneralSubTool, map[string]any{"description": "Read the docs", "prompt": "Summarize docs/"})
-	if err != nil || res.Await == nil || res.Await.By != tools.AwaitAgent {
-		t.Fatalf("a task: %+v %v", res, err)
-	}
-	call, err := Decode(res.Await.Request)
-	if err != nil || call.Prompt != "Summarize docs/" {
-		t.Errorf("the call it waits on: %+v %v", call, err)
-	}
-	if _, err := (LaunchTools{}).Invoke(context.Background(), GeneralSubTool, map[string]any{"description": "x", "prompt": "  "}); err == nil {
-		t.Error("a blank prompt launched a subagent")
+	if !slices.Equal(roles, []string{string(GeneralSub), string(BrowserSub)}) {
+		t.Errorf("the kinds of subagent are %q", roles)
 	}
 }

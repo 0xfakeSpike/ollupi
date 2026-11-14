@@ -9,6 +9,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
 
 // Name is a role as a turn stores it.
@@ -38,7 +39,7 @@ type Role struct {
 // A LaunchTool is the tool that launches a subagent role, as the launching agent sees it.
 type LaunchTool struct {
 	Name, Title string
-	// Description tells the launching agent when to use the role; LaunchTools adds how launching works.
+	// Description tells the launching agent when to use the role; the tool adds how launching works.
 	Description string
 }
 
@@ -59,4 +60,15 @@ func ForMain(inputTokens int) Role {
 		return compactMain
 	}
 	return fullMain
+}
+
+// Subagents are the kinds of subagent the roles are launched as, in the order of the roles.
+func Subagents() []subagent.Kind {
+	var kinds []subagent.Kind
+	for _, r := range all {
+		if r.LaunchedBy != nil {
+			kinds = append(kinds, subagent.Kind{Tool: r.LaunchedBy.Name, Title: r.LaunchedBy.Title, Description: r.LaunchedBy.Description, Role: string(r.Name)})
+		}
+	}
+	return kinds
 }

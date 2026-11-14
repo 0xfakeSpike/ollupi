@@ -4,52 +4,29 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
+// settle reports to the parent the subagent that its call launched, once the subagent's turn ended. Until then it
+// starts that turn, which the call queued, as a thread starts a queued turn: the orchestrator runs it when a slot is
+// free. It reports whether it reported.
 func (o *Orchestrator) settle(parent repo.ThreadRow, turn repo.TurnRow, call repo.ItemRow) (bool, error) {
-	req, err := role.Decode(call.Await.Request)
-	if err != nil {
-		return false, err
-	}
-	if _, ok := role.Of(req.Role); !ok {
-		return false, fmt.Errorf("orchestrator: call %s launches role %q, which is none of %q", call.ID, req.Role, role.NameValues)
-	}
 	childID := call.Await.Handle
-	if childID == "" {
-		child, err := o.createThread(repo.ThreadRow{
-			UserID:         parent.UserID,
-			Title:          clipRunes(req.Description, maxTitleRunes),
-			ParentThreadID: repo.Ref(parent.ID), ParentItemID: repo.Ref(call.ID),
-			WorkspaceID:   parent.WorkspaceID,
-			EnvironmentID: parent.EnvironmentID,
-		})
-		if err != nil {
-			return false, err
-		}
-		call.Await.Handle = child.ID
-		stored, _, err := o.cfg.DB.RecordItem(parent.ID, call)
-		if err != nil {
-			return false, err
-		}
-		o.emitItem(parent, turn, stored, false)
-		childID = child.ID
-	}
 	child, err := o.cfg.DB.ThreadState(childID)
 	if err != nil {
 		return false, fmt.Errorf("orchestrator: subagent thread %s: %w", childID, err)
 	}
-	if child.Last == nil {
-		if _, err := o.submit(child.Thread, repo.TurnRow{Input: req.Prompt, Agent: string(req.Role)}, turn.Model); err != nil {
-			return false, err
-		}
+	if _, active := child.ActiveTurn(); active {
+		return false, nil
+	}
+	if len(child.QueuedTurns()) > 0 {
+		o.emit(Event{Kind: EventThreadStarted, Thread: child.Thread})
 		o.reconcile(childID)
 		return false, nil
 	}
-	if _, active := child.ActiveTurn(); active {
-		return false, nil
+	if child.Last == nil {
+		return false, fmt.Errorf("orchestrator: subagent thread %s has no turn", childID)
 	}
 	report, err := o.report(call, childID, *child.Last)
 	if err != nil {

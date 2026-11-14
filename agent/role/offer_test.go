@@ -2,6 +2,7 @@ package role
 
 import (
 	"encoding/json"
+	"github.com/0xfakeSpike/ollupi/tools/subagent"
 	"slices"
 	"strings"
 	"testing"
@@ -85,7 +86,7 @@ func TestOfferKeepsOnlyTheCoreToolsForASmallInput(t *testing.T) {
 
 func TestALaunchToolIsOfferedOnlyWithItsProvidersTools(t *testing.T) {
 	general, browser := tool(GeneralSubTool, "launch"), tool(BrowserSubTool, "launch")
-	general.Provider, browser.Provider = LaunchToolsProvider, LaunchToolsProvider
+	general.Provider, browser.Provider = subagent.ProviderName, subagent.ProviderName
 	launchTools := []tools.ToolDescriptor{tool("shell", "run"), general, browser}
 	if offered, _ := fullMain.Offer(launchTools, window, nil); slices.Contains(names(offered), BrowserSubTool) || !slices.Contains(names(offered), GeneralSubTool) {
 		t.Errorf("without a browser: offered %q", names(offered))
