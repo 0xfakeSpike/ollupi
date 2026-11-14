@@ -18,6 +18,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/0xfakeSpike/ollupi/tools/background"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
 
@@ -215,7 +216,7 @@ func (m *waitingModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			delta = map[string]any{"content": "no id"}
 			break
 		}
-		delta, finish = call(orchestrator.ToolWaitForBackground, `{"background":["`+id[1]+`"]}`), "tool_calls"
+		delta, finish = call(background.ToolWait, `{"background":["`+id[1]+`"]}`), "tool_calls"
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	send := func(v any) { raw, _ := json.Marshal(v); fmt.Fprintf(w, "data: %s\n\n", raw) }
