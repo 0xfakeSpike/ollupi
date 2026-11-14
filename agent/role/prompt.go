@@ -18,19 +18,25 @@ type Deployment struct {
 	SkillsDir string
 }
 
-// Input is what a run's system prompt is written from besides the role: its deployment's, and the run's own.
+// Deployed is the role as the deployment configures it: its system prompt names the deployment's agent and lists the
+// skills installed for the role there.
+func (r Role) Deployed(d Deployment) Role {
+	r.deployment = d
+	return r
+}
+
+// Input is what a run's system prompt is written from besides the role and its deployment.
 type Input struct {
-	Deployment
 	Root        string
 	SkillTokens int
 	Deferred    []tools.ToolDescriptor
 }
 
-// System writes the role's system prompt, listing the skills the role has in SkillsDir.
+// System writes the role's system prompt, listing the skills its deployment installed for it.
 func (r Role) System(in Input) (string, error) {
 	listed := ""
-	if in.SkillsDir != "" {
-		own, err := skills.Load(in.SkillsDir, string(r.Name))
+	if r.deployment.SkillsDir != "" {
+		own, err := skills.Load(r.deployment.SkillsDir, string(r.Name))
 		if err != nil {
 			return "", fmt.Errorf("role: the skills of %s: %w", r.Name, err)
 		}
@@ -39,7 +45,7 @@ func (r Role) System(in Input) (string, error) {
 	if !r.Persona {
 		return strings.Join(slices.DeleteFunc([]string{r.Rules, listed}, func(s string) bool { return s == "" }), "\n\n"), nil
 	}
-	parts := []string{strings.TrimSpace(agentPrompt(in.Name, in.Prompt)), r.Rules}
+	parts := []string{strings.TrimSpace(agentPrompt(r.deployment.Name, r.deployment.Prompt)), r.Rules}
 	if listed != "" {
 		parts = append(parts, listed)
 	}

@@ -36,10 +36,8 @@ type Runtime struct {
 	// Thread is the turn's conversation, and Workspace the workspace it works in, if any.
 	Thread    db.ThreadRow
 	Workspace db.WorkspaceRow
-	// Role is the role of agent the turn names, which the run is.
-	Role role.Role
-	// Deployment is what the run's system prompt takes from the configuration.
-	Deployment  role.Deployment
+	// Role is the role of agent the turn names, as the deployment configures it, which the run is.
+	Role        role.Role
 	Permissions *permission.Checker
 	History     []db.ItemRow
 	Items       []db.ItemRow

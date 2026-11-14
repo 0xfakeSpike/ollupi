@@ -68,10 +68,8 @@ func (o *Orchestrator) checkPromptFits() error {
 		main := role.ForMain(window.InputTokens())
 
 		offered, deferred := main.Offer(descriptors, window, nil)
-		system, err := main.System(role.Input{
-			Deployment:  role.Deployment{Name: o.cfg.Name, Prompt: o.cfg.Prompt, SkillsDir: o.cfg.SkillsDir},
-			SkillTokens: window.SkillBudget(), Deferred: deferred,
-		})
+		deployed := main.Deployed(role.Deployment{Name: o.cfg.Name, Prompt: o.cfg.Prompt, SkillsDir: o.cfg.SkillsDir})
+		system, err := deployed.System(role.Input{SkillTokens: window.SkillBudget(), Deferred: deferred})
 		if err != nil {
 			return err
 		}

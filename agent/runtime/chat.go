@@ -22,7 +22,7 @@ import (
 // tools, as they are now.
 func (rt *Runtime) contextInput() (contextmanager.Input, error) {
 	system, err := rt.Role.System(role.Input{
-		Deployment: rt.Deployment, Root: rt.Workspace.RootPath, SkillTokens: rt.Window.SkillBudget(), Deferred: rt.deferred,
+		Root: rt.Workspace.RootPath, SkillTokens: rt.Window.SkillBudget(), Deferred: rt.deferred,
 	})
 	if err != nil {
 		return contextmanager.Input{}, fmt.Errorf("runtime: %w", err)
