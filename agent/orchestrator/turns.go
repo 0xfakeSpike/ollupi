@@ -352,7 +352,7 @@ func checkMessage(text string, attachments int) (string, error) {
 
 // checkLength holds a message to the share of the model's input one message may take, so that it can always be sent.
 func (o *Orchestrator) checkLength(model llm.Model, text string) error {
-	window, err := o.windowFor(model)
+	window, err := o.res.Window(model)
 	if err != nil {
 		return err
 	}

@@ -183,10 +183,10 @@ func (o *Orchestrator) changeWorkspace(user, id string, change func(*db.Workspac
 }
 
 func (o *Orchestrator) validateLayer(user string, base []permission.Layer, previous permission.Settings, layer permission.Layer) error {
-	if o.registry == nil {
+	if o.res == nil {
 		return fmt.Errorf("orchestrator: the tool registry is not ready")
 	}
-	registry, err := o.registryFor(user)
+	registry, err := o.res.Registry(user)
 	if err != nil {
 		return err
 	}
