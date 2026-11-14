@@ -22,8 +22,11 @@ type Outputs struct {
 
 func NewOutputs(db *repo.DB) *Outputs { return &Outputs{db: db} }
 
+// OutputsProvider is the provider of ToolReadOutput.
+const OutputsProvider = "context"
+
 func (*Outputs) Name() (string, string) {
-	return "context", "Reads tool output that was shortened in this conversation."
+	return OutputsProvider, "Reads tool output that was shortened in this conversation."
 }
 
 func (*Outputs) ToolList(context.Context) ([]*tools.Spec, error) {

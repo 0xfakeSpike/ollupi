@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
+	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
@@ -24,8 +25,8 @@ type Role struct {
 	Rules   string
 	// Skills lists the skills in the system prompt.
 	Skills bool
-	// offers picks the tools the role is offered, besides what Offers decides for every role.
-	offers func(d tools.ToolDescriptor) bool
+	// Permission is the role's own permission layer: the tools it may use, below the user's settings.
+	Permission permission.Layer
 	// send splits the visible tools into the ones sent to the model and the ones only named in DEFERRED TOOLS.
 	send func(visible []tools.ToolDescriptor, window *contextmanager.Manager) (sent, deferred []tools.ToolDescriptor)
 	// Memory loads the user's memory into the run.

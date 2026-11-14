@@ -1,6 +1,9 @@
 package role
 
-import "github.com/0xfakeSpike/ollupi/tools"
+import (
+	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
+	"github.com/0xfakeSpike/ollupi/agent/permission"
+)
 
 const (
 	// BrowserSub is the name of the browser subagent.
@@ -13,7 +16,9 @@ const (
 
 var browserSub = Role{
 	Name: BrowserSub, Rules: browserSubRules,
-	offers: func(d tools.ToolDescriptor) bool { return d.Provider == BrowserProvider }, send: sendFitting,
+	send: sendFitting,
+	// It works with the browser's tools alone, and reads the outputs they shorten.
+	Permission: permission.Layer{Of: "the browser subagent's role", Providers: []string{BrowserProvider, contextmanager.OutputsProvider}},
 	Launcher: &Launcher{
 		Tool:  BrowserSubTool,
 		Title: "Browser subagent",

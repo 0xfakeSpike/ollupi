@@ -258,3 +258,26 @@ func TestNoSuggestionWhereAnAllowRuleWouldNotHelp(t *testing.T) {
 		}
 	}
 }
+
+func TestALayerKeepsOnlyTheProvidersItNames(t *testing.T) {
+	registry := testRegistry(t)
+	providers := func(l Layer) []string {
+		c, err := New([]Layer{l, defaults}, nil, registry)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, d := range c.Tools() {
+			if !slices.Contains(out, d.Provider) {
+				out = append(out, d.Provider)
+			}
+		}
+		return out
+	}
+	if got := providers(Layer{Of: "a role", Providers: []string{"files"}}); !slices.Equal(got, []string{"files"}) {
+		t.Errorf("a layer of files alone leaves %q", got)
+	}
+	if got := providers(Layer{Of: "a role", Without: []string{"files"}}); len(got) == 0 || slices.Contains(got, "files") {
+		t.Errorf("a layer without files leaves %q", got)
+	}
+}

@@ -17,7 +17,7 @@ const (
 // deferred.
 var compactMain = Role{
 	Name: CompactMain, Persona: true, Rules: compactMainRules, Memory: true,
-	offers: anyTool, send: sendOnly(tools.ToolLoadTools, workspace.ToolReadFile, workspace.ToolRunCommand),
+	send: sendOnly(tools.ToolLoadTools, workspace.ToolReadFile, workspace.ToolRunCommand),
 }
 
 const compactMainRules = `You complete the user's request by calling tools in a loop, then reply without calling a tool; that reply is the final answer.
