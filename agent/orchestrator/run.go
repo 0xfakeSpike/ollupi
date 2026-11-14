@@ -99,14 +99,17 @@ func (o *Orchestrator) runTurn(ctx context.Context, t db.ThreadRow, turn db.Turn
 		}
 	}
 	rt := &runtime.Runtime{
-		LLM:         client,
-		Registry:    registry,
-		Window:      window,
-		Host:        turnHost{o: o, t: t, turn: turn, role: r, registry: registry},
-		Turn:        turn,
-		Thread:      t,
-		Workspace:   w,
-		Role:        r.Deployed(role.Deployment{Name: o.cfg.Name, Prompt: o.cfg.Prompt, SkillsDir: o.cfg.SkillsDir}),
+		LLM:       client,
+		Registry:  registry,
+		Window:    window,
+		Host:      turnHost{o: o, t: t, turn: turn, role: r, registry: registry},
+		Turn:      turn,
+		Thread:    t,
+		Workspace: w,
+		Role:      r,
+		System: role.Input{
+			Name: o.cfg.Name, Prompt: o.cfg.Prompt, SkillsDir: o.cfg.SkillsDir, SkillTokens: window.SkillBudget(), Root: w.RootPath,
+		},
 		Permissions: checker,
 		History:     history,
 		Items:       items,
