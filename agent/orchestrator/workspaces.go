@@ -160,7 +160,7 @@ func (o *Orchestrator) UpdateWorkspaceSettings(user, id string, settings permiss
 	if err != nil {
 		return db.WorkspaceRow{}, err
 	}
-	if err := o.validateLayer(user, o.layers(db.WorkspaceRow{}), w.Settings, workspaceLayer(w.Name, settings)); err != nil {
+	if err := o.validateLayer(user, permission.Base(o.cfg.Settings, o.cfg.ToolsFor != nil, db.WorkspaceRow{}), w.Settings, permission.WorkspaceLayer(w.Name, settings)); err != nil {
 		return db.WorkspaceRow{}, err
 	}
 	return o.changeWorkspace(user, id, func(w *db.WorkspaceRow) { w.Settings = settings })

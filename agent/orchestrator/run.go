@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/agent/runtime"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"go.opentelemetry.io/otel/attribute"
@@ -54,7 +53,7 @@ func (o *Orchestrator) run(threadID string, sl *slot) {
 	ctx, cancel := context.WithTimeoutCause(ctx, o.cfg.RunLimit, limit)
 	defer cancel()
 	started := time.Now()
-	final, usage, err := o.runTurn(ctx, t, turn, items)
+	final, usage, err := o.runTurn(ctx, t, turn)
 	if err != nil && context.Cause(ctx) == limit {
 		err = limit
 	}
@@ -69,7 +68,9 @@ func (o *Orchestrator) run(threadID string, sl *slot) {
 	o.post(func() { o.afterRun(threadID, sl, final, err) })
 }
 
-func (o *Orchestrator) runTurn(ctx context.Context, t db.ThreadRow, turn db.TurnRow, thread []db.ItemRow) (bool, db.Usage, error) {
+// runTurn runs the turn on what its user runs it with: the model client of its connection, the model's context window
+// and the user's tools. The runtime reads the rest itself.
+func (o *Orchestrator) runTurn(ctx context.Context, t db.ThreadRow, turn db.TurnRow) (bool, db.Usage, error) {
 	window, err := o.windowFor(turn.Model)
 	if err != nil {
 		return false, db.Usage{}, err
@@ -82,37 +83,15 @@ func (o *Orchestrator) runTurn(ctx context.Context, t db.ThreadRow, turn db.Turn
 	if err != nil {
 		return false, db.Usage{}, err
 	}
-	r, ok := role.Of(role.Name(turn.Agent))
-	if !ok {
-		return false, db.Usage{}, fmt.Errorf("orchestrator: turn %s names role %q, which is none of %q", turn.ID, turn.Agent, role.NameValues)
-	}
-	checker, w, err := o.permissions(t, r)
-	if err != nil {
-		return false, db.Usage{}, err
-	}
-	var history, items []db.ItemRow
-	for _, it := range thread {
-		if it.TurnID == turn.ID {
-			items = append(items, it)
-		} else {
-			history = append(history, it)
-		}
-	}
 	rt := &runtime.Runtime{
-		LLM:       client,
-		Registry:  registry,
-		Window:    window,
-		Host:      turnHost{o: o, t: t, turn: turn, role: r, registry: registry},
-		Turn:      turn,
-		Thread:    t,
-		Workspace: w,
-		Role:      r,
-		System: role.Input{
-			Name: o.cfg.Name, Prompt: o.cfg.Prompt, SkillsDir: o.cfg.SkillsDir, SkillTokens: window.SkillBudget(), Root: w.RootPath,
+		DB: o.cfg.DB, Attachments: o.cfg.Attachments,
+		LLM: client, Registry: registry, Window: window,
+		Host: turnHost{o: o, t: t, turn: turn, registry: registry},
+		Config: runtime.Config{
+			Name: o.cfg.Name, Prompt: o.cfg.Prompt, SkillsDir: o.cfg.SkillsDir,
+			Settings: o.cfg.Settings, Shared: o.cfg.ToolsFor != nil, Tools: o.cfg.Tools,
 		},
-		Permissions: checker,
-		History:     history,
-		Items:       items,
+		TurnID: turn.ID,
 	}
 	return rt.Run(ctx)
 }

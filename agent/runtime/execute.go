@@ -175,7 +175,7 @@ func (rt *Runtime) execute(ctx context.Context, j job) tools.Result {
 	if result.Err != nil {
 		span.SetStatus(codes.Error, "")
 	}
-	slog.InfoContext(ctx, "tool call", "thread", rt.Thread.ID, "turn", rt.Turn.ID, "item", it.ID, "tool", it.Tool,
+	slog.InfoContext(ctx, "tool call", "thread", rt.thread.ID, "turn", rt.turn.ID, "item", it.ID, "tool", it.Tool,
 		"ms", time.Since(started).Milliseconds(), "failed", result.Err != nil, "awaits", result.Await != nil)
 	return result
 }

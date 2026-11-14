@@ -31,7 +31,7 @@ func (o *Orchestrator) StartThread(user, workspaceID, environmentID, title strin
 	if err := usable(w); err != nil {
 		return db.ThreadRow{}, err
 	}
-	if err := o.validateLayer(user, o.layers(w), permission.Settings{}, threadLayer(settings)); err != nil {
+	if err := o.validateLayer(user, permission.Base(o.cfg.Settings, o.cfg.ToolsFor != nil, w), permission.Settings{}, permission.ThreadLayer(settings)); err != nil {
 		return db.ThreadRow{}, err
 	}
 	return o.createThread(db.ThreadRow{UserID: user, Title: title, Settings: settings, WorkspaceID: db.Ref(workspaceID), EnvironmentID: db.Ref(env.ID)})
@@ -46,7 +46,7 @@ func (o *Orchestrator) UpdateThreadSettings(user, threadID string, settings perm
 	if err != nil {
 		return db.ThreadRow{}, err
 	}
-	if err := o.validateLayer(user, o.layers(w), t.Settings, threadLayer(settings)); err != nil {
+	if err := o.validateLayer(user, permission.Base(o.cfg.Settings, o.cfg.ToolsFor != nil, w), t.Settings, permission.ThreadLayer(settings)); err != nil {
 		return db.ThreadRow{}, err
 	}
 	t, err = o.cfg.DB.SetThreadSettings(user, threadID, settings)
