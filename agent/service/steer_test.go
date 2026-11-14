@@ -1,4 +1,4 @@
-package orchestrator_test
+package service_test
 
 import (
 	"context"
