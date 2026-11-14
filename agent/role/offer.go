@@ -24,11 +24,11 @@ func (r Role) Offer(visible []tools.ToolDescriptor, window *contextmanager.Manag
 	return offered, deferred
 }
 
-// launchable leaves out the launcher of a subagent role whose permission keeps none of the visible tools: its subagent
+// launchable leaves out the launch tool of a subagent role whose permission keeps none of the visible tools: its subagent
 // would have nothing to work with.
 func launchable(visible []tools.ToolDescriptor) []tools.ToolDescriptor {
 	return slices.DeleteFunc(slices.Clone(visible), func(d tools.ToolDescriptor) bool {
-		r, ok := Launched(d.Name)
+		r, ok := LaunchedBy(d.Name)
 		return ok && !slices.ContainsFunc(visible, func(t tools.ToolDescriptor) bool {
 			return t.Provider != contextmanager.OutputsProvider && r.Permission.Keeps(t)
 		})

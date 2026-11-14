@@ -228,7 +228,7 @@ func (o *Orchestrator) Start(ctx context.Context) error {
 }
 
 func (o *Orchestrator) buildTools(ctx context.Context) error {
-	providers := append(slices.Clone(o.cfg.Providers), plan.New(), role.Launchers{}, userinput.New(), contextmanager.NewOutputs(o.cfg.DB), runtime.Loader{}, backgroundTools{o})
+	providers := append(slices.Clone(o.cfg.Providers), plan.New(), role.LaunchTools{}, userinput.New(), contextmanager.NewOutputs(o.cfg.DB), runtime.Loader{}, backgroundTools{o})
 	if o.cfg.Memory != nil {
 		providers = append(providers, o.cfg.Memory)
 	}

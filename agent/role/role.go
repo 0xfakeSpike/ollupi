@@ -31,18 +31,18 @@ type Role struct {
 	send func(visible []tools.ToolDescriptor, window *contextmanager.Manager) (sent, deferred []tools.ToolDescriptor)
 	// Memory loads the user's memory into the run.
 	Memory bool
-	// Launcher is the tool that launches the role as a subagent; a main role has none.
-	Launcher *Launcher
+	// LaunchedBy is the tool through which another agent launches the role as a subagent; a main role has none.
+	LaunchedBy *LaunchTool
 }
 
-// A Launcher is the tool that launches a subagent role, as the launching agent sees it.
-type Launcher struct {
-	Tool, Title string
-	// Description tells the launching agent when to use the role; Launchers adds how launching works.
+// A LaunchTool is the tool that launches a subagent role, as the launching agent sees it.
+type LaunchTool struct {
+	Name, Title string
+	// Description tells the launching agent when to use the role; LaunchTools adds how launching works.
 	Description string
 }
 
-// all are the roles, in the order their launchers are listed.
+// all are the roles, in the order their launch tools are listed.
 var all = []Role{fullMain, compactMain, generalSub, browserSub}
 
 func Of(name Name) (Role, bool) {
@@ -53,9 +53,9 @@ func Of(name Name) (Role, bool) {
 	return all[i], true
 }
 
-// Launched is the role that the tool launches.
-func Launched(tool string) (Role, bool) {
-	i := slices.IndexFunc(all, func(r Role) bool { return r.Launcher != nil && r.Launcher.Tool == tool })
+// LaunchedBy is the role that the tool launches.
+func LaunchedBy(tool string) (Role, bool) {
+	i := slices.IndexFunc(all, func(r Role) bool { return r.LaunchedBy != nil && r.LaunchedBy.Name == tool })
 	if i < 0 {
 		return Role{}, false
 	}

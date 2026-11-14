@@ -35,10 +35,10 @@ func TestEachRolesPermissionKeepsItsTools(t *testing.T) {
 	page := tools.ToolDescriptor{Provider: BrowserProvider, Name: "navigate"}
 	job := tools.ToolDescriptor{Provider: cron.ProviderName, Name: cron.ToolCreateJob}
 	output := tools.ToolDescriptor{Provider: contextmanager.OutputsProvider, Name: contextmanager.ToolReadOutput}
-	launchers := []tools.ToolDescriptor{{Provider: LaunchersProvider, Name: GeneralSubTool}, {Provider: LaunchersProvider, Name: BrowserSubTool}}
+	launchTools := []tools.ToolDescriptor{{Provider: LaunchToolsProvider, Name: GeneralSubTool}, {Provider: LaunchToolsProvider, Name: BrowserSubTool}}
 	for _, r := range all {
-		main := r.Launcher == nil
-		for _, l := range launchers {
+		main := r.LaunchedBy == nil
+		for _, l := range launchTools {
 			if r.Permission.Keeps(l) != main {
 				t.Errorf("%s keeps %s: %v", r.Name, l.Name, r.Permission.Keeps(l))
 			}
@@ -60,26 +60,26 @@ func TestEachRolesPermissionKeepsItsTools(t *testing.T) {
 	}
 }
 
-func TestLaunchersLaunchEverySubagentRole(t *testing.T) {
-	specs, err := Launchers{}.ToolList(context.Background())
+func TestLaunchToolsLaunchEverySubagentRole(t *testing.T) {
+	specs, err := LaunchTools{}.ToolList(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 	var names []string
 	for _, s := range specs {
-		r, ok := Launched(s.Name)
-		if !ok || !strings.HasPrefix(s.Description, r.Launcher.Description) {
+		r, ok := LaunchedBy(s.Name)
+		if !ok || !strings.HasPrefix(s.Description, r.LaunchedBy.Description) {
 			t.Errorf("%s launches no role", s.Name)
 		}
 		names = append(names, string(r.Name))
 	}
 	if strings.Join(names, " ") != string(GeneralSub)+" "+string(BrowserSub) {
-		t.Errorf("the launchers launch %q", names)
+		t.Errorf("the launch tools launch %q", names)
 	}
 }
 
 func TestASubagentNeedsATaskToDo(t *testing.T) {
-	res, err := Launchers{}.Invoke(context.Background(), GeneralSubTool, map[string]any{"description": "Read the docs", "prompt": "Summarize docs/"})
+	res, err := LaunchTools{}.Invoke(context.Background(), GeneralSubTool, map[string]any{"description": "Read the docs", "prompt": "Summarize docs/"})
 	if err != nil || res.Await == nil || res.Await.By != tools.AwaitAgent {
 		t.Fatalf("a task: %+v %v", res, err)
 	}
@@ -87,7 +87,7 @@ func TestASubagentNeedsATaskToDo(t *testing.T) {
 	if err != nil || call.Prompt != "Summarize docs/" {
 		t.Errorf("the call it waits on: %+v %v", call, err)
 	}
-	if _, err := (Launchers{}).Invoke(context.Background(), GeneralSubTool, map[string]any{"description": "x", "prompt": "  "}); err == nil {
+	if _, err := (LaunchTools{}).Invoke(context.Background(), GeneralSubTool, map[string]any{"description": "x", "prompt": "  "}); err == nil {
 		t.Error("a blank prompt launched a subagent")
 	}
 }
