@@ -32,7 +32,7 @@ const (
 	LoadConnections LoadMeasure = "connections"
 )
 
-// LoadReporter takes each shard's load, for the router to place new users by; router.Catalog is one.
+// LoadReporter takes each shard's load, for the router to place new users by; catalog.Catalog (repo/catalog) is one.
 type LoadReporter interface {
 	ReportLoad(ctx context.Context, shard string, load int64) error
 }

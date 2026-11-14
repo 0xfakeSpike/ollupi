@@ -15,6 +15,7 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/gateway"
+	"github.com/0xfakeSpike/ollupi/repo/catalog"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/coder/websocket"
 )
@@ -122,7 +123,7 @@ func get(t *testing.T, url, token string) int {
 func TestTheRouterSendsEachUserToTheirShard(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	catalog, err := OpenCatalog(filepath.Join(t.TempDir(), "catalog.sqlite"))
+	catalog, err := catalog.Open(filepath.Join(t.TempDir(), "catalog.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
