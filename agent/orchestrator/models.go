@@ -1,4 +1,4 @@
-package agent
+package orchestrator
 
 import (
 	"fmt"
@@ -19,13 +19,13 @@ func (o *Orchestrator) checkModels() error {
 	}
 	for i, m := range o.cfg.Models {
 		if m.Connection == "" || strings.TrimSpace(m.Name) == "" {
-			return fmt.Errorf("agent: every model needs a connection and a name")
+			return fmt.Errorf("orchestrator: every model needs a connection and a name")
 		}
 		if slices.ContainsFunc(o.cfg.Models[:i], func(o llm.Model) bool { return o.Connection == m.Connection }) {
-			return fmt.Errorf("agent: connection %q is listed twice", m.Connection)
+			return fmt.Errorf("orchestrator: connection %q is listed twice", m.Connection)
 		}
 		if o.cfg.Connections[m.Connection] == nil {
-			return fmt.Errorf("agent: connection %q has no client", m.Connection)
+			return fmt.Errorf("orchestrator: connection %q has no client", m.Connection)
 		}
 	}
 	return nil
@@ -106,7 +106,7 @@ func (o *Orchestrator) conversationModel(last *repo.TurnRow, requested string) (
 	}
 	model, err := o.modelOn(connection)
 	if err != nil {
-		return llm.Model{}, fmt.Errorf("agent: %w: %v", ErrInvalidMessage, err)
+		return llm.Model{}, fmt.Errorf("orchestrator: %w: %v", ErrInvalidMessage, err)
 	}
 	return model, nil
 }

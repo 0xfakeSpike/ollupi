@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
@@ -81,14 +81,14 @@ func mix(args []string) {
 	}
 	defer db.Close()
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}, done: map[string]chan struct{}{}}
-	ag := agent.New(agent.Config{
+	ag := orchestrator.New(orchestrator.Config{
 		Name: "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", *calls, map[string]llm.Limits{"fake": {Context: 200_000, Output: 32_000}})},
 		Providers:   []tools.Provider{work{latency: *toolLatency}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 		Slots:       *slots, DB: db,
-		OnEvent: func(e agent.Event) {
-			if e.Kind == agent.EventTurnStarted && e.Thread.ParentThreadID != "" {
+		OnEvent: func(e orchestrator.Event) {
+			if e.Kind == orchestrator.EventTurnStarted && e.Thread.ParentThreadID != "" {
 				mu.Lock()
 				turns[e.Turn.Input] = &mixTurn{kind: "sub", thread: string(e.Thread.ParentThreadID), turnID: e.Turn.ID, submitted: time.Now()}
 				mu.Unlock()

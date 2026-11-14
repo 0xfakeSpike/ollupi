@@ -1,4 +1,4 @@
-package agent_test
+package orchestrator_test
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
@@ -83,7 +83,7 @@ func TestThinkingIsReplayedAcrossTurns(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	ag := agent.New(agent.Config{
+	ag := orchestrator.New(orchestrator.Config{
 		Name: "Ollupi", Models: []llm.Model{{Name: "claude", Connection: "anthropic"}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 		Connections: map[string]llm.Client{"anthropic": llm.NewAnthropic(srv.URL, "key", 4, map[string]llm.Limits{"claude": {Context: 200_000, Output: 32_000}})},
@@ -105,7 +105,7 @@ func TestThinkingIsReplayedAcrossTurns(t *testing.T) {
 	}
 	ask := func(text string, requests int) {
 		t.Helper()
-		turn, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, agent.Input{Text: text})
+		turn, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, orchestrator.Input{Text: text})
 		if err != nil {
 			t.Fatal(err)
 		}

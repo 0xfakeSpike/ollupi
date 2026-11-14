@@ -1,4 +1,4 @@
-package agent
+package orchestrator
 
 import (
 	"context"
@@ -9,8 +9,8 @@ import (
 )
 
 var (
-	errStopped = errors.New("agent: the orchestrator is shutting down")
-	errCrashed = errors.New("agent: an internal error stopped this")
+	errStopped = errors.New("orchestrator: the orchestrator is shutting down")
+	errCrashed = errors.New("orchestrator: an internal error stopped this")
 )
 
 type slot struct {

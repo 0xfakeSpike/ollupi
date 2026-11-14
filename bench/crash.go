@@ -17,7 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
@@ -224,7 +224,7 @@ func crashChild(args []string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	var ag *agent.Orchestrator
+	var ag *orchestrator.Orchestrator
 	answer := func(threadID, itemID string) {
 		go func() {
 			time.Sleep(200 * time.Millisecond)
@@ -233,14 +233,14 @@ func crashChild(args []string) {
 			}
 		}()
 	}
-	ag = agent.New(agent.Config{
+	ag = orchestrator.New(orchestrator.Config{
 		Name: "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(*url, "", *calls, map[string]llm.Limits{"fake": {Context: 200_000, Output: 32_000}})},
 		Providers:   []tools.Provider{work{latency: *toolLatency, log: toolLog}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 		Slots:       *slots, DB: db, Lease: *lease,
-		OnEvent: func(e agent.Event) {
-			if e.Kind == agent.EventUserInputRequested {
+		OnEvent: func(e orchestrator.Event) {
+			if e.Kind == orchestrator.EventUserInputRequested {
 				answer(e.Thread.ID, e.Item.ID)
 			}
 		},
@@ -264,7 +264,7 @@ func crashChild(args []string) {
 		if err != nil {
 			log.Fatal(err)
 		}
-		if _, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, agent.Input{Text: kinds[i%len(kinds)]}); err != nil {
+		if _, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, orchestrator.Input{Text: kinds[i%len(kinds)]}); err != nil {
 			log.Fatal(err)
 		}
 	}

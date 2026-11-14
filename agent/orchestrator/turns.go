@@ -1,4 +1,4 @@
-package agent
+package orchestrator
 
 import (
 	"context"
@@ -129,7 +129,7 @@ func (o *Orchestrator) startTurn(threadID string, in Input, atts []repo.Attachme
 	}
 	st, err := o.cfg.DB.ThreadState(threadID)
 	if err != nil {
-		return repo.TurnRow{}, fmt.Errorf("agent: thread %s: %w", threadID, err)
+		return repo.TurnRow{}, fmt.Errorf("orchestrator: thread %s: %w", threadID, err)
 	}
 	if st.Thread.ParentThreadID != "" {
 		return repo.TurnRow{}, ErrSubagentThread
@@ -169,7 +169,7 @@ func (o *Orchestrator) submit(t repo.ThreadRow, turn repo.TurnRow, model llm.Mod
 		o.moveMu.Lock()
 		defer o.moveMu.Unlock()
 		if o.moving[w.ID] {
-			return repo.TurnRow{}, fmt.Errorf("agent: workspace %s is moving: %w", w.Name, ErrWorkspaceBusy)
+			return repo.TurnRow{}, fmt.Errorf("orchestrator: workspace %s is moving: %w", w.Name, ErrWorkspaceBusy)
 		}
 	}
 	now := time.Now().UTC()
@@ -196,7 +196,7 @@ func (o *Orchestrator) steer(threadID, expectedTurnID string, in Input, atts []r
 	}
 	st, err := o.cfg.DB.ThreadState(threadID)
 	if err != nil {
-		return repo.TurnRow{}, fmt.Errorf("agent: thread %s: %w", threadID, err)
+		return repo.TurnRow{}, fmt.Errorf("orchestrator: thread %s: %w", threadID, err)
 	}
 	turn, active := st.ActiveTurn()
 	if !active {
@@ -236,7 +236,7 @@ func (o *Orchestrator) interrupt(threadID, expectedTurnID string) error {
 	}
 	st, err := o.cfg.DB.ThreadState(threadID)
 	if err != nil {
-		return fmt.Errorf("agent: thread %s: %w", threadID, err)
+		return fmt.Errorf("orchestrator: thread %s: %w", threadID, err)
 	}
 	turn, active := st.ActiveTurn()
 	if !active {
@@ -260,7 +260,7 @@ func (o *Orchestrator) interrupt(threadID, expectedTurnID string) error {
 func (o *Orchestrator) resolveApproval(threadID, approvalID string, decision repo.Decision, decidedBy string) error {
 	return o.respond(threadID, func(it repo.ItemRow) bool { return it.WaitsForApproval() && it.Approval.ID == approvalID }, func(it repo.ItemRow) (repo.ItemRow, error) {
 		if available := it.Approval.AvailableDecisions(); !slices.Contains(available, decision) {
-			return repo.ItemRow{}, fmt.Errorf("agent: %w: %q is not one of %q", ErrInvalidDecision, decision, available)
+			return repo.ItemRow{}, fmt.Errorf("orchestrator: %w: %q is not one of %q", ErrInvalidDecision, decision, available)
 		}
 		if decision == repo.DecisionAcceptAlways {
 			if err := o.allowAlways(threadID, it.Approval.Suggested); err != nil {
@@ -276,11 +276,11 @@ func (o *Orchestrator) resolveApproval(threadID, approvalID string, decision rep
 func (o *Orchestrator) allowAlways(threadID string, rules []string) error {
 	t, err := o.cfg.DB.ThreadRow(threadID)
 	if err != nil {
-		return fmt.Errorf("agent: thread %s: %w", threadID, err)
+		return fmt.Errorf("orchestrator: thread %s: %w", threadID, err)
 	}
 	if parent := string(t.ParentThreadID); parent != "" {
 		if t, err = o.cfg.DB.ThreadRow(parent); err != nil {
-			return fmt.Errorf("agent: parent thread %s: %w", parent, err)
+			return fmt.Errorf("orchestrator: parent thread %s: %w", parent, err)
 		}
 	}
 	allow := permission.Settings{Rules: permission.Rules{Allow: rules}}
@@ -303,7 +303,7 @@ func (o *Orchestrator) answerUserInput(threadID, itemID string, answers userinpu
 			return repo.ItemRow{}, err
 		}
 		if err := req.Check(answers, maxAnswerRunes); err != nil {
-			return repo.ItemRow{}, fmt.Errorf("agent: %w: %v", ErrInvalidAnswer, err)
+			return repo.ItemRow{}, fmt.Errorf("orchestrator: %w: %v", ErrInvalidAnswer, err)
 		}
 		result, _, err := repo.ResultOf(tools.Result{Output: answers})
 		if err != nil {
@@ -321,7 +321,7 @@ func (o *Orchestrator) respond(threadID string, match func(repo.ItemRow) bool, a
 	}
 	st, err := o.cfg.DB.ThreadState(threadID)
 	if err != nil {
-		return fmt.Errorf("agent: thread %s: %w", threadID, err)
+		return fmt.Errorf("orchestrator: thread %s: %w", threadID, err)
 	}
 	pending := st.PendingRequests()
 	i := slices.IndexFunc(pending, match)
@@ -345,7 +345,7 @@ func (o *Orchestrator) respond(threadID string, match func(repo.ItemRow) bool, a
 func checkMessage(text string, attachments int) (string, error) {
 	text = strings.TrimSpace(text)
 	if text == "" && attachments == 0 {
-		return "", fmt.Errorf("agent: %w: empty message", ErrInvalidMessage)
+		return "", fmt.Errorf("orchestrator: %w: empty message", ErrInvalidMessage)
 	}
 	return text, nil
 }
@@ -357,7 +357,7 @@ func (o *Orchestrator) checkLength(model llm.Model, text string) error {
 		return err
 	}
 	if tokens, budget := llm.EstimateTokens(text), window.MessageBudget(); tokens > budget {
-		return fmt.Errorf("agent: %w: the message takes about %d tokens, and model %s takes at most %d in one message; send long text as a file attachment",
+		return fmt.Errorf("orchestrator: %w: the message takes about %d tokens, and model %s takes at most %d in one message; send long text as a file attachment",
 			ErrInvalidMessage, tokens, model.Name, budget)
 	}
 	return nil

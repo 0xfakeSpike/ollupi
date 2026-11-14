@@ -1,4 +1,4 @@
-package agent_test
+package orchestrator_test
 
 import (
 	"context"
@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/agent/memory"
+	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
@@ -118,7 +118,7 @@ func TestLoadedToolIsSentWithTheNextRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	jobs := cron.New(db, time.Local, func(string, string) {})
-	ag := agent.New(agent.Config{
+	ag := orchestrator.New(orchestrator.Config{
 		Name: "Ollupi", Models: []llm.Model{{Name: "demo", Connection: "fake"}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
@@ -154,7 +154,7 @@ func TestLoadedToolIsSentWithTheNextRequest(t *testing.T) {
 			}
 		}
 	}
-	if _, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, agent.Input{Text: "帮我在 GitHub 上提个 issue：登录页在 Safari 上白屏"}); err != nil {
+	if _, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, orchestrator.Input{Text: "帮我在 GitHub 上提个 issue：登录页在 Safari 上白屏"}); err != nil {
 		t.Fatal(err)
 	}
 	wait(3)

@@ -22,7 +22,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/gateway"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
@@ -401,11 +401,11 @@ func connsShard(args []string) {
 	}
 	defer db.Close()
 	var server *gateway.Server
-	ag := agent.New(agent.Config{
+	ag := orchestrator.New(orchestrator.Config{
 		Name: "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": &model{}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
-		DB:          db, OnEvent: func(e agent.Event) { server.Deliver(e) },
+		DB:          db, OnEvent: func(e orchestrator.Event) { server.Deliver(e) },
 	})
 	server, err = gateway.NewServer(ag, gateway.Options{DB: db, Authenticate: benchUser})
 	if err != nil {

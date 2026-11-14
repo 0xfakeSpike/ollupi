@@ -1,4 +1,4 @@
-package agent
+package orchestrator
 
 import (
 	"context"
@@ -43,7 +43,7 @@ func (h turnHost) Reload() ([]repo.ItemRow, *permission.Checker, error) {
 	}
 	current, err := h.o.cfg.DB.ThreadRow(h.t.ID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("agent: thread %s: %w", h.t.ID, err)
+		return nil, nil, fmt.Errorf("orchestrator: thread %s: %w", h.t.ID, err)
 	}
 	checker, _, err := h.o.permissions(current, h.role)
 	return items, checker, err

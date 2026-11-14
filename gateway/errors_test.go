@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 )
 
@@ -15,7 +15,7 @@ func TestAnUnknownErrorStaysOnTheServer(t *testing.T) {
 	if internal.Code != jsonrpc.CodeServerError || strings.Contains(internal.Message, "/srv") {
 		t.Errorf("an unknown error: %+v", internal)
 	}
-	known := serverError(fmt.Errorf("agent: %w: /nowhere is unavailable", agent.ErrInvalidPath))
+	known := serverError(fmt.Errorf("agent: %w: /nowhere is unavailable", orchestrator.ErrInvalidPath))
 	if known.Code != jsonrpc.CodeInvalidParams || !strings.Contains(known.Message, "/nowhere") {
 		t.Errorf("a known error: %+v", known)
 	}

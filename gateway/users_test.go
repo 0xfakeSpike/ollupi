@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/pkg/wshub"
 	"github.com/0xfakeSpike/ollupi/repo"
@@ -115,7 +115,7 @@ func TestEachUserHasTheirOwnConnectionAndEvents(t *testing.T) {
 	}
 	defer db.Close()
 	tokens := map[string]string{"token-a": "a", "token-b": "b"}
-	s, err := NewServer(agent.New(agent.Config{DB: db}), Options{DB: db, Authenticate: func(token string) (string, bool) {
+	s, err := NewServer(orchestrator.New(orchestrator.Config{DB: db}), Options{DB: db, Authenticate: func(token string) (string, bool) {
 		user, ok := tokens[token]
 		return user, ok
 	}})
@@ -159,11 +159,11 @@ func TestEachUserHasTheirOwnConnectionAndEvents(t *testing.T) {
 	if users, err := db.Users(); err != nil || len(users) != 3 {
 		t.Errorf("users after connecting: %v, %v", users, err)
 	}
-	changed := func(user, thread string) agent.Event {
-		return agent.Event{Kind: agent.EventThreadDeleted, Thread: repo.ThreadRow{ID: thread, UserID: user}}
+	changed := func(user, thread string) orchestrator.Event {
+		return orchestrator.Event{Kind: orchestrator.EventThreadDeleted, Thread: repo.ThreadRow{ID: thread, UserID: user}}
 	}
 	s.Deliver(changed("b", "of-b"))
-	s.Deliver(agent.Event{Kind: agent.EventError, Thread: repo.ThreadRow{ID: "of-nobody"}, Error: "internal"})
+	s.Deliver(orchestrator.Event{Kind: orchestrator.EventError, Thread: repo.ThreadRow{ID: "of-nobody"}, Error: "internal"})
 	s.Deliver(changed("a", "of-a"))
 	if got := nextThread(ctx, t, a); got != "of-a" {
 		t.Errorf("a received an event of %q", got)

@@ -22,8 +22,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/agent/memory"
+	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
@@ -83,7 +83,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer runner.Close()
-	ag := agent.New(agent.Config{
+	ag := orchestrator.New(orchestrator.Config{
 		Name:   "test",
 		Models: []llm.Model{{Name: "gpt-4o", Connection: "fake"}, {Name: "gpt-4o", Connection: "vision", Images: true}},
 		Settings: permission.Settings{ApprovalPolicy: string(permission.OnRequest),
@@ -97,7 +97,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 		ToolsFor:       servers.Tools,
 		Memory:         mem,
 		DB:             db,
-		OnEvent:        func(e agent.Event) { server.Deliver(e) },
+		OnEvent:        func(e orchestrator.Event) { server.Deliver(e) },
 	})
 	if server, err = NewServer(ag, Options{DB: db, Token: "secret", Memory: mem, Jobs: jobs, MCP: servers}); err != nil {
 		t.Fatal(err)
@@ -388,7 +388,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	go jobs.Run(agentCtx, func(threadID, text, jobID string) error {
-		_, err := ag.StartTurn(ctx, repo.DefaultUser, threadID, agent.Input{Text: text, CronJobID: jobID})
+		_, err := ag.StartTurn(ctx, repo.DefaultUser, threadID, orchestrator.Input{Text: text, CronJobID: jobID})
 		return err
 	})
 	ran := c.await("turn/completed", func(params json.RawMessage) bool {

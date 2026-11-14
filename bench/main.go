@@ -32,7 +32,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
@@ -85,11 +85,11 @@ type tracker struct {
 	done map[string]chan struct{}
 }
 
-func (t *tracker) on(e agent.Event) {
+func (t *tracker) on(e orchestrator.Event) {
 	switch e.Kind {
-	case agent.EventUserInputRequested:
+	case orchestrator.EventUserInputRequested:
 		t.asked.Add(1)
-	case agent.EventTurnCompleted:
+	case orchestrator.EventTurnCompleted:
 		t.ended.Add(1)
 		if e.Turn.Status != repo.TurnCompleted {
 			t.failed.Add(1)
@@ -105,9 +105,9 @@ func (t *tracker) on(e agent.Event) {
 }
 
 // start holds no lock while StartTurn runs: the agent's loop delivers events to on, which takes it.
-func (t *tracker) start(ag *agent.Orchestrator, user, threadID, text string) string {
+func (t *tracker) start(ag *orchestrator.Orchestrator, user, threadID, text string) string {
 	at := time.Now()
-	turn, err := ag.StartTurn(context.Background(), user, threadID, agent.Input{Text: text})
+	turn, err := ag.StartTurn(context.Background(), user, threadID, orchestrator.Input{Text: text})
 	if err != nil {
 		log.Fatalf("start turn: %v", err)
 	}
@@ -226,7 +226,7 @@ func parked(args []string) {
 	defer db.Close()
 	m := &model{}
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}}
-	ag := agent.New(agent.Config{
+	ag := orchestrator.New(orchestrator.Config{
 		Name: "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": m},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},

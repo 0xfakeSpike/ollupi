@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/gateway"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/coder/websocket"
@@ -33,7 +33,7 @@ func startShard(t *testing.T, id, home string, authenticate func(string) (string
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := gateway.NewServer(agent.New(agent.Config{DB: db}), gateway.Options{
+	s, err := gateway.NewServer(orchestrator.New(orchestrator.Config{DB: db}), gateway.Options{
 		DB: db, Authenticate: authenticate, Shard: id, Placements: placements,
 	})
 	if err != nil {
@@ -165,11 +165,11 @@ func TestTheRouterSendsEachUserToTheirShard(t *testing.T) {
 	if !hasUser(t, shards[shardA].db, "a") || hasUser(t, shards[shardB].db, "a") {
 		t.Error("a is not on their shard alone")
 	}
-	shards[shardB].server.Deliver(agent.Event{Kind: agent.EventThreadDeleted, Thread: repo.ThreadRow{ID: "of-b", UserID: "b"}})
+	shards[shardB].server.Deliver(orchestrator.Event{Kind: orchestrator.EventThreadDeleted, Thread: repo.ThreadRow{ID: "of-b", UserID: "b"}})
 	if got := nextThread(ctx, t, b); got != "of-b" {
 		t.Errorf("b received %q through the router", got)
 	}
-	shards[shardA].server.Deliver(agent.Event{Kind: agent.EventThreadDeleted, Thread: repo.ThreadRow{ID: "of-a", UserID: "a"}})
+	shards[shardA].server.Deliver(orchestrator.Event{Kind: orchestrator.EventThreadDeleted, Thread: repo.ThreadRow{ID: "of-a", UserID: "a"}})
 	if got := nextThread(ctx, t, a); got != "of-a" {
 		t.Errorf("a received %q through the router", got)
 	}
@@ -187,7 +187,7 @@ func TestTheRouterSendsEachUserToTheirShard(t *testing.T) {
 		t.Fatal(err)
 	}
 	back := connect(ctx, t, front.URL, "token-a")
-	standby.server.Deliver(agent.Event{Kind: agent.EventThreadDeleted, Thread: repo.ThreadRow{ID: "after", UserID: "a"}})
+	standby.server.Deliver(orchestrator.Event{Kind: orchestrator.EventThreadDeleted, Thread: repo.ThreadRow{ID: "after", UserID: "a"}})
 	if got := nextThread(ctx, t, back); got != "after" {
 		t.Errorf("a received %q from the new holder", got)
 	}

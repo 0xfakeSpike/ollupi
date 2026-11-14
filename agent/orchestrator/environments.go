@@ -1,4 +1,4 @@
-package agent
+package orchestrator
 
 import (
 	"errors"
@@ -30,9 +30,9 @@ func (o *Orchestrator) AddEnvironment(user, name string, kind repo.EnvironmentKi
 	case kind == "":
 		kind = repo.EnvironmentMachine
 	case kind == repo.EnvironmentLocal:
-		return repo.EnvironmentRow{}, fmt.Errorf("agent: %w: this machine is one environment and every user has it; name a cloud sandbox instead", ErrInvalidName)
+		return repo.EnvironmentRow{}, fmt.Errorf("orchestrator: %w: this machine is one environment and every user has it; name a cloud sandbox instead", ErrInvalidName)
 	case kind != repo.EnvironmentMachine:
-		return repo.EnvironmentRow{}, fmt.Errorf("agent: %w: an environment is %q, not %q", ErrInvalidName, repo.EnvironmentMachine, kind)
+		return repo.EnvironmentRow{}, fmt.Errorf("orchestrator: %w: an environment is %q, not %q", ErrInvalidName, repo.EnvironmentMachine, kind)
 	}
 	now := time.Now().UTC()
 	row, err := o.cfg.DB.AddEnvironment(
@@ -56,12 +56,12 @@ func (o *Orchestrator) RenameEnvironment(user, id, name string) (repo.Environmen
 	}
 	for _, other := range rows {
 		if other.ID != id && strings.EqualFold(other.Name, name) {
-			return repo.EnvironmentRow{}, fmt.Errorf("agent: %w: you already have an environment called %q", ErrInvalidName, other.Name)
+			return repo.EnvironmentRow{}, fmt.Errorf("orchestrator: %w: you already have an environment called %q", ErrInvalidName, other.Name)
 		}
 	}
 	row, err := o.cfg.DB.RenameEnvironment(user, id, name, time.Now().UTC())
 	if errors.Is(err, repo.ErrNotFound) {
-		return repo.EnvironmentRow{}, fmt.Errorf("agent: environment %s: %w", id, repo.ErrNotFound)
+		return repo.EnvironmentRow{}, fmt.Errorf("orchestrator: environment %s: %w", id, repo.ErrNotFound)
 	}
 	if err != nil {
 		return repo.EnvironmentRow{}, err
@@ -76,20 +76,20 @@ func (o *Orchestrator) RenameEnvironment(user, id, name string) (repo.Environmen
 func (o *Orchestrator) DeleteEnvironment(user, id string) (repo.EnvironmentRow, error) {
 	row, err := o.cfg.DB.EnvironmentOf(user, id)
 	if errors.Is(err, repo.ErrNotFound) {
-		return repo.EnvironmentRow{}, fmt.Errorf("agent: environment %s: %w", id, repo.ErrNotFound)
+		return repo.EnvironmentRow{}, fmt.Errorf("orchestrator: environment %s: %w", id, repo.ErrNotFound)
 	}
 	if err != nil {
 		return repo.EnvironmentRow{}, err
 	}
 	if row.Kind == repo.EnvironmentLocal {
-		return repo.EnvironmentRow{}, fmt.Errorf("agent: %w: %s is this machine, whose folders the workspaces are", ErrInvalidName, row.Name)
+		return repo.EnvironmentRow{}, fmt.Errorf("orchestrator: %w: %s is this machine, whose folders the workspaces are", ErrInvalidName, row.Name)
 	}
 	used, err := o.cfg.DB.EnvironmentInUse(id)
 	if err != nil {
 		return repo.EnvironmentRow{}, err
 	}
 	if used {
-		return repo.EnvironmentRow{}, fmt.Errorf("agent: environment %s: %w", row.Name, ErrEnvironmentInUse)
+		return repo.EnvironmentRow{}, fmt.Errorf("orchestrator: environment %s: %w", row.Name, ErrEnvironmentInUse)
 	}
 	if _, err := o.cfg.DB.DeleteEnvironment(user, id); err != nil {
 		return repo.EnvironmentRow{}, err
@@ -103,13 +103,13 @@ func (o *Orchestrator) environmentFor(user, id string) (repo.EnvironmentRow, err
 	if id == "" {
 		env, err := o.cfg.DB.LocalEnvironment(user)
 		if errors.Is(err, repo.ErrNotFound) {
-			return repo.EnvironmentRow{}, fmt.Errorf("agent: the user %s has no environment on this machine", user)
+			return repo.EnvironmentRow{}, fmt.Errorf("orchestrator: the user %s has no environment on this machine", user)
 		}
 		return env, err
 	}
 	env, err := o.cfg.DB.EnvironmentOf(user, id)
 	if errors.Is(err, repo.ErrNotFound) {
-		return repo.EnvironmentRow{}, fmt.Errorf("agent: environment %s: %w", id, repo.ErrNotFound)
+		return repo.EnvironmentRow{}, fmt.Errorf("orchestrator: environment %s: %w", id, repo.ErrNotFound)
 	}
 	return env, err
 }
@@ -117,7 +117,7 @@ func (o *Orchestrator) environmentFor(user, id string) (repo.EnvironmentRow, err
 func environmentName(name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" || len([]rune(name)) > 120 {
-		return "", fmt.Errorf("agent: %w: an environment name must be 1 to 120 characters", ErrInvalidName)
+		return "", fmt.Errorf("orchestrator: %w: an environment name must be 1 to 120 characters", ErrInvalidName)
 	}
 	return name, nil
 }

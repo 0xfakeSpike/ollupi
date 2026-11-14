@@ -1,4 +1,4 @@
-package agent_test
+package orchestrator_test
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/repo"
 )
@@ -22,7 +22,7 @@ func TestAWorkspaceMovesWithTheFilesInIt(t *testing.T) {
 	}
 	defer db.Close()
 	// Without BoxFor the agent works on this machine's files, as the desktop's backend does.
-	ag := agent.New(agent.Config{DB: db})
+	ag := orchestrator.New(orchestrator.Config{DB: db})
 
 	root := canonical(t, t.TempDir())
 	if err := os.WriteFile(filepath.Join(root, "notes.txt"), []byte("kept\n"), 0o644); err != nil {
@@ -71,7 +71,7 @@ func TestAWorkspaceDoesNotMoveOntoAFolderThatIsTaken(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	ag := agent.New(agent.Config{DB: db})
+	ag := orchestrator.New(orchestrator.Config{DB: db})
 
 	root := canonical(t, t.TempDir())
 	w, err := ag.AddWorkspace(ctx, repo.DefaultUser, root, "app")
@@ -99,7 +99,7 @@ func TestAWorkspaceDoesNotMoveOntoAFolderThatIsTaken(t *testing.T) {
 		{"a folder inside the workspace", child},
 		{"a folder that is not there", filepath.Join(root, "missing")},
 	} {
-		if _, err := ag.MoveWorkspace(ctx, repo.DefaultUser, w.ID, c.path); !errors.Is(err, agent.ErrInvalidPath) {
+		if _, err := ag.MoveWorkspace(ctx, repo.DefaultUser, w.ID, c.path); !errors.Is(err, orchestrator.ErrInvalidPath) {
 			t.Errorf("%s: %v, want an invalid path", c.what, err)
 		}
 	}

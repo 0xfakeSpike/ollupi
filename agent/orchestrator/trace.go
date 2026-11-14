@@ -1,4 +1,4 @@
-package agent
+package orchestrator
 
 import (
 	"time"
@@ -11,7 +11,7 @@ import (
 
 // The orchestrator traces through the global TracerProvider, which the host sets up with its exporter and sampler; until it
 // does, tracing costs nothing.
-var tracer = otel.Tracer("github.com/0xfakeSpike/ollupi/agent")
+var tracer = otel.Tracer("github.com/0xfakeSpike/ollupi/agent/orchestrator")
 
 // turnTrace is the trace every run of a turn joins: a turn runs once per slot it takes, perhaps in several processes as
 // the shard changes hands, and holds no span open in between. Its trace ID is the turn's ID, so a log line naming the

@@ -1,4 +1,4 @@
-package agent
+package orchestrator
 
 import (
 	"context"
@@ -22,11 +22,11 @@ func (o *Orchestrator) AddWorkspace(ctx context.Context, user, path, name string
 	defer cancel()
 	box, err := o.cfg.BoxFor(user)
 	if err != nil {
-		return repo.WorkspaceRow{}, fmt.Errorf("agent: the sandbox of the user: %w", err)
+		return repo.WorkspaceRow{}, fmt.Errorf("orchestrator: the sandbox of the user: %w", err)
 	}
 	root, err := box.Directory(ctx, path)
 	if err != nil {
-		return repo.WorkspaceRow{}, fmt.Errorf("agent: %w: %v", ErrInvalidPath, err)
+		return repo.WorkspaceRow{}, fmt.Errorf("orchestrator: %w: %v", ErrInvalidPath, err)
 	}
 	if name == "" {
 		name = filepath.Base(root)
@@ -74,21 +74,21 @@ func (o *Orchestrator) MoveWorkspace(ctx context.Context, user, id, path string)
 		return repo.WorkspaceRow{}, err
 	}
 	if w.ID == "" {
-		return repo.WorkspaceRow{}, fmt.Errorf("agent: workspace %s: %w", id, repo.ErrNotFound)
+		return repo.WorkspaceRow{}, fmt.Errorf("orchestrator: workspace %s: %w", id, repo.ErrNotFound)
 	}
 	box, err := o.cfg.BoxFor(user)
 	if err != nil {
-		return repo.WorkspaceRow{}, fmt.Errorf("agent: the sandbox of the user: %w", err)
+		return repo.WorkspaceRow{}, fmt.Errorf("orchestrator: the sandbox of the user: %w", err)
 	}
 	target, err := box.Directory(ctx, path)
 	if err != nil {
-		return repo.WorkspaceRow{}, fmt.Errorf("agent: %w: %v", ErrInvalidPath, err)
+		return repo.WorkspaceRow{}, fmt.Errorf("orchestrator: %w: %v", ErrInvalidPath, err)
 	}
 	if box.Same(ctx, w.RootPath, target) {
 		return w, nil
 	}
 	if sandbox.Within(w.RootPath, target) {
-		return repo.WorkspaceRow{}, fmt.Errorf("agent: %w: %q is inside the workspace", ErrInvalidPath, target)
+		return repo.WorkspaceRow{}, fmt.Errorf("orchestrator: %w: %q is inside the workspace", ErrInvalidPath, target)
 	}
 	if err := o.startMove(user, w); err != nil {
 		return repo.WorkspaceRow{}, err
@@ -99,9 +99,9 @@ func (o *Orchestrator) MoveWorkspace(ctx context.Context, user, id, path string)
 		o.moveMu.Unlock()
 	}()
 	if entries, err := box.ReadDir(ctx, target); err != nil {
-		return repo.WorkspaceRow{}, fmt.Errorf("agent: %w: %v", ErrInvalidPath, err)
+		return repo.WorkspaceRow{}, fmt.Errorf("orchestrator: %w: %v", ErrInvalidPath, err)
 	} else if len(entries) > 0 {
-		return repo.WorkspaceRow{}, fmt.Errorf("agent: %w: %q is not empty", ErrInvalidPath, target)
+		return repo.WorkspaceRow{}, fmt.Errorf("orchestrator: %w: %q is not empty", ErrInvalidPath, target)
 	}
 	rows, err := o.cfg.DB.Workspaces(user)
 	if err != nil {
@@ -109,16 +109,16 @@ func (o *Orchestrator) MoveWorkspace(ctx context.Context, user, id, path string)
 	}
 	for _, other := range rows {
 		if other.ID != w.ID && box.Same(ctx, other.RootPath, target) {
-			return repo.WorkspaceRow{}, fmt.Errorf("agent: %w: %q is the folder of the workspace %s", ErrInvalidPath, target, other.Name)
+			return repo.WorkspaceRow{}, fmt.Errorf("orchestrator: %w: %q is the folder of the workspace %s", ErrInvalidPath, target, other.Name)
 		}
 	}
 	if err := box.Move(move, w.RootPath, target); err != nil {
-		return repo.WorkspaceRow{}, fmt.Errorf("agent: %w", err)
+		return repo.WorkspaceRow{}, fmt.Errorf("orchestrator: %w", err)
 	}
 	moved, err := o.cfg.DB.SetWorkspaceRoot(user, w.ID, target, time.Now().UTC())
 	if err != nil {
 		if back := box.Move(move, target, w.RootPath); back != nil {
-			return repo.WorkspaceRow{}, fmt.Errorf("agent: the folder is now at %s but the workspace still names %s: %w; moving it back failed too: %v", target, w.RootPath, err, back)
+			return repo.WorkspaceRow{}, fmt.Errorf("orchestrator: the folder is now at %s but the workspace still names %s: %w; moving it back failed too: %v", target, w.RootPath, err, back)
 		}
 		return repo.WorkspaceRow{}, err
 	}
@@ -132,14 +132,14 @@ func (o *Orchestrator) startMove(user string, w repo.WorkspaceRow) error {
 	o.moveMu.Lock()
 	defer o.moveMu.Unlock()
 	if o.moving[w.ID] {
-		return fmt.Errorf("agent: workspace %s is moving: %w", w.Name, ErrWorkspaceBusy)
+		return fmt.Errorf("orchestrator: workspace %s is moving: %w", w.Name, ErrWorkspaceBusy)
 	}
 	busy, err := o.cfg.DB.WorkspaceBusy(user, w.ID)
 	if err != nil {
 		return err
 	}
 	if busy {
-		return fmt.Errorf("agent: workspace %s: %w", w.Name, ErrWorkspaceBusy)
+		return fmt.Errorf("orchestrator: workspace %s: %w", w.Name, ErrWorkspaceBusy)
 	}
 	o.moving[w.ID] = true
 	return nil
@@ -173,7 +173,7 @@ func (o *Orchestrator) changeWorkspace(user, id string, change func(*repo.Worksp
 		return w, nil
 	})
 	if errors.Is(err, repo.ErrNotFound) {
-		return repo.WorkspaceRow{}, fmt.Errorf("agent: workspace %s: %w", id, repo.ErrNotFound)
+		return repo.WorkspaceRow{}, fmt.Errorf("orchestrator: workspace %s: %w", id, repo.ErrNotFound)
 	}
 	if err != nil {
 		return repo.WorkspaceRow{}, err
@@ -184,21 +184,21 @@ func (o *Orchestrator) changeWorkspace(user, id string, change func(*repo.Worksp
 
 func (o *Orchestrator) validateLayer(user string, base []permission.Layer, previous permission.Settings, layer permission.Layer) error {
 	if o.registry == nil {
-		return fmt.Errorf("agent: the tool registry is not ready")
+		return fmt.Errorf("orchestrator: the tool registry is not ready")
 	}
 	registry, err := o.registryFor(user)
 	if err != nil {
 		return err
 	}
 	if err := permission.ValidateLayer(base, previous, layer, registry); err != nil {
-		return fmt.Errorf("agent: %w", err)
+		return fmt.Errorf("orchestrator: %w", err)
 	}
 	return nil
 }
 
 func usable(w repo.WorkspaceRow) error {
 	if w.ArchivedAt != nil {
-		return fmt.Errorf("agent: workspace %s: %w", w.Name, ErrWorkspaceArchived)
+		return fmt.Errorf("orchestrator: workspace %s: %w", w.Name, ErrWorkspaceArchived)
 	}
 	return nil
 }
@@ -206,7 +206,7 @@ func usable(w repo.WorkspaceRow) error {
 func workspaceName(name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" || len([]rune(name)) > 120 {
-		return "", fmt.Errorf("agent: %w: a workspace name must be 1 to 120 characters", ErrInvalidName)
+		return "", fmt.Errorf("orchestrator: %w: a workspace name must be 1 to 120 characters", ErrInvalidName)
 	}
 	return name, nil
 }

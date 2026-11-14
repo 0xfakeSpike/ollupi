@@ -1,4 +1,4 @@
-package agent
+package orchestrator
 
 import (
 	"context"
@@ -16,7 +16,7 @@ func (o *Orchestrator) claimShard(ctx context.Context) (context.Context, error) 
 	for {
 		held, err := o.cfg.DB.ClaimShard(o.owner, time.Now(), o.cfg.Lease)
 		if err != nil {
-			return nil, fmt.Errorf("agent: claim the shard: %w", err)
+			return nil, fmt.Errorf("orchestrator: claim the shard: %w", err)
 		}
 		if held {
 			break
