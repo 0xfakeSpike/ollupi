@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/google/jsonschema-go/jsonschema"
@@ -73,6 +74,50 @@ func (a *Agent) endBackground(ctx context.Context, call repo.BackgroundCallRow, 
 		return
 	}
 	slog.Info("background call ended", "thread", call.ThreadID, "background", call.ID, "status", status, "recorded", ended)
+	if ended && status != repo.BackgroundInterrupted {
+		a.post(func() { a.deliverBackground(call.ThreadID) })
+	}
+}
+
+// deliverBackground brings the results of a thread's ended background calls back to it, into its current turn. A
+// conversation with none takes them in a turn they start, on the model its last turn ran on; a subagent's thread
+// that has reported takes none.
+func (a *Agent) deliverBackground(threadID string) {
+	st, err := a.cfg.DB.ThreadState(threadID)
+	if err != nil {
+		slog.Error("background results not delivered", "thread", threadID, "err", err)
+		return
+	}
+	var next *repo.TurnRow
+	if st.Thread.ParentThreadID == "" {
+		model, err := a.conversationModel(st.Last, "")
+		if err != nil {
+			slog.Error("background results not delivered", "thread", threadID, "err", err)
+			return
+		}
+		window, err := a.windowFor(model)
+		if err != nil {
+			slog.Error("background results not delivered", "thread", threadID, "err", err)
+			return
+		}
+		next = &repo.TurnRow{ID: uuid.NewString(), Model: model.Clone(), Agent: string(role.ForMain(window.InputTokens()).Name)}
+	}
+	thread, turn, items, started, err := a.cfg.DB.DeliverBackgroundCalls(threadID, next)
+	if err != nil {
+		slog.Error("background results not delivered", "thread", threadID, "err", err)
+		return
+	}
+	if len(items) == 0 {
+		return
+	}
+	if started {
+		a.startedTurn(thread, turn)
+	}
+	for _, it := range items {
+		a.emitItem(thread, turn, it, true)
+	}
+	a.emitStatus(threadID)
+	slog.Info("background results delivered", "thread", threadID, "turn", turn.ID, "results", len(items), "started", started)
 }
 
 func (a *Agent) forgetBackground(id string) {

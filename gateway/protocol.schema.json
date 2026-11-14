@@ -1222,6 +1222,9 @@
             "$ref": "#/$defs/Attachment"
           }
         },
+        "backgroundId": {
+          "type": "string"
+        },
         "text": {
           "type": "string"
         },
@@ -1278,7 +1281,8 @@
         "toolCall",
         "contextCompaction",
         "memoryContext",
-        "error"
+        "error",
+        "backgroundResult"
       ]
     },
     "MCPServerListResult": {

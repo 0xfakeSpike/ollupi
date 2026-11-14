@@ -396,6 +396,6 @@ func (d *DB) TurnItems(turnID string) ([]ItemRow, error) {
 
 func (d *DB) InputAfterAnswer(turnID string) (bool, error) {
 	var n int64
-	err := d.gorm.Model(&ItemRow{}).Where("turn_id = ? AND type = 'userMessage' AND seq > (SELECT COALESCE(MAX(seq), 0) FROM items WHERE turn_id = ? AND type = 'agentMessage' AND status = 'completed')", turnID, turnID).Count(&n).Error
+	err := d.gorm.Model(&ItemRow{}).Where("turn_id = ? AND type IN ('userMessage', 'backgroundResult') AND seq > (SELECT COALESCE(MAX(seq), 0) FROM items WHERE turn_id = ? AND type = 'agentMessage' AND status = 'completed')", turnID, turnID).Count(&n).Error
 	return n > 0, err
 }

@@ -175,7 +175,9 @@ func (rt *Runtime) run(ctx context.Context) (bool, error) {
 				return true, rt.finish(ctx, halt)
 			}
 		}
-		if len(resp.Message.ToolCalls) == 0 && !slices.ContainsFunc(rt.Items, func(it repo.ItemRow) bool { return it.Type == repo.ItemUserMessage && it.Seq > seen }) {
+		if len(resp.Message.ToolCalls) == 0 && !slices.ContainsFunc(rt.Items, func(it repo.ItemRow) bool {
+			return (it.Type == repo.ItemUserMessage || it.Type == repo.ItemBackgroundResult) && it.Seq > seen
+		}) {
 			return true, nil
 		}
 	}
