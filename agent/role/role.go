@@ -6,6 +6,7 @@ package role
 import (
 	"slices"
 
+	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
 )
@@ -81,11 +82,11 @@ func ForMain(inputTokens int) Role {
 	return fullMain
 }
 
-// Offers says whether the role is offered d. A main role is offered every tool. A subagent cannot launch another or
-// schedule tasks, which would come back to its thread after it reported, and one with a Provider works with that
-// provider's tools alone.
+// Offers says whether the role is offered d. Every role keeps read_tool_output, which a shortened output points at. A
+// main role is offered every tool. A subagent cannot launch another or schedule tasks, which would come back to its
+// thread after it reported, and one with a Provider works with that provider's tools alone.
 func (r Role) Offers(d tools.ToolDescriptor) bool {
-	if r.Launcher == nil {
+	if r.Launcher == nil || d.Name == contextmanager.ToolReadOutput {
 		return true
 	}
 	if _, launches := Launched(d.Name); launches || d.Provider == cron.ProviderName {

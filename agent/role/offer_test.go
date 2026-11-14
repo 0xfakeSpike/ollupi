@@ -83,17 +83,14 @@ func TestOfferKeepsOnlyTheCoreToolsForASmallInput(t *testing.T) {
 	}
 }
 
-func TestABackgroundToolTakesRunInBackground(t *testing.T) {
-	schema := map[string]any{"type": "object", "properties": map[string]any{"cmd": map[string]any{"type": "string"}}, "additionalProperties": false}
-	specs := Specs([]tools.ToolDescriptor{{Name: "slow", InputSchema: schema, Background: true}, {Name: "quick", InputSchema: schema}})
-	slow, quick := specs[0].Parameters, specs[1].Parameters
-	if _, ok := slow["properties"].(map[string]any)[tools.ArgBackground]; !ok {
-		t.Errorf("the background tool's schema: %v", slow)
+func TestALauncherIsOfferedOnlyWithItsProvidersTools(t *testing.T) {
+	launchers := []tools.ToolDescriptor{tool(GeneralSubTool, "launch"), tool(BrowserSubTool, "launch")}
+	if offered, _ := fullMain.Offer(launchers, window, nil); slices.Contains(names(offered), BrowserSubTool) || !slices.Contains(names(offered), GeneralSubTool) {
+		t.Errorf("without a browser: offered %q", names(offered))
 	}
-	if _, ok := quick["properties"].(map[string]any)[tools.ArgBackground]; ok {
-		t.Errorf("a foreground tool's schema has %s: %v", tools.ArgBackground, quick)
-	}
-	if _, ok := schema["properties"].(map[string]any)[tools.ArgBackground]; ok {
-		t.Error("the tool's own schema was changed")
+	page := tool("navigate", "open")
+	page.Provider = BrowserProvider
+	if offered, _ := fullMain.Offer(append(launchers, page), window, nil); !slices.Contains(names(offered), BrowserSubTool) {
+		t.Errorf("with a browser: offered %q", names(offered))
 	}
 }

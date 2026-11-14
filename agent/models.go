@@ -39,6 +39,15 @@ func (a *Agent) windowFor(m llm.Model) (*contextmanager.Manager, error) {
 	return contextmanager.New(m.Name, limits), nil
 }
 
+// mainRole is the main role of a turn on the model, by how much input it takes.
+func (a *Agent) mainRole(model llm.Model) (role.Role, error) {
+	window, err := a.windowFor(model)
+	if err != nil {
+		return role.Role{}, err
+	}
+	return role.ForMain(window.InputTokens()), nil
+}
+
 func (a *Agent) clientFor(user, connection string) (llm.Client, error) {
 	if a.cfg.ClientFor != nil {
 		return a.cfg.ClientFor(user, connection)

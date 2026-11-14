@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/google/uuid"
@@ -28,12 +27,12 @@ func (a *Agent) deliverBackground(threadID string) {
 			slog.Error("background results not delivered", "thread", threadID, "err", err)
 			return
 		}
-		window, err := a.windowFor(model)
+		main, err := a.mainRole(model)
 		if err != nil {
 			slog.Error("background results not delivered", "thread", threadID, "err", err)
 			return
 		}
-		next = &repo.TurnRow{ID: uuid.NewString(), Model: model.Clone(), Agent: string(role.ForMain(window.InputTokens()).Name)}
+		next = &repo.TurnRow{ID: uuid.NewString(), Model: model.Clone(), Agent: string(main.Name)}
 	}
 	thread, turn, items, started, err := a.cfg.DB.DeliverBackgroundCalls(threadID, next)
 	if err != nil {

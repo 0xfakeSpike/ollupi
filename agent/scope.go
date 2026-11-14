@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/repo"
@@ -48,9 +47,7 @@ func (a *Agent) permissions(t repo.ThreadRow, r role.Role) (*permission.Checker,
 	}
 	allowlist := []string{}
 	for _, d := range registry.Descriptors() {
-		// A shortened output points at read_tool_output, whatever tools the role has.
-		offered := d.Name == contextmanager.ToolReadOutput || r.Offers(d)
-		if offered && (a.cfg.Tools == nil || slices.Contains(a.cfg.Tools, d.Name)) {
+		if r.Offers(d) && (a.cfg.Tools == nil || slices.Contains(a.cfg.Tools, d.Name)) {
 			allowlist = append(allowlist, d.Name)
 		}
 	}
