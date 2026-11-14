@@ -30,7 +30,7 @@ func (o *Orchestrator) reconcile(threadID string) {
 		o.emitItem(st.Thread, turn, message, true)
 		o.emitStatus(threadID)
 	}
-	if _, err := o.modelOn(turn.Model.Connection); err != nil {
+	if _, err := o.res.Model(turn.Model.Connection); err != nil {
 		turn.Status, turn.Error = db.TurnFailed, err.Error()
 		o.endTurn(turn)
 		return

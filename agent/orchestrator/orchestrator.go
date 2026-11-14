@@ -7,6 +7,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
+	"github.com/0xfakeSpike/ollupi/agent/resources"
 	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/agent/runtime"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
@@ -105,13 +106,9 @@ type Config struct {
 // An Orchestrator runs the agents of a shard: it keeps their threads and turns, schedules turns into slots, launches
 // subagents and runs background calls. The agent of each turn is a role, which the runtime runs one turn at a time.
 type Orchestrator struct {
-	cfg      Config
-	ctx      context.Context
-	registry *tools.Registry
-
-	// providers are what every user's registry starts from.
-	providers  []tools.Provider
-	registries sync.Map
+	cfg Config
+	ctx context.Context
+	res *resources.Resources
 
 	// backgroundCancels stop the background calls running on this process, by id.
 	backgroundMu      sync.Mutex
@@ -129,37 +126,11 @@ type Orchestrator struct {
 }
 
 func (o *Orchestrator) ListTools(user string) ([]tools.ToolDescriptor, error) {
-	registry, err := o.registryFor(user)
+	registry, err := o.res.Registry(user)
 	if err != nil {
 		return nil, err
 	}
 	return registry.Descriptors(), nil
-}
-
-// userRegistry is a user's registry and the Set it was built from.
-type userRegistry struct {
-	set      *tools.Set
-	registry *tools.Registry
-}
-
-// registryFor gives the tools a user has. The first call may wait for their servers to connect.
-func (o *Orchestrator) registryFor(user string) (*tools.Registry, error) {
-	if o.cfg.ToolsFor == nil {
-		return o.registry, nil
-	}
-	set, err := o.cfg.ToolsFor(user)
-	if err != nil {
-		return nil, fmt.Errorf("orchestrator: the tools of the user: %w", err)
-	}
-	if built, ok := o.registries.Load(user); ok && built.(userRegistry).set == set {
-		return built.(userRegistry).registry, nil
-	}
-	registry, err := tools.New(o.ctx, set.Unavailable, slices.Concat(o.providers, set.Providers)...)
-	if err != nil {
-		return nil, fmt.Errorf("orchestrator: the tools of the user: %w", err)
-	}
-	o.registries.Store(user, userRegistry{set: set, registry: registry})
-	return registry, nil
 }
 
 func New(cfg Config) *Orchestrator {
@@ -177,9 +148,6 @@ func (o *Orchestrator) Start(ctx context.Context) error {
 		return fmt.Errorf("orchestrator: a database is required")
 	}
 	if err := o.buildTools(ctx); err != nil {
-		return err
-	}
-	if err := o.checkModels(); err != nil {
 		return err
 	}
 	if err := o.checkPromptFits(); err != nil {
@@ -226,7 +194,7 @@ func (o *Orchestrator) Start(ctx context.Context) error {
 	for _, id := range undelivered {
 		o.post(func() { o.deliverBackground(id) })
 	}
-	slog.Info("orchestrator started", "name", o.cfg.Name, "slots", o.cfg.Slots, "models", len(o.cfg.Models), "tools", len(o.registry.Descriptors()))
+	slog.Info("orchestrator started", "name", o.cfg.Name, "slots", o.cfg.Slots, "models", len(o.cfg.Models), "tools", len(o.res.Tools().Descriptors()))
 	return nil
 }
 
@@ -245,9 +213,11 @@ func (o *Orchestrator) buildTools(ctx context.Context) error {
 		}
 		providers = append(providers, skilltools.New(o.cfg.SkillsDir))
 	}
-	o.providers = providers
 	var err error
-	if o.registry, err = tools.New(ctx, nil, providers...); err != nil {
+	o.res, err = resources.New(ctx, resources.Config{
+		Models: o.cfg.Models, Connections: o.cfg.Connections, ClientFor: o.cfg.ClientFor, ToolsFor: o.cfg.ToolsFor,
+	}, providers)
+	if err != nil {
 		return fmt.Errorf("orchestrator: %w", err)
 	}
 	return nil

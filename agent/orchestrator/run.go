@@ -53,15 +53,15 @@ func (o *Orchestrator) run(threadID string, sl *slot) {
 // runTurn runs the turn on what its user runs it with: the model client of its connection, the model's context window
 // and the user's tools. The runtime reads the rest itself.
 func (o *Orchestrator) runTurn(ctx context.Context, t db.ThreadRow, turn db.TurnRow) (bool, db.Usage, error) {
-	window, err := o.windowFor(turn.Model)
+	window, err := o.res.Window(turn.Model)
 	if err != nil {
 		return false, db.Usage{}, err
 	}
-	client, err := o.clientFor(t.UserID, turn.Model.Connection)
+	client, err := o.res.Client(t.UserID, turn.Model.Connection)
 	if err != nil {
 		return false, db.Usage{}, fmt.Errorf("orchestrator: the model client of the user: %w", err)
 	}
-	registry, err := o.registryFor(t.UserID)
+	registry, err := o.res.Registry(t.UserID)
 	if err != nil {
 		return false, db.Usage{}, err
 	}
@@ -71,7 +71,7 @@ func (o *Orchestrator) runTurn(ctx context.Context, t db.ThreadRow, turn db.Turn
 		Host: turnHost{o: o, t: t, turn: turn, registry: registry},
 		Config: runtime.Config{
 			Name: o.cfg.Name, Prompt: o.cfg.Prompt, SkillsDir: o.cfg.SkillsDir,
-			Settings: o.cfg.Settings, Shared: o.cfg.ToolsFor != nil, Tools: o.cfg.Tools,
+			Settings: o.cfg.Settings, Shared: o.res.Shared(), Tools: o.cfg.Tools,
 		},
 		TurnID: turn.ID,
 	}
