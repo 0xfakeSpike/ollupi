@@ -21,6 +21,7 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/repo/skills"
 	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/0xfakeSpike/ollupi/tools/background"
 	"github.com/0xfakeSpike/ollupi/tools/plan"
 	skilltools "github.com/0xfakeSpike/ollupi/tools/skills"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
@@ -230,7 +231,7 @@ func (o *Orchestrator) Start(ctx context.Context) error {
 }
 
 func (o *Orchestrator) buildTools(ctx context.Context) error {
-	providers := append(slices.Clone(o.cfg.Providers), plan.New(), subagent.New(o.cfg.DB), userinput.New(), contextmanager.NewOutputs(o.cfg.DB), runtime.Loader{}, backgroundTools{o})
+	providers := append(slices.Clone(o.cfg.Providers), plan.New(), subagent.New(o.cfg.DB), userinput.New(), contextmanager.NewOutputs(o.cfg.DB), runtime.Loader{}, background.New(o.cfg.DB, o.cancelBackground))
 	if o.cfg.Memory != nil {
 		providers = append(providers, o.cfg.Memory)
 	}
