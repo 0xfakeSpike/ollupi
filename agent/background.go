@@ -75,7 +75,10 @@ func (a *Agent) endBackground(ctx context.Context, call repo.BackgroundCallRow, 
 	}
 	slog.Info("background call ended", "thread", call.ThreadID, "background", call.ID, "status", status, "recorded", ended)
 	if ended && status != repo.BackgroundInterrupted {
-		a.post(func() { a.deliverBackground(call.ThreadID) })
+		a.post(func() {
+			a.deliverBackground(call.ThreadID)
+			a.reconcile(call.ThreadID)
+		})
 	}
 }
 
@@ -156,6 +159,50 @@ func (a *Agent) cancelBackgroundOf(threadID, why string) error {
 	return nil
 }
 
+// ToolWaitForBackground waits for background calls of the conversation to end.
+const ToolWaitForBackground = "wait_for_background"
+
+type waitForBackground struct {
+	Background []string `json:"background" jsonschema:"The ids of the background calls to wait for, as their starts returned them."`
+}
+
+func (waitForBackground) Constrain(s *jsonschema.Schema) {
+	s.Properties["background"].MinItems = jsonschema.Ptr(1)
+	s.Properties["background"].Items.MinLength = jsonschema.Ptr(1)
+}
+
+// fulfil completes a call that waits for background calls once they have all ended, with how each ended; their
+// results come back to the turn as backgroundResult items. It reports whether it did.
+func (a *Agent) fulfil(t repo.ThreadRow, turn repo.TurnRow, call repo.ItemRow) (bool, error) {
+	var req waitForBackground
+	if err := json.Unmarshal(call.Await.Request, &req); err != nil {
+		return false, fmt.Errorf("agent: wait %s: %w", call.ID, err)
+	}
+	ended := map[string]string{}
+	for _, id := range req.Background {
+		bc, err := a.cfg.DB.BackgroundCall(id)
+		if err != nil {
+			return false, fmt.Errorf("agent: background call %s: %w", id, err)
+		}
+		if bc.Status == repo.BackgroundRunning {
+			return false, nil
+		}
+		ended[id] = string(bc.Status)
+	}
+	result, _, err := repo.ResultOf(tools.Result{Output: map[string]any{"ended": ended}})
+	if err != nil {
+		return false, err
+	}
+	now := time.Now().UTC()
+	call.Status, call.Result, call.CompletedAt = repo.ItemCompleted, result, &now
+	stored, _, err := a.cfg.DB.RecordItem(t.ID, call)
+	if err != nil {
+		return false, err
+	}
+	a.emitItem(t, turn, stored, false)
+	return true, nil
+}
+
 // backgroundTools are the tools a conversation keeps its background calls with.
 type backgroundTools struct{ a *Agent }
 
@@ -173,6 +220,12 @@ func (cancelBackground) Constrain(s *jsonschema.Schema) {
 
 func (backgroundTools) ToolList(context.Context) ([]*tools.Spec, error) {
 	return []*tools.Spec{{
+		Name: ToolWaitForBackground,
+		Description: "Wait until background calls of this conversation have ended, when you need their results before going on. " +
+			"The turn waits without holding anything; it goes on once every call named has ended, with their results.",
+		InputSchema: tools.InputSchema[waitForBackground](),
+		Annotations: &tools.Annotations{Title: "Wait for background calls", ReadOnlyHint: true, OpenWorldHint: tools.Hint(false)},
+	}, {
 		Name:        ToolCancelBackground,
 		Description: "Stop a background call of this conversation that is still running. Its result does not come back.",
 		InputSchema: tools.InputSchema[cancelBackground](),
@@ -180,7 +233,10 @@ func (backgroundTools) ToolList(context.Context) ([]*tools.Spec, error) {
 	}}, nil
 }
 
-func (b backgroundTools) Invoke(ctx context.Context, _ string, arguments map[string]any) (tools.Result, error) {
+func (b backgroundTools) Invoke(ctx context.Context, tool string, arguments map[string]any) (tools.Result, error) {
+	if tool == ToolWaitForBackground {
+		return b.wait(ctx, arguments)
+	}
 	args, err := tools.DecodeArguments[cancelBackground](arguments)
 	if err != nil {
 		return tools.Result{}, err
@@ -201,4 +257,21 @@ func (b backgroundTools) Invoke(ctx context.Context, _ string, arguments map[str
 		return tools.Result{}, fmt.Errorf("background call %s already ended: %s", call.ID, ended.Status)
 	}
 	return tools.Result{Output: map[string]any{"background": call.ID, "status": string(repo.BackgroundCancelled)}}, nil
+}
+
+func (b backgroundTools) wait(ctx context.Context, arguments map[string]any) (tools.Result, error) {
+	args, err := tools.DecodeArguments[waitForBackground](arguments)
+	if err != nil {
+		return tools.Result{}, err
+	}
+	for _, id := range args.Background {
+		call, err := b.a.cfg.DB.BackgroundCall(id)
+		if errors.Is(err, repo.ErrNotFound) || err == nil && call.ThreadID != tools.CallerOf(ctx).ThreadID {
+			return tools.Result{}, fmt.Errorf("this conversation has no background call %q", id)
+		}
+		if err != nil {
+			return tools.Result{}, err
+		}
+	}
+	return tools.Awaiting(tools.AwaitBackground, args)
 }

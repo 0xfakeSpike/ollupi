@@ -248,10 +248,11 @@ func (a *Agent) interrupt(threadID, expectedTurnID string) error {
 		return fmt.Errorf("%w (expected %s, in progress %s)", ErrTurnMismatch, expectedTurnID, turn.ID)
 	}
 	reason := map[repo.TurnStatus]string{
-		repo.TurnReady:              "interrupted while waiting for a slot",
-		repo.TurnWaitingOnApproval:  "interrupted while waiting for the user",
-		repo.TurnWaitingOnUserInput: "interrupted while waiting for the user",
-		repo.TurnWaitingOnAgent:     "interrupted while waiting for subagents",
+		repo.TurnReady:               "interrupted while waiting for a slot",
+		repo.TurnWaitingOnApproval:   "interrupted while waiting for the user",
+		repo.TurnWaitingOnUserInput:  "interrupted while waiting for the user",
+		repo.TurnWaitingOnAgent:      "interrupted while waiting for subagents",
+		repo.TurnWaitingOnBackground: "interrupted while waiting for background calls",
 	}[turn.Status]
 	turn.Status, turn.Error = repo.TurnInterrupted, reason
 	a.endTurn(turn)

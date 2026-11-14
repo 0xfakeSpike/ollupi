@@ -63,13 +63,15 @@ const (
 	TurnWaitingOnApproval  TurnStatus = "waitingOnApproval"
 	TurnWaitingOnUserInput TurnStatus = "waitingOnUserInput"
 	TurnWaitingOnAgent     TurnStatus = "waitingOnAgent"
-	TurnCompleted          TurnStatus = "completed"
-	TurnInterrupted        TurnStatus = "interrupted"
-	TurnFailed             TurnStatus = "failed"
+	// TurnWaitingOnBackground waits for background calls of its thread to end.
+	TurnWaitingOnBackground TurnStatus = "waitingOnBackground"
+	TurnCompleted           TurnStatus = "completed"
+	TurnInterrupted         TurnStatus = "interrupted"
+	TurnFailed              TurnStatus = "failed"
 )
 
 var TurnStatusValues = []TurnStatus{TurnQueued, TurnReady, TurnInProgress, TurnWaitingOnApproval, TurnWaitingOnUserInput,
-	TurnWaitingOnAgent, TurnCompleted, TurnInterrupted, TurnFailed}
+	TurnWaitingOnAgent, TurnWaitingOnBackground, TurnCompleted, TurnInterrupted, TurnFailed}
 
 func (s TurnStatus) Value() (driver.Value, error) { return enumValue(s, TurnStatusValues) }
 
@@ -110,10 +112,11 @@ func (d *DB) ThreadsWaitingOnUser(user string) ([]string, error) {
 }
 
 // StrandedThreads lists the threads a stopped process may have left without a way forward: a turn it was running,
-// a call awaiting a subagent that may have ended unreported or never started, or queued turns behind no current one.
+// a call awaiting a subagent that may have ended unreported or never started, a call awaiting background calls that
+// ended as it stopped, or queued turns behind no current one.
 func (d *DB) StrandedThreads() ([]string, error) {
 	var ids []string
-	err := d.gorm.Raw(`SELECT thread_id FROM turns WHERE status IN ('inProgress', 'waitingOnAgent')
+	err := d.gorm.Raw(`SELECT thread_id FROM turns WHERE status IN ('inProgress', 'waitingOnAgent', 'waitingOnBackground')
 		UNION SELECT thread_id FROM turns q WHERE q.status = 'queued'
 			AND NOT EXISTS (SELECT 1 FROM turns a WHERE a.thread_id = q.thread_id AND ` + currentTurn + `)`).Scan(&ids).Error
 	return ids, err
@@ -168,6 +171,8 @@ func waitingOn(open []ItemRow) TurnStatus {
 			status = TurnWaitingOnUserInput
 		case it.waitsOnAgent() && status == TurnReady:
 			status = TurnWaitingOnAgent
+		case it.waitsOnBackground() && status == TurnReady:
+			status = TurnWaitingOnBackground
 		}
 	}
 	return status

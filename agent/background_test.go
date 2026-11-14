@@ -3,8 +3,13 @@ package agent_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -174,5 +179,90 @@ func TestArchivingAConversationCancelsItsBackgroundCalls(t *testing.T) {
 	}
 	if row, err := db.BackgroundCall(id); err != nil || row.Status != repo.BackgroundCancelled || row.Result != nil {
 		t.Errorf("the call of an archived conversation: %+v %v", row, err)
+	}
+}
+
+// waitingModel starts a download in the background, waits for it with the id it was told, and answers after that.
+type waitingModel struct {
+	mu   sync.Mutex
+	reqs [][]byte
+}
+
+func (m *waitingModel) last() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return string(m.reqs[len(m.reqs)-1])
+}
+
+func (m *waitingModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(r.Body)
+	m.mu.Lock()
+	m.reqs = append(m.reqs, body)
+	n := len(m.reqs)
+	m.mu.Unlock()
+	call := func(name, args string) map[string]any {
+		return map[string]any{"tool_calls": []any{map[string]any{"index": 0, "id": fmt.Sprintf("call_%d", n), "type": "function", "function": map[string]any{"name": name, "arguments": args}}}}
+	}
+	delta, finish := map[string]any{"content": "下载好了。"}, "stop"
+	switch n {
+	case 1:
+		delta, finish = call("files__download", `{"url":"https://example.com/big.iso","run_in_background":true}`), "tool_calls"
+	case 2:
+		id := regexp.MustCompile(`\\"background\\": *\\"([0-9a-f-]+)\\"`).FindStringSubmatch(string(body))
+		if id == nil {
+			delta = map[string]any{"content": "no id"}
+			break
+		}
+		delta, finish = call(agent.ToolWaitForBackground, `{"background":["`+id[1]+`"]}`), "tool_calls"
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	send := func(v any) { raw, _ := json.Marshal(v); fmt.Fprintf(w, "data: %s\n\n", raw) }
+	chunk := func(delta map[string]any, finish any) map[string]any {
+		return map[string]any{"id": "x", "object": "chat.completion.chunk", "created": 1, "model": "demo", "choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": finish}}}
+	}
+	send(chunk(delta, nil))
+	send(chunk(map[string]any{}, finish))
+	fmt.Fprint(w, "data: [DONE]\n\n")
+}
+
+func TestATurnWaitsForItsBackgroundCallWithoutASlot(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	slow := slowTools{release: make(chan struct{}), stopped: make(chan struct{})}
+	fake := &waitingModel{}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	ag, db := started(ctx, t, agent.Config{Providers: []tools.Provider{slow}}, srv.URL)
+	th, err := ag.StartThread(repo.DefaultUser, "", "", "download", permission.Settings{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, agent.Input{Text: "下载这个文件，下好了告诉我"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reach := func(want repo.TurnStatus) {
+		t.Helper()
+		for {
+			row, err := db.Turn(turn.ID)
+			if err == nil && row.Status == want {
+				return
+			}
+			select {
+			case <-ctx.Done():
+				t.Fatalf("the turn never reached %s: %s", want, row.Status)
+			case <-time.After(20 * time.Millisecond):
+			}
+		}
+	}
+	reach(repo.TurnWaitingOnBackground)
+	close(slow.release)
+	reach(repo.TurnCompleted)
+	if v, err := db.Thread(th.ID); err != nil || len(v.Turns) != 1 {
+		t.Errorf("the result started a turn of its own instead of coming back to the one that waited: %v", err)
+	}
+	last := fake.last()
+	if !strings.Contains(last, "of files__download ended: completed]") || !strings.Contains(last, `\"ended\"`) {
+		t.Errorf("the turn went on without the result: %s", last)
 	}
 }

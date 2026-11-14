@@ -44,6 +44,17 @@ func (a *Agent) reconcile(threadID string) {
 		}
 		reported = reported || settled
 	}
+	if waits := st.BackgroundWaits(); len(waits) > 0 {
+		a.deliverBackground(threadID)
+		for _, call := range waits {
+			fulfilled, err := a.fulfil(st.Thread, turn, call)
+			if err != nil {
+				a.halt(threadID, err)
+				return
+			}
+			reported = reported || fulfilled
+		}
+	}
 	if reported {
 		if turn, err = a.cfg.DB.Turn(turn.ID); err != nil {
 			a.halt(threadID, err)
