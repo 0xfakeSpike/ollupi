@@ -2,7 +2,6 @@ package role
 
 import (
 	"encoding/json"
-	"github.com/0xfakeSpike/ollupi/tools/subagent"
 	"slices"
 	"strings"
 	"testing"
@@ -11,6 +10,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/0xfakeSpike/ollupi/tools/subagent"
 	"github.com/0xfakeSpike/ollupi/tools/workspace"
 )
 
@@ -85,15 +85,15 @@ func TestOfferKeepsOnlyTheCoreToolsForASmallInput(t *testing.T) {
 }
 
 func TestALaunchToolIsOfferedOnlyWithItsProvidersTools(t *testing.T) {
-	general, browser := tool(GeneralSubTool, "launch"), tool(BrowserSubTool, "launch")
+	general, browser := tool(string(GeneralSub), "launch"), tool(string(BrowserSub), "launch")
 	general.Provider, browser.Provider = subagent.ProviderName, subagent.ProviderName
 	launchTools := []tools.ToolDescriptor{tool("shell", "run"), general, browser}
-	if offered, _ := fullMain.Offer(launchTools, window, nil); slices.Contains(names(offered), BrowserSubTool) || !slices.Contains(names(offered), GeneralSubTool) {
+	if offered, _ := fullMain.Offer(launchTools, window, nil); slices.Contains(names(offered), string(BrowserSub)) || !slices.Contains(names(offered), string(GeneralSub)) {
 		t.Errorf("without a browser: offered %q", names(offered))
 	}
 	page := tool("navigate", "open")
 	page.Provider = BrowserProvider
-	if offered, _ := fullMain.Offer(append(launchTools, page), window, nil); !slices.Contains(names(offered), BrowserSubTool) {
+	if offered, _ := fullMain.Offer(append(launchTools, page), window, nil); !slices.Contains(names(offered), string(BrowserSub)) {
 		t.Errorf("with a browser: offered %q", names(offered))
 	}
 }

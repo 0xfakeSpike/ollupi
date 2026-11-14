@@ -3607,12 +3607,7 @@
     }
   },
   "builtinTools": {
-    "Agent": {
-      "arguments": {
-        "$ref": "#/$defs/SubagentCall"
-      }
-    },
-    "BrowserAgent": {
+    "browser-sub-agent": {
       "arguments": {
         "$ref": "#/$defs/SubagentCall"
       }
@@ -3620,6 +3615,11 @@
     "edit_file": {
       "output": {
         "$ref": "#/$defs/FileOutput"
+      }
+    },
+    "general-sub-agent": {
+      "arguments": {
+        "$ref": "#/$defs/SubagentCall"
       }
     },
     "glob": {

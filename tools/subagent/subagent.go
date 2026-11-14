@@ -17,12 +17,33 @@ import (
 // ProviderName is the provider of the tools that launch subagents.
 const ProviderName = "subagents"
 
-// A Kind is a kind of subagent: how the tool that launches it shows to the launching agent, and the role it runs as.
+const (
+	// General and Browser are the kinds of subagent. Each is the name of the tool that launches it, and of the role
+	// that its subagent runs as.
+	General = "general-sub-agent"
+	Browser = "browser-sub-agent"
+)
+
+// A Kind is how the tool that launches a kind of subagent shows: its title to the user, and its description to the
+// launching agent, which tells it when to launch the kind; the tool adds how launching works.
 type Kind struct {
-	Title string
-	// Description tells the launching agent when to launch the kind; the tool adds how launching works.
-	Description string
-	Role        string
+	Title, Description string
+}
+
+// Kinds are the kinds of subagent, by name.
+var Kinds = map[string]Kind{
+	General: {
+		Title: "Subagent",
+		Description: "Launch a general-purpose subagent: another run of you, with your tools, that does one task on its own and reports back. " +
+			"For a task in the built-in browser, launch " + Browser + " instead. " +
+			"To work on independent tasks at the same time, call " + General + " several times in the same response; the subagents run in parallel.",
+	},
+	Browser: {
+		Title: "Browser subagent",
+		Description: "Launch a browser subagent: an agent that does one task in the built-in browser (opening pages, reading them, clicking and typing) and reports back. " +
+			"It has only the browser's tools. Use it for browser work of many steps, so the pages it reads stay out of this conversation. " +
+			"Browser subagents share the one browser, so launch one at a time.",
+	},
 }
 
 // A Call is what a launch tool is called with: the task for the subagent.
@@ -39,11 +60,9 @@ func (Call) Constrain(s *jsonschema.Schema) {
 // Tools provides a tool for each kind of subagent.
 type Tools struct {
 	db *repo.DB
-	// kinds are the kinds of subagent by the name of the tool that launches them.
-	kinds map[string]Kind
 }
 
-func New(db *repo.DB, kinds map[string]Kind) *Tools { return &Tools{db: db, kinds: kinds} }
+func New(db *repo.DB) *Tools { return &Tools{db: db} }
 
 func (*Tools) Name() (string, string) { return ProviderName, "Launches subagents." }
 
@@ -51,8 +70,8 @@ const launching = "It knows nothing of this conversation: put everything it need
 	"The turn waits until every subagent launched in the response has reported, and each call returns that subagent's final report. Subagents cannot launch subagents."
 
 func (t *Tools) ToolList(context.Context) ([]*tools.Spec, error) {
-	specs := make([]*tools.Spec, 0, len(t.kinds))
-	for name, k := range t.kinds {
+	specs := make([]*tools.Spec, 0, len(Kinds))
+	for name, k := range Kinds {
 		specs = append(specs, &tools.Spec{
 			Name:        name,
 			Description: k.Description + " " + launching,
@@ -65,8 +84,7 @@ func (t *Tools) ToolList(context.Context) ([]*tools.Spec, error) {
 
 // Invoke queues the subagent of the kind whose tool was called, and waits on its conversation.
 func (t *Tools) Invoke(ctx context.Context, caller tools.Caller, name string, arguments map[string]any) (tools.Result, error) {
-	kind, ok := t.kinds[name]
-	if !ok {
+	if _, ok := Kinds[name]; !ok {
 		return tools.Result{}, fmt.Errorf("%q launches no subagent", name)
 	}
 	c, err := tools.DecodeArguments[Call](arguments)
@@ -80,7 +98,7 @@ func (t *Tools) Invoke(ctx context.Context, caller tools.Caller, name string, ar
 	if item == "" {
 		return tools.Result{}, fmt.Errorf("a subagent is launched only by a call of a turn")
 	}
-	child, err := t.db.QueueSubagent(caller.ThreadID, item, c.Description, repo.TurnRow{Input: c.Prompt, Agent: kind.Role})
+	child, err := t.db.QueueSubagent(caller.ThreadID, item, c.Description, repo.TurnRow{Input: c.Prompt, Agent: name})
 	if err != nil {
 		return tools.Result{}, err
 	}

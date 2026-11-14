@@ -3,13 +3,12 @@ package role
 import (
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
+	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
 
 const (
-	// BrowserSub is the name of the browser subagent.
-	BrowserSub Name = "browser-sub-agent"
-	// BrowserSubTool launches a subagent that works only in the built-in browser.
-	BrowserSubTool = "BrowserAgent"
+	// BrowserSub is the subagent that works only in the built-in browser; the tool of its name launches it.
+	BrowserSub Name = subagent.Browser
 	// BrowserProvider is the provider of the built-in browser's tools, which the desktop app connects.
 	BrowserProvider = "browser"
 )
@@ -19,13 +18,6 @@ var browserSub = Role{
 	send: sendFitting,
 	// It works with the browser's tools alone, and reads the outputs they shorten.
 	Permission: permission.Layer{Of: "the browser subagent's role", Providers: []string{BrowserProvider, contextmanager.OutputsProvider}},
-	LaunchedBy: &LaunchTool{
-		Name:  BrowserSubTool,
-		Title: "Browser subagent",
-		Description: "Launch a browser subagent: an agent that does one task in the built-in browser (opening pages, reading them, clicking and typing) and reports back. " +
-			"It has only the browser's tools. Use it for browser work of many steps, so the pages it reads stay out of this conversation. " +
-			"Browser subagents share the one browser, so launch one at a time.",
-	},
 }
 
 const browserSubRules = `You are a subagent that does one task in the built-in browser and reports back to the agent that launched you. You do the task by calling the browser's tools in a loop; every result comes back to you as an observation. When the task is done, or cannot go further, reply without calling a tool: that reply is your report.

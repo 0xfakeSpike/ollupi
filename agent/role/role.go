@@ -9,7 +9,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/tools"
-	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
 
 // Name is a role as a turn stores it.
@@ -32,18 +31,9 @@ type Role struct {
 	send func(visible []tools.ToolDescriptor, window *contextmanager.Manager) (sent, deferred []tools.ToolDescriptor)
 	// Memory loads the user's memory into the run.
 	Memory bool
-	// LaunchedBy is the tool through which another agent launches the role as a subagent; a main role has none.
-	LaunchedBy *LaunchTool
 }
 
-// A LaunchTool is the tool that launches a subagent role, as the launching agent sees it.
-type LaunchTool struct {
-	Name, Title string
-	// Description tells the launching agent when to use the role; the tool adds how launching works.
-	Description string
-}
-
-// all are the roles, in the order their launch tools are listed.
+// all are the roles.
 var all = []Role{fullMain, compactMain, generalSub, browserSub}
 
 func Of(name Name) (Role, bool) {
@@ -60,15 +50,4 @@ func ForMain(inputTokens int) Role {
 		return compactMain
 	}
 	return fullMain
-}
-
-// Subagents are the kinds of subagent the roles are launched as, by the name of the tool that launches them.
-func Subagents() map[string]subagent.Kind {
-	kinds := map[string]subagent.Kind{}
-	for _, r := range all {
-		if r.LaunchedBy != nil {
-			kinds[r.LaunchedBy.Name] = subagent.Kind{Title: r.LaunchedBy.Title, Description: r.LaunchedBy.Description, Role: string(r.Name)}
-		}
-	}
-	return kinds
 }

@@ -24,11 +24,11 @@ func TestACallQueuesTheSubagentsConversationAndWaitsOnIt(t *testing.T) {
 	if _, _, _, err := db.SubmitTurn("main", repo.TurnRow{ID: "asked", Model: model, Agent: "full-main-agent", Input: "go", CreatedAt: at, StartedAt: at}); err != nil {
 		t.Fatal(err)
 	}
-	launch := New(db, map[string]Kind{"BrowserAgent": {Title: "Browser subagent", Description: "Browse.", Role: "browser-sub-agent"}})
+	launch := New(db)
 	ctx, caller := context.Background(), tools.Caller{UserID: repo.DefaultUser, ThreadID: "main", Item: "call"}
 	args := map[string]any{"description": "Look it up", "prompt": "Find the page and report."}
 
-	res, err := launch.Invoke(ctx, caller, "BrowserAgent", args)
+	res, err := launch.Invoke(ctx, caller, Browser, args)
 	if err != nil || res.Await == nil || res.Await.By != tools.AwaitAgent || res.Await.Handle == "" {
 		t.Fatalf("a launch: %+v %v", res, err)
 	}
@@ -40,19 +40,19 @@ func TestACallQueuesTheSubagentsConversationAndWaitsOnIt(t *testing.T) {
 		t.Errorf("the subagent's conversation: %+v", child.Thread)
 	}
 	queued := child.QueuedTurns()
-	if _, active := child.ActiveTurn(); active || len(queued) != 1 || queued[0].Agent != "browser-sub-agent" ||
+	if _, active := child.ActiveTurn(); active || len(queued) != 1 || queued[0].Agent != Browser ||
 		queued[0].Input != "Find the page and report." || queued[0].Model != model {
 		t.Errorf("the subagent's turn: %+v", queued)
 	}
 
-	again, err := launch.Invoke(ctx, caller, "BrowserAgent", args)
+	again, err := launch.Invoke(ctx, caller, Browser, args)
 	if err != nil || again.Await == nil || again.Await.Handle != res.Await.Handle {
 		t.Errorf("the same call launched another subagent: %+v %v", again, err)
 	}
-	if _, err := launch.Invoke(ctx, caller, "BrowserAgent", map[string]any{"description": "x", "prompt": "  "}); err == nil {
+	if _, err := launch.Invoke(ctx, caller, Browser, map[string]any{"description": "x", "prompt": "  "}); err == nil {
 		t.Error("a blank task launched a subagent")
 	}
-	if _, err := launch.Invoke(ctx, tools.Caller{UserID: repo.DefaultUser, ThreadID: "main"}, "BrowserAgent", args); err == nil {
+	if _, err := launch.Invoke(ctx, tools.Caller{UserID: repo.DefaultUser, ThreadID: "main"}, Browser, args); err == nil {
 		t.Error("a launch outside a call of a turn queued a subagent")
 	}
 }

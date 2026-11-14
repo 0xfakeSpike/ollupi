@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"context"
-	"github.com/0xfakeSpike/ollupi/tools/subagent"
 	"slices"
 	"testing"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
 
 type pageTools struct{}
@@ -27,7 +27,7 @@ func (pageTools) Invoke(context.Context, tools.Caller, string, map[string]any) (
 
 func offered(t *testing.T, providers ...tools.Provider) []string {
 	t.Helper()
-	registry, err := tools.New(context.Background(), nil, append(providers, subagent.New(nil, role.Subagents()))...)
+	registry, err := tools.New(context.Background(), nil, append(providers, subagent.New(nil))...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,10 +46,10 @@ func offered(t *testing.T, providers ...tools.Provider) []string {
 }
 
 func TestTheBrowserSubagentIsHiddenWithoutABrowser(t *testing.T) {
-	if got := offered(t); slices.Contains(got, role.BrowserSubTool) || !slices.Contains(got, role.GeneralSubTool) {
+	if got := offered(t); slices.Contains(got, subagent.Browser) || !slices.Contains(got, subagent.General) {
 		t.Errorf("without a browser: offered %q", got)
 	}
-	if got := offered(t, pageTools{}); !slices.Contains(got, role.BrowserSubTool) {
+	if got := offered(t, pageTools{}); !slices.Contains(got, subagent.Browser) {
 		t.Errorf("with a browser: offered %q", got)
 	}
 }
