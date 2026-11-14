@@ -287,6 +287,27 @@ func TestTrafficMatchesContract(t *testing.T) {
 	turn = c.startTurn(threadID, "delegate this")
 	c.awaitTurnEnd(turn, repo.TurnCompleted)
 
+	turn = c.startTurn(threadID, "browse this")
+	c.awaitTurnEnd(turn, repo.TurnCompleted)
+	if v, err := db.Thread(threadID); err != nil || !slices.ContainsFunc(v.Items, func(it repo.ItemRow) bool {
+		return it.Tool == subagent.BrowserTool && it.Status == repo.ItemCompleted
+	}) {
+		t.Errorf("the browser subagent did not report back (%v)", err)
+	}
+	fake.mu.Lock()
+	for text, names := range fake.tools {
+		if strings.HasSuffix(text, "Look the thing up on the web and report.") && !slices.Equal(names, []string{"click", "read_tool_output"}) {
+			t.Errorf("the browser subagent was sent %q, want only the browser's tools", names)
+		}
+		if strings.HasSuffix(text, "Check the thing and report.") && (len(names) == 0 || slices.ContainsFunc(names, func(name string) bool {
+			_, launches := subagent.KindOf(name)
+			return launches || strings.Contains(name, "scheduled_job")
+		})) {
+			t.Errorf("the general subagent was sent %q, want its parent's tools without subagents or scheduled tasks", names)
+		}
+	}
+	fake.mu.Unlock()
+
 	turn = c.startTurn(threadID, "recall how to answer")
 	c.awaitTurnEnd(turn, repo.TurnCompleted)
 
@@ -763,6 +784,8 @@ type fakeModel struct {
 	calls   int
 	parts   []string
 	prompts []string
+	// tools are the tools sent with each user prompt, by its text.
+	tools map[string][]string
 }
 
 func (f *fakeModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -771,6 +794,11 @@ func (f *fakeModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Role    string          `json:"role"`
 			Content json.RawMessage `json:"content"`
 		} `json:"messages"`
+		Tools []struct {
+			Function struct {
+				Name string `json:"name"`
+			} `json:"function"`
+		} `json:"tools"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Messages) == 0 {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -799,6 +827,12 @@ func (f *fakeModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if last.Role == "user" {
 		f.mu.Lock()
 		f.prompts = append(f.prompts, text)
+		if f.tools == nil {
+			f.tools = map[string][]string{}
+		}
+		for _, t := range req.Tools {
+			f.tools[text] = append(f.tools[text], t.Function.Name)
+		}
 		f.mu.Unlock()
 	}
 
@@ -817,6 +851,8 @@ func (f *fakeModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		call(userinput.Tool, `{"questions":[{"id":"color","header":"Color","question":"Which color?"}]}`)
 	case last.Role == "user" && strings.Contains(text, "delegate"):
 		call(subagent.Tool, `{"description":"Check a thing","prompt":"Check the thing and report."}`)
+	case last.Role == "user" && strings.Contains(text, "browse"):
+		call(subagent.BrowserTool, `{"description":"Look a thing up","prompt":"Look the thing up on the web and report."}`)
 	case last.Role == "user" && strings.Contains(text, "recall"):
 		call(memory.ToolSearch, `{"query":"answers"}`)
 	case last.Role == "user" && strings.Contains(text, "write notes"):

@@ -94,9 +94,6 @@ func (j *Jobs) Invoke(ctx context.Context, tool string, arguments map[string]any
 		if caller.ThreadID == "" {
 			return tools.Result{}, fmt.Errorf("cron: a task is created in a conversation")
 		}
-		if caller.Subagent {
-			return tools.Result{}, fmt.Errorf("cron: a subagent cannot schedule tasks; report what should be scheduled instead")
-		}
 		args, err := tools.DecodeArguments[CreateArgs](arguments)
 		if err != nil {
 			return tools.Result{}, err

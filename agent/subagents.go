@@ -81,3 +81,19 @@ func (a *Agent) report(call repo.ItemRow, childID string, ended repo.TurnRow) (r
 	}
 	return call, nil
 }
+
+// kind is the kind of subagent the thread is, nil for a top-level thread.
+func (a *Agent) kind(t repo.ThreadRow) (*subagent.Kind, error) {
+	if t.ParentItemID == "" {
+		return nil, nil
+	}
+	call, err := a.cfg.DB.Item(string(t.ParentItemID))
+	if err != nil {
+		return nil, fmt.Errorf("agent: the call that launched subagent %s: %w", t.ID, err)
+	}
+	k, ok := subagent.KindOf(call.Tool)
+	if !ok {
+		return nil, fmt.Errorf("agent: subagent %s was launched by %q, which launches no kind of subagent", t.ID, call.Tool)
+	}
+	return &k, nil
+}

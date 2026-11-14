@@ -88,6 +88,10 @@ func (a *Agent) runTurn(ctx context.Context, t repo.ThreadRow, turn repo.TurnRow
 	if err != nil {
 		return false, repo.Usage{}, err
 	}
+	kind, err := a.kind(t)
+	if err != nil {
+		return false, repo.Usage{}, err
+	}
 	var history, items []repo.ItemRow
 	for _, it := range thread {
 		if it.TurnID == turn.ID {
@@ -104,6 +108,7 @@ func (a *Agent) runTurn(ctx context.Context, t repo.ThreadRow, turn repo.TurnRow
 		Memory:      a.cfg.Memory,
 		Turn:        turn,
 		Caller:      tools.Caller{UserID: t.UserID, ThreadID: t.ID, WorkspaceID: string(t.WorkspaceID), EnvironmentID: string(t.EnvironmentID), Root: w.RootPath, Subagent: t.ParentThreadID != ""},
+		Subagent:    kind,
 		Prompt:      systemprompt.AgentPrompt(a.cfg.Name, a.cfg.Prompt),
 		Permissions: checker,
 		History:     history,

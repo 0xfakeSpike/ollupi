@@ -7,13 +7,15 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/skills"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
 
 type Input struct {
 	Agent string
 	// Compact asks for the version for a model with a small input: shorter rules, and no skills, as their tools are deferred.
-	Compact     bool
-	Subagent    bool
+	Compact bool
+	// Subagent is the kind of subagent this thread is, nil for a top-level thread.
+	Subagent    *subagent.Kind
 	Root        string
 	Skills      []skills.Skill
 	SkillTokens int
@@ -21,6 +23,9 @@ type Input struct {
 }
 
 func Build(in Input) string {
+	if in.Subagent != nil && in.Subagent.Prompt != "" {
+		return in.Subagent.Prompt
+	}
 	// Ordered from the most to the least stable section, so requests of other threads and subagents share the cached prefix.
 	rules := loopRules
 	if in.Compact {
@@ -36,8 +41,8 @@ func Build(in Input) string {
 	if in.Root != "" {
 		parts = append(parts, "# PROJECT\nThis conversation works in the project at "+in.Root+"; commands run there unless you set work_dir.")
 	}
-	if in.Subagent {
-		parts = append(parts, subagentRules)
+	if in.Subagent != nil {
+		parts = append(parts, subagent.Report)
 	}
 	return strings.Join(parts, "\n\n")
 }
@@ -57,10 +62,6 @@ const defaultAgentPrompt = `You are %s, a personal assistant working on the user
 
 # Talking with the user
 - Write plainly and warmly, as a capable colleague would. Lead with the outcome, then the details that matter to the user.`
-
-const subagentRules = `# You are a subagent
-Another agent launched you to do one task. Your final answer is your report to that agent, not a message to the user: make it complete on its own, with what the task asked for. ` +
-	`You cannot launch subagents; do the task yourself with your tools.`
 
 const loopRules = `You complete the user's request by calling tools in a loop. Every tool result comes back to you as an observation. Keep working until the request is done, then reply to the user without calling any tool; that reply is shown to the user as the final answer.
 

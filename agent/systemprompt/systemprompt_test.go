@@ -7,6 +7,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/skills"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
 
 func TestDeferredToolsAreListedByProvider(t *testing.T) {
@@ -34,5 +35,19 @@ func TestCompactIsShorterAndListsNoSkills(t *testing.T) {
 	}
 	if tokens := llm.EstimateTokens(compact); tokens > 400 {
 		t.Errorf("the compact prompt takes %d tokens", tokens)
+	}
+}
+
+func TestEachSubagentHasItsPrompt(t *testing.T) {
+	in := Input{Agent: "AGENT", Root: "/p", Skills: []skills.Skill{{Name: "deploy", Description: "Ship it."}}, SkillTokens: 1000}
+	for _, k := range subagent.Kinds {
+		in.Subagent = &k
+		text := Build(in)
+		if k.Prompt != "" && text != k.Prompt {
+			t.Errorf("%s has more than its own prompt:\n%s", k.Tool, text)
+		}
+		if k.Prompt == "" && (!strings.HasPrefix(text, "AGENT") || !strings.HasSuffix(text, subagent.Report)) {
+			t.Errorf("%s does not run on the agent's prompt with the report rules:\n%s", k.Tool, text)
+		}
 	}
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/redact"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/0xfakeSpike/ollupi/tools/subagent"
 	"github.com/0xfakeSpike/ollupi/tools/workspace"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
@@ -39,8 +40,10 @@ type Runtime struct {
 	Window   *contextmanager.Manager
 	Memory   *memory.Manager
 
-	Turn        repo.TurnRow
-	Caller      tools.Caller
+	Turn   repo.TurnRow
+	Caller tools.Caller
+	// Subagent is the kind of subagent this thread is, nil for a top-level thread.
+	Subagent    *subagent.Kind
 	Prompt      string
 	Permissions *permission.Checker
 	History     []repo.ItemRow
@@ -83,10 +86,10 @@ func (rt *Runtime) start() error {
 	}
 	rt.offered, rt.deferred = Offer(rt.Permissions.Tools(), rt.Window, slices.Concat(rt.History, rt.Items))
 	rt.system = systemprompt.Build(systemprompt.Input{
-		Agent: rt.Prompt, Compact: rt.Window.Compact(), Subagent: rt.Caller.Subagent, Root: rt.Caller.Root,
+		Agent: rt.Prompt, Compact: rt.Window.Compact(), Subagent: rt.Subagent, Root: rt.Caller.Root,
 		Skills: catalog, SkillTokens: rt.Window.SkillBudget(), Deferred: rt.deferred,
 	})
-	if hasSnapshot(slices.Concat(rt.History, rt.Items)) {
+	if rt.Subagent != nil && !rt.Subagent.Memory || hasSnapshot(slices.Concat(rt.History, rt.Items)) {
 		return nil
 	}
 	return rt.loadMemory()
@@ -140,6 +143,10 @@ var compactTools = []string{tools.ToolLoadTools, workspace.ToolReadFile, workspa
 func Offer(visible []tools.ToolDescriptor, window *contextmanager.Manager, items []repo.ItemRow) (offered, deferred []tools.ToolDescriptor) {
 	external := func(d tools.ToolDescriptor) bool { return strings.Contains(d.Name, tools.ProviderSeparator) }
 	loader := func(d tools.ToolDescriptor) bool { return d.Name == tools.ToolLoadTools }
+	visible = slices.DeleteFunc(slices.Clone(visible), func(d tools.ToolDescriptor) bool {
+		k, ok := subagent.KindOf(d.Name)
+		return ok && k.Provider != "" && !slices.ContainsFunc(visible, func(t tools.ToolDescriptor) bool { return t.Provider == k.Provider })
+	})
 	compact := window.Compact()
 	deferrable := func(d tools.ToolDescriptor) bool {
 		return external(d) || compact && !slices.Contains(compactTools, d.Name)

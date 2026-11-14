@@ -2,10 +2,11 @@ package agent
 
 import (
 	"fmt"
+	"slices"
 
+	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/repo"
-	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
 
 func (a *Agent) workspaceOf(id repo.Ref) (repo.WorkspaceRow, error) {
@@ -44,7 +45,22 @@ func (a *Agent) permissions(t repo.ThreadRow) (*permission.Checker, repo.Workspa
 	if err != nil {
 		return nil, repo.WorkspaceRow{}, err
 	}
-	checker, err := permission.New(layers, a.cfg.Tools, registry)
+	kind, err := a.kind(t)
+	if err != nil {
+		return nil, repo.WorkspaceRow{}, err
+	}
+	allowlist := a.cfg.Tools
+	if kind != nil {
+		allowlist = []string{}
+		for _, d := range registry.Descriptors() {
+			// A shortened output points at read_tool_output, whatever tools the subagent has.
+			offered := d.Name == contextmanager.ToolReadOutput || kind.Offers(d)
+			if offered && (a.cfg.Tools == nil || slices.Contains(a.cfg.Tools, d.Name)) {
+				allowlist = append(allowlist, d.Name)
+			}
+		}
+	}
+	checker, err := permission.New(layers, allowlist, registry)
 	if err != nil {
 		return nil, repo.WorkspaceRow{}, err
 	}
@@ -76,8 +92,5 @@ func (a *Agent) threadLayers(t repo.ThreadRow, w repo.WorkspaceRow) ([]permissio
 	if err != nil {
 		return nil, fmt.Errorf("agent: parent thread %s: %w", t.ParentThreadID, err)
 	}
-	return append(a.layers(w),
-		permission.Layer{Of: "the parent conversation's permission settings", Settings: parent.Settings},
-		permission.Layer{Of: "the subagent restrictions", Settings: permission.Settings{Rules: permission.Rules{Deny: []string{subagent.Tool}}}},
-	), nil
+	return append(a.layers(w), permission.Layer{Of: "the parent conversation's permission settings", Settings: parent.Settings}), nil
 }
