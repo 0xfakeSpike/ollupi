@@ -1,4 +1,4 @@
-package agent_test
+package orchestrator_test
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
@@ -33,7 +33,7 @@ func TestEveryRunOfATurnJoinsTheTurnsTrace(t *testing.T) {
 	fake := &callingModel{tool: "notes__write", args: `{"text":"buy milk"}`}
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
-	ag, db := started(ctx, t, agent.Config{Providers: []tools.Provider{noteTools{&atomic.Int32{}}}}, srv.URL)
+	ag, db := started(ctx, t, orchestrator.Config{Providers: []tools.Provider{noteTools{&atomic.Int32{}}}}, srv.URL)
 	w, err := ag.AddWorkspace(ctx, repo.DefaultUser, t.TempDir(), "app")
 	if err != nil {
 		t.Fatal(err)
@@ -43,7 +43,7 @@ func TestEveryRunOfATurnJoinsTheTurnsTrace(t *testing.T) {
 		t.Fatal(err)
 	}
 	rctx, request := otel.Tracer("test").Start(ctx, "turn/start")
-	turn, err := ag.StartTurn(rctx, repo.DefaultUser, th.ID, agent.Input{Text: "记一下买牛奶"})
+	turn, err := ag.StartTurn(rctx, repo.DefaultUser, th.ID, orchestrator.Input{Text: "记一下买牛奶"})
 	request.End()
 	if err != nil {
 		t.Fatal(err)

@@ -1,4 +1,4 @@
-package agent
+package orchestrator
 
 import (
 	"bytes"
@@ -60,10 +60,10 @@ func (o *Orchestrator) storeAttachments(ctx context.Context, t repo.ThreadRow, i
 		return nil, nil
 	}
 	if o.cfg.Attachments == nil {
-		return nil, fmt.Errorf("agent: %w: this agent takes no attachments", ErrInvalidMessage)
+		return nil, fmt.Errorf("orchestrator: %w: this agent takes no attachments", ErrInvalidMessage)
 	}
 	if len(ins) > maxAttachments {
-		return nil, fmt.Errorf("agent: %w: %d attachments; at most %d are accepted", ErrInvalidMessage, len(ins), maxAttachments)
+		return nil, fmt.Errorf("orchestrator: %w: %d attachments; at most %d are accepted", ErrInvalidMessage, len(ins), maxAttachments)
 	}
 	out := make([]repo.Attachment, 0, len(ins))
 	for _, in := range ins {
@@ -79,11 +79,11 @@ func (o *Orchestrator) storeAttachments(ctx context.Context, t repo.ThreadRow, i
 
 func (o *Orchestrator) storeAttachment(ctx context.Context, t repo.ThreadRow, in AttachmentInput) (repo.Attachment, error) {
 	if !filepath.IsAbs(in.Path) {
-		return repo.Attachment{}, fmt.Errorf("agent: %w: attachment path %q is not absolute", ErrInvalidMessage, in.Path)
+		return repo.Attachment{}, fmt.Errorf("orchestrator: %w: attachment path %q is not absolute", ErrInvalidMessage, in.Path)
 	}
 	src, size, err := o.attachmentSource(ctx, t.UserID, in.Path)
 	if err != nil {
-		return repo.Attachment{}, fmt.Errorf("agent: %w: attachment %s: %v", ErrInvalidMessage, in.Path, err)
+		return repo.Attachment{}, fmt.Errorf("orchestrator: %w: attachment %s: %v", ErrInvalidMessage, in.Path, err)
 	}
 	name := in.Name
 	if strings.TrimSpace(name) == "" {
@@ -91,11 +91,11 @@ func (o *Orchestrator) storeAttachment(ctx context.Context, t repo.ThreadRow, in
 	}
 	att, err := describe(src, size, attachmentName(name), in.MimeType)
 	if err != nil {
-		return repo.Attachment{}, fmt.Errorf("agent: %w: %v", ErrInvalidMessage, err)
+		return repo.Attachment{}, fmt.Errorf("orchestrator: %w: %v", ErrInvalidMessage, err)
 	}
 	att.File = t.ID + "/" + att.File
 	if err := o.copyAttachment(ctx, src, att); err != nil {
-		return repo.Attachment{}, fmt.Errorf("agent: store attachment %s: %w", att.Name, err)
+		return repo.Attachment{}, fmt.Errorf("orchestrator: store attachment %s: %w", att.Name, err)
 	}
 	return att, nil
 }
@@ -258,13 +258,13 @@ func (o *Orchestrator) ReadAttachment(ctx context.Context, user, threadID, id st
 	}
 	att, err := o.cfg.DB.Attachment(user, threadID, id)
 	if err != nil {
-		return repo.Attachment{}, nil, fmt.Errorf("agent: attachment %s: %w", id, err)
+		return repo.Attachment{}, nil, fmt.Errorf("orchestrator: attachment %s: %w", id, err)
 	}
 	ctx, cancel := context.WithTimeout(ctx, attachmentTimeout)
 	defer cancel()
 	data, err := o.cfg.Attachments.Get(ctx, att.File)
 	if err != nil {
-		return repo.Attachment{}, nil, fmt.Errorf("agent: attachment %s: %w", id, err)
+		return repo.Attachment{}, nil, fmt.Errorf("orchestrator: attachment %s: %w", id, err)
 	}
 	return att, data, nil
 }
@@ -275,15 +275,15 @@ func (o *Orchestrator) checkImages(threadID string, model llm.Model, atts []repo
 	}
 	for _, att := range atts {
 		if att.Kind == repo.AttachmentImage {
-			return fmt.Errorf("agent: %w: model %s does not accept images; pick a model that does", ErrInvalidMessage, model.Name)
+			return fmt.Errorf("orchestrator: %w: model %s does not accept images; pick a model that does", ErrInvalidMessage, model.Name)
 		}
 	}
 	has, err := o.cfg.DB.HasImages(threadID)
 	if err != nil {
-		return fmt.Errorf("agent: thread %s: %w", threadID, err)
+		return fmt.Errorf("orchestrator: thread %s: %w", threadID, err)
 	}
 	if has {
-		return fmt.Errorf("agent: %w: this conversation shows the model images, and model %s does not accept them; pick a model that does", ErrInvalidMessage, model.Name)
+		return fmt.Errorf("orchestrator: %w: this conversation shows the model images, and model %s does not accept them; pick a model that does", ErrInvalidMessage, model.Name)
 	}
 	return nil
 }

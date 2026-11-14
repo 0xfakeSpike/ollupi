@@ -1,4 +1,4 @@
-package agent
+package orchestrator
 
 import (
 	"context"
@@ -51,7 +51,7 @@ func (o *Orchestrator) run(threadID string, sl *slot) {
 	wait.End()
 	ctx, span := tracer.Start(parent, "ollupi.turn.run", attrs)
 	defer span.End()
-	limit := fmt.Errorf("agent: the turn reached its time limit of %s", o.cfg.RunLimit)
+	limit := fmt.Errorf("orchestrator: the turn reached its time limit of %s", o.cfg.RunLimit)
 	ctx, cancel := context.WithTimeoutCause(ctx, o.cfg.RunLimit, limit)
 	defer cancel()
 	started := time.Now()
@@ -77,7 +77,7 @@ func (o *Orchestrator) runTurn(ctx context.Context, t repo.ThreadRow, turn repo.
 	}
 	client, err := o.clientFor(t.UserID, turn.Model.Connection)
 	if err != nil {
-		return false, repo.Usage{}, fmt.Errorf("agent: the model client of the user: %w", err)
+		return false, repo.Usage{}, fmt.Errorf("orchestrator: the model client of the user: %w", err)
 	}
 	registry, err := o.registryFor(t.UserID)
 	if err != nil {
@@ -85,7 +85,7 @@ func (o *Orchestrator) runTurn(ctx context.Context, t repo.ThreadRow, turn repo.
 	}
 	r, ok := role.Of(role.Name(turn.Agent))
 	if !ok {
-		return false, repo.Usage{}, fmt.Errorf("agent: turn %s names role %q, which is none of %q", turn.ID, turn.Agent, role.NameValues)
+		return false, repo.Usage{}, fmt.Errorf("orchestrator: turn %s names role %q, which is none of %q", turn.ID, turn.Agent, role.NameValues)
 	}
 	checker, w, err := o.permissions(t, r)
 	if err != nil {

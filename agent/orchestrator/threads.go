@@ -1,4 +1,4 @@
-package agent
+package orchestrator
 
 import (
 	"context"
@@ -51,7 +51,7 @@ func (o *Orchestrator) UpdateThreadSettings(user, threadID string, settings perm
 	}
 	t, err = o.cfg.DB.SetThreadSettings(user, threadID, settings)
 	if err != nil {
-		return repo.ThreadRow{}, fmt.Errorf("agent: thread %s: %w", threadID, err)
+		return repo.ThreadRow{}, fmt.Errorf("orchestrator: thread %s: %w", threadID, err)
 	}
 	o.emit(Event{Kind: EventThreadChanged, Thread: t})
 	return t, nil
@@ -62,7 +62,7 @@ func (o *Orchestrator) createThread(t repo.ThreadRow) (repo.ThreadRow, error) {
 	t.ID = uuid.NewString()
 	t.CreatedAt, t.UpdatedAt = now, now
 	if err := o.cfg.DB.CreateThread(t); err != nil {
-		return repo.ThreadRow{}, fmt.Errorf("agent: create: %w", err)
+		return repo.ThreadRow{}, fmt.Errorf("orchestrator: create: %w", err)
 	}
 	o.emit(Event{Kind: EventThreadStarted, Thread: t})
 	return t, nil
@@ -124,7 +124,7 @@ func (o *Orchestrator) RenameThread(user, id, title string) (repo.ThreadRow, err
 		}
 		row, err := o.cfg.DB.SetThreadTitle(user, id, title)
 		if err != nil {
-			return fmt.Errorf("agent: thread %s: %w", id, err)
+			return fmt.Errorf("orchestrator: thread %s: %w", id, err)
 		}
 		t = row
 		o.emit(Event{Kind: EventThreadChanged, Thread: t})
@@ -143,7 +143,7 @@ func (o *Orchestrator) MarkThreadRead(user, id string) (repo.ThreadRow, error) {
 		}
 		row, err := o.cfg.DB.MarkThreadRead(user, id, time.Now())
 		if err != nil {
-			return fmt.Errorf("agent: thread %s: %w", id, err)
+			return fmt.Errorf("orchestrator: thread %s: %w", id, err)
 		}
 		t = row
 		o.emit(Event{Kind: EventThreadChanged, Thread: t})
@@ -171,11 +171,11 @@ func (o *Orchestrator) ArchiveThread(user, id string, archived bool) (repo.Threa
 		}
 		jobs, err := o.cfg.DB.CronJobViews(user, id)
 		if err != nil {
-			return fmt.Errorf("agent: thread %s: %w", id, err)
+			return fmt.Errorf("orchestrator: thread %s: %w", id, err)
 		}
 		row, err := o.cfg.DB.SetThreadArchived(user, id, at)
 		if err != nil {
-			return fmt.Errorf("agent: thread %s: %w", id, err)
+			return fmt.Errorf("orchestrator: thread %s: %w", id, err)
 		}
 		t = row
 		o.emit(Event{Kind: EventThreadChanged, Thread: t})
@@ -199,10 +199,10 @@ func (o *Orchestrator) DeleteThread(user, id string) error {
 		}
 		jobs, err := o.cfg.DB.CronJobViews(user, id)
 		if err != nil {
-			return fmt.Errorf("agent: thread %s: %w", id, err)
+			return fmt.Errorf("orchestrator: thread %s: %w", id, err)
 		}
 		if err := o.cfg.DB.DeleteThread(user, id); err != nil {
-			return fmt.Errorf("agent: thread %s: %w", id, err)
+			return fmt.Errorf("orchestrator: thread %s: %w", id, err)
 		}
 		o.emit(Event{Kind: EventThreadDeleted, Thread: t})
 		o.emitCronJobs(t, jobs)
@@ -230,7 +230,7 @@ func (o *Orchestrator) emitCronJobs(t repo.ThreadRow, jobs []repo.CronJobView) {
 func threadTitle(title string, required bool) (string, error) {
 	title = strings.TrimSpace(title)
 	if (required && title == "") || len([]rune(title)) > maxTitleRunes {
-		return "", fmt.Errorf("agent: %w: a title must be 1 to %d characters", ErrInvalidName, maxTitleRunes)
+		return "", fmt.Errorf("orchestrator: %w: a title must be 1 to %d characters", ErrInvalidName, maxTitleRunes)
 	}
 	return title, nil
 }
@@ -238,7 +238,7 @@ func threadTitle(title string, required bool) (string, error) {
 // owned refuses a thread that is not the user's as though it did not exist.
 func (o *Orchestrator) owned(user, id string) error {
 	if _, err := o.cfg.DB.ThreadOf(user, id); err != nil {
-		return fmt.Errorf("agent: thread %s: %w", id, err)
+		return fmt.Errorf("orchestrator: thread %s: %w", id, err)
 	}
 	return nil
 }
@@ -246,7 +246,7 @@ func (o *Orchestrator) owned(user, id string) error {
 func (o *Orchestrator) topThread(user, id string) (repo.ThreadRow, error) {
 	t, err := o.cfg.DB.ThreadOf(user, id)
 	if err != nil {
-		return repo.ThreadRow{}, fmt.Errorf("agent: thread %s: %w", id, err)
+		return repo.ThreadRow{}, fmt.Errorf("orchestrator: thread %s: %w", id, err)
 	}
 	if t.ParentThreadID != "" {
 		return repo.ThreadRow{}, ErrSubagentThread
@@ -257,7 +257,7 @@ func (o *Orchestrator) topThread(user, id string) (repo.ThreadRow, error) {
 func (o *Orchestrator) idle(id string) error {
 	st, err := o.cfg.DB.ThreadState(id)
 	if err != nil {
-		return fmt.Errorf("agent: thread %s: %w", id, err)
+		return fmt.Errorf("orchestrator: thread %s: %w", id, err)
 	}
 	if _, active := st.ActiveTurn(); active || len(st.QueuedTurns()) > 0 {
 		return ErrThreadBusy

@@ -20,7 +20,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
@@ -107,7 +107,7 @@ func steady(args []string) {
 		providers = []tools.Provider{runner}
 	}
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}, done: map[string]chan struct{}{}}
-	ag := agent.New(agent.Config{
+	ag := orchestrator.New(orchestrator.Config{
 		Name: "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(url, "", *calls, map[string]llm.Limits{"fake": {Context: 200_000, Output: 32_000}})},
 		Providers:   providers,

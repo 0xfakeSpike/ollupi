@@ -1,4 +1,4 @@
-package agent
+package orchestrator
 
 import (
 	"context"
@@ -101,11 +101,11 @@ func (o *Orchestrator) cancelBackground(id, why string) (bool, error) {
 func (o *Orchestrator) cancelBackgroundOf(threadID, why string) error {
 	ids, err := o.cfg.DB.RunningBackgroundCalls(threadID)
 	if err != nil {
-		return fmt.Errorf("agent: background calls of thread %s: %w", threadID, err)
+		return fmt.Errorf("orchestrator: background calls of thread %s: %w", threadID, err)
 	}
 	for _, id := range ids {
 		if _, err := o.cancelBackground(id, why); err != nil {
-			return fmt.Errorf("agent: cancel background call %s: %w", id, err)
+			return fmt.Errorf("orchestrator: cancel background call %s: %w", id, err)
 		}
 	}
 	return nil

@@ -1,4 +1,4 @@
-package agent_test
+package orchestrator_test
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/repo"
@@ -82,10 +82,10 @@ func TestThisMachineStaysAndSoDoesTheEnvironmentsInUse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ag.RenameEnvironment(repo.DefaultUser, cloud.ID, "my mac"); !errors.Is(err, agent.ErrInvalidName) {
+	if _, err := ag.RenameEnvironment(repo.DefaultUser, cloud.ID, "my mac"); !errors.Is(err, orchestrator.ErrInvalidName) {
 		t.Errorf("two environments got one name: %v", err)
 	}
-	if _, err := ag.DeleteEnvironment(repo.DefaultUser, local.ID); !errors.Is(err, agent.ErrInvalidName) {
+	if _, err := ag.DeleteEnvironment(repo.DefaultUser, local.ID); !errors.Is(err, orchestrator.ErrInvalidName) {
 		t.Errorf("this machine was removed: %v", err)
 	}
 
@@ -93,7 +93,7 @@ func TestThisMachineStaysAndSoDoesTheEnvironmentsInUse(t *testing.T) {
 	if _, err := ag.StartThread(repo.DefaultUser, workspace.ID, cloud.ID, "there", permission.Settings{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ag.DeleteEnvironment(repo.DefaultUser, cloud.ID); !errors.Is(err, agent.ErrEnvironmentInUse) {
+	if _, err := ag.DeleteEnvironment(repo.DefaultUser, cloud.ID); !errors.Is(err, orchestrator.ErrEnvironmentInUse) {
 		t.Errorf("an environment a conversation runs in was removed: %v", err)
 	}
 
@@ -129,20 +129,20 @@ func TestAConversationOnlyRunsInItsOwnUsersEnvironments(t *testing.T) {
 	if _, err := ag.StartThread(repo.DefaultUser, "", "nope", "x", permission.Settings{}); !errors.Is(err, repo.ErrNotFound) {
 		t.Errorf("a conversation was started in an environment that does not exist: %v", err)
 	}
-	if _, err := ag.AddEnvironment(repo.DefaultUser, "local again", repo.EnvironmentLocal); !errors.Is(err, agent.ErrInvalidName) {
+	if _, err := ag.AddEnvironment(repo.DefaultUser, "local again", repo.EnvironmentLocal); !errors.Is(err, orchestrator.ErrInvalidName) {
 		t.Errorf("a second environment on this machine was added: %v", err)
 	}
-	if _, err := ag.AddEnvironment(repo.DefaultUser, "  ", repo.EnvironmentMachine); !errors.Is(err, agent.ErrInvalidName) {
+	if _, err := ag.AddEnvironment(repo.DefaultUser, "  ", repo.EnvironmentMachine); !errors.Is(err, orchestrator.ErrInvalidName) {
 		t.Errorf("an environment with no name was added: %v", err)
 	}
 }
 
-func environmentAgent(t *testing.T) (*agent.Orchestrator, *repo.DB) {
+func environmentAgent(t *testing.T) (*orchestrator.Orchestrator, *repo.DB) {
 	t.Helper()
-	return started(context.Background(), t, agent.Config{}, "http://127.0.0.1:1")
+	return started(context.Background(), t, orchestrator.Config{}, "http://127.0.0.1:1")
 }
 
-func addWorkspace(t *testing.T, ag *agent.Orchestrator, dir string) repo.WorkspaceRow {
+func addWorkspace(t *testing.T, ag *orchestrator.Orchestrator, dir string) repo.WorkspaceRow {
 	ctx := context.Background()
 	t.Helper()
 	root, err := sandbox.CanonicalDirectory(dir)

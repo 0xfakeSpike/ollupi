@@ -1,4 +1,4 @@
-package agent
+package orchestrator
 
 import (
 	"fmt"
@@ -16,7 +16,7 @@ func (o *Orchestrator) settle(parent repo.ThreadRow, turn repo.TurnRow, call rep
 	}
 	launched, ok := role.Launched(call.Tool)
 	if !ok {
-		return false, fmt.Errorf("agent: call %s of %q launches no subagent role", call.ID, call.Tool)
+		return false, fmt.Errorf("orchestrator: call %s of %q launches no subagent role", call.ID, call.Tool)
 	}
 	childID := call.Await.Handle
 	if childID == "" {
@@ -40,7 +40,7 @@ func (o *Orchestrator) settle(parent repo.ThreadRow, turn repo.TurnRow, call rep
 	}
 	child, err := o.cfg.DB.ThreadState(childID)
 	if err != nil {
-		return false, fmt.Errorf("agent: subagent thread %s: %w", childID, err)
+		return false, fmt.Errorf("orchestrator: subagent thread %s: %w", childID, err)
 	}
 	if child.Last == nil {
 		if _, err := o.submit(child.Thread, repo.TurnRow{Input: req.Prompt, Agent: string(launched.Name)}, turn.Model); err != nil {
@@ -71,7 +71,7 @@ func (o *Orchestrator) report(call repo.ItemRow, childID string, ended repo.Turn
 	case repo.TurnCompleted:
 		answer, err := o.cfg.DB.FinalAnswer(childID, ended.ID)
 		if err != nil {
-			return repo.ItemRow{}, fmt.Errorf("agent: subagent %s completed turn %s without a final answer: %w", childID, ended.ID, err)
+			return repo.ItemRow{}, fmt.Errorf("orchestrator: subagent %s completed turn %s without a final answer: %w", childID, ended.ID, err)
 		}
 		result, _, err := repo.ResultOf(tools.Result{Output: answer})
 		if err != nil {

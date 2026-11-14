@@ -1,4 +1,4 @@
-package agent
+package orchestrator
 
 import (
 	"fmt"
@@ -98,19 +98,19 @@ func (o *Orchestrator) admit() {
 func (o *Orchestrator) recover() error {
 	stranded, err := o.cfg.DB.StrandedThreads()
 	if err != nil {
-		return fmt.Errorf("agent: stranded threads: %w", err)
+		return fmt.Errorf("orchestrator: stranded threads: %w", err)
 	}
 	for _, id := range stranded {
 		closed, err := o.cfg.DB.RecoverItems(id)
 		if err != nil {
-			return fmt.Errorf("agent: recover thread %s: %w", id, err)
+			return fmt.Errorf("orchestrator: recover thread %s: %w", id, err)
 		}
 		if len(closed) > 0 {
 			slog.Warn("items cut off by the restart closed", "thread", id, "items", len(closed))
 		}
 		if turn, err := o.cfg.DB.ActiveTurn(id); err == nil && turn.Status == repo.TurnInProgress {
 			if _, err := o.cfg.DB.Park(turn.ID); err != nil {
-				return fmt.Errorf("agent: recover thread %s: %w", id, err)
+				return fmt.Errorf("orchestrator: recover thread %s: %w", id, err)
 			}
 		}
 		o.reconcile(id)

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/repo"
 )
 
@@ -43,7 +43,7 @@ func TestAShardServesOnlyItsOwnUsers(t *testing.T) {
 	}
 	defer db.Close()
 	where := &placements{on: map[string]string{"a": "one", "b": "two"}}
-	s, err := NewServer(agent.New(agent.Config{DB: db}), Options{
+	s, err := NewServer(orchestrator.New(orchestrator.Config{DB: db}), Options{
 		DB: db, Authenticate: func(token string) (string, bool) { return token, token != "" }, Shard: "one", Placements: where,
 	})
 	if err != nil {
@@ -141,7 +141,7 @@ func TestAShardReportsItsLoadWhileItServes(t *testing.T) {
 	}
 	defer db.Close()
 	got := &reports{last: map[string]int64{}}
-	s, err := NewServer(agent.New(agent.Config{DB: db}), Options{
+	s, err := NewServer(orchestrator.New(orchestrator.Config{DB: db}), Options{
 		DB: db, Authenticate: func(token string) (string, bool) { return token, token != "" },
 		Shard: "one", Placements: &placements{on: map[string]string{"a": "one", "b": "one"}},
 		Load: Load{Reporter: got, Measure: LoadConnections, Every: 20 * time.Millisecond},

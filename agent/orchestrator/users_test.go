@@ -1,4 +1,4 @@
-package agent_test
+package orchestrator_test
 
 import (
 	"context"
@@ -18,7 +18,7 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
@@ -43,7 +43,7 @@ func TestAUserCannotReachAnotherUsersThread(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	ag := agent.New(agent.Config{
+	ag := orchestrator.New(orchestrator.Config{
 		Name: "Ollupi", Models: []llm.Model{{Name: "demo", Connection: "fake"}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
@@ -92,11 +92,11 @@ func TestAUserCannotReachAnotherUsersThread(t *testing.T) {
 		"archive the thread": func() error { _, err := ag.ArchiveThread("b", thread.ID, true); return err },
 		"delete the thread":  func() error { return ag.DeleteThread("b", thread.ID) },
 		"start a turn": func() error {
-			_, err := ag.StartTurn(ctx, "b", thread.ID, agent.Input{Text: "hello"})
+			_, err := ag.StartTurn(ctx, "b", thread.ID, orchestrator.Input{Text: "hello"})
 			return err
 		},
 		"steer": func() error {
-			_, err := ag.SteerTurn(ctx, "b", thread.ID, "turn", agent.Input{Text: "hello"})
+			_, err := ag.SteerTurn(ctx, "b", thread.ID, "turn", orchestrator.Input{Text: "hello"})
 			return err
 		},
 		"interrupt":   func() error { return ag.InterruptTurn("b", thread.ID, "") },
@@ -171,13 +171,13 @@ func TestAUserHoldsNoMoreSlotsThanTheirLimit(t *testing.T) {
 		}
 	}
 	var ended atomic.Int32
-	ag := agent.New(agent.Config{
+	ag := orchestrator.New(orchestrator.Config{
 		Name: "Ollupi", Models: []llm.Model{{Name: "demo", Connection: "fake"}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", 16, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
 		Slots:       8, UserSlots: 2, DB: db,
-		OnEvent: func(e agent.Event) {
-			if e.Kind == agent.EventTurnCompleted {
+		OnEvent: func(e orchestrator.Event) {
+			if e.Kind == orchestrator.EventTurnCompleted {
 				ended.Add(1)
 			}
 		},
@@ -195,7 +195,7 @@ func TestAUserHoldsNoMoreSlotsThanTheirLimit(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := ag.StartTurn(ctx, user, thread.ID, agent.Input{Text: "hello"}); err != nil {
+		if _, err := ag.StartTurn(ctx, user, thread.ID, orchestrator.Input{Text: "hello"}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -246,7 +246,7 @@ func TestTurnsRunOnTheUsersClient(t *testing.T) {
 	}
 	ownClient := llm.NewOpenAI(ownSrv.URL, "", 4, limits)
 	ended := make(chan repo.TurnRow, 2)
-	ag := agent.New(agent.Config{
+	ag := orchestrator.New(orchestrator.Config{
 		Name: "Ollupi", Models: []llm.Model{{Name: "demo", Connection: "fake"}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(sharedSrv.URL, "", 4, limits)},
@@ -257,8 +257,8 @@ func TestTurnsRunOnTheUsersClient(t *testing.T) {
 			return nil, errors.New("no key for this user")
 		},
 		DB: db,
-		OnEvent: func(e agent.Event) {
-			if e.Kind == agent.EventTurnCompleted {
+		OnEvent: func(e orchestrator.Event) {
+			if e.Kind == orchestrator.EventTurnCompleted {
 				ended <- e.Turn
 			}
 		},
@@ -274,7 +274,7 @@ func TestTurnsRunOnTheUsersClient(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		turn, err := ag.StartTurn(ctx, user, thread.ID, agent.Input{Text: "hello"})
+		turn, err := ag.StartTurn(ctx, user, thread.ID, orchestrator.Input{Text: "hello"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -315,8 +315,8 @@ func TestAStandbyTakesTheShard(t *testing.T) {
 		t.Cleanup(func() { db.Close() })
 		return db
 	}
-	process := func(db *repo.DB, lost func()) *agent.Orchestrator {
-		return agent.New(agent.Config{
+	process := func(db *repo.DB, lost func()) *orchestrator.Orchestrator {
+		return orchestrator.New(orchestrator.Config{
 			Name: "Ollupi", Models: []llm.Model{{Name: "demo", Connection: "fake"}},
 			Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 			Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
@@ -383,7 +383,7 @@ func TestAWorkspaceIsFoundInTheUsersSandbox(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	ag := agent.New(agent.Config{
+	ag := orchestrator.New(orchestrator.Config{
 		DB: db,
 		BoxFor: func(string) (sandbox.Box, error) {
 			return sandbox.Remote(stubMachine{}, []string{"/cloud"}, "cloud"), nil
@@ -481,7 +481,7 @@ func TestAttachmentsLiveInTheStore(t *testing.T) {
 	defer db.Close()
 	store := &memoryStore{objects: map[string][]byte{}}
 	ended := make(chan repo.TurnRow, 1)
-	ag := agent.New(agent.Config{
+	ag := orchestrator.New(orchestrator.Config{
 		Name: "Ollupi", Models: []llm.Model{{Name: "demo", Connection: "fake"}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
@@ -489,8 +489,8 @@ func TestAttachmentsLiveInTheStore(t *testing.T) {
 		BoxFor: func(string) (sandbox.Box, error) {
 			return sandbox.Remote(noteMachine{}, []string{"/cloud"}, "cloud"), nil
 		},
-		OnEvent: func(e agent.Event) {
-			if e.Kind == agent.EventTurnCompleted {
+		OnEvent: func(e orchestrator.Event) {
+			if e.Kind == orchestrator.EventTurnCompleted {
 				ended <- e.Turn
 			}
 		},
@@ -509,10 +509,10 @@ func TestAttachmentsLiveInTheStore(t *testing.T) {
 	if err := os.WriteFile(onHost, []byte("of this machine"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, agent.Input{Text: "read", Attachments: []agent.AttachmentInput{{Path: onHost}}}); err == nil {
+	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, orchestrator.Input{Text: "read", Attachments: []orchestrator.AttachmentInput{{Path: onHost}}}); err == nil {
 		t.Fatal("a user with a sandbox attached a file of this machine")
 	}
-	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, agent.Input{Text: "read", Attachments: []agent.AttachmentInput{{Path: "/cloud/note.txt"}}}); err != nil {
+	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, orchestrator.Input{Text: "read", Attachments: []orchestrator.AttachmentInput{{Path: "/cloud/note.txt"}}}); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -578,7 +578,7 @@ func TestEachUserHasTheirOwnTools(t *testing.T) {
 	}
 	var mu sync.Mutex
 	sets := map[string]*tools.Set{"a": {Providers: []tools.Provider{ownTools("github")}}, "b": {}}
-	ag := agent.New(agent.Config{
+	ag := orchestrator.New(orchestrator.Config{
 		Name: "Ollupi", Models: []llm.Model{{Name: "demo", Connection: "fake"}},
 		Settings: permission.Settings{ApprovalPolicy: string(permission.Never),
 			Rules: permission.Rules{Ask: []string{"github__act"}}},

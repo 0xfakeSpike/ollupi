@@ -1,4 +1,4 @@
-package agent
+package orchestrator
 
 import (
 	"fmt"
@@ -15,7 +15,7 @@ func (o *Orchestrator) workspaceOf(id repo.Ref) (repo.WorkspaceRow, error) {
 	}
 	w, err := o.cfg.DB.Workspace(string(id))
 	if err != nil {
-		return repo.WorkspaceRow{}, fmt.Errorf("agent: workspace %s: %w", id, err)
+		return repo.WorkspaceRow{}, fmt.Errorf("orchestrator: workspace %s: %w", id, err)
 	}
 	return w, nil
 }
@@ -27,7 +27,7 @@ func (o *Orchestrator) workspaceFor(user string, id repo.Ref) (repo.WorkspaceRow
 	}
 	w, err := o.cfg.DB.WorkspaceOf(user, string(id))
 	if err != nil {
-		return repo.WorkspaceRow{}, fmt.Errorf("agent: workspace %s: %w", id, err)
+		return repo.WorkspaceRow{}, fmt.Errorf("orchestrator: workspace %s: %w", id, err)
 	}
 	return w, nil
 }
@@ -81,7 +81,7 @@ func (o *Orchestrator) threadLayers(t repo.ThreadRow, w repo.WorkspaceRow) ([]pe
 	}
 	parent, err := o.cfg.DB.ThreadRow(string(t.ParentThreadID))
 	if err != nil {
-		return nil, fmt.Errorf("agent: parent thread %s: %w", t.ParentThreadID, err)
+		return nil, fmt.Errorf("orchestrator: parent thread %s: %w", t.ParentThreadID, err)
 	}
 	return append(o.layers(w), permission.Layer{Of: "the parent conversation's permission settings", Settings: parent.Settings}), nil
 }

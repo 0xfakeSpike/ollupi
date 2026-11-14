@@ -1,4 +1,4 @@
-package agent
+package orchestrator
 
 import (
 	"errors"
@@ -20,13 +20,13 @@ func (o *Orchestrator) PendingRequests(user, threadID string) ([]Request, error)
 	}
 	st, err := o.cfg.DB.ThreadState(threadID)
 	if err != nil {
-		return nil, fmt.Errorf("agent: thread %s: %w", threadID, err)
+		return nil, fmt.Errorf("orchestrator: thread %s: %w", threadID, err)
 	}
 	out := requestsOf(st)
 	for _, call := range st.AgentCalls() {
 		child, err := o.cfg.DB.ThreadState(call.Await.Handle)
 		if err != nil {
-			return nil, fmt.Errorf("agent: thread %s: %w", call.Await.Handle, err)
+			return nil, fmt.Errorf("orchestrator: thread %s: %w", call.Await.Handle, err)
 		}
 		out = append(out, requestsOf(child)...)
 	}
@@ -36,7 +36,7 @@ func (o *Orchestrator) PendingRequests(user, threadID string) ([]Request, error)
 func (o *Orchestrator) AllPendingRequests(user string) ([]Request, error) {
 	ids, err := o.cfg.DB.ThreadsWaitingOnUser(user)
 	if err != nil {
-		return nil, fmt.Errorf("agent: threads waiting on the user: %w", err)
+		return nil, fmt.Errorf("orchestrator: threads waiting on the user: %w", err)
 	}
 	var out []Request
 	for _, id := range ids {
@@ -44,7 +44,7 @@ func (o *Orchestrator) AllPendingRequests(user string) ([]Request, error) {
 		switch {
 		case errors.Is(err, repo.ErrNotFound):
 		case err != nil:
-			return nil, fmt.Errorf("agent: thread %s: %w", id, err)
+			return nil, fmt.Errorf("orchestrator: thread %s: %w", id, err)
 		default:
 			out = append(out, requestsOf(st)...)
 		}

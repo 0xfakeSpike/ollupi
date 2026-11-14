@@ -1,4 +1,4 @@
-package agent_test
+package orchestrator_test
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/repo"
 )
@@ -22,7 +22,7 @@ func TestAMessageIsHeldToAShareOfTheModelsInput(t *testing.T) {
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
 	defer close(fake.release)
-	ag, _ := started(ctx, t, agent.Config{}, srv.URL)
+	ag, _ := started(ctx, t, orchestrator.Config{}, srv.URL)
 	thread, err := ag.StartThread(repo.DefaultUser, "", "", "t", permission.Settings{})
 	if err != nil {
 		t.Fatal(err)
@@ -30,11 +30,11 @@ func TestAMessageIsHeldToAShareOfTheModelsInput(t *testing.T) {
 
 	// The model takes 28,000 tokens of input, so a message gets 7,000.
 	tooLong := strings.Repeat("The build log goes on. ", 2000)
-	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, agent.Input{Text: tooLong}); !errors.Is(err, agent.ErrInvalidMessage) || !strings.Contains(err.Error(), "attachment") {
+	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, orchestrator.Input{Text: tooLong}); !errors.Is(err, orchestrator.ErrInvalidMessage) || !strings.Contains(err.Error(), "attachment") {
 		t.Errorf("a message over the model's share: %v", err)
 	}
 	long := strings.Repeat("The task says more. ", 500)
-	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, agent.Input{Text: long}); err != nil {
+	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, orchestrator.Input{Text: long}); err != nil {
 		t.Errorf("a %d-character message: %v", len(long), err)
 	}
 }

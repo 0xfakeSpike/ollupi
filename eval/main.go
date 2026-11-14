@@ -24,7 +24,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
@@ -120,12 +120,12 @@ func main() {
 	}
 	defer runner.Close()
 
-	var ag *agent.Orchestrator
+	var ag *orchestrator.Orchestrator
 	ended := make(chan repo.TurnRow, 1)
 	// changed tells the writer below that the turn has a new item, so that -out holds the run so far even when the
 	// harness kills the run at its time limit.
 	changed := make(chan struct{}, 1)
-	ag = agent.New(agent.Config{
+	ag = orchestrator.New(orchestrator.Config{
 		Name: "ollupi", Prompt: prompt,
 		Models:      []llm.Model{{Name: *model, Connection: "model"}},
 		Connections: map[string]llm.Client{"model": client},
@@ -133,9 +133,9 @@ func main() {
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 		RunLimit:    *runLimit,
 		DB:          db,
-		OnEvent: func(e agent.Event) {
+		OnEvent: func(e orchestrator.Event) {
 			switch e.Kind {
-			case agent.EventItemCompleted:
+			case orchestrator.EventItemCompleted:
 				logItem(e.Item)
 				if e.Thread.ParentThreadID == "" {
 					select {
@@ -143,10 +143,10 @@ func main() {
 					default:
 					}
 				}
-			case agent.EventUserInputRequested:
+			case orchestrator.EventUserInputRequested:
 				// Answered outside the event, which the agent's loop is delivering.
 				go answer(ag, e.Thread.ID, e.Item)
-			case agent.EventTurnCompleted:
+			case orchestrator.EventTurnCompleted:
 				// A subagent's turns end in conversations of their own.
 				if e.Thread.ParentThreadID == "" {
 					ended <- e.Turn
@@ -164,7 +164,7 @@ func main() {
 		log.Fatalf("eval: %v", err)
 	}
 	startedAt := time.Now()
-	started, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, agent.Input{Text: instruction})
+	started, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, orchestrator.Input{Text: instruction})
 	if err != nil {
 		log.Fatalf("eval: %v", err)
 	}
@@ -267,7 +267,7 @@ func logItem(it *repo.ItemRow) {
 	}
 }
 
-func answer(ag *agent.Orchestrator, threadID string, it *repo.ItemRow) {
+func answer(ag *orchestrator.Orchestrator, threadID string, it *repo.ItemRow) {
 	if it == nil {
 		return
 	}

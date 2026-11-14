@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
@@ -96,7 +96,7 @@ func users(args []string) {
 	}
 	var failed sync.Map // user → *atomic.Int64
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}, done: map[string]chan struct{}{}}
-	ag := agent.New(agent.Config{
+	ag := orchestrator.New(orchestrator.Config{
 		Name: "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": clients[heavyUser]},
 		ClientFor: func(user, _ string) (llm.Client, error) {
@@ -108,8 +108,8 @@ func users(args []string) {
 		Providers: []tools.Provider{work{latency: *toolLatency}},
 		Settings:  permission.Settings{ApprovalPolicy: string(permission.Never)},
 		Slots:     *slots, UserSlots: *userSlots, DB: db,
-		OnEvent: func(e agent.Event) {
-			if e.Kind == agent.EventTurnCompleted && e.Turn.Status != repo.TurnCompleted {
+		OnEvent: func(e orchestrator.Event) {
+			if e.Kind == orchestrator.EventTurnCompleted && e.Turn.Status != repo.TurnCompleted {
 				count, _ := failed.LoadOrStore(e.Thread.UserID, new(atomic.Int64))
 				count.(*atomic.Int64).Add(1)
 			}

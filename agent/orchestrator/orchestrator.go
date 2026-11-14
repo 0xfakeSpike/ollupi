@@ -1,4 +1,4 @@
-package agent
+package orchestrator
 
 import (
 	"context"
@@ -146,14 +146,14 @@ func (o *Orchestrator) registryFor(user string) (*tools.Registry, error) {
 	}
 	set, err := o.cfg.ToolsFor(user)
 	if err != nil {
-		return nil, fmt.Errorf("agent: the tools of the user: %w", err)
+		return nil, fmt.Errorf("orchestrator: the tools of the user: %w", err)
 	}
 	if built, ok := o.registries.Load(user); ok && built.(userRegistry).set == set {
 		return built.(userRegistry).registry, nil
 	}
 	registry, err := tools.New(o.ctx, set.Unavailable, slices.Concat(o.providers, set.Providers)...)
 	if err != nil {
-		return nil, fmt.Errorf("agent: the tools of the user: %w", err)
+		return nil, fmt.Errorf("orchestrator: the tools of the user: %w", err)
 	}
 	o.registries.Store(user, userRegistry{set: set, registry: registry})
 	return registry, nil
@@ -168,10 +168,10 @@ func New(cfg Config) *Orchestrator {
 
 func (o *Orchestrator) Start(ctx context.Context) error {
 	if strings.TrimSpace(o.cfg.Name) == "" {
-		return fmt.Errorf("agent: name is required")
+		return fmt.Errorf("orchestrator: name is required")
 	}
 	if o.cfg.DB == nil {
-		return fmt.Errorf("agent: a database is required")
+		return fmt.Errorf("orchestrator: a database is required")
 	}
 	if err := o.buildTools(ctx); err != nil {
 		return err
@@ -209,7 +209,7 @@ func (o *Orchestrator) Start(ctx context.Context) error {
 		}
 	}
 	if _, err := o.cfg.DB.InterruptBackgroundCalls(time.Now()); err != nil {
-		return fmt.Errorf("agent: end the background calls of a process that stopped: %w", err)
+		return fmt.Errorf("orchestrator: end the background calls of a process that stopped: %w", err)
 	}
 	if err := o.recover(); err != nil {
 		return err
@@ -218,7 +218,7 @@ func (o *Orchestrator) Start(ctx context.Context) error {
 	go o.loop()
 	undelivered, err := o.cfg.DB.UndeliveredBackgroundThreads()
 	if err != nil {
-		return fmt.Errorf("agent: background results to deliver: %w", err)
+		return fmt.Errorf("orchestrator: background results to deliver: %w", err)
 	}
 	for _, id := range undelivered {
 		o.post(func() { o.deliverBackground(id) })
@@ -235,14 +235,14 @@ func (o *Orchestrator) buildTools(ctx context.Context) error {
 	if o.cfg.SkillsDir != "" {
 		var err error
 		if o.skills, err = skills.New(o.cfg.SkillsDir); err != nil {
-			return fmt.Errorf("agent: skills: %w", err)
+			return fmt.Errorf("orchestrator: skills: %w", err)
 		}
 		providers = append(providers, o.skills)
 	}
 	o.providers = providers
 	var err error
 	if o.registry, err = tools.New(ctx, nil, providers...); err != nil {
-		return fmt.Errorf("agent: %w", err)
+		return fmt.Errorf("orchestrator: %w", err)
 	}
 	return nil
 }

@@ -1,4 +1,4 @@
-package agent_test
+package orchestrator_test
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
@@ -89,7 +89,7 @@ func TestAMessageTakesThePlaceOfWhatTheTurnWaitsFor(t *testing.T) {
 			}
 			defer db.Close()
 			writes := &atomic.Int32{}
-			ag := agent.New(agent.Config{
+			ag := orchestrator.New(orchestrator.Config{
 				Name: "Ollupi", Models: []llm.Model{{Name: "demo", Connection: "fake"}},
 				Settings:    permission.Settings{ApprovalPolicy: string(permission.Untrusted)},
 				Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
@@ -109,7 +109,7 @@ func TestAMessageTakesThePlaceOfWhatTheTurnWaitsFor(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			turn, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, agent.Input{Text: "记一下买牛奶"})
+			turn, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, orchestrator.Input{Text: "记一下买牛奶"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -127,7 +127,7 @@ func TestAMessageTakesThePlaceOfWhatTheTurnWaitsFor(t *testing.T) {
 				}
 			}
 			until(tc.waits)
-			if _, err := ag.SteerTurn(ctx, repo.DefaultUser, th.ID, turn.ID, agent.Input{Text: "算了，先别记"}); err != nil {
+			if _, err := ag.SteerTurn(ctx, repo.DefaultUser, th.ID, turn.ID, orchestrator.Input{Text: "算了，先别记"}); err != nil {
 				t.Fatal(err)
 			}
 			until(repo.TurnCompleted)

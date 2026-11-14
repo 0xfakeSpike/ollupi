@@ -1,4 +1,4 @@
-package agent_test
+package orchestrator_test
 
 import (
 	"context"
@@ -15,14 +15,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/repo"
 )
 
-func started(ctx context.Context, t *testing.T, cfg agent.Config, url string) (*agent.Orchestrator, *repo.DB) {
+func started(ctx context.Context, t *testing.T, cfg orchestrator.Config, url string) (*orchestrator.Orchestrator, *repo.DB) {
 	t.Helper()
 	db, err := repo.Open(t.TempDir())
 	if err != nil {
@@ -33,7 +33,7 @@ func started(ctx context.Context, t *testing.T, cfg agent.Config, url string) (*
 	cfg.Models = []llm.Model{{Name: "demo", Connection: "fake"}}
 	cfg.Settings = permission.Settings{ApprovalPolicy: string(permission.Never)}
 	cfg.Connections = map[string]llm.Client{"fake": llm.NewOpenAI(url, "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})}
-	ag := agent.New(cfg)
+	ag := orchestrator.New(cfg)
 	actx, stop := context.WithCancel(ctx)
 	if err := ag.Start(actx); err != nil {
 		stop()
@@ -76,7 +76,7 @@ func TestASlowSandboxDoesNotHoldUpOtherThreads(t *testing.T) {
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
 	machine := stuckMachine{asked: make(chan struct{}), release: make(chan struct{})}
-	ag, _ := started(ctx, t, agent.Config{
+	ag, _ := started(ctx, t, orchestrator.Config{
 		Attachments: &memoryStore{objects: map[string][]byte{}},
 		BoxFor: func(string) (sandbox.Box, error) {
 			return sandbox.Remote(machine, []string{"/cloud"}, "cloud"), nil
@@ -92,7 +92,7 @@ func TestASlowSandboxDoesNotHoldUpOtherThreads(t *testing.T) {
 	}
 	sent := make(chan error, 1)
 	go func() {
-		_, err := ag.StartTurn(ctx, repo.DefaultUser, stuck.ID, agent.Input{Text: "read", Attachments: []agent.AttachmentInput{{Path: "/cloud/note.txt"}}})
+		_, err := ag.StartTurn(ctx, repo.DefaultUser, stuck.ID, orchestrator.Input{Text: "read", Attachments: []orchestrator.AttachmentInput{{Path: "/cloud/note.txt"}}})
 		sent <- err
 	}()
 	<-machine.asked
@@ -122,10 +122,10 @@ func TestACrashFailsTheTurnAndNothingElse(t *testing.T) {
 	srv := httptest.NewServer(&recordingModel{})
 	defer srv.Close()
 	ended := make(chan repo.TurnRow, 1)
-	ag, _ := started(ctx, t, agent.Config{
+	ag, _ := started(ctx, t, orchestrator.Config{
 		ClientFor: func(string, string) (llm.Client, error) { panic("the secret detail") },
-		OnEvent: func(e agent.Event) {
-			if e.Kind == agent.EventTurnCompleted {
+		OnEvent: func(e orchestrator.Event) {
+			if e.Kind == orchestrator.EventTurnCompleted {
 				ended <- e.Turn
 			}
 		},
@@ -134,7 +134,7 @@ func TestACrashFailsTheTurnAndNothingElse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, agent.Input{Text: "hello"}); err != nil {
+	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, orchestrator.Input{Text: "hello"}); err != nil {
 		t.Fatal(err)
 	}
 	turn := endOf(ctx, t, ended)
@@ -154,10 +154,10 @@ func TestATurnStopsAtItsRunLimit(t *testing.T) {
 	defer srv.Close()
 	defer close(fake.release)
 	ended := make(chan repo.TurnRow, 1)
-	ag, _ := started(ctx, t, agent.Config{
+	ag, _ := started(ctx, t, orchestrator.Config{
 		RunLimit: 200 * time.Millisecond,
-		OnEvent: func(e agent.Event) {
-			if e.Kind == agent.EventTurnCompleted {
+		OnEvent: func(e orchestrator.Event) {
+			if e.Kind == orchestrator.EventTurnCompleted {
 				ended <- e.Turn
 			}
 		},
@@ -166,7 +166,7 @@ func TestATurnStopsAtItsRunLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, agent.Input{Text: "hello"}); err != nil {
+	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, orchestrator.Input{Text: "hello"}); err != nil {
 		t.Fatal(err)
 	}
 	if turn := endOf(ctx, t, ended); turn.Status != repo.TurnFailed || !strings.Contains(turn.Error, "time limit") {
@@ -182,7 +182,7 @@ func TestPendingRequestsReportStorageThatFails(t *testing.T) {
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
-	ag := agent.New(agent.Config{DB: db})
+	ag := orchestrator.New(orchestrator.Config{DB: db})
 	if got, err := ag.AllPendingRequests(repo.DefaultUser); err == nil {
 		t.Errorf("all requests: %+v", got)
 	}
@@ -227,8 +227,8 @@ func TestACutOffResponseRunsNoCall(t *testing.T) {
 	srv := httptest.NewServer(&cutOffModel{})
 	defer srv.Close()
 	ended := make(chan repo.TurnRow, 1)
-	ag, db := started(ctx, t, agent.Config{OnEvent: func(e agent.Event) {
-		if e.Kind == agent.EventTurnCompleted {
+	ag, db := started(ctx, t, orchestrator.Config{OnEvent: func(e orchestrator.Event) {
+		if e.Kind == orchestrator.EventTurnCompleted {
 			ended <- e.Turn
 		}
 	}}, srv.URL)
@@ -236,7 +236,7 @@ func TestACutOffResponseRunsNoCall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, agent.Input{Text: "hello"}); err != nil {
+	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, orchestrator.Input{Text: "hello"}); err != nil {
 		t.Fatal(err)
 	}
 	if turn := endOf(ctx, t, ended); turn.Status != repo.TurnCompleted {
@@ -273,7 +273,7 @@ func TestNoTurnStartsWhileTheWorkspaceMoves(t *testing.T) {
 	srv := httptest.NewServer(&recordingModel{})
 	defer srv.Close()
 	box := slowMove{Box: sandbox.Here(), moving: make(chan struct{}), release: make(chan struct{})}
-	ag, _ := started(ctx, t, agent.Config{BoxFor: func(string) (sandbox.Box, error) { return box, nil }}, srv.URL)
+	ag, _ := started(ctx, t, orchestrator.Config{BoxFor: func(string) (sandbox.Box, error) { return box, nil }}, srv.URL)
 	from, to := t.TempDir(), t.TempDir()
 	for _, dir := range []*string{&from, &to} {
 		resolved, err := sandbox.CanonicalDirectory(*dir)
@@ -299,7 +299,7 @@ func TestNoTurnStartsWhileTheWorkspaceMoves(t *testing.T) {
 		moved <- err
 	}()
 	<-box.moving
-	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, agent.Input{Text: "hello"}); !errors.Is(err, agent.ErrWorkspaceBusy) {
+	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, orchestrator.Input{Text: "hello"}); !errors.Is(err, orchestrator.ErrWorkspaceBusy) {
 		t.Errorf("a turn during the move: %v", err)
 	}
 	close(box.release)
@@ -316,17 +316,17 @@ func TestAConversationQueuesOnlySoManyTurns(t *testing.T) {
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
 	defer close(fake.release)
-	ag, _ := started(ctx, t, agent.Config{}, srv.URL)
+	ag, _ := started(ctx, t, orchestrator.Config{}, srv.URL)
 	thread, err := ag.StartThread(repo.DefaultUser, "", "", "t", permission.Settings{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 21; i++ {
-		if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, agent.Input{Text: fmt.Sprintf("message %d", i)}); err != nil {
+		if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, orchestrator.Input{Text: fmt.Sprintf("message %d", i)}); err != nil {
 			t.Fatalf("message %d: %v", i, err)
 		}
 	}
-	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, agent.Input{Text: "one more"}); !errors.Is(err, agent.ErrQueueFull) {
+	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, orchestrator.Input{Text: "one more"}); !errors.Is(err, orchestrator.ErrQueueFull) {
 		t.Errorf("past the queue: %v", err)
 	}
 }

@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/agent/memory"
+	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/pkg/wshub"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
@@ -44,7 +44,7 @@ type Options struct {
 	Load Load
 }
 
-func NewServer(a *agent.Orchestrator, opts Options) (*Server, error) {
+func NewServer(a *orchestrator.Orchestrator, opts Options) (*Server, error) {
 	if opts.Authenticate == nil {
 		if strings.TrimSpace(opts.Token) == "" {
 			return nil, errors.New("gateway: a token is required; clients send it as Authorization: Bearer <token> or, from a browser, as the subprotocol after " + tokenProtocol)

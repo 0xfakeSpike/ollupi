@@ -1,4 +1,4 @@
-package agent_test
+package orchestrator_test
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
@@ -41,13 +41,13 @@ func (s slowTools) Invoke(ctx context.Context, _ string, args map[string]any) (t
 	}
 }
 
-func backgroundTurn(ctx context.Context, t *testing.T, cfg agent.Config) (*agent.Orchestrator, *repo.DB, repo.ThreadRow, repo.ItemRow) {
+func backgroundTurn(ctx context.Context, t *testing.T, cfg orchestrator.Config) (*orchestrator.Orchestrator, *repo.DB, repo.ThreadRow, repo.ItemRow) {
 	t.Helper()
 	ag, db, th, call, _ := backgroundTurnOf(ctx, t, cfg)
 	return ag, db, th, call
 }
 
-func backgroundTurnOf(ctx context.Context, t *testing.T, cfg agent.Config) (*agent.Orchestrator, *repo.DB, repo.ThreadRow, repo.ItemRow, *callingModel) {
+func backgroundTurnOf(ctx context.Context, t *testing.T, cfg orchestrator.Config) (*orchestrator.Orchestrator, *repo.DB, repo.ThreadRow, repo.ItemRow, *callingModel) {
 	t.Helper()
 	fake := &callingModel{tool: "files__download", args: `{"url":"https://example.com/big.iso","run_in_background":true}`}
 	srv := httptest.NewServer(fake)
@@ -57,7 +57,7 @@ func backgroundTurnOf(ctx context.Context, t *testing.T, cfg agent.Config) (*age
 	if err != nil {
 		t.Fatal(err)
 	}
-	turn, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, agent.Input{Text: "下载这个文件"})
+	turn, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, orchestrator.Input{Text: "下载这个文件"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestABackgroundCallLetsItsTurnEndAndComesBackLater(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	slow := slowTools{release: make(chan struct{}), stopped: make(chan struct{})}
-	_, db, th, call, fake := backgroundTurnOf(ctx, t, agent.Config{Providers: []tools.Provider{slow}})
+	_, db, th, call, fake := backgroundTurnOf(ctx, t, orchestrator.Config{Providers: []tools.Provider{slow}})
 	id := backgroundID(t, call)
 	if row, err := db.BackgroundCall(id); err != nil || row.Status != repo.BackgroundRunning || row.Arguments != `{"url":"https://example.com/big.iso"}` {
 		t.Fatalf("the call while its turn has ended: %+v %v", row, err)
@@ -168,7 +168,7 @@ func TestArchivingAConversationCancelsItsBackgroundCalls(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	slow := slowTools{release: make(chan struct{}), stopped: make(chan struct{})}
-	ag, db, th, call := backgroundTurn(ctx, t, agent.Config{Providers: []tools.Provider{slow}})
+	ag, db, th, call := backgroundTurn(ctx, t, orchestrator.Config{Providers: []tools.Provider{slow}})
 	id := backgroundID(t, call)
 	if _, err := ag.ArchiveThread(repo.DefaultUser, th.ID, true); err != nil {
 		t.Fatal(err)
@@ -214,7 +214,7 @@ func (m *waitingModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			delta = map[string]any{"content": "no id"}
 			break
 		}
-		delta, finish = call(agent.ToolWaitForBackground, `{"background":["`+id[1]+`"]}`), "tool_calls"
+		delta, finish = call(orchestrator.ToolWaitForBackground, `{"background":["`+id[1]+`"]}`), "tool_calls"
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	send := func(v any) { raw, _ := json.Marshal(v); fmt.Fprintf(w, "data: %s\n\n", raw) }
@@ -233,12 +233,12 @@ func TestATurnWaitsForItsBackgroundCallWithoutASlot(t *testing.T) {
 	fake := &waitingModel{}
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
-	ag, db := started(ctx, t, agent.Config{Providers: []tools.Provider{slow}}, srv.URL)
+	ag, db := started(ctx, t, orchestrator.Config{Providers: []tools.Provider{slow}}, srv.URL)
 	th, err := ag.StartThread(repo.DefaultUser, "", "", "download", permission.Settings{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	turn, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, agent.Input{Text: "下载这个文件，下好了告诉我"})
+	turn, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, orchestrator.Input{Text: "下载这个文件，下好了告诉我"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,12 +321,12 @@ func TestASubagentReportsOnlyOnceItsBackgroundCallsHaveEnded(t *testing.T) {
 	fake := &delegatingModel{}
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
-	ag, db := started(ctx, t, agent.Config{Providers: []tools.Provider{slow}}, srv.URL)
+	ag, db := started(ctx, t, orchestrator.Config{Providers: []tools.Provider{slow}}, srv.URL)
 	th, err := ag.StartThread(repo.DefaultUser, "", "", "delegate", permission.Settings{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	turn, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, agent.Input{Text: "让子 agent 去下载"})
+	turn, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, orchestrator.Input{Text: "让子 agent 去下载"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -381,8 +381,8 @@ func TestABackgroundCallCutOffByARestartComesBackAsInterrupted(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	start := func(slow slowTools) (*agent.Orchestrator, context.CancelFunc) {
-		ag := agent.New(agent.Config{
+	start := func(slow slowTools) (*orchestrator.Orchestrator, context.CancelFunc) {
+		ag := orchestrator.New(orchestrator.Config{
 			Name: "Ollupi", DB: db, Models: []llm.Model{{Name: "demo", Connection: "fake"}},
 			Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 			Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
@@ -400,7 +400,7 @@ func TestABackgroundCallCutOffByARestartComesBackAsInterrupted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := first.StartTurn(ctx, repo.DefaultUser, th.ID, agent.Input{Text: "下载这个文件"}); err != nil {
+	if _, err := first.StartTurn(ctx, repo.DefaultUser, th.ID, orchestrator.Input{Text: "下载这个文件"}); err != nil {
 		t.Fatal(err)
 	}
 	var id string

@@ -1,4 +1,4 @@
-package agent
+package orchestrator
 
 import (
 	"encoding/json"
@@ -57,13 +57,13 @@ func (o *Orchestrator) deliverBackground(threadID string) {
 func (o *Orchestrator) fulfil(t repo.ThreadRow, turn repo.TurnRow, call repo.ItemRow) (bool, error) {
 	var req waitForBackground
 	if err := json.Unmarshal(call.Await.Request, &req); err != nil {
-		return false, fmt.Errorf("agent: wait %s: %w", call.ID, err)
+		return false, fmt.Errorf("orchestrator: wait %s: %w", call.ID, err)
 	}
 	ended := map[string]string{}
 	for _, id := range req.Background {
 		bc, err := o.cfg.DB.BackgroundCall(id)
 		if err != nil {
-			return false, fmt.Errorf("agent: background call %s: %w", id, err)
+			return false, fmt.Errorf("orchestrator: background call %s: %w", id, err)
 		}
 		if bc.Status == repo.BackgroundRunning {
 			return false, nil

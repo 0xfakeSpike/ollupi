@@ -10,8 +10,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/agent/memory"
+	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/pkg/wshub"
@@ -39,7 +39,7 @@ const (
 )
 
 type Server struct {
-	orchestrator *agent.Orchestrator
+	orchestrator *orchestrator.Orchestrator
 	db           *repo.DB
 	memory       *memory.Manager
 	jobs         *cron.Jobs
@@ -120,7 +120,7 @@ func (s *Server) mine(w http.ResponseWriter, r *http.Request, user string) bool 
 
 // Deliver sends an event to the connections of the user it belongs to; one that names no user goes to nobody, the
 // log has it.
-func (s *Server) Deliver(e agent.Event) {
+func (s *Server) Deliver(e orchestrator.Event) {
 	user := e.Thread.UserID
 	if e.Workspace != nil {
 		user = e.Workspace.UserID
@@ -129,9 +129,9 @@ func (s *Server) Deliver(e agent.Event) {
 		user = e.Environment.UserID
 	}
 	switch e.Kind {
-	case agent.EventEnvironmentChanged:
+	case orchestrator.EventEnvironmentChanged:
 		s.environmentChanged(user, e.Environment.ID)
-	case agent.EventCronJobChanged:
+	case orchestrator.EventCronJobChanged:
 		s.cronChanged(user, e.CronJobID, e.Thread.ID)
 	default:
 		s.each(user, func(c *conn) { c.event(e) })
@@ -235,47 +235,47 @@ func (c *conn) mcpServerList(ctx context.Context, _ Empty) (MCPServerListResult,
 	return MCPServerListResult{Data: nonNil(servers)}, nil, nil
 }
 
-func (c *conn) event(e agent.Event) {
+func (c *conn) event(e orchestrator.Event) {
 	switch e.Kind {
-	case agent.EventThreadStarted:
+	case orchestrator.EventThreadStarted:
 		c.rpc.Notify(notifyThreadStarted, ThreadResult{Thread: threadRow(e.Thread)})
-	case agent.EventThreadChanged:
+	case orchestrator.EventThreadChanged:
 		changed := threadRow(e.Thread)
 		c.rpc.Notify(notifyThreadChanged, ThreadChangedNotification{ThreadID: e.Thread.ID, Thread: &changed})
-	case agent.EventThreadDeleted:
+	case orchestrator.EventThreadDeleted:
 		c.rpc.Notify(notifyThreadChanged, ThreadChangedNotification{ThreadID: e.Thread.ID})
-	case agent.EventTurnQueued:
+	case orchestrator.EventTurnQueued:
 		c.rpc.Notify(notifyTurnQueued, TurnNotification{ThreadID: e.Thread.ID, Thread: threadRow(e.Thread), Turn: turnRow(e.Turn)})
-	case agent.EventTurnStarted:
+	case orchestrator.EventTurnStarted:
 		c.rpc.Notify(notifyTurnStarted, TurnNotification{ThreadID: e.Thread.ID, Thread: threadRow(e.Thread), Turn: turnRow(e.Turn)})
-	case agent.EventItemStarted:
+	case orchestrator.EventItemStarted:
 		c.rpc.Notify(notifyItemStarted, ItemNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Item: itemRow(*e.Item)})
-	case agent.EventItemUpdated:
+	case orchestrator.EventItemUpdated:
 		c.rpc.Notify(notifyItemUpdated, ItemNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Item: itemRow(*e.Item)})
-	case agent.EventItemCompleted:
+	case orchestrator.EventItemCompleted:
 		c.rpc.Notify(notifyItemCompleted, ItemNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Item: itemRow(*e.Item)})
-	case agent.EventItemDelta:
+	case orchestrator.EventItemDelta:
 		method := notifyAgentMessageDelta
 		if e.Item.Type == repo.ItemReasoning {
 			method = notifyReasoningDelta
 		}
 		c.rpc.Notify(method, DeltaNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, ItemID: e.Item.ID, Delta: e.Delta})
-	case agent.EventTurnCompleted:
+	case orchestrator.EventTurnCompleted:
 		c.rpc.Notify(notifyTurnCompleted, TurnNotification{ThreadID: e.Thread.ID, Thread: threadRow(e.Thread), Turn: turnRow(e.Turn)})
-	case agent.EventError:
+	case orchestrator.EventError:
 		c.rpc.Notify(notifyError, ErrorNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Message: e.Error})
-	case agent.EventThreadStatusChanged:
+	case orchestrator.EventThreadStatusChanged:
 		c.rpc.Notify(notifyThreadStatusChanged, ThreadStatusNotification{ThreadID: e.Thread.ID, Status: e.Status})
-	case agent.EventWorkspaceChanged:
+	case orchestrator.EventWorkspaceChanged:
 		c.rpc.Notify(notifyWorkspaceChanged, WorkspaceResult{Workspace: workspaceRow(*e.Workspace)})
-	case agent.EventApprovalRequested, agent.EventUserInputRequested:
+	case orchestrator.EventApprovalRequested, orchestrator.EventUserInputRequested:
 		c.request(e.Thread.ID, *e.Item)
 	}
 }
 
 // requests asks the client what is waiting on it. A client that cannot be told would wait without knowing, so one that
 // could not be told is dropped and asked again when it comes back.
-func (c *conn) requests(pending []agent.Request, err error) {
+func (c *conn) requests(pending []orchestrator.Request, err error) {
 	if errors.Is(err, repo.ErrNotFound) {
 		return
 	}
@@ -308,7 +308,7 @@ func (c *conn) request(threadID string, it repo.ItemRow) {
 		if err := c.resolve(threadID, it, result); err != nil {
 			slog.Warn("client response not applied", "item", it.ID, "err", err)
 			c.rpc.Notify(notifyError, ErrorNotification{ThreadID: threadID, TurnID: it.TurnID, ItemID: it.ID, Message: serverError(err).Message})
-			if !errors.Is(err, agent.ErrNoSuchRequest) {
+			if !errors.Is(err, orchestrator.ErrNoSuchRequest) {
 				c.request(threadID, it)
 			}
 		}
@@ -361,17 +361,17 @@ func itemBytes(it repo.ItemRow) int {
 	return len(raw)
 }
 
-func agentInput(input []UserInput) (agent.Input, error) {
-	var in agent.Input
+func agentInput(input []UserInput) (orchestrator.Input, error) {
+	var in orchestrator.Input
 	texts := make([]string, 0, len(input))
 	for _, part := range input {
 		switch part.Type {
 		case "text":
 			texts = append(texts, part.Text)
 		case "file":
-			in.Attachments = append(in.Attachments, agent.AttachmentInput{Path: part.Path, Name: part.Name, MimeType: part.MimeType})
+			in.Attachments = append(in.Attachments, orchestrator.AttachmentInput{Path: part.Path, Name: part.Name, MimeType: part.MimeType})
 		default:
-			return agent.Input{}, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "input type %q is not supported", part.Type)
+			return orchestrator.Input{}, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "input type %q is not supported", part.Type)
 		}
 	}
 	in.Text = strings.Join(texts, "\n")
@@ -390,21 +390,21 @@ var errorCodes = []struct {
 	code int
 }{
 	{repo.ErrNotFound, errNotFound},
-	{agent.ErrNoActiveTurn, errNoActiveTurn},
-	{agent.ErrTurnMismatch, errTurnMismatch},
-	{agent.ErrNoSuchRequest, errNoSuchRequest},
-	{agent.ErrSubagentThread, errSubagentThread},
-	{agent.ErrWorkspaceArchived, errWorkspaceArchived},
-	{agent.ErrThreadArchived, errThreadArchived},
-	{agent.ErrThreadBusy, errThreadBusy},
-	{agent.ErrWorkspaceBusy, errThreadBusy},
-	{agent.ErrQueueFull, errThreadBusy},
-	{agent.ErrEnvironmentInUse, jsonrpc.CodeInvalidParams},
-	{agent.ErrInvalidMessage, jsonrpc.CodeInvalidParams},
-	{agent.ErrInvalidAnswer, jsonrpc.CodeInvalidParams},
-	{agent.ErrInvalidDecision, jsonrpc.CodeInvalidParams},
-	{agent.ErrInvalidName, jsonrpc.CodeInvalidParams},
-	{agent.ErrInvalidPath, jsonrpc.CodeInvalidParams},
+	{orchestrator.ErrNoActiveTurn, errNoActiveTurn},
+	{orchestrator.ErrTurnMismatch, errTurnMismatch},
+	{orchestrator.ErrNoSuchRequest, errNoSuchRequest},
+	{orchestrator.ErrSubagentThread, errSubagentThread},
+	{orchestrator.ErrWorkspaceArchived, errWorkspaceArchived},
+	{orchestrator.ErrThreadArchived, errThreadArchived},
+	{orchestrator.ErrThreadBusy, errThreadBusy},
+	{orchestrator.ErrWorkspaceBusy, errThreadBusy},
+	{orchestrator.ErrQueueFull, errThreadBusy},
+	{orchestrator.ErrEnvironmentInUse, jsonrpc.CodeInvalidParams},
+	{orchestrator.ErrInvalidMessage, jsonrpc.CodeInvalidParams},
+	{orchestrator.ErrInvalidAnswer, jsonrpc.CodeInvalidParams},
+	{orchestrator.ErrInvalidDecision, jsonrpc.CodeInvalidParams},
+	{orchestrator.ErrInvalidName, jsonrpc.CodeInvalidParams},
+	{orchestrator.ErrInvalidPath, jsonrpc.CodeInvalidParams},
 	{permission.ErrInvalidSettings, jsonrpc.CodeInvalidParams},
 	{memory.ErrInvalidChange, jsonrpc.CodeInvalidParams},
 	{tools.ErrUnknownTool, jsonrpc.CodeInvalidParams},
