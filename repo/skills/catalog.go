@@ -16,11 +16,12 @@ import (
 )
 
 const (
-	maxDescriptionRunes   = 1024
-	maxInstructionRunes   = 20000
-	maxInstructionLines   = 500
-	defaultResourceRunes  = 12000
-	maxResourceRunes      = 30000
+	maxDescriptionRunes  = 1024
+	maxInstructionRunes  = 20000
+	maxInstructionLines  = 500
+	defaultResourceRunes = 12000
+	// MaxResourceRunes is the most runes a page of a resource holds.
+	MaxResourceRunes      = 30000
 	maxReadableResourceB  = 1 << 20
 	maxListedResources    = 200
 	skillInstructionsFile = "SKILL.md"
@@ -121,13 +122,19 @@ func (c *Catalog) For(role string) []Skill {
 	return out
 }
 
-func (c *Catalog) lookup(role, name string) (Skill, bool) {
+// Dir is the directory of the role's skills.
+func (c *Catalog) Dir(role string) string { return filepath.Join(c.root, role) }
+
+// Lookup is the skill of the role that has the name.
+func (c *Catalog) Lookup(role, name string) (Skill, bool) {
 	skill, ok := c.byRole[role][strings.TrimSpace(name)]
 	return cloneSkill(skill), ok
 }
 
-func (c *Catalog) resourcePage(role, skillName, resourcePath string, offset, limit int) (ResourcePage, error) {
-	skill, ok := c.lookup(role, skillName)
+// ResourcePage reads a page of runes of a resource of the role's skill: limit of them from offset, or a default
+// number when limit is 0.
+func (c *Catalog) ResourcePage(role, skillName, resourcePath string, offset, limit int) (ResourcePage, error) {
+	skill, ok := c.Lookup(role, skillName)
 	if !ok {
 		return ResourcePage{}, fmt.Errorf("skills: no skill named %q", strings.TrimSpace(skillName))
 	}
@@ -151,8 +158,8 @@ func (c *Catalog) resourcePage(role, skillName, resourcePath string, offset, lim
 	if limit <= 0 {
 		limit = defaultResourceRunes
 	}
-	if limit > maxResourceRunes {
-		return ResourcePage{}, fmt.Errorf("skills: resource limit must be <= %d", maxResourceRunes)
+	if limit > MaxResourceRunes {
+		return ResourcePage{}, fmt.Errorf("skills: resource limit must be <= %d", MaxResourceRunes)
 	}
 
 	fullPath, err := safeResourcePath(skill.RootDir, resourcePath)

@@ -19,9 +19,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/skills"
+	"github.com/0xfakeSpike/ollupi/repo/skills"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/plan"
+	skilltools "github.com/0xfakeSpike/ollupi/tools/skills"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
 )
@@ -244,7 +245,7 @@ func (o *Orchestrator) buildTools(ctx context.Context) error {
 				return fmt.Errorf("orchestrator: skills: %s has skills for %q, which is no role; the roles are %q", o.cfg.SkillsDir, name, role.NameValues)
 			}
 		}
-		providers = append(providers, o.skills)
+		providers = append(providers, skilltools.New(o.skills))
 	}
 	o.providers = providers
 	var err error

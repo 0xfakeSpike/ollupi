@@ -1,11 +1,13 @@
+// Package skills gives an agent the tools of the skills its role has: listing them, activating one, and reading its
+// resources.
 package skills
 
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 
+	"github.com/0xfakeSpike/ollupi/repo/skills"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/google/jsonschema-go/jsonschema"
 )
@@ -18,21 +20,28 @@ const (
 	ToolReadResource  = "read_skill_resource"
 )
 
-func (c *Catalog) Name() (string, string) {
+// Tools provides the skill tools over the catalog of installed skills.
+type Tools struct {
+	catalog *skills.Catalog
+}
+
+func New(catalog *skills.Catalog) *Tools { return &Tools{catalog: catalog} }
+
+func (*Tools) Name() (string, string) {
 	return ProviderName, "Directory-based Agent Skills with explicit activation and on-demand resources."
 }
 
 // Invoke works on the skills of the caller's role alone.
-func (c *Catalog) Invoke(_ context.Context, caller tools.Caller, tool string, arguments map[string]any) (tools.Result, error) {
+func (t *Tools) Invoke(_ context.Context, caller tools.Caller, tool string, arguments map[string]any) (tools.Result, error) {
 	switch strings.TrimSpace(tool) {
 	case ToolGetRootDir:
-		return tools.Result{Output: map[string]any{"skills_root_dir": filepath.Join(c.root, caller.Role)}}, nil
+		return tools.Result{Output: map[string]any{"skills_root_dir": t.catalog.Dir(caller.Role)}}, nil
 	case ToolListSkills:
-		return tools.Result{Output: map[string]any{"skills": c.For(caller.Role)}}, nil
+		return tools.Result{Output: map[string]any{"skills": t.catalog.For(caller.Role)}}, nil
 	case ToolActivateSkill:
-		return c.activate(caller.Role, arguments)
+		return t.activate(caller.Role, arguments)
 	case ToolReadResource:
-		return c.readResource(caller.Role, arguments)
+		return t.readResource(caller.Role, arguments)
 	default:
 		err := fmt.Errorf("skills: unknown tool %q", tool)
 		return tools.Result{}, err
@@ -53,10 +62,10 @@ type resourceArgs struct {
 func (resourceArgs) Constrain(s *jsonschema.Schema) {
 	s.Properties["offset_runes"].Minimum = jsonschema.Ptr(0.0)
 	s.Properties["limit_runes"].Minimum = jsonschema.Ptr(1.0)
-	s.Properties["limit_runes"].Maximum = jsonschema.Ptr(float64(maxResourceRunes))
+	s.Properties["limit_runes"].Maximum = jsonschema.Ptr(float64(skills.MaxResourceRunes))
 }
 
-func (c *Catalog) ToolList(context.Context) ([]*tools.Spec, error) {
+func (*Tools) ToolList(context.Context) ([]*tools.Spec, error) {
 	read := &tools.Annotations{ReadOnlyHint: true, OpenWorldHint: tools.Hint(false)}
 	return []*tools.Spec{
 		{
@@ -86,13 +95,13 @@ func (c *Catalog) ToolList(context.Context) ([]*tools.Spec, error) {
 	}, nil
 }
 
-func (c *Catalog) activate(role string, arguments map[string]any) (tools.Result, error) {
+func (t *Tools) activate(role string, arguments map[string]any) (tools.Result, error) {
 	args, err := tools.DecodeArguments[activateArgs](arguments)
 	if err != nil {
 		return tools.Result{}, err
 	}
 	name := strings.TrimSpace(args.Name)
-	skill, ok := c.lookup(role, name)
+	skill, ok := t.catalog.Lookup(role, name)
 	if !ok {
 		return tools.Result{}, fmt.Errorf("skills: you have no skill named %q; use a name from AVAILABLE SKILLS", name)
 	}
@@ -112,12 +121,12 @@ func (c *Catalog) activate(role string, arguments map[string]any) (tools.Result,
 	}, nil
 }
 
-func (c *Catalog) readResource(role string, arguments map[string]any) (tools.Result, error) {
+func (t *Tools) readResource(role string, arguments map[string]any) (tools.Result, error) {
 	args, err := tools.DecodeArguments[resourceArgs](arguments)
 	if err != nil {
 		return tools.Result{}, err
 	}
-	page, err := c.resourcePage(role, args.Skill, args.Path, args.OffsetRunes, args.LimitRunes)
+	page, err := t.catalog.ResourcePage(role, args.Skill, args.Path, args.OffsetRunes, args.LimitRunes)
 	if err != nil {
 		return tools.Result{}, err
 	}
