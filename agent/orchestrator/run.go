@@ -109,22 +109,14 @@ func (o *Orchestrator) runTurn(ctx context.Context, t repo.ThreadRow, turn repo.
 		}
 	}
 	caller := tools.Caller{UserID: t.UserID, ThreadID: t.ID, WorkspaceID: string(t.WorkspaceID), EnvironmentID: string(t.EnvironmentID), Root: w.RootPath, Subagent: t.ParentThreadID != ""}
-	rt := &runtime.Runtime{
-		LLM:         client,
-		Registry:    registry,
-		Window:      window,
-		Host:        turnHost{o: o, t: t, turn: turn, role: r, caller: caller, registry: registry},
-		Turn:        turn,
-		Caller:      caller,
-		Role:        r,
-		Prompt:      role.AgentPrompt(o.cfg.Name, o.cfg.Prompt),
-		Permissions: checker,
-		Settings:    settings,
-		Skills:      catalog,
-		History:     history,
-		Items:       items,
+	tr := &turnRun{
+		o: o, t: t, caller: caller, registry: registry, client: client, settings: settings,
+		state: runtime.State{
+			Turn: turn, Role: r, Prompt: role.AgentPrompt(o.cfg.Name, o.cfg.Prompt), Root: w.RootPath, Skills: catalog,
+			Window: window, Permissions: checker, History: history, Items: items, Inspections: map[string]runtime.Inspection{},
+		},
 	}
-	return rt.Run(ctx)
+	return tr.run(ctx)
 }
 
 func (o *Orchestrator) afterRun(threadID string, sl *slot, final bool, runErr error) {

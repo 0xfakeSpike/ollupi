@@ -23,29 +23,30 @@ const (
 	userDeclined = "the user declined this call"
 )
 
-type job struct {
-	it   repo.ItemRow
-	args map[string]any
-	// background is what the call asked with ArgBackground.
-	background bool
-	readOnly   bool
+// A Job is a call to run, with its arguments for the tool.
+type Job struct {
+	Item repo.ItemRow
+	Args map[string]any
+	// Background is what the call asked with ArgBackground.
+	Background bool
+	ReadOnly   bool
 }
 
 // A callPlan is what the pending calls come to: the items that record what was decided on them, the calls to run in
 // their order, and why tool use stops, when it does.
 type callPlan struct {
 	records []repo.ItemRow
-	run     []job
+	run     []Job
 	halt    string
 }
 
 // firstRun is the calls that run first: read-only calls in a row run together, any other call on its own.
-func (p callPlan) firstRun() []job {
-	if len(p.run) == 0 || !p.run[0].readOnly {
+func (p callPlan) firstRun() []Job {
+	if len(p.run) == 0 || !p.run[0].ReadOnly {
 		return p.run[:min(1, len(p.run))]
 	}
 	n := 1
-	for n < len(p.run) && p.run[n].readOnly {
+	for n < len(p.run) && p.run[n].ReadOnly {
 		n++
 	}
 	return p.run[:n]
@@ -56,7 +57,7 @@ func (p callPlan) firstRun() []job {
 // user's approval asks for it, and the calls after it wait with it. Tool use stops when the user declines a call, the
 // turn makes too many calls, or the calls in a row fail too often; the pending calls after the one that stops it are
 // skipped. A call that has to be inspected first returns Inspect, before anything is decided.
-func (s State) planCalls(of offer) (callPlan, *Inspect, error) {
+func (s State) planCalls(of Offer) (callPlan, *Inspect, error) {
 	items := slices.Clone(s.Items)
 	var p callPlan
 	failures := 0
@@ -122,7 +123,7 @@ func (s State) planCalls(of offer) (callPlan, *Inspect, error) {
 			if !in.HasContent || in.Content.Text == it.Approval.Content {
 				switch it.Approval.Decision {
 				case repo.DecisionAccept, repo.DecisionAcceptForSession, repo.DecisionAcceptAlways:
-					p.run = append(p.run, job{it: it, args: args, background: background, readOnly: of.readOnly(it.Tool)})
+					p.run = append(p.run, Job{Item: it, Args: args, Background: background, ReadOnly: of.readOnly(it.Tool)})
 					continue
 				default:
 					return callPlan{}, nil, fmt.Errorf("runtime: call %s has no approval decision", it.ID)
@@ -130,9 +131,9 @@ func (s State) planCalls(of offer) (callPlan, *Inspect, error) {
 			}
 			approved, it.Approval = it.Approval, nil
 		}
-		if _, offered := of.tool(it.Tool); !offered {
+		if _, offered := of.Tool(it.Tool); !offered {
 			reason := fmt.Sprintf("tool %q is not available in this turn; use an exact tool name from the tool list", it.Tool)
-			if slices.ContainsFunc(of.deferred, func(d tools.ToolDescriptor) bool { return d.Name == it.Tool }) {
+			if slices.ContainsFunc(of.Deferred, func(d tools.ToolDescriptor) bool { return d.Name == it.Tool }) {
 				reason = fmt.Sprintf("tool %q is not loaded yet; call %s with its name first", it.Tool, tools.ToolLoadTools)
 			}
 			refuse(i, it, reason)
@@ -143,7 +144,7 @@ func (s State) planCalls(of offer) (callPlan, *Inspect, error) {
 			refuse(i, it, err.Error())
 			continue
 		}
-		descriptor, _ := of.tool(it.Tool)
+		descriptor, _ := of.Tool(it.Tool)
 		if err := tools.ValidateArguments(args, descriptor.InputSchema); err != nil {
 			refuse(i, it, fmt.Sprintf("invalid arguments for %s: %v", it.Tool, err))
 			continue
@@ -177,24 +178,24 @@ func (s State) planCalls(of offer) (callPlan, *Inspect, error) {
 			p.records = append(p.records, it)
 			return p, nil, nil
 		default:
-			p.run = append(p.run, job{it: it, args: args, background: background, readOnly: of.readOnly(it.Tool)})
+			p.run = append(p.run, Job{Item: it, Args: args, Background: background, ReadOnly: of.readOnly(it.Tool)})
 		}
 	}
 	return p, nil, nil
 }
 
-func (o offer) readOnly(tool string) bool {
-	d, ok := o.tool(tool)
+func (o Offer) readOnly(tool string) bool {
+	d, ok := o.Tool(tool)
 	return ok && d.Annotations.ReadOnlyHint && !d.Serial
 }
 
 // arguments are the call's arguments for its tool and whether it asked to run in the background.
-func (o offer) arguments(it repo.ItemRow) (map[string]any, bool, error) {
+func (o Offer) arguments(it repo.ItemRow) (map[string]any, bool, error) {
 	args, err := callArguments(it)
 	if err != nil {
 		return nil, false, err
 	}
-	d, _ := o.tool(it.Tool)
+	d, _ := o.Tool(it.Tool)
 	background, err := d.TakeBackground(args)
 	if err != nil {
 		return nil, false, err

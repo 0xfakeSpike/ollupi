@@ -99,7 +99,8 @@ type Config struct {
 }
 
 // An Orchestrator runs the agents of a shard: it keeps their threads and turns, schedules turns into slots, launches
-// subagents and runs background calls. The agent of each turn is a role, which the runtime runs one turn at a time.
+// subagents and runs background calls. The agent of each turn is a role; runtime.Next decides each step of a run of
+// the turn, and the orchestrator carries it out.
 type Orchestrator struct {
 	cfg      Config
 	ctx      context.Context
