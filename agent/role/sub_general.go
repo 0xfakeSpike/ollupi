@@ -6,25 +6,14 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
 
-const (
-	// GeneralSub is the name of the general-purpose subagent.
-	GeneralSub Name = "general-sub-agent"
-	// GeneralSubTool launches a general-purpose subagent, which has its parent's tools.
-	GeneralSubTool = "Agent"
-)
+// GeneralSub is the general-purpose subagent, which has its parent's tools; the tool of its name launches it.
+const GeneralSub Name = subagent.General
 
 var generalSub = Role{
 	Name: GeneralSub, Persona: true, Rules: generalSubRules, Skills: true, Memory: true,
 	send: sendFitting,
 	// A subagent cannot launch another or schedule tasks, which would come back to its thread after it reported.
 	Permission: permission.Layer{Of: "the general subagent's role", Without: []string{subagent.ProviderName, cron.ProviderName}},
-	LaunchedBy: &LaunchTool{
-		Name:  GeneralSubTool,
-		Title: "Subagent",
-		Description: "Launch a general-purpose subagent: another run of you, with your tools, that does one task on its own and reports back. " +
-			"For a task in the built-in browser, launch " + BrowserSubTool + " instead. " +
-			"To work on independent tasks at the same time, call " + GeneralSubTool + " several times in the same response; the subagents run in parallel.",
-	},
 }
 
 const generalSubRules = `You complete the user's request by calling tools in a loop. Every tool result comes back to you as an observation. Keep working until the request is done, then reply to the user without calling any tool; that reply is shown to the user as the final answer.

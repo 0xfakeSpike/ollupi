@@ -1,12 +1,14 @@
 package role
 
 import (
-	"github.com/0xfakeSpike/ollupi/tools/subagent"
+	"maps"
+	"slices"
 	"testing"
 
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
+	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
 
 func TestEveryNameIsARole(t *testing.T) {
@@ -34,9 +36,10 @@ func TestEachRolesPermissionKeepsItsTools(t *testing.T) {
 	page := tools.ToolDescriptor{Provider: BrowserProvider, Name: "navigate"}
 	job := tools.ToolDescriptor{Provider: cron.ProviderName, Name: cron.ToolCreateJob}
 	output := tools.ToolDescriptor{Provider: contextmanager.OutputsProvider, Name: contextmanager.ToolReadOutput}
-	launchTools := []tools.ToolDescriptor{{Provider: subagent.ProviderName, Name: GeneralSubTool}, {Provider: subagent.ProviderName, Name: BrowserSubTool}}
+	launchTools := []tools.ToolDescriptor{{Provider: subagent.ProviderName, Name: string(GeneralSub)}, {Provider: subagent.ProviderName, Name: string(BrowserSub)}}
 	for _, r := range all {
-		main := r.LaunchedBy == nil
+		_, sub := subagent.Kinds[string(r.Name)]
+		main := !sub
 		for _, l := range launchTools {
 			if r.Permission.Keeps(l) != main {
 				t.Errorf("%s keeps %s: %v", r.Name, l.Name, r.Permission.Keeps(l))
@@ -59,18 +62,13 @@ func TestEachRolesPermissionKeepsItsTools(t *testing.T) {
 	}
 }
 
-func TestEachSubagentRoleIsAKindOfSubagent(t *testing.T) {
-	kinds := Subagents()
-	if len(kinds) != 2 {
-		t.Fatalf("the kinds of subagent are %+v", kinds)
+func TestEachKindOfSubagentRunsAsItsRole(t *testing.T) {
+	for name := range subagent.Kinds {
+		if r, ok := Of(Name(name)); !ok || r.Name != Name(name) {
+			t.Errorf("subagent %s runs as no role", name)
+		}
 	}
-	for _, r := range all {
-		if r.LaunchedBy == nil {
-			continue
-		}
-		k, ok := kinds[r.LaunchedBy.Name]
-		if !ok || k.Role != string(r.Name) || k.Title != r.LaunchedBy.Title || k.Description != r.LaunchedBy.Description {
-			t.Errorf("%s is launched as %+v", r.Name, k)
-		}
+	if len(subagent.Kinds) != 2 {
+		t.Errorf("the kinds of subagent are %q", slices.Collect(maps.Keys(subagent.Kinds)))
 	}
 }

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/0xfakeSpike/ollupi/tools/subagent"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -26,6 +25,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
 	"github.com/0xfakeSpike/ollupi/tools/plan"
+	"github.com/0xfakeSpike/ollupi/tools/subagent"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
 	"github.com/0xfakeSpike/ollupi/tools/workspace"
 	"github.com/google/jsonschema-go/jsonschema"
@@ -59,8 +59,8 @@ type toolSchemas struct {
 
 var builtinTools = map[string]struct{ arguments, output reflect.Type }{
 	plan.Tool:                {arguments: reflect.TypeFor[plan.Plan]()},
-	role.GeneralSubTool:      {arguments: reflect.TypeFor[subagent.Call]()},
-	role.BrowserSubTool:      {arguments: reflect.TypeFor[subagent.Call]()},
+	subagent.General:         {arguments: reflect.TypeFor[subagent.Call]()},
+	subagent.Browser:         {arguments: reflect.TypeFor[subagent.Call]()},
 	userinput.Tool:           {arguments: reflect.TypeFor[userinput.Request](), output: reflect.TypeFor[userinput.Answers]()},
 	workspace.ToolRunCommand: {output: reflect.TypeFor[workspace.CommandOutput]()},
 	workspace.ToolEditFile:   {output: reflect.TypeFor[workspace.FileOutput]()},
@@ -189,13 +189,9 @@ func constants(dir, typ string) ([]string, error) {
 					continue
 				}
 				for _, v := range vs.Values {
-					lit, ok := v.(*ast.BasicLit)
-					if !ok || lit.Kind != token.STRING {
-						return nil, fmt.Errorf("%s: a %s constant is not a string literal", fset.Position(v.Pos()), typ)
-					}
-					s, err := strconv.Unquote(lit.Value)
+					s, err := constantValue(fset, f, v)
 					if err != nil {
-						return nil, err
+						return nil, fmt.Errorf("%s: a %s constant: %w", fset.Position(v.Pos()), typ, err)
 					}
 					values = append(values, s)
 				}
@@ -203,6 +199,59 @@ func constants(dir, typ string) ([]string, error) {
 		}
 	}
 	return values, nil
+}
+
+// constantValue is the string a constant is declared as: a string literal, or a constant of another package of this
+// module that is one, as a role is named after the tool that launches it.
+func constantValue(fset *token.FileSet, f *ast.File, v ast.Expr) (string, error) {
+	switch v := v.(type) {
+	case *ast.BasicLit:
+		if v.Kind == token.STRING {
+			return strconv.Unquote(v.Value)
+		}
+	case *ast.SelectorExpr:
+		pkg, ok := v.X.(*ast.Ident)
+		if !ok {
+			break
+		}
+		for _, imp := range f.Imports {
+			path, _ := strconv.Unquote(imp.Path.Value)
+			if rel, ok := strings.CutPrefix(path, "github.com/0xfakeSpike/ollupi/"); ok && (imp.Name != nil && imp.Name.Name == pkg.Name || imp.Name == nil && filepath.Base(path) == pkg.Name) {
+				return declaredIn(fset, filepath.Join("..", rel), v.Sel.Name)
+			}
+		}
+	}
+	return "", fmt.Errorf("it is neither a string literal nor a constant of this module that is one")
+}
+
+// declaredIn is the string literal the constant of that name is declared as in the package at dir.
+func declaredIn(fset *token.FileSet, dir, name string) (string, error) {
+	files, err := filepath.Glob(filepath.Join(dir, "*.go"))
+	if err != nil {
+		return "", err
+	}
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(fset, file, nil, 0)
+		if err != nil {
+			return "", err
+		}
+		for _, decl := range f.Decls {
+			if d, ok := decl.(*ast.GenDecl); ok && d.Tok == token.CONST {
+				for _, spec := range d.Specs {
+					vs := spec.(*ast.ValueSpec)
+					for i, id := range vs.Names {
+						if id.Name == name && i < len(vs.Values) {
+							return constantValue(fset, f, vs.Values[i])
+						}
+					}
+				}
+			}
+		}
+	}
+	return "", fmt.Errorf("%s declares no constant %s", dir, name)
 }
 
 func enumValues(list any) []string {

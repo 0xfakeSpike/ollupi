@@ -18,6 +18,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
 
 // slowTools runs a download that ends when released, or stops when its call is cancelled.
@@ -296,7 +297,7 @@ func (m *delegatingModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	delta, finish := map[string]any{"content": "都好了。"}, "stop"
 	switch {
 	case !isChild && n == 1:
-		delta, finish = call("Agent", `{"description":"Download it","prompt":"Download https://example.com/big.iso and report where it is."}`), "tool_calls"
+		delta, finish = call(subagent.General, `{"description":"Download it","prompt":"Download https://example.com/big.iso and report where it is."}`), "tool_calls"
 	case isChild && n == 1:
 		delta, finish = call("files__download", `{"url":"https://example.com/big.iso","run_in_background":true}`), "tool_calls"
 	case isChild && strings.Contains(string(body), "ended: completed]"):
@@ -336,7 +337,7 @@ func TestASubagentReportsOnlyOnceItsBackgroundCallsHaveEnded(t *testing.T) {
 			return repo.TurnRow{}
 		}
 		for _, it := range v.Items {
-			if it.Tool == "Agent" && it.Await != nil && it.Await.Handle != "" {
+			if it.Tool == subagent.General && it.Await != nil && it.Await.Handle != "" {
 				if cv, err := db.Thread(it.Await.Handle); err == nil && len(cv.Turns) > 0 {
 					return cv.Turns[len(cv.Turns)-1]
 				}

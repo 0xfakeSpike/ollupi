@@ -22,6 +22,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/0xfakeSpike/ollupi/tools/subagent"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -57,7 +58,7 @@ func crash(args []string) {
 		case ask == kindAsk && answered == 0:
 			return userinput.Tool, askArgs
 		case ask == kindDelegate && answered == 0:
-			return "Agent", `{"description":"Do the work","prompt":"work"}`
+			return subagent.General, `{"description":"Do the work","prompt":"work"}`
 		case ask == kindWork && answered < 2:
 			return "bench__work", fmt.Sprintf(`{"token":"t%d"}`, token.Add(1))
 		}

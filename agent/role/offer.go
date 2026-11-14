@@ -9,6 +9,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
 
 // Offer splits the visible tools into the ones sent to the model and the ones only named in DEFERRED TOOLS, as the
@@ -24,17 +25,18 @@ func (r Role) Offer(visible []tools.ToolDescriptor, window *contextmanager.Manag
 	return offered, deferred
 }
 
-// launchable leaves out the launch tool of each subagent role whose permission keeps none of the visible tools: its
+// launchable leaves out the tool of each kind of subagent whose role's permission keeps none of the visible tools: its
 // subagent would have nothing to work with.
 func launchable(visible []tools.ToolDescriptor) []tools.ToolDescriptor {
 	out := slices.Clone(visible)
-	for _, r := range all {
-		if r.LaunchedBy == nil || slices.ContainsFunc(visible, func(t tools.ToolDescriptor) bool {
+	for name := range subagent.Kinds {
+		r, ok := Of(Name(name))
+		if ok && slices.ContainsFunc(visible, func(t tools.ToolDescriptor) bool {
 			return t.Provider != contextmanager.OutputsProvider && r.Permission.Keeps(t)
 		}) {
 			continue
 		}
-		out = slices.DeleteFunc(out, func(d tools.ToolDescriptor) bool { return d.Name == r.LaunchedBy.Name })
+		out = slices.DeleteFunc(out, func(d tools.ToolDescriptor) bool { return d.Name == name })
 	}
 	return out
 }
