@@ -5,23 +5,19 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
-	"github.com/0xfakeSpike/ollupi/agent/skills"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
-// A Host is what a run asks of the agent that runs it, for the turn it runs.
+// A Host is what a run asks of the orchestrator that runs it, for the turn it runs.
 type Host interface {
 	// Record stores an item of the turn and tells those who watch the thread.
 	Record(repo.ItemRow) (repo.ItemRow, error)
 	// Delta tells those who watch the thread of text the model streams into an item.
 	Delta(it repo.ItemRow, text string)
-	// Reload reads the turn's items again, with the permissions of its thread as they are now.
-	Reload() ([]repo.ItemRow, *permission.Checker, error)
-	// Settings are the settings of the turn's user.
-	Settings() (repo.SettingsRow, error)
-	// Skills are the skills the system prompt may list.
-	Skills() []skills.Skill
+	// Reload reads the turn's items again, with the permissions of its thread and the settings of its user as they
+	// are now.
+	Reload() ([]repo.ItemRow, *permission.Checker, repo.SettingsRow, error)
 	// Memory is the snapshot of the user's memory that a run starts with, within budget tokens; nil when the agent
 	// keeps no memory.
 	Memory(budget int) (*memory.Snapshot, error)

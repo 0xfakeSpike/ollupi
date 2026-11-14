@@ -32,7 +32,7 @@ type callAction struct {
 	reason string
 }
 
-func (rt *Runtime) executePlan(ctx context.Context, plan []callAction) (bool, error) {
+func (rt *Runtime) executePlan(ctx context.Context, of offer, plan []callAction) (bool, error) {
 	var batch []job
 	halt := ""
 	flush := func() (string, error) {
@@ -40,7 +40,7 @@ func (rt *Runtime) executePlan(ctx context.Context, plan []callAction) (bool, er
 			return "", nil
 		}
 		var h string
-		results, err := rt.runJobs(ctx, batch)
+		results, err := rt.runJobs(ctx, of, batch)
 		if err != nil {
 			return "", err
 		}
@@ -58,7 +58,7 @@ func (rt *Runtime) executePlan(ctx context.Context, plan []callAction) (bool, er
 	}
 	runOne := func(j job) (string, error) {
 		jobs := []job{j}
-		results, err := rt.runJobs(ctx, jobs)
+		results, err := rt.runJobs(ctx, of, jobs)
 		if err != nil {
 			return "", err
 		}
@@ -134,8 +134,8 @@ func (rt *Runtime) executePlan(ctx context.Context, plan []callAction) (bool, er
 	return false, nil
 }
 
-func (rt *Runtime) runJobs(ctx context.Context, jobs []job) ([]tools.Result, error) {
-	ctx = context.WithValue(ctx, deferredKey{}, rt.deferred)
+func (rt *Runtime) runJobs(ctx context.Context, of offer, jobs []job) ([]tools.Result, error) {
+	ctx = context.WithValue(ctx, deferredKey{}, of.deferred)
 	for i := range jobs {
 		jobs[i].it.Status = repo.ItemInProgress
 		stored, err := rt.record(jobs[i].it)

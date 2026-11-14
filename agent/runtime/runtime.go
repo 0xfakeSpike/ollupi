@@ -9,8 +9,8 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/role"
+	"github.com/0xfakeSpike/ollupi/agent/skills"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/pkg/redact"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/google/uuid"
@@ -38,39 +38,25 @@ type Runtime struct {
 	Role        role.Role
 	Prompt      string
 	Permissions *permission.Checker
-	History     []repo.ItemRow
-	Items       []repo.ItemRow
-
-	offered  []tools.ToolDescriptor
-	deferred []tools.ToolDescriptor
-	system   string
-	redactor *redact.Redactor
-	usage    repo.Usage
+	// Settings are the settings of the turn's user, and Skills the skills the system prompt may list.
+	Settings repo.SettingsRow
+	Skills   []skills.Skill
+	History  []repo.ItemRow
+	Items    []repo.ItemRow
 }
 
-func (rt *Runtime) Run(ctx context.Context) (bool, repo.Usage, error) {
+func (rt *Runtime) Run(ctx context.Context) (bool, error) {
 	ctx = tools.WithCaller(ctx, rt.Caller)
 	if err := rt.start(); err != nil {
-		return false, repo.Usage{}, err
+		return false, err
 	}
-	final, err := rt.run(ctx)
-	return final, rt.usage, err
+	return rt.run(ctx)
 }
 
 func (rt *Runtime) start() error {
 	if rt.waiting() {
 		return fmt.Errorf("runtime: turn %s still waits for an answer", rt.Turn.ID)
 	}
-	settings, err := rt.Host.Settings()
-	if err != nil {
-		return fmt.Errorf("runtime: read the settings: %w", err)
-	}
-	rt.redactor = redact.New(settings.RedactionKey)
-	rt.offer()
-	rt.system = rt.Role.System(role.Input{
-		Agent: rt.Prompt, Root: rt.Caller.Root,
-		Skills: rt.Host.Skills(), SkillTokens: rt.Window.SkillBudget(), Deferred: rt.deferred,
-	})
 	if !rt.Role.Memory || hasSnapshot(slices.Concat(rt.History, rt.Items)) {
 		return nil
 	}
@@ -105,26 +91,41 @@ func (rt *Runtime) loadMemory() error {
 	return err
 }
 
-func (rt *Runtime) tool(name string) (tools.ToolDescriptor, bool) {
-	i := slices.IndexFunc(rt.offered, func(d tools.ToolDescriptor) bool { return d.Name == name })
+// An offer is the role's split of the tools the run may use, as the run's items and permissions are at one point: the
+// ones sent to the model, and the deferred ones it has to load first.
+type offer struct {
+	offered, deferred []tools.ToolDescriptor
+}
+
+func (rt *Runtime) offer() offer {
+	offered, deferred := rt.Role.Offer(rt.Permissions.Tools(), rt.Window, slices.Concat(rt.History, rt.Items))
+	return offer{offered: offered, deferred: deferred}
+}
+
+func (o offer) tool(name string) (tools.ToolDescriptor, bool) {
+	i := slices.IndexFunc(o.offered, func(d tools.ToolDescriptor) bool { return d.Name == name })
 	if i < 0 {
 		return tools.ToolDescriptor{}, false
 	}
-	return rt.offered[i], true
+	return o.offered[i], true
 }
 
-// offer keeps the role's split of the tools the run may use.
-func (rt *Runtime) offer() {
-	rt.offered, rt.deferred = rt.Role.Offer(rt.Permissions.Tools(), rt.Window, slices.Concat(rt.History, rt.Items))
+// system is the role's system prompt for the offer.
+func (rt *Runtime) system(of offer) string {
+	return rt.Role.System(role.Input{
+		Agent: rt.Prompt, Root: rt.Caller.Root,
+		Skills: rt.Skills, SkillTokens: rt.Window.SkillBudget(), Deferred: of.deferred,
+	})
 }
 
 func (rt *Runtime) run(ctx context.Context) (bool, error) {
 	for {
-		plan, err := rt.planCalls(ctx)
+		of := rt.offer()
+		plan, err := rt.planCalls(ctx, of)
 		if err != nil {
 			return false, err
 		}
-		if final, err := rt.executePlan(ctx, plan); final || err != nil || rt.waiting() {
+		if final, err := rt.executePlan(ctx, of, plan); final || err != nil || rt.waiting() {
 			return final, err
 		}
 		if rt.modelCalls() >= maxModelCalls {
@@ -138,12 +139,11 @@ func (rt *Runtime) run(ctx context.Context) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		items, permissions, err := rt.Host.Reload()
+		items, permissions, settings, err := rt.Host.Reload()
 		if err != nil {
 			return false, fmt.Errorf("runtime: reload the turn: %w", err)
 		}
-		rt.Items, rt.Permissions = items, permissions
-		rt.offer()
+		rt.Items, rt.Permissions, rt.Settings = items, permissions, settings
 		if resp.FinishReason == "length" && len(resp.Message.ToolCalls) > 0 {
 			if halt := rt.haltAfterFailures(cutOffCall); halt != "" {
 				return true, rt.finish(ctx, halt)

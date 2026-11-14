@@ -292,20 +292,27 @@ func (d *DB) startIn(t ThreadRow, turn TurnRow) (ThreadRow, TurnRow, ItemRow, er
 	return t, turn, stored, nil
 }
 
-func (d *DB) AddUsage(threadID, turnID string, u Usage) error {
-	if u == (Usage{}) {
-		return nil
-	}
+// CountUsage sets a turn's usage to the sum of what its items used.
+func (d *DB) CountUsage(turnID string) error {
 	return d.Tx(func(tx *DB) error {
-		row, err := tx.ActiveTurn(threadID)
-		if errors.Is(err, ErrNotFound) || (err == nil && row.ID != turnID) {
-			return fmt.Errorf("storage: turn %s is not in progress", turnID)
-		}
+		items, err := tx.TurnItems(turnID)
 		if err != nil {
 			return err
 		}
-		row.Usage.Add(u)
-		return tx.updateTurn(row)
+		var u Usage
+		for _, it := range items {
+			if it.Usage != nil {
+				u.Add(*it.Usage)
+			}
+		}
+		res := tx.gorm.Model(&TurnRow{}).Where("id = ?", turnID).Updates(map[string]any{
+			"input_tokens": u.InputTokens, "cached_input_tokens": u.CachedInputTokens,
+			"cache_write_input_tokens": u.CacheWriteInputTokens, "output_tokens": u.OutputTokens,
+		})
+		if err := checkOne(res); err != nil {
+			return fmt.Errorf("turn %s: %w", turnID, err)
+		}
+		return nil
 	})
 }
 

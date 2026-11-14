@@ -22,7 +22,7 @@ type job struct {
 	background bool
 }
 
-func (rt *Runtime) planCalls(ctx context.Context) ([]callAction, error) {
+func (rt *Runtime) planCalls(ctx context.Context, of offer) ([]callAction, error) {
 	var plan []callAction
 	halt := ""
 	for _, it := range rt.Items {
@@ -33,7 +33,7 @@ func (rt *Runtime) planCalls(ctx context.Context) ([]callAction, error) {
 			plan = append(plan, callAction{kind: actionSkip, item: it, reason: "skipped: the turn stopped before this call was executed"})
 			continue
 		}
-		h, waits, ready, err := rt.handleCall(ctx, it)
+		h, waits, ready, err := rt.handleCall(ctx, of, it)
 		if err != nil {
 			return nil, err
 		}
@@ -43,7 +43,7 @@ func (rt *Runtime) planCalls(ctx context.Context) ([]callAction, error) {
 			return plan, nil
 		case ready != nil:
 			kind := actionRun
-			if rt.readOnly(ready.it.Tool) {
+			if of.readOnly(ready.it.Tool) {
 				kind = actionRunReadOnly
 			}
 			plan = append(plan, callAction{kind: kind, item: ready.it, job: ready})
@@ -55,38 +55,38 @@ func (rt *Runtime) planCalls(ctx context.Context) ([]callAction, error) {
 	return plan, nil
 }
 
-func (rt *Runtime) readOnly(tool string) bool {
-	d, ok := rt.tool(tool)
+func (o offer) readOnly(tool string) bool {
+	d, ok := o.tool(tool)
 	return ok && d.Annotations.ReadOnlyHint && !d.Serial
 }
 
-func (rt *Runtime) handleCall(ctx context.Context, it repo.ItemRow) (string, bool, *job, error) {
+func (rt *Runtime) handleCall(ctx context.Context, of offer, it repo.ItemRow) (string, bool, *job, error) {
 	var approved *repo.Approval
 	if it.Approval != nil {
-		changed, err := rt.changedSinceApproval(ctx, it)
+		changed, err := rt.changedSinceApproval(ctx, of, it)
 		if err != nil {
 			h, err := rt.refuse(it, err.Error())
 			return h, false, nil, err
 		}
 		if !changed {
-			return rt.decided(it)
+			return rt.decided(of, it)
 		}
 		approved, it.Approval = it.Approval, nil
 	}
-	if _, offered := rt.tool(it.Tool); !offered {
+	if _, offered := of.tool(it.Tool); !offered {
 		reason := fmt.Sprintf("tool %q is not available in this turn; use an exact tool name from the tool list", it.Tool)
-		if slices.ContainsFunc(rt.deferred, func(d tools.ToolDescriptor) bool { return d.Name == it.Tool }) {
+		if slices.ContainsFunc(of.deferred, func(d tools.ToolDescriptor) bool { return d.Name == it.Tool }) {
 			reason = fmt.Sprintf("tool %q is not loaded yet; call %s with its name first", it.Tool, tools.ToolLoadTools)
 		}
 		h, err := rt.refuse(it, reason)
 		return h, false, nil, err
 	}
-	args, background, err := rt.arguments(it)
+	args, background, err := of.arguments(it)
 	if err != nil {
 		h, err := rt.refuse(it, err.Error())
 		return h, false, nil, err
 	}
-	descriptor, _ := rt.tool(it.Tool)
+	descriptor, _ := of.tool(it.Tool)
 	if err := tools.ValidateArguments(args, descriptor.InputSchema); err != nil {
 		h, err := rt.refuse(it, fmt.Sprintf("invalid arguments for %s: %v", it.Tool, err))
 		return h, false, nil, err
@@ -141,11 +141,11 @@ func (rt *Runtime) handleCall(ctx context.Context, it repo.ItemRow) (string, boo
 	return "", false, &job{it: it, args: args, background: background}, nil
 }
 
-func (rt *Runtime) changedSinceApproval(ctx context.Context, it repo.ItemRow) (bool, error) {
+func (rt *Runtime) changedSinceApproval(ctx context.Context, of offer, it repo.ItemRow) (bool, error) {
 	if it.Approval.Decision == repo.DecisionDecline {
 		return false, nil
 	}
-	args, _, err := rt.arguments(it)
+	args, _, err := of.arguments(it)
 	if err != nil {
 		return false, nil
 	}
@@ -156,10 +156,10 @@ func (rt *Runtime) changedSinceApproval(ctx context.Context, it repo.ItemRow) (b
 	return ok && content.Text != it.Approval.Content, nil
 }
 
-func (rt *Runtime) decided(it repo.ItemRow) (string, bool, *job, error) {
+func (rt *Runtime) decided(of offer, it repo.ItemRow) (string, bool, *job, error) {
 	switch it.Approval.Decision {
 	case repo.DecisionAccept, repo.DecisionAcceptForSession, repo.DecisionAcceptAlways:
-		args, background, err := rt.arguments(it)
+		args, background, err := of.arguments(it)
 		if err != nil {
 			h, err := rt.refuse(it, fmt.Sprintf("the approved call has invalid arguments: %v", err))
 			return h, false, nil, err
@@ -176,12 +176,12 @@ func (rt *Runtime) decided(it repo.ItemRow) (string, bool, *job, error) {
 }
 
 // arguments are the call's arguments for its tool and whether it asked to run in the background.
-func (rt *Runtime) arguments(it repo.ItemRow) (map[string]any, bool, error) {
+func (o offer) arguments(it repo.ItemRow) (map[string]any, bool, error) {
 	args, err := callArguments(it)
 	if err != nil {
 		return nil, false, err
 	}
-	d, _ := rt.tool(it.Tool)
+	d, _ := o.tool(it.Tool)
 	background, err := d.TakeBackground(args)
 	if err != nil {
 		return nil, false, err
