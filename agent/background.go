@@ -275,3 +275,29 @@ func (b backgroundTools) wait(ctx context.Context, arguments map[string]any) (to
 	}
 	return tools.Awaiting(tools.AwaitBackground, args)
 }
+
+// waitBeforeReport keeps a subagent from reporting while background calls of its own still run: it waits for them in
+// the subagent's place, as a wait_for_background call of its own response, so that the subagent goes on with their
+// results and reports with them. It reports whether the turn waits.
+func (a *Agent) waitBeforeReport(t repo.ThreadRow, turn repo.TurnRow) (bool, error) {
+	running, err := a.cfg.DB.RunningBackgroundCalls(t.ID)
+	if err != nil || len(running) == 0 {
+		return false, err
+	}
+	request, err := json.Marshal(waitForBackground{Background: running})
+	if err != nil {
+		return false, err
+	}
+	call := repo.ItemRow{
+		ID: uuid.NewString(), TurnID: turn.ID, Type: repo.ItemToolCall, Status: repo.ItemInProgress,
+		CallID: "wait_" + uuid.NewString(), ResponseID: uuid.NewString(), Tool: ToolWaitForBackground, Arguments: string(request),
+		Await: &tools.Await{By: tools.AwaitBackground, Request: request}, StartedAt: time.Now().UTC(),
+	}
+	stored, _, err := a.cfg.DB.RecordItem(t.ID, call)
+	if err != nil {
+		return false, err
+	}
+	a.emitItem(t, turn, stored, true)
+	slog.Info("subagent waits for its background calls before it reports", "thread", t.ID, "turn", turn.ID, "calls", len(running))
+	return true, nil
+}

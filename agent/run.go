@@ -183,6 +183,12 @@ func (a *Agent) afterRun(threadID string, sl *slot, final bool, runErr error) {
 			a.halt(threadID, err)
 			return
 		}
+		if !more && st.Thread.ParentThreadID != "" {
+			if more, err = a.waitBeforeReport(st.Thread, turn); err != nil {
+				a.halt(threadID, err)
+				return
+			}
+		}
 		if !more {
 			turn.Status = repo.TurnCompleted
 		}
@@ -236,6 +242,9 @@ func (a *Agent) endTurn(turn repo.TurnRow) {
 }
 
 func (a *Agent) stopSubagent(threadID string) {
+	if err := a.cancelBackgroundOf(threadID, "the subagent was stopped"); err != nil {
+		a.fault(threadID, "", err)
+	}
 	if sl, ok := a.slotByThread[threadID]; ok {
 		sl.cancel()
 		return

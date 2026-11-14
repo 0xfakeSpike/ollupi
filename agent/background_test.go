@@ -266,3 +266,105 @@ func TestATurnWaitsForItsBackgroundCallWithoutASlot(t *testing.T) {
 		t.Errorf("the turn went on without the result: %s", last)
 	}
 }
+
+// delegatingModel has the parent hand the download to a subagent, which starts it in the background and reports at
+// once, and again with what it knows when it is next asked.
+type delegatingModel struct {
+	mu            sync.Mutex
+	parent, child int
+	childLast     string
+	parentLast    string
+}
+
+func (m *delegatingModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(r.Body)
+	m.mu.Lock()
+	isChild := strings.Contains(string(body), "# You are a subagent")
+	var n int
+	if isChild {
+		m.child++
+		n, m.childLast = m.child, string(body)
+	} else {
+		m.parent++
+		n, m.parentLast = m.parent, string(body)
+	}
+	m.mu.Unlock()
+	call := func(name, args string) map[string]any {
+		return map[string]any{"tool_calls": []any{map[string]any{"index": 0, "id": fmt.Sprintf("call_%v_%d", isChild, n), "type": "function", "function": map[string]any{"name": name, "arguments": args}}}}
+	}
+	delta, finish := map[string]any{"content": "都好了。"}, "stop"
+	switch {
+	case !isChild && n == 1:
+		delta, finish = call("Agent", `{"description":"Download it","prompt":"Download https://example.com/big.iso and report where it is."}`), "tool_calls"
+	case isChild && n == 1:
+		delta, finish = call("files__download", `{"url":"https://example.com/big.iso","run_in_background":true}`), "tool_calls"
+	case isChild && strings.Contains(string(body), "ended: completed]"):
+		delta = map[string]any{"content": "big.iso is saved."}
+	case isChild:
+		delta = map[string]any{"content": "The download has started."}
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	send := func(v any) { raw, _ := json.Marshal(v); fmt.Fprintf(w, "data: %s\n\n", raw) }
+	chunk := func(delta map[string]any, finish any) map[string]any {
+		return map[string]any{"id": "x", "object": "chat.completion.chunk", "created": 1, "model": "demo", "choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": finish}}}
+	}
+	send(chunk(delta, nil))
+	send(chunk(map[string]any{}, finish))
+	fmt.Fprint(w, "data: [DONE]\n\n")
+}
+
+func TestASubagentReportsOnlyOnceItsBackgroundCallsHaveEnded(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	slow := slowTools{release: make(chan struct{}), stopped: make(chan struct{})}
+	fake := &delegatingModel{}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	ag, db := started(ctx, t, agent.Config{Providers: []tools.Provider{slow}}, srv.URL)
+	th, err := ag.StartThread(repo.DefaultUser, "", "", "delegate", permission.Settings{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, agent.Input{Text: "让子 agent 去下载"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	child := func() repo.TurnRow {
+		v, err := db.Thread(th.ID)
+		if err != nil {
+			return repo.TurnRow{}
+		}
+		for _, it := range v.Items {
+			if it.Tool == "Agent" && it.Await != nil && it.Await.Handle != "" {
+				if cv, err := db.Thread(it.Await.Handle); err == nil && len(cv.Turns) > 0 {
+					return cv.Turns[len(cv.Turns)-1]
+				}
+			}
+		}
+		return repo.TurnRow{}
+	}
+	for child().Status != repo.TurnWaitingOnBackground {
+		select {
+		case <-ctx.Done():
+			t.Fatalf("the subagent never waited for its download: %s", child().Status)
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	close(slow.release)
+	for {
+		row, err := db.Turn(turn.ID)
+		if err == nil && row.Status == repo.TurnCompleted {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("the parent never got the report: %s", row.Status)
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if !strings.Contains(fake.parentLast, "big.iso is saved.") || strings.Contains(fake.parentLast, "The download has started.") {
+		t.Errorf("the parent was reported to before the download ended: %s", fake.parentLast)
+	}
+}
