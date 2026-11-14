@@ -14,7 +14,7 @@ func (o *Orchestrator) settle(parent repo.ThreadRow, turn repo.TurnRow, call rep
 	if err != nil {
 		return false, err
 	}
-	launched, ok := role.Launched(call.Tool)
+	launched, ok := role.LaunchedBy(call.Tool)
 	if !ok {
 		return false, fmt.Errorf("orchestrator: call %s of %q launches no subagent role", call.ID, call.Tool)
 	}

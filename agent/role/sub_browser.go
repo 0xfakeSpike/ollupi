@@ -19,8 +19,8 @@ var browserSub = Role{
 	send: sendFitting,
 	// It works with the browser's tools alone, and reads the outputs they shorten.
 	Permission: permission.Layer{Of: "the browser subagent's role", Providers: []string{BrowserProvider, contextmanager.OutputsProvider}},
-	Launcher: &Launcher{
-		Tool:  BrowserSubTool,
+	LaunchedBy: &LaunchTool{
+		Name:  BrowserSubTool,
 		Title: "Browser subagent",
 		Description: "Launch a browser subagent: an agent that does one task in the built-in browser (opening pages, reading them, clicking and typing) and reports back. " +
 			"It has only the browser's tools. Use it for browser work of many steps, so the pages it reads stay out of this conversation. " +

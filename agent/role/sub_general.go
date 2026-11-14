@@ -16,9 +16,9 @@ var generalSub = Role{
 	Name: GeneralSub, Persona: true, Rules: generalSubRules, Skills: true, Memory: true,
 	send: sendFitting,
 	// A subagent cannot launch another or schedule tasks, which would come back to its thread after it reported.
-	Permission: permission.Layer{Of: "the general subagent's role", Without: []string{LaunchersProvider, cron.ProviderName}},
-	Launcher: &Launcher{
-		Tool:  GeneralSubTool,
+	Permission: permission.Layer{Of: "the general subagent's role", Without: []string{LaunchToolsProvider, cron.ProviderName}},
+	LaunchedBy: &LaunchTool{
+		Name:  GeneralSubTool,
 		Title: "Subagent",
 		Description: "Launch a general-purpose subagent: another run of you, with your tools, that does one task on its own and reports back. " +
 			"For a task in the built-in browser, launch " + BrowserSubTool + " instead. " +

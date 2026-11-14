@@ -83,16 +83,16 @@ func TestOfferKeepsOnlyTheCoreToolsForASmallInput(t *testing.T) {
 	}
 }
 
-func TestALauncherIsOfferedOnlyWithItsProvidersTools(t *testing.T) {
+func TestALaunchToolIsOfferedOnlyWithItsProvidersTools(t *testing.T) {
 	general, browser := tool(GeneralSubTool, "launch"), tool(BrowserSubTool, "launch")
-	general.Provider, browser.Provider = LaunchersProvider, LaunchersProvider
-	launchers := []tools.ToolDescriptor{tool("shell", "run"), general, browser}
-	if offered, _ := fullMain.Offer(launchers, window, nil); slices.Contains(names(offered), BrowserSubTool) || !slices.Contains(names(offered), GeneralSubTool) {
+	general.Provider, browser.Provider = LaunchToolsProvider, LaunchToolsProvider
+	launchTools := []tools.ToolDescriptor{tool("shell", "run"), general, browser}
+	if offered, _ := fullMain.Offer(launchTools, window, nil); slices.Contains(names(offered), BrowserSubTool) || !slices.Contains(names(offered), GeneralSubTool) {
 		t.Errorf("without a browser: offered %q", names(offered))
 	}
 	page := tool("navigate", "open")
 	page.Provider = BrowserProvider
-	if offered, _ := fullMain.Offer(append(launchers, page), window, nil); !slices.Contains(names(offered), BrowserSubTool) {
+	if offered, _ := fullMain.Offer(append(launchTools, page), window, nil); !slices.Contains(names(offered), BrowserSubTool) {
 		t.Errorf("with a browser: offered %q", names(offered))
 	}
 }

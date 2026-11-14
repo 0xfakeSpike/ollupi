@@ -26,7 +26,7 @@ func (pageTools) Invoke(context.Context, string, map[string]any) (tools.Result, 
 
 func offered(t *testing.T, providers ...tools.Provider) []string {
 	t.Helper()
-	registry, err := tools.New(context.Background(), nil, append(providers, role.Launchers{})...)
+	registry, err := tools.New(context.Background(), nil, append(providers, role.LaunchTools{})...)
 	if err != nil {
 		t.Fatal(err)
 	}
