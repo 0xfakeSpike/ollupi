@@ -50,6 +50,9 @@ type Runtime struct {
 	Settings    func() (repo.SettingsRow, error)
 
 	Attachments blobs.Store
+	// Background starts a call that asked for it in the background and returns at once with what the model is told.
+	// Without it such a call runs in the foreground.
+	Background func(it repo.ItemRow, args map[string]any) tools.Result
 
 	offered  []tools.ToolDescriptor
 	deferred []tools.ToolDescriptor

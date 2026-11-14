@@ -100,6 +100,7 @@ func (a *Agent) runTurn(ctx context.Context, t repo.ThreadRow, turn repo.TurnRow
 			history = append(history, it)
 		}
 	}
+	caller := tools.Caller{UserID: t.UserID, ThreadID: t.ID, WorkspaceID: string(t.WorkspaceID), EnvironmentID: string(t.EnvironmentID), Root: w.RootPath, Subagent: t.ParentThreadID != ""}
 	rt := &runtime.Runtime{
 		LLM:         client,
 		Registry:    registry,
@@ -107,7 +108,7 @@ func (a *Agent) runTurn(ctx context.Context, t repo.ThreadRow, turn repo.TurnRow
 		Window:      window,
 		Memory:      a.cfg.Memory,
 		Turn:        turn,
-		Caller:      tools.Caller{UserID: t.UserID, ThreadID: t.ID, WorkspaceID: string(t.WorkspaceID), EnvironmentID: string(t.EnvironmentID), Root: w.RootPath, Subagent: t.ParentThreadID != ""},
+		Caller:      caller,
 		Role:        r,
 		Prompt:      role.AgentPrompt(a.cfg.Name, a.cfg.Prompt),
 		Permissions: checker,
@@ -130,6 +131,7 @@ func (a *Agent) runTurn(ctx context.Context, t repo.ThreadRow, turn repo.TurnRow
 			return items, checker, err
 		},
 		Attachments: a.cfg.Attachments,
+		Background:  a.startBackground(t, caller, registry),
 		Settings:    func() (repo.SettingsRow, error) { return a.cfg.DB.Settings(t.UserID) },
 	}
 	return rt.Run(ctx)
