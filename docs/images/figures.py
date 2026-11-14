@@ -5,6 +5,9 @@ that states the point and a line of context; a footer carries the conditions or 
 desktop app's stone and moss: moss is Ollupi, rose is the per-agent isolation it replaces, the wolf's tan is tool
 execution, warm grey is neutral; waiting is hatched. Text never takes a series color.
 
+The emblem in each header is the brand's, read from the desktop app's repository (assets/brand/mark.svg), checked
+out beside this one or wherever OLLUPI_DESKTOP points; the figures written here carry their own copy of it.
+
 Run from anywhere: python3 docs/images/figures.py. The charts' numbers are the bench's output, written in below; the
 burst timeline and the soak are read from bench/results, where the raw output is kept. After a new measurement, update
 both and run this again.
@@ -31,7 +34,8 @@ MONO = "ui-monospace, 'SF Mono', Menlo, monospace"
 ENV = "Apple M1 · 8 cores · 8 GB · one SQLite database · simulated model and tools"
 SOURCE = "github.com/0xfakeSpike/ollupi"
 
-WOLF = re.search(r"<svg[^>]*>(.*)</svg>", open(f"{ROOT}/docs/logo/mark.svg").read(), re.S).group(1)
+DESKTOP = os.environ.get("OLLUPI_DESKTOP", os.path.join(os.path.dirname(ROOT), "ollupi-desktop"))
+WOLF = re.search(r"<svg[^>]*>(.*)</svg>", open(f"{DESKTOP}/assets/brand/mark.svg").read(), re.S).group(1)
 
 
 def esc(s):
