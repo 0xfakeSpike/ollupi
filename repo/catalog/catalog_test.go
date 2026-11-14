@@ -1,4 +1,4 @@
-package router
+package catalog
 
 import (
 	"errors"
@@ -11,7 +11,7 @@ import (
 
 func TestCatalogPlacesUsersOnShards(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "catalog", "catalog.sqlite")
-	c, err := OpenCatalog(path)
+	c, err := Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestCatalogPlacesUsersOnShards(t *testing.T) {
 	if err := c.Close(); err != nil {
 		t.Fatal(err)
 	}
-	reopened, err := OpenCatalog(path)
+	reopened, err := Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestACatalogFromBeforeMigrationsKeepsItsRows(t *testing.T) {
 	if err := sqlitedb.Close(g); err != nil {
 		t.Fatal(err)
 	}
-	c, err := OpenCatalog(path)
+	c, err := Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestACatalogFromBeforeMigrationsKeepsItsRows(t *testing.T) {
 
 func openCatalog(t *testing.T, shards map[string]int64) *Catalog {
 	t.Helper()
-	c, err := OpenCatalog(filepath.Join(t.TempDir(), "catalog.sqlite"))
+	c, err := Open(filepath.Join(t.TempDir(), "catalog.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}

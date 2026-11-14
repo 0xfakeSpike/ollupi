@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/gateway"
+	"github.com/0xfakeSpike/ollupi/repo/catalog"
 	lru "github.com/hashicorp/golang-lru/v2"
 )
 
@@ -134,7 +135,7 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 var (
-	_ Directory            = (*Catalog)(nil)
-	_ gateway.Placements   = (*Catalog)(nil)
-	_ gateway.LoadReporter = (*Catalog)(nil)
+	_ Directory            = (*catalog.Catalog)(nil)
+	_ gateway.Placements   = (*catalog.Catalog)(nil)
+	_ gateway.LoadReporter = (*catalog.Catalog)(nil)
 )

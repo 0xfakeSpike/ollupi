@@ -1,4 +1,5 @@
-package router
+// Package catalog keeps what all shards share: which shard each user is on, and where each shard runs now.
+package catalog
 
 import (
 	"context"
@@ -14,9 +15,9 @@ import (
 
 var (
 	// ErrNoShard says no shard can take a new user: none has been published, or none takes new users.
-	ErrNoShard = errors.New("router: no shard takes this user")
+	ErrNoShard = errors.New("catalog: no shard takes this user")
 	// ErrUnknownShard says no shard of that name has been published.
-	ErrUnknownShard = errors.New("router: no such shard")
+	ErrUnknownShard = errors.New("catalog: no such shard")
 )
 
 // Catalog is what all shards share: which shard each user is on, and where each shard runs now. The turns and files of
@@ -50,14 +51,14 @@ func (PlacementRow) TableName() string { return "placements" }
 //go:embed migrations/*.sql
 var migrationFiles embed.FS
 
-// OpenCatalog opens the catalog in the file at path, making it if need be.
-func OpenCatalog(path string) (*Catalog, error) {
+// Open opens the catalog in the file at path, making it if need be.
+func Open(path string) (*Catalog, error) {
 	g, err := sqlitedb.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	if err := migrate(g); err != nil {
-		err = fmt.Errorf("router: %s: %w", path, err)
+		err = fmt.Errorf("catalog: %s: %w", path, err)
 		if cerr := sqlitedb.Close(g); cerr != nil {
 			return nil, fmt.Errorf("%w (close: %v)", err, cerr)
 		}
@@ -127,7 +128,7 @@ func (c *Catalog) Place(ctx context.Context, user, shard string) error {
 		return err
 	}
 	if placed != shard {
-		return fmt.Errorf("router: user %s is already on shard %s", user, placed)
+		return fmt.Errorf("catalog: user %s is already on shard %s", user, placed)
 	}
 	return nil
 }
