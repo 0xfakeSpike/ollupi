@@ -1,9 +1,14 @@
 package skills
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
+
+	"github.com/0xfakeSpike/ollupi/tools"
 )
 
 // A skill's resource stays inside its folder: no path, link or parent reaches a file beside it.
@@ -28,5 +33,63 @@ func TestAResourceStaysInsideItsSkill(t *testing.T) {
 		if got, err := safeResourcePath(root, bad); err == nil {
 			t.Errorf("%s reached %s", bad, got)
 		}
+	}
+}
+
+func writeSkill(t *testing.T, dir, name string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(dir, name), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "---\nname: " + name + "\ndescription: How to " + name + ".\n---\nDo " + name + " step by step.\n"
+	if err := os.WriteFile(filepath.Join(dir, name, skillInstructionsFile), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Each role has the skills installed in the directory of its name, and its calls reach no other role's.
+func TestARoleHasTheSkillsOfItsDirectory(t *testing.T) {
+	root := t.TempDir()
+	writeSkill(t, filepath.Join(root, "full-main-agent"), "deploy")
+	writeSkill(t, filepath.Join(root, "compact-main-agent"), "deploy")
+	writeSkill(t, filepath.Join(root, "browser-sub-agent"), "site-login")
+	c, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Roles(); !slices.Equal(got, []string{"browser-sub-agent", "compact-main-agent", "full-main-agent"}) {
+		t.Errorf("roles %q", got)
+	}
+	names := func(role string) []string {
+		var out []string
+		for _, s := range c.For(role) {
+			out = append(out, s.Name)
+		}
+		return out
+	}
+	if !slices.Equal(names("full-main-agent"), []string{"deploy"}) || !slices.Equal(names("browser-sub-agent"), []string{"site-login"}) || names("general-sub-agent") != nil {
+		t.Errorf("full %q, browser %q, general %q", names("full-main-agent"), names("browser-sub-agent"), names("general-sub-agent"))
+	}
+	activate := func(role, name string) error {
+		_, err := c.Invoke(context.Background(), tools.Caller{Role: role}, ToolActivateSkill, map[string]any{"name": name})
+		return err
+	}
+	if err := activate("full-main-agent", "deploy"); err != nil {
+		t.Errorf("a role's own skill: %v", err)
+	}
+	if err := activate("browser-sub-agent", "deploy"); err == nil {
+		t.Error("the browser subagent activated a skill of the main agent")
+	}
+	listed, err := c.Invoke(context.Background(), tools.Caller{Role: "browser-sub-agent"}, ToolListSkills, map[string]any{})
+	if err != nil || len(listed.Output.(map[string]any)["skills"].([]Skill)) != 1 {
+		t.Errorf("the browser subagent's list: %+v %v", listed, err)
+	}
+}
+
+func TestASkillOutsideARolesDirectoryIsRefused(t *testing.T) {
+	root := t.TempDir()
+	writeSkill(t, root, "deploy")
+	if _, err := New(root); err == nil || !strings.Contains(err.Error(), "outside a role's directory") {
+		t.Errorf("a skill in the root: %v", err)
 	}
 }

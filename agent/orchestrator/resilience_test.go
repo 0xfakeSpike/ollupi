@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -328,5 +329,27 @@ func TestAConversationQueuesOnlySoManyTurns(t *testing.T) {
 	}
 	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, orchestrator.Input{Text: "one more"}); !errors.Is(err, orchestrator.ErrQueueFull) {
 		t.Errorf("past the queue: %v", err)
+	}
+}
+
+func TestSkillsForNoRoleKeepTheOrchestratorFromStarting(t *testing.T) {
+	db, err := repo.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "main-agent"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ag := orchestrator.New(orchestrator.Config{
+		Name: "Ollupi", DB: db, SkillsDir: dir,
+		Models:      []llm.Model{{Name: "demo", Connection: "fake"}},
+		Connections: map[string]llm.Client{"fake": llm.NewOpenAI("http://127.0.0.1:1", "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
+	})
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+	if err := ag.Start(ctx); err == nil || !strings.Contains(err.Error(), `"main-agent", which is no role`) {
+		t.Errorf("skills for no role: %v", err)
 	}
 }

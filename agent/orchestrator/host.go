@@ -55,7 +55,7 @@ func (h turnHost) Skills() []skills.Skill {
 	if h.o.skills == nil {
 		return nil
 	}
-	return h.o.skills.All()
+	return h.o.skills.For(string(h.role.Name))
 }
 
 func (h turnHost) Memory(budget int) (*memory.Snapshot, error) {

@@ -25,7 +25,7 @@ func (r Role) System(in Input) string {
 		return r.Rules
 	}
 	parts := []string{strings.TrimSpace(in.Agent), r.Rules}
-	if s := listSkills(in.Skills, in.SkillTokens); s != "" && r.Skills {
+	if s := listSkills(in.Skills, in.SkillTokens); s != "" {
 		parts = append(parts, s)
 	}
 	if len(in.Deferred) > 0 {
