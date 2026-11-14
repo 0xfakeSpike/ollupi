@@ -17,7 +17,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/0xfakeSpike/ollupi/agent/event"
 	"log"
 	"log/slog"
 	"os"
@@ -86,11 +85,11 @@ type tracker struct {
 	done map[string]chan struct{}
 }
 
-func (t *tracker) on(e event.Event) {
+func (t *tracker) on(e orchestrator.Event) {
 	switch e.Kind {
-	case event.UserInputRequested:
+	case orchestrator.EventUserInputRequested:
 		t.asked.Add(1)
-	case event.TurnCompleted:
+	case orchestrator.EventTurnCompleted:
 		t.ended.Add(1)
 		if e.Turn.Status != repo.TurnCompleted {
 			t.failed.Add(1)

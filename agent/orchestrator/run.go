@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/0xfakeSpike/ollupi/agent/event"
 	"log/slog"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/agent/runtime"
 	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/tools"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -54,7 +55,7 @@ func (o *Orchestrator) run(threadID string, sl *slot) {
 	ctx, cancel := context.WithTimeoutCause(ctx, o.cfg.RunLimit, limit)
 	defer cancel()
 	started := time.Now()
-	final, err := o.runTurn(ctx, t, turn, items)
+	final, usage, err := o.runTurn(ctx, t, turn, items)
 	if err != nil && context.Cause(ctx) == limit {
 		err = limit
 	}
@@ -63,33 +64,56 @@ func (o *Orchestrator) run(threadID string, sl *slot) {
 		span.SetStatus(codes.Error, err.Error())
 	}
 	slog.InfoContext(ctx, "run ended", "thread", threadID, "turn", turn.ID, "ms", time.Since(started).Milliseconds(), "final", final, "items", len(items))
-	if err := o.cfg.DB.CountUsage(turn.ID); err != nil {
+	if err := o.cfg.DB.AddUsage(threadID, turn.ID, usage); err != nil {
 		slog.Error("turn usage not recorded", "thread", threadID, "turn", turn.ID, "err", err)
 	}
 	o.post(func() { o.afterRun(threadID, sl, final, err) })
 }
 
-// runTurn runs the turn on what its user runs it with: the model client of its connection, the model's context window
-// and the user's tools.
-func (o *Orchestrator) runTurn(ctx context.Context, t repo.ThreadRow, turn repo.TurnRow, thread []repo.ItemRow) (bool, error) {
+func (o *Orchestrator) runTurn(ctx context.Context, t repo.ThreadRow, turn repo.TurnRow, thread []repo.ItemRow) (bool, repo.Usage, error) {
 	window, err := o.windowFor(turn.Model)
 	if err != nil {
-		return false, err
+		return false, repo.Usage{}, err
 	}
 	client, err := o.clientFor(t.UserID, turn.Model.Connection)
 	if err != nil {
-		return false, fmt.Errorf("orchestrator: the model client of the user: %w", err)
+		return false, repo.Usage{}, fmt.Errorf("orchestrator: the model client of the user: %w", err)
 	}
 	registry, err := o.registryFor(t.UserID)
 	if err != nil {
-		return false, err
+		return false, repo.Usage{}, err
 	}
-	return runtime.Run(ctx, runtime.Config{
-		DB: o.cfg.DB, Name: o.cfg.Name, Prompt: o.cfg.Prompt,
-		Settings: o.cfg.Settings, Shared: o.cfg.ToolsFor != nil, Tools: o.cfg.Tools,
-		Skills: o.skills, Memory: o.cfg.Memory, Attachments: o.cfg.Attachments, BackgroundCalls: o.cfg.BackgroundCalls,
-		Emit: o.emit, Queued: func() { o.post(o.startQueued) },
-	}, runtime.Turn{Thread: t, Turn: turn, Items: thread, Client: client, Window: window, Registry: registry})
+	r, ok := role.Of(role.Name(turn.Agent))
+	if !ok {
+		return false, repo.Usage{}, fmt.Errorf("orchestrator: turn %s names role %q, which is none of %q", turn.ID, turn.Agent, role.NameValues)
+	}
+	checker, w, err := o.permissions(t, r)
+	if err != nil {
+		return false, repo.Usage{}, err
+	}
+	var history, items []repo.ItemRow
+	for _, it := range thread {
+		if it.TurnID == turn.ID {
+			items = append(items, it)
+		} else {
+			history = append(history, it)
+		}
+	}
+	caller := tools.Caller{UserID: t.UserID, ThreadID: t.ID, WorkspaceID: string(t.WorkspaceID), EnvironmentID: string(t.EnvironmentID), Root: w.RootPath, Subagent: t.ParentThreadID != ""}
+	rt := &runtime.Runtime{
+		LLM:         client,
+		Registry:    registry,
+		Window:      window,
+		Host:        turnHost{o: o, t: t, turn: turn, role: r, caller: caller, registry: registry},
+		Turn:        turn,
+		Caller:      caller,
+		Role:        r,
+		Prompt:      role.AgentPrompt(o.cfg.Name, o.cfg.Prompt),
+		Permissions: checker,
+		History:     history,
+		Items:       items,
+	}
+	return rt.Run(ctx)
 }
 
 func (o *Orchestrator) afterRun(threadID string, sl *slot, final bool, runErr error) {
@@ -174,7 +198,7 @@ func (o *Orchestrator) endTurn(turn repo.TurnRow) {
 		attrs = append(attrs, "ms", ended.CompletedAt.Sub(ended.StartedAt).Milliseconds())
 	}
 	slog.Info("turn ended", attrs...)
-	o.emit(event.Event{Kind: event.TurnCompleted, Thread: thread, Turn: ended})
+	o.emit(Event{Kind: EventTurnCompleted, Thread: thread, Turn: ended})
 	o.emitStatus(turn.ThreadID)
 	for _, call := range st.AgentCalls() {
 		o.stopSubagent(call.Await.Handle)

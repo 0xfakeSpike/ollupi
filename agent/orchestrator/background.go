@@ -10,32 +10,22 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/google/uuid"
 )
 
-// startQueued starts the background calls that wait to start.
-func (o *Orchestrator) startQueued() {
-	calls, err := o.cfg.DB.QueuedBackgroundCalls()
+// startBackground starts a call of the thread in the background and returns at once with what the model is told: the
+// call's id, under which its result comes back when it ends.
+func (o *Orchestrator) startBackground(t repo.ThreadRow, caller tools.Caller, registry *tools.Registry, it repo.ItemRow, args map[string]any) tools.Result {
+	raw, err := json.Marshal(args)
 	if err != nil {
-		o.fault("", "", fmt.Errorf("queued background calls could not be listed: %w", err))
-		return
+		return tools.Result{Err: fmt.Errorf("encode the arguments: %w", err)}.For(it.Tool)
 	}
-	for _, call := range calls {
-		started, err := o.cfg.DB.StartBackgroundCall(call.ID, time.Now())
-		if err != nil {
-			slog.Error("background call not started", "thread", call.ThreadID, "background", call.ID, "err", err)
-			continue
-		}
-		if started {
-			o.startBackground(call)
-		}
+	call := repo.BackgroundCallRow{ID: uuid.NewString(), ThreadID: t.ID, ItemID: it.ID, Tool: it.Tool, Arguments: string(raw), StartedAt: time.Now()}
+	if err := o.cfg.DB.StartBackgroundCall(t.UserID, call, o.cfg.BackgroundCalls); err != nil {
+		return tools.Result{Err: err}.For(it.Tool)
 	}
-}
-
-// startBackground runs a call that started in a goroutine of its own, within the time limit; its result comes back
-// to its thread when it ends.
-func (o *Orchestrator) startBackground(call repo.BackgroundCallRow) {
 	limit := fmt.Errorf("the background call reached its time limit of %s", o.cfg.BackgroundLimit)
-	ctx, cancel := context.WithTimeoutCause(o.ctx, o.cfg.BackgroundLimit, limit)
+	ctx, cancel := context.WithTimeoutCause(tools.WithCaller(o.ctx, caller), o.cfg.BackgroundLimit, limit)
 	o.backgroundMu.Lock()
 	o.backgroundCancels[call.ID] = cancel
 	o.backgroundMu.Unlock()
@@ -43,40 +33,13 @@ func (o *Orchestrator) startBackground(call repo.BackgroundCallRow) {
 	go func() {
 		defer o.done.Done()
 		defer o.forgetBackground(call.ID)
-		slog.Info("background call started", "thread", call.ThreadID, "item", call.ItemID, "background", call.ID, "tool", call.Tool)
-		o.endBackground(ctx, call, limit, o.invokeBackground(ctx, call))
+		slog.Info("background call started", "thread", t.ID, "item", it.ID, "background", call.ID, "tool", it.Tool)
+		o.endBackground(ctx, call, limit, registry.InvokePrepared(ctx, it.Tool, args, it.PreparedExecution))
 	}()
-}
-
-// invokeBackground calls the tool of a background call as the call that started it would have: for its thread, with
-// its user's tools, its arguments and how it was prepared to run.
-func (o *Orchestrator) invokeBackground(ctx context.Context, call repo.BackgroundCallRow) tools.Result {
-	failed := func(err error) tools.Result { return tools.Result{Err: err}.For(call.Tool) }
-	t, err := o.cfg.DB.ThreadRow(call.ThreadID)
-	if err != nil {
-		return failed(err)
-	}
-	w, err := o.workspaceOf(t.WorkspaceID)
-	if err != nil {
-		return failed(err)
-	}
-	registry, err := o.registryFor(t.UserID)
-	if err != nil {
-		return failed(err)
-	}
-	it, err := o.cfg.DB.Item(call.ItemID)
-	if err != nil {
-		return failed(err)
-	}
-	args := map[string]any{}
-	if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
-		return failed(fmt.Errorf("decode the arguments: %w", err))
-	}
-	ctx = tools.WithCaller(ctx, tools.Caller{
-		UserID: t.UserID, ThreadID: t.ID, WorkspaceID: string(t.WorkspaceID), EnvironmentID: string(t.EnvironmentID),
-		Root: w.RootPath, Subagent: t.ParentThreadID != "",
-	})
-	return registry.InvokePrepared(ctx, call.Tool, args, it.PreparedExecution)
+	return tools.Result{Output: map[string]any{
+		"background": call.ID, "status": string(repo.BackgroundRunning),
+		"note": "It runs in the background; its result comes back to this conversation when it ends.",
+	}}
 }
 
 func (o *Orchestrator) endBackground(ctx context.Context, call repo.BackgroundCallRow, limit error, result tools.Result) {
@@ -122,7 +85,7 @@ func (o *Orchestrator) forgetBackground(id string) {
 	}
 }
 
-// cancelBackground ends a call that waits to start or runs as cancelled before it stops it, so that the result its tool may still return
+// cancelBackground ends a running call as cancelled before it stops it, so that the result its tool may still return
 // does not take the cancellation's place. It reports false for a call that had already ended.
 func (o *Orchestrator) cancelBackground(id, why string) (bool, error) {
 	ended, err := o.cfg.DB.EndBackgroundCall(id, repo.BackgroundCancelled, nil, why, time.Now())
@@ -133,10 +96,10 @@ func (o *Orchestrator) cancelBackground(id, why string) (bool, error) {
 	return true, nil
 }
 
-// cancelBackgroundOf cancels the calls that wait to start or run in a thread and its subagents' threads, as one that is archived
+// cancelBackgroundOf cancels the calls still running in a thread and its subagents' threads, as one that is archived
 // or deleted needs none of them.
 func (o *Orchestrator) cancelBackgroundOf(threadID, why string) error {
-	ids, err := o.cfg.DB.UnendedBackgroundCalls(threadID)
+	ids, err := o.cfg.DB.RunningBackgroundCalls(threadID)
 	if err != nil {
 		return fmt.Errorf("orchestrator: background calls of thread %s: %w", threadID, err)
 	}

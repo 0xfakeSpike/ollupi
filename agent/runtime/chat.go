@@ -1,0 +1,264 @@
+package runtime
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
+	"github.com/0xfakeSpike/ollupi/agent/role"
+	"github.com/0xfakeSpike/ollupi/pkg/llm"
+	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+)
+
+func (rt *Runtime) contextInput() contextmanager.Input {
+	return contextmanager.Input{
+		Items:  slices.Concat(rt.History, rt.Items),
+		System: rt.system,
+		Tools:  role.Specs(rt.offered),
+	}
+}
+
+func (rt *Runtime) respond(ctx context.Context, choice llm.ToolChoice) (llm.ChatResponse, error) {
+	rt.offer()
+	prompt, err := rt.Window.Build(rt.contextInput())
+	if err != nil {
+		return llm.ChatResponse{}, fmt.Errorf("runtime: %w", err)
+	}
+	if prompt.NeedsCompaction {
+		if err := rt.compact(ctx); err != nil {
+			return llm.ChatResponse{}, err
+		}
+		if prompt, err = rt.Window.Build(rt.contextInput()); err != nil {
+			return llm.ChatResponse{}, fmt.Errorf("runtime: after compaction: %w", err)
+		}
+	}
+	call := rt.modelCalls() + 1
+	r := newResponseRecorder(rt, prompt.Stats)
+	started := time.Now()
+	resp, err := rt.send(ctx, prompt, choice, r.delta)
+	r.usage = responseUsage(resp)
+	rt.logModelCall(ctx, "model call", started, resp, err)
+	if err == nil {
+		err = checkResponse(resp, choice)
+	}
+	if err != nil {
+		return llm.ChatResponse{}, r.fail(fmt.Errorf("runtime: model call %d: %w", call, err))
+	}
+	if err := r.finish(resp); err != nil {
+		return llm.ChatResponse{}, err
+	}
+	cutOff := resp.FinishReason == "length"
+	for _, call := range resp.Message.ToolCalls {
+		it := rt.callItem(r.id, call)
+		r.carry(&it, resp.Message.Native)
+		if cutOff {
+			now := time.Now().UTC()
+			it.Status, it.Error, it.CompletedAt = repo.ItemFailed, cutOffCall, &now
+		}
+		if _, err := rt.record(it); err != nil {
+			return llm.ChatResponse{}, err
+		}
+	}
+	return resp, nil
+}
+
+// cutOffCall is why no call of a response the output limit cut off runs: the last may be incomplete, and the model
+// would read a missing piece as a failed call instead of a request too long for one response.
+const cutOffCall = "not run: the response reached the model's output limit before it was complete; do this in smaller steps, such as a long file written in parts"
+
+func checkResponse(resp llm.ChatResponse, choice llm.ToolChoice) error {
+	if len(resp.Message.ToolCalls) > 0 {
+		if choice == llm.ToolChoiceNone {
+			return fmt.Errorf("model requested tools after tool use was stopped")
+		}
+		return nil
+	}
+	if resp.FinishReason == "length" {
+		return fmt.Errorf("final answer truncated by the model output limit")
+	}
+	if strings.TrimSpace(resp.Message.Content) == "" {
+		return fmt.Errorf("model returned neither a tool call nor an answer (finish_reason=%s)", resp.FinishReason)
+	}
+	return nil
+}
+
+func (rt *Runtime) compact(ctx context.Context) (err error) {
+	ctx, span := tracer.Start(ctx, "ollupi.context.compact")
+	defer func() {
+		if err != nil {
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+	prompt, err := rt.Window.CompactionPrompt(rt.contextInput())
+	if err != nil {
+		return fmt.Errorf("runtime: %w", err)
+	}
+	span.SetAttributes(attribute.Int("ollupi.context.estimated_tokens", prompt.Stats.EstimatedTokens))
+	it, err := rt.record(repo.ItemRow{
+		ID: uuid.NewString(), TurnID: rt.Turn.ID, Type: repo.ItemContextCompaction, Status: repo.ItemInProgress, StartedAt: time.Now().UTC(),
+		ResponseID: uuid.NewString(), ContextStats: &prompt.Stats,
+	})
+	if err != nil {
+		return err
+	}
+	started := time.Now()
+	resp, err := rt.send(ctx, prompt, llm.ToolChoiceNone, nil)
+	it.Usage = responseUsage(resp)
+	rt.logModelCall(ctx, "context compaction", started, resp, err)
+	summary := strings.TrimSpace(resp.Message.Content)
+	switch {
+	case err != nil:
+	case len(resp.Message.ToolCalls) > 0 || summary == "":
+		err = fmt.Errorf("the model returned no summary (finish_reason=%s)", resp.FinishReason)
+	case resp.FinishReason == "length":
+		err = fmt.Errorf("the summary was truncated by the model output limit")
+	}
+	if err != nil {
+		if _, rerr := rt.complete(withError(it, err.Error()), repo.ItemFailed); rerr != nil {
+			return rerr
+		}
+		return fmt.Errorf("runtime: compaction: %w", err)
+	}
+	it.Text = summary
+	if _, err := rt.complete(it, repo.ItemCompleted); err != nil {
+		return err
+	}
+	return rt.loadMemory()
+}
+
+func (rt *Runtime) send(ctx context.Context, prompt contextmanager.Prompt, choice llm.ToolChoice, onDelta func(llm.Delta)) (llm.ChatResponse, error) {
+	settings, err := rt.Host.Settings()
+	if err != nil {
+		return llm.ChatResponse{}, fmt.Errorf("runtime: read the redaction setting: %w", err)
+	}
+	mask := rt.redactor.Mask
+	if !settings.Redaction {
+		mask = func(s string) string { return s }
+	}
+	messages := make([]llm.ChatMessage, 0, len(prompt.Messages)+1)
+	messages = append(messages, llm.ChatMessage{Role: llm.RoleSystem, Content: mask(prompt.System)})
+	for _, message := range prompt.Messages {
+		message.Content, message.ReasoningContent = mask(message.Content), mask(message.ReasoningContent)
+		if message.Parts, err = rt.loadParts(ctx, message.Parts, mask); err != nil {
+			return llm.ChatResponse{}, err
+		}
+		message.ToolCalls = slices.Clone(message.ToolCalls)
+		for i := range message.ToolCalls {
+			message.ToolCalls[i].Arguments = mask(message.ToolCalls[i].Arguments)
+		}
+		messages = append(messages, message)
+	}
+	ctx, span := tracer.Start(ctx, "chat "+rt.Turn.Model.Name, trace.WithSpanKind(trace.SpanKindClient), trace.WithAttributes(
+		attribute.String("gen_ai.operation.name", "chat"), attribute.String("gen_ai.request.model", rt.Turn.Model.Name),
+		attribute.String("ollupi.connection", rt.Turn.Model.Connection), attribute.Int("ollupi.llm.estimated_input_tokens", prompt.Stats.CalibratedTokens)))
+	defer span.End()
+	started, answering := time.Now(), false
+	content, reasoning := rt.redactor.Stream(), rt.redactor.Stream()
+	restored := func(d llm.Delta) {
+		if !answering && (d.Content != "" || d.Reasoning != "") {
+			answering = true
+			span.SetAttributes(attribute.Int64("ollupi.llm.first_token_ms", time.Since(started).Milliseconds()))
+		}
+		d.Content, d.Reasoning = content.Write(d.Content), reasoning.Write(d.Reasoning)
+		if onDelta != nil && (d.Content != "" || d.Reasoning != "") {
+			onDelta(d)
+		}
+	}
+	resp, err := rt.LLM.Chat(ctx, llm.ChatRequest{
+		Model:    rt.Turn.Model,
+		Messages: messages, Tools: role.Specs(rt.offered), ToolChoice: choice,
+		InputTokens: prompt.Stats.CalibratedTokens,
+	}, restored)
+	if rest := (llm.Delta{Content: content.Flush(), Reasoning: reasoning.Flush()}); onDelta != nil && (rest.Content != "" || rest.Reasoning != "") {
+		onDelta(rest)
+	}
+	resp.Message.Content = rt.redactor.Restore(resp.Message.Content)
+	resp.Message.ReasoningContent = rt.redactor.Restore(resp.Message.ReasoningContent)
+	for i := range resp.Message.ToolCalls {
+		resp.Message.ToolCalls[i].Arguments = rt.redactor.RestoreJSON(resp.Message.ToolCalls[i].Arguments)
+	}
+	if usage := responseUsage(resp); usage != nil {
+		rt.usage.Add(*usage)
+		span.SetAttributes(attribute.Int64("gen_ai.usage.input_tokens", usage.InputTokens), attribute.Int64("gen_ai.usage.output_tokens", usage.OutputTokens),
+			attribute.Int64("ollupi.llm.cached_input_tokens", usage.CachedInputTokens))
+	}
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+	} else {
+		span.SetAttributes(attribute.StringSlice("gen_ai.response.finish_reasons", []string{resp.FinishReason}),
+			attribute.Int("ollupi.llm.tool_calls", len(resp.Message.ToolCalls)))
+	}
+	return resp, err
+}
+
+func (rt *Runtime) loadParts(ctx context.Context, parts []llm.ContentPart, mask func(string) string) ([]llm.ContentPart, error) {
+	if len(parts) == 0 {
+		return nil, nil
+	}
+	out := slices.Clone(parts)
+	for i, p := range out {
+		data, err := rt.Host.Attachment(ctx, p.Path)
+		if err != nil {
+			return nil, fmt.Errorf("runtime: attachment %s: %w", p.Name, err)
+		}
+		if p.Type == llm.PartImage {
+			out[i].Data = data
+		} else {
+			out[i].Text = mask("--- file: " + p.Name + " ---\n" + string(data))
+		}
+	}
+	return out, nil
+}
+
+// logModelCall records one model request: its model, duration, tokens and how it ended, never its text.
+func (rt *Runtime) logModelCall(ctx context.Context, msg string, started time.Time, resp llm.ChatResponse, err error) {
+	attrs := []any{"thread", rt.Caller.ThreadID, "turn", rt.Turn.ID, "model", rt.Turn.Model.Name, "ms", time.Since(started).Milliseconds()}
+	if err != nil {
+		slog.WarnContext(ctx, msg+" failed", append(attrs, "err", err)...)
+		return
+	}
+	slog.InfoContext(ctx, msg, append(attrs, "input", resp.Usage.PromptTokens, "cached", resp.Usage.CachedPromptTokens,
+		"output", resp.Usage.CompletionTokens, "finish", resp.FinishReason, "toolCalls", len(resp.Message.ToolCalls))...)
+}
+
+func responseUsage(resp llm.ChatResponse) *repo.Usage {
+	if !resp.UsageReported {
+		return nil
+	}
+	return &repo.Usage{
+		InputTokens: resp.Usage.PromptTokens, CachedInputTokens: resp.Usage.CachedPromptTokens,
+		CacheWriteInputTokens: resp.Usage.CacheWritePromptTokens, OutputTokens: resp.Usage.CompletionTokens,
+	}
+}
+
+func (rt *Runtime) modelCalls() int {
+	seen := map[string]bool{}
+	for _, it := range rt.Items {
+		if it.ResponseID != "" && it.Type != repo.ItemContextCompaction {
+			seen[it.ResponseID] = true
+		}
+	}
+	return len(seen)
+}
+
+func (rt *Runtime) callItem(responseID string, call llm.ToolCall) repo.ItemRow {
+	it := repo.ItemRow{
+		ID: uuid.NewString(), TurnID: rt.Turn.ID, Type: repo.ItemToolCall, Status: repo.ItemPending,
+		ResponseID: responseID, CallID: call.ID, Tool: call.Name, Arguments: call.Arguments, StartedAt: time.Now().UTC(),
+	}
+	if d, ok := rt.tool(call.Name); ok {
+		it.Server = d.Provider
+		annotations := d.Annotations
+		it.Annotations = &annotations
+	}
+	return it
+}

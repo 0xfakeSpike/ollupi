@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/0xfakeSpike/ollupi/agent/event"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -109,8 +108,8 @@ func users(args []string) {
 		Providers: []tools.Provider{work{latency: *toolLatency}},
 		Settings:  permission.Settings{ApprovalPolicy: string(permission.Never)},
 		Slots:     *slots, UserSlots: *userSlots, DB: db,
-		OnEvent: func(e event.Event) {
-			if e.Kind == event.TurnCompleted && e.Turn.Status != repo.TurnCompleted {
+		OnEvent: func(e orchestrator.Event) {
+			if e.Kind == orchestrator.EventTurnCompleted && e.Turn.Status != repo.TurnCompleted {
 				count, _ := failed.LoadOrStore(e.Thread.UserID, new(atomic.Int64))
 				count.(*atomic.Int64).Add(1)
 			}
