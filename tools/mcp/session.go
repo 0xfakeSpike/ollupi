@@ -138,14 +138,14 @@ type caller struct {
 	Subagent    bool   `json:"subagent,omitempty"`
 }
 
-func (s *Session) Invoke(ctx context.Context, tool string, arguments map[string]any) (tools.Result, error) {
+func (s *Session) Invoke(ctx context.Context, c tools.Caller, tool string, arguments map[string]any) (tools.Result, error) {
 	t, ok := s.tools[tool]
 	if !ok {
 		err := fmt.Errorf("mcp: tool %q not exposed by MCP server %q", tool, s.name)
 		return tools.Result{}, err
 	}
 	params := &mcp.CallToolParams{Name: t.Name, Arguments: arguments}
-	if c := tools.CallerOf(ctx); c.ThreadID != "" {
+	if c.ThreadID != "" {
 		params.Meta = mcp.Meta{metaCaller: caller{ThreadID: c.ThreadID, WorkspaceID: c.WorkspaceID, Subagent: c.Subagent}}
 	}
 	call, cancel := context.WithTimeout(ctx, s.timeout)

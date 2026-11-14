@@ -98,7 +98,7 @@ func (rt *Runtime) handleCall(ctx context.Context, it repo.ItemRow) (string, boo
 		return fmt.Sprintf("reached the tool call limit (%d)", maxToolCalls), false, nil, nil
 	}
 	if it.PreparedExecution == nil {
-		prepared, err := rt.Registry.Prepare(ctx, it.Tool, args)
+		prepared, err := rt.Registry.Prepare(ctx, rt.caller(it), it.Tool, args)
 		if err != nil {
 			h, err := rt.refuse(it, err.Error())
 			return h, false, nil, err
@@ -112,7 +112,7 @@ func (rt *Runtime) handleCall(ctx context.Context, it repo.ItemRow) (string, boo
 			it = stored
 		}
 	}
-	content, hasContent, err := rt.Registry.PermissionContent(ctx, it.Tool, args)
+	content, hasContent, err := rt.Registry.PermissionContent(ctx, rt.caller(it), it.Tool, args)
 	if err != nil {
 		h, err := rt.refuse(it, err.Error())
 		return h, false, nil, err
@@ -149,7 +149,7 @@ func (rt *Runtime) changedSinceApproval(ctx context.Context, it repo.ItemRow) (b
 	if err != nil {
 		return false, nil
 	}
-	content, ok, err := rt.Registry.PermissionContent(ctx, it.Tool, args)
+	content, ok, err := rt.Registry.PermissionContent(ctx, rt.caller(it), it.Tool, args)
 	if err != nil {
 		return false, err
 	}

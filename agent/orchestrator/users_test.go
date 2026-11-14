@@ -556,7 +556,7 @@ func (o ownTools) ToolList(context.Context) ([]*tools.Spec, error) {
 	return []*tools.Spec{{Name: string(o) + tools.ProviderSeparator + "act", InputSchema: map[string]any{"type": "object"}}}, nil
 }
 
-func (ownTools) Invoke(context.Context, string, map[string]any) (tools.Result, error) {
+func (ownTools) Invoke(context.Context, tools.Caller, string, map[string]any) (tools.Result, error) {
 	return tools.Result{Output: "done"}, nil
 }
 

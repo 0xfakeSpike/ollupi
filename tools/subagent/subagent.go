@@ -64,7 +64,7 @@ func (t *Tools) ToolList(context.Context) ([]*tools.Spec, error) {
 }
 
 // Invoke queues the subagent of the kind whose tool was called, and waits on its conversation.
-func (t *Tools) Invoke(ctx context.Context, name string, arguments map[string]any) (tools.Result, error) {
+func (t *Tools) Invoke(ctx context.Context, caller tools.Caller, name string, arguments map[string]any) (tools.Result, error) {
 	i := slices.IndexFunc(t.kinds, func(k Kind) bool { return k.Tool == name })
 	if i < 0 {
 		return tools.Result{}, fmt.Errorf("%q launches no subagent", name)
@@ -76,11 +76,11 @@ func (t *Tools) Invoke(ctx context.Context, name string, arguments map[string]an
 	if strings.TrimSpace(c.Prompt) == "" || strings.TrimSpace(c.Description) == "" {
 		return tools.Result{}, fmt.Errorf("description and prompt must not be blank")
 	}
-	item := tools.ItemOf(ctx)
+	item := caller.Item
 	if item == "" {
 		return tools.Result{}, fmt.Errorf("a subagent is launched only by a call of a turn")
 	}
-	child, err := t.db.QueueSubagent(tools.CallerOf(ctx).ThreadID, item, c.Description, repo.TurnRow{Input: c.Prompt, Agent: t.kinds[i].Role})
+	child, err := t.db.QueueSubagent(caller.ThreadID, item, c.Description, repo.TurnRow{Input: c.Prompt, Agent: t.kinds[i].Role})
 	if err != nil {
 		return tools.Result{}, err
 	}

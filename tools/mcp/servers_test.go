@@ -133,7 +133,7 @@ func TestConnect(t *testing.T) {
 		t.Fatal(err)
 	}
 	for tool, want := range map[string]string{"local__greet": "hello from config", "web__greet": "hello from the parent"} {
-		r := reg.Invoke(ctx, tool, map[string]any{})
+		r := reg.Invoke(ctx, tools.Caller{}, tool, map[string]any{})
 		if r.Err != nil || r.Output != want {
 			t.Errorf("%s: %v, %v; want %q", tool, r.Output, r.Err, want)
 		}
@@ -143,7 +143,7 @@ func TestConnect(t *testing.T) {
 		{ThreadID: "t1", WorkspaceID: "w1", Root: "/home/me/project"}: `{"threadId":"t1","workspaceId":"w1"}`,
 		{ThreadID: "t2", Subagent: true}:                              `{"subagent":true,"threadId":"t2"}`,
 	} {
-		if r := reg.Invoke(tools.WithCaller(ctx, c), "local__whoami", map[string]any{}); r.Err != nil || r.Output != want {
+		if r := reg.Invoke(ctx, c, "local__whoami", map[string]any{}); r.Err != nil || r.Output != want {
 			t.Errorf("caller %+v reached the server as %v, %v; want %s", c, r.Output, r.Err, want)
 		}
 	}
@@ -170,7 +170,7 @@ func TestACallThatGetsNoAnswerEnds(t *testing.T) {
 	if st := servers.Statuses()[0]; !st.Connected {
 		t.Fatalf("%+v", st)
 	}
-	_, err = servers.sessions[0].Invoke(ctx, "slow"+tools.ProviderSeparator+"hang", map[string]any{})
+	_, err = servers.sessions[0].Invoke(ctx, tools.Caller{}, "slow"+tools.ProviderSeparator+"hang", map[string]any{})
 	if err == nil || !strings.Contains(err.Error(), "may still have taken effect") {
 		t.Errorf("the call: %v", err)
 	}

@@ -49,7 +49,6 @@ type Runtime struct {
 }
 
 func (rt *Runtime) Run(ctx context.Context) (bool, repo.Usage, error) {
-	ctx = tools.WithCaller(ctx, rt.Caller)
 	if err := rt.start(); err != nil {
 		return false, repo.Usage{}, err
 	}
@@ -203,4 +202,11 @@ func withError(it repo.ItemRow, text string) repo.ItemRow {
 
 func (rt *Runtime) waiting() bool {
 	return slices.ContainsFunc(rt.Items, func(it repo.ItemRow) bool { return it.WaitsOnUser() || it.Awaits() })
+}
+
+// caller is the run's caller for the call that it records.
+func (rt *Runtime) caller(it repo.ItemRow) tools.Caller {
+	c := rt.Caller
+	c.Item = it.ID
+	return c
 }

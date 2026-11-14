@@ -21,7 +21,7 @@ func (pageTools) ToolList(context.Context) ([]*tools.Spec, error) {
 	return []*tools.Spec{{Name: "navigate", Description: "Opens a page.", InputSchema: map[string]any{"type": "object"}}}, nil
 }
 
-func (pageTools) Invoke(context.Context, string, map[string]any) (tools.Result, error) {
+func (pageTools) Invoke(context.Context, tools.Caller, string, map[string]any) (tools.Result, error) {
 	return tools.Result{}, nil
 }
 

@@ -155,7 +155,6 @@ func (rt *Runtime) runJobs(ctx context.Context, jobs []job) ([]tools.Result, err
 
 func (rt *Runtime) execute(ctx context.Context, j job) tools.Result {
 	it := j.it
-	ctx = tools.WithItem(ctx, it.ID)
 	ctx, span := tracer.Start(ctx, "execute_tool "+it.Tool, trace.WithAttributes(
 		attribute.String("gen_ai.operation.name", "execute_tool"), attribute.String("gen_ai.tool.name", it.Tool),
 		attribute.String("gen_ai.tool.call.id", it.CallID), attribute.String("ollupi.tool.server", it.Server)))
@@ -165,7 +164,7 @@ func (rt *Runtime) execute(ctx context.Context, j job) tools.Result {
 		span.SetAttributes(attribute.Bool("ollupi.tool.background", true))
 		return rt.Host.Background(it, j.args)
 	}
-	result := rt.Registry.InvokePrepared(ctx, it.Tool, j.args, it.PreparedExecution)
+	result := rt.Registry.InvokePrepared(ctx, rt.caller(it), it.Tool, j.args, it.PreparedExecution)
 	if result.Err == nil {
 		if err := rt.Window.CheckArtifacts(result.Artifacts); err != nil {
 			result = tools.Result{Err: fmt.Errorf("apply tool context: %w", err)}.For(it.Tool)

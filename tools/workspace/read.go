@@ -152,8 +152,8 @@ func (r *Provider) readTools() []*tools.Spec {
 }
 
 // readContent is what permission rules match: the file or folder read, relative to the project root inside it.
-func (r *Provider) readContent(ctx context.Context, args map[string]any) (tools.Content, error) {
-	d, err := r.dirs(ctx)
+func (r *Provider) readContent(ctx context.Context, caller tools.Caller, args map[string]any) (tools.Content, error) {
+	d, err := r.dirs(ctx, caller)
 	if err != nil {
 		return tools.Content{}, err
 	}
@@ -216,8 +216,8 @@ func (d dirs) display(abs string) string {
 	return abs
 }
 
-func (r *Provider) invokeRead(ctx context.Context, tool string, args map[string]any) (tools.Result, error) {
-	d, err := r.dirs(ctx)
+func (r *Provider) invokeRead(ctx context.Context, caller tools.Caller, tool string, args map[string]any) (tools.Result, error) {
+	d, err := r.dirs(ctx, caller)
 	if err != nil {
 		return tools.Result{}, err
 	}

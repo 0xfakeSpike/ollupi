@@ -132,19 +132,19 @@ func TestSearch(t *testing.T) {
 		repo.MemoryRow{UserID: repo.DefaultUser, ID: "gone", WorkspaceID: "w", Topic: "old", Kind: "fact", Text: "Blue once.", Status: repo.MemoryRetired},
 		repo.MemoryRow{UserID: repo.DefaultUser, ID: "unrelated", WorkspaceID: "w", Topic: "db", Kind: "fact", Text: "Uses sqlite."},
 	)
-	ctx := tools.WithCaller(context.Background(), tools.Caller{UserID: repo.DefaultUser, WorkspaceID: "w"})
-	res, err := m.Invoke(ctx, ToolSearch, map[string]any{"query": "blue"})
+	ctx, caller := context.Background(), tools.Caller{UserID: repo.DefaultUser, WorkspaceID: "w"}
+	res, err := m.Invoke(ctx, caller, ToolSearch, map[string]any{"query": "blue"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := ids(res.Output.(SearchResult).Memories); !slices.Equal(got, []string{"w", "g"}) {
 		t.Errorf("found %v, want the workspace's preference, then the global fact", got)
 	}
-	res, err = m.Invoke(ctx, ToolSearch, map[string]any{"query": "nothing matches"})
+	res, err = m.Invoke(ctx, caller, ToolSearch, map[string]any{"query": "nothing matches"})
 	if err != nil || res.Output.(SearchResult).Memories == nil || len(res.Output.(SearchResult).Memories) != 0 {
 		t.Errorf("no match: %+v, %v", res, err)
 	}
-	if _, err := m.Invoke(ctx, ToolSearch, map[string]any{"query": "?"}); err == nil {
+	if _, err := m.Invoke(ctx, caller, ToolSearch, map[string]any{"query": "?"}); err == nil {
 		t.Error("a query without words was accepted")
 	}
 }

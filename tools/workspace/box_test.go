@@ -110,12 +110,10 @@ func TestToolsRunOnTheUsersMachine(t *testing.T) {
 	for _, s := range specs {
 		spec[s.Name] = s
 	}
-	as := func(user string) context.Context {
-		return tools.WithCaller(context.Background(), tools.Caller{UserID: user})
-	}
+	as := func(user string) tools.Caller { return tools.Caller{UserID: user} }
 	read := func(user, tool string, args map[string]any) any {
 		t.Helper()
-		res, err := r.Invoke(as(user), tool, args)
+		res, err := r.Invoke(context.Background(), as(user), tool, args)
 		if err != nil {
 			t.Fatalf("%s as %s: %v", tool, user, err)
 		}
@@ -123,12 +121,12 @@ func TestToolsRunOnTheUsersMachine(t *testing.T) {
 	}
 	act := func(user, tool string, args map[string]any) (tools.Result, error) {
 		t.Helper()
-		ctx := as(user)
-		p, err := spec[tool].Local.Prepare(ctx, args)
+		ctx, caller := context.Background(), as(user)
+		p, err := spec[tool].Local.Prepare(ctx, caller, args)
 		if err != nil {
 			return tools.Result{}, err
 		}
-		return spec[tool].Local.Run(ctx, args, p)
+		return spec[tool].Local.Run(ctx, caller, args, p)
 	}
 
 	if out := read("a", ToolReadFile, map[string]any{"path": "src/a.go"}).(ReadFileOutput); !strings.Contains(out.Text, "needle") {
@@ -188,7 +186,7 @@ func TestToolsRunOnTheUsersMachine(t *testing.T) {
 		t.Errorf("the tool does not describe its sandbox: %s", spec[ToolRunCommand].Description)
 	}
 
-	if _, err := r.Invoke(as("nobody"), ToolGlob, map[string]any{"pattern": "*"}); err == nil {
+	if _, err := r.Invoke(context.Background(), as("nobody"), ToolGlob, map[string]any{"pattern": "*"}); err == nil {
 		t.Error("a user with no sandbox reached one")
 	}
 }
@@ -216,8 +214,8 @@ func TestACallRunsInTheEnvironmentItNames(t *testing.T) {
 
 	glob := func(environment string) []string {
 		t.Helper()
-		ctx := tools.WithCaller(context.Background(), tools.Caller{UserID: "a", EnvironmentID: environment})
-		res, err := r.Invoke(ctx, ToolGlob, map[string]any{"pattern": "**/*.txt"})
+		ctx, caller := context.Background(), tools.Caller{UserID: "a", EnvironmentID: environment}
+		res, err := r.Invoke(ctx, caller, ToolGlob, map[string]any{"pattern": "**/*.txt"})
 		if err != nil {
 			t.Fatalf("glob in %q: %v", environment, err)
 		}
@@ -242,8 +240,8 @@ func TestBoxInMayLeaveTheCallInTheProvidersBox(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer r.Close()
-	ctx := tools.WithCaller(context.Background(), tools.Caller{UserID: "a", EnvironmentID: "local"})
-	res, err := r.Invoke(ctx, ToolGlob, map[string]any{"pattern": "**/*.txt"})
+	ctx, caller := context.Background(), tools.Caller{UserID: "a", EnvironmentID: "local"}
+	res, err := r.Invoke(ctx, caller, ToolGlob, map[string]any{"pattern": "**/*.txt"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +257,7 @@ func TestACommandPreparedOnAMachineIsConfined(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer r.Close()
-	p, err := r.prepareCommand(context.Background(), map[string]any{"program": "ls"})
+	p, err := r.prepareCommand(context.Background(), tools.Caller{}, map[string]any{"program": "ls"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,15 +287,15 @@ func TestGrepReportsWhatItCouldNotRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer r.Close()
-	ctx := tools.WithCaller(context.Background(), tools.Caller{UserID: "a"})
-	res, err := r.Invoke(ctx, ToolGrep, map[string]any{"pattern": "needle", "files_only": true})
+	ctx, caller := context.Background(), tools.Caller{UserID: "a"}
+	res, err := r.Invoke(ctx, caller, ToolGrep, map[string]any{"pattern": "needle", "files_only": true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := res.Output.(GrepOutput); len(got.Files) != 1 || got.Skipped != 1 {
 		t.Errorf("a folder with an unreadable file: %+v", got)
 	}
-	if _, err := r.Invoke(ctx, ToolGrep, map[string]any{"pattern": "needle", "path": "b.txt"}); err == nil {
+	if _, err := r.Invoke(ctx, caller, ToolGrep, map[string]any{"pattern": "needle", "path": "b.txt"}); err == nil {
 		t.Error("an unreadable file searched as one without matches")
 	}
 }

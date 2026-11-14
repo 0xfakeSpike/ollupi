@@ -63,16 +63,16 @@ func readFixture(t *testing.T) (root string, call func(tool string, args map[str
 	for _, s := range specs {
 		spec[s.Name] = s
 	}
-	ctx := tools.WithCaller(context.Background(), tools.Caller{Root: root})
+	ctx, caller := context.Background(), tools.Caller{Root: root}
 	call = func(tool string, args map[string]any) (any, error) {
 		if err := tools.ValidateArguments(args, spec[tool].InputSchema); err != nil {
 			return nil, err
 		}
-		res, err := r.Invoke(ctx, tool, args)
+		res, err := r.Invoke(ctx, caller, tool, args)
 		return res.Output, err
 	}
 	content = func(tool string, args map[string]any) (tools.Content, error) {
-		return spec[tool].PermissionContent(ctx, args)
+		return spec[tool].PermissionContent(ctx, caller, args)
 	}
 	for _, name := range []string{ToolReadFile, ToolGlob, ToolGrep} {
 		if a := spec[name].Annotations; a == nil || !a.ReadOnlyHint || tools.OpenWorld(*a) || spec[name].Local != nil {

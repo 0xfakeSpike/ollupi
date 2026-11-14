@@ -46,7 +46,7 @@ func (m *Manager) ToolList(context.Context) ([]*tools.Spec, error) {
 	}}, nil
 }
 
-func (m *Manager) Invoke(ctx context.Context, _ string, arguments map[string]any) (tools.Result, error) {
+func (m *Manager) Invoke(ctx context.Context, caller tools.Caller, _ string, arguments map[string]any) (tools.Result, error) {
 	args, err := tools.DecodeArguments[SearchArgs](arguments)
 	if err != nil {
 		return tools.Result{}, err
@@ -55,7 +55,6 @@ func (m *Manager) Invoke(ctx context.Context, _ string, arguments map[string]any
 	if len(terms) == 0 {
 		return tools.Result{}, errors.New("query must contain a word of at least two letters or digits")
 	}
-	caller := tools.CallerOf(ctx)
 	workspaceID := caller.WorkspaceID
 	rows, err := m.db.Memories(caller.UserID, localScope(workspaceID), workspaceID, true)
 	if err != nil {

@@ -121,8 +121,8 @@ var (
 
 const maxOutputBytes = 1 << 20
 
-func (r *Registry) Invoke(ctx context.Context, tool string, arguments map[string]any) Result {
-	return guard(tool, func() (Result, error) { return r.dispatch(ctx, tool, arguments) })
+func (r *Registry) Invoke(ctx context.Context, caller Caller, tool string, arguments map[string]any) Result {
+	return guard(tool, func() (Result, error) { return r.dispatch(ctx, caller, tool, arguments) })
 }
 
 func guard(tool string, run func() (Result, error)) (result Result) {
@@ -148,7 +148,7 @@ func guard(tool string, run func() (Result, error)) (result Result) {
 	return result.For(tool)
 }
 
-func (r *Registry) dispatch(ctx context.Context, tool string, arguments map[string]any) (Result, error) {
+func (r *Registry) dispatch(ctx context.Context, caller Caller, tool string, arguments map[string]any) (Result, error) {
 	p, ok := r.owner[tool]
 	if !ok {
 		return Result{}, fmt.Errorf("tool registry: %w %q", ErrUnknownTool, tool)
@@ -156,7 +156,7 @@ func (r *Registry) dispatch(ctx context.Context, tool string, arguments map[stri
 	if err := ValidateArguments(arguments, r.specs[tool].InputSchema); err != nil {
 		return Result{}, fmt.Errorf("tool registry: %w for %q: %v", ErrInvalidArguments, tool, err)
 	}
-	return p.Invoke(ctx, tool, arguments)
+	return p.Invoke(ctx, caller, tool, arguments)
 }
 
 func (r *Registry) HasPermissionContent(tool string) bool {
@@ -164,11 +164,11 @@ func (r *Registry) HasPermissionContent(tool string) bool {
 	return ok && spec.PermissionContent != nil
 }
 
-func (r *Registry) PermissionContent(ctx context.Context, tool string, arguments map[string]any) (content Content, ok bool, err error) {
+func (r *Registry) PermissionContent(ctx context.Context, caller Caller, tool string, arguments map[string]any) (content Content, ok bool, err error) {
 	if !r.HasPermissionContent(tool) {
 		return Content{}, false, nil
 	}
-	content, err = r.specs[tool].PermissionContent(ctx, arguments)
+	content, err = r.specs[tool].PermissionContent(ctx, caller, arguments)
 	if err != nil {
 		return Content{}, false, fmt.Errorf("tool registry: permission content of %q: %w", tool, err)
 	}
@@ -184,7 +184,7 @@ func (r *Registry) providerIDs() []string {
 	return ids
 }
 
-func (r *Registry) Prepare(ctx context.Context, tool string, arguments map[string]any) (prepared *Prepared, err error) {
+func (r *Registry) Prepare(ctx context.Context, caller Caller, tool string, arguments map[string]any) (prepared *Prepared, err error) {
 	if _, ok := r.owner[tool]; !ok {
 		return nil, fmt.Errorf("tool registry: %w %q", ErrUnknownTool, tool)
 	}
@@ -201,10 +201,10 @@ func (r *Registry) Prepare(ctx context.Context, tool string, arguments map[strin
 			prepared, err = nil, fmt.Errorf("the tool crashed while preparing: %v", p)
 		}
 	}()
-	return local.Prepare(ctx, arguments)
+	return local.Prepare(ctx, caller, arguments)
 }
 
-func (r *Registry) InvokePrepared(ctx context.Context, tool string, arguments map[string]any, prepared *Prepared) Result {
+func (r *Registry) InvokePrepared(ctx context.Context, caller Caller, tool string, arguments map[string]any, prepared *Prepared) Result {
 	if _, ok := r.owner[tool]; !ok {
 		return Result{Err: fmt.Errorf("tool registry: %w %q", ErrUnknownTool, tool)}.For(tool)
 	}
@@ -212,10 +212,10 @@ func (r *Registry) InvokePrepared(ctx context.Context, tool string, arguments ma
 		return Result{Err: fmt.Errorf("tool registry: %w for %q: %v", ErrInvalidArguments, tool, err)}.For(tool)
 	}
 	if local := r.specs[tool].Local; local != nil {
-		return guard(tool, func() (Result, error) { return local.Run(ctx, arguments, prepared) })
+		return guard(tool, func() (Result, error) { return local.Run(ctx, caller, arguments, prepared) })
 	}
 	if prepared != nil {
 		return Result{Err: fmt.Errorf("tool registry: tool %q no longer supports saved execution parameters", tool)}.For(tool)
 	}
-	return r.Invoke(ctx, tool, arguments)
+	return r.Invoke(ctx, caller, tool, arguments)
 }

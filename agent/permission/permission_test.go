@@ -18,12 +18,16 @@ func (fileTools) Name() (string, string) { return "files", "Touches files." }
 func (fileTools) ToolList(context.Context) ([]*tools.Spec, error) {
 	return []*tools.Spec{
 		{Name: "touch", InputSchema: map[string]any{"type": "object"}},
-		{Name: "exec", InputSchema: map[string]any{"type": "object"}, PermissionContent: func(context.Context, map[string]any) (tools.Content, error) { return tools.Content{}, nil }},
-		{Name: "click", InputSchema: map[string]any{"type": "object"}, PermissionContent: func(context.Context, map[string]any) (tools.Content, error) { return tools.Content{}, nil }},
+		{Name: "exec", InputSchema: map[string]any{"type": "object"}, PermissionContent: func(context.Context, tools.Caller, map[string]any) (tools.Content, error) {
+			return tools.Content{}, nil
+		}},
+		{Name: "click", InputSchema: map[string]any{"type": "object"}, PermissionContent: func(context.Context, tools.Caller, map[string]any) (tools.Content, error) {
+			return tools.Content{}, nil
+		}},
 	}, nil
 }
 
-func (fileTools) Invoke(context.Context, string, map[string]any) (tools.Result, error) {
+func (fileTools) Invoke(context.Context, tools.Caller, string, map[string]any) (tools.Result, error) {
 	return tools.Result{}, nil
 }
 

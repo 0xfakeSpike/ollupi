@@ -54,13 +54,13 @@ func TestFileTools(t *testing.T) {
 	for _, s := range specs {
 		spec[s.Name] = s
 	}
-	ctx := tools.WithCaller(context.Background(), tools.Caller{Root: root})
+	ctx, caller := context.Background(), tools.Caller{Root: root}
 	run := func(tool string, args map[string]any) (tools.Result, *tools.Prepared, error) {
-		p, err := spec[tool].Local.Prepare(ctx, args)
+		p, err := spec[tool].Local.Prepare(ctx, caller, args)
 		if err != nil {
 			return tools.Result{}, nil, err
 		}
-		res, err := spec[tool].Local.Run(ctx, args, p)
+		res, err := spec[tool].Local.Run(ctx, caller, args, p)
 		return res, p, err
 	}
 
@@ -68,16 +68,16 @@ func TestFileTools(t *testing.T) {
 		t.Fatalf("write: %v %+v", err, p)
 	}
 	args := map[string]any{"path": "src/a.go", "edits": []any{map[string]any{"old_text": "package a", "new_text": "package b"}}}
-	content, err := spec[ToolEditFile].PermissionContent(ctx, args)
+	content, err := spec[ToolEditFile].PermissionContent(ctx, caller, args)
 	if err != nil || content.Match != "src/a.go" || !strings.Contains(content.Text, "+package b") {
 		t.Fatalf("content %+v: %v", content, err)
 	}
-	p, err := spec[ToolEditFile].Local.Prepare(ctx, args)
+	p, err := spec[ToolEditFile].Local.Prepare(ctx, caller, args)
 	if err != nil {
 		t.Fatal(err)
 	}
 	os.WriteFile(filepath.Join(root, "src/a.go"), []byte("package a\n// changed\n"), 0o644)
-	if _, err := spec[ToolEditFile].Local.Run(ctx, args, p); err == nil || !strings.Contains(err.Error(), "changed after") {
+	if _, err := spec[ToolEditFile].Local.Run(ctx, caller, args, p); err == nil || !strings.Contains(err.Error(), "changed after") {
 		t.Errorf("edit of a changed file: %v", err)
 	}
 	if res, _, err := run(ToolEditFile, args); err != nil || res.Output.(FileOutput).Added != 1 {

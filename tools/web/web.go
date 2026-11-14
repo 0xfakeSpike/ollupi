@@ -93,7 +93,7 @@ func (p *Provider) ToolList(context.Context) ([]*tools.Spec, error) {
 	}}, nil
 }
 
-func permissionContent(_ context.Context, arguments map[string]any) (tools.Content, error) {
+func permissionContent(_ context.Context, _ tools.Caller, arguments map[string]any) (tools.Content, error) {
 	f, err := tools.DecodeArguments[Fetch](arguments)
 	if err != nil {
 		return tools.Content{}, err
@@ -120,7 +120,7 @@ func parseURL(raw string) (*url.URL, error) {
 	return u, nil
 }
 
-func (p *Provider) Invoke(ctx context.Context, _ string, arguments map[string]any) (tools.Result, error) {
+func (p *Provider) Invoke(ctx context.Context, _ tools.Caller, _ string, arguments map[string]any) (tools.Result, error) {
 	f, err := tools.DecodeArguments[Fetch](arguments)
 	if err != nil {
 		return tools.Result{}, err

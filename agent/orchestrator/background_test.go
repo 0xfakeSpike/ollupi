@@ -31,7 +31,7 @@ func (slowTools) ToolList(context.Context) ([]*tools.Spec, error) {
 	schema := map[string]any{"type": "object", "properties": map[string]any{"url": map[string]any{"type": "string"}}, "additionalProperties": false}
 	return []*tools.Spec{{Name: "files__download", Description: "Download a file.", InputSchema: schema, Background: true}}, nil
 }
-func (s slowTools) Invoke(ctx context.Context, _ string, args map[string]any) (tools.Result, error) {
+func (s slowTools) Invoke(ctx context.Context, _ tools.Caller, _ string, args map[string]any) (tools.Result, error) {
 	select {
 	case <-s.release:
 		return tools.Result{Output: map[string]any{"saved": args["url"]}}, nil

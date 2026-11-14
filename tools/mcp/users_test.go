@@ -65,7 +65,7 @@ func TestEachUsersServersRunInTheirMachine(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		r := reg.Invoke(ctx, "own__whose", map[string]any{})
+		r := reg.Invoke(ctx, tools.Caller{}, "own__whose", map[string]any{})
 		if r.Err != nil {
 			t.Fatalf("%s: %v", user, r.Err)
 		}

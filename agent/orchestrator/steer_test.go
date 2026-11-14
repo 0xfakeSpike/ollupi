@@ -29,7 +29,7 @@ func (noteTools) ToolList(context.Context) ([]*tools.Spec, error) {
 	schema := map[string]any{"type": "object", "properties": map[string]any{"text": map[string]any{"type": "string"}}, "additionalProperties": false}
 	return []*tools.Spec{{Name: "notes__write", Description: "Write a note.", InputSchema: schema}}, nil
 }
-func (n noteTools) Invoke(context.Context, string, map[string]any) (tools.Result, error) {
+func (n noteTools) Invoke(context.Context, tools.Caller, string, map[string]any) (tools.Result, error) {
 	n.writes.Add(1)
 	return tools.Result{Output: map[string]any{"ok": true}}, nil
 }

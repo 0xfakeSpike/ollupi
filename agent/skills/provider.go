@@ -21,7 +21,7 @@ func (c *Catalog) Name() (string, string) {
 	return ProviderName, "Directory-based Agent Skills with explicit activation and on-demand resources."
 }
 
-func (c *Catalog) Invoke(_ context.Context, tool string, arguments map[string]any) (tools.Result, error) {
+func (c *Catalog) Invoke(_ context.Context, _ tools.Caller, tool string, arguments map[string]any) (tools.Result, error) {
 	switch strings.TrimSpace(tool) {
 	case ToolGetRootDir:
 		return tools.Result{Output: map[string]any{"skills_root_dir": c.root}}, nil

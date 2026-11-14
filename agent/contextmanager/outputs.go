@@ -48,7 +48,7 @@ func (*Outputs) ToolList(context.Context) ([]*tools.Spec, error) {
 	}}, nil
 }
 
-func (o *Outputs) Invoke(ctx context.Context, _ string, args map[string]any) (tools.Result, error) {
+func (o *Outputs) Invoke(ctx context.Context, caller tools.Caller, _ string, args map[string]any) (tools.Result, error) {
 	id, _ := args["output_id"].(string)
 	offset, err := intArg(args, "offset", 0)
 	if err != nil {
@@ -62,7 +62,7 @@ func (o *Outputs) Invoke(ctx context.Context, _ string, args map[string]any) (to
 		return tools.Result{}, fmt.Errorf("offset must be at least 0 and length between 1 and %d", maxReadRunes)
 	}
 	it, err := o.db.Item(id)
-	if errors.Is(err, repo.ErrNotFound) || err == nil && (it.ThreadID != tools.CallerOf(ctx).ThreadID || !it.IsCall() && it.Type != repo.ItemBackgroundResult || it.Result == nil) {
+	if errors.Is(err, repo.ErrNotFound) || err == nil && (it.ThreadID != caller.ThreadID || !it.IsCall() && it.Type != repo.ItemBackgroundResult || it.Result == nil) {
 		return tools.Result{}, fmt.Errorf("this conversation has no tool output %q", id)
 	}
 	if err != nil {

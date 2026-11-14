@@ -118,7 +118,7 @@ func (*Provider) ToolList(context.Context) ([]*tools.Spec, error) {
 	}}, nil
 }
 
-func (*Provider) Invoke(_ context.Context, _ string, arguments map[string]any) (tools.Result, error) {
+func (*Provider) Invoke(_ context.Context, _ tools.Caller, _ string, arguments map[string]any) (tools.Result, error) {
 	r, err := tools.DecodeArguments[Request](arguments)
 	if err != nil {
 		return tools.Result{}, err

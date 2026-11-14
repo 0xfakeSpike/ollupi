@@ -112,10 +112,10 @@ func (r *Provider) tool() *tools.Spec {
 	}
 }
 
-func (r *Provider) Invoke(ctx context.Context, tool string, args map[string]any) (tools.Result, error) {
+func (r *Provider) Invoke(ctx context.Context, caller tools.Caller, tool string, args map[string]any) (tools.Result, error) {
 	switch tool {
 	case ToolReadFile, ToolGlob, ToolGrep:
-		return r.invokeRead(ctx, tool, args)
+		return r.invokeRead(ctx, caller, tool, args)
 	}
 	return tools.Result{}, fmt.Errorf("workspace: %s runs only inside a turn", tool)
 }

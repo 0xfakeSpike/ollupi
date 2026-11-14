@@ -50,7 +50,7 @@ func (*introspection) ToolList(context.Context) ([]*Spec, error) {
 	}, nil
 }
 
-func (i *introspection) Invoke(_ context.Context, tool string, args map[string]any) (Result, error) {
+func (i *introspection) Invoke(_ context.Context, _ Caller, tool string, args map[string]any) (Result, error) {
 	switch tool {
 	case ToolListProviders:
 		providers := make([]map[string]string, 0, len(i.reg.providers))

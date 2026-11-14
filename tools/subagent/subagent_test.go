@@ -25,10 +25,10 @@ func TestACallQueuesTheSubagentsConversationAndWaitsOnIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	launch := New(db, []Kind{{Tool: "BrowserAgent", Title: "Browser subagent", Description: "Browse.", Role: "browser-sub-agent"}})
-	ctx := tools.WithItem(tools.WithCaller(context.Background(), tools.Caller{UserID: repo.DefaultUser, ThreadID: "main"}), "call")
+	ctx, caller := context.Background(), tools.Caller{UserID: repo.DefaultUser, ThreadID: "main", Item: "call"}
 	args := map[string]any{"description": "Look it up", "prompt": "Find the page and report."}
 
-	res, err := launch.Invoke(ctx, "BrowserAgent", args)
+	res, err := launch.Invoke(ctx, caller, "BrowserAgent", args)
 	if err != nil || res.Await == nil || res.Await.By != tools.AwaitAgent || res.Await.Handle == "" {
 		t.Fatalf("a launch: %+v %v", res, err)
 	}
@@ -45,14 +45,14 @@ func TestACallQueuesTheSubagentsConversationAndWaitsOnIt(t *testing.T) {
 		t.Errorf("the subagent's turn: %+v", queued)
 	}
 
-	again, err := launch.Invoke(ctx, "BrowserAgent", args)
+	again, err := launch.Invoke(ctx, caller, "BrowserAgent", args)
 	if err != nil || again.Await == nil || again.Await.Handle != res.Await.Handle {
 		t.Errorf("the same call launched another subagent: %+v %v", again, err)
 	}
-	if _, err := launch.Invoke(ctx, "BrowserAgent", map[string]any{"description": "x", "prompt": "  "}); err == nil {
+	if _, err := launch.Invoke(ctx, caller, "BrowserAgent", map[string]any{"description": "x", "prompt": "  "}); err == nil {
 		t.Error("a blank task launched a subagent")
 	}
-	if _, err := launch.Invoke(context.Background(), "BrowserAgent", args); err == nil {
+	if _, err := launch.Invoke(ctx, tools.Caller{UserID: repo.DefaultUser, ThreadID: "main"}, "BrowserAgent", args); err == nil {
 		t.Error("a launch outside a call of a turn queued a subagent")
 	}
 }
