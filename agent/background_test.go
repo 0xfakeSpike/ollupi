@@ -15,6 +15,7 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
+	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
 )
@@ -366,5 +367,78 @@ func TestASubagentReportsOnlyOnceItsBackgroundCallsHaveEnded(t *testing.T) {
 	defer fake.mu.Unlock()
 	if !strings.Contains(fake.parentLast, "big.iso is saved.") || strings.Contains(fake.parentLast, "The download has started.") {
 		t.Errorf("the parent was reported to before the download ended: %s", fake.parentLast)
+	}
+}
+
+func TestABackgroundCallCutOffByARestartComesBackAsInterrupted(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	fake := &callingModel{tool: "files__download", args: `{"url":"https://example.com/big.iso","run_in_background":true}`}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	db, err := repo.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	start := func(slow slowTools) (*agent.Agent, context.CancelFunc) {
+		ag := agent.New(agent.Config{
+			Name: "Ollupi", DB: db, Models: []llm.Model{{Name: "demo", Connection: "fake"}},
+			Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
+			Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
+			Providers:   []tools.Provider{slow},
+		})
+		actx, stop := context.WithCancel(ctx)
+		if err := ag.Start(actx); err != nil {
+			stop()
+			t.Fatal(err)
+		}
+		return ag, stop
+	}
+	first, stop := start(slowTools{release: make(chan struct{}), stopped: make(chan struct{})})
+	th, err := first.StartThread(repo.DefaultUser, "", "", "download", permission.Settings{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := first.StartTurn(ctx, repo.DefaultUser, th.ID, agent.Input{Text: "下载这个文件"}); err != nil {
+		t.Fatal(err)
+	}
+	var id string
+	for id == "" {
+		if v, err := db.Thread(th.ID); err == nil && len(v.Turns) == 1 && v.Turns[0].Status == repo.TurnCompleted {
+			for _, it := range v.Items {
+				if it.Tool == "files__download" {
+					id = backgroundID(t, it)
+				}
+			}
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("the download never started in the background")
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	stop()
+	first.Wait()
+	if call, err := db.BackgroundCall(id); err != nil || call.Status != repo.BackgroundInterrupted || call.DeliveredAt != nil {
+		t.Fatalf("the call after its process stopped: %+v %v", call, err)
+	}
+
+	second, stopSecond := start(slowTools{release: make(chan struct{}), stopped: make(chan struct{})})
+	defer second.Wait()
+	defer stopSecond()
+	for {
+		v, err := db.Thread(th.ID)
+		if err == nil && len(v.Turns) == 2 && v.Turns[1].Status == repo.TurnCompleted {
+			if first := itemsOf(v, v.Turns[1].ID); len(first) == 0 || first[0].BackgroundID != id || first[0].Text != string(repo.BackgroundInterrupted) {
+				t.Errorf("the turn after the restart begins with %+v", first)
+			}
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("the interrupted call never came back to the conversation")
+		case <-time.After(20 * time.Millisecond):
+		}
 	}
 }

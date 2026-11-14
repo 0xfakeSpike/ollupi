@@ -350,6 +350,29 @@ func TestTrafficMatchesContract(t *testing.T) {
 		t.Errorf("web_fetch did not return the page text (%v)", err)
 	}
 
+	// The same fetch in the background. Its page comes back to the conversation: into the turn that started it while
+	// that turn still runs, as it may with a site this near, or in a turn of its own.
+	turn = c.startTurn(threadID, "fetch later "+site.URL+"/docs")
+	approval = c.await(requestApproval, nil)
+	json.Unmarshal(approval.Params, &asked)
+	if asked.Content != site.URL+"/docs" {
+		t.Errorf("the background fetch's approval shows %q", asked.Content)
+	}
+	c.respond(approval, ApprovalResponse{Decision: repo.DecisionAccept})
+	result := c.await("item/completed", func(params json.RawMessage) bool {
+		var n ItemNotification
+		return json.Unmarshal(params, &n) == nil && n.Item.Type == repo.ItemBackgroundResult
+	})
+	var came ItemNotification
+	json.Unmarshal(result.Params, &came)
+	if came.Item.BackgroundID == "" || came.Item.Result == nil || !strings.Contains(string(came.Item.Result.Output), "# Welcome") {
+		t.Errorf("the background fetch came back as %+v", came.Item)
+	}
+	c.awaitTurnEnd(turn, repo.TurnCompleted)
+	if came.TurnID != turn {
+		c.awaitTurnEnd(came.TurnID, repo.TurnCompleted)
+	}
+
 	var daily repo.CronJobRow
 	c.call("cron/create", CronCreateParams{ThreadID: threadID, Name: "daily", Spec: "@daily", Prompt: "daily check"}, &daily)
 	c.cronChanged(daily.ID, func(j *CronJobView) bool { return j != nil && j.Name == "daily" && j.ThreadTitle == "hello" })
@@ -865,6 +888,9 @@ func (f *fakeModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		call(workspace.ToolGlob, `{"pattern":"**/*.txt"}`)
 	case last.Role == "user" && strings.Contains(text, "search notes"):
 		call(workspace.ToolGrep, `{"pattern":"there","context":1}`)
+	case last.Role == "user" && strings.Contains(text, "fetch later http"):
+		words := strings.Fields(text)
+		call(web.Tool, fmt.Sprintf(`{"url":%q,"run_in_background":true}`, words[len(words)-1]))
 	case last.Role == "user" && strings.Contains(text, "fetch http"):
 		words := strings.Fields(text)
 		call(web.Tool, fmt.Sprintf(`{"url":%q}`, words[len(words)-1]))
