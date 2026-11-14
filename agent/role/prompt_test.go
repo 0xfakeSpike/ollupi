@@ -12,13 +12,13 @@ import (
 
 func TestDeferredToolsAreListedByProvider(t *testing.T) {
 	deferred := []tools.ToolDescriptor{{Provider: "github", Name: "github__issue"}, {Provider: "github", Name: "github__pr"}, {Provider: "slack", Name: "slack__post"}}
-	text := system(t, fullMain, Input{Agent: "AGENT", Root: "/p", Deferred: deferred})
+	text := system(t, fullMain, Input{Deployment: Deployment{Prompt: "AGENT"}, Root: "/p", Deferred: deferred})
 	list := "# DEFERRED TOOLS\n"
 	i, j := strings.Index(text, list), strings.Index(text, "# PROJECT")
 	if i < 0 || j < i || !strings.Contains(text[i:j], "\n- github: github__issue, github__pr\n- slack: slack__post\n") {
 		t.Errorf("prompt:\n%s", text)
 	}
-	if strings.Contains(system(t, fullMain, Input{Agent: "AGENT"}), list) {
+	if strings.Contains(system(t, fullMain, Input{Deployment: Deployment{Prompt: "AGENT"}}), list) {
 		t.Error("a prompt without deferred tools has a DEFERRED TOOLS section")
 	}
 }
@@ -52,12 +52,12 @@ func skillsFor(t *testing.T, roles ...Name) string {
 func TestARoleListsTheSkillsItHasAndCompactIsShorter(t *testing.T) {
 	root := skillsFor(t, FullMain, CompactMain, BrowserSub)
 	for _, r := range all {
-		listed := strings.Contains(system(t, r, Input{Agent: "AGENT", SkillsDir: root, SkillTokens: 1000}), "# AVAILABLE SKILLS\n- deploy: Ship it.")
+		listed := strings.Contains(system(t, r, Input{Deployment: Deployment{Prompt: "AGENT", SkillsDir: root}, SkillTokens: 1000}), "# AVAILABLE SKILLS\n- deploy: Ship it.")
 		if want := r.Name != GeneralSub; listed != want {
 			t.Errorf("%s lists the skill: %v, want %v", r.Name, listed, want)
 		}
 	}
-	compact := system(t, compactMain, Input{Agent: "AGENT"})
+	compact := system(t, compactMain, Input{Deployment: Deployment{Prompt: "AGENT"}})
 	if !strings.HasPrefix(compact, "AGENT\n\n") || !strings.Contains(compact, "# Safety") || strings.Contains(compact, "# AVAILABLE SKILLS") {
 		t.Errorf("compact:\n%s", compact)
 	}
@@ -67,7 +67,7 @@ func TestARoleListsTheSkillsItHasAndCompactIsShorter(t *testing.T) {
 }
 
 func TestEachRoleWritesItsOwnPrompt(t *testing.T) {
-	in := Input{Agent: "AGENT", Root: "/p", SkillTokens: 1000}
+	in := Input{Deployment: Deployment{Prompt: "AGENT"}, Root: "/p", SkillTokens: 1000}
 	for _, r := range all {
 		text := system(t, r, in)
 		if !r.Persona && text != r.Rules {
@@ -79,5 +79,14 @@ func TestEachRoleWritesItsOwnPrompt(t *testing.T) {
 	}
 	if general, _ := Of(GeneralSub); !strings.Contains(system(t, general, in), "# You are a subagent") {
 		t.Error("the general subagent is not told its answer is a report")
+	}
+}
+
+func TestTheAgentsPromptIsTheOperatorsOrNamesTheAgent(t *testing.T) {
+	if text := system(t, fullMain, Input{Deployment: Deployment{Name: "Ollupi"}}); !strings.HasPrefix(text, "You are Ollupi, a personal assistant") {
+		t.Errorf("without the operator's prompt:\n%s", text)
+	}
+	if text := system(t, fullMain, Input{Deployment: Deployment{Name: "Ollupi", Prompt: "You are Helper."}}); !strings.HasPrefix(text, "You are Helper.\n\n"+fullMain.Rules) {
+		t.Errorf("with the operator's prompt:\n%s", text)
 	}
 }

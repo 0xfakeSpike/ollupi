@@ -35,10 +35,9 @@ type Runtime struct {
 	Turn   db.TurnRow
 	Caller tools.Caller
 	// Role is the role of agent the turn names, which the run is.
-	Role   role.Role
-	Prompt string
-	// SkillsDir is where the skills of each role are installed.
-	SkillsDir   string
+	Role role.Role
+	// Deployment is what the run's system prompt takes from the configuration.
+	Deployment  role.Deployment
 	Permissions *permission.Checker
 	History     []db.ItemRow
 	Items       []db.ItemRow
@@ -69,8 +68,7 @@ func (rt *Runtime) start() error {
 	rt.redactor = redact.New(settings.RedactionKey)
 	rt.offer()
 	if rt.system, err = rt.Role.System(role.Input{
-		Agent: rt.Prompt, Root: rt.Caller.Root,
-		SkillsDir: rt.SkillsDir, SkillTokens: rt.Window.SkillBudget(), Deferred: rt.deferred,
+		Deployment: rt.Deployment, Root: rt.Caller.Root, SkillTokens: rt.Window.SkillBudget(), Deferred: rt.deferred,
 	}); err != nil {
 		return fmt.Errorf("runtime: %w", err)
 	}

@@ -10,13 +10,18 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
-// Input is what a run's system prompt is written from besides the role.
+// A Deployment is what every system prompt of a deployment takes from its configuration: the agent's name and the
+// operator's prompt for it, and where the roles' skills are installed.
+type Deployment struct {
+	Name, Prompt string
+	// SkillsDir is where the skills of each role are installed; a role lists its own.
+	SkillsDir string
+}
+
+// Input is what a run's system prompt is written from besides the role: its deployment's, and the run's own.
 type Input struct {
-	// Agent is the agent's own prompt, AgentPrompt.
-	Agent string
-	Root  string
-	// SkillsDir is where the skills of each role are installed; the role lists its own, within SkillTokens.
-	SkillsDir   string
+	Deployment
+	Root        string
 	SkillTokens int
 	Deferred    []tools.ToolDescriptor
 }
@@ -34,7 +39,7 @@ func (r Role) System(in Input) (string, error) {
 	if !r.Persona {
 		return strings.Join(slices.DeleteFunc([]string{r.Rules, listed}, func(s string) bool { return s == "" }), "\n\n"), nil
 	}
-	parts := []string{strings.TrimSpace(in.Agent), r.Rules}
+	parts := []string{strings.TrimSpace(agentPrompt(in.Name, in.Prompt)), r.Rules}
 	if listed != "" {
 		parts = append(parts, listed)
 	}
@@ -47,8 +52,8 @@ func (r Role) System(in Input) (string, error) {
 	return strings.Join(parts, "\n\n"), nil
 }
 
-// AgentPrompt is the agent's own prompt: the operator's, or one that names the agent.
-func AgentPrompt(name, prompt string) string {
+// agentPrompt is the agent's own prompt: the operator's, or one that names the agent.
+func agentPrompt(name, prompt string) string {
 	if strings.TrimSpace(prompt) != "" {
 		return prompt
 	}
