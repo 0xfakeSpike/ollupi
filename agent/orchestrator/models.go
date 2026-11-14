@@ -55,7 +55,7 @@ func (o *Orchestrator) clientFor(user, connection string) (llm.Client, error) {
 }
 
 func (o *Orchestrator) checkPromptFits() error {
-	checker, err := permission.New(o.layers(db.WorkspaceRow{}), o.cfg.Tools, o.registry)
+	checker, err := permission.New(permission.Base(o.cfg.Settings, o.cfg.ToolsFor != nil, db.WorkspaceRow{}), o.cfg.Tools, o.registry)
 	if err != nil {
 		return err
 	}

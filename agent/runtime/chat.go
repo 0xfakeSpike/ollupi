@@ -21,13 +21,14 @@ import (
 // contextInput is what the next request is built from: the run's items, the role's system prompt and the offered
 // tools, as they are now.
 func (rt *Runtime) contextInput() (contextmanager.Input, error) {
-	in := rt.System
-	in.Deferred = rt.deferred
-	system, err := rt.Role.System(in)
+	system, err := rt.role.System(role.Input{
+		Name: rt.Config.Name, Prompt: rt.Config.Prompt, SkillsDir: rt.Config.SkillsDir,
+		SkillTokens: rt.Window.SkillBudget(), Root: rt.workspace.RootPath, Deferred: rt.deferred,
+	})
 	if err != nil {
 		return contextmanager.Input{}, fmt.Errorf("runtime: %w", err)
 	}
-	return contextmanager.Input{Items: slices.Concat(rt.History, rt.Items), System: system, Tools: role.Specs(rt.offered)}, nil
+	return contextmanager.Input{Items: slices.Concat(rt.history, rt.items), System: system, Tools: role.Specs(rt.offered)}, nil
 }
 
 func (rt *Runtime) respond(ctx context.Context, choice llm.ToolChoice) (llm.ChatResponse, error) {
@@ -119,7 +120,7 @@ func (rt *Runtime) compact(ctx context.Context) (err error) {
 	}
 	span.SetAttributes(attribute.Int("ollupi.context.estimated_tokens", prompt.Stats.EstimatedTokens))
 	it, err := rt.record(db.ItemRow{
-		ID: uuid.NewString(), TurnID: rt.Turn.ID, Type: db.ItemContextCompaction, Status: db.ItemInProgress, StartedAt: time.Now().UTC(),
+		ID: uuid.NewString(), TurnID: rt.turn.ID, Type: db.ItemContextCompaction, Status: db.ItemInProgress, StartedAt: time.Now().UTC(),
 		ResponseID: uuid.NewString(), ContextStats: &prompt.Stats,
 	})
 	if err != nil {
@@ -151,7 +152,7 @@ func (rt *Runtime) compact(ctx context.Context) (err error) {
 }
 
 func (rt *Runtime) send(ctx context.Context, prompt contextmanager.Prompt, choice llm.ToolChoice, onDelta func(llm.Delta)) (llm.ChatResponse, error) {
-	settings, err := rt.Host.Settings()
+	settings, err := rt.DB.Settings(rt.thread.UserID)
 	if err != nil {
 		return llm.ChatResponse{}, fmt.Errorf("runtime: read the redaction setting: %w", err)
 	}
@@ -172,9 +173,9 @@ func (rt *Runtime) send(ctx context.Context, prompt contextmanager.Prompt, choic
 		}
 		messages = append(messages, message)
 	}
-	ctx, span := tracer.Start(ctx, "chat "+rt.Turn.Model.Name, trace.WithSpanKind(trace.SpanKindClient), trace.WithAttributes(
-		attribute.String("gen_ai.operation.name", "chat"), attribute.String("gen_ai.request.model", rt.Turn.Model.Name),
-		attribute.String("ollupi.connection", rt.Turn.Model.Connection), attribute.Int("ollupi.llm.estimated_input_tokens", prompt.Stats.CalibratedTokens)))
+	ctx, span := tracer.Start(ctx, "chat "+rt.turn.Model.Name, trace.WithSpanKind(trace.SpanKindClient), trace.WithAttributes(
+		attribute.String("gen_ai.operation.name", "chat"), attribute.String("gen_ai.request.model", rt.turn.Model.Name),
+		attribute.String("ollupi.connection", rt.turn.Model.Connection), attribute.Int("ollupi.llm.estimated_input_tokens", prompt.Stats.CalibratedTokens)))
 	defer span.End()
 	started, answering := time.Now(), false
 	content, reasoning := rt.redactor.Stream(), rt.redactor.Stream()
@@ -189,7 +190,7 @@ func (rt *Runtime) send(ctx context.Context, prompt contextmanager.Prompt, choic
 		}
 	}
 	resp, err := rt.LLM.Chat(ctx, llm.ChatRequest{
-		Model:    rt.Turn.Model,
+		Model:    rt.turn.Model,
 		Messages: messages, Tools: role.Specs(rt.offered), ToolChoice: choice,
 		InputTokens: prompt.Stats.CalibratedTokens,
 	}, restored)
@@ -221,7 +222,10 @@ func (rt *Runtime) loadParts(ctx context.Context, parts []llm.ContentPart, mask 
 	}
 	out := slices.Clone(parts)
 	for i, p := range out {
-		data, err := rt.Host.Attachment(ctx, p.Path)
+		if rt.Attachments == nil {
+			return nil, fmt.Errorf("runtime: the conversation has attachments, but this agent keeps none")
+		}
+		data, err := rt.Attachments.Get(ctx, p.Path)
 		if err != nil {
 			return nil, fmt.Errorf("runtime: attachment %s: %w", p.Name, err)
 		}
@@ -236,7 +240,7 @@ func (rt *Runtime) loadParts(ctx context.Context, parts []llm.ContentPart, mask 
 
 // logModelCall records one model request: its model, duration, tokens and how it ended, never its text.
 func (rt *Runtime) logModelCall(ctx context.Context, msg string, started time.Time, resp llm.ChatResponse, err error) {
-	attrs := []any{"thread", rt.Thread.ID, "turn", rt.Turn.ID, "model", rt.Turn.Model.Name, "ms", time.Since(started).Milliseconds()}
+	attrs := []any{"thread", rt.thread.ID, "turn", rt.turn.ID, "model", rt.turn.Model.Name, "ms", time.Since(started).Milliseconds()}
 	if err != nil {
 		slog.WarnContext(ctx, msg+" failed", append(attrs, "err", err)...)
 		return
@@ -257,7 +261,7 @@ func responseUsage(resp llm.ChatResponse) *db.Usage {
 
 func (rt *Runtime) modelCalls() int {
 	seen := map[string]bool{}
-	for _, it := range rt.Items {
+	for _, it := range rt.items {
 		if it.ResponseID != "" && it.Type != db.ItemContextCompaction {
 			seen[it.ResponseID] = true
 		}
@@ -267,7 +271,7 @@ func (rt *Runtime) modelCalls() int {
 
 func (rt *Runtime) callItem(responseID string, call llm.ToolCall) db.ItemRow {
 	it := db.ItemRow{
-		ID: uuid.NewString(), TurnID: rt.Turn.ID, Type: db.ItemToolCall, Status: db.ItemPending,
+		ID: uuid.NewString(), TurnID: rt.turn.ID, Type: db.ItemToolCall, Status: db.ItemPending,
 		ResponseID: responseID, CallID: call.ID, Tool: call.Name, Arguments: call.Arguments, StartedAt: time.Now().UTC(),
 	}
 	if d, ok := rt.tool(call.Name); ok {

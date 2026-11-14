@@ -39,7 +39,7 @@ func (r *responseRecorder) add(target **db.ItemRow, text *strings.Builder, kind 
 	}
 	if *target == nil {
 		started, err := r.rt.record(db.ItemRow{
-			ID: uuid.NewString(), TurnID: r.rt.Turn.ID, Type: kind, Status: db.ItemInProgress,
+			ID: uuid.NewString(), TurnID: r.rt.turn.ID, Type: kind, Status: db.ItemInProgress,
 			ResponseID: r.id, StartedAt: time.Now().UTC(),
 		})
 		if err != nil {
@@ -73,7 +73,7 @@ func (r *responseRecorder) finish(resp llm.ChatResponse) error {
 		now := time.Now().UTC()
 		it := part.item
 		if it == nil {
-			it = &db.ItemRow{ID: uuid.NewString(), TurnID: r.rt.Turn.ID, Type: part.kind, ResponseID: r.id, StartedAt: now}
+			it = &db.ItemRow{ID: uuid.NewString(), TurnID: r.rt.turn.ID, Type: part.kind, ResponseID: r.id, StartedAt: now}
 		}
 		it.Text, it.Status, it.CompletedAt = part.text, db.ItemCompleted, &now
 		r.carry(it, resp.Message.Native)
@@ -98,7 +98,7 @@ func (r *responseRecorder) fail(cause error) error {
 	if r.reasoning == nil && r.agent == nil {
 		now := time.Now().UTC()
 		it := db.ItemRow{
-			ID: uuid.NewString(), TurnID: r.rt.Turn.ID, Type: db.ItemError, Status: db.ItemFailed,
+			ID: uuid.NewString(), TurnID: r.rt.turn.ID, Type: db.ItemError, Status: db.ItemFailed,
 			ResponseID: r.id, Text: cause.Error(), Error: cause.Error(), StartedAt: now, CompletedAt: &now,
 		}
 		r.carry(&it, nil)

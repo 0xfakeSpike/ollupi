@@ -25,7 +25,7 @@ type job struct {
 func (rt *Runtime) planCalls(ctx context.Context) ([]callAction, error) {
 	var plan []callAction
 	halt := ""
-	for _, it := range rt.Items {
+	for _, it := range rt.items {
 		if !it.IsCall() || it.Status != db.ItemPending {
 			continue
 		}
@@ -122,7 +122,7 @@ func (rt *Runtime) handleCall(ctx context.Context, it db.ItemRow) (string, bool,
 		annotations = *it.Annotations
 	}
 	call := permission.Call{Tool: it.Tool, Annotations: annotations, Content: content, HasContent: hasContent, Prepared: it.PreparedExecution}
-	decision := rt.Permissions.Decide(call, slices.Concat(rt.History, rt.Items))
+	decision := rt.permissions.Decide(call, slices.Concat(rt.history, rt.items))
 	if decision.Verdict == permission.Deny {
 		h, err := rt.refuse(it, decision.Reason)
 		return h, false, nil, err
@@ -135,7 +135,7 @@ func (rt *Runtime) handleCall(ctx context.Context, it db.ItemRow) (string, bool,
 		if _, err := rt.record(it); err != nil {
 			return "", false, nil, err
 		}
-		slog.Info("approval requested", "thread", rt.Thread.ID, "turn", rt.Turn.ID, "item", it.ID, "tool", it.Tool)
+		slog.Info("approval requested", "thread", rt.thread.ID, "turn", rt.turn.ID, "item", it.ID, "tool", it.Tool)
 		return "", true, nil, nil
 	}
 	return "", false, &job{it: it, args: args, background: background}, nil
@@ -205,7 +205,7 @@ func callArguments(it db.ItemRow) (map[string]any, error) {
 
 func (rt *Runtime) toolCalls() int {
 	n := 0
-	for _, it := range rt.Items {
+	for _, it := range rt.items {
 		if !it.IsCall() {
 			continue
 		}
@@ -219,7 +219,7 @@ func (rt *Runtime) toolCalls() int {
 
 func (rt *Runtime) consecutiveFailures() int {
 	n := 0
-	items := rt.Items
+	items := rt.items
 	for i := len(items) - 1; i >= 0; i-- {
 		if !items[i].IsCall() || items[i].Status == db.ItemPending || items[i].Status == db.ItemInProgress {
 			continue
