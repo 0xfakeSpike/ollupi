@@ -101,7 +101,7 @@ func TestACallIsInspectedBeforeItRuns(t *testing.T) {
 	}
 	s.Inspections["c"] = Inspection{}
 	calls, ok := next(t, s).(Calls)
-	if !ok || len(calls.Records) != 0 || len(calls.Run) != 1 || calls.Run[0].it.ID != "c" {
+	if !ok || len(calls.Records) != 0 || len(calls.Run) != 1 || calls.Run[0].Item.ID != "c" {
 		t.Fatalf("once inspected: %#v", calls)
 	}
 }

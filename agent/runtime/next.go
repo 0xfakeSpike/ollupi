@@ -67,7 +67,7 @@ type Inspect struct {
 // Calls records what was decided on pending calls, then runs the calls of Run at the same time.
 type Calls struct {
 	Records  []repo.ItemRow
-	Run      []job
+	Run      []Job
 	Deferred []tools.ToolDescriptor
 }
 
@@ -77,7 +77,7 @@ type Stop struct{ Notice repo.ItemRow }
 // Compact summarizes the conversation with Prompt.
 type Compact struct {
 	Prompt contextmanager.Prompt
-	Offer  offer
+	Offer  Offer
 }
 
 // CallModel sends Prompt, which was built from the items up to Seq Prompted. Stopped is why tool use stopped, when
@@ -85,7 +85,7 @@ type Compact struct {
 type CallModel struct {
 	Prompt   contextmanager.Prompt
 	Choice   llm.ToolChoice
-	Offer    offer
+	Offer    Offer
 	Prompted int
 	Stopped  string
 }
@@ -114,7 +114,7 @@ func Next(s State) (Step, error) {
 		return *inspect, nil
 	}
 	if len(plan.records) > 0 || len(plan.run) > 0 {
-		return Calls{Records: plan.records, Run: plan.firstRun(), Deferred: of.deferred}, nil
+		return Calls{Records: plan.records, Run: plan.firstRun(), Deferred: of.Deferred}, nil
 	}
 	if waiting(s.Items) {
 		return Wait{}, nil
@@ -127,7 +127,7 @@ func Next(s State) (Step, error) {
 
 // ask is the model request that comes next, or the end of the run when the latest response is the final answer and
 // nothing came since it was asked for.
-func (s State) ask(of offer) (Step, error) {
+func (s State) ask(of Offer) (Step, error) {
 	response, stop := lastIndex(s.Items, isResponse), lastIndex(s.Items, isStopNotice)
 	choice, stopped := llm.ToolChoiceAuto, ""
 	switch {
@@ -171,32 +171,32 @@ func (s State) stop(reason string) Stop {
 	}}
 }
 
-// An offer is the role's split of the tools the run may use, as the run's items and permissions are at one point: the
+// An Offer is the role's split of the tools the run may use, as the run's items and permissions are at one point: the
 // ones sent to the model, and the deferred ones it has to load first.
-type offer struct {
-	offered, deferred []tools.ToolDescriptor
+type Offer struct {
+	Offered, Deferred []tools.ToolDescriptor
 }
 
-func (s State) offer() offer {
+func (s State) offer() Offer {
 	offered, deferred := s.Role.Offer(s.Permissions.Tools(), s.Window, slices.Concat(s.History, s.Items))
-	return offer{offered: offered, deferred: deferred}
+	return Offer{Offered: offered, Deferred: deferred}
 }
 
-func (o offer) tool(name string) (tools.ToolDescriptor, bool) {
-	i := slices.IndexFunc(o.offered, func(d tools.ToolDescriptor) bool { return d.Name == name })
+func (o Offer) Tool(name string) (tools.ToolDescriptor, bool) {
+	i := slices.IndexFunc(o.Offered, func(d tools.ToolDescriptor) bool { return d.Name == name })
 	if i < 0 {
 		return tools.ToolDescriptor{}, false
 	}
-	return o.offered[i], true
+	return o.Offered[i], true
 }
 
-func (s State) contextInput(of offer) contextmanager.Input {
+func (s State) contextInput(of Offer) contextmanager.Input {
 	return contextmanager.Input{
 		Items: slices.Concat(s.History, s.Items),
 		System: s.Role.System(role.Input{
-			Agent: s.Prompt, Root: s.Root, Skills: s.Skills, SkillTokens: s.Window.SkillBudget(), Deferred: of.deferred,
+			Agent: s.Prompt, Root: s.Root, Skills: s.Skills, SkillTokens: s.Window.SkillBudget(), Deferred: of.Deferred,
 		}),
-		Tools: role.Specs(of.offered),
+		Tools: role.Specs(of.Offered),
 	}
 }
 
