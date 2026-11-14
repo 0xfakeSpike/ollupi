@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	toolReadOutput = "read_tool_output"
+	ToolReadOutput = "read_tool_output"
 
 	defaultReadRunes = 8000
 	maxReadRunes     = 20000
@@ -28,7 +28,7 @@ func (*Outputs) Name() (string, string) {
 
 func (*Outputs) ToolList(context.Context) ([]*tools.Spec, error) {
 	return []*tools.Spec{{
-		Name: toolReadOutput,
+		Name: ToolReadOutput,
 		Description: "Reads characters of a tool output that the conversation shows shortened. " +
 			"A shortened output names its output_id and the offset of the omitted characters; read only the part you need.",
 		InputSchema: map[string]any{

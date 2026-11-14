@@ -10,6 +10,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/0xfakeSpike/ollupi/tools/subagent"
 	"github.com/0xfakeSpike/ollupi/tools/workspace"
 )
 
@@ -80,5 +81,18 @@ func TestOfferKeepsOnlyTheCoreToolsForASmallInput(t *testing.T) {
 	without := visible[:4]
 	if offered, deferred := Offer(without, small, nil); len(offered) != 4 || deferred != nil {
 		t.Errorf("without load_tools: offered %q, deferred %q; want everything offered", names(offered), names(deferred))
+	}
+}
+
+func TestOfferHidesTheBrowserSubagentWithoutABrowser(t *testing.T) {
+	visible := []tools.ToolDescriptor{tool(subagent.Tool, "launch"), tool(subagent.BrowserTool, "launch")}
+	if offered, _ := Offer(visible, window, nil); !slices.Equal(names(offered), []string{subagent.Tool}) {
+		t.Errorf("without a browser: offered %q", names(offered))
+	}
+	page := tool("navigate", "open")
+	page.Provider = subagent.BrowserProvider
+	visible = append(visible, page)
+	if offered, _ := Offer(visible, window, nil); !slices.Contains(names(offered), subagent.BrowserTool) {
+		t.Errorf("with a browser: offered %q", names(offered))
 	}
 }

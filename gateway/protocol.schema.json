@@ -3590,6 +3590,11 @@
         "$ref": "#/$defs/SubagentCall"
       }
     },
+    "BrowserAgent": {
+      "arguments": {
+        "$ref": "#/$defs/SubagentCall"
+      }
+    },
     "edit_file": {
       "output": {
         "$ref": "#/$defs/FileOutput"
