@@ -20,33 +20,31 @@ const ToolCancelBackground = "cancel_background"
 
 // startBackground starts a call of the thread in the background and returns at once with what the model is told: the
 // call's id, under which its result comes back when it ends.
-func (a *Agent) startBackground(t repo.ThreadRow, caller tools.Caller, registry *tools.Registry) func(repo.ItemRow, map[string]any) tools.Result {
-	return func(it repo.ItemRow, args map[string]any) tools.Result {
-		raw, err := json.Marshal(args)
-		if err != nil {
-			return tools.Result{Err: fmt.Errorf("encode the arguments: %w", err)}.For(it.Tool)
-		}
-		call := repo.BackgroundCallRow{ID: uuid.NewString(), ThreadID: t.ID, ItemID: it.ID, Tool: it.Tool, Arguments: string(raw), StartedAt: time.Now()}
-		if err := a.cfg.DB.StartBackgroundCall(t.UserID, call, a.cfg.BackgroundCalls); err != nil {
-			return tools.Result{Err: err}.For(it.Tool)
-		}
-		limit := fmt.Errorf("the background call reached its time limit of %s", a.cfg.BackgroundLimit)
-		ctx, cancel := context.WithTimeoutCause(tools.WithCaller(a.ctx, caller), a.cfg.BackgroundLimit, limit)
-		a.backgroundMu.Lock()
-		a.backgroundCancels[call.ID] = cancel
-		a.backgroundMu.Unlock()
-		a.done.Add(1)
-		go func() {
-			defer a.done.Done()
-			defer a.forgetBackground(call.ID)
-			slog.Info("background call started", "thread", t.ID, "item", it.ID, "background", call.ID, "tool", it.Tool)
-			a.endBackground(ctx, call, limit, registry.InvokePrepared(ctx, it.Tool, args, it.PreparedExecution))
-		}()
-		return tools.Result{Output: map[string]any{
-			"background": call.ID, "status": string(repo.BackgroundRunning),
-			"note": "It runs in the background; its result comes back to this conversation when it ends.",
-		}}
+func (a *Agent) startBackground(t repo.ThreadRow, caller tools.Caller, registry *tools.Registry, it repo.ItemRow, args map[string]any) tools.Result {
+	raw, err := json.Marshal(args)
+	if err != nil {
+		return tools.Result{Err: fmt.Errorf("encode the arguments: %w", err)}.For(it.Tool)
 	}
+	call := repo.BackgroundCallRow{ID: uuid.NewString(), ThreadID: t.ID, ItemID: it.ID, Tool: it.Tool, Arguments: string(raw), StartedAt: time.Now()}
+	if err := a.cfg.DB.StartBackgroundCall(t.UserID, call, a.cfg.BackgroundCalls); err != nil {
+		return tools.Result{Err: err}.For(it.Tool)
+	}
+	limit := fmt.Errorf("the background call reached its time limit of %s", a.cfg.BackgroundLimit)
+	ctx, cancel := context.WithTimeoutCause(tools.WithCaller(a.ctx, caller), a.cfg.BackgroundLimit, limit)
+	a.backgroundMu.Lock()
+	a.backgroundCancels[call.ID] = cancel
+	a.backgroundMu.Unlock()
+	a.done.Add(1)
+	go func() {
+		defer a.done.Done()
+		defer a.forgetBackground(call.ID)
+		slog.Info("background call started", "thread", t.ID, "item", it.ID, "background", call.ID, "tool", it.Tool)
+		a.endBackground(ctx, call, limit, registry.InvokePrepared(ctx, it.Tool, args, it.PreparedExecution))
+	}()
+	return tools.Result{Output: map[string]any{
+		"background": call.ID, "status": string(repo.BackgroundRunning),
+		"note": "It runs in the background; its result comes back to this conversation when it ends.",
+	}}
 }
 
 func (a *Agent) endBackground(ctx context.Context, call repo.BackgroundCallRow, limit error, result tools.Result) {

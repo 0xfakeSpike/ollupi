@@ -7,11 +7,8 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
-	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/role"
-	"github.com/0xfakeSpike/ollupi/agent/skills"
-	"github.com/0xfakeSpike/ollupi/pkg/blobs"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/redact"
 	"github.com/0xfakeSpike/ollupi/repo"
@@ -32,9 +29,8 @@ const (
 type Runtime struct {
 	LLM      llm.Client
 	Registry *tools.Registry
-	Skills   *skills.Catalog
 	Window   *contextmanager.Manager
-	Memory   *memory.Manager
+	Host     Host
 
 	Turn   repo.TurnRow
 	Caller tools.Caller
@@ -44,15 +40,6 @@ type Runtime struct {
 	Permissions *permission.Checker
 	History     []repo.ItemRow
 	Items       []repo.ItemRow
-	Record      func(repo.ItemRow) (repo.ItemRow, error)
-	Delta       func(repo.ItemRow, string)
-	Reload      func() ([]repo.ItemRow, *permission.Checker, error)
-	Settings    func() (repo.SettingsRow, error)
-
-	Attachments blobs.Store
-	// Background starts a call that asked for it in the background and returns at once with what the model is told.
-	// Without it such a call runs in the foreground.
-	Background func(it repo.ItemRow, args map[string]any) tools.Result
 
 	offered  []tools.ToolDescriptor
 	deferred []tools.ToolDescriptor
@@ -74,19 +61,15 @@ func (rt *Runtime) start() error {
 	if rt.waiting() {
 		return fmt.Errorf("runtime: turn %s still waits for an answer", rt.Turn.ID)
 	}
-	settings, err := rt.Settings()
+	settings, err := rt.Host.Settings()
 	if err != nil {
 		return fmt.Errorf("runtime: read the settings: %w", err)
 	}
 	rt.redactor = redact.New(settings.RedactionKey)
-	var catalog []skills.Skill
-	if rt.Skills != nil {
-		catalog = rt.Skills.All()
-	}
 	rt.offer(rt.Permissions)
 	rt.system = rt.Role.System(role.Input{
 		Agent: rt.Prompt, Root: rt.Caller.Root,
-		Skills: catalog, SkillTokens: rt.Window.SkillBudget(), Deferred: rt.deferred,
+		Skills: rt.Host.Skills(), SkillTokens: rt.Window.SkillBudget(), Deferred: rt.deferred,
 	})
 	if !rt.Role.Memory || hasSnapshot(slices.Concat(rt.History, rt.Items)) {
 		return nil
@@ -107,10 +90,7 @@ func hasSnapshot(items []repo.ItemRow) bool {
 }
 
 func (rt *Runtime) loadMemory() error {
-	if rt.Memory == nil {
-		return nil
-	}
-	snapshot, err := rt.Memory.Snapshot(rt.Caller.UserID, rt.Caller.WorkspaceID, rt.Window.MemoryBudget())
+	snapshot, err := rt.Host.Memory(rt.Window.MemoryBudget())
 	if err != nil {
 		return fmt.Errorf("runtime: load memory: %w", err)
 	}
@@ -164,7 +144,7 @@ func (rt *Runtime) run(ctx context.Context) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		items, permissions, err := rt.Reload()
+		items, permissions, err := rt.Host.Reload()
 		if err != nil {
 			return false, fmt.Errorf("runtime: reload the turn: %w", err)
 		}
@@ -201,7 +181,7 @@ func (rt *Runtime) finish(ctx context.Context, reason string) error {
 }
 
 func (rt *Runtime) record(it repo.ItemRow) (repo.ItemRow, error) {
-	stored, err := rt.Record(it)
+	stored, err := rt.Host.Record(it)
 	if err != nil {
 		return repo.ItemRow{}, fmt.Errorf("runtime: record %s item: %w", it.Type, err)
 	}

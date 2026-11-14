@@ -49,7 +49,7 @@ func (r *responseRecorder) add(target **repo.ItemRow, text *strings.Builder, kin
 		*target = &started
 	}
 	text.WriteString(content)
-	r.rt.Delta(**target, content)
+	r.rt.Host.Delta(**target, content)
 }
 
 type responsePart struct {
