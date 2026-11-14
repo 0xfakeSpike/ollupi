@@ -21,9 +21,9 @@ import (
 // contextInput is what the next request is built from: the run's items, the role's system prompt and the offered
 // tools, as they are now.
 func (rt *Runtime) contextInput() (contextmanager.Input, error) {
-	system, err := rt.Role.System(role.Input{
-		Root: rt.Workspace.RootPath, SkillTokens: rt.Window.SkillBudget(), Deferred: rt.deferred,
-	})
+	in := rt.System
+	in.Deferred = rt.deferred
+	system, err := rt.Role.System(in)
 	if err != nil {
 		return contextmanager.Input{}, fmt.Errorf("runtime: %w", err)
 	}

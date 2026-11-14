@@ -10,33 +10,22 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
-// A Deployment is what every system prompt of a deployment takes from its configuration: the agent's name and the
-// operator's prompt for it, and where the roles' skills are installed.
-type Deployment struct {
-	Name, Prompt string
-	// SkillsDir is where the skills of each role are installed; a role lists its own.
-	SkillsDir string
-}
-
-// Deployed is the role as the deployment configures it: its system prompt names the deployment's agent and lists the
-// skills installed for the role there.
-func (r Role) Deployed(d Deployment) Role {
-	r.deployment = d
-	return r
-}
-
-// Input is what a run's system prompt is written from besides the role and its deployment.
+// Input is what a role's system prompt is written from: the agent's name and the operator's prompt for it, where the
+// skills of each role are installed, and what the run adds.
 type Input struct {
-	Root        string
+	Name, Prompt string
+	// SkillsDir is where the skills of each role are installed; the role lists its own, within SkillTokens.
+	SkillsDir   string
 	SkillTokens int
+	Root        string
 	Deferred    []tools.ToolDescriptor
 }
 
-// System writes the role's system prompt, listing the skills its deployment installed for it.
+// System writes the role's system prompt, listing the skills installed for it in SkillsDir.
 func (r Role) System(in Input) (string, error) {
 	listed := ""
-	if r.deployment.SkillsDir != "" {
-		own, err := skills.Load(r.deployment.SkillsDir, string(r.Name))
+	if in.SkillsDir != "" {
+		own, err := skills.Load(in.SkillsDir, string(r.Name))
 		if err != nil {
 			return "", fmt.Errorf("role: the skills of %s: %w", r.Name, err)
 		}
@@ -45,7 +34,7 @@ func (r Role) System(in Input) (string, error) {
 	if !r.Persona {
 		return strings.Join(slices.DeleteFunc([]string{r.Rules, listed}, func(s string) bool { return s == "" }), "\n\n"), nil
 	}
-	parts := []string{strings.TrimSpace(agentPrompt(r.deployment.Name, r.deployment.Prompt)), r.Rules}
+	parts := []string{strings.TrimSpace(agentPrompt(in.Name, in.Prompt)), r.Rules}
 	if listed != "" {
 		parts = append(parts, listed)
 	}

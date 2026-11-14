@@ -29,8 +29,6 @@ type Role struct {
 	send func(visible []tools.ToolDescriptor, window *contextmanager.Manager) (sent, deferred []tools.ToolDescriptor)
 	// Memory loads the user's memory into the run.
 	Memory bool
-	// deployment is what the deployment configures for the role; see Deployed.
-	deployment Deployment
 }
 
 // all are the roles.
