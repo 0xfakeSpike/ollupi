@@ -47,6 +47,15 @@ type Layer struct {
 	Settings Settings
 	// Shared settings serve users with different tools, so they may name tools this user lacks.
 	Shared bool
+	// Providers, when set, are the only providers whose tools the layer leaves visible.
+	Providers []string
+	// Without are the providers whose tools the layer takes away.
+	Without []string
+}
+
+// Keeps says whether the layer leaves d visible.
+func (l Layer) Keeps(d tools.ToolDescriptor) bool {
+	return (l.Providers == nil || slices.Contains(l.Providers, d.Provider)) && !slices.Contains(l.Without, d.Provider)
 }
 
 func New(layers []Layer, allowlist []string, registry *tools.Registry) (*Checker, error) {
@@ -77,7 +86,8 @@ func New(layers []Layer, allowlist []string, registry *tools.Registry) (*Checker
 		}
 	}
 	visible := slices.DeleteFunc(registry.Descriptors(), func(d tools.ToolDescriptor) bool {
-		return (allowlist != nil && !slices.Contains(allowlist, d.Name)) || set.removes(d.Name)
+		return (allowlist != nil && !slices.Contains(allowlist, d.Name)) || set.removes(d.Name) ||
+			slices.ContainsFunc(layers, func(l Layer) bool { return !l.Keeps(d) })
 	})
 	return &Checker{policy: policy, rules: set, tools: visible}, nil
 }

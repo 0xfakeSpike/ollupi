@@ -9,23 +9,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
-	"github.com/0xfakeSpike/ollupi/tools/cron"
 )
-
-// Offers says whether the role is offered d. Every role keeps read_tool_output, which a shortened output points at. A
-// subagent cannot launch another or schedule tasks, which would come back to its thread after it reported. The rest is
-// the role's own choice.
-func (r Role) Offers(d tools.ToolDescriptor) bool {
-	if d.Name == contextmanager.ToolReadOutput {
-		return true
-	}
-	if r.Launcher != nil {
-		if _, launches := Launched(d.Name); launches || d.Provider == cron.ProviderName {
-			return false
-		}
-	}
-	return r.offers(d)
-}
 
 // Offer splits the visible tools into the ones sent to the model and the ones only named in DEFERRED TOOLS, as the
 // role sends them. The ones a load_tools call loaded follow the others in load order, so the tool list only grows.
@@ -40,18 +24,16 @@ func (r Role) Offer(visible []tools.ToolDescriptor, window *contextmanager.Manag
 	return offered, deferred
 }
 
-// launchable leaves out the launcher of a subagent role that is offered none of the visible tools: its subagent would
-// have nothing to work with.
+// launchable leaves out the launcher of a subagent role whose permission keeps none of the visible tools: its subagent
+// would have nothing to work with.
 func launchable(visible []tools.ToolDescriptor) []tools.ToolDescriptor {
 	return slices.DeleteFunc(slices.Clone(visible), func(d tools.ToolDescriptor) bool {
 		r, ok := Launched(d.Name)
 		return ok && !slices.ContainsFunc(visible, func(t tools.ToolDescriptor) bool {
-			return t.Name != contextmanager.ToolReadOutput && r.Offers(t)
+			return t.Provider != contextmanager.OutputsProvider && r.Permission.Keeps(t)
 		})
 	})
 }
-
-func anyTool(tools.ToolDescriptor) bool { return true }
 
 func external(d tools.ToolDescriptor) bool { return strings.Contains(d.Name, tools.ProviderSeparator) }
 

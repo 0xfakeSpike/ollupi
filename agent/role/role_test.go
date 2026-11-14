@@ -30,34 +30,33 @@ func TestASmallInputGetsTheCompactMainAgent(t *testing.T) {
 	}
 }
 
-func TestEachRoleIsOfferedItsTools(t *testing.T) {
-	shell := tools.ToolDescriptor{Name: "run_command"}
+func TestEachRolesPermissionKeepsItsTools(t *testing.T) {
+	shell := tools.ToolDescriptor{Provider: "workspace", Name: "run_command"}
 	page := tools.ToolDescriptor{Provider: BrowserProvider, Name: "navigate"}
 	job := tools.ToolDescriptor{Provider: cron.ProviderName, Name: cron.ToolCreateJob}
-	launchers := []tools.ToolDescriptor{{Name: GeneralSubTool}, {Name: BrowserSubTool}}
+	output := tools.ToolDescriptor{Provider: contextmanager.OutputsProvider, Name: contextmanager.ToolReadOutput}
+	launchers := []tools.ToolDescriptor{{Provider: LaunchersProvider, Name: GeneralSubTool}, {Provider: LaunchersProvider, Name: BrowserSubTool}}
 	for _, r := range all {
 		main := r.Launcher == nil
 		for _, l := range launchers {
-			if r.Offers(l) != main {
-				t.Errorf("%s offered %s: %v", r.Name, l.Name, r.Offers(l))
+			if r.Permission.Keeps(l) != main {
+				t.Errorf("%s keeps %s: %v", r.Name, l.Name, r.Permission.Keeps(l))
 			}
 		}
-		if r.Offers(job) != main {
-			t.Errorf("%s offered a scheduled-task tool: %v", r.Name, r.Offers(job))
+		if r.Permission.Keeps(job) != main {
+			t.Errorf("%s keeps a scheduled-task tool: %v", r.Name, r.Permission.Keeps(job))
+		}
+		if !r.Permission.Keeps(output) {
+			t.Errorf("%s cannot read a shortened output", r.Name)
 		}
 	}
 	general, _ := Of(GeneralSub)
 	browser, _ := Of(BrowserSub)
-	if !general.Offers(shell) || !general.Offers(page) {
+	if !general.Permission.Keeps(shell) || !general.Permission.Keeps(page) {
 		t.Error("the general subagent lacks a tool of its parent")
 	}
-	if browser.Offers(shell) || !browser.Offers(page) {
-		t.Error("the browser subagent is offered other than the browser's tools")
-	}
-	for _, r := range all {
-		if !r.Offers(tools.ToolDescriptor{Name: contextmanager.ToolReadOutput}) {
-			t.Errorf("%s cannot read a shortened output", r.Name)
-		}
+	if browser.Permission.Keeps(shell) || !browser.Permission.Keeps(page) {
+		t.Error("the browser subagent keeps other than the browser's tools")
 	}
 }
 

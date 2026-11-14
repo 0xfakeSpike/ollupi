@@ -31,7 +31,10 @@ func Decode(raw json.RawMessage) (Call, error) {
 // Launchers provides the tools that launch the subagent roles.
 type Launchers struct{}
 
-func (Launchers) Name() (string, string) { return "subagents", "Launches subagents." }
+// LaunchersProvider is the provider of the launchers.
+const LaunchersProvider = "subagents"
+
+func (Launchers) Name() (string, string) { return LaunchersProvider, "Launches subagents." }
 
 const launching = "It knows nothing of this conversation: put everything it needs in prompt, including what its report must contain. " +
 	"The turn waits until every subagent launched in the response has reported, and each call returns that subagent's final report. Subagents cannot launch subagents."

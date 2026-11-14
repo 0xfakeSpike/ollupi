@@ -45,13 +45,17 @@ func (o *Orchestrator) permissions(t repo.ThreadRow, r role.Role) (*permission.C
 	if err != nil {
 		return nil, repo.WorkspaceRow{}, err
 	}
-	allowlist := []string{}
-	for _, d := range registry.Descriptors() {
-		if r.Offers(d) && (o.cfg.Tools == nil || slices.Contains(o.cfg.Tools, d.Name)) {
-			allowlist = append(allowlist, d.Name)
+	var allowlist []string
+	if o.cfg.Tools != nil {
+		allowlist = []string{}
+		for _, d := range registry.Descriptors() {
+			if slices.Contains(o.cfg.Tools, d.Name) {
+				allowlist = append(allowlist, d.Name)
+			}
 		}
 	}
-	checker, err := permission.New(layers, allowlist, registry)
+	// The role's layer comes first, so that the user's settings decide over it.
+	checker, err := permission.New(append([]permission.Layer{r.Permission}, layers...), allowlist, registry)
 	if err != nil {
 		return nil, repo.WorkspaceRow{}, err
 	}
