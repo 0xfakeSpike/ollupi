@@ -16,10 +16,10 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
+	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
-	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
 
 // mixTurn is one turn of the mix: its kind, its conversation, when it was submitted, its first model request
@@ -54,7 +54,7 @@ func mix(args []string) {
 			kind, id, _ := strings.Cut(ask, "#")
 			switch {
 			case kind == "delegate" && answered == 0:
-				return subagent.Tool, fmt.Sprintf(`{"description":"Do the work","prompt":"sub#%s"}`, id)
+				return role.GeneralSubTool, fmt.Sprintf(`{"description":"Do the work","prompt":"sub#%s"}`, id)
 			case kind != "delegate" && answered < *rounds:
 				return "bench__work", "{}"
 			}

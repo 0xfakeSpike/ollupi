@@ -6,6 +6,7 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
+	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/repo"
 )
 
@@ -32,7 +33,7 @@ func (a *Agent) workspaceFor(user string, id repo.Ref) (repo.WorkspaceRow, error
 	return w, nil
 }
 
-func (a *Agent) permissions(t repo.ThreadRow) (*permission.Checker, repo.WorkspaceRow, error) {
+func (a *Agent) permissions(t repo.ThreadRow, r role.Role) (*permission.Checker, repo.WorkspaceRow, error) {
 	w, err := a.workspaceOf(t.WorkspaceID)
 	if err != nil {
 		return nil, repo.WorkspaceRow{}, err
@@ -45,19 +46,12 @@ func (a *Agent) permissions(t repo.ThreadRow) (*permission.Checker, repo.Workspa
 	if err != nil {
 		return nil, repo.WorkspaceRow{}, err
 	}
-	kind, err := a.kind(t)
-	if err != nil {
-		return nil, repo.WorkspaceRow{}, err
-	}
-	allowlist := a.cfg.Tools
-	if kind != nil {
-		allowlist = []string{}
-		for _, d := range registry.Descriptors() {
-			// A shortened output points at read_tool_output, whatever tools the subagent has.
-			offered := d.Name == contextmanager.ToolReadOutput || kind.Offers(d)
-			if offered && (a.cfg.Tools == nil || slices.Contains(a.cfg.Tools, d.Name)) {
-				allowlist = append(allowlist, d.Name)
-			}
+	allowlist := []string{}
+	for _, d := range registry.Descriptors() {
+		// A shortened output points at read_tool_output, whatever tools the role has.
+		offered := d.Name == contextmanager.ToolReadOutput || r.Offers(d)
+		if offered && (a.cfg.Tools == nil || slices.Contains(a.cfg.Tools, d.Name)) {
+			allowlist = append(allowlist, d.Name)
 		}
 	}
 	checker, err := permission.New(layers, allowlist, registry)

@@ -3,6 +3,7 @@ package gateway
 import (
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
@@ -49,6 +50,7 @@ type TurnRow struct {
 	Seq         int               `json:"seq"`
 	Status      repo.TurnStatus   `json:"status"`
 	Model       llm.Model         `json:"model"`
+	Agent       role.Name         `json:"agent"`
 	Usage       repo.Usage        `json:"usage"`
 	Error       string            `json:"error,omitempty"`
 	CronJobID   string            `json:"cronJobId,omitempty"`
@@ -61,7 +63,7 @@ type TurnRow struct {
 
 func turnRow(t repo.TurnRow) TurnRow {
 	return TurnRow{
-		ID: t.ID, ThreadID: t.ThreadID, Seq: t.Seq, Status: t.Status, Model: t.Model, Usage: t.Usage, Error: t.Error,
+		ID: t.ID, ThreadID: t.ThreadID, Seq: t.Seq, Status: t.Status, Model: t.Model, Agent: role.Name(t.Agent), Usage: t.Usage, Error: t.Error,
 		CronJobID: t.CronJobID, CreatedAt: t.CreatedAt, StartedAt: t.StartedAt, CompletedAt: t.CompletedAt,
 		Attachments: t.Attachments, Input: t.Input,
 	}

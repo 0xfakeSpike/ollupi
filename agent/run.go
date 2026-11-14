@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/permission"
+	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/agent/runtime"
-	"github.com/0xfakeSpike/ollupi/agent/systemprompt"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"go.opentelemetry.io/otel/attribute"
@@ -84,11 +84,11 @@ func (a *Agent) runTurn(ctx context.Context, t repo.ThreadRow, turn repo.TurnRow
 	if err != nil {
 		return false, repo.Usage{}, err
 	}
-	checker, w, err := a.permissions(t)
-	if err != nil {
-		return false, repo.Usage{}, err
+	r, ok := role.Of(role.Name(turn.Agent))
+	if !ok {
+		return false, repo.Usage{}, fmt.Errorf("agent: turn %s names role %q, which is none of %q", turn.ID, turn.Agent, role.NameValues)
 	}
-	kind, err := a.kind(t)
+	checker, w, err := a.permissions(t, r)
 	if err != nil {
 		return false, repo.Usage{}, err
 	}
@@ -108,8 +108,8 @@ func (a *Agent) runTurn(ctx context.Context, t repo.ThreadRow, turn repo.TurnRow
 		Memory:      a.cfg.Memory,
 		Turn:        turn,
 		Caller:      tools.Caller{UserID: t.UserID, ThreadID: t.ID, WorkspaceID: string(t.WorkspaceID), EnvironmentID: string(t.EnvironmentID), Root: w.RootPath, Subagent: t.ParentThreadID != ""},
-		Subagent:    kind,
-		Prompt:      systemprompt.AgentPrompt(a.cfg.Name, a.cfg.Prompt),
+		Role:        r,
+		Prompt:      role.AgentPrompt(a.cfg.Name, a.cfg.Prompt),
 		Permissions: checker,
 		History:     history,
 		Items:       items,
@@ -126,7 +126,7 @@ func (a *Agent) runTurn(ctx context.Context, t repo.ThreadRow, turn repo.TurnRow
 			if err != nil {
 				return nil, nil, fmt.Errorf("agent: thread %s: %w", t.ID, err)
 			}
-			checker, _, err := a.permissions(current)
+			checker, _, err := a.permissions(current, r)
 			return items, checker, err
 		},
 		Attachments: a.cfg.Attachments,

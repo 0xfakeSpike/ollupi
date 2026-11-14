@@ -9,15 +9,13 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
-	"github.com/0xfakeSpike/ollupi/agent/profile"
+	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/agent/skills"
-	"github.com/0xfakeSpike/ollupi/agent/systemprompt"
 	"github.com/0xfakeSpike/ollupi/pkg/blobs"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/redact"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
-	"github.com/0xfakeSpike/ollupi/tools/subagent"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 )
@@ -40,8 +38,8 @@ type Runtime struct {
 
 	Turn   repo.TurnRow
 	Caller tools.Caller
-	// Subagent is the kind of subagent this thread is, nil for a top-level thread.
-	Subagent    *subagent.Kind
+	// Role is the role of agent the turn names, which the run is.
+	Role        role.Role
 	Prompt      string
 	Permissions *permission.Checker
 	History     []repo.ItemRow
@@ -53,7 +51,6 @@ type Runtime struct {
 
 	Attachments blobs.Store
 
-	profile  profile.Profile
 	offered  []tools.ToolDescriptor
 	deferred []tools.ToolDescriptor
 	system   string
@@ -83,13 +80,12 @@ func (rt *Runtime) start() error {
 	if rt.Skills != nil {
 		catalog = rt.Skills.All()
 	}
-	rt.profile = profile.For(rt.Window.InputTokens())
 	rt.offer(rt.Permissions)
-	rt.system = systemprompt.Build(systemprompt.Input{
-		Agent: rt.Prompt, Profile: rt.profile, Subagent: rt.Subagent, Root: rt.Caller.Root,
+	rt.system = rt.Role.System(role.Input{
+		Agent: rt.Prompt, Root: rt.Caller.Root,
 		Skills: catalog, SkillTokens: rt.Window.SkillBudget(), Deferred: rt.deferred,
 	})
-	if rt.Subagent != nil && !rt.Subagent.Memory || hasSnapshot(slices.Concat(rt.History, rt.Items)) {
+	if !rt.Role.Memory || hasSnapshot(slices.Concat(rt.History, rt.Items)) {
 		return nil
 	}
 	return rt.loadMemory()
@@ -134,15 +130,15 @@ func (rt *Runtime) tool(name string) (tools.ToolDescriptor, bool) {
 	return rt.offered[i], true
 }
 
-// offer splits the tools the run may use as its profile does. A kind of subagent that works with one provider is
-// hidden first while none of that provider's tools is visible: its subagent would have nothing to work with.
+// offer splits the tools the run may use as its role does. The launcher of a subagent role that works with one provider
+// is hidden first while none of that provider's tools is visible: its subagent would have nothing to work with.
 func (rt *Runtime) offer(permissions *permission.Checker) {
 	all := permissions.Tools()
 	visible := slices.DeleteFunc(slices.Clone(all), func(d tools.ToolDescriptor) bool {
-		k, ok := subagent.KindOf(d.Name)
-		return ok && k.Provider != "" && !slices.ContainsFunc(all, func(t tools.ToolDescriptor) bool { return t.Provider == k.Provider })
+		r, ok := role.Launched(d.Name)
+		return ok && r.Provider != "" && !slices.ContainsFunc(all, func(t tools.ToolDescriptor) bool { return t.Provider == r.Provider })
 	})
-	rt.offered, rt.deferred = rt.profile.Offer(visible, rt.Window, slices.Concat(rt.History, rt.Items))
+	rt.offered, rt.deferred = rt.Role.Offer(visible, rt.Window, slices.Concat(rt.History, rt.Items))
 }
 
 func (rt *Runtime) run(ctx context.Context) (bool, error) {

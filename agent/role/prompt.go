@@ -1,34 +1,31 @@
-package systemprompt
+package role
 
 import (
 	"fmt"
 	"strings"
 
-	"github.com/0xfakeSpike/ollupi/agent/profile"
 	"github.com/0xfakeSpike/ollupi/agent/skills"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/tools"
-	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
 
+// Input is what a run's system prompt is written from besides the role.
 type Input struct {
-	Agent   string
-	Profile profile.Profile
-	// Subagent is the kind of subagent this thread is, nil for a top-level thread.
-	Subagent    *subagent.Kind
+	// Agent is the agent's own prompt, AgentPrompt.
+	Agent       string
 	Root        string
 	Skills      []skills.Skill
 	SkillTokens int
 	Deferred    []tools.ToolDescriptor
 }
 
-func Build(in Input) string {
-	if in.Subagent != nil && in.Subagent.Prompt != "" {
-		return in.Subagent.Prompt
+// System writes the role's system prompt.
+func (r Role) System(in Input) string {
+	if !r.Persona {
+		return r.Rules
 	}
-	// Ordered from the most to the least stable section, so requests of other threads and subagents share the cached prefix.
-	parts := []string{strings.TrimSpace(in.Agent), in.Profile.Rules}
-	if s := listSkills(in.Skills, in.SkillTokens); s != "" && in.Profile.Skills {
+	parts := []string{strings.TrimSpace(in.Agent), r.Rules}
+	if s := listSkills(in.Skills, in.SkillTokens); s != "" && r.Skills {
 		parts = append(parts, s)
 	}
 	if len(in.Deferred) > 0 {
@@ -37,12 +34,10 @@ func Build(in Input) string {
 	if in.Root != "" {
 		parts = append(parts, "# PROJECT\nThis conversation works in the project at "+in.Root+"; commands run there unless you set work_dir.")
 	}
-	if in.Subagent != nil {
-		parts = append(parts, subagent.Report)
-	}
 	return strings.Join(parts, "\n\n")
 }
 
+// AgentPrompt is the agent's own prompt: the operator's, or one that names the agent.
 func AgentPrompt(name, prompt string) string {
 	if strings.TrimSpace(prompt) != "" {
 		return prompt

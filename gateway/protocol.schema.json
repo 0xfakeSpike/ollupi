@@ -1,6 +1,15 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$defs": {
+    "AgentRole": {
+      "type": "string",
+      "enum": [
+        "full-main-agent",
+        "compact-main-agent",
+        "general-sub-agent",
+        "browser-sub-agent"
+      ]
+    },
     "Annotations": {
       "type": "object",
       "properties": {
@@ -2668,6 +2677,9 @@
         "model": {
           "$ref": "#/$defs/Model"
         },
+        "agent": {
+          "$ref": "#/$defs/AgentRole"
+        },
         "usage": {
           "$ref": "#/$defs/Usage"
         },
@@ -2711,6 +2723,7 @@
         "seq",
         "status",
         "model",
+        "agent",
         "usage",
         "createdAt",
         "startedAt"

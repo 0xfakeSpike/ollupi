@@ -14,10 +14,10 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
+	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
-	"github.com/0xfakeSpike/ollupi/tools/subagent"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -43,7 +43,7 @@ func fanout(args []string) {
 		next: func(ask string, answered int) (string, string) {
 			switch {
 			case ask == "delegate" && answered == 0:
-				return subagent.Tool, `{"description":"Do the work","prompt":"work"}`
+				return role.GeneralSubTool, `{"description":"Do the work","prompt":"work"}`
 			case ask == "work" && answered < *rounds:
 				return "bench__work", "{}"
 			}

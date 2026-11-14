@@ -19,12 +19,12 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
+	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/agent/skills"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
 	"github.com/0xfakeSpike/ollupi/tools/plan"
-	"github.com/0xfakeSpike/ollupi/tools/subagent"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
 	"github.com/0xfakeSpike/ollupi/tools/workspace"
 	"github.com/google/jsonschema-go/jsonschema"
@@ -58,8 +58,8 @@ type toolSchemas struct {
 
 var builtinTools = map[string]struct{ arguments, output reflect.Type }{
 	plan.Tool:                {arguments: reflect.TypeFor[plan.Plan]()},
-	subagent.Tool:            {arguments: reflect.TypeFor[subagent.Call]()},
-	subagent.BrowserTool:     {arguments: reflect.TypeFor[subagent.Call]()},
+	role.GeneralSubTool:      {arguments: reflect.TypeFor[role.Call]()},
+	role.BrowserSubTool:      {arguments: reflect.TypeFor[role.Call]()},
 	userinput.Tool:           {arguments: reflect.TypeFor[userinput.Request](), output: reflect.TypeFor[userinput.Answers]()},
 	workspace.ToolRunCommand: {output: reflect.TypeFor[workspace.CommandOutput]()},
 	workspace.ToolEditFile:   {output: reflect.TypeFor[workspace.FileOutput]()},
@@ -73,7 +73,7 @@ var providers = []string{cron.ProviderName, skills.ProviderName, memory.Provider
 
 var enums = []any{
 	repo.ItemTypeValues, repo.ItemStatusValues, repo.TurnStatusValues, repo.ThreadStatusValues,
-	repo.DecisionValues, repo.MemoryRowStatusValues, repo.MemoryScopeValues, repo.MemoryFailureCodeValues, permission.PolicyValues, plan.StatusValues, tools.AwaitByValues, repo.AttachmentKindValues, repo.EnvironmentKindValues,
+	repo.DecisionValues, repo.MemoryRowStatusValues, repo.MemoryScopeValues, repo.MemoryFailureCodeValues, permission.PolicyValues, role.NameValues, plan.StatusValues, tools.AwaitByValues, repo.AttachmentKindValues, repo.EnvironmentKindValues,
 }
 
 var plainStrings = []reflect.Type{reflect.TypeFor[repo.Ref]()}
@@ -109,9 +109,10 @@ var arrays = []field{
 
 var defNames = map[reflect.Type]string{
 	reflect.TypeFor[permission.Policy]():  "ApprovalPolicy",
+	reflect.TypeFor[role.Name]():          "AgentRole",
 	reflect.TypeFor[plan.Step]():          "PlanStep",
 	reflect.TypeFor[plan.Status]():        "PlanStepStatus",
-	reflect.TypeFor[subagent.Call]():      "SubagentCall",
+	reflect.TypeFor[role.Call]():          "SubagentCall",
 	reflect.TypeFor[userinput.Request]():  "UserInputRequest",
 	reflect.TypeFor[userinput.Question](): "UserInputQuestion",
 	reflect.TypeFor[userinput.Option]():   "UserInputOption",

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
+	"github.com/0xfakeSpike/ollupi/pkg/sqlitedb"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -217,4 +218,52 @@ func diff(got, want []string) []string {
 		}
 	}
 	return out
+}
+
+func TestTurnsFromBeforeRolesTakeTheRoleOfTheirThread(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, "data", "ollupi.sqlite")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	all, err := shardSteps()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := rawDB(t, path)
+	if err := sqlitedb.Migrate(old, all[:8], 0); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 11, 1, 8, 0, 0, 0, time.UTC)
+	model := llm.Model{Name: "m", Connection: "c"}
+	create := func(rows ...any) {
+		t.Helper()
+		for _, row := range rows {
+			if err := old.Omit("Agent").Create(row).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	// The users step made the default user.
+	create(&ThreadRow{UserID: DefaultUser, ID: "main", Title: "main", CreatedAt: at, UpdatedAt: at},
+		&TurnRow{ID: "asked", ThreadID: "main", Seq: 1, Status: TurnWaitingOnAgent, Model: model, CreatedAt: at, StartedAt: at})
+	for i, tool := range []string{"Agent", "BrowserAgent"} {
+		call, child := fmt.Sprintf("call%d", i), fmt.Sprintf("child%d", i)
+		create(&ItemRow{ID: call, ThreadID: "main", TurnID: "asked", Seq: i + 1, Type: ItemToolCall, Status: ItemInProgress, Tool: tool, StartedAt: at},
+			&ThreadRow{UserID: DefaultUser, ID: child, Title: child, ParentThreadID: "main", ParentItemID: Ref(call), CreatedAt: at, UpdatedAt: at},
+			&TurnRow{ID: "of" + child, ThreadID: child, Seq: 1, Status: TurnInProgress, Model: model, CreatedAt: at, StartedAt: at})
+	}
+	closeRaw(t, old)
+
+	db, err := Open(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for id, want := range map[string]string{"asked": "full-main-agent", "ofchild0": "general-sub-agent", "ofchild1": "browser-sub-agent"} {
+		turn, err := db.Turn(id)
+		if err != nil || turn.Agent != want {
+			t.Errorf("turn %s runs as %q (%v), want %q", id, turn.Agent, err, want)
+		}
+	}
 }

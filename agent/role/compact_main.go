@@ -1,14 +1,18 @@
-package profile
+package role
 
 import (
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/workspace"
 )
 
-// Compact is for a model with a small input: shorter rules, and no skills, as their tools are deferred.
-var Compact = Profile{Rules: compactRules, Core: []string{tools.ToolLoadTools, workspace.ToolReadFile, workspace.ToolRunCommand}}
+// compactMain is the main agent for a model with a small input: shorter rules, and no skills, as their tools are
+// deferred.
+var compactMain = Role{
+	Name: CompactMain, Persona: true, Rules: compactMainRules, Memory: true,
+	Core: []string{tools.ToolLoadTools, workspace.ToolReadFile, workspace.ToolRunCommand},
+}
 
-const compactRules = `You complete the user's request by calling tools in a loop, then reply without calling a tool; that reply is the final answer.
+const compactMainRules = `You complete the user's request by calling tools in a loop, then reply without calling a tool; that reply is the final answer.
 
 # Rules
 - Tool names and arguments are exact; never invent them.

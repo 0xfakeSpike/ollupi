@@ -25,6 +25,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
+	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
@@ -33,7 +34,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools/cron"
 	"github.com/0xfakeSpike/ollupi/tools/mcp"
 	"github.com/0xfakeSpike/ollupi/tools/plan"
-	"github.com/0xfakeSpike/ollupi/tools/subagent"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
 	"github.com/0xfakeSpike/ollupi/tools/web"
 	"github.com/0xfakeSpike/ollupi/tools/workspace"
@@ -290,7 +290,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 	turn = c.startTurn(threadID, "browse this")
 	c.awaitTurnEnd(turn, repo.TurnCompleted)
 	if v, err := db.Thread(threadID); err != nil || !slices.ContainsFunc(v.Items, func(it repo.ItemRow) bool {
-		return it.Tool == subagent.BrowserTool && it.Status == repo.ItemCompleted
+		return it.Tool == role.BrowserSubTool && it.Status == repo.ItemCompleted
 	}) {
 		t.Errorf("the browser subagent did not report back (%v)", err)
 	}
@@ -300,7 +300,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 			t.Errorf("the browser subagent was sent %q, want only the browser's tools", names)
 		}
 		if strings.HasSuffix(text, "Check the thing and report.") && (len(names) == 0 || slices.ContainsFunc(names, func(name string) bool {
-			_, launches := subagent.KindOf(name)
+			_, launches := role.Launched(name)
 			return launches || strings.Contains(name, "scheduled_job")
 		})) {
 			t.Errorf("the general subagent was sent %q, want its parent's tools without subagents or scheduled tasks", names)
@@ -850,9 +850,9 @@ func (f *fakeModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case last.Role == "user" && strings.Contains(text, "ask"):
 		call(userinput.Tool, `{"questions":[{"id":"color","header":"Color","question":"Which color?"}]}`)
 	case last.Role == "user" && strings.Contains(text, "delegate"):
-		call(subagent.Tool, `{"description":"Check a thing","prompt":"Check the thing and report."}`)
+		call(role.GeneralSubTool, `{"description":"Check a thing","prompt":"Check the thing and report."}`)
 	case last.Role == "user" && strings.Contains(text, "browse"):
-		call(subagent.BrowserTool, `{"description":"Look a thing up","prompt":"Look the thing up on the web and report."}`)
+		call(role.BrowserSubTool, `{"description":"Look a thing up","prompt":"Look the thing up on the web and report."}`)
 	case last.Role == "user" && strings.Contains(text, "recall"):
 		call(memory.ToolSearch, `{"query":"answers"}`)
 	case last.Role == "user" && strings.Contains(text, "write notes"):

@@ -33,8 +33,10 @@ type TurnRow struct {
 	Seq      int        `gorm:"not null;uniqueIndex:turns_thread_seq,priority:2" json:"seq"`
 	Status   TurnStatus `gorm:"not null" json:"status"`
 	Model    llm.Model  `gorm:"not null;serializer:json;check:turns_model,json_valid(model)" json:"model"`
-	Usage    Usage      `gorm:"embedded" json:"usage"`
-	Error    string     `gorm:"not null;default:''" json:"error,omitempty"`
+	// Agent is the role of agent that runs the turn, one of role.NameValues.
+	Agent string `gorm:"not null;default:'full-main-agent'" json:"agent"`
+	Usage Usage  `gorm:"embedded" json:"usage"`
+	Error string `gorm:"not null;default:''" json:"error,omitempty"`
 	// turns_cron_job finds the turns a scheduled task sent, newest last; the others stay out of it.
 	CronJobID string `gorm:"not null;default:'';index:turns_cron_job,priority:1,where:cron_job_id <> ''" json:"cronJobId,omitempty"`
 	// CreatedAt is when the turn was submitted; StartedAt, when it became its thread's current turn.

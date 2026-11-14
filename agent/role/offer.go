@@ -1,4 +1,4 @@
-package profile
+package role
 
 import (
 	"encoding/json"
@@ -12,16 +12,16 @@ import (
 )
 
 // Offer splits the visible tools into the ones sent to the model and the ones only named in DEFERRED TOOLS. Only the
-// core tools are sent when the profile has them; otherwise tools of external providers are deferred when all visible
+// core tools are sent when the role has them; otherwise tools of external providers are deferred when all visible
 // tools would take more than the tool budget. The ones a load_tools call loaded follow the others in load order, so the
 // tool list only grows.
-func (p Profile) Offer(visible []tools.ToolDescriptor, window *contextmanager.Manager, items []repo.ItemRow) (offered, deferred []tools.ToolDescriptor) {
+func (r Role) Offer(visible []tools.ToolDescriptor, window *contextmanager.Manager, items []repo.ItemRow) (offered, deferred []tools.ToolDescriptor) {
 	external := func(d tools.ToolDescriptor) bool { return strings.Contains(d.Name, tools.ProviderSeparator) }
 	loader := func(d tools.ToolDescriptor) bool { return d.Name == tools.ToolLoadTools }
 	deferrable := func(d tools.ToolDescriptor) bool {
-		return external(d) || p.Core != nil && !slices.Contains(p.Core, d.Name)
+		return external(d) || r.Core != nil && !slices.Contains(r.Core, d.Name)
 	}
-	deferring := slices.ContainsFunc(visible, loader) && (p.Core != nil || slices.ContainsFunc(visible, external) && !window.ToolsFit(Specs(visible)))
+	deferring := slices.ContainsFunc(visible, loader) && (r.Core != nil || slices.ContainsFunc(visible, external) && !window.ToolsFit(Specs(visible)))
 	for _, d := range visible {
 		switch {
 		case deferring && deferrable(d):
