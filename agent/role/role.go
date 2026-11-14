@@ -62,12 +62,12 @@ func ForMain(inputTokens int) Role {
 	return fullMain
 }
 
-// Subagents are the kinds of subagent the roles are launched as, in the order of the roles.
-func Subagents() []subagent.Kind {
-	var kinds []subagent.Kind
+// Subagents are the kinds of subagent the roles are launched as, by the name of the tool that launches them.
+func Subagents() map[string]subagent.Kind {
+	kinds := map[string]subagent.Kind{}
 	for _, r := range all {
 		if r.LaunchedBy != nil {
-			kinds = append(kinds, subagent.Kind{Tool: r.LaunchedBy.Name, Title: r.LaunchedBy.Title, Description: r.LaunchedBy.Description, Role: string(r.Name)})
+			kinds[r.LaunchedBy.Name] = subagent.Kind{Title: r.LaunchedBy.Title, Description: r.LaunchedBy.Description, Role: string(r.Name)}
 		}
 	}
 	return kinds
