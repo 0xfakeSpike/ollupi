@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -159,11 +160,11 @@ func TestEachUserHasTheirOwnConnectionAndEvents(t *testing.T) {
 	if users, err := db.Users(); err != nil || len(users) != 3 {
 		t.Errorf("users after connecting: %v, %v", users, err)
 	}
-	changed := func(user, thread string) orchestrator.Event {
-		return orchestrator.Event{Kind: orchestrator.EventThreadDeleted, Thread: repo.ThreadRow{ID: thread, UserID: user}}
+	changed := func(user, thread string) event.Event {
+		return event.Event{Kind: event.ThreadDeleted, Thread: repo.ThreadRow{ID: thread, UserID: user}}
 	}
 	s.Deliver(changed("b", "of-b"))
-	s.Deliver(orchestrator.Event{Kind: orchestrator.EventError, Thread: repo.ThreadRow{ID: "of-nobody"}, Error: "internal"})
+	s.Deliver(event.Event{Kind: event.Error, Thread: repo.ThreadRow{ID: "of-nobody"}, Error: "internal"})
 	s.Deliver(changed("a", "of-a"))
 	if got := nextThread(ctx, t, a); got != "of-a" {
 		t.Errorf("a received an event of %q", got)

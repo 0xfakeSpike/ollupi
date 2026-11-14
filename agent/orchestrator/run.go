@@ -4,14 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"log/slog"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/agent/runtime"
-	"github.com/0xfakeSpike/ollupi/agent/skills"
 	"github.com/0xfakeSpike/ollupi/repo"
-	"github.com/0xfakeSpike/ollupi/tools"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -71,6 +69,8 @@ func (o *Orchestrator) run(threadID string, sl *slot) {
 	o.post(func() { o.afterRun(threadID, sl, final, err) })
 }
 
+// runTurn runs the turn on what its user runs it with: the model client of its connection, the model's context window
+// and the user's tools.
 func (o *Orchestrator) runTurn(ctx context.Context, t repo.ThreadRow, turn repo.TurnRow, thread []repo.ItemRow) (bool, error) {
 	window, err := o.windowFor(turn.Model)
 	if err != nil {
@@ -84,39 +84,12 @@ func (o *Orchestrator) runTurn(ctx context.Context, t repo.ThreadRow, turn repo.
 	if err != nil {
 		return false, err
 	}
-	r, ok := role.Of(role.Name(turn.Agent))
-	if !ok {
-		return false, fmt.Errorf("orchestrator: turn %s names role %q, which is none of %q", turn.ID, turn.Agent, role.NameValues)
-	}
-	checker, w, err := o.permissions(t, r)
-	if err != nil {
-		return false, err
-	}
-	settings, err := o.cfg.DB.Settings(t.UserID)
-	if err != nil {
-		return false, err
-	}
-	var catalog []skills.Skill
-	if o.skills != nil {
-		catalog = o.skills.All()
-	}
-	var history, items []repo.ItemRow
-	for _, it := range thread {
-		if it.TurnID == turn.ID {
-			items = append(items, it)
-		} else {
-			history = append(history, it)
-		}
-	}
-	caller := tools.Caller{UserID: t.UserID, ThreadID: t.ID, WorkspaceID: string(t.WorkspaceID), EnvironmentID: string(t.EnvironmentID), Root: w.RootPath, Subagent: t.ParentThreadID != ""}
-	tr := &turnRun{
-		o: o, t: t, caller: caller, registry: registry, client: client, settings: settings,
-		state: runtime.State{
-			Turn: turn, Role: r, Prompt: role.AgentPrompt(o.cfg.Name, o.cfg.Prompt), Root: w.RootPath, Skills: catalog,
-			Window: window, Permissions: checker, History: history, Items: items, Inspections: map[string]runtime.Inspection{},
-		},
-	}
-	return tr.run(ctx)
+	return runtime.Run(ctx, runtime.Config{
+		DB: o.cfg.DB, Name: o.cfg.Name, Prompt: o.cfg.Prompt,
+		Settings: o.cfg.Settings, Shared: o.cfg.ToolsFor != nil, Tools: o.cfg.Tools,
+		Skills: o.skills, Memory: o.cfg.Memory, Attachments: o.cfg.Attachments, BackgroundCalls: o.cfg.BackgroundCalls,
+		Emit: o.emit, Queued: func() { o.post(o.startQueued) },
+	}, runtime.Turn{Thread: t, Turn: turn, Items: thread, Client: client, Window: window, Registry: registry})
 }
 
 func (o *Orchestrator) afterRun(threadID string, sl *slot, final bool, runErr error) {
@@ -201,7 +174,7 @@ func (o *Orchestrator) endTurn(turn repo.TurnRow) {
 		attrs = append(attrs, "ms", ended.CompletedAt.Sub(ended.StartedAt).Milliseconds())
 	}
 	slog.Info("turn ended", attrs...)
-	o.emit(Event{Kind: EventTurnCompleted, Thread: thread, Turn: ended})
+	o.emit(event.Event{Kind: event.TurnCompleted, Thread: thread, Turn: ended})
 	o.emitStatus(turn.ThreadID)
 	for _, call := range st.AgentCalls() {
 		o.stopSubagent(call.Await.Handle)

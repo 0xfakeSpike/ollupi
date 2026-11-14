@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"image"
 	"image/png"
 	"net/http"
@@ -97,7 +98,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 		ToolsFor:       servers.Tools,
 		Memory:         mem,
 		DB:             db,
-		OnEvent:        func(e orchestrator.Event) { server.Deliver(e) },
+		OnEvent:        func(e event.Event) { server.Deliver(e) },
 	})
 	if server, err = NewServer(ag, Options{DB: db, Token: "secret", Memory: mem, Jobs: jobs, MCP: servers}); err != nil {
 		t.Fatal(err)

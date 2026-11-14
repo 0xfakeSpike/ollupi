@@ -1,16 +1,16 @@
-package orchestrator
+package runtime
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"log/slog"
 	"slices"
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/agent/role"
-	"github.com/0xfakeSpike/ollupi/agent/runtime"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/redact"
 	"github.com/0xfakeSpike/ollupi/repo"
@@ -21,9 +21,9 @@ import (
 )
 
 // respond sends the step's request and records the response: its text as it streams, then its calls.
-func (tr *turnRun) respond(ctx context.Context, st runtime.CallModel) error {
-	call := tr.modelCall()
-	response := runtime.NewResponse(tr.state.Turn.ID, st.Prompt.Stats)
+func (r *run) respond(ctx context.Context, st CallModel) error {
+	call := r.modelCall()
+	response := NewResponse(r.state.Turn.ID, st.Prompt.Stats)
 	var streamErr error
 	onDelta := func(d llm.Delta) {
 		if streamErr != nil {
@@ -31,7 +31,7 @@ func (tr *turnRun) respond(ctx context.Context, st runtime.CallModel) error {
 		}
 		for _, piece := range response.Delta(d) {
 			if piece.New {
-				stored, err := tr.record(piece.Item)
+				stored, err := r.record(piece.Item)
 				if err != nil {
 					streamErr = err
 					return
@@ -39,19 +39,19 @@ func (tr *turnRun) respond(ctx context.Context, st runtime.CallModel) error {
 				response.Started(stored)
 				piece.Item = stored
 			}
-			tr.o.emit(Event{Kind: EventItemDelta, Thread: tr.t, Turn: tr.state.Turn, Item: &piece.Item, Delta: piece.Text})
+			r.cfg.Emit(event.Event{Kind: event.ItemDelta, Thread: r.t, Turn: r.state.Turn, Item: &piece.Item, Delta: piece.Text})
 		}
 	}
 	started := time.Now()
-	resp, err := tr.send(ctx, st.Offer, st.Prompt, st.Choice, onDelta)
-	tr.logModelCall(ctx, "model call", started, resp, err)
+	resp, err := r.send(ctx, st.Offer, st.Prompt, st.Choice, onDelta)
+	r.logModelCall(ctx, "model call", started, resp, err)
 	if err == nil {
-		err = runtime.CheckResponse(resp, st.Choice)
+		err = CheckResponse(resp, st.Choice)
 	}
 	if err != nil {
-		cause := fmt.Errorf("orchestrator: model call %d: %w", call, err)
+		cause := fmt.Errorf("runtime: model call %d: %w", call, err)
 		for _, it := range response.Fail(resp, cause) {
-			if _, err := tr.record(it); err != nil {
+			if _, err := r.record(it); err != nil {
 				return errors.Join(cause, err)
 			}
 		}
@@ -61,7 +61,7 @@ func (tr *turnRun) respond(ctx context.Context, st runtime.CallModel) error {
 		return streamErr
 	}
 	for _, it := range response.Finish(resp, st.Offer) {
-		if _, err := tr.record(it); err != nil {
+		if _, err := r.record(it); err != nil {
 			return err
 		}
 	}
@@ -69,9 +69,9 @@ func (tr *turnRun) respond(ctx context.Context, st runtime.CallModel) error {
 }
 
 // modelCall is the number of the request being made: one more than the responses the turn has.
-func (tr *turnRun) modelCall() int {
+func (r *run) modelCall() int {
 	seen := map[string]bool{}
-	for _, it := range tr.state.Items {
+	for _, it := range r.state.Items {
 		if it.ResponseID != "" && it.Type != repo.ItemContextCompaction {
 			seen[it.ResponseID] = true
 		}
@@ -79,7 +79,7 @@ func (tr *turnRun) modelCall() int {
 	return len(seen) + 1
 }
 
-func (tr *turnRun) compact(ctx context.Context, st runtime.Compact) (err error) {
+func (r *run) compact(ctx context.Context, st Compact) (err error) {
 	ctx, span := tracer.Start(ctx, "ollupi.context.compact")
 	defer func() {
 		if err != nil {
@@ -88,28 +88,28 @@ func (tr *turnRun) compact(ctx context.Context, st runtime.Compact) (err error) 
 		span.End()
 	}()
 	span.SetAttributes(attribute.Int("ollupi.context.estimated_tokens", st.Prompt.Stats.EstimatedTokens))
-	it, err := tr.record(repo.ItemRow{
-		ID: uuid.NewString(), TurnID: tr.state.Turn.ID, Type: repo.ItemContextCompaction, Status: repo.ItemInProgress, StartedAt: time.Now().UTC(),
+	it, err := r.record(repo.ItemRow{
+		ID: uuid.NewString(), TurnID: r.state.Turn.ID, Type: repo.ItemContextCompaction, Status: repo.ItemInProgress, StartedAt: time.Now().UTC(),
 		ResponseID: uuid.NewString(), ContextStats: &st.Prompt.Stats,
 	})
 	if err != nil {
 		return err
 	}
 	started := time.Now()
-	resp, err := tr.send(ctx, st.Offer, st.Prompt, llm.ToolChoiceNone, nil)
-	tr.logModelCall(ctx, "context compaction", started, resp, err)
-	it, cause := runtime.Compacted(it, resp, err)
-	if _, err := tr.record(it); err != nil {
+	resp, err := r.send(ctx, st.Offer, st.Prompt, llm.ToolChoiceNone, nil)
+	r.logModelCall(ctx, "context compaction", started, resp, err)
+	it, cause := Compacted(it, resp, err)
+	if _, err := r.record(it); err != nil {
 		return err
 	}
 	return cause
 }
 
-func (tr *turnRun) send(ctx context.Context, of runtime.Offer, prompt contextmanager.Prompt, choice llm.ToolChoice, onDelta func(llm.Delta)) (llm.ChatResponse, error) {
-	model := tr.state.Turn.Model
-	redactor := redact.New(tr.settings.RedactionKey)
+func (r *run) send(ctx context.Context, of Offer, prompt contextmanager.Prompt, choice llm.ToolChoice, onDelta func(llm.Delta)) (llm.ChatResponse, error) {
+	model := r.state.Turn.Model
+	redactor := redact.New(r.settings.RedactionKey)
 	mask := redactor.Mask
-	if !tr.settings.Redaction {
+	if !r.settings.Redaction {
 		mask = func(s string) string { return s }
 	}
 	messages := make([]llm.ChatMessage, 0, len(prompt.Messages)+1)
@@ -117,7 +117,7 @@ func (tr *turnRun) send(ctx context.Context, of runtime.Offer, prompt contextman
 	for _, message := range prompt.Messages {
 		message.Content, message.ReasoningContent = mask(message.Content), mask(message.ReasoningContent)
 		var err error
-		if message.Parts, err = tr.loadParts(ctx, message.Parts, mask); err != nil {
+		if message.Parts, err = r.loadParts(ctx, message.Parts, mask); err != nil {
 			return llm.ChatResponse{}, err
 		}
 		message.ToolCalls = slices.Clone(message.ToolCalls)
@@ -142,7 +142,7 @@ func (tr *turnRun) send(ctx context.Context, of runtime.Offer, prompt contextman
 			onDelta(d)
 		}
 	}
-	resp, err := tr.client.Chat(ctx, llm.ChatRequest{
+	resp, err := r.client.Chat(ctx, llm.ChatRequest{
 		Model:    model,
 		Messages: messages, Tools: role.Specs(of.Offered), ToolChoice: choice,
 		InputTokens: prompt.Stats.CalibratedTokens,
@@ -155,7 +155,7 @@ func (tr *turnRun) send(ctx context.Context, of runtime.Offer, prompt contextman
 	for i := range resp.Message.ToolCalls {
 		resp.Message.ToolCalls[i].Arguments = redactor.RestoreJSON(resp.Message.ToolCalls[i].Arguments)
 	}
-	if usage := runtime.UsageOf(resp); usage != nil {
+	if usage := UsageOf(resp); usage != nil {
 		span.SetAttributes(attribute.Int64("gen_ai.usage.input_tokens", usage.InputTokens), attribute.Int64("gen_ai.usage.output_tokens", usage.OutputTokens),
 			attribute.Int64("ollupi.llm.cached_input_tokens", usage.CachedInputTokens))
 	}
@@ -169,18 +169,18 @@ func (tr *turnRun) send(ctx context.Context, of runtime.Offer, prompt contextman
 }
 
 // loadParts reads the files attached to a message into it.
-func (tr *turnRun) loadParts(ctx context.Context, parts []llm.ContentPart, mask func(string) string) ([]llm.ContentPart, error) {
+func (r *run) loadParts(ctx context.Context, parts []llm.ContentPart, mask func(string) string) ([]llm.ContentPart, error) {
 	if len(parts) == 0 {
 		return nil, nil
 	}
-	if tr.o.cfg.Attachments == nil {
-		return nil, errors.New("orchestrator: the conversation has attachments, but this agent keeps none")
+	if r.cfg.Attachments == nil {
+		return nil, errors.New("runtime: the conversation has attachments, but this agent keeps none")
 	}
 	out := slices.Clone(parts)
 	for i, p := range out {
-		data, err := tr.o.cfg.Attachments.Get(ctx, p.Path)
+		data, err := r.cfg.Attachments.Get(ctx, p.Path)
 		if err != nil {
-			return nil, fmt.Errorf("orchestrator: attachment %s: %w", p.Name, err)
+			return nil, fmt.Errorf("runtime: attachment %s: %w", p.Name, err)
 		}
 		if p.Type == llm.PartImage {
 			out[i].Data = data
@@ -192,8 +192,8 @@ func (tr *turnRun) loadParts(ctx context.Context, parts []llm.ContentPart, mask 
 }
 
 // logModelCall records one model request: its model, duration, tokens and how it ended, never its text.
-func (tr *turnRun) logModelCall(ctx context.Context, msg string, started time.Time, resp llm.ChatResponse, err error) {
-	attrs := []any{"thread", tr.t.ID, "turn", tr.state.Turn.ID, "model", tr.state.Turn.Model.Name, "ms", time.Since(started).Milliseconds()}
+func (r *run) logModelCall(ctx context.Context, msg string, started time.Time, resp llm.ChatResponse, err error) {
+	attrs := []any{"thread", r.t.ID, "turn", r.state.Turn.ID, "model", r.state.Turn.Model.Name, "ms", time.Since(started).Milliseconds()}
 	if err != nil {
 		slog.WarnContext(ctx, msg+" failed", append(attrs, "err", err)...)
 		return

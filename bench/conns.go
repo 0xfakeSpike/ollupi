@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"io"
 	"log"
 	"log/slog"
@@ -405,7 +406,7 @@ func connsShard(args []string) {
 		Name: "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": &model{}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
-		DB:          db, OnEvent: func(e orchestrator.Event) { server.Deliver(e) },
+		DB:          db, OnEvent: func(e event.Event) { server.Deliver(e) },
 	})
 	server, err = gateway.NewServer(ag, gateway.Options{DB: db, Authenticate: benchUser})
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"log"
 	"math/rand/v2"
 	"net/http/httptest"
@@ -239,8 +240,8 @@ func crashChild(args []string) {
 		Providers:   []tools.Provider{work{latency: *toolLatency, log: toolLog}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 		Slots:       *slots, DB: db, Lease: *lease,
-		OnEvent: func(e orchestrator.Event) {
-			if e.Kind == orchestrator.EventUserInputRequested {
+		OnEvent: func(e event.Event) {
+			if e.Kind == event.UserInputRequested {
 				answer(e.Thread.ID, e.Item.ID)
 			}
 		},

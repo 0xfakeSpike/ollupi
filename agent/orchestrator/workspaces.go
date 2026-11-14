@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"path/filepath"
 	"strings"
 	"time"
@@ -48,7 +49,7 @@ func (o *Orchestrator) AddWorkspace(ctx context.Context, user, path, name string
 	if err != nil {
 		return repo.WorkspaceRow{}, err
 	}
-	o.emit(Event{Kind: EventWorkspaceChanged, Workspace: &w})
+	o.emit(event.Event{Kind: event.WorkspaceChanged, Workspace: &w})
 	return w, nil
 }
 
@@ -122,7 +123,7 @@ func (o *Orchestrator) MoveWorkspace(ctx context.Context, user, id, path string)
 		}
 		return repo.WorkspaceRow{}, err
 	}
-	o.emit(Event{Kind: EventWorkspaceChanged, Workspace: &moved})
+	o.emit(event.Event{Kind: event.WorkspaceChanged, Workspace: &moved})
 	return moved, nil
 }
 
@@ -160,7 +161,7 @@ func (o *Orchestrator) UpdateWorkspaceSettings(user, id string, settings permiss
 	if err != nil {
 		return repo.WorkspaceRow{}, err
 	}
-	if err := o.validateLayer(user, o.layers(repo.WorkspaceRow{}), w.Settings, workspaceLayer(w.Name, settings)); err != nil {
+	if err := o.validateLayer(user, permission.Base(o.cfg.Settings, o.cfg.ToolsFor != nil, repo.WorkspaceRow{}), w.Settings, permission.WorkspaceLayer(w.Name, settings)); err != nil {
 		return repo.WorkspaceRow{}, err
 	}
 	return o.changeWorkspace(user, id, func(w *repo.WorkspaceRow) { w.Settings = settings })
@@ -178,7 +179,7 @@ func (o *Orchestrator) changeWorkspace(user, id string, change func(*repo.Worksp
 	if err != nil {
 		return repo.WorkspaceRow{}, err
 	}
-	o.emit(Event{Kind: EventWorkspaceChanged, Workspace: &w})
+	o.emit(event.Event{Kind: event.WorkspaceChanged, Workspace: &w})
 	return w, nil
 }
 

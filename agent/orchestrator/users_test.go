@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"io"
 	"io/fs"
 	"net/http"
@@ -176,8 +177,8 @@ func TestAUserHoldsNoMoreSlotsThanTheirLimit(t *testing.T) {
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", 16, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
 		Slots:       8, UserSlots: 2, DB: db,
-		OnEvent: func(e orchestrator.Event) {
-			if e.Kind == orchestrator.EventTurnCompleted {
+		OnEvent: func(e event.Event) {
+			if e.Kind == event.TurnCompleted {
 				ended.Add(1)
 			}
 		},
@@ -257,8 +258,8 @@ func TestTurnsRunOnTheUsersClient(t *testing.T) {
 			return nil, errors.New("no key for this user")
 		},
 		DB: db,
-		OnEvent: func(e orchestrator.Event) {
-			if e.Kind == orchestrator.EventTurnCompleted {
+		OnEvent: func(e event.Event) {
+			if e.Kind == event.TurnCompleted {
 				ended <- e.Turn
 			}
 		},
@@ -489,8 +490,8 @@ func TestAttachmentsLiveInTheStore(t *testing.T) {
 		BoxFor: func(string) (sandbox.Box, error) {
 			return sandbox.Remote(noteMachine{}, []string{"/cloud"}, "cloud"), nil
 		},
-		OnEvent: func(e orchestrator.Event) {
-			if e.Kind == orchestrator.EventTurnCompleted {
+		OnEvent: func(e event.Event) {
+			if e.Kind == event.TurnCompleted {
 				ended <- e.Turn
 			}
 		},
