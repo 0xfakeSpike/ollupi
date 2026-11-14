@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"errors"
 	"fmt"
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"strings"
 	"time"
 
@@ -41,7 +42,7 @@ func (o *Orchestrator) AddEnvironment(user, name string, kind repo.EnvironmentKi
 	if err != nil {
 		return repo.EnvironmentRow{}, err
 	}
-	o.emit(Event{Kind: EventEnvironmentChanged, Environment: &row})
+	o.emit(event.Event{Kind: event.EnvironmentChanged, Environment: &row})
 	return row, nil
 }
 
@@ -66,7 +67,7 @@ func (o *Orchestrator) RenameEnvironment(user, id, name string) (repo.Environmen
 	if err != nil {
 		return repo.EnvironmentRow{}, err
 	}
-	o.emit(Event{Kind: EventEnvironmentChanged, Environment: &row})
+	o.emit(event.Event{Kind: event.EnvironmentChanged, Environment: &row})
 	return row, nil
 }
 
@@ -94,7 +95,7 @@ func (o *Orchestrator) DeleteEnvironment(user, id string) (repo.EnvironmentRow, 
 	if _, err := o.cfg.DB.DeleteEnvironment(user, id); err != nil {
 		return repo.EnvironmentRow{}, err
 	}
-	o.emit(Event{Kind: EventEnvironmentChanged, Environment: &row})
+	o.emit(event.Event{Kind: event.EnvironmentChanged, Environment: &row})
 	return row, nil
 }
 

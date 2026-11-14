@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"log"
 	"math/rand/v2"
 	"net/http"
@@ -87,8 +88,8 @@ func mix(args []string) {
 		Providers:   []tools.Provider{work{latency: *toolLatency}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 		Slots:       *slots, DB: db,
-		OnEvent: func(e orchestrator.Event) {
-			if e.Kind == orchestrator.EventTurnStarted && e.Thread.ParentThreadID != "" {
+		OnEvent: func(e event.Event) {
+			if e.Kind == event.TurnStarted && e.Thread.ParentThreadID != "" {
 				mu.Lock()
 				turns[e.Turn.Input] = &mixTurn{kind: "sub", thread: string(e.Thread.ParentThreadID), turnID: e.Turn.ID, submitted: time.Now()}
 				mu.Unlock()

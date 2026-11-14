@@ -18,8 +18,14 @@ func TestABackgroundCallEndsOnce(t *testing.T) {
 	if err := db.CreateThread(ThreadRow{ID: "t", UserID: DefaultUser, Title: "t", CreatedAt: at, UpdatedAt: at}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.StartBackgroundCall(DefaultUser, BackgroundCallRow{ID: "b", ThreadID: "t", ItemID: "call", Tool: "run_command", Arguments: `{"command":"sleep 9"}`, StartedAt: at}, 1); err != nil {
+	if err := db.QueueBackgroundCall(DefaultUser, BackgroundCallRow{ID: "b", ThreadID: "t", ItemID: "call", Tool: "run_command", Arguments: `{"command":"sleep 9"}`, StartedAt: at}, 1); err != nil {
 		t.Fatal(err)
+	}
+	if started, err := db.StartBackgroundCall("b", at); err != nil || !started {
+		t.Fatalf("starting the queued call: %v %v", started, err)
+	}
+	if again, err := db.StartBackgroundCall("b", at); err != nil || again {
+		t.Errorf("a running call started again: %v %v", again, err)
 	}
 	ended, err := db.EndBackgroundCall("b", BackgroundCompleted, &ToolResult{Output: json.RawMessage(`"done"`)}, "", at.Add(time.Minute))
 	if err != nil || !ended {
@@ -45,7 +51,7 @@ func TestAUserRunsAtMostSoManyBackgroundCalls(t *testing.T) {
 		t.Fatal(err)
 	}
 	start := func(id string) error {
-		return db.StartBackgroundCall(DefaultUser, BackgroundCallRow{ID: id, ThreadID: "t", ItemID: id, Tool: "run_command", StartedAt: at}, 2)
+		return db.QueueBackgroundCall(DefaultUser, BackgroundCallRow{ID: id, ThreadID: "t", ItemID: id, Tool: "run_command", StartedAt: at}, 2)
 	}
 	if err := start("a"); err != nil {
 		t.Fatal(err)
@@ -56,8 +62,11 @@ func TestAUserRunsAtMostSoManyBackgroundCalls(t *testing.T) {
 	if err := start("c"); err == nil {
 		t.Fatal("a third call started past the limit of two")
 	}
-	if running, err := db.RunningBackgroundCalls("t"); err != nil || len(running) != 2 {
-		t.Errorf("running: %q %v", running, err)
+	if _, err := db.StartBackgroundCall("a", at); err != nil {
+		t.Fatal(err)
+	}
+	if unended, err := db.UnendedBackgroundCalls("t"); err != nil || len(unended) != 2 {
+		t.Errorf("queued or running: %q %v", unended, err)
 	}
 	interrupted, err := db.InterruptBackgroundCalls(at.Add(time.Hour))
 	if err != nil || len(interrupted) != 2 {
@@ -86,7 +95,7 @@ func TestEndedBackgroundCallsComeBackToTheirThreadOnce(t *testing.T) {
 	}
 	end := func(thread, id string, status BackgroundStatus) {
 		t.Helper()
-		if err := db.StartBackgroundCall(DefaultUser, BackgroundCallRow{ID: id, ThreadID: thread, ItemID: id, Tool: "run_command", StartedAt: at}, 10); err != nil {
+		if err := db.QueueBackgroundCall(DefaultUser, BackgroundCallRow{ID: id, ThreadID: thread, ItemID: id, Tool: "run_command", StartedAt: at}, 10); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := db.EndBackgroundCall(id, status, &ToolResult{Output: json.RawMessage(`"out of ` + id + `"`)}, "", at.Add(time.Minute)); err != nil {

@@ -88,7 +88,7 @@ func backgroundTurnOf(ctx context.Context, t *testing.T, cfg orchestrator.Config
 func backgroundID(t *testing.T, call repo.ItemRow) string {
 	t.Helper()
 	var out struct{ Background, Status string }
-	if call.Result == nil || json.Unmarshal(call.Result.Output, &out) != nil || out.Background == "" || out.Status != "running" {
+	if call.Result == nil || json.Unmarshal(call.Result.Output, &out) != nil || out.Background == "" || out.Status != string(repo.BackgroundQueued) {
 		t.Fatalf("the call did not start in the background: %+v %s", call.Result, call.Error)
 	}
 	return out.Background

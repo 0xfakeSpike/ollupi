@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"log/slog"
 	"slices"
 	"strings"
@@ -184,7 +185,7 @@ func (o *Orchestrator) submit(t repo.ThreadRow, turn repo.TurnRow, model llm.Mod
 		o.emitStatus(t.ID)
 	} else {
 		slog.Info("turn queued", "thread", t.ID, "turn", turn.ID)
-		o.emit(Event{Kind: EventTurnQueued, Thread: t, Turn: turn})
+		o.emit(event.Event{Kind: event.TurnQueued, Thread: t, Turn: turn})
 	}
 	return turn, nil
 }

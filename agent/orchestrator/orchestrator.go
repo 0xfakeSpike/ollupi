@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/role"
@@ -86,7 +87,7 @@ type Config struct {
 	AttachmentsDir string
 	Memory         *memory.Manager
 	DB             *repo.DB
-	OnEvent        func(Event)
+	OnEvent        func(event.Event)
 	// Lease makes this process claim the shard before it runs it, waiting for as long as another holds it, and keep
 	// the claim alive; a process that dies leaves its claim for this long. Without it the process trusts it is alone.
 	Lease time.Duration
@@ -99,8 +100,8 @@ type Config struct {
 }
 
 // An Orchestrator runs the agents of a shard: it keeps their threads and turns, schedules turns into slots, launches
-// subagents and runs background calls. The agent of each turn is a role; runtime.Next decides each step of a run of
-// the turn, and the orchestrator carries it out.
+// subagents and starts background calls. It does not run a turn itself: runtime.Run does, on the user's model client
+// and tools that the orchestrator gives it.
 type Orchestrator struct {
 	cfg      Config
 	ctx      context.Context

@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"io"
 	"log"
 	"log/slog"
@@ -133,9 +134,9 @@ func main() {
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 		RunLimit:    *runLimit,
 		DB:          db,
-		OnEvent: func(e orchestrator.Event) {
+		OnEvent: func(e event.Event) {
 			switch e.Kind {
-			case orchestrator.EventItemCompleted:
+			case event.ItemCompleted:
 				logItem(e.Item)
 				if e.Thread.ParentThreadID == "" {
 					select {
@@ -143,10 +144,10 @@ func main() {
 					default:
 					}
 				}
-			case orchestrator.EventUserInputRequested:
+			case event.UserInputRequested:
 				// Answered outside the event, which the agent's loop is delivering.
 				go answer(ag, e.Thread.ID, e.Item)
-			case orchestrator.EventTurnCompleted:
+			case event.TurnCompleted:
 				// A subagent's turns end in conversations of their own.
 				if e.Thread.ParentThreadID == "" {
 					ended <- e.Turn

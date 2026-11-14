@@ -65,7 +65,7 @@ func (o *Orchestrator) fulfil(t repo.ThreadRow, turn repo.TurnRow, call repo.Ite
 		if err != nil {
 			return false, fmt.Errorf("orchestrator: background call %s: %w", id, err)
 		}
-		if bc.Status == repo.BackgroundRunning {
+		if !bc.Status.Ended() {
 			return false, nil
 		}
 		ended[id] = string(bc.Status)
@@ -88,7 +88,7 @@ func (o *Orchestrator) fulfil(t repo.ThreadRow, turn repo.TurnRow, call repo.Ite
 // the subagent's place, as a wait_for_background call of its own response, so that the subagent goes on with their
 // results and reports with them. It reports whether the turn waits.
 func (o *Orchestrator) waitBeforeReport(t repo.ThreadRow, turn repo.TurnRow) (bool, error) {
-	running, err := o.cfg.DB.RunningBackgroundCalls(t.ID)
+	running, err := o.cfg.DB.UnendedBackgroundCalls(t.ID)
 	if err != nil || len(running) == 0 {
 		return false, err
 	}
