@@ -1,7 +1,11 @@
 package role
 
-// GeneralSubTool launches a general-purpose subagent, which has its parent's tools.
-const GeneralSubTool = "Agent"
+const (
+	// GeneralSub is the name of the general-purpose subagent.
+	GeneralSub Name = "general-sub-agent"
+	// GeneralSubTool launches a general-purpose subagent, which has its parent's tools.
+	GeneralSubTool = "Agent"
+)
 
 var generalSub = Role{
 	Name: GeneralSub, Persona: true, Rules: generalSubRules, Skills: true, Memory: true,

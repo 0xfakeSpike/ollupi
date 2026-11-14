@@ -1,6 +1,8 @@
 package role
 
 const (
+	// BrowserSub is the name of the browser subagent.
+	BrowserSub Name = "browser-sub-agent"
 	// BrowserSubTool launches a subagent that works only in the built-in browser.
 	BrowserSubTool = "BrowserAgent"
 	// BrowserProvider is the provider of the built-in browser's tools, which the desktop app connects.

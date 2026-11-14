@@ -14,13 +14,6 @@ import (
 // Name is a role as a turn stores it.
 type Name string
 
-const (
-	FullMain    Name = "full-main-agent"
-	CompactMain Name = "compact-main-agent"
-	GeneralSub  Name = "general-sub-agent"
-	BrowserSub  Name = "browser-sub-agent"
-)
-
 var NameValues = []Name{FullMain, CompactMain, GeneralSub, BrowserSub}
 
 // A Role is one role of agent: its system prompt, the tools it is offered and sent, and how it is launched.
@@ -69,10 +62,6 @@ func Launched(tool string) (Role, bool) {
 	}
 	return all[i], true
 }
-
-// compactBelow is the input the full main agent's prompt and tool list need: about 8k tokens, which the context window
-// holds to half of it.
-const compactBelow = 16_384
 
 // ForMain is the main role for a model that takes inputTokens of input.
 func ForMain(inputTokens int) Role {
