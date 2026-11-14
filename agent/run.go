@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/agent/runtime"
 	"github.com/0xfakeSpike/ollupi/repo"
@@ -104,9 +103,8 @@ func (a *Agent) runTurn(ctx context.Context, t repo.ThreadRow, turn repo.TurnRow
 	rt := &runtime.Runtime{
 		LLM:         client,
 		Registry:    registry,
-		Skills:      a.skills,
 		Window:      window,
-		Memory:      a.cfg.Memory,
+		Host:        turnHost{a: a, t: t, turn: turn, role: r, caller: caller, registry: registry},
 		Turn:        turn,
 		Caller:      caller,
 		Role:        r,
@@ -114,38 +112,8 @@ func (a *Agent) runTurn(ctx context.Context, t repo.ThreadRow, turn repo.TurnRow
 		Permissions: checker,
 		History:     history,
 		Items:       items,
-		Record:      a.recorder(t, turn),
-		Delta: func(it repo.ItemRow, text string) {
-			a.emit(Event{Kind: EventItemDelta, Thread: t, Turn: turn, Item: &it, Delta: text})
-		},
-		Reload: func() ([]repo.ItemRow, *permission.Checker, error) {
-			items, err := a.cfg.DB.TurnItems(turn.ID)
-			if err != nil {
-				return nil, nil, err
-			}
-			current, err := a.cfg.DB.ThreadRow(t.ID)
-			if err != nil {
-				return nil, nil, fmt.Errorf("agent: thread %s: %w", t.ID, err)
-			}
-			checker, _, err := a.permissions(current, r)
-			return items, checker, err
-		},
-		Attachments: a.cfg.Attachments,
-		Background:  a.startBackground(t, caller, registry),
-		Settings:    func() (repo.SettingsRow, error) { return a.cfg.DB.Settings(t.UserID) },
 	}
 	return rt.Run(ctx)
-}
-
-func (a *Agent) recorder(t repo.ThreadRow, turn repo.TurnRow) func(repo.ItemRow) (repo.ItemRow, error) {
-	return func(it repo.ItemRow) (repo.ItemRow, error) {
-		stored, isNew, err := a.cfg.DB.RecordItem(t.ID, it)
-		if err != nil {
-			return repo.ItemRow{}, err
-		}
-		a.emitItem(t, turn, stored, isNew)
-		return stored, nil
-	}
 }
 
 func (a *Agent) afterRun(threadID string, sl *slot, final bool, runErr error) {

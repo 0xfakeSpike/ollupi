@@ -136,7 +136,7 @@ func (rt *Runtime) compact(ctx context.Context) (err error) {
 }
 
 func (rt *Runtime) send(ctx context.Context, prompt contextmanager.Prompt, choice llm.ToolChoice, onDelta func(llm.Delta)) (llm.ChatResponse, error) {
-	settings, err := rt.Settings()
+	settings, err := rt.Host.Settings()
 	if err != nil {
 		return llm.ChatResponse{}, fmt.Errorf("runtime: read the redaction setting: %w", err)
 	}
@@ -204,12 +204,9 @@ func (rt *Runtime) loadParts(ctx context.Context, parts []llm.ContentPart, mask 
 	if len(parts) == 0 {
 		return nil, nil
 	}
-	if rt.Attachments == nil {
-		return nil, fmt.Errorf("runtime: the conversation has attachments, but this agent keeps none")
-	}
 	out := slices.Clone(parts)
 	for i, p := range out {
-		data, err := rt.Attachments.Get(ctx, p.Path)
+		data, err := rt.Host.Attachment(ctx, p.Path)
 		if err != nil {
 			return nil, fmt.Errorf("runtime: attachment %s: %w", p.Name, err)
 		}
