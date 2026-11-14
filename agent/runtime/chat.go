@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
+	"github.com/0xfakeSpike/ollupi/agent/profile"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/google/uuid"
@@ -21,12 +22,12 @@ func (rt *Runtime) contextInput() contextmanager.Input {
 	return contextmanager.Input{
 		Items:  slices.Concat(rt.History, rt.Items),
 		System: rt.system,
-		Tools:  Specs(rt.offered),
+		Tools:  profile.Specs(rt.offered),
 	}
 }
 
 func (rt *Runtime) respond(ctx context.Context, choice llm.ToolChoice) (llm.ChatResponse, error) {
-	rt.offered, rt.deferred = Offer(rt.Permissions.Tools(), rt.profile, rt.Window, slices.Concat(rt.History, rt.Items))
+	rt.offer(rt.Permissions)
 	prompt, err := rt.Window.Build(rt.contextInput())
 	if err != nil {
 		return llm.ChatResponse{}, fmt.Errorf("runtime: %w", err)
@@ -174,7 +175,7 @@ func (rt *Runtime) send(ctx context.Context, prompt contextmanager.Prompt, choic
 	}
 	resp, err := rt.LLM.Chat(ctx, llm.ChatRequest{
 		Model:    rt.Turn.Model,
-		Messages: messages, Tools: Specs(rt.offered), ToolChoice: choice,
+		Messages: messages, Tools: profile.Specs(rt.offered), ToolChoice: choice,
 		InputTokens: prompt.Stats.CalibratedTokens,
 	}, restored)
 	if rest := (llm.Delta{Content: content.Flush(), Reasoning: reasoning.Flush()}); onDelta != nil && (rest.Content != "" || rest.Reasoning != "") {

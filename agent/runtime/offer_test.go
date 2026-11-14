@@ -1,99 +1,54 @@
 package runtime
 
 import (
-	"encoding/json"
+	"context"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
+	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/profile"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
-	"github.com/0xfakeSpike/ollupi/tools/workspace"
 )
 
-func tool(name, description string) tools.ToolDescriptor {
-	provider, _, _ := strings.Cut(name, tools.ProviderSeparator)
-	return tools.ToolDescriptor{Provider: provider, Name: name, Description: description}
+type pageTools struct{}
+
+func (pageTools) Name() (string, string) { return subagent.BrowserProvider, "Drives a browser tab." }
+
+func (pageTools) ToolList(context.Context) ([]*tools.Spec, error) {
+	return []*tools.Spec{{Name: "navigate", Description: "Opens a page.", InputSchema: map[string]any{"type": "object"}}}, nil
 }
 
-func names(ds []tools.ToolDescriptor) []string {
-	var out []string
-	for _, d := range ds {
-		out = append(out, d.Name)
-	}
-	return out
+func (pageTools) Invoke(context.Context, string, map[string]any) (tools.Result, error) {
+	return tools.Result{}, nil
 }
 
-func loadCall(status repo.ItemStatus, loaded ...string) repo.ItemRow {
-	out, _ := json.Marshal(map[string]any{"loaded": loaded})
-	return repo.ItemRow{Type: repo.ItemToolCall, Tool: tools.ToolLoadTools, Status: status, Result: &repo.ToolResult{Output: out}}
+func offered(t *testing.T, providers ...tools.Provider) []string {
+	t.Helper()
+	registry, err := tools.New(context.Background(), nil, append(providers, subagent.New())...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checker, err := permission.New([]permission.Layer{{Of: "test", Settings: permission.Settings{ApprovalPolicy: string(permission.OnRequest)}}}, nil, registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt := &Runtime{profile: profile.Full, Window: contextmanager.New("m", llm.Limits{Context: 20000, Output: 2000})}
+	rt.offer(checker)
+	var names []string
+	for _, d := range rt.offered {
+		names = append(names, d.Name)
+	}
+	return names
 }
 
-var window = contextmanager.New("m", llm.Limits{Context: 20000, Output: 2000})
-
-func TestOfferSendsEveryToolWithinTheBudget(t *testing.T) {
-	offered, deferred := Offer([]tools.ToolDescriptor{tool("shell", "run"), tool(tools.ToolLoadTools, "load"), tool("github__issue", "file")}, profile.Full, window, nil)
-	if got, want := names(offered), []string{"shell", "github__issue"}; !slices.Equal(got, want) || deferred != nil {
-		t.Errorf("offered %q, deferred %q; want %q and nothing deferred", got, names(deferred), want)
+func TestTheBrowserSubagentIsHiddenWithoutABrowser(t *testing.T) {
+	if got := offered(t); slices.Contains(got, subagent.BrowserTool) || !slices.Contains(got, subagent.Tool) {
+		t.Errorf("without a browser: offered %q", got)
 	}
-}
-
-func TestOfferDefersExternalToolsOverTheBudget(t *testing.T) {
-	long := strings.Repeat("word ", 1000)
-	visible := []tools.ToolDescriptor{tool("shell", "run"), tool(tools.ToolLoadTools, "load"), tool("github__issue", long), tool("github__pr", long)}
-	offered, deferred := Offer(visible, profile.Full, window, nil)
-	if got, want := names(offered), []string{"shell", tools.ToolLoadTools}; !slices.Equal(got, want) {
-		t.Errorf("offered %q, want %q", got, want)
-	}
-	if got, want := names(deferred), []string{"github__issue", "github__pr"}; !slices.Equal(got, want) {
-		t.Errorf("deferred %q, want %q", got, want)
-	}
-
-	items := []repo.ItemRow{loadCall(repo.ItemCompleted, "github__pr", "shell"), loadCall(repo.ItemFailed, "github__issue"), loadCall(repo.ItemCompleted, "github__pr")}
-	offered, deferred = Offer(visible, profile.Full, window, items)
-	if got, want := names(offered), []string{"shell", tools.ToolLoadTools, "github__pr"}; !slices.Equal(got, want) || len(deferred) != 2 {
-		t.Errorf("after loading: offered %q, deferred %q", got, names(deferred))
-	}
-
-	without := slices.DeleteFunc(slices.Clone(visible), func(d tools.ToolDescriptor) bool { return d.Name == tools.ToolLoadTools })
-	if offered, deferred := Offer(without, profile.Full, window, nil); len(offered) != 3 || deferred != nil {
-		t.Errorf("without load_tools: offered %q, deferred %q; want everything offered", names(offered), names(deferred))
-	}
-}
-
-func TestOfferKeepsOnlyTheCoreToolsForASmallInput(t *testing.T) {
-	small := contextmanager.New("m", llm.Limits{Context: 8192, Output: 2048})
-	visible := []tools.ToolDescriptor{tool(workspace.ToolReadFile, "read"), tool(workspace.ToolRunCommand, "run"), tool("grep", "search"), tool("github__issue", "file"), tool(tools.ToolLoadTools, "load")}
-	offered, deferred := Offer(visible, profile.Compact, small, nil)
-	if want := []string{workspace.ToolReadFile, workspace.ToolRunCommand, tools.ToolLoadTools}; !slices.Equal(names(offered), want) {
-		t.Errorf("offered %q, want %q", names(offered), want)
-	}
-	if want := []string{"grep", "github__issue"}; !slices.Equal(names(deferred), want) {
-		t.Errorf("deferred %q, want %q", names(deferred), want)
-	}
-	offered, _ = Offer(visible, profile.Compact, small, []repo.ItemRow{loadCall(repo.ItemCompleted, "grep")})
-	if !slices.Contains(names(offered), "grep") {
-		t.Errorf("a loaded tool is not offered: %q", names(offered))
-	}
-	without := visible[:4]
-	if offered, deferred := Offer(without, profile.Compact, small, nil); len(offered) != 4 || deferred != nil {
-		t.Errorf("without load_tools: offered %q, deferred %q; want everything offered", names(offered), names(deferred))
-	}
-}
-
-func TestOfferHidesTheBrowserSubagentWithoutABrowser(t *testing.T) {
-	visible := []tools.ToolDescriptor{tool(subagent.Tool, "launch"), tool(subagent.BrowserTool, "launch")}
-	if offered, _ := Offer(visible, profile.Full, window, nil); !slices.Equal(names(offered), []string{subagent.Tool}) {
-		t.Errorf("without a browser: offered %q", names(offered))
-	}
-	page := tool("navigate", "open")
-	page.Provider = subagent.BrowserProvider
-	visible = append(visible, page)
-	if offered, _ := Offer(visible, profile.Full, window, nil); !slices.Contains(names(offered), subagent.BrowserTool) {
-		t.Errorf("with a browser: offered %q", names(offered))
+	if got := offered(t, pageTools{}); !slices.Contains(got, subagent.BrowserTool) {
+		t.Errorf("with a browser: offered %q", got)
 	}
 }
