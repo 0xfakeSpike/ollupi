@@ -19,9 +19,8 @@ type BackgroundCallRow struct {
 	// ItemID is the call that started it.
 	ItemID string `gorm:"not null" json:"itemId"`
 	Tool   string `gorm:"not null" json:"tool"`
-	// background_calls_unended finds the calls that wait to start or run, as the orchestrator does to start them and
-	// a process that starts does to end them.
-	Status      BackgroundStatus `gorm:"not null;index:background_calls_unended,where:status = 'queued' OR status = 'running'" json:"status"`
+	// background_calls_running finds the calls still running, as a process that starts does to end them.
+	Status      BackgroundStatus `gorm:"not null;index:background_calls_running,where:status = 'running'" json:"status"`
 	Error       string           `gorm:"not null;default:''" json:"error,omitempty"`
 	StartedAt   time.Time        `gorm:"not null" json:"startedAt"`
 	CompletedAt *time.Time       `json:"completedAt,omitempty"`
@@ -37,8 +36,6 @@ func (BackgroundCallRow) TableName() string { return "background_calls" }
 type BackgroundStatus string
 
 const (
-	// BackgroundQueued is a call that waits for the orchestrator to start it.
-	BackgroundQueued    BackgroundStatus = "queued"
 	BackgroundRunning   BackgroundStatus = "running"
 	BackgroundCompleted BackgroundStatus = "completed"
 	BackgroundFailed    BackgroundStatus = "failed"
@@ -47,49 +44,30 @@ const (
 	BackgroundInterrupted BackgroundStatus = "interrupted"
 )
 
-var BackgroundStatusValues = []BackgroundStatus{BackgroundQueued, BackgroundRunning, BackgroundCompleted, BackgroundFailed, BackgroundCancelled, BackgroundInterrupted}
+var BackgroundStatusValues = []BackgroundStatus{BackgroundRunning, BackgroundCompleted, BackgroundFailed, BackgroundCancelled, BackgroundInterrupted}
 
-// Ended says the call ended: it neither waits to start nor runs.
-func (s BackgroundStatus) Ended() bool { return s != BackgroundQueued && s != BackgroundRunning }
-
-const unendedCall = "(status = 'queued' OR status = 'running')"
-
-// QueueBackgroundCall records a call that waits to start, unless the user already has max of them queued or running.
-func (d *DB) QueueBackgroundCall(user string, call BackgroundCallRow, max int) error {
-	call.Status, call.StartedAt, call.CompletedAt = BackgroundQueued, call.StartedAt.UTC(), nil
+// StartBackgroundCall records a call that starts running, unless the user already runs max of them.
+func (d *DB) StartBackgroundCall(user string, call BackgroundCallRow, max int) error {
+	call.Status, call.StartedAt, call.CompletedAt = BackgroundRunning, call.StartedAt.UTC(), nil
 	return d.Tx(func(tx *DB) error {
-		var unended int64
+		var running int64
 		if err := tx.gorm.Model(&BackgroundCallRow{}).
-			Where(unendedCall+" AND thread_id IN (SELECT id FROM threads WHERE user_id = ?)", user).
-			Count(&unended).Error; err != nil {
+			Where("status = ? AND thread_id IN (SELECT id FROM threads WHERE user_id = ?)", BackgroundRunning, user).
+			Count(&running).Error; err != nil {
 			return err
 		}
-		if unended >= int64(max) {
-			return fmt.Errorf("%d background calls are running, the most at once; run this call in the foreground, or wait for one to end", unended)
+		if running >= int64(max) {
+			return fmt.Errorf("%d background calls are running, the most at once; run this call in the foreground, or wait for one to end", running)
 		}
 		return tx.gorm.Create(&call).Error
 	})
 }
 
-// QueuedBackgroundCalls are the calls that wait to start, the oldest first.
-func (d *DB) QueuedBackgroundCalls() ([]BackgroundCallRow, error) {
-	var calls []BackgroundCallRow
-	return calls, d.gorm.Where("status = ?", BackgroundQueued).Order("started_at").Find(&calls).Error
-}
-
-// StartBackgroundCall marks a queued call running from at. It reports false for a call no longer queued, as one
-// cancelled before it started is.
-func (d *DB) StartBackgroundCall(id string, at time.Time) (bool, error) {
-	res := d.gorm.Model(&BackgroundCallRow{}).Where("id = ? AND status = ?", id, BackgroundQueued).
-		Updates(map[string]any{"status": BackgroundRunning, "started_at": at.UTC()})
-	return res.RowsAffected == 1, res.Error
-}
-
-// EndBackgroundCall records how a call that waits to start or runs ended. It reports false for a call that had already
-// ended, as one cancelled while its tool was still returning has.
+// EndBackgroundCall records how a running call ended. It reports false for a call that had already ended, as one
+// cancelled while its tool was still returning has.
 func (d *DB) EndBackgroundCall(id string, status BackgroundStatus, result *ToolResult, failure string, at time.Time) (bool, error) {
 	at = at.UTC()
-	res := d.gorm.Model(&BackgroundCallRow{}).Where("id = ? AND "+unendedCall, id).
+	res := d.gorm.Model(&BackgroundCallRow{}).Where("id = ? AND status = ?", id, BackgroundRunning).
 		Select("status", "result", "error", "completed_at").
 		Updates(&BackgroundCallRow{Status: status, Result: result, Error: failure, CompletedAt: &at})
 	return res.RowsAffected == 1, res.Error
@@ -100,12 +78,12 @@ func (d *DB) BackgroundCall(id string) (BackgroundCallRow, error) {
 	return row, notFound(d.gorm.Where("id = ?", id).Take(&row).Error)
 }
 
-// InterruptBackgroundCalls ends as interrupted every call that waits to start or runs, as a process that starts finds
-// the calls of one that stopped, and returns them.
+// InterruptBackgroundCalls ends as interrupted every call still running, as a process that starts finds the calls of
+// one that stopped, and returns them.
 func (d *DB) InterruptBackgroundCalls(at time.Time) ([]BackgroundCallRow, error) {
 	var calls []BackgroundCallRow
 	err := d.Tx(func(tx *DB) error {
-		if err := tx.gorm.Where(unendedCall).Find(&calls).Error; err != nil {
+		if err := tx.gorm.Where("status = ?", BackgroundRunning).Find(&calls).Error; err != nil {
 			return err
 		}
 		for i := range calls {
@@ -118,11 +96,11 @@ func (d *DB) InterruptBackgroundCalls(at time.Time) ([]BackgroundCallRow, error)
 	return calls, err
 }
 
-// UnendedBackgroundCalls are the ids of the calls that wait to start or run in the thread and its subagents' threads.
-func (d *DB) UnendedBackgroundCalls(threadID string) ([]string, error) {
+// RunningBackgroundCalls are the ids of the calls still running in the thread and its subagents' threads.
+func (d *DB) RunningBackgroundCalls(threadID string) ([]string, error) {
 	var ids []string
 	err := d.gorm.Model(&BackgroundCallRow{}).
-		Where(unendedCall+" AND (thread_id = ? OR thread_id IN (SELECT id FROM threads WHERE parent_thread_id = ?))", threadID, threadID).
+		Where("status = ? AND (thread_id = ? OR thread_id IN (SELECT id FROM threads WHERE parent_thread_id = ?))", BackgroundRunning, threadID, threadID).
 		Pluck("id", &ids).Error
 	return ids, err
 }

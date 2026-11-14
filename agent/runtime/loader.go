@@ -56,8 +56,3 @@ func (Loader) Invoke(ctx context.Context, _ string, arguments map[string]any) (t
 
 // deferredKey carries the thread's deferred tools to Loader.Invoke.
 type deferredKey struct{}
-
-// WithDeferred gives a call's context the deferred tools that load_tools may load.
-func WithDeferred(ctx context.Context, deferred []tools.ToolDescriptor) context.Context {
-	return context.WithValue(ctx, deferredKey{}, deferred)
-}

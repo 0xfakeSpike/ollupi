@@ -35,9 +35,10 @@ func offered(t *testing.T, providers ...tools.Provider) []string {
 		t.Fatal(err)
 	}
 	full, _ := role.Of(role.FullMain)
-	s := State{Role: full, Permissions: checker, Window: contextmanager.New("m", llm.Limits{Context: 20000, Output: 2000})}
+	rt := &Runtime{Role: full, Permissions: checker, Window: contextmanager.New("m", llm.Limits{Context: 20000, Output: 2000})}
+	rt.offer()
 	var names []string
-	for _, d := range s.offer().Offered {
+	for _, d := range rt.offered {
 		names = append(names, d.Name)
 	}
 	return names

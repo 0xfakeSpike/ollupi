@@ -1,7 +1,6 @@
 package repo
 
 import (
-	"fmt"
 	"slices"
 	"testing"
 	"time"
@@ -138,37 +137,4 @@ func TestOnlyReadyTurnsWaitForASlot(t *testing.T) {
 		t.Fatal(err)
 	}
 	ready("t")
-}
-
-func TestATurnUsesWhatItsItemsUsed(t *testing.T) {
-	db, err := Open(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	at := time.Date(2026, 11, 2, 8, 0, 0, 0, time.UTC)
-	if err := db.CreateThread(ThreadRow{UserID: DefaultUser, ID: "t", CreatedAt: at, UpdatedAt: at}); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, _, err := db.SubmitTurn("t", TurnRow{ID: "turn", Input: "hi", Model: llm.Model{Name: "m", Connection: "c"}, StartedAt: at}); err != nil {
-		t.Fatal(err)
-	}
-	for i, u := range []*Usage{{InputTokens: 100, CachedInputTokens: 60, OutputTokens: 7}, nil, {InputTokens: 40, CacheWriteInputTokens: 10, OutputTokens: 3}} {
-		it := ItemRow{ID: fmt.Sprintf("i%d", i), TurnID: "turn", Type: ItemAgentMessage, Status: ItemCompleted, Text: "x", Usage: u, StartedAt: at}
-		if _, _, err := db.RecordItem("t", it); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for range 2 {
-		if err := db.CountUsage("turn"); err != nil {
-			t.Fatal(err)
-		}
-	}
-	turn, err := db.Turn("turn")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := (Usage{InputTokens: 140, CachedInputTokens: 60, CacheWriteInputTokens: 10, OutputTokens: 10}); turn.Usage != want {
-		t.Errorf("the turn used %+v, want %+v", turn.Usage, want)
-	}
 }
