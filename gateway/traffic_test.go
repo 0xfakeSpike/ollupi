@@ -300,8 +300,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 			t.Errorf("the browser subagent was sent %q, want only the browser's tools", names)
 		}
 		if strings.HasSuffix(text, "Check the thing and report.") && (len(names) == 0 || slices.ContainsFunc(names, func(name string) bool {
-			_, launches := role.LaunchedBy(name)
-			return launches || strings.Contains(name, "scheduled_job")
+			return name == role.GeneralSubTool || name == role.BrowserSubTool || strings.Contains(name, "scheduled_job")
 		})) {
 			t.Errorf("the general subagent was sent %q, want its parent's tools without subagents or scheduled tasks", names)
 		}

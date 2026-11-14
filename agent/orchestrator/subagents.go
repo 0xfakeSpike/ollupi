@@ -14,9 +14,8 @@ func (o *Orchestrator) settle(parent repo.ThreadRow, turn repo.TurnRow, call rep
 	if err != nil {
 		return false, err
 	}
-	launched, ok := role.LaunchedBy(call.Tool)
-	if !ok {
-		return false, fmt.Errorf("orchestrator: call %s of %q launches no subagent role", call.ID, call.Tool)
+	if _, ok := role.Of(req.Role); !ok {
+		return false, fmt.Errorf("orchestrator: call %s launches role %q, which is none of %q", call.ID, req.Role, role.NameValues)
 	}
 	childID := call.Await.Handle
 	if childID == "" {
@@ -43,7 +42,7 @@ func (o *Orchestrator) settle(parent repo.ThreadRow, turn repo.TurnRow, call rep
 		return false, fmt.Errorf("orchestrator: subagent thread %s: %w", childID, err)
 	}
 	if child.Last == nil {
-		if _, err := o.submit(child.Thread, repo.TurnRow{Input: req.Prompt, Agent: string(launched.Name)}, turn.Model); err != nil {
+		if _, err := o.submit(child.Thread, repo.TurnRow{Input: req.Prompt, Agent: string(req.Role)}, turn.Model); err != nil {
 			return false, err
 		}
 		o.reconcile(childID)

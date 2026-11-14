@@ -303,7 +303,61 @@ func TestAWaitFromBeforeHandlesKeepsItsSubagentThread(t *testing.T) {
 	}
 	defer db.Close()
 	call, err := db.Item("call")
-	if err != nil || call.Await == nil || call.Await.Handle != "child" || call.Await.By != "agent" || string(call.Await.Request) != `{"prompt":"p"}` {
+	if err != nil || call.Await == nil || call.Await.Handle != "child" || call.Await.By != "agent" || string(call.Await.Request) != `{"prompt":"p","role":"general-sub-agent"}` {
 		t.Errorf("the wait after the step: %+v (%v)", call.Await, err)
+	}
+}
+
+func TestALaunchFromBeforeRolesNamesTheRoleOfItsTool(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, "data", "ollupi.sqlite")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	all, err := shardSteps()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := rawDB(t, path)
+	if err := sqlitedb.Migrate(old, all[:12], 0); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 11, 1, 8, 0, 0, 0, time.UTC)
+	rows := []any{
+		&ThreadRow{UserID: DefaultUser, ID: "main", Title: "main", CreatedAt: at, UpdatedAt: at},
+		&TurnRow{ID: "asked", ThreadID: "main", Seq: 1, Status: TurnWaitingOnAgent, Model: llm.Model{Name: "m", Connection: "c"}, Agent: "full-main-agent", CreatedAt: at, StartedAt: at},
+	}
+	for i, tool := range []string{"Agent", "BrowserAgent", "run_command"} {
+		rows = append(rows, &ItemRow{ID: tool, ThreadID: "main", TurnID: "asked", Seq: i + 1, Type: ItemToolCall, Status: ItemInProgress, Tool: tool, StartedAt: at})
+	}
+	for _, row := range rows {
+		if err := old.Create(row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tool := range []string{"Agent", "BrowserAgent"} {
+		if err := old.Exec("UPDATE items SET await = ? WHERE id = ?", `{"by":"agent","request":{"description":"d","prompt":"p"},"handle":"child"}`, tool).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := old.Exec("UPDATE items SET await = ? WHERE id = 'run_command'", `{"by":"user","request":{"questions":[]}}`).Error; err != nil {
+		t.Fatal(err)
+	}
+	closeRaw(t, old)
+
+	db, err := Open(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for tool, want := range map[string]string{
+		"Agent":        `{"description":"d","prompt":"p","role":"general-sub-agent"}`,
+		"BrowserAgent": `{"description":"d","prompt":"p","role":"browser-sub-agent"}`,
+		"run_command":  `{"questions":[]}`,
+	} {
+		call, err := db.Item(tool)
+		if err != nil || call.Await == nil || string(call.Await.Request) != want || (tool != "run_command" && call.Await.Handle != "child") {
+			t.Errorf("%s after the step: %+v (%v)", tool, call.Await, err)
+		}
 	}
 }
