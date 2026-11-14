@@ -1,7 +1,6 @@
 package orchestrator
 
 import (
-	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 )
@@ -18,13 +17,6 @@ func (h turnHost) Notify(it db.ItemRow, isNew bool) { h.o.emitItem(h.t, h.turn, 
 
 func (h turnHost) Delta(it db.ItemRow, text string) {
 	h.o.emit(Event{Kind: EventItemDelta, Thread: h.t, Turn: h.turn, Item: &it, Delta: text})
-}
-
-func (h turnHost) Memory(budget int) (*memory.Snapshot, error) {
-	if h.o.cfg.Memory == nil {
-		return nil, nil
-	}
-	return h.o.cfg.Memory.Snapshot(h.t.UserID, string(h.t.WorkspaceID), budget)
 }
 
 func (h turnHost) Background(caller tools.Caller, it db.ItemRow, args map[string]any) tools.Result {

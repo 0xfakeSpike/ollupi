@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
+	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
@@ -46,8 +47,10 @@ type Config struct {
 // the turn, its conversation and workspace, the items, the user's settings and the permissions.
 type Runtime struct {
 	DB *db.DB
-	// Attachments keeps the files sent with messages; without it messages have none.
+	// Attachments keeps the files sent with messages; without it messages have none. Memory keeps the users' memory;
+	// without it a run loads none.
 	Attachments blobs.Store
+	Memory      *memory.Manager
 	LLM         llm.Client
 	Registry    *tools.Registry
 	Window      *contextmanager.Manager
@@ -218,7 +221,10 @@ func hasSnapshot(items []db.ItemRow) bool {
 }
 
 func (rt *Runtime) loadMemory() error {
-	snapshot, err := rt.Host.Memory(rt.Window.MemoryBudget())
+	if rt.Memory == nil {
+		return nil
+	}
+	snapshot, err := rt.Memory.Snapshot(rt.thread.UserID, string(rt.thread.WorkspaceID), rt.Window.MemoryBudget())
 	if err != nil {
 		return fmt.Errorf("runtime: load memory: %w", err)
 	}
