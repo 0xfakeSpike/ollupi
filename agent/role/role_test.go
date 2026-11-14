@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
 )
@@ -52,6 +53,11 @@ func TestEachRoleIsOfferedItsTools(t *testing.T) {
 	}
 	if browser.Offers(shell) || !browser.Offers(page) {
 		t.Error("the browser subagent is offered other than the browser's tools")
+	}
+	for _, r := range all {
+		if !r.Offers(tools.ToolDescriptor{Name: contextmanager.ToolReadOutput}) {
+			t.Errorf("%s cannot read a shortened output", r.Name)
+		}
 	}
 }
 

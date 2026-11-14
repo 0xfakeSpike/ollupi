@@ -175,24 +175,16 @@ func (rt *Runtime) decided(it repo.ItemRow) (string, bool, *job, error) {
 	}
 }
 
-// arguments are the call's arguments for its tool and whether it asked to run in the background. ArgBackground is the
-// runtime's to read: it is taken out for a tool that may run in the background, and left to any other tool as its own.
+// arguments are the call's arguments for its tool and whether it asked to run in the background.
 func (rt *Runtime) arguments(it repo.ItemRow) (map[string]any, bool, error) {
 	args, err := callArguments(it)
 	if err != nil {
 		return nil, false, err
 	}
-	if d, _ := rt.tool(it.Tool); !d.Background {
-		return args, false, nil
-	}
-	v, given := args[tools.ArgBackground]
-	delete(args, tools.ArgBackground)
-	if !given {
-		return args, false, nil
-	}
-	background, ok := v.(bool)
-	if !ok {
-		return nil, false, fmt.Errorf("%s must be true or false", tools.ArgBackground)
+	d, _ := rt.tool(it.Tool)
+	background, err := d.TakeBackground(args)
+	if err != nil {
+		return nil, false, err
 	}
 	return args, background, nil
 }

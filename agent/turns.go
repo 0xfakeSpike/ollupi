@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/permission"
-	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
@@ -148,11 +147,10 @@ func (a *Agent) startTurn(threadID string, in Input, atts []repo.Attachment) (re
 	if err := a.checkImages(threadID, model, atts); err != nil {
 		return repo.TurnRow{}, err
 	}
-	window, err := a.windowFor(model)
+	main, err := a.mainRole(model)
 	if err != nil {
 		return repo.TurnRow{}, err
 	}
-	main := role.ForMain(window.InputTokens())
 	return a.submit(st.Thread, repo.TurnRow{Input: text, Attachments: atts, CronJobID: in.CronJobID, Agent: string(main.Name)}, model)
 }
 

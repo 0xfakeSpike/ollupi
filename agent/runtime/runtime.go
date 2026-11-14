@@ -113,15 +113,9 @@ func (rt *Runtime) tool(name string) (tools.ToolDescriptor, bool) {
 	return rt.offered[i], true
 }
 
-// offer splits the tools the run may use as its role does. The launcher of a subagent role that works with one provider
-// is hidden first while none of that provider's tools is visible: its subagent would have nothing to work with.
+// offer splits the tools the run may use as its role does.
 func (rt *Runtime) offer(permissions *permission.Checker) {
-	all := permissions.Tools()
-	visible := slices.DeleteFunc(slices.Clone(all), func(d tools.ToolDescriptor) bool {
-		r, ok := role.Launched(d.Name)
-		return ok && r.Provider != "" && !slices.ContainsFunc(all, func(t tools.ToolDescriptor) bool { return t.Provider == r.Provider })
-	})
-	rt.offered, rt.deferred = rt.Role.Offer(visible, rt.Window, slices.Concat(rt.History, rt.Items))
+	rt.offered, rt.deferred = rt.Role.Offer(permissions.Tools(), rt.Window, slices.Concat(rt.History, rt.Items))
 }
 
 func (rt *Runtime) run(ctx context.Context) (bool, error) {

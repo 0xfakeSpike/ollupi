@@ -2,7 +2,6 @@ package role
 
 import (
 	"encoding/json"
-	"maps"
 	"slices"
 	"strings"
 
@@ -17,6 +16,7 @@ import (
 // tools would take more than the tool budget. The ones a load_tools call loaded follow the others in load order, so the
 // tool list only grows.
 func (r Role) Offer(visible []tools.ToolDescriptor, window *contextmanager.Manager, items []repo.ItemRow) (offered, deferred []tools.ToolDescriptor) {
+	visible = launchable(visible)
 	external := func(d tools.ToolDescriptor) bool { return strings.Contains(d.Name, tools.ProviderSeparator) }
 	loader := func(d tools.ToolDescriptor) bool { return d.Name == tools.ToolLoadTools }
 	deferrable := func(d tools.ToolDescriptor) bool {
@@ -40,6 +40,15 @@ func (r Role) Offer(visible []tools.ToolDescriptor, window *contextmanager.Manag
 	return offered, deferred
 }
 
+// launchable leaves out the launcher of a subagent role that works with one provider while none of that provider's
+// tools is visible: its subagent would have nothing to work with.
+func launchable(visible []tools.ToolDescriptor) []tools.ToolDescriptor {
+	return slices.DeleteFunc(slices.Clone(visible), func(d tools.ToolDescriptor) bool {
+		r, ok := Launched(d.Name)
+		return ok && r.Provider != "" && !slices.ContainsFunc(visible, func(t tools.ToolDescriptor) bool { return t.Provider == r.Provider })
+	})
+}
+
 func loadedTools(items []repo.ItemRow) []string {
 	var names []string
 	for _, it := range items {
@@ -56,31 +65,11 @@ func loadedTools(items []repo.ItemRow) []string {
 	return names
 }
 
-// Specs are the tools as the model is sent them. A tool that may run in the background takes ArgBackground besides its
-// own arguments.
+// Specs are the tools as the model is sent them.
 func Specs(descriptors []tools.ToolDescriptor) []llm.ToolSpec {
 	specs := make([]llm.ToolSpec, 0, len(descriptors))
 	for _, d := range descriptors {
-		parameters := d.InputSchema
-		if d.Background {
-			parameters = withBackground(parameters)
-		}
-		specs = append(specs, llm.ToolSpec{Name: d.Name, Description: strings.TrimSpace(d.Description), Parameters: parameters})
+		specs = append(specs, llm.ToolSpec{Name: d.Name, Description: strings.TrimSpace(d.Description), Parameters: d.ModelSchema()})
 	}
 	return specs
-}
-
-func withBackground(schema map[string]any) map[string]any {
-	properties := map[string]any{}
-	if own, ok := schema["properties"].(map[string]any); ok {
-		properties = maps.Clone(own)
-	}
-	properties[tools.ArgBackground] = map[string]any{
-		"type": "boolean",
-		"description": "Run the call in the background: it returns at once with a background call id, and its result comes back " +
-			"to the conversation when it ends. Leave it out for a quick call, or one whose result you need before going on.",
-	}
-	out := maps.Clone(schema)
-	out["properties"] = properties
-	return out
 }
