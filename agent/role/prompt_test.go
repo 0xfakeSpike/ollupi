@@ -1,39 +1,64 @@
 package role
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo/skills"
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
 func TestDeferredToolsAreListedByProvider(t *testing.T) {
 	deferred := []tools.ToolDescriptor{{Provider: "github", Name: "github__issue"}, {Provider: "github", Name: "github__pr"}, {Provider: "slack", Name: "slack__post"}}
-	text := fullMain.System(Input{Agent: "AGENT", Root: "/p", Deferred: deferred})
+	text := system(t, fullMain, Input{Agent: "AGENT", Root: "/p", Deferred: deferred})
 	list := "# DEFERRED TOOLS\n"
 	i, j := strings.Index(text, list), strings.Index(text, "# PROJECT")
 	if i < 0 || j < i || !strings.Contains(text[i:j], "\n- github: github__issue, github__pr\n- slack: slack__post\n") {
 		t.Errorf("prompt:\n%s", text)
 	}
-	if strings.Contains(fullMain.System(Input{Agent: "AGENT"}), list) {
+	if strings.Contains(system(t, fullMain, Input{Agent: "AGENT"}), list) {
 		t.Error("a prompt without deferred tools has a DEFERRED TOOLS section")
 	}
 }
 
-func TestAMainAgentListsTheSkillsItHasAndCompactIsShorter(t *testing.T) {
-	catalog := []skills.Skill{{Name: "deploy", Description: "Ship it."}}
-	for _, r := range []Role{fullMain, compactMain} {
-		if !strings.Contains(r.System(Input{Agent: "AGENT", Skills: catalog, SkillTokens: 1000}), "# AVAILABLE SKILLS\n- deploy: Ship it.") {
-			t.Errorf("%s does not list its skills", r.Name)
+// system is the role's prompt from in.
+func system(t *testing.T, r Role, in Input) string {
+	t.Helper()
+	text, err := r.System(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return text
+}
+
+// skillsFor installs a skill deploy for each of the roles, in a skills directory of their own.
+func skillsFor(t *testing.T, roles ...Name) string {
+	t.Helper()
+	root := t.TempDir()
+	for _, r := range roles {
+		dir := filepath.Join(root, string(r), "deploy")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
 		}
-		if strings.Contains(r.System(Input{Agent: "AGENT", SkillTokens: 1000}), "# AVAILABLE SKILLS") {
-			t.Errorf("%s lists skills it has none of", r.Name)
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: deploy\ndescription: Ship it.\n---\nShip it carefully.\n"), 0o644); err != nil {
+			t.Fatal(err)
 		}
 	}
-	compact := compactMain.System(Input{Agent: "AGENT"})
-	if !strings.HasPrefix(compact, "AGENT\n\n") || !strings.Contains(compact, "# Safety") {
+	return root
+}
+
+func TestARoleListsTheSkillsItHasAndCompactIsShorter(t *testing.T) {
+	root := skillsFor(t, FullMain, CompactMain, BrowserSub)
+	for _, r := range all {
+		listed := strings.Contains(system(t, r, Input{Agent: "AGENT", SkillsDir: root, SkillTokens: 1000}), "# AVAILABLE SKILLS\n- deploy: Ship it.")
+		if want := r.Name != GeneralSub; listed != want {
+			t.Errorf("%s lists the skill: %v, want %v", r.Name, listed, want)
+		}
+	}
+	compact := system(t, compactMain, Input{Agent: "AGENT"})
+	if !strings.HasPrefix(compact, "AGENT\n\n") || !strings.Contains(compact, "# Safety") || strings.Contains(compact, "# AVAILABLE SKILLS") {
 		t.Errorf("compact:\n%s", compact)
 	}
 	if tokens := llm.EstimateTokens(compact); tokens > 400 {
@@ -42,9 +67,9 @@ func TestAMainAgentListsTheSkillsItHasAndCompactIsShorter(t *testing.T) {
 }
 
 func TestEachRoleWritesItsOwnPrompt(t *testing.T) {
-	in := Input{Agent: "AGENT", Root: "/p", Skills: []skills.Skill{{Name: "deploy", Description: "Ship it."}}, SkillTokens: 1000}
+	in := Input{Agent: "AGENT", Root: "/p", SkillTokens: 1000}
 	for _, r := range all {
-		text := r.System(in)
+		text := system(t, r, in)
 		if !r.Persona && text != r.Rules {
 			t.Errorf("%s has more than its own rules:\n%s", r.Name, text)
 		}
@@ -52,7 +77,7 @@ func TestEachRoleWritesItsOwnPrompt(t *testing.T) {
 			t.Errorf("%s does not put its rules between the agent's prompt and the conversation's sections:\n%s", r.Name, text)
 		}
 	}
-	if general, _ := Of(GeneralSub); !strings.Contains(general.System(in), "# You are a subagent") {
+	if general, _ := Of(GeneralSub); !strings.Contains(system(t, general, in), "# You are a subagent") {
 		t.Error("the general subagent is not told its answer is a report")
 	}
 }

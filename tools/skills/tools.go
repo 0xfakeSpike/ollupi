@@ -5,6 +5,7 @@ package skills
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/0xfakeSpike/ollupi/repo/skills"
@@ -20,12 +21,12 @@ const (
 	ToolReadResource  = "read_skill_resource"
 )
 
-// Tools provides the skill tools over the catalog of installed skills.
+// Tools provides the skill tools over the skills installed under root, which a call reads anew: the caller's role's.
 type Tools struct {
-	catalog *skills.Catalog
+	root string
 }
 
-func New(catalog *skills.Catalog) *Tools { return &Tools{catalog: catalog} }
+func New(root string) *Tools { return &Tools{root: root} }
 
 func (*Tools) Name() (string, string) {
 	return ProviderName, "Directory-based Agent Skills with explicit activation and on-demand resources."
@@ -35,9 +36,13 @@ func (*Tools) Name() (string, string) {
 func (t *Tools) Invoke(_ context.Context, caller tools.Caller, tool string, arguments map[string]any) (tools.Result, error) {
 	switch strings.TrimSpace(tool) {
 	case ToolGetRootDir:
-		return tools.Result{Output: map[string]any{"skills_root_dir": t.catalog.Dir(caller.Role)}}, nil
+		return tools.Result{Output: map[string]any{"skills_root_dir": filepath.Join(t.root, caller.Role)}}, nil
 	case ToolListSkills:
-		return tools.Result{Output: map[string]any{"skills": t.catalog.For(caller.Role)}}, nil
+		own, err := skills.Load(t.root, caller.Role)
+		if err != nil {
+			return tools.Result{}, err
+		}
+		return tools.Result{Output: map[string]any{"skills": own}}, nil
 	case ToolActivateSkill:
 		return t.activate(caller.Role, arguments)
 	case ToolReadResource:
@@ -101,7 +106,10 @@ func (t *Tools) activate(role string, arguments map[string]any) (tools.Result, e
 		return tools.Result{}, err
 	}
 	name := strings.TrimSpace(args.Name)
-	skill, ok := t.catalog.Lookup(role, name)
+	skill, ok, err := t.find(role, name)
+	if err != nil {
+		return tools.Result{}, err
+	}
 	if !ok {
 		return tools.Result{}, fmt.Errorf("skills: you have no skill named %q; use a name from AVAILABLE SKILLS", name)
 	}
@@ -126,9 +134,26 @@ func (t *Tools) readResource(role string, arguments map[string]any) (tools.Resul
 	if err != nil {
 		return tools.Result{}, err
 	}
-	page, err := t.catalog.ResourcePage(role, args.Skill, args.Path, args.OffsetRunes, args.LimitRunes)
+	skill, ok, err := t.find(role, args.Skill)
+	if err != nil {
+		return tools.Result{}, err
+	}
+	if !ok {
+		return tools.Result{}, fmt.Errorf("skills: you have no skill named %q; use a name from AVAILABLE SKILLS", args.Skill)
+	}
+	page, err := skill.Page(args.Path, args.OffsetRunes, args.LimitRunes)
 	if err != nil {
 		return tools.Result{}, err
 	}
 	return tools.Result{Output: page}, nil
+}
+
+// find is the skill of the role that has the name.
+func (t *Tools) find(role, name string) (skills.Skill, bool, error) {
+	own, err := skills.Load(t.root, role)
+	if err != nil {
+		return skills.Skill{}, false, err
+	}
+	skill, ok := skills.Find(own, name)
+	return skill, ok, nil
 }

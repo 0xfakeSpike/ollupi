@@ -10,7 +10,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo/db"
-	"github.com/0xfakeSpike/ollupi/repo/skills"
 )
 
 func (o *Orchestrator) checkModels() error {
@@ -67,12 +66,12 @@ func (o *Orchestrator) checkPromptFits() error {
 			return err
 		}
 		main := role.ForMain(window.InputTokens())
-		var catalog []skills.Skill
-		if o.skills != nil {
-			catalog = o.skills.For(string(main.Name))
-		}
+
 		offered, deferred := main.Offer(descriptors, window, nil)
-		system := main.System(role.Input{Agent: role.AgentPrompt(o.cfg.Name, o.cfg.Prompt), Skills: catalog, SkillTokens: window.SkillBudget(), Deferred: deferred})
+		system, err := main.System(role.Input{Agent: role.AgentPrompt(o.cfg.Name, o.cfg.Prompt), SkillsDir: o.cfg.SkillsDir, SkillTokens: window.SkillBudget(), Deferred: deferred})
+		if err != nil {
+			return err
+		}
 		if err := window.Fits(system, role.Specs(offered)); err != nil {
 			return err
 		}
