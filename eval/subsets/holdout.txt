@@ -1,6 +1,4 @@
-# Twenty Terminal-Bench 2.0 tasks kept apart from smoke for confirming a change: run them only once a change looks
-# right on smoke, and do not read their trials to steer the next change, or they stop telling whether a change
-# helps tasks it was not shaped on. One easy, sixteen medium and three hard, each needing 2 GB. Picked by hand.
+# Twenty tasks for confirming a change: do not read their trials to steer the next one; see eval/README.md.
 prove-plus-comm
 build-cython-ext
 crack-7z-hash

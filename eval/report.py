@@ -1,146 +1,113 @@
 #!/usr/bin/env python3
-"""Compare the versions of an agent on the trials Harbor kept under eval/jobs.
+"""Compare ollupi's latest version with the earlier ones on the trials under eval/jobs; see eval/README.md.
 
-    python3 eval/report.py [--last N | --all] [--agent NAME] [--jobs DIR]
-
-By default it puts an agent's latest version, the commit eval was built from (see build.sh), next to what came
-before it: for each task, the latest result of any earlier version, tagged with the version it came from, so that
-running only the tasks a change is for still compares each of them. A last column says which tasks the change fixed
-or broke. With --all each version gets a column of its own, oldest first.
-
-A trial counts only when its verifier ran the tests: Terminal-Bench's verifiers write verifier/ctrf.json from
-pytest, and a trial without it scored 0 because the tests never ran (the container could not install them, or the
-environment did not start), not because of what the agent did. Those are listed to run again.
-
-For each column and task, the latest job with a counted trial gives the result: a rerun of a task replaces the
-earlier one, and with --n-attempts the job's attempts give a pass rate such as 3/5. Minutes are the agent's, from
-its start to its end; T/O marks a trial the agent ran out of time in.
+    python3 eval/report.py [--all]
 """
 
 import argparse
-import json
 import re
-from datetime import datetime
-from pathlib import Path
+from collections import defaultdict
+from dataclasses import dataclass
+
+from trials import read_all
 
 
-def when(s):
-    return datetime.fromisoformat(s.replace("Z", "+00:00")) if s else None
+@dataclass
+class Result:
+    """A task's tested trials in one version, from the latest job that tested it."""
+
+    passed: int
+    runs: int
+    minutes: float
+    timeout: bool
+    version: str
+
+    @property
+    def rate(self):
+        return self.passed / self.runs
+
+    def cell(self, tagged=False):
+        mark = "pass" if self.passed == self.runs else "FAIL" if self.passed == 0 else f"{self.passed}/{self.runs}"
+        return f"{mark} {self.minutes:4.1f}m" + (" T/O" if self.timeout else "") + (f" @{short(self.version)}" if tagged else "")
 
 
-def trials(jobs):
-    for result in sorted(jobs.glob("*/*/*/result.json")):
-        trial = result.parent
-        r = json.loads(result.read_text())
-        info = r.get("agent_info") or {}
-        run = r.get("agent_execution") or {}
-        start, end = when(run.get("started_at")), when(run.get("finished_at"))
-        reward = trial / "verifier" / "reward.txt"
-        yield {
-            "agent": info.get("name", "?"),
-            "column": (info.get("name", "?"), (info.get("model_info") or {}).get("name", "?"), info.get("version") or "?"),
-            "task": r.get("task_name") or trial.name.split("__")[0],
-            "job": trial.parent.name,
-            "started": when(r.get("started_at")),
-            "counted": (trial / "verifier" / "ctrf.json").is_file() and reward.is_file(),
-            "passed": reward.is_file() and float(reward.read_text().strip() or 0) >= 1,
-            "minutes": (end - start).total_seconds() / 60 if start and end else None,
-            "timeout": ((r.get("exception_info") or {}).get("exception_type")) == "AgentTimeoutError",
-            "path": trial,
-        }
-
-
-def result(runs):
-    """The counted trials of a task in one column: (pass rate, mean minutes, any timeout), from its latest job."""
-    latest = max(t["job"] for t in runs)
-    run = [t for t in runs if t["job"] == latest]
-    return (sum(t["passed"] for t in run) / len(run), sum(t["minutes"] or 0 for t in run) / len(run),
-            any(t["timeout"] for t in run), len(run))
-
-
-def cell(r):
-    if r is None:
-        return "-"
-    if r == "untested":
-        return "not tested"
-    rate, minutes, timeout, n = r[:4]
-    mark = "pass" if rate == 1 else "FAIL" if rate == 0 else f"{round(rate * n)}/{n}"
-    return f"{mark} {minutes:4.1f}m" + (" T/O" if timeout else "") + (f" @{short(r[4])}" if len(r) > 4 else "")
+def summarize(trials):
+    latest = max(t.job for t in trials)
+    run = [t for t in trials if t.job == latest]
+    return Result(sum(t.passed for t in run), len(run), sum(t.minutes or 0 for t in run) / len(run),
+                  any(t.timeout for t in run), run[0].version)
 
 
 def short(version):
     """The commit of a version such as v0.12.1-7-gaeaf673-dirty+1a2b3c4d, with -dirty when it had changes."""
     m = re.search(r"-g([0-9a-f]+)(-dirty)?", version)
-    return (m.group(1) + ("-dirty" if m.group(2) else "")) if m else version
+    return m.group(1) + (m.group(2) or "") if m else version
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("--jobs", type=Path, default=Path(__file__).parent / "jobs")
-    p.add_argument("--agent", help="only this agent's columns")
     p.add_argument("--all", action="store_true", help="a column for every version, instead of the latest against before")
     a = p.parse_args()
 
-    found = [t for t in trials(a.jobs) if not a.agent or t["agent"] == a.agent]
-    if not found:
-        raise SystemExit(f"no trials under {a.jobs}")
-    first = {}
-    for t in found:
-        if t["started"] and (t["column"] not in first or t["started"] < first[t["column"]]):
-            first[t["column"]] = t["started"]
-    order = sorted({t["column"] for t in found}, key=lambda c: first.get(c) or datetime.min)
-    tasks = sorted({t["task"] for t in found})
+    # A version is a commit run with a model; versions are ordered by their first job.
+    trials = defaultdict(list)
+    for t in read_all():
+        trials[t.version, t.model].append(t)
+    if not trials:
+        raise SystemExit("no trials under eval/jobs")
+    versions = sorted(trials, key=lambda v: trials[v][0].job)
+    tasks = sorted({t.task for ts in trials.values() for t in ts})
 
-    results, rerun = {}, []
-    for c in order:
+    results, untested = {}, {}
+    for v in versions:
         for task in tasks:
-            mine = [t for t in found if t["column"] == c and t["task"] == task]
-            counted = [t for t in mine if t["counted"]]
-            if counted:
-                results[c, task] = result(counted)
-            elif mine:
-                results[c, task] = "untested"
-                rerun.append((c, task, max(mine, key=lambda t: t["job"])["path"]))
-
-    if a.all or len(order) == 1:
-        columns = order
-        labels = [f"{agent}@{version} · {model}" for agent, model, version in columns]
-    else:
-        # Before is a column of its own: each task's latest tested result among the earlier versions.
-        latest, earlier = order[-1], order[:-1]
-        before = ("before",)
-        for task in tasks:
-            tested = [c for c in earlier if isinstance(results.get((c, task)), tuple)]
+            mine = [t for t in trials[v] if t.task == task]
+            tested = [t for t in mine if t.tested]
             if tested:
-                results[before, task] = results[tested[-1], task] + (tested[-1][2],)
-        columns = [before, latest]
-        labels = ["before", f"{latest[0]}@{latest[2]} · {latest[1]}"]
-        rerun = [r for r in rerun if r[0] == latest]
+                results[v, task] = summarize(tested)
+            elif mine:
+                untested[v, task] = mine[-1].path
+
+    def column(v):
+        cells = {task: results[v, task].cell() if (v, task) in results else
+                 "not tested" if (v, task) in untested else "-" for task in tasks}
+        return f"{v[0]} · {v[1]}", cells, {task: results.get((v, task)) for task in tasks}
+
+    latest = versions[-1]
+    if a.all or len(versions) == 1:
+        columns = [column(v) for v in versions]
+    else:
+        # Before is each task's latest tested result in any earlier version, tagged with that version.
+        before = {task: next((results[v, task] for v in reversed(versions[:-1]) if (v, task) in results), None)
+                  for task in tasks}
+        cells = {task: r.cell(tagged=True) if r else "-" for task, r in before.items()}
+        columns = [("before", cells, before), column(latest)]
+        untested = {k: path for k, path in untested.items() if k[0] == latest}
+
     compare = len(columns) == 2
-    width = max(len(t) for t in tasks) + 2
-    cols = [max(len(label), 16) + 2 for label in labels]
-    print("task".ljust(width) + "".join(label.rjust(w) for label, w in zip(labels, cols)) + ("   change" if compare else ""))
+    width = max(map(len, tasks)) + 2
+    widths = [max(len(label), 16) + 2 for label, _, _ in columns]
+    print("task".ljust(width) + "".join(label.rjust(w) for (label, _, _), w in zip(columns, widths))
+          + ("   change" if compare else ""))
     for task in tasks:
-        row = [results.get((c, task)) for c in columns]
-        line = task.ljust(width) + "".join(cell(r).rjust(w) for r, w in zip(row, cols))
-        if compare and all(isinstance(r, tuple) for r in row):
-            before, after = row[0][0], row[1][0]
-            line += "   fixed" if after > before else "   BROKE" if after < before else ""
+        line = task.ljust(width) + "".join(cells[task].rjust(w) for (_, cells, _), w in zip(columns, widths))
+        if compare and all(r[task] for _, _, r in columns):
+            was, now = (r[task].rate for _, _, r in columns)
+            line += "   fixed" if now > was else "   BROKE" if now < was else ""
         print(line)
     print()
-    for c, label in zip(columns, labels):
-        done = [r for (col, _), r in results.items() if col == c and isinstance(r, tuple)]
-        print(f"{label}: {sum(r[0] for r in done):g}/{len(done)} passed, {sum(r[1] for r in done):.1f} agent minutes")
-    if compare and columns[0] == ("before",):
-        both = [t for t in tasks if isinstance(results.get((columns[0], t)), tuple) and isinstance(results.get((columns[1], t)), tuple)]
+    for label, _, r in columns:
+        done = [x for x in r.values() if x]
+        print(f"{label}: {sum(x.rate for x in done):g}/{len(done)} passed, {sum(x.minutes for x in done):.1f} agent minutes")
+    if compare:
+        both = [task for task in tasks if all(r[task] for _, _, r in columns)]
         if both:
-            b = sum(results[columns[0], t][0] for t in both)
-            n = sum(results[columns[1], t][0] for t in both)
-            print(f"on the {len(both)} tasks both tested: {b:g} passed before, {n:g} now")
-    if rerun:
+            was, now = (sum(r[task].rate for task in both) for _, _, r in columns)
+            print(f"on the {len(both)} tasks both tested: {was:g} passed before, {now:g} now")
+    if untested:
         print("\nNot tested, because the verifier never ran the tests; read verifier/test-stdout.txt and run again:")
-        for (agent, model, version), task, path in rerun:
-            print(f"  {agent}@{version}  {task}  ({path})")
+        for ((version, _), _), path in untested.items():
+            print(f"  {version}  {path}")
 
 
 if __name__ == "__main__":

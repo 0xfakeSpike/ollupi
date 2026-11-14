@@ -1,11 +1,7 @@
-// Command eval runs one task through ollupi's agent and exits: one user, one conversation, one turn, no gateway and
-// no client. A benchmark harness such as Harbor runs it inside a task's container, where the container is the
-// sandbox, so by default commands run with full access; nothing asks for approval. When the model asks the user something,
-// eval answers that no one is there and it should decide for itself.
-//
-// The task comes from the OLLUPI_INSTRUCTION environment variable, a file (-instruction-file) or stdin; the model's
-// key from the variable -key-env names. It prints the agent's last message and exits 1 when the turn does not
-// complete. With -out it keeps the turn and its items in that file as JSON, rewritten as each item completes.
+// Command eval runs one benchmark task through ollupi's agent inside the task's container and exits: one user, one
+// conversation, one turn. The container is the sandbox, so commands run with full access and nothing asks for
+// approval; a question the model asks is answered that no one is there. It is configured by the environment (see
+// eval/README.md), prints the agent's last message, and exits 1 when the turn does not complete.
 package main
 
 import (
@@ -14,11 +10,11 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -27,6 +23,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
+	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
@@ -45,76 +42,51 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})))
 	log.SetOutput(os.Stderr)
 	log.SetFlags(0)
-	api := flag.String("api", "openai", "the provider's API: openai (chat completions, also for compatible providers), anthropic or gemini")
-	baseURL := flag.String("base-url", "", "the provider's base URL (default: the API's own)")
-	model := flag.String("model", "", "the model to run, as the provider names it")
-	keyEnv := flag.String("key-env", "OLLUPI_API_KEY", "the environment variable holding the provider's key")
-	contextWindow := flag.Int("context", 128_000, "the model's context window, in tokens")
-	output := flag.Int("output", 8_192, "the most tokens the model writes in one response")
-	dir := flag.String("dir", "", "the folder the task is in and commands run in (default: the current one)")
-	home := flag.String("home", "", "the folder ollupi keeps its database in (default: a new temporary one)")
-	instructionFile := flag.String("instruction-file", "", "read the task from this file (default: $OLLUPI_INSTRUCTION, else stdin)")
-	promptFile := flag.String("prompt-file", "", "add this file's text to the agent's prompt")
-	mode := flag.String("sandbox", "full-access", "the sandbox commands run in: full-access inside a task's container, "+
-		"workspace-write to confine them on macOS")
-	out := flag.String("out", "", "write the turn's items to this file as JSON")
-	runLimit := flag.Duration("run-limit", 0, "fail the turn after this long (default: the agent's own limit)")
+	out := flag.String("out", "", "keep the turn and its items in this file as JSON, rewritten as each item completes")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println(version)
 		return
 	}
-	if *model == "" {
-		log.Fatal("eval: -model is required")
-	}
 
-	instruction, err := readInstruction(*instructionFile)
-	if err != nil {
-		log.Fatalf("eval: %v", err)
-	}
-	var prompt string
-	if *promptFile != "" {
-		raw, err := os.ReadFile(*promptFile)
-		if err != nil {
-			log.Fatalf("eval: %v", err)
-		}
-		prompt = string(raw)
-	}
-	if *dir == "" {
-		if *dir, err = os.Getwd(); err != nil {
-			log.Fatalf("eval: %v", err)
-		}
-	}
-	if *home == "" {
-		if *home, err = os.MkdirTemp("", "ollupi-eval-"); err != nil {
-			log.Fatalf("eval: %v", err)
-		}
-	}
-
-	limits := map[string]llm.Limits{*model: {Context: *contextWindow, Output: *output}}
-	key := os.Getenv(*keyEnv)
+	instruction := required("OLLUPI_INSTRUCTION")
+	model := required("OLLUPI_MODEL")
+	key := required("OLLUPI_API_KEY")
+	baseURL := os.Getenv("OLLUPI_BASE_URL")
+	limits := map[string]llm.Limits{model: {Context: number("OLLUPI_CONTEXT", 128_000), Output: number("OLLUPI_OUTPUT", 8_192)}}
 	var client llm.Client
-	switch *api {
+	var err error
+	switch api := cmp.Or(os.Getenv("OLLUPI_API"), "openai"); api {
 	case "openai":
-		client = llm.NewOpenAI(*baseURL, key, 4, limits)
+		client = llm.NewOpenAI(baseURL, key, 4, limits)
 	case "anthropic":
-		client = llm.NewAnthropic(*baseURL, key, 4, limits)
+		client = llm.NewAnthropic(baseURL, key, 4, limits)
 	case "gemini":
-		if client, err = llm.NewGemini(*baseURL, key, 4, limits); err != nil {
+		if client, err = llm.NewGemini(baseURL, key, 4, limits); err != nil {
 			log.Fatalf("eval: %v", err)
 		}
 	default:
-		log.Fatalf("eval: unknown -api %q", *api)
+		log.Fatalf("eval: unknown OLLUPI_API %q", api)
 	}
 
-	store, err := db.Open(*home)
+	dir, err := os.Getwd()
+	if err != nil {
+		log.Fatalf("eval: %v", err)
+	}
+	home, err := os.MkdirTemp("", "ollupi-eval-")
+	if err != nil {
+		log.Fatalf("eval: %v", err)
+	}
+	store, err := db.Open(home)
 	if err != nil {
 		log.Fatalf("eval: %v", err)
 	}
 	defer store.Close()
-	runner, err := workspace.New(workspace.Options{Config: workspace.Config{WorkspaceDirs: []string{*dir}, SandboxMode: *mode},
-		Agent: workspace.AgentFiles{Home: *home}})
+	runner, err := workspace.New(workspace.Options{
+		Config: workspace.Config{WorkspaceDirs: []string{dir}, SandboxMode: string(sandbox.ModeFullAccess)},
+		Agent:  workspace.AgentFiles{Home: home},
+	})
 	if err != nil {
 		log.Fatalf("eval: %v", err)
 	}
@@ -126,12 +98,11 @@ func main() {
 	// harness kills the run at its time limit.
 	changed := make(chan struct{}, 1)
 	ag = orchestrator.New(orchestrator.Config{
-		Name: "ollupi", Prompt: prompt,
-		Models:      []llm.Model{{Name: *model, Connection: "model"}},
+		Name:        "ollupi",
+		Models:      []llm.Model{{Name: model, Connection: "model"}},
 		Connections: map[string]llm.Client{"model": client},
 		Providers:   []tools.Provider{runner, web.New(web.Options{})},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
-		RunLimit:    *runLimit,
 		DB:          store,
 		OnEvent: func(e orchestrator.Event) {
 			switch e.Kind {
@@ -216,6 +187,26 @@ func main() {
 	}
 }
 
+func required(name string) string {
+	v := os.Getenv(name)
+	if strings.TrimSpace(v) == "" {
+		log.Fatalf("eval: set %s", name)
+	}
+	return v
+}
+
+func number(name string, fallback int) int {
+	v := os.Getenv(name)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		log.Fatalf("eval: %s must be a positive number of tokens, not %q", name, v)
+	}
+	return n
+}
+
 // writeItems replaces the file whole, so a reader never sees half of it.
 func writeItems(path string, turn db.TurnRow, items []db.ItemRow) error {
 	raw, err := json.MarshalIndent(struct {
@@ -230,26 +221,6 @@ func writeItems(path string, turn db.TurnRow, items []db.ItemRow) error {
 		return err
 	}
 	return os.Rename(tmp, path)
-}
-
-func readInstruction(file string) (string, error) {
-	var raw []byte
-	var err error
-	switch {
-	case file != "":
-		raw, err = os.ReadFile(file)
-	case os.Getenv("OLLUPI_INSTRUCTION") != "":
-		return os.Getenv("OLLUPI_INSTRUCTION"), nil
-	default:
-		raw, err = io.ReadAll(os.Stdin)
-	}
-	if err != nil {
-		return "", err
-	}
-	if strings.TrimSpace(string(raw)) == "" {
-		return "", fmt.Errorf("the task is empty")
-	}
-	return string(raw), nil
 }
 
 // logItem writes a line for each tool call and message as it completes, so the harness's log shows the run.

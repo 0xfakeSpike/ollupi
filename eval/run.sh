@@ -1,23 +1,10 @@
 #!/bin/sh
-# Runs Terminal-Bench 2.0 tasks through Harbor for one agent, then compares its latest version with what came
-# before, with eval/report.py.
+# Runs Terminal-Bench 2.0 tasks through ollupi with Harbor, then compares the result with earlier versions; see
+# eval/README.md.
 #
-#   eval/run.sh <agent> [subset] [harbor run flags...]
-#
-# agent is ollupi or any agent Harbor ships, such as terminus-2. subset names a file in eval/subsets (default
-# smoke), or is all. Further flags go to harbor run, such as --n-attempts 5; with -i the tasks it names run instead
-# of the subset.
-#
-# Before it starts it checks what would otherwise score every task 0 or test the wrong code: that Docker runs,
-# that containers download over both HTTP and HTTPS, and, for ollupi, that eval/build holds the current code.
-#
-# Environment: MODEL (default deepseek/deepseek-flash), N trials at once (default 2), TASKS_DIR (default
-# ~/harbor-tasks/terminal-bench-2.0, downloaded when missing). ollupi takes OLLUPI_API_KEY and OLLUPI_BASE_URL
-# (see harbor/ollupi_agent.py); Harbor's agents read the provider's own variables, such as DEEPSEEK_API_KEY.
+#   eval/run.sh [subset] [harbor run flags...]
 set -eu
 root=$(cd "$(dirname "$0")/.." && pwd)
-agent=${1:?usage: eval/run.sh <agent> [subset] [harbor run flags...]}
-shift
 subset=smoke
 case ${1:-} in
 "" | -*) ;;
@@ -37,6 +24,7 @@ fail() {
 
 command -v harbor >/dev/null || fail "harbor is not installed: uv tool install --python 3.12 harbor==0.25.0"
 docker info >/dev/null 2>&1 || fail "Docker is not running"
+[ -n "${OLLUPI_API_KEY:-}" ] || fail "set OLLUPI_API_KEY to the provider's key"
 
 # harbor download exports into the folder it is given, under terminal-bench/; runs read the tasks from there, so
 # they need no clone from GitHub.
@@ -74,19 +62,12 @@ else
 	includes=$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' -e 's/^/-i /' "$root/eval/subsets/$subset.txt")
 fi
 
-case $agent in
-ollupi)
-	[ -n "${OLLUPI_API_KEY:-}" ] || fail "set OLLUPI_API_KEY to the provider's key"
-	"$root/eval/build.sh" --if-stale
-	export PYTHONPATH="$root/eval/harbor${PYTHONPATH:+:$PYTHONPATH}"
-	harbor_agent=ollupi_agent:Ollupi
-	;;
-*) harbor_agent=$agent ;;
-esac
+"$root/eval/build.sh" --if-stale
 
 cd "$root"
 # Task names hold no spaces, so $includes splits into its -i flags.
 # shellcheck disable=SC2086
-harbor run -p "$tasks_dir" -m "$model" -a "$harbor_agent" $includes -n "${N:-2}" --max-retries 1 \
-	-o "eval/jobs/$agent" "$@"
-python3 "$root/eval/report.py" --agent "$agent"
+PYTHONPATH="$root/eval/harbor${PYTHONPATH:+:$PYTHONPATH}" \
+	harbor run -p "$tasks_dir" -m "$model" -a ollupi_agent:Ollupi $includes -n "${N:-2}" --max-retries 1 \
+	-o eval/jobs "$@"
+python3 "$root/eval/report.py"
