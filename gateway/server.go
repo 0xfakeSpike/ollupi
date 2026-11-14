@@ -14,6 +14,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
+	"github.com/0xfakeSpike/ollupi/agent/service"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/pkg/wshub"
 	"github.com/0xfakeSpike/ollupi/repo/db"
@@ -40,7 +41,7 @@ const (
 )
 
 type Server struct {
-	orchestrator *orchestrator.Orchestrator
+	service      *service.Service
 	db           *db.DB
 	memory       *memory.Manager
 	jobs         *cron.Jobs
@@ -206,18 +207,18 @@ func (c *conn) initialize(ctx context.Context, _ InitializeParams) (InitializeRe
 		c.mu.Lock()
 		c.initialized = true
 		c.mu.Unlock()
-		c.requests(c.s.orchestrator.AllPendingRequests(c.user))
+		c.requests(c.s.service.AllPendingRequests(c.user))
 	}
 	return InitializeResult{ServerInfo: ServerInfo{Name: "ollupi", Version: version()}, ProtocolSHA256: protocolSHA256}, after, nil
 }
 
 func (c *conn) modelList(ctx context.Context, _ Empty) (ModelListResult, func(), error) {
-	models, fallback := c.s.orchestrator.ListModels()
+	models, fallback := c.s.service.ListModels()
 	return ModelListResult{Data: nonNil(models), Default: fallback}, nil, nil
 }
 
 func (c *conn) toolList(ctx context.Context, _ Empty) (ToolListResult, func(), error) {
-	list, err := c.s.orchestrator.ListTools(c.user)
+	list, err := c.s.service.ListTools(c.user)
 	if err != nil {
 		return ToolListResult{}, nil, err
 	}
@@ -276,7 +277,7 @@ func (c *conn) event(e event.Event) {
 
 // requests asks the client what is waiting on it. A client that cannot be told would wait without knowing, so one that
 // could not be told is dropped and asked again when it comes back.
-func (c *conn) requests(pending []orchestrator.Request, err error) {
+func (c *conn) requests(pending []service.Request, err error) {
 	if errors.Is(err, db.ErrNotFound) {
 		return
 	}
@@ -309,7 +310,7 @@ func (c *conn) request(threadID string, it db.ItemRow) {
 		if err := c.resolve(threadID, it, result); err != nil {
 			slog.Warn("client response not applied", "item", it.ID, "err", err)
 			c.rpc.Notify(notifyError, ErrorNotification{ThreadID: threadID, TurnID: it.TurnID, ItemID: it.ID, Message: serverError(err).Message})
-			if !errors.Is(err, orchestrator.ErrNoSuchRequest) {
+			if !errors.Is(err, service.ErrNoSuchRequest) {
 				c.request(threadID, it)
 			}
 		}
@@ -341,15 +342,15 @@ func (c *conn) resolve(threadID string, it db.ItemRow, result json.RawMessage) e
 			return err
 		}
 		if r.Skipped {
-			return c.s.orchestrator.SkipUserInput(c.user, threadID, it.ID)
+			return c.s.service.SkipUserInput(c.user, threadID, it.ID)
 		}
-		return c.s.orchestrator.AnswerUserInput(c.user, threadID, it.ID, r.Answers)
+		return c.s.service.AnswerUserInput(c.user, threadID, it.ID, r.Answers)
 	}
 	var r ApprovalResponse
 	if err := json.Unmarshal(result, &r); err != nil {
 		return err
 	}
-	return c.s.orchestrator.ResolveApproval(c.user, threadID, it.Approval.ID, r.Decision, "gateway")
+	return c.s.service.ResolveApproval(c.user, threadID, it.Approval.ID, r.Decision, "gateway")
 }
 
 const pageBytes = 4 << 20
@@ -362,17 +363,17 @@ func itemBytes(it db.ItemRow) int {
 	return len(raw)
 }
 
-func agentInput(input []UserInput) (orchestrator.Input, error) {
-	var in orchestrator.Input
+func agentInput(input []UserInput) (service.Input, error) {
+	var in service.Input
 	texts := make([]string, 0, len(input))
 	for _, part := range input {
 		switch part.Type {
 		case "text":
 			texts = append(texts, part.Text)
 		case "file":
-			in.Attachments = append(in.Attachments, orchestrator.AttachmentInput{Path: part.Path, Name: part.Name, MimeType: part.MimeType})
+			in.Attachments = append(in.Attachments, service.AttachmentInput{Path: part.Path, Name: part.Name, MimeType: part.MimeType})
 		default:
-			return orchestrator.Input{}, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "input type %q is not supported", part.Type)
+			return service.Input{}, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "input type %q is not supported", part.Type)
 		}
 	}
 	in.Text = strings.Join(texts, "\n")
@@ -393,19 +394,19 @@ var errorCodes = []struct {
 	{db.ErrNotFound, errNotFound},
 	{orchestrator.ErrNoActiveTurn, errNoActiveTurn},
 	{orchestrator.ErrTurnMismatch, errTurnMismatch},
-	{orchestrator.ErrNoSuchRequest, errNoSuchRequest},
-	{orchestrator.ErrSubagentThread, errSubagentThread},
-	{orchestrator.ErrWorkspaceArchived, errWorkspaceArchived},
-	{orchestrator.ErrThreadArchived, errThreadArchived},
-	{orchestrator.ErrThreadBusy, errThreadBusy},
-	{orchestrator.ErrWorkspaceBusy, errThreadBusy},
-	{orchestrator.ErrQueueFull, errThreadBusy},
-	{orchestrator.ErrEnvironmentInUse, jsonrpc.CodeInvalidParams},
-	{orchestrator.ErrInvalidMessage, jsonrpc.CodeInvalidParams},
-	{orchestrator.ErrInvalidAnswer, jsonrpc.CodeInvalidParams},
-	{orchestrator.ErrInvalidDecision, jsonrpc.CodeInvalidParams},
-	{orchestrator.ErrInvalidName, jsonrpc.CodeInvalidParams},
-	{orchestrator.ErrInvalidPath, jsonrpc.CodeInvalidParams},
+	{service.ErrNoSuchRequest, errNoSuchRequest},
+	{service.ErrSubagentThread, errSubagentThread},
+	{service.ErrWorkspaceArchived, errWorkspaceArchived},
+	{service.ErrThreadArchived, errThreadArchived},
+	{service.ErrThreadBusy, errThreadBusy},
+	{service.ErrWorkspaceBusy, errThreadBusy},
+	{service.ErrQueueFull, errThreadBusy},
+	{service.ErrEnvironmentInUse, jsonrpc.CodeInvalidParams},
+	{service.ErrInvalidMessage, jsonrpc.CodeInvalidParams},
+	{service.ErrInvalidAnswer, jsonrpc.CodeInvalidParams},
+	{service.ErrInvalidDecision, jsonrpc.CodeInvalidParams},
+	{service.ErrInvalidName, jsonrpc.CodeInvalidParams},
+	{service.ErrInvalidPath, jsonrpc.CodeInvalidParams},
 	{permission.ErrInvalidSettings, jsonrpc.CodeInvalidParams},
 	{memory.ErrInvalidChange, jsonrpc.CodeInvalidParams},
 	{tools.ErrUnknownTool, jsonrpc.CodeInvalidParams},

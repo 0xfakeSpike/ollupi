@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
+	"github.com/0xfakeSpike/ollupi/agent/service"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
@@ -89,7 +89,7 @@ func TestAMessageTakesThePlaceOfWhatTheTurnWaitsFor(t *testing.T) {
 			}
 			defer store.Close()
 			writes := &atomic.Int32{}
-			ag := orchestrator.New(orchestrator.Config{
+			ag := service.New(service.Config{
 				Name: "Ollupi", Models: []llm.Model{{Name: "demo", Connection: "fake"}},
 				Settings:    permission.Settings{ApprovalPolicy: string(permission.Untrusted)},
 				Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
@@ -109,7 +109,7 @@ func TestAMessageTakesThePlaceOfWhatTheTurnWaitsFor(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			turn, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, orchestrator.Input{Text: "记一下买牛奶"})
+			turn, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, service.Input{Text: "记一下买牛奶"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -127,7 +127,7 @@ func TestAMessageTakesThePlaceOfWhatTheTurnWaitsFor(t *testing.T) {
 				}
 			}
 			until(tc.waits)
-			if _, err := ag.SteerTurn(ctx, db.DefaultUser, th.ID, turn.ID, orchestrator.Input{Text: "算了，先别记"}); err != nil {
+			if _, err := ag.SteerTurn(ctx, db.DefaultUser, th.ID, turn.ID, service.Input{Text: "算了，先别记"}); err != nil {
 				t.Fatal(err)
 			}
 			until(db.TurnCompleted)

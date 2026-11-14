@@ -33,8 +33,8 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/event"
-	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
+	"github.com/0xfakeSpike/ollupi/agent/service"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 )
@@ -106,9 +106,9 @@ func (t *tracker) on(e event.Event) {
 }
 
 // start holds no lock while StartTurn runs: the agent's loop delivers events to on, which takes it.
-func (t *tracker) start(ag *orchestrator.Orchestrator, user, threadID, text string) string {
+func (t *tracker) start(ag *service.Service, user, threadID, text string) string {
 	at := time.Now()
-	turn, err := ag.StartTurn(context.Background(), user, threadID, orchestrator.Input{Text: text})
+	turn, err := ag.StartTurn(context.Background(), user, threadID, service.Input{Text: text})
 	if err != nil {
 		log.Fatalf("start turn: %v", err)
 	}
@@ -227,7 +227,7 @@ func parked(args []string) {
 	defer store.Close()
 	m := &model{}
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}}
-	ag := orchestrator.New(orchestrator.Config{
+	ag := service.New(service.Config{
 		Name: "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": m},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},

@@ -1,4 +1,4 @@
-package orchestrator
+package service
 
 import (
 	"errors"
@@ -14,37 +14,37 @@ type Request struct {
 	Item   db.ItemRow
 }
 
-func (o *Orchestrator) PendingRequests(user, threadID string) ([]Request, error) {
-	if err := o.owned(user, threadID); err != nil {
+func (sv *Service) PendingRequests(user, threadID string) ([]Request, error) {
+	if err := sv.owned(user, threadID); err != nil {
 		return nil, err
 	}
-	st, err := o.cfg.DB.ThreadState(threadID)
+	st, err := sv.cfg.DB.ThreadState(threadID)
 	if err != nil {
-		return nil, fmt.Errorf("orchestrator: thread %s: %w", threadID, err)
+		return nil, fmt.Errorf("service: thread %s: %w", threadID, err)
 	}
 	out := requestsOf(st)
 	for _, call := range st.AgentCalls() {
-		child, err := o.cfg.DB.ThreadState(call.Await.Handle)
+		child, err := sv.cfg.DB.ThreadState(call.Await.Handle)
 		if err != nil {
-			return nil, fmt.Errorf("orchestrator: thread %s: %w", call.Await.Handle, err)
+			return nil, fmt.Errorf("service: thread %s: %w", call.Await.Handle, err)
 		}
 		out = append(out, requestsOf(child)...)
 	}
 	return byRequestTime(out), nil
 }
 
-func (o *Orchestrator) AllPendingRequests(user string) ([]Request, error) {
-	ids, err := o.cfg.DB.ThreadsWaitingOnUser(user)
+func (sv *Service) AllPendingRequests(user string) ([]Request, error) {
+	ids, err := sv.cfg.DB.ThreadsWaitingOnUser(user)
 	if err != nil {
-		return nil, fmt.Errorf("orchestrator: threads waiting on the user: %w", err)
+		return nil, fmt.Errorf("service: threads waiting on the user: %w", err)
 	}
 	var out []Request
 	for _, id := range ids {
-		st, err := o.cfg.DB.ThreadState(id)
+		st, err := sv.cfg.DB.ThreadState(id)
 		switch {
 		case errors.Is(err, db.ErrNotFound):
 		case err != nil:
-			return nil, fmt.Errorf("orchestrator: thread %s: %w", id, err)
+			return nil, fmt.Errorf("service: thread %s: %w", id, err)
 		default:
 			out = append(out, requestsOf(st)...)
 		}

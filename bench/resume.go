@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
+	"github.com/0xfakeSpike/ollupi/agent/service"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 )
@@ -39,8 +39,8 @@ func resume(args []string) {
 	}
 	defer store.Close()
 	answer := strings.Repeat("A paragraph of an answer, about as long as a short reply in a chat. ", 6)
-	open := func(m *model, tr *tracker) (*orchestrator.Orchestrator, context.CancelFunc, time.Duration) {
-		ag := orchestrator.New(orchestrator.Config{
+	open := func(m *model, tr *tracker) (*service.Service, context.CancelFunc, time.Duration) {
+		ag := service.New(service.Config{
 			Name: "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 			Connections: map[string]llm.Client{"fake": m},
 			Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},

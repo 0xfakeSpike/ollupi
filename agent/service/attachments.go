@@ -1,4 +1,4 @@
-package orchestrator
+package service
 
 import (
 	"bytes"
@@ -45,31 +45,31 @@ var imageTypes = map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "i
 
 // attach stores what a message brings, before the message goes through the loop: a sandbox or blob store that is slow
 // there would hold up every thread on the shard.
-func (o *Orchestrator) attach(ctx context.Context, user, threadID string, ins []AttachmentInput) ([]db.Attachment, error) {
-	t, err := o.topThread(user, threadID)
+func (sv *Service) attach(ctx context.Context, user, threadID string, ins []AttachmentInput) ([]db.Attachment, error) {
+	t, err := sv.topThread(user, threadID)
 	if err != nil {
 		return nil, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, attachmentTimeout)
 	defer cancel()
-	return o.storeAttachments(ctx, t, ins)
+	return sv.storeAttachments(ctx, t, ins)
 }
 
-func (o *Orchestrator) storeAttachments(ctx context.Context, t db.ThreadRow, ins []AttachmentInput) ([]db.Attachment, error) {
+func (sv *Service) storeAttachments(ctx context.Context, t db.ThreadRow, ins []AttachmentInput) ([]db.Attachment, error) {
 	if len(ins) == 0 {
 		return nil, nil
 	}
-	if o.cfg.Attachments == nil {
-		return nil, fmt.Errorf("orchestrator: %w: this agent takes no attachments", ErrInvalidMessage)
+	if sv.cfg.Attachments == nil {
+		return nil, fmt.Errorf("service: %w: this agent takes no attachments", ErrInvalidMessage)
 	}
 	if len(ins) > maxAttachments {
-		return nil, fmt.Errorf("orchestrator: %w: %d attachments; at most %d are accepted", ErrInvalidMessage, len(ins), maxAttachments)
+		return nil, fmt.Errorf("service: %w: %d attachments; at most %d are accepted", ErrInvalidMessage, len(ins), maxAttachments)
 	}
 	out := make([]db.Attachment, 0, len(ins))
 	for _, in := range ins {
-		att, err := o.storeAttachment(ctx, t, in)
+		att, err := sv.storeAttachment(ctx, t, in)
 		if err != nil {
-			o.removeAttachments(out)
+			sv.removeAttachments(out)
 			return nil, err
 		}
 		out = append(out, att)
@@ -77,13 +77,13 @@ func (o *Orchestrator) storeAttachments(ctx context.Context, t db.ThreadRow, ins
 	return out, nil
 }
 
-func (o *Orchestrator) storeAttachment(ctx context.Context, t db.ThreadRow, in AttachmentInput) (db.Attachment, error) {
+func (sv *Service) storeAttachment(ctx context.Context, t db.ThreadRow, in AttachmentInput) (db.Attachment, error) {
 	if !filepath.IsAbs(in.Path) {
-		return db.Attachment{}, fmt.Errorf("orchestrator: %w: attachment path %q is not absolute", ErrInvalidMessage, in.Path)
+		return db.Attachment{}, fmt.Errorf("service: %w: attachment path %q is not absolute", ErrInvalidMessage, in.Path)
 	}
-	src, size, err := o.attachmentSource(ctx, t.UserID, in.Path)
+	src, size, err := sv.attachmentSource(ctx, t.UserID, in.Path)
 	if err != nil {
-		return db.Attachment{}, fmt.Errorf("orchestrator: %w: attachment %s: %v", ErrInvalidMessage, in.Path, err)
+		return db.Attachment{}, fmt.Errorf("service: %w: attachment %s: %v", ErrInvalidMessage, in.Path, err)
 	}
 	name := in.Name
 	if strings.TrimSpace(name) == "" {
@@ -91,18 +91,18 @@ func (o *Orchestrator) storeAttachment(ctx context.Context, t db.ThreadRow, in A
 	}
 	att, err := describe(src, size, attachmentName(name), in.MimeType)
 	if err != nil {
-		return db.Attachment{}, fmt.Errorf("orchestrator: %w: %v", ErrInvalidMessage, err)
+		return db.Attachment{}, fmt.Errorf("service: %w: %v", ErrInvalidMessage, err)
 	}
 	att.File = t.ID + "/" + att.File
-	if err := o.copyAttachment(ctx, src, att); err != nil {
-		return db.Attachment{}, fmt.Errorf("orchestrator: store attachment %s: %w", att.Name, err)
+	if err := sv.copyAttachment(ctx, src, att); err != nil {
+		return db.Attachment{}, fmt.Errorf("service: store attachment %s: %w", att.Name, err)
 	}
 	return att, nil
 }
 
 // attachmentSource reads the file a user names, from their sandbox: nothing else is theirs to send.
-func (o *Orchestrator) attachmentSource(ctx context.Context, user, path string) (io.ReadSeeker, int64, error) {
-	box, err := o.cfg.BoxFor(user)
+func (sv *Service) attachmentSource(ctx context.Context, user, path string) (io.ReadSeeker, int64, error) {
+	box, err := sv.cfg.BoxFor(user)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -124,7 +124,7 @@ func (o *Orchestrator) attachmentSource(ctx context.Context, user, path string) 
 }
 
 // copyAttachment copies exactly the bytes describe measured, so a file that changes meanwhile is refused.
-func (o *Orchestrator) copyAttachment(ctx context.Context, src io.ReadSeeker, att db.Attachment) error {
+func (sv *Service) copyAttachment(ctx context.Context, src io.ReadSeeker, att db.Attachment) error {
 	if _, err := src.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
@@ -135,7 +135,7 @@ func (o *Orchestrator) copyAttachment(ctx context.Context, src io.ReadSeeker, at
 	if int64(len(data)) != att.Size {
 		return fmt.Errorf("%w: the file changed while it was being attached", ErrInvalidMessage)
 	}
-	return o.cfg.Attachments.Put(ctx, att.File, data)
+	return sv.cfg.Attachments.Put(ctx, att.File, data)
 }
 
 // describe classifies a file as an image or a text file from its first bytes and checks it against the limits
@@ -242,48 +242,48 @@ func clipRunes(s string, n int) string {
 	return s
 }
 
-func (o *Orchestrator) removeAttachments(atts []db.Attachment) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(o.ctx), attachmentTimeout)
+func (sv *Service) removeAttachments(atts []db.Attachment) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(sv.ctx), attachmentTimeout)
 	defer cancel()
 	for _, att := range atts {
-		if err := o.cfg.Attachments.Delete(ctx, att.File); err != nil {
+		if err := sv.cfg.Attachments.Delete(ctx, att.File); err != nil {
 			slog.Warn("attachment not removed", "file", att.File, "err", err)
 		}
 	}
 }
 
-func (o *Orchestrator) ReadAttachment(ctx context.Context, user, threadID, id string) (db.Attachment, []byte, error) {
-	if err := o.owned(user, threadID); err != nil {
+func (sv *Service) ReadAttachment(ctx context.Context, user, threadID, id string) (db.Attachment, []byte, error) {
+	if err := sv.owned(user, threadID); err != nil {
 		return db.Attachment{}, nil, err
 	}
-	att, err := o.cfg.DB.Attachment(user, threadID, id)
+	att, err := sv.cfg.DB.Attachment(user, threadID, id)
 	if err != nil {
-		return db.Attachment{}, nil, fmt.Errorf("orchestrator: attachment %s: %w", id, err)
+		return db.Attachment{}, nil, fmt.Errorf("service: attachment %s: %w", id, err)
 	}
 	ctx, cancel := context.WithTimeout(ctx, attachmentTimeout)
 	defer cancel()
-	data, err := o.cfg.Attachments.Get(ctx, att.File)
+	data, err := sv.cfg.Attachments.Get(ctx, att.File)
 	if err != nil {
-		return db.Attachment{}, nil, fmt.Errorf("orchestrator: attachment %s: %w", id, err)
+		return db.Attachment{}, nil, fmt.Errorf("service: attachment %s: %w", id, err)
 	}
 	return att, data, nil
 }
 
-func (o *Orchestrator) checkImages(threadID string, model llm.Model, atts []db.Attachment) error {
+func (sv *Service) checkImages(threadID string, model llm.Model, atts []db.Attachment) error {
 	if model.Images {
 		return nil
 	}
 	for _, att := range atts {
 		if att.Kind == db.AttachmentImage {
-			return fmt.Errorf("orchestrator: %w: model %s does not accept images; pick a model that does", ErrInvalidMessage, model.Name)
+			return fmt.Errorf("service: %w: model %s does not accept images; pick a model that does", ErrInvalidMessage, model.Name)
 		}
 	}
-	has, err := o.cfg.DB.HasImages(threadID)
+	has, err := sv.cfg.DB.HasImages(threadID)
 	if err != nil {
-		return fmt.Errorf("orchestrator: thread %s: %w", threadID, err)
+		return fmt.Errorf("service: thread %s: %w", threadID, err)
 	}
 	if has {
-		return fmt.Errorf("orchestrator: %w: this conversation shows the model images, and model %s does not accept them; pick a model that does", ErrInvalidMessage, model.Name)
+		return fmt.Errorf("service: %w: this conversation shows the model images, and model %s does not accept them; pick a model that does", ErrInvalidMessage, model.Name)
 	}
 	return nil
 }

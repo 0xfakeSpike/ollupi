@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
+	"github.com/0xfakeSpike/ollupi/agent/service"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"go.opentelemetry.io/otel"
@@ -33,7 +33,7 @@ func TestEveryRunOfATurnJoinsTheTurnsTrace(t *testing.T) {
 	fake := &callingModel{tool: "notes__write", args: `{"text":"buy milk"}`}
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
-	ag, store := started(ctx, t, orchestrator.Config{Providers: []tools.Provider{noteTools{&atomic.Int32{}}}}, srv.URL)
+	ag, store := started(ctx, t, service.Config{Providers: []tools.Provider{noteTools{&atomic.Int32{}}}}, srv.URL)
 	w, err := ag.AddWorkspace(ctx, db.DefaultUser, t.TempDir(), "app")
 	if err != nil {
 		t.Fatal(err)
@@ -43,7 +43,7 @@ func TestEveryRunOfATurnJoinsTheTurnsTrace(t *testing.T) {
 		t.Fatal(err)
 	}
 	rctx, request := otel.Tracer("test").Start(ctx, "turn/start")
-	turn, err := ag.StartTurn(rctx, db.DefaultUser, th.ID, orchestrator.Input{Text: "记一下买牛奶"})
+	turn, err := ag.StartTurn(rctx, db.DefaultUser, th.ID, service.Input{Text: "记一下买牛奶"})
 	request.End()
 	if err != nil {
 		t.Fatal(err)

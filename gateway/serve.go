@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/memory"
-	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
+	"github.com/0xfakeSpike/ollupi/agent/service"
 	"github.com/0xfakeSpike/ollupi/pkg/wshub"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
@@ -22,7 +22,7 @@ import (
 )
 
 type Options struct {
-	// DB is the orchestrator's database; the gateway reads it for views that need no orchestration.
+	// DB is the shard's database; the gateway reads it for views that need no orchestration.
 	DB *db.DB
 	// Token is the default user's, for a gateway with one user; Authenticate takes its place for many.
 	Token string
@@ -44,7 +44,7 @@ type Options struct {
 	Load Load
 }
 
-func NewServer(a *orchestrator.Orchestrator, opts Options) (*Server, error) {
+func NewServer(a *service.Service, opts Options) (*Server, error) {
 	if opts.Authenticate == nil {
 		if strings.TrimSpace(opts.Token) == "" {
 			return nil, errors.New("gateway: a token is required; clients send it as Authorization: Bearer <token> or, from a browser, as the subprotocol after " + tokenProtocol)
@@ -54,7 +54,7 @@ func NewServer(a *orchestrator.Orchestrator, opts Options) (*Server, error) {
 		}
 	}
 	if opts.DB == nil {
-		return nil, errors.New("gateway: the orchestrator's database is required")
+		return nil, errors.New("gateway: the shard's database is required")
 	}
 	if (opts.Shard == "") != (opts.Placements == nil) {
 		return nil, errors.New("gateway: Shard and Placements go together")
@@ -74,7 +74,7 @@ func NewServer(a *orchestrator.Orchestrator, opts Options) (*Server, error) {
 		return nil, fmt.Errorf("gateway: %w", err)
 	}
 	s := &Server{
-		orchestrator: a,
+		service:      a,
 		db:           opts.DB,
 		memory:       opts.Memory,
 		jobs:         opts.Jobs,

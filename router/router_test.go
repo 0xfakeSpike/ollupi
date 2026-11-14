@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/event"
-	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
+	"github.com/0xfakeSpike/ollupi/agent/service"
 	"github.com/0xfakeSpike/ollupi/gateway"
 	"github.com/0xfakeSpike/ollupi/repo/catalog"
 	"github.com/0xfakeSpike/ollupi/repo/db"
@@ -35,7 +35,7 @@ func startShard(t *testing.T, id, home string, authenticate func(string) (string
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := gateway.NewServer(orchestrator.New(orchestrator.Config{DB: store}), gateway.Options{
+	s, err := gateway.NewServer(service.New(service.Config{DB: store}), gateway.Options{
 		DB: store, Authenticate: authenticate, Shard: id, Placements: placements,
 	})
 	if err != nil {

@@ -21,8 +21,8 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/event"
-	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
+	"github.com/0xfakeSpike/ollupi/agent/service"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/repo/db"
@@ -93,12 +93,12 @@ func main() {
 	}
 	defer runner.Close()
 
-	var ag *orchestrator.Orchestrator
+	var ag *service.Service
 	ended := make(chan db.TurnRow, 1)
 	// changed tells the writer below that the turn has a new item, so that -out holds the run so far even when the
 	// harness kills the run at its time limit.
 	changed := make(chan struct{}, 1)
-	ag = orchestrator.New(orchestrator.Config{
+	ag = service.New(service.Config{
 		Name:        "ollupi",
 		Models:      []llm.Model{{Name: model, Connection: "model"}},
 		Connections: map[string]llm.Client{"model": client},
@@ -136,7 +136,7 @@ func main() {
 		log.Fatalf("eval: %v", err)
 	}
 	startedAt := time.Now()
-	started, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, orchestrator.Input{Text: instruction})
+	started, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, service.Input{Text: instruction})
 	if err != nil {
 		log.Fatalf("eval: %v", err)
 	}
@@ -239,7 +239,7 @@ func logItem(it *db.ItemRow) {
 	}
 }
 
-func answer(ag *orchestrator.Orchestrator, threadID string, it *db.ItemRow) {
+func answer(ag *service.Service, threadID string, it *db.ItemRow) {
 	if it == nil {
 		return
 	}

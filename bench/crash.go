@@ -18,8 +18,8 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/event"
-	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
+	"github.com/0xfakeSpike/ollupi/agent/service"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
@@ -226,7 +226,7 @@ func crashChild(args []string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	var ag *orchestrator.Orchestrator
+	var ag *service.Service
 	answer := func(threadID, itemID string) {
 		go func() {
 			time.Sleep(200 * time.Millisecond)
@@ -235,7 +235,7 @@ func crashChild(args []string) {
 			}
 		}()
 	}
-	ag = orchestrator.New(orchestrator.Config{
+	ag = service.New(service.Config{
 		Name: "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(*url, "", *calls, map[string]llm.Limits{"fake": {Context: 200_000, Output: 32_000}})},
 		Providers:   []tools.Provider{work{latency: *toolLatency, log: toolLog}},
@@ -266,7 +266,7 @@ func crashChild(args []string) {
 		if err != nil {
 			log.Fatal(err)
 		}
-		if _, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, orchestrator.Input{Text: kinds[i%len(kinds)]}); err != nil {
+		if _, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, service.Input{Text: kinds[i%len(kinds)]}); err != nil {
 			log.Fatal(err)
 		}
 	}
