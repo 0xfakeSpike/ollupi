@@ -84,7 +84,7 @@ func TestOfferKeepsOnlyTheCoreToolsForASmallInput(t *testing.T) {
 }
 
 func TestALauncherIsOfferedOnlyWithItsProvidersTools(t *testing.T) {
-	launchers := []tools.ToolDescriptor{tool(GeneralSubTool, "launch"), tool(BrowserSubTool, "launch")}
+	launchers := []tools.ToolDescriptor{tool("shell", "run"), tool(GeneralSubTool, "launch"), tool(BrowserSubTool, "launch")}
 	if offered, _ := fullMain.Offer(launchers, window, nil); slices.Contains(names(offered), BrowserSubTool) || !slices.Contains(names(offered), GeneralSubTool) {
 		t.Errorf("without a browser: offered %q", names(offered))
 	}

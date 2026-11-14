@@ -8,7 +8,6 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/tools"
-	"github.com/0xfakeSpike/ollupi/tools/cron"
 )
 
 // Name is a role as a turn stores it.
@@ -25,11 +24,10 @@ type Role struct {
 	Rules   string
 	// Skills lists the skills in the system prompt.
 	Skills bool
-	// Core are the only tools sent with every request; the others are deferred, for the model to load. Nil sends every
-	// tool, deferring external ones only when they do not fit.
-	Core []string
-	// Provider, when set, is the only provider whose tools the role is offered.
-	Provider string
+	// offers picks the tools the role is offered, besides what Offers decides for every role.
+	offers func(d tools.ToolDescriptor) bool
+	// send splits the visible tools into the ones sent to the model and the ones only named in DEFERRED TOOLS.
+	send func(visible []tools.ToolDescriptor, window *contextmanager.Manager) (sent, deferred []tools.ToolDescriptor)
 	// Memory loads the user's memory into the run.
 	Memory bool
 	// Launcher is the tool that launches the role as a subagent; a main role has none.
@@ -69,17 +67,4 @@ func ForMain(inputTokens int) Role {
 		return compactMain
 	}
 	return fullMain
-}
-
-// Offers says whether the role is offered d. Every role keeps read_tool_output, which a shortened output points at. A
-// main role is offered every tool. A subagent cannot launch another or schedule tasks, which would come back to its
-// thread after it reported, and one with a Provider works with that provider's tools alone.
-func (r Role) Offers(d tools.ToolDescriptor) bool {
-	if r.Launcher == nil || d.Name == contextmanager.ToolReadOutput {
-		return true
-	}
-	if _, launches := Launched(d.Name); launches || d.Provider == cron.ProviderName {
-		return false
-	}
-	return r.Provider == "" || d.Provider == r.Provider
 }

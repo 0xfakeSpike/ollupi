@@ -4,7 +4,10 @@ package role
 const FullMain Name = "full-main-agent"
 
 // fullMain is the main agent for a model whose input holds the whole prompt and tool list.
-var fullMain = Role{Name: FullMain, Persona: true, Rules: fullMainRules, Skills: true, Memory: true}
+var fullMain = Role{
+	Name: FullMain, Persona: true, Rules: fullMainRules, Skills: true, Memory: true,
+	offers: anyTool, send: sendFitting,
+}
 
 const fullMainRules = `You complete the user's request by calling tools in a loop. Every tool result comes back to you as an observation. Keep working until the request is done, then reply to the user without calling any tool; that reply is shown to the user as the final answer.
 

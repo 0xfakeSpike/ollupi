@@ -9,6 +9,7 @@ const (
 
 var generalSub = Role{
 	Name: GeneralSub, Persona: true, Rules: generalSubRules, Skills: true, Memory: true,
+	offers: anyTool, send: sendFitting,
 	Launcher: &Launcher{
 		Tool:  GeneralSubTool,
 		Title: "Subagent",

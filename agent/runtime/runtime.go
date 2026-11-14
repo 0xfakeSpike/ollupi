@@ -66,7 +66,7 @@ func (rt *Runtime) start() error {
 		return fmt.Errorf("runtime: read the settings: %w", err)
 	}
 	rt.redactor = redact.New(settings.RedactionKey)
-	rt.offer(rt.Permissions)
+	rt.offer()
 	rt.system = rt.Role.System(role.Input{
 		Agent: rt.Prompt, Root: rt.Caller.Root,
 		Skills: rt.Host.Skills(), SkillTokens: rt.Window.SkillBudget(), Deferred: rt.deferred,
@@ -113,9 +113,9 @@ func (rt *Runtime) tool(name string) (tools.ToolDescriptor, bool) {
 	return rt.offered[i], true
 }
 
-// offer splits the tools the run may use as its role does.
-func (rt *Runtime) offer(permissions *permission.Checker) {
-	rt.offered, rt.deferred = rt.Role.Offer(permissions.Tools(), rt.Window, slices.Concat(rt.History, rt.Items))
+// offer keeps the role's split of the tools the run may use.
+func (rt *Runtime) offer() {
+	rt.offered, rt.deferred = rt.Role.Offer(rt.Permissions.Tools(), rt.Window, slices.Concat(rt.History, rt.Items))
 }
 
 func (rt *Runtime) run(ctx context.Context) (bool, error) {
@@ -143,7 +143,7 @@ func (rt *Runtime) run(ctx context.Context) (bool, error) {
 			return false, fmt.Errorf("runtime: reload the turn: %w", err)
 		}
 		rt.Items, rt.Permissions = items, permissions
-		rt.offer(permissions)
+		rt.offer()
 		if resp.FinishReason == "length" && len(resp.Message.ToolCalls) > 0 {
 			if halt := rt.haltAfterFailures(cutOffCall); halt != "" {
 				return true, rt.finish(ctx, halt)
