@@ -11,8 +11,8 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/runtime"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
-	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/repo/blobs"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"log/slog"
 	"slices"
 	"strings"
@@ -87,7 +87,7 @@ type Config struct {
 	// AttachmentsDir is a folder on this machine to keep them in, when Attachments is not set.
 	AttachmentsDir string
 	Memory         *memory.Manager
-	DB             *repo.DB
+	DB             *db.DB
 	OnEvent        func(Event)
 	// Lease makes this process claim the shard before it runs it, waiting for as long as another holds it, and keep
 	// the claim alive; a process that dies leaves its claim for this long. Without it the process trusts it is alone.

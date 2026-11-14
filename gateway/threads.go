@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
 func (c *conn) threadStart(ctx context.Context, p ThreadStartParams) (ThreadResult, func(), error) {
@@ -22,12 +22,12 @@ func threadPage(resume bool) func(*conn, context.Context, ThreadPageParams) (Thr
 		if p.Limit < 1 || p.Limit > maxItems || p.BeforeSeq < 0 {
 			return ThreadPageResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "limit must be 1 to %d and beforeSeq not negative", maxItems)
 		}
-		db := c.s.db.WithContext(ctx)
-		if _, err := db.ThreadOf(c.user, p.ThreadID); err != nil {
+		store := c.s.db.WithContext(ctx)
+		if _, err := store.ThreadOf(c.user, p.ThreadID); err != nil {
 			return ThreadPageResult{}, nil, err
 		}
 		c.rpc.HoldUntilReplied()
-		view, more, err := db.ThreadPage(c.user, p.ThreadID, p.BeforeSeq, p.Limit)
+		view, more, err := store.ThreadPage(c.user, p.ThreadID, p.BeforeSeq, p.Limit)
 		if err != nil {
 			return ThreadPageResult{}, nil, err
 		}
@@ -74,7 +74,7 @@ func (c *conn) threadDelete(ctx context.Context, p ThreadDeleteParams) (Empty, f
 	return Empty{}, nil, c.s.orchestrator.DeleteThread(c.user, p.ThreadID)
 }
 
-func (c *conn) threadList(ctx context.Context, p repo.ThreadFilter) (ThreadListResult, func(), error) {
+func (c *conn) threadList(ctx context.Context, p db.ThreadFilter) (ThreadListResult, func(), error) {
 	if p.Limit == 0 {
 		p.Limit = defaultLimit
 	}

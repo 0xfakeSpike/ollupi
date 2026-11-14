@@ -11,7 +11,7 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"go.opentelemetry.io/otel"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -33,17 +33,17 @@ func TestEveryRunOfATurnJoinsTheTurnsTrace(t *testing.T) {
 	fake := &callingModel{tool: "notes__write", args: `{"text":"buy milk"}`}
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
-	ag, db := started(ctx, t, orchestrator.Config{Providers: []tools.Provider{noteTools{&atomic.Int32{}}}}, srv.URL)
-	w, err := ag.AddWorkspace(ctx, repo.DefaultUser, t.TempDir(), "app")
+	ag, store := started(ctx, t, orchestrator.Config{Providers: []tools.Provider{noteTools{&atomic.Int32{}}}}, srv.URL)
+	w, err := ag.AddWorkspace(ctx, db.DefaultUser, t.TempDir(), "app")
 	if err != nil {
 		t.Fatal(err)
 	}
-	th, err := ag.StartThread(repo.DefaultUser, w.ID, "", "", permission.Settings{ApprovalPolicy: string(permission.Untrusted)})
+	th, err := ag.StartThread(db.DefaultUser, w.ID, "", "", permission.Settings{ApprovalPolicy: string(permission.Untrusted)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	rctx, request := otel.Tracer("test").Start(ctx, "turn/start")
-	turn, err := ag.StartTurn(rctx, repo.DefaultUser, th.ID, orchestrator.Input{Text: "记一下买牛奶"})
+	turn, err := ag.StartTurn(rctx, db.DefaultUser, th.ID, orchestrator.Input{Text: "记一下买牛奶"})
 	request.End()
 	if err != nil {
 		t.Fatal(err)
@@ -59,14 +59,14 @@ func TestEveryRunOfATurnJoinsTheTurnsTrace(t *testing.T) {
 		}
 	}
 	until("asked for approval", func() bool {
-		row, err := db.Turn(turn.ID)
-		return err == nil && row.Status == repo.TurnWaitingOnApproval
+		row, err := store.Turn(turn.ID)
+		return err == nil && row.Status == db.TurnWaitingOnApproval
 	})
-	asked, err := ag.PendingRequests(repo.DefaultUser, th.ID)
+	asked, err := ag.PendingRequests(db.DefaultUser, th.ID)
 	if err != nil || len(asked) != 1 || asked[0].Item.Approval == nil {
 		t.Fatalf("pending requests = %+v, %v", asked, err)
 	}
-	if err := ag.ResolveApproval(repo.DefaultUser, th.ID, asked[0].Item.Approval.ID, repo.DecisionAccept, repo.DefaultUser); err != nil {
+	if err := ag.ResolveApproval(db.DefaultUser, th.ID, asked[0].Item.Approval.ID, db.DecisionAccept, db.DefaultUser); err != nil {
 		t.Fatal(err)
 	}
 

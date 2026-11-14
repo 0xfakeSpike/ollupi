@@ -6,44 +6,44 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/role"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
-func (o *Orchestrator) workspaceOf(id repo.Ref) (repo.WorkspaceRow, error) {
+func (o *Orchestrator) workspaceOf(id db.Ref) (db.WorkspaceRow, error) {
 	if id == "" {
-		return repo.WorkspaceRow{}, nil
+		return db.WorkspaceRow{}, nil
 	}
 	w, err := o.cfg.DB.Workspace(string(id))
 	if err != nil {
-		return repo.WorkspaceRow{}, fmt.Errorf("orchestrator: workspace %s: %w", id, err)
+		return db.WorkspaceRow{}, fmt.Errorf("orchestrator: workspace %s: %w", id, err)
 	}
 	return w, nil
 }
 
 // workspaceFor reads a workspace the user names; one of another user's does not exist for them.
-func (o *Orchestrator) workspaceFor(user string, id repo.Ref) (repo.WorkspaceRow, error) {
+func (o *Orchestrator) workspaceFor(user string, id db.Ref) (db.WorkspaceRow, error) {
 	if id == "" {
-		return repo.WorkspaceRow{}, nil
+		return db.WorkspaceRow{}, nil
 	}
 	w, err := o.cfg.DB.WorkspaceOf(user, string(id))
 	if err != nil {
-		return repo.WorkspaceRow{}, fmt.Errorf("orchestrator: workspace %s: %w", id, err)
+		return db.WorkspaceRow{}, fmt.Errorf("orchestrator: workspace %s: %w", id, err)
 	}
 	return w, nil
 }
 
-func (o *Orchestrator) permissions(t repo.ThreadRow, r role.Role) (*permission.Checker, repo.WorkspaceRow, error) {
+func (o *Orchestrator) permissions(t db.ThreadRow, r role.Role) (*permission.Checker, db.WorkspaceRow, error) {
 	w, err := o.workspaceOf(t.WorkspaceID)
 	if err != nil {
-		return nil, repo.WorkspaceRow{}, err
+		return nil, db.WorkspaceRow{}, err
 	}
 	layers, err := o.threadLayers(t, w)
 	if err != nil {
-		return nil, repo.WorkspaceRow{}, err
+		return nil, db.WorkspaceRow{}, err
 	}
 	registry, err := o.registryFor(t.UserID)
 	if err != nil {
-		return nil, repo.WorkspaceRow{}, err
+		return nil, db.WorkspaceRow{}, err
 	}
 	var allowlist []string
 	if o.cfg.Tools != nil {
@@ -57,12 +57,12 @@ func (o *Orchestrator) permissions(t repo.ThreadRow, r role.Role) (*permission.C
 	// The role's layer comes first, so that the user's settings decide over it.
 	checker, err := permission.New(append([]permission.Layer{r.Permission}, layers...), allowlist, registry)
 	if err != nil {
-		return nil, repo.WorkspaceRow{}, err
+		return nil, db.WorkspaceRow{}, err
 	}
 	return checker, w, nil
 }
 
-func (o *Orchestrator) layers(w repo.WorkspaceRow) []permission.Layer {
+func (o *Orchestrator) layers(w db.WorkspaceRow) []permission.Layer {
 	out := []permission.Layer{{Of: "the default permission settings", Settings: o.cfg.Settings, Shared: o.cfg.ToolsFor != nil}}
 	if w.ID != "" {
 		out = append(out, workspaceLayer(w.Name, w.Settings))
@@ -79,7 +79,7 @@ func threadLayer(s permission.Settings) permission.Layer {
 	return permission.Layer{Of: "this conversation's permission settings", Settings: s}
 }
 
-func (o *Orchestrator) threadLayers(t repo.ThreadRow, w repo.WorkspaceRow) ([]permission.Layer, error) {
+func (o *Orchestrator) threadLayers(t db.ThreadRow, w db.WorkspaceRow) ([]permission.Layer, error) {
 	if t.ParentThreadID == "" {
 		return append(o.layers(w), threadLayer(t.Settings)), nil
 	}

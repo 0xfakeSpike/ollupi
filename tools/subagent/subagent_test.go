@@ -6,33 +6,33 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
 func TestACallQueuesTheSubagentsConversationAndWaitsOnIt(t *testing.T) {
-	db, err := repo.Open(t.TempDir())
+	store, err := db.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer store.Close()
 	at := time.Date(2026, 11, 14, 9, 0, 0, 0, time.UTC)
 	model := llm.Model{Name: "m", Connection: "c"}
-	if err := db.CreateThread(repo.ThreadRow{ID: "main", UserID: repo.DefaultUser, Title: "main", CreatedAt: at, UpdatedAt: at}); err != nil {
+	if err := store.CreateThread(db.ThreadRow{ID: "main", UserID: db.DefaultUser, Title: "main", CreatedAt: at, UpdatedAt: at}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := db.SubmitTurn("main", repo.TurnRow{ID: "asked", Model: model, Agent: "full-main-agent", Input: "go", CreatedAt: at, StartedAt: at}); err != nil {
+	if _, _, _, err := store.SubmitTurn("main", db.TurnRow{ID: "asked", Model: model, Agent: "full-main-agent", Input: "go", CreatedAt: at, StartedAt: at}); err != nil {
 		t.Fatal(err)
 	}
-	launch := New(db)
-	ctx, caller := context.Background(), tools.Caller{UserID: repo.DefaultUser, ThreadID: "main", Item: "call"}
+	launch := New(store)
+	ctx, caller := context.Background(), tools.Caller{UserID: db.DefaultUser, ThreadID: "main", Item: "call"}
 	args := map[string]any{"description": "Look it up", "prompt": "Find the page and report."}
 
 	res, err := launch.Invoke(ctx, caller, Browser, args)
 	if err != nil || res.Await == nil || res.Await.By != tools.AwaitAgent || res.Await.Handle == "" {
 		t.Fatalf("a launch: %+v %v", res, err)
 	}
-	child, err := db.ThreadState(res.Await.Handle)
+	child, err := store.ThreadState(res.Await.Handle)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestACallQueuesTheSubagentsConversationAndWaitsOnIt(t *testing.T) {
 	if _, err := launch.Invoke(ctx, caller, Browser, map[string]any{"description": "x", "prompt": "  "}); err == nil {
 		t.Error("a blank task launched a subagent")
 	}
-	if _, err := launch.Invoke(ctx, tools.Caller{UserID: repo.DefaultUser, ThreadID: "main"}, Browser, args); err == nil {
+	if _, err := launch.Invoke(ctx, tools.Caller{UserID: db.DefaultUser, ThreadID: "main"}, Browser, args); err == nil {
 		t.Error("a launch outside a call of a turn queued a subagent")
 	}
 }

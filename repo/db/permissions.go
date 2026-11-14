@@ -1,4 +1,4 @@
-package repo
+package db
 
 type PermissionRules struct {
 	Allow []string `json:"allow,omitempty"`

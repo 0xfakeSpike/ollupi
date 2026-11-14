@@ -20,17 +20,17 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
-func started(ctx context.Context, t *testing.T, cfg orchestrator.Config, url string) (*orchestrator.Orchestrator, *repo.DB) {
+func started(ctx context.Context, t *testing.T, cfg orchestrator.Config, url string) (*orchestrator.Orchestrator, *db.DB) {
 	t.Helper()
-	db, err := repo.Open(t.TempDir())
+	store, err := db.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
-	cfg.Name, cfg.DB = "Ollupi", db
+	t.Cleanup(func() { store.Close() })
+	cfg.Name, cfg.DB = "Ollupi", store
 	cfg.Models = []llm.Model{{Name: "demo", Connection: "fake"}}
 	cfg.Settings = permission.Settings{ApprovalPolicy: string(permission.Never)}
 	cfg.Connections = map[string]llm.Client{"fake": llm.NewOpenAI(url, "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})}
@@ -42,17 +42,17 @@ func started(ctx context.Context, t *testing.T, cfg orchestrator.Config, url str
 	}
 	t.Cleanup(ag.Wait)
 	t.Cleanup(stop)
-	return ag, db
+	return ag, store
 }
 
-func endOf(ctx context.Context, t *testing.T, ended <-chan repo.TurnRow) repo.TurnRow {
+func endOf(ctx context.Context, t *testing.T, ended <-chan db.TurnRow) db.TurnRow {
 	t.Helper()
 	select {
 	case turn := <-ended:
 		return turn
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
-		return repo.TurnRow{}
+		return db.TurnRow{}
 	}
 }
 
@@ -83,24 +83,24 @@ func TestASlowSandboxDoesNotHoldUpOtherThreads(t *testing.T) {
 			return sandbox.Remote(machine, []string{"/cloud"}, "cloud"), nil
 		},
 	}, srv.URL)
-	stuck, err := ag.StartThread(repo.DefaultUser, "", "", "stuck", permission.Settings{})
+	stuck, err := ag.StartThread(db.DefaultUser, "", "", "stuck", permission.Settings{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := ag.StartThread(repo.DefaultUser, "", "", "other", permission.Settings{})
+	other, err := ag.StartThread(db.DefaultUser, "", "", "other", permission.Settings{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	sent := make(chan error, 1)
 	go func() {
-		_, err := ag.StartTurn(ctx, repo.DefaultUser, stuck.ID, orchestrator.Input{Text: "read", Attachments: []orchestrator.AttachmentInput{{Path: "/cloud/note.txt"}}})
+		_, err := ag.StartTurn(ctx, db.DefaultUser, stuck.ID, orchestrator.Input{Text: "read", Attachments: []orchestrator.AttachmentInput{{Path: "/cloud/note.txt"}}})
 		sent <- err
 	}()
 	<-machine.asked
 
 	renamed := make(chan error, 1)
 	go func() {
-		_, err := ag.RenameThread(repo.DefaultUser, other.ID, "renamed")
+		_, err := ag.RenameThread(db.DefaultUser, other.ID, "renamed")
 		renamed <- err
 	}()
 	select {
@@ -122,7 +122,7 @@ func TestACrashFailsTheTurnAndNothingElse(t *testing.T) {
 	defer cancel()
 	srv := httptest.NewServer(&recordingModel{})
 	defer srv.Close()
-	ended := make(chan repo.TurnRow, 1)
+	ended := make(chan db.TurnRow, 1)
 	ag, _ := started(ctx, t, orchestrator.Config{
 		ClientFor: func(string, string) (llm.Client, error) { panic("the secret detail") },
 		OnEvent: func(e orchestrator.Event) {
@@ -131,18 +131,18 @@ func TestACrashFailsTheTurnAndNothingElse(t *testing.T) {
 			}
 		},
 	}, srv.URL)
-	thread, err := ag.StartThread(repo.DefaultUser, "", "", "t", permission.Settings{})
+	thread, err := ag.StartThread(db.DefaultUser, "", "", "t", permission.Settings{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, orchestrator.Input{Text: "hello"}); err != nil {
+	if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, orchestrator.Input{Text: "hello"}); err != nil {
 		t.Fatal(err)
 	}
 	turn := endOf(ctx, t, ended)
-	if turn.Status != repo.TurnFailed || strings.Contains(turn.Error, "secret") {
+	if turn.Status != db.TurnFailed || strings.Contains(turn.Error, "secret") {
 		t.Errorf("the turn: %s %q", turn.Status, turn.Error)
 	}
-	if _, err := ag.RenameThread(repo.DefaultUser, thread.ID, "still here"); err != nil {
+	if _, err := ag.RenameThread(db.DefaultUser, thread.ID, "still here"); err != nil {
 		t.Errorf("after the crash: %v", err)
 	}
 }
@@ -154,7 +154,7 @@ func TestATurnStopsAtItsRunLimit(t *testing.T) {
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
 	defer close(fake.release)
-	ended := make(chan repo.TurnRow, 1)
+	ended := make(chan db.TurnRow, 1)
 	ag, _ := started(ctx, t, orchestrator.Config{
 		RunLimit: 200 * time.Millisecond,
 		OnEvent: func(e orchestrator.Event) {
@@ -163,31 +163,31 @@ func TestATurnStopsAtItsRunLimit(t *testing.T) {
 			}
 		},
 	}, srv.URL)
-	thread, err := ag.StartThread(repo.DefaultUser, "", "", "t", permission.Settings{})
+	thread, err := ag.StartThread(db.DefaultUser, "", "", "t", permission.Settings{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, orchestrator.Input{Text: "hello"}); err != nil {
+	if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, orchestrator.Input{Text: "hello"}); err != nil {
 		t.Fatal(err)
 	}
-	if turn := endOf(ctx, t, ended); turn.Status != repo.TurnFailed || !strings.Contains(turn.Error, "time limit") {
+	if turn := endOf(ctx, t, ended); turn.Status != db.TurnFailed || !strings.Contains(turn.Error, "time limit") {
 		t.Errorf("the turn: %s %q", turn.Status, turn.Error)
 	}
 }
 
 func TestPendingRequestsReportStorageThatFails(t *testing.T) {
-	db, err := repo.Open(t.TempDir())
+	store, err := db.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Close(); err != nil {
+	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	ag := orchestrator.New(orchestrator.Config{DB: db})
-	if got, err := ag.AllPendingRequests(repo.DefaultUser); err == nil {
+	ag := orchestrator.New(orchestrator.Config{DB: store})
+	if got, err := ag.AllPendingRequests(db.DefaultUser); err == nil {
 		t.Errorf("all requests: %+v", got)
 	}
-	if got, err := ag.PendingRequests(repo.DefaultUser, "t"); err == nil || errors.Is(err, repo.ErrNotFound) {
+	if got, err := ag.PendingRequests(db.DefaultUser, "t"); err == nil || errors.Is(err, db.ErrNotFound) {
 		t.Errorf("a thread's requests: %+v, %v", got, err)
 	}
 }
@@ -227,28 +227,28 @@ func TestACutOffResponseRunsNoCall(t *testing.T) {
 	defer cancel()
 	srv := httptest.NewServer(&cutOffModel{})
 	defer srv.Close()
-	ended := make(chan repo.TurnRow, 1)
-	ag, db := started(ctx, t, orchestrator.Config{OnEvent: func(e orchestrator.Event) {
+	ended := make(chan db.TurnRow, 1)
+	ag, store := started(ctx, t, orchestrator.Config{OnEvent: func(e orchestrator.Event) {
 		if e.Kind == orchestrator.EventTurnCompleted {
 			ended <- e.Turn
 		}
 	}}, srv.URL)
-	thread, err := ag.StartThread(repo.DefaultUser, "", "", "t", permission.Settings{})
+	thread, err := ag.StartThread(db.DefaultUser, "", "", "t", permission.Settings{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, orchestrator.Input{Text: "hello"}); err != nil {
+	if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, orchestrator.Input{Text: "hello"}); err != nil {
 		t.Fatal(err)
 	}
-	if turn := endOf(ctx, t, ended); turn.Status != repo.TurnCompleted {
+	if turn := endOf(ctx, t, ended); turn.Status != db.TurnCompleted {
 		t.Fatalf("the turn: %s %q", turn.Status, turn.Error)
 	}
-	view, err := db.Thread(thread.ID)
+	view, err := store.Thread(thread.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, it := range view.Items {
-		if it.IsCall() && (it.Status != repo.ItemFailed || !strings.Contains(it.Error, "output limit")) {
+		if it.IsCall() && (it.Status != db.ItemFailed || !strings.Contains(it.Error, "output limit")) {
 			t.Errorf("the cut-off call: %s %q", it.Status, it.Error)
 		}
 	}
@@ -286,21 +286,21 @@ func TestNoTurnStartsWhileTheWorkspaceMoves(t *testing.T) {
 	if err := os.WriteFile(from+"/notes.txt", []byte("kept\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	w, err := ag.AddWorkspace(ctx, repo.DefaultUser, from, "app")
+	w, err := ag.AddWorkspace(ctx, db.DefaultUser, from, "app")
 	if err != nil {
 		t.Fatal(err)
 	}
-	thread, err := ag.StartThread(repo.DefaultUser, w.ID, "", "t", permission.Settings{})
+	thread, err := ag.StartThread(db.DefaultUser, w.ID, "", "t", permission.Settings{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	moved := make(chan error, 1)
 	go func() {
-		_, err := ag.MoveWorkspace(ctx, repo.DefaultUser, w.ID, to)
+		_, err := ag.MoveWorkspace(ctx, db.DefaultUser, w.ID, to)
 		moved <- err
 	}()
 	<-box.moving
-	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, orchestrator.Input{Text: "hello"}); !errors.Is(err, orchestrator.ErrWorkspaceBusy) {
+	if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, orchestrator.Input{Text: "hello"}); !errors.Is(err, orchestrator.ErrWorkspaceBusy) {
 		t.Errorf("a turn during the move: %v", err)
 	}
 	close(box.release)
@@ -318,32 +318,32 @@ func TestAConversationQueuesOnlySoManyTurns(t *testing.T) {
 	defer srv.Close()
 	defer close(fake.release)
 	ag, _ := started(ctx, t, orchestrator.Config{}, srv.URL)
-	thread, err := ag.StartThread(repo.DefaultUser, "", "", "t", permission.Settings{})
+	thread, err := ag.StartThread(db.DefaultUser, "", "", "t", permission.Settings{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 21; i++ {
-		if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, orchestrator.Input{Text: fmt.Sprintf("message %d", i)}); err != nil {
+		if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, orchestrator.Input{Text: fmt.Sprintf("message %d", i)}); err != nil {
 			t.Fatalf("message %d: %v", i, err)
 		}
 	}
-	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, orchestrator.Input{Text: "one more"}); !errors.Is(err, orchestrator.ErrQueueFull) {
+	if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, orchestrator.Input{Text: "one more"}); !errors.Is(err, orchestrator.ErrQueueFull) {
 		t.Errorf("past the queue: %v", err)
 	}
 }
 
 func TestSkillsForNoRoleKeepTheOrchestratorFromStarting(t *testing.T) {
-	db, err := repo.Open(t.TempDir())
+	store, err := db.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer store.Close()
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "main-agent"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	ag := orchestrator.New(orchestrator.Config{
-		Name: "Ollupi", DB: db, SkillsDir: dir,
+		Name: "Ollupi", DB: store, SkillsDir: dir,
 		Models:      []llm.Model{{Name: "demo", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI("http://127.0.0.1:1", "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
 	})

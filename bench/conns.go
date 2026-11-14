@@ -26,7 +26,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/gateway"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/router"
 	"github.com/coder/websocket"
 )
@@ -395,19 +395,19 @@ func connsShard(args []string) {
 	addr := fs.String("addr", "", "address to listen on")
 	fs.Parse(args)
 	quiet()
-	db, err := repo.Open(*dir)
+	store, err := db.Open(*dir)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
+	defer store.Close()
 	var server *gateway.Server
 	ag := orchestrator.New(orchestrator.Config{
 		Name: "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": &model{}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
-		DB:          db, OnEvent: func(e orchestrator.Event) { server.Deliver(e) },
+		DB:          store, OnEvent: func(e orchestrator.Event) { server.Deliver(e) },
 	})
-	server, err = gateway.NewServer(ag, gateway.Options{DB: db, Authenticate: benchUser})
+	server, err = gateway.NewServer(ag, gateway.Options{DB: store, Authenticate: benchUser})
 	if err != nil {
 		log.Fatal(err)
 	}

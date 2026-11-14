@@ -14,7 +14,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
 // resume times what bringing work back costs: a message to a conversation idle in the database, by the length of its
@@ -33,18 +33,18 @@ func resume(args []string) {
 		log.Fatal(err)
 	}
 	defer os.RemoveAll(dir)
-	db, err := repo.Open(dir)
+	store, err := db.Open(dir)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
+	defer store.Close()
 	answer := strings.Repeat("A paragraph of an answer, about as long as a short reply in a chat. ", 6)
 	open := func(m *model, tr *tracker) (*orchestrator.Orchestrator, context.CancelFunc, time.Duration) {
 		ag := orchestrator.New(orchestrator.Config{
 			Name: "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 			Connections: map[string]llm.Client{"fake": m},
 			Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
-			Slots:       *running + 32, DB: db, OnEvent: tr.on,
+			Slots:       *running + 32, DB: store, OnEvent: tr.on,
 		})
 		ctx, cancel := context.WithCancel(context.Background())
 		at := time.Now()
@@ -57,7 +57,7 @@ func resume(args []string) {
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}, done: map[string]chan struct{}{}}
 	ag, cancel, _ := open(m, tr)
 	newThread := func() string {
-		th, err := ag.StartThread(repo.DefaultUser, "", "", "bench", permission.Settings{})
+		th, err := ag.StartThread(db.DefaultUser, "", "", "bench", permission.Settings{})
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -67,7 +67,7 @@ func resume(args []string) {
 		return th.ID
 	}
 	turn := func(id, text string) {
-		tr.start(ag, repo.DefaultUser, id, text)
+		tr.start(ag, db.DefaultUser, id, text)
 		select {
 		case <-tr.done[id]:
 		case <-time.After(time.Minute):
@@ -106,13 +106,13 @@ func resume(args []string) {
 	}
 
 	for range *waiting {
-		tr.start(ag, repo.DefaultUser, newThread(), "ASK")
+		tr.start(ag, db.DefaultUser, newThread(), "ASK")
 	}
 	waitFor("the waiting conversations", func() bool { return tr.asked.Load() >= int64(*waiting) })
 	m.latency.Store(int64(time.Hour))
 	before := m.calls.Load()
 	for range *running {
-		tr.start(ag, repo.DefaultUser, newThread(), "work")
+		tr.start(ag, db.DefaultUser, newThread(), "work")
 	}
 	waitFor("the running turns", func() bool { return m.calls.Load()-before >= int64(*running) })
 	cancel()

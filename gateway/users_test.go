@@ -13,7 +13,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/pkg/wshub"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
 	"github.com/coder/websocket"
 )
@@ -21,38 +21,38 @@ import (
 // The gateway reads some views straight from the database; those keep to the connection's user too.
 func TestAConnectionReadsOnlyItsUsersRows(t *testing.T) {
 	ctx := context.Background()
-	db, err := repo.Open(t.TempDir())
+	store, err := db.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer store.Close()
 	for _, user := range []string{"a", "b"} {
-		if err := db.EnsureUser(user); err != nil {
+		if err := store.EnsureUser(user); err != nil {
 			t.Fatal(err)
 		}
 	}
 	at := time.Date(2026, 11, 5, 8, 0, 0, 0, time.UTC)
-	if err := db.CreateThread(repo.ThreadRow{ID: "t", UserID: "a", Title: "mine", CreatedAt: at, UpdatedAt: at}); err != nil {
+	if err := store.CreateThread(db.ThreadRow{ID: "t", UserID: "a", Title: "mine", CreatedAt: at, UpdatedAt: at}); err != nil {
 		t.Fatal(err)
 	}
-	jobs := cron.New(db, time.UTC, func(string, string) {})
-	s, err := NewServer(nil, Options{DB: db, Token: "secret", Jobs: jobs})
+	jobs := cron.New(store, time.UTC, func(string, string) {})
+	s, err := NewServer(nil, Options{DB: store, Token: "secret", Jobs: jobs})
 	if err != nil {
 		t.Fatal(err)
 	}
 	c := &conn{s: s, user: "b", rpc: jsonrpc.NewConn(nil)}
 
-	if _, _, err := threadPage(false)(c, ctx, ThreadPageParams{ThreadID: "t"}); !errors.Is(err, repo.ErrNotFound) {
+	if _, _, err := threadPage(false)(c, ctx, ThreadPageParams{ThreadID: "t"}); !errors.Is(err, db.ErrNotFound) {
 		t.Errorf("read the thread: %v", err)
 	}
-	if _, _, err := c.cronCreate(ctx, CronCreateParams{ThreadID: "t", Name: "x", Spec: "@daily", Prompt: "go"}); !errors.Is(err, repo.ErrNotFound) {
+	if _, _, err := c.cronCreate(ctx, CronCreateParams{ThreadID: "t", Name: "x", Spec: "@daily", Prompt: "go"}); !errors.Is(err, db.ErrNotFound) {
 		t.Errorf("schedule a task: %v", err)
 	}
 	paused := true
-	if _, _, err := c.cronPause(ctx, CronPauseParams{ThreadID: "t", Name: "x", Paused: &paused}); !errors.Is(err, repo.ErrNotFound) {
+	if _, _, err := c.cronPause(ctx, CronPauseParams{ThreadID: "t", Name: "x", Paused: &paused}); !errors.Is(err, db.ErrNotFound) {
 		t.Errorf("pause a task: %v", err)
 	}
-	if _, _, err := c.cronDelete(ctx, CronDeleteParams{ThreadID: "t", Name: "x"}); !errors.Is(err, repo.ErrNotFound) {
+	if _, _, err := c.cronDelete(ctx, CronDeleteParams{ThreadID: "t", Name: "x"}); !errors.Is(err, db.ErrNotFound) {
 		t.Errorf("delete a task: %v", err)
 	}
 	owner := &conn{s: s, user: "a", rpc: jsonrpc.NewConn(nil)}
@@ -109,13 +109,13 @@ func nextThread(ctx context.Context, t *testing.T, ws *websocket.Conn) string {
 func TestEachUserHasTheirOwnConnectionAndEvents(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	db, err := repo.Open(t.TempDir())
+	store, err := db.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer store.Close()
 	tokens := map[string]string{"token-a": "a", "token-b": "b"}
-	s, err := NewServer(orchestrator.New(orchestrator.Config{DB: db}), Options{DB: db, Authenticate: func(token string) (string, bool) {
+	s, err := NewServer(orchestrator.New(orchestrator.Config{DB: store}), Options{DB: store, Authenticate: func(token string) (string, bool) {
 		user, ok := tokens[token]
 		return user, ok
 	}})
@@ -156,14 +156,14 @@ func TestEachUserHasTheirOwnConnectionAndEvents(t *testing.T) {
 	browser.Close(websocket.StatusNormalClosure, "")
 
 	a, b := userClient(ctx, t, gw.URL, "token-a"), userClient(ctx, t, gw.URL, "token-b")
-	if users, err := db.Users(); err != nil || len(users) != 3 {
+	if users, err := store.Users(); err != nil || len(users) != 3 {
 		t.Errorf("users after connecting: %v, %v", users, err)
 	}
 	changed := func(user, thread string) orchestrator.Event {
-		return orchestrator.Event{Kind: orchestrator.EventThreadDeleted, Thread: repo.ThreadRow{ID: thread, UserID: user}}
+		return orchestrator.Event{Kind: orchestrator.EventThreadDeleted, Thread: db.ThreadRow{ID: thread, UserID: user}}
 	}
 	s.Deliver(changed("b", "of-b"))
-	s.Deliver(orchestrator.Event{Kind: orchestrator.EventError, Thread: repo.ThreadRow{ID: "of-nobody"}, Error: "internal"})
+	s.Deliver(orchestrator.Event{Kind: orchestrator.EventError, Thread: db.ThreadRow{ID: "of-nobody"}, Error: "internal"})
 	s.Deliver(changed("a", "of-a"))
 	if got := nextThread(ctx, t, a); got != "of-a" {
 		t.Errorf("a received an event of %q", got)
@@ -200,12 +200,12 @@ func TestEachUserHasTheirOwnConnectionAndEvents(t *testing.T) {
 }
 
 func TestOnlyLocalAndAllowedHostsAreServed(t *testing.T) {
-	db, err := repo.Open(t.TempDir())
+	store, err := db.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
-	s, err := NewServer(nil, Options{DB: db, Token: "secret", AllowedHosts: []string{"app.example"}})
+	defer store.Close()
+	s, err := NewServer(nil, Options{DB: store, Token: "secret", AllowedHosts: []string{"app.example"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +213,7 @@ func TestOnlyLocalAndAllowedHostsAreServed(t *testing.T) {
 		r := httptest.NewRequest(http.MethodGet, "http://"+host, nil)
 		r.Header.Set("Authorization", "Bearer secret")
 		user, status, _ := s.authorize(r)
-		if status != want || want == 0 && user != repo.DefaultUser {
+		if status != want || want == 0 && user != db.DefaultUser {
 			t.Errorf("%s: user %q, status %d", host, user, status)
 		}
 	}

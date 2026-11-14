@@ -13,7 +13,7 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/redact"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
 type Options struct {
@@ -34,20 +34,20 @@ const (
 )
 
 type Manager struct {
-	db     *repo.DB
+	db     *db.DB
 	model  llm.Client
 	opts   Options
 	budget int
 }
 
-func New(db *repo.DB, model llm.Client, opts Options) (*Manager, error) {
-	if db == nil {
+func New(store *db.DB, model llm.Client, opts Options) (*Manager, error) {
+	if store == nil {
 		return nil, errors.New("memory: database is required")
 	}
 	if opts.Generate && (model == nil || strings.TrimSpace(opts.Model.Name) == "") {
 		return nil, errors.New("memory: extraction model is required")
 	}
-	m := &Manager{db: db, model: model, opts: opts, budget: extractionTokens}
+	m := &Manager{db: store, model: model, opts: opts, budget: extractionTokens}
 	if opts.Generate {
 		limits, err := model.Limits(opts.Model.Name)
 		if err != nil {
@@ -86,7 +86,7 @@ func (m *Manager) RunOnce(ctx context.Context) error {
 	}
 	users, err := m.db.Users()
 	if err != nil {
-		return failure{repo.MemoryStorage, fmt.Errorf("could not list the users: %w", err)}
+		return failure{db.MemoryStorage, fmt.Errorf("could not list the users: %w", err)}
 	}
 	for _, user := range users {
 		err := m.runFor(ctx, user)
@@ -113,7 +113,7 @@ func (m *Manager) runFor(ctx context.Context, user string) (err error) {
 	}()
 	state, err := m.db.MemoryState(user)
 	if err != nil {
-		return failure{repo.MemoryStorage, fmt.Errorf("could not read memory state: %w", err)}
+		return failure{db.MemoryStorage, fmt.Errorf("could not read memory state: %w", err)}
 	}
 	if state.NextAttempt != nil && time.Now().Before(*state.NextAttempt) {
 		return nil
@@ -126,7 +126,7 @@ func (m *Manager) runFor(ctx context.Context, user string) (err error) {
 	if err != nil {
 		return m.deferBatch(batch, err)
 	}
-	report := repo.MemoryReport{Model: m.opts.Model.Clone(), EstimatedInputTokens: estimated}
+	report := db.MemoryReport{Model: m.opts.Model.Clone(), EstimatedInputTokens: estimated}
 	var ops []Operation
 	if len(batch.Facts) > 0 {
 		if ops, err = m.extract(ctx, batch, payload, &report); err != nil {
@@ -137,7 +137,7 @@ func (m *Manager) runFor(ctx context.Context, user string) (err error) {
 		}
 	}
 	if err := commit(m.db, batch, ops, report); err != nil {
-		return m.deferBatch(batch, failure{repo.MemoryStorage, fmt.Errorf("could not commit the memory batch of turn %s: %w", batch.TurnID, err)})
+		return m.deferBatch(batch, failure{db.MemoryStorage, fmt.Errorf("could not commit the memory batch of turn %s: %w", batch.TurnID, err)})
 	}
 	slog.Info("memory extracted", "turn", batch.TurnID, "facts", len(batch.Facts), "changes", len(ops),
 		"input", report.InputTokens, "output", report.OutputTokens, "ms", time.Since(started).Milliseconds())
@@ -145,24 +145,24 @@ func (m *Manager) runFor(ctx context.Context, user string) (err error) {
 }
 
 type failure struct {
-	code repo.MemoryFailureCode
+	code db.MemoryFailureCode
 	err  error
 }
 
 func (f failure) Error() string { return f.err.Error() }
 func (f failure) Unwrap() error { return f.err }
 
-func failureOf(err error) repo.MemoryFailure {
-	f := failure{code: repo.MemoryStorage}
+func failureOf(err error) db.MemoryFailure {
+	f := failure{code: db.MemoryStorage}
 	errors.As(err, &f)
-	return repo.MemoryFailure{Code: f.code, Error: clipMemory(err.Error(), 1000)}
+	return db.MemoryFailure{Code: f.code, Error: clipMemory(err.Error(), 1000)}
 }
 
 func (m *Manager) gatherEvidence(user string) (*Batch, string, int, error) {
 	for limit := batchSize; ; limit = max(1, limit/2) {
 		batch, err := nextBatch(m.db, user, limit)
 		if err != nil {
-			return nil, "", 0, failure{repo.MemoryEvidence, fmt.Errorf("could not read pending memory evidence: %w", err)}
+			return nil, "", 0, failure{db.MemoryEvidence, fmt.Errorf("could not read pending memory evidence: %w", err)}
 		}
 		if batch == nil {
 			return nil, "", 0, nil
@@ -172,17 +172,17 @@ func (m *Manager) gatherEvidence(user string) (*Batch, string, int, error) {
 			return batch, payload, estimated, nil
 		}
 		if limit == 1 {
-			return batch, "", 0, failure{repo.MemoryEvidence, err}
+			return batch, "", 0, failure{db.MemoryEvidence, err}
 		}
 	}
 }
 
-func (m *Manager) extract(ctx context.Context, batch *Batch, payload string, report *repo.MemoryReport) ([]Operation, error) {
+func (m *Manager) extract(ctx context.Context, batch *Batch, payload string, report *db.MemoryReport) ([]Operation, error) {
 	callCtx, cancel := context.WithTimeout(ctx, extractTimeout)
 	defer cancel()
 	settings, err := m.db.Settings(batch.UserID)
 	if err != nil {
-		return nil, failure{repo.MemoryStorage, fmt.Errorf("could not read the redaction setting: %w", err)}
+		return nil, failure{db.MemoryStorage, fmt.Errorf("could not read the redaction setting: %w", err)}
 	}
 	redactor := redact.New(settings.RedactionKey)
 	if settings.Redaction {
@@ -191,7 +191,7 @@ func (m *Manager) extract(ctx context.Context, batch *Batch, payload string, rep
 	client := m.model
 	if m.opts.ClientFor != nil {
 		if client, err = m.opts.ClientFor(batch.UserID); err != nil {
-			return nil, failure{repo.MemoryModelRequest, fmt.Errorf("could not get the model client of the user: %w", err)}
+			return nil, failure{db.MemoryModelRequest, fmt.Errorf("could not get the model client of the user: %w", err)}
 		}
 	}
 	response, err := client.Chat(callCtx, llm.ChatRequest{
@@ -201,14 +201,14 @@ func (m *Manager) extract(ctx context.Context, batch *Batch, payload string, rep
 		InputTokens: llm.EstimateTokens(extractionInstructions) + llm.EstimateTokens(payload),
 	}, nil)
 	if err != nil {
-		return nil, failure{repo.MemoryModelRequest, fmt.Errorf("memory extraction model request failed: %w", err)}
+		return nil, failure{db.MemoryModelRequest, fmt.Errorf("memory extraction model request failed: %w", err)}
 	}
 	if len(response.Message.ToolCalls) != 0 || (response.FinishReason != "" && response.FinishReason != "stop") {
-		return nil, failure{repo.MemoryInvalidResponse, errors.New("memory extraction did not produce a complete text response")}
+		return nil, failure{db.MemoryInvalidResponse, errors.New("memory extraction did not produce a complete text response")}
 	}
 	ops, err := parseOperations(response.Message.Content, batch, redactor.Restore)
 	if err != nil {
-		return nil, failure{repo.MemoryInvalidResponse, err}
+		return nil, failure{db.MemoryInvalidResponse, err}
 	}
 	report.InputTokens, report.OutputTokens = response.Usage.PromptTokens, response.Usage.CompletionTokens
 	report.UsageReported = response.UsageReported
@@ -216,7 +216,7 @@ func (m *Manager) extract(ctx context.Context, batch *Batch, payload string, rep
 }
 
 func (m *Manager) deferBatch(b *Batch, cause error) error {
-	skip := repo.MemorySkip{Entries: b.Entries, ThreadID: b.ThreadID, TurnID: b.TurnID, MemoryFailure: failureOf(cause)}
+	skip := db.MemorySkip{Entries: b.Entries, ThreadID: b.ThreadID, TurnID: b.TurnID, MemoryFailure: failureOf(cause)}
 	skipped, err := m.db.DeferMemory(b.UserID, b.Cursor, skip, time.Now())
 	if err != nil {
 		return fmt.Errorf("could not defer the memory batch of turn %s (%v): %w", b.TurnID, cause, err)
@@ -231,47 +231,47 @@ func (m *Manager) deferBatch(b *Batch, cause error) error {
 
 var ErrInvalidChange = errors.New("invalid memory change")
 
-func (m *Manager) List(user string, scope repo.MemoryScope, workspaceID string) ([]repo.MemoryRow, error) {
+func (m *Manager) List(user string, scope db.MemoryScope, workspaceID string) ([]db.MemoryRow, error) {
 	if err := checkPlace(scope, workspaceID); err != nil {
 		return nil, err
 	}
 	entries, err := m.db.Memories(user, scope, workspaceID, false)
 	if entries == nil {
-		entries = []repo.MemoryRow{}
+		entries = []db.MemoryRow{}
 	}
 	return entries, err
 }
 
-func checkPlace(scope repo.MemoryScope, workspaceID string) error {
-	if !slices.Contains(repo.MemoryScopeValues, scope) {
-		return fmt.Errorf("%w: the scope must be one of %v", ErrInvalidChange, repo.MemoryScopeValues)
+func checkPlace(scope db.MemoryScope, workspaceID string) error {
+	if !slices.Contains(db.MemoryScopeValues, scope) {
+		return fmt.Errorf("%w: the scope must be one of %v", ErrInvalidChange, db.MemoryScopeValues)
 	}
-	if (scope == repo.MemoryWorkspace) != (workspaceID != "") {
+	if (scope == db.MemoryWorkspace) != (workspaceID != "") {
 		return fmt.Errorf("%w: give a workspaceId with the workspace scope, and only with it", ErrInvalidChange)
 	}
 	return nil
 }
 
-func (m *Manager) Move(user, id string) (repo.MemoryRow, error) {
-	var out repo.MemoryRow
-	err := m.db.Tx(func(tx *repo.DB) error {
+func (m *Manager) Move(user, id string) (db.MemoryRow, error) {
+	var out db.MemoryRow
+	err := m.db.Tx(func(tx *db.DB) error {
 		e, err := tx.Memory(user, id)
 		if err != nil {
 			return err
 		}
-		if e.Status == repo.MemoryForgotten {
+		if e.Status == db.MemoryForgotten {
 			return fmt.Errorf("%w: a forgotten memory cannot be moved", ErrInvalidChange)
 		}
-		if e.Scope == repo.MemoryGlobal {
+		if e.Scope == db.MemoryGlobal {
 			e.Scope, e.WorkspaceID, e.OriginWorkspaceID = localScope(e.OriginWorkspaceID), e.OriginWorkspaceID, ""
 		} else {
-			e.Scope, e.WorkspaceID, e.OriginWorkspaceID = repo.MemoryGlobal, "", e.WorkspaceID
+			e.Scope, e.WorkspaceID, e.OriginWorkspaceID = db.MemoryGlobal, "", e.WorkspaceID
 		}
 		there, err := tx.Memories(user, e.Scope, e.WorkspaceID, false)
 		if err != nil {
 			return err
 		}
-		if slices.ContainsFunc(there, func(o repo.MemoryRow) bool { return o.Topic == e.Topic }) {
+		if slices.ContainsFunc(there, func(o db.MemoryRow) bool { return o.Topic == e.Topic }) {
 			return fmt.Errorf("%w: a memory with the topic %q is already there; forget or edit that one instead", ErrInvalidChange, e.Topic)
 		}
 		e.UpdatedAt = time.Now().UTC()
@@ -281,27 +281,27 @@ func (m *Manager) Move(user, id string) (repo.MemoryRow, error) {
 	return out, err
 }
 
-func (m *Manager) Status(user string) (repo.MemoryStatus, error) {
+func (m *Manager) Status(user string) (db.MemoryStatus, error) {
 	s, err := m.db.MemoryStatus(user)
 	s.GenerationEnabled, s.UseEnabled = m.opts.Generate, m.opts.Use
 	return s, err
 }
 
-func (m *Manager) Edit(user, id, text string) (repo.MemoryRow, error) {
+func (m *Manager) Edit(user, id, text string) (db.MemoryRow, error) {
 	text = strings.TrimSpace(text)
 	if text == "" || utf8.RuneCountInString(text) > maxTextRunes {
-		return repo.MemoryRow{}, fmt.Errorf("%w: memory text must contain 1 to %d characters", ErrInvalidChange, maxTextRunes)
+		return db.MemoryRow{}, fmt.Errorf("%w: memory text must contain 1 to %d characters", ErrInvalidChange, maxTextRunes)
 	}
-	var out repo.MemoryRow
-	err := m.db.Tx(func(tx *repo.DB) error {
+	var out db.MemoryRow
+	err := m.db.Tx(func(tx *db.DB) error {
 		e, err := tx.Memory(user, id)
 		if err != nil {
 			return err
 		}
-		if e.Status == repo.MemoryForgotten {
+		if e.Status == db.MemoryForgotten {
 			return fmt.Errorf("%w: a forgotten memory cannot be edited", ErrInvalidChange)
 		}
-		e.Text, e.UserEdited, e.Status = text, true, repo.MemoryActive
+		e.Text, e.UserEdited, e.Status = text, true, db.MemoryActive
 		e.UpdatedAt = time.Now().UTC()
 		out = e
 		return tx.SaveMemory(e)
@@ -310,15 +310,15 @@ func (m *Manager) Edit(user, id, text string) (repo.MemoryRow, error) {
 }
 
 func (m *Manager) Forget(user, id string) error {
-	return m.db.Tx(func(tx *repo.DB) error {
+	return m.db.Tx(func(tx *db.DB) error {
 		e, err := tx.Memory(user, id)
 		if err != nil {
 			return err
 		}
-		if e.Status == repo.MemoryForgotten {
+		if e.Status == db.MemoryForgotten {
 			return nil
 		}
-		e.Status, e.Text = repo.MemoryForgotten, ""
+		e.Status, e.Text = db.MemoryForgotten, ""
 		e.UpdatedAt = time.Now().UTC()
 		return tx.SaveMemory(e)
 	})

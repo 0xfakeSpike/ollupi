@@ -4,19 +4,19 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/google/uuid"
 )
 
-func commit(db *repo.DB, b *Batch, ops []Operation, report repo.MemoryReport) error {
-	return db.Tx(func(tx *repo.DB) error {
+func commit(store *db.DB, b *Batch, ops []Operation, report db.MemoryReport) error {
+	return store.Tx(func(tx *db.DB) error {
 		current, err := tx.Memories(b.UserID, b.Scope, b.WorkspaceID, true)
 		if err != nil {
 			return err
 		}
 		s := &applyState{
 			tx: tx, batch: b, now: time.Now().UTC(),
-			byID: map[string]repo.MemoryRow{}, byTopic: map[topicKey]string{}, blocked: forgottenSources(current),
+			byID: map[string]db.MemoryRow{}, byTopic: map[topicKey]string{}, blocked: forgottenSources(current),
 		}
 		for _, e := range current {
 			s.byID[e.ID] = e
@@ -30,10 +30,10 @@ func commit(db *repo.DB, b *Batch, ops []Operation, report repo.MemoryReport) er
 }
 
 type applyState struct {
-	tx      *repo.DB
+	tx      *db.DB
 	batch   *Batch
 	now     time.Time
-	byID    map[string]repo.MemoryRow
+	byID    map[string]db.MemoryRow
 	byTopic map[topicKey]string
 	blocked map[string]bool
 }
@@ -48,9 +48,9 @@ func (s *applyState) apply(ops []Operation) error {
 			continue
 		}
 		if op.Action == "retire" {
-			e.Status = repo.MemoryRetired
+			e.Status = db.MemoryRetired
 		} else {
-			e.Text, e.Kind, e.Status = op.Text, op.Kind, repo.MemoryActive
+			e.Text, e.Kind, e.Status = op.Text, op.Kind, db.MemoryActive
 		}
 		e.Sources, e.UpdatedAt = op.Sources, s.now
 		if err := s.tx.SaveMemory(e); err != nil {
@@ -63,16 +63,16 @@ func (s *applyState) apply(ops []Operation) error {
 }
 
 type topicKey struct {
-	scope repo.MemoryScope
+	scope db.MemoryScope
 	topic string
 }
 
-func (s *applyState) target(op Operation) (repo.MemoryRow, bool, error) {
-	var e repo.MemoryRow
+func (s *applyState) target(op Operation) (db.MemoryRow, bool, error) {
+	var e db.MemoryRow
 	if op.Action == "add" {
-		added := repo.MemoryRow{ID: uuid.NewString(), UserID: s.batch.UserID, Scope: s.batch.Scope, WorkspaceID: s.batch.WorkspaceID, Topic: op.Topic, CreatedAt: s.now}
+		added := db.MemoryRow{ID: uuid.NewString(), UserID: s.batch.UserID, Scope: s.batch.Scope, WorkspaceID: s.batch.WorkspaceID, Topic: op.Topic, CreatedAt: s.now}
 		if op.Scope == scopeGlobal {
-			added.Scope, added.WorkspaceID, added.OriginWorkspaceID = repo.MemoryGlobal, "", s.batch.WorkspaceID
+			added.Scope, added.WorkspaceID, added.OriginWorkspaceID = db.MemoryGlobal, "", s.batch.WorkspaceID
 		}
 		id, exists := s.byTopic[topicKey{added.Scope, op.Topic}]
 		if !exists {
@@ -82,16 +82,16 @@ func (s *applyState) target(op Operation) (repo.MemoryRow, bool, error) {
 	} else {
 		var ok bool
 		if e, ok = s.byID[op.ID]; !ok {
-			return repo.MemoryRow{}, false, fmt.Errorf("memory %s disappeared while the batch was being extracted", op.ID)
+			return db.MemoryRow{}, false, fmt.Errorf("memory %s disappeared while the batch was being extracted", op.ID)
 		}
 	}
-	if e.Status == repo.MemoryForgotten || e.UserEdited {
-		return repo.MemoryRow{}, false, nil
+	if e.Status == db.MemoryForgotten || e.UserEdited {
+		return db.MemoryRow{}, false, nil
 	}
 	return e, true, nil
 }
 
-func (s *applyState) blockedBy(sources []repo.MemorySource) bool {
+func (s *applyState) blockedBy(sources []db.MemorySource) bool {
 	for _, src := range sources {
 		if s.blocked[sourceKey(src)] {
 			return true

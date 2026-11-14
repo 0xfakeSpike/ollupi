@@ -10,13 +10,13 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/permission"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/google/uuid"
 )
 
 type job struct {
-	it   repo.ItemRow
+	it   db.ItemRow
 	args map[string]any
 	// background is what the call asked with ArgBackground.
 	background bool
@@ -26,7 +26,7 @@ func (rt *Runtime) planCalls(ctx context.Context) ([]callAction, error) {
 	var plan []callAction
 	halt := ""
 	for _, it := range rt.Items {
-		if !it.IsCall() || it.Status != repo.ItemPending {
+		if !it.IsCall() || it.Status != db.ItemPending {
 			continue
 		}
 		if halt != "" {
@@ -60,8 +60,8 @@ func (rt *Runtime) readOnly(tool string) bool {
 	return ok && d.Annotations.ReadOnlyHint && !d.Serial
 }
 
-func (rt *Runtime) handleCall(ctx context.Context, it repo.ItemRow) (string, bool, *job, error) {
-	var approved *repo.Approval
+func (rt *Runtime) handleCall(ctx context.Context, it db.ItemRow) (string, bool, *job, error) {
+	var approved *db.Approval
 	if it.Approval != nil {
 		changed, err := rt.changedSinceApproval(ctx, it)
 		if err != nil {
@@ -141,8 +141,8 @@ func (rt *Runtime) handleCall(ctx context.Context, it repo.ItemRow) (string, boo
 	return "", false, &job{it: it, args: args, background: background}, nil
 }
 
-func (rt *Runtime) changedSinceApproval(ctx context.Context, it repo.ItemRow) (bool, error) {
-	if it.Approval.Decision == repo.DecisionDecline {
+func (rt *Runtime) changedSinceApproval(ctx context.Context, it db.ItemRow) (bool, error) {
+	if it.Approval.Decision == db.DecisionDecline {
 		return false, nil
 	}
 	args, _, err := rt.arguments(it)
@@ -156,17 +156,17 @@ func (rt *Runtime) changedSinceApproval(ctx context.Context, it repo.ItemRow) (b
 	return ok && content.Text != it.Approval.Content, nil
 }
 
-func (rt *Runtime) decided(it repo.ItemRow) (string, bool, *job, error) {
+func (rt *Runtime) decided(it db.ItemRow) (string, bool, *job, error) {
 	switch it.Approval.Decision {
-	case repo.DecisionAccept, repo.DecisionAcceptForSession, repo.DecisionAcceptAlways:
+	case db.DecisionAccept, db.DecisionAcceptForSession, db.DecisionAcceptAlways:
 		args, background, err := rt.arguments(it)
 		if err != nil {
 			h, err := rt.refuse(it, fmt.Sprintf("the approved call has invalid arguments: %v", err))
 			return h, false, nil, err
 		}
 		return "", false, &job{it: it, args: args, background: background}, nil
-	case repo.DecisionDecline:
-		if _, err := rt.complete(withError(it, "the user declined this call"), repo.ItemDeclined); err != nil {
+	case db.DecisionDecline:
+		if _, err := rt.complete(withError(it, "the user declined this call"), db.ItemDeclined); err != nil {
 			return "", false, nil, err
 		}
 		return fmt.Sprintf("the user declined %s", it.Tool), false, nil, nil
@@ -176,7 +176,7 @@ func (rt *Runtime) decided(it repo.ItemRow) (string, bool, *job, error) {
 }
 
 // arguments are the call's arguments for its tool and whether it asked to run in the background.
-func (rt *Runtime) arguments(it repo.ItemRow) (map[string]any, bool, error) {
+func (rt *Runtime) arguments(it db.ItemRow) (map[string]any, bool, error) {
 	args, err := callArguments(it)
 	if err != nil {
 		return nil, false, err
@@ -189,7 +189,7 @@ func (rt *Runtime) arguments(it repo.ItemRow) (map[string]any, bool, error) {
 	return args, background, nil
 }
 
-func callArguments(it repo.ItemRow) (map[string]any, error) {
+func callArguments(it db.ItemRow) (map[string]any, error) {
 	args := map[string]any{}
 	if strings.TrimSpace(it.Arguments) == "" {
 		return args, nil
@@ -209,7 +209,7 @@ func (rt *Runtime) toolCalls() int {
 		if !it.IsCall() {
 			continue
 		}
-		if it.Status == repo.ItemPending && it.Approval == nil {
+		if it.Status == db.ItemPending && it.Approval == nil {
 			continue
 		}
 		n++
@@ -221,10 +221,10 @@ func (rt *Runtime) consecutiveFailures() int {
 	n := 0
 	items := rt.Items
 	for i := len(items) - 1; i >= 0; i-- {
-		if !items[i].IsCall() || items[i].Status == repo.ItemPending || items[i].Status == repo.ItemInProgress {
+		if !items[i].IsCall() || items[i].Status == db.ItemPending || items[i].Status == db.ItemInProgress {
 			continue
 		}
-		if items[i].Status != repo.ItemFailed && items[i].Status != repo.ItemDeclined {
+		if items[i].Status != db.ItemFailed && items[i].Status != db.ItemDeclined {
 			break
 		}
 		n++

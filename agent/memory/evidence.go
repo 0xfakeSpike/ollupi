@@ -5,27 +5,27 @@ import (
 	"errors"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
 var (
-	evidenceTypes    = []repo.ItemType{repo.ItemUserMessage, repo.ItemAgentMessage, repo.ItemToolCall, repo.ItemError}
-	evidenceStatuses = []repo.ItemStatus{repo.ItemCompleted, repo.ItemFailed, repo.ItemDeclined}
+	evidenceTypes    = []db.ItemType{db.ItemUserMessage, db.ItemAgentMessage, db.ItemToolCall, db.ItemError}
+	evidenceStatuses = []db.ItemStatus{db.ItemCompleted, db.ItemFailed, db.ItemDeclined}
 )
 
-func nextBatch(db *repo.DB, user string, limit int) (*Batch, error) {
+func nextBatch(store *db.DB, user string, limit int) (*Batch, error) {
 	var batch *Batch
-	err := db.Tx(func(tx *repo.DB) error {
+	err := store.Tx(func(tx *db.DB) error {
 		state, err := tx.MemoryState(user)
 		if err != nil {
 			return err
 		}
 		c := state.Cursor
-		var turn repo.TurnRow
-		var items []repo.ItemRow
+		var turn db.TurnRow
+		var items []db.ItemRow
 		if c.ID != "" {
 			switch turn, err = tx.EndedTurn(c.ID); {
-			case errors.Is(err, repo.ErrNotFound):
+			case errors.Is(err, db.ErrNotFound):
 			case err != nil:
 				return err
 			default:
@@ -35,7 +35,7 @@ func nextBatch(db *repo.DB, user string, limit int) (*Batch, error) {
 			}
 		}
 		if len(items) == 0 {
-			if turn, err = tx.NextEndedTurn(user, c); errors.Is(err, repo.ErrNotFound) {
+			if turn, err = tx.NextEndedTurn(user, c); errors.Is(err, db.ErrNotFound) {
 				return nil
 			} else if err != nil {
 				return err
@@ -51,7 +51,7 @@ func nextBatch(db *repo.DB, user string, limit int) (*Batch, error) {
 		b := &Batch{
 			UserID: user, Scope: localScope(string(thread.WorkspaceID)), WorkspaceID: string(thread.WorkspaceID), ThreadID: turn.ThreadID, TurnID: turn.ID,
 			TurnStatus: turn.Status, TurnError: clipMemory(turn.Error, 1000), Facts: []Fact{},
-			Cursor: repo.MemoryCursor{At: turn.CompletedAt, ID: turn.ID}, Entries: len(items),
+			Cursor: db.MemoryCursor{At: turn.CompletedAt, ID: turn.ID}, Entries: len(items),
 		}
 		if len(items) > 0 {
 			b.Cursor.Seq = items[len(items)-1].Seq
@@ -61,7 +61,7 @@ func nextBatch(db *repo.DB, user string, limit int) (*Batch, error) {
 		}
 		blocked := forgottenSources(b.Existing)
 		for _, it := range items {
-			if blocked[sourceKey(repo.MemorySource{Table: "items", ID: it.ID})] {
+			if blocked[sourceKey(db.MemorySource{Table: "items", ID: it.ID})] {
 				continue
 			}
 			f, err := itemFact(it)
@@ -76,17 +76,17 @@ func nextBatch(db *repo.DB, user string, limit int) (*Batch, error) {
 	return batch, err
 }
 
-func localScope(workspaceID string) repo.MemoryScope {
+func localScope(workspaceID string) db.MemoryScope {
 	if workspaceID == "" {
-		return repo.MemoryGeneral
+		return db.MemoryGeneral
 	}
-	return repo.MemoryWorkspace
+	return db.MemoryWorkspace
 }
 
-func forgottenSources(entries []repo.MemoryRow) map[string]bool {
+func forgottenSources(entries []db.MemoryRow) map[string]bool {
 	blocked := map[string]bool{}
 	for _, e := range entries {
-		if e.Status != repo.MemoryForgotten {
+		if e.Status != db.MemoryForgotten {
 			continue
 		}
 		for _, s := range e.Sources {
@@ -98,9 +98,9 @@ func forgottenSources(entries []repo.MemoryRow) map[string]bool {
 
 const factRunes = 4000
 
-func itemFact(it repo.ItemRow) (Fact, error) {
+func itemFact(it db.ItemRow) (Fact, error) {
 	textBound := 3000
-	if it.Type == repo.ItemUserMessage {
+	if it.Type == db.ItemUserMessage {
 		textBound = 1500
 	}
 	var result string
@@ -132,7 +132,7 @@ func itemFact(it repo.ItemRow) (Fact, error) {
 	if err != nil {
 		return Fact{}, err
 	}
-	return Fact{Source: repo.MemorySource{Table: "items", ID: it.ID, OccurredAt: it.StartedAt.UTC().Format(time.RFC3339Nano)}, Data: raw}, nil
+	return Fact{Source: db.MemorySource{Table: "items", ID: it.ID, OccurredAt: it.StartedAt.UTC().Format(time.RFC3339Nano)}, Data: raw}, nil
 }
 
 func clipMemory(s string, n int) string {

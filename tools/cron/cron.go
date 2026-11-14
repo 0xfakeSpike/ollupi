@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/google/uuid"
 	robfig "github.com/robfig/cron/v3"
 )
@@ -26,15 +26,15 @@ var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 var ErrInvalidJob = errors.New("invalid scheduled task")
 
 type Jobs struct {
-	db       *repo.DB
+	db       *db.DB
 	location *time.Location
 	parser   robfig.Parser
 	onChange func(id, threadID string)
 }
 
-func New(db *repo.DB, location *time.Location, onChange func(id, threadID string)) *Jobs {
+func New(store *db.DB, location *time.Location, onChange func(id, threadID string)) *Jobs {
 	return &Jobs{
-		db:       db,
+		db:       store,
 		location: location,
 		parser:   robfig.NewParser(robfig.Minute | robfig.Hour | robfig.Dom | robfig.Month | robfig.Dow | robfig.Descriptor),
 		onChange: onChange,
@@ -94,49 +94,49 @@ func (j *Jobs) next(spec string, after time.Time) (time.Time, error) {
 // lastRun refuses a job's last run when it is nearly a year away. A cron spec
 // has no year, so a one-time task whose date has passed would otherwise run
 // on that date next year.
-func lastRun(job repo.CronJobRow, next, now time.Time) error {
+func lastRun(job db.CronJobRow, next, now time.Time) error {
 	if job.Times != nil && *job.Times-job.Runs == 1 && next.After(now.AddDate(1, -1, 0)) {
 		return fmt.Errorf("cron: %w: the time of task %q's last run has passed; a spec has no year, so it would run next year", ErrInvalidJob, job.Name)
 	}
 	return nil
 }
 
-func (j *Jobs) Create(threadID, name, spec, prompt string, times *int) (repo.CronJobRow, error) {
+func (j *Jobs) Create(threadID, name, spec, prompt string, times *int) (db.CronJobRow, error) {
 	name, spec, prompt = strings.TrimSpace(name), strings.TrimSpace(spec), strings.TrimSpace(prompt)
 	if threadID == "" {
-		return repo.CronJobRow{}, fmt.Errorf("cron: %w: a task belongs to a conversation", ErrInvalidJob)
+		return db.CronJobRow{}, fmt.Errorf("cron: %w: a task belongs to a conversation", ErrInvalidJob)
 	}
 	if !namePattern.MatchString(name) {
-		return repo.CronJobRow{}, fmt.Errorf("cron: %w: name %q must match %s", ErrInvalidJob, name, namePattern)
+		return db.CronJobRow{}, fmt.Errorf("cron: %w: name %q must match %s", ErrInvalidJob, name, namePattern)
 	}
 	if prompt == "" || len([]rune(prompt)) > maxPromptRunes {
-		return repo.CronJobRow{}, fmt.Errorf("cron: %w: prompt must be 1 to %d characters", ErrInvalidJob, maxPromptRunes)
+		return db.CronJobRow{}, fmt.Errorf("cron: %w: prompt must be 1 to %d characters", ErrInvalidJob, maxPromptRunes)
 	}
 	if times != nil && *times < 1 {
-		return repo.CronJobRow{}, fmt.Errorf("cron: %w: times must be at least 1", ErrInvalidJob)
+		return db.CronJobRow{}, fmt.Errorf("cron: %w: times must be at least 1", ErrInvalidJob)
 	}
 	now := time.Now().UTC()
 	next, err := j.next(spec, now)
 	if err != nil {
-		return repo.CronJobRow{}, err
+		return db.CronJobRow{}, err
 	}
-	job := repo.CronJobRow{ID: uuid.NewString(), ThreadID: threadID, Name: name, Spec: spec, Prompt: prompt, Times: times, NextRunAt: next, CreatedAt: now}
+	job := db.CronJobRow{ID: uuid.NewString(), ThreadID: threadID, Name: name, Spec: spec, Prompt: prompt, Times: times, NextRunAt: next, CreatedAt: now}
 	if err := lastRun(job, next, now); err != nil {
-		return repo.CronJobRow{}, err
+		return db.CronJobRow{}, err
 	}
 	if err := j.db.CreateCronJob(job, maxJobs); err != nil {
-		return repo.CronJobRow{}, err
+		return db.CronJobRow{}, err
 	}
 	j.changed(job.ID, job.ThreadID)
 	return job, nil
 }
 
-func (j *Jobs) Delete(threadID, name string) (repo.CronJobRow, error) {
-	return j.change(threadID, name, func(repo.CronJobRow) (*repo.CronJobRow, error) { return nil, nil })
+func (j *Jobs) Delete(threadID, name string) (db.CronJobRow, error) {
+	return j.change(threadID, name, func(db.CronJobRow) (*db.CronJobRow, error) { return nil, nil })
 }
 
-func (j *Jobs) SetPaused(threadID, name string, paused bool) (repo.CronJobRow, error) {
-	return j.change(threadID, name, func(job repo.CronJobRow) (*repo.CronJobRow, error) {
+func (j *Jobs) SetPaused(threadID, name string, paused bool) (db.CronJobRow, error) {
+	return j.change(threadID, name, func(job db.CronJobRow) (*db.CronJobRow, error) {
 		job.Paused = paused
 		if !paused {
 			now := time.Now().UTC()
@@ -155,7 +155,7 @@ func (j *Jobs) SetPaused(threadID, name string, paused bool) (repo.CronJobRow, e
 
 // ran moves job past the run due now. A run that was sent, or failed to
 // start, counts toward its times; one skipped does not.
-func (j *Jobs) ran(job repo.CronJobRow, now time.Time, counted bool) error {
+func (j *Jobs) ran(job db.CronJobRow, now time.Time, counted bool) error {
 	next, err := j.next(job.Spec, now)
 	if err != nil {
 		return err
@@ -172,14 +172,14 @@ func (j *Jobs) ran(job repo.CronJobRow, now time.Time, counted bool) error {
 	return nil
 }
 
-func (j *Jobs) change(threadID, name string, fn func(repo.CronJobRow) (*repo.CronJobRow, error)) (repo.CronJobRow, error) {
+func (j *Jobs) change(threadID, name string, fn func(db.CronJobRow) (*db.CronJobRow, error)) (db.CronJobRow, error) {
 	name = strings.TrimSpace(name)
 	if threadID == "" || name == "" {
-		return repo.CronJobRow{}, fmt.Errorf("cron: %w: a task is changed from its conversation, by name", ErrInvalidJob)
+		return db.CronJobRow{}, fmt.Errorf("cron: %w: a task is changed from its conversation, by name", ErrInvalidJob)
 	}
 	row, err := j.db.UpdateCronJob(threadID, name, fn)
-	if errors.Is(err, repo.ErrNotFound) {
-		return repo.CronJobRow{}, fmt.Errorf("cron: this conversation has no task named %q: %w", name, repo.ErrNotFound)
+	if errors.Is(err, db.ErrNotFound) {
+		return db.CronJobRow{}, fmt.Errorf("cron: this conversation has no task named %q: %w", name, db.ErrNotFound)
 	}
 	if err == nil {
 		j.changed(row.ID, row.ThreadID)

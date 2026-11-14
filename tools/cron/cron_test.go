@@ -6,37 +6,37 @@ import (
 	"testing"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
-func testJobs(t *testing.T) (*Jobs, *repo.DB) {
+func testJobs(t *testing.T) (*Jobs, *db.DB) {
 	t.Helper()
-	db, err := repo.Open(t.TempDir())
+	store, err := db.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { store.Close() })
 	now := time.Now().UTC()
-	if err := db.CreateThread(repo.ThreadRow{UserID: repo.DefaultUser, ID: "t", CreatedAt: now, UpdatedAt: now}); err != nil {
+	if err := store.CreateThread(db.ThreadRow{UserID: db.DefaultUser, ID: "t", CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	return New(db, time.Local, nil), db
+	return New(store, time.Local, nil), store
 }
 
 // due makes the job's next run a minute ago.
-func due(t *testing.T, db *repo.DB, id string) {
+func due(t *testing.T, store *db.DB, id string) {
 	t.Helper()
-	job, err := db.CronJobView(id)
+	job, err := store.CronJobView(id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.SetCronJobNextRun(id, job.NextRunAt, time.Now().Add(-time.Minute)); err != nil {
+	if err := store.SetCronJobNextRun(id, job.NextRunAt, time.Now().Add(-time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestATaskEndsAfterItsTimes(t *testing.T) {
-	jobs, db := testJobs(t)
+	jobs, store := testJobs(t)
 	two := 2
 	job, err := jobs.Create("t", "twice", "@daily", "check", &two)
 	if err != nil {
@@ -45,9 +45,9 @@ func TestATaskEndsAfterItsTimes(t *testing.T) {
 	sent := 0
 	send := func(string, string, string) error { sent++; return nil }
 
-	due(t, db, job.ID)
+	due(t, store, job.ID)
 	jobs.sendDue(context.Background(), send)
-	view, err := db.CronJobView(job.ID)
+	view, err := store.CronJobView(job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,9 +55,9 @@ func TestATaskEndsAfterItsTimes(t *testing.T) {
 		t.Fatalf("after one run: runs %d, next %s", view.Runs, view.NextRunAt)
 	}
 
-	due(t, db, job.ID)
+	due(t, store, job.ID)
 	jobs.sendDue(context.Background(), send)
-	if _, err := db.CronJobView(job.ID); !errors.Is(err, repo.ErrNotFound) {
+	if _, err := store.CronJobView(job.ID); !errors.Is(err, db.ErrNotFound) {
 		t.Fatalf("after its last run the task is %v, want deleted", err)
 	}
 	if sent != 2 {
@@ -66,16 +66,16 @@ func TestATaskEndsAfterItsTimes(t *testing.T) {
 }
 
 func TestATaskWithoutTimesRepeats(t *testing.T) {
-	jobs, db := testJobs(t)
+	jobs, store := testJobs(t)
 	job, err := jobs.Create("t", "daily", "@daily", "check", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for range 3 {
-		due(t, db, job.ID)
+		due(t, store, job.ID)
 		jobs.sendDue(context.Background(), func(string, string, string) error { return nil })
 	}
-	view, err := db.CronJobView(job.ID)
+	view, err := store.CronJobView(job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,11 +106,11 @@ func TestALastRunWhoseDateHasPassedIsRefused(t *testing.T) {
 }
 
 func TestACrashInATickLeavesTheNextOne(t *testing.T) {
-	jobs, db := testJobs(t)
+	jobs, store := testJobs(t)
 	row, err := jobs.Create("t", "crashes", "@daily", "go", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	due(t, db, row.ID)
+	due(t, store, row.ID)
 	jobs.sendDue(context.Background(), func(string, string, string) error { panic("a crash") })
 }

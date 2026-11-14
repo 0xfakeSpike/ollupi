@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/google/jsonschema-go/jsonschema"
 )
@@ -59,10 +59,10 @@ func (Call) Constrain(s *jsonschema.Schema) {
 
 // Tools provides a tool for each kind of subagent.
 type Tools struct {
-	db *repo.DB
+	db *db.DB
 }
 
-func New(db *repo.DB) *Tools { return &Tools{db: db} }
+func New(store *db.DB) *Tools { return &Tools{db: store} }
 
 func (*Tools) Name() (string, string) { return ProviderName, "Launches subagents." }
 
@@ -98,7 +98,7 @@ func (t *Tools) Invoke(ctx context.Context, caller tools.Caller, name string, ar
 	if item == "" {
 		return tools.Result{}, fmt.Errorf("a subagent is launched only by a call of a turn")
 	}
-	child, err := t.db.QueueSubagent(caller.ThreadID, item, c.Description, repo.TurnRow{Input: c.Prompt, Agent: name})
+	child, err := t.db.QueueSubagent(caller.ThreadID, item, c.Description, db.TurnRow{Input: c.Prompt, Agent: name})
 	if err != nil {
 		return tools.Result{}, err
 	}

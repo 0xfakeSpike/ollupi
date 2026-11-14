@@ -16,7 +16,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
@@ -42,29 +42,29 @@ func (s slowTools) Invoke(ctx context.Context, _ tools.Caller, _ string, args ma
 	}
 }
 
-func backgroundTurn(ctx context.Context, t *testing.T, cfg orchestrator.Config) (*orchestrator.Orchestrator, *repo.DB, repo.ThreadRow, repo.ItemRow) {
+func backgroundTurn(ctx context.Context, t *testing.T, cfg orchestrator.Config) (*orchestrator.Orchestrator, *db.DB, db.ThreadRow, db.ItemRow) {
 	t.Helper()
-	ag, db, th, call, _ := backgroundTurnOf(ctx, t, cfg)
-	return ag, db, th, call
+	ag, store, th, call, _ := backgroundTurnOf(ctx, t, cfg)
+	return ag, store, th, call
 }
 
-func backgroundTurnOf(ctx context.Context, t *testing.T, cfg orchestrator.Config) (*orchestrator.Orchestrator, *repo.DB, repo.ThreadRow, repo.ItemRow, *callingModel) {
+func backgroundTurnOf(ctx context.Context, t *testing.T, cfg orchestrator.Config) (*orchestrator.Orchestrator, *db.DB, db.ThreadRow, db.ItemRow, *callingModel) {
 	t.Helper()
 	fake := &callingModel{tool: "files__download", args: `{"url":"https://example.com/big.iso","run_in_background":true}`}
 	srv := httptest.NewServer(fake)
 	t.Cleanup(srv.Close)
-	ag, db := started(ctx, t, cfg, srv.URL)
-	th, err := ag.StartThread(repo.DefaultUser, "", "", "download", permission.Settings{})
+	ag, store := started(ctx, t, cfg, srv.URL)
+	th, err := ag.StartThread(db.DefaultUser, "", "", "download", permission.Settings{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	turn, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, orchestrator.Input{Text: "下载这个文件"})
+	turn, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, orchestrator.Input{Text: "下载这个文件"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for {
-		row, err := db.Turn(turn.ID)
-		if err == nil && row.Status == repo.TurnCompleted {
+		row, err := store.Turn(turn.ID)
+		if err == nil && row.Status == db.TurnCompleted {
 			break
 		}
 		select {
@@ -73,20 +73,20 @@ func backgroundTurnOf(ctx context.Context, t *testing.T, cfg orchestrator.Config
 		case <-time.After(20 * time.Millisecond):
 		}
 	}
-	v, err := db.Thread(th.ID)
+	v, err := store.Thread(th.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, it := range v.Items {
 		if it.Tool == "files__download" {
-			return ag, db, th, it, fake
+			return ag, store, th, it, fake
 		}
 	}
 	t.Fatal("the turn made no download call")
-	return nil, nil, repo.ThreadRow{}, repo.ItemRow{}, nil
+	return nil, nil, db.ThreadRow{}, db.ItemRow{}, nil
 }
 
-func backgroundID(t *testing.T, call repo.ItemRow) string {
+func backgroundID(t *testing.T, call db.ItemRow) string {
 	t.Helper()
 	var out struct{ Background, Status string }
 	if call.Result == nil || json.Unmarshal(call.Result.Output, &out) != nil || out.Background == "" || out.Status != "running" {
@@ -95,10 +95,10 @@ func backgroundID(t *testing.T, call repo.ItemRow) string {
 	return out.Background
 }
 
-func until(ctx context.Context, t *testing.T, db *repo.DB, id string, want repo.BackgroundStatus) repo.BackgroundCallRow {
+func until(ctx context.Context, t *testing.T, store *db.DB, id string, want db.BackgroundStatus) db.BackgroundCallRow {
 	t.Helper()
 	for {
-		call, err := db.BackgroundCall(id)
+		call, err := store.BackgroundCall(id)
 		if err == nil && call.Status == want {
 			return call
 		}
@@ -114,20 +114,20 @@ func TestABackgroundCallLetsItsTurnEndAndComesBackLater(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	slow := slowTools{release: make(chan struct{}), stopped: make(chan struct{})}
-	_, db, th, call, fake := backgroundTurnOf(ctx, t, orchestrator.Config{Providers: []tools.Provider{slow}})
+	_, store, th, call, fake := backgroundTurnOf(ctx, t, orchestrator.Config{Providers: []tools.Provider{slow}})
 	id := backgroundID(t, call)
-	if row, err := db.BackgroundCall(id); err != nil || row.Status != repo.BackgroundRunning || row.Arguments != `{"url":"https://example.com/big.iso"}` {
+	if row, err := store.BackgroundCall(id); err != nil || row.Status != db.BackgroundRunning || row.Arguments != `{"url":"https://example.com/big.iso"}` {
 		t.Fatalf("the call while its turn has ended: %+v %v", row, err)
 	}
 	close(slow.release)
-	if ended := until(ctx, t, db, id, repo.BackgroundCompleted); ended.Result == nil || !strings.Contains(string(ended.Result.Output), "big.iso") {
+	if ended := until(ctx, t, store, id, db.BackgroundCompleted); ended.Result == nil || !strings.Contains(string(ended.Result.Output), "big.iso") {
 		t.Errorf("the ended call: %+v", ended)
 	}
 	// The idle conversation takes the result in a turn it starts, and the model reads it as data.
 	for {
-		v, err := db.Thread(th.ID)
-		if err == nil && len(v.Turns) == 2 && v.Turns[1].Status == repo.TurnCompleted {
-			if first := itemsOf(v, v.Turns[1].ID); len(first) == 0 || first[0].Type != repo.ItemBackgroundResult || first[0].BackgroundID != id {
+		v, err := store.Thread(th.ID)
+		if err == nil && len(v.Turns) == 2 && v.Turns[1].Status == db.TurnCompleted {
+			if first := itemsOf(v, v.Turns[1].ID); len(first) == 0 || first[0].Type != db.ItemBackgroundResult || first[0].BackgroundID != id {
 				t.Errorf("the turn the result started begins with %+v", first)
 			}
 			break
@@ -155,8 +155,8 @@ func TestABackgroundCallLetsItsTurnEndAndComesBackLater(t *testing.T) {
 	}
 }
 
-func itemsOf(v repo.ThreadView, turnID string) []repo.ItemRow {
-	var out []repo.ItemRow
+func itemsOf(v db.ThreadView, turnID string) []db.ItemRow {
+	var out []db.ItemRow
 	for _, it := range v.Items {
 		if it.TurnID == turnID {
 			out = append(out, it)
@@ -169,9 +169,9 @@ func TestArchivingAConversationCancelsItsBackgroundCalls(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	slow := slowTools{release: make(chan struct{}), stopped: make(chan struct{})}
-	ag, db, th, call := backgroundTurn(ctx, t, orchestrator.Config{Providers: []tools.Provider{slow}})
+	ag, store, th, call := backgroundTurn(ctx, t, orchestrator.Config{Providers: []tools.Provider{slow}})
 	id := backgroundID(t, call)
-	if _, err := ag.ArchiveThread(repo.DefaultUser, th.ID, true); err != nil {
+	if _, err := ag.ArchiveThread(db.DefaultUser, th.ID, true); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -179,7 +179,7 @@ func TestArchivingAConversationCancelsItsBackgroundCalls(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("the tool of a cancelled call kept running")
 	}
-	if row, err := db.BackgroundCall(id); err != nil || row.Status != repo.BackgroundCancelled || row.Result != nil {
+	if row, err := store.BackgroundCall(id); err != nil || row.Status != db.BackgroundCancelled || row.Result != nil {
 		t.Errorf("the call of an archived conversation: %+v %v", row, err)
 	}
 }
@@ -234,19 +234,19 @@ func TestATurnWaitsForItsBackgroundCallWithoutASlot(t *testing.T) {
 	fake := &waitingModel{}
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
-	ag, db := started(ctx, t, orchestrator.Config{Providers: []tools.Provider{slow}}, srv.URL)
-	th, err := ag.StartThread(repo.DefaultUser, "", "", "download", permission.Settings{})
+	ag, store := started(ctx, t, orchestrator.Config{Providers: []tools.Provider{slow}}, srv.URL)
+	th, err := ag.StartThread(db.DefaultUser, "", "", "download", permission.Settings{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	turn, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, orchestrator.Input{Text: "下载这个文件，下好了告诉我"})
+	turn, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, orchestrator.Input{Text: "下载这个文件，下好了告诉我"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	reach := func(want repo.TurnStatus) {
+	reach := func(want db.TurnStatus) {
 		t.Helper()
 		for {
-			row, err := db.Turn(turn.ID)
+			row, err := store.Turn(turn.ID)
 			if err == nil && row.Status == want {
 				return
 			}
@@ -257,10 +257,10 @@ func TestATurnWaitsForItsBackgroundCallWithoutASlot(t *testing.T) {
 			}
 		}
 	}
-	reach(repo.TurnWaitingOnBackground)
+	reach(db.TurnWaitingOnBackground)
 	close(slow.release)
-	reach(repo.TurnCompleted)
-	if v, err := db.Thread(th.ID); err != nil || len(v.Turns) != 1 {
+	reach(db.TurnCompleted)
+	if v, err := store.Thread(th.ID); err != nil || len(v.Turns) != 1 {
 		t.Errorf("the result started a turn of its own instead of coming back to the one that waited: %v", err)
 	}
 	last := fake.last()
@@ -322,30 +322,30 @@ func TestASubagentReportsOnlyOnceItsBackgroundCallsHaveEnded(t *testing.T) {
 	fake := &delegatingModel{}
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
-	ag, db := started(ctx, t, orchestrator.Config{Providers: []tools.Provider{slow}}, srv.URL)
-	th, err := ag.StartThread(repo.DefaultUser, "", "", "delegate", permission.Settings{})
+	ag, store := started(ctx, t, orchestrator.Config{Providers: []tools.Provider{slow}}, srv.URL)
+	th, err := ag.StartThread(db.DefaultUser, "", "", "delegate", permission.Settings{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	turn, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, orchestrator.Input{Text: "让子 agent 去下载"})
+	turn, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, orchestrator.Input{Text: "让子 agent 去下载"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	child := func() repo.TurnRow {
-		v, err := db.Thread(th.ID)
+	child := func() db.TurnRow {
+		v, err := store.Thread(th.ID)
 		if err != nil {
-			return repo.TurnRow{}
+			return db.TurnRow{}
 		}
 		for _, it := range v.Items {
 			if it.Tool == subagent.General && it.Await != nil && it.Await.Handle != "" {
-				if cv, err := db.Thread(it.Await.Handle); err == nil && len(cv.Turns) > 0 {
+				if cv, err := store.Thread(it.Await.Handle); err == nil && len(cv.Turns) > 0 {
 					return cv.Turns[len(cv.Turns)-1]
 				}
 			}
 		}
-		return repo.TurnRow{}
+		return db.TurnRow{}
 	}
-	for child().Status != repo.TurnWaitingOnBackground {
+	for child().Status != db.TurnWaitingOnBackground {
 		select {
 		case <-ctx.Done():
 			t.Fatalf("the subagent never waited for its download: %s", child().Status)
@@ -354,8 +354,8 @@ func TestASubagentReportsOnlyOnceItsBackgroundCallsHaveEnded(t *testing.T) {
 	}
 	close(slow.release)
 	for {
-		row, err := db.Turn(turn.ID)
-		if err == nil && row.Status == repo.TurnCompleted {
+		row, err := store.Turn(turn.ID)
+		if err == nil && row.Status == db.TurnCompleted {
 			break
 		}
 		select {
@@ -377,14 +377,14 @@ func TestABackgroundCallCutOffByARestartComesBackAsInterrupted(t *testing.T) {
 	fake := &callingModel{tool: "files__download", args: `{"url":"https://example.com/big.iso","run_in_background":true}`}
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
-	db, err := repo.Open(t.TempDir())
+	store, err := db.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer store.Close()
 	start := func(slow slowTools) (*orchestrator.Orchestrator, context.CancelFunc) {
 		ag := orchestrator.New(orchestrator.Config{
-			Name: "Ollupi", DB: db, Models: []llm.Model{{Name: "demo", Connection: "fake"}},
+			Name: "Ollupi", DB: store, Models: []llm.Model{{Name: "demo", Connection: "fake"}},
 			Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 			Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
 			Providers:   []tools.Provider{slow},
@@ -397,16 +397,16 @@ func TestABackgroundCallCutOffByARestartComesBackAsInterrupted(t *testing.T) {
 		return ag, stop
 	}
 	first, stop := start(slowTools{release: make(chan struct{}), stopped: make(chan struct{})})
-	th, err := first.StartThread(repo.DefaultUser, "", "", "download", permission.Settings{})
+	th, err := first.StartThread(db.DefaultUser, "", "", "download", permission.Settings{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := first.StartTurn(ctx, repo.DefaultUser, th.ID, orchestrator.Input{Text: "下载这个文件"}); err != nil {
+	if _, err := first.StartTurn(ctx, db.DefaultUser, th.ID, orchestrator.Input{Text: "下载这个文件"}); err != nil {
 		t.Fatal(err)
 	}
 	var id string
 	for id == "" {
-		if v, err := db.Thread(th.ID); err == nil && len(v.Turns) == 1 && v.Turns[0].Status == repo.TurnCompleted {
+		if v, err := store.Thread(th.ID); err == nil && len(v.Turns) == 1 && v.Turns[0].Status == db.TurnCompleted {
 			for _, it := range v.Items {
 				if it.Tool == "files__download" {
 					id = backgroundID(t, it)
@@ -421,7 +421,7 @@ func TestABackgroundCallCutOffByARestartComesBackAsInterrupted(t *testing.T) {
 	}
 	stop()
 	first.Wait()
-	if call, err := db.BackgroundCall(id); err != nil || call.Status != repo.BackgroundInterrupted || call.DeliveredAt != nil {
+	if call, err := store.BackgroundCall(id); err != nil || call.Status != db.BackgroundInterrupted || call.DeliveredAt != nil {
 		t.Fatalf("the call after its process stopped: %+v %v", call, err)
 	}
 
@@ -429,9 +429,9 @@ func TestABackgroundCallCutOffByARestartComesBackAsInterrupted(t *testing.T) {
 	defer second.Wait()
 	defer stopSecond()
 	for {
-		v, err := db.Thread(th.ID)
-		if err == nil && len(v.Turns) == 2 && v.Turns[1].Status == repo.TurnCompleted {
-			if first := itemsOf(v, v.Turns[1].ID); len(first) == 0 || first[0].BackgroundID != id || first[0].Text != string(repo.BackgroundInterrupted) {
+		v, err := store.Thread(th.ID)
+		if err == nil && len(v.Turns) == 2 && v.Turns[1].Status == db.TurnCompleted {
+			if first := itemsOf(v, v.Turns[1].ID); len(first) == 0 || first[0].BackgroundID != id || first[0].Text != string(db.BackgroundInterrupted) {
 				t.Errorf("the turn after the restart begins with %+v", first)
 			}
 			return

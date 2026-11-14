@@ -9,7 +9,7 @@ import (
 	"unicode"
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
 const (
@@ -30,19 +30,19 @@ func (m *Manager) Snapshot(user, workspaceID string, budget int) (*Snapshot, err
 	if err != nil {
 		return nil, err
 	}
-	var global, local []repo.MemoryReference
+	var global, local []db.MemoryReference
 	for _, r := range rank(rows, snapshotScore) {
 		if r.score == 0 {
 			break
 		}
-		if r.entry.Scope == repo.MemoryGlobal {
+		if r.entry.Scope == db.MemoryGlobal {
 			global = append(global, r.entry.Reference())
 		} else {
 			local = append(local, r.entry.Reference())
 		}
 	}
 	localTitle := workspaceTitle
-	if scope == repo.MemoryGeneral {
+	if scope == db.MemoryGeneral {
 		localTitle = generalTitle
 	}
 	budget -= llm.EstimateTokens(snapshotIntro + globalTitle + localTitle + fmt.Sprintf(omittedNote, len(rows)))
@@ -50,7 +50,7 @@ func (m *Manager) Snapshot(user, workspaceID string, budget int) (*Snapshot, err
 	l, usedLocal := fit(local, budget-used)
 	g, _ := fit(global, budget-usedLocal)
 	if len(g)+len(l) == 0 {
-		return &Snapshot{Entries: []repo.MemoryReference{}}, nil
+		return &Snapshot{Entries: []db.MemoryReference{}}, nil
 	}
 	text := snapshotIntro
 	if len(g) > 0 {
@@ -67,26 +67,26 @@ func (m *Manager) Snapshot(user, workspaceID string, budget int) (*Snapshot, err
 
 var snapshotKinds = []string{"fact", "procedure", "decision", "preference"}
 
-func snapshotScore(e repo.MemoryRow) int {
-	if e.Status != repo.MemoryActive {
+func snapshotScore(e db.MemoryRow) int {
+	if e.Status != db.MemoryActive {
 		return 0
 	}
 	return 1 + slices.Index(snapshotKinds, e.Kind)
 }
 
-func fit(entries []repo.MemoryReference, budget int) ([]repo.MemoryReference, int) {
-	var out []repo.MemoryReference
+func fit(entries []db.MemoryReference, budget int) ([]db.MemoryReference, int) {
+	var out []db.MemoryReference
 	used := 0
 	for _, e := range entries {
-		if cost := llm.EstimateTokens(renderNotes([]repo.MemoryReference{e})); used+cost <= budget {
+		if cost := llm.EstimateTokens(renderNotes([]db.MemoryReference{e})); used+cost <= budget {
 			out, used = append(out, e), used+cost
 		}
 	}
 	return out, used
 }
 
-func renderNotes(entries []repo.MemoryReference) string {
-	notes := make([]repo.MemoryNote, len(entries))
+func renderNotes(entries []db.MemoryReference) string {
+	notes := make([]db.MemoryNote, len(entries))
 	for i, e := range entries {
 		notes[i] = e.MemoryNote
 	}
@@ -98,11 +98,11 @@ func renderNotes(entries []repo.MemoryReference) string {
 }
 
 type scored struct {
-	entry repo.MemoryRow
+	entry db.MemoryRow
 	score int
 }
 
-func rank(entries []repo.MemoryRow, score func(repo.MemoryRow) int) []scored {
+func rank(entries []db.MemoryRow, score func(db.MemoryRow) int) []scored {
 	out := make([]scored, 0, len(entries))
 	for _, e := range entries {
 		out = append(out, scored{e, score(e)})
@@ -119,7 +119,7 @@ func rank(entries []repo.MemoryRow, score func(repo.MemoryRow) int) []scored {
 	return out
 }
 
-func termScore(e repo.MemoryRow, terms []string) int {
+func termScore(e db.MemoryRow, terms []string) int {
 	text := strings.ToLower(e.Topic + " " + e.Text)
 	score := 0
 	for _, term := range terms {
@@ -130,7 +130,7 @@ func termScore(e repo.MemoryRow, terms []string) int {
 	return score
 }
 
-func kindPriority(e repo.MemoryRow) int {
+func kindPriority(e db.MemoryRow) int {
 	switch e.Kind {
 	case "preference":
 		return 12

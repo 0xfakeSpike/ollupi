@@ -22,7 +22,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
 )
@@ -33,13 +33,13 @@ func TestAUserCannotReachAnotherUsersThread(t *testing.T) {
 	defer cancel()
 	srv := httptest.NewServer(&recordingModel{})
 	defer srv.Close()
-	db, err := repo.Open(t.TempDir())
+	store, err := db.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer store.Close()
 	for _, user := range []string{"a", "b"} {
-		if err := db.EnsureUser(user); err != nil {
+		if err := store.EnsureUser(user); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -47,7 +47,7 @@ func TestAUserCannotReachAnotherUsersThread(t *testing.T) {
 		Name: "Ollupi", Models: []llm.Model{{Name: "demo", Connection: "fake"}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
-		DB:          db,
+		DB:          store,
 	})
 	actx, stop := context.WithCancel(ctx)
 	if err := ag.Start(actx); err != nil {
@@ -100,21 +100,21 @@ func TestAUserCannotReachAnotherUsersThread(t *testing.T) {
 			return err
 		},
 		"interrupt":   func() error { return ag.InterruptTurn("b", thread.ID, "") },
-		"approve":     func() error { return ag.ResolveApproval("b", thread.ID, "approval", repo.DecisionAccept, "b") },
+		"approve":     func() error { return ag.ResolveApproval("b", thread.ID, "approval", db.DecisionAccept, "b") },
 		"answer":      func() error { return ag.AnswerUserInput("b", thread.ID, "item", userinput.Answers{}) },
 		"read a file": func() error { _, _, err := ag.ReadAttachment(ctx, "b", thread.ID, "file"); return err },
 	} {
-		if err := try(); !errors.Is(err, repo.ErrNotFound) {
+		if err := try(); !errors.Is(err, db.ErrNotFound) {
 			t.Errorf("b tried to %s: %v", name, err)
 		}
 	}
-	if got, err := ag.PendingRequests("b", thread.ID); !errors.Is(err, repo.ErrNotFound) {
+	if got, err := ag.PendingRequests("b", thread.ID); !errors.Is(err, db.ErrNotFound) {
 		t.Errorf("b sees requests: %+v, %v", got, err)
 	}
-	if rows, _, err := ag.ListThreads("b", repo.ThreadFilter{Limit: 10}); err != nil || len(rows) != 0 {
+	if rows, _, err := ag.ListThreads("b", db.ThreadFilter{Limit: 10}); err != nil || len(rows) != 0 {
 		t.Errorf("b lists threads: %+v, %v", rows, err)
 	}
-	if rows, _, err := ag.ListThreads("a", repo.ThreadFilter{Limit: 10}); err != nil || len(rows) != 1 || rows[0].Title != "mine" {
+	if rows, _, err := ag.ListThreads("a", db.ThreadFilter{Limit: 10}); err != nil || len(rows) != 1 || rows[0].Title != "mine" {
 		t.Errorf("a lists threads: %+v, %v", rows, err)
 	}
 	if err := ag.StartScheduledTurn(thread.ID, "scheduled", "job"); err != nil {
@@ -160,13 +160,13 @@ func TestAUserHoldsNoMoreSlotsThanTheirLimit(t *testing.T) {
 	fake := &holdingModel{release: make(chan struct{})}
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
-	db, err := repo.Open(t.TempDir())
+	store, err := db.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer store.Close()
 	for _, user := range []string{"a", "b"} {
-		if err := db.EnsureUser(user); err != nil {
+		if err := store.EnsureUser(user); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -175,7 +175,7 @@ func TestAUserHoldsNoMoreSlotsThanTheirLimit(t *testing.T) {
 		Name: "Ollupi", Models: []llm.Model{{Name: "demo", Connection: "fake"}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", 16, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
-		Slots:       8, UserSlots: 2, DB: db,
+		Slots:       8, UserSlots: 2, DB: store,
 		OnEvent: func(e orchestrator.Event) {
 			if e.Kind == orchestrator.EventTurnCompleted {
 				ended.Add(1)
@@ -234,18 +234,18 @@ func TestTurnsRunOnTheUsersClient(t *testing.T) {
 	defer sharedSrv.Close()
 	defer ownSrv.Close()
 	limits := map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}}
-	db, err := repo.Open(t.TempDir())
+	store, err := db.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer store.Close()
 	for _, user := range []string{"a", "b"} {
-		if err := db.EnsureUser(user); err != nil {
+		if err := store.EnsureUser(user); err != nil {
 			t.Fatal(err)
 		}
 	}
 	ownClient := llm.NewOpenAI(ownSrv.URL, "", 4, limits)
-	ended := make(chan repo.TurnRow, 2)
+	ended := make(chan db.TurnRow, 2)
 	ag := orchestrator.New(orchestrator.Config{
 		Name: "Ollupi", Models: []llm.Model{{Name: "demo", Connection: "fake"}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
@@ -256,7 +256,7 @@ func TestTurnsRunOnTheUsersClient(t *testing.T) {
 			}
 			return nil, errors.New("no key for this user")
 		},
-		DB: db,
+		DB: store,
 		OnEvent: func(e orchestrator.Event) {
 			if e.Kind == orchestrator.EventTurnCompleted {
 				ended <- e.Turn
@@ -280,9 +280,9 @@ func TestTurnsRunOnTheUsersClient(t *testing.T) {
 		}
 		select {
 		case got := <-ended:
-			want := repo.TurnCompleted
+			want := db.TurnCompleted
 			if user == "b" {
-				want = repo.TurnFailed
+				want = db.TurnFailed
 			}
 			if got.ID != turn.ID || got.Status != want {
 				t.Errorf("%s's turn: %s %q", user, got.Status, got.Error)
@@ -307,20 +307,20 @@ func TestAStandbyTakesTheShard(t *testing.T) {
 	srv := httptest.NewServer(&recordingModel{})
 	defer srv.Close()
 	home := t.TempDir()
-	open := func() *repo.DB {
-		db, err := repo.Open(home)
+	open := func() *db.DB {
+		store, err := db.Open(home)
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { db.Close() })
-		return db
+		t.Cleanup(func() { store.Close() })
+		return store
 	}
-	process := func(db *repo.DB, lost func()) *orchestrator.Orchestrator {
+	process := func(store *db.DB, lost func()) *orchestrator.Orchestrator {
 		return orchestrator.New(orchestrator.Config{
 			Name: "Ollupi", Models: []llm.Model{{Name: "demo", Connection: "fake"}},
 			Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 			Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
-			DB:          db, Lease: 300 * time.Millisecond, OnLeaseLost: lost,
+			DB:          store, Lease: 300 * time.Millisecond, OnLeaseLost: lost,
 		})
 	}
 	first := process(open(), nil)
@@ -378,29 +378,29 @@ func TestAWorkspaceIsFoundInTheUsersSandbox(t *testing.T) {
 	ctx := context.Background()
 	srv := httptest.NewServer(&recordingModel{})
 	defer srv.Close()
-	db, err := repo.Open(t.TempDir())
+	store, err := db.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer store.Close()
 	ag := orchestrator.New(orchestrator.Config{
-		DB: db,
+		DB: store,
 		BoxFor: func(string) (sandbox.Box, error) {
 			return sandbox.Remote(stubMachine{}, []string{"/cloud"}, "cloud"), nil
 		},
 	})
-	w, err := ag.AddWorkspace(ctx, repo.DefaultUser, "/cloud/app/", "app")
+	w, err := ag.AddWorkspace(ctx, db.DefaultUser, "/cloud/app/", "app")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if w.RootPath != "/cloud/app" {
 		t.Errorf("root %q", w.RootPath)
 	}
-	again, err := ag.AddWorkspace(ctx, repo.DefaultUser, "/cloud/app", "app")
+	again, err := ag.AddWorkspace(ctx, db.DefaultUser, "/cloud/app", "app")
 	if err != nil || again.ID != w.ID {
 		t.Errorf("the same folder again: %+v, %v", again, err)
 	}
-	if _, err := ag.AddWorkspace(ctx, repo.DefaultUser, "/cloud/missing", "x"); err == nil {
+	if _, err := ag.AddWorkspace(ctx, db.DefaultUser, "/cloud/missing", "x"); err == nil {
 		t.Error("a folder the sandbox does not have was added")
 	}
 }
@@ -474,18 +474,18 @@ func TestAttachmentsLiveInTheStore(t *testing.T) {
 	close(fake.release)
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
-	db, err := repo.Open(t.TempDir())
+	store, err := db.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
-	store := &memoryStore{objects: map[string][]byte{}}
-	ended := make(chan repo.TurnRow, 1)
+	defer store.Close()
+	attachments := &memoryStore{objects: map[string][]byte{}}
+	ended := make(chan db.TurnRow, 1)
 	ag := orchestrator.New(orchestrator.Config{
 		Name: "Ollupi", Models: []llm.Model{{Name: "demo", Connection: "fake"}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
-		Attachments: store, DB: db,
+		Attachments: attachments, DB: store,
 		BoxFor: func(string) (sandbox.Box, error) {
 			return sandbox.Remote(noteMachine{}, []string{"/cloud"}, "cloud"), nil
 		},
@@ -501,7 +501,7 @@ func TestAttachmentsLiveInTheStore(t *testing.T) {
 	}
 	defer ag.Wait()
 	defer stop()
-	thread, err := ag.StartThread(repo.DefaultUser, "", "", "t", permission.Settings{})
+	thread, err := ag.StartThread(db.DefaultUser, "", "", "t", permission.Settings{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -509,24 +509,24 @@ func TestAttachmentsLiveInTheStore(t *testing.T) {
 	if err := os.WriteFile(onHost, []byte("of this machine"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, orchestrator.Input{Text: "read", Attachments: []orchestrator.AttachmentInput{{Path: onHost}}}); err == nil {
+	if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, orchestrator.Input{Text: "read", Attachments: []orchestrator.AttachmentInput{{Path: onHost}}}); err == nil {
 		t.Fatal("a user with a sandbox attached a file of this machine")
 	}
-	if _, err := ag.StartTurn(ctx, repo.DefaultUser, thread.ID, orchestrator.Input{Text: "read", Attachments: []orchestrator.AttachmentInput{{Path: "/cloud/note.txt"}}}); err != nil {
+	if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, orchestrator.Input{Text: "read", Attachments: []orchestrator.AttachmentInput{{Path: "/cloud/note.txt"}}}); err != nil {
 		t.Fatal(err)
 	}
 	select {
 	case turn := <-ended:
-		if turn.Status != repo.TurnCompleted {
+		if turn.Status != db.TurnCompleted {
 			t.Fatalf("the turn: %s %q", turn.Status, turn.Error)
 		}
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	if store.len() != 1 {
-		t.Fatalf("%d objects stored", store.len())
+	if attachments.len() != 1 {
+		t.Fatalf("%d objects stored", attachments.len())
 	}
-	view, err := db.Thread(thread.ID)
+	view, err := store.Thread(thread.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -536,14 +536,14 @@ func TestAttachmentsLiveInTheStore(t *testing.T) {
 			id = it.Attachments[0].ID
 		}
 	}
-	if _, data, err := ag.ReadAttachment(ctx, repo.DefaultUser, thread.ID, id); err != nil || string(data) != "a note" {
+	if _, data, err := ag.ReadAttachment(ctx, db.DefaultUser, thread.ID, id); err != nil || string(data) != "a note" {
 		t.Errorf("the attachment: %q, %v", data, err)
 	}
-	if err := ag.DeleteThread(repo.DefaultUser, thread.ID); err != nil {
+	if err := ag.DeleteThread(db.DefaultUser, thread.ID); err != nil {
 		t.Fatal(err)
 	}
-	if store.len() != 0 {
-		t.Errorf("%d objects outlived their thread", store.len())
+	if attachments.len() != 0 {
+		t.Errorf("%d objects outlived their thread", attachments.len())
 	}
 }
 
@@ -566,13 +566,13 @@ func TestEachUserHasTheirOwnTools(t *testing.T) {
 	defer cancel()
 	srv := httptest.NewServer(&recordingModel{})
 	defer srv.Close()
-	db, err := repo.Open(t.TempDir())
+	store, err := db.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer store.Close()
 	for _, user := range []string{"a", "b"} {
-		if err := db.EnsureUser(user); err != nil {
+		if err := store.EnsureUser(user); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -583,7 +583,7 @@ func TestEachUserHasTheirOwnTools(t *testing.T) {
 		Settings: permission.Settings{ApprovalPolicy: string(permission.Never),
 			Rules: permission.Rules{Ask: []string{"github__act"}}},
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
-		DB:          db,
+		DB:          store,
 		ToolsFor: func(user string) (*tools.Set, error) {
 			mu.Lock()
 			defer mu.Unlock()

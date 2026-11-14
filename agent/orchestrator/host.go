@@ -9,34 +9,34 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/agent/skills"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
 // turnHost is what the orchestrator gives a run of one turn: runtime.Host for the turn's thread.
 type turnHost struct {
 	o        *Orchestrator
-	t        repo.ThreadRow
-	turn     repo.TurnRow
+	t        db.ThreadRow
+	turn     db.TurnRow
 	role     role.Role
 	caller   tools.Caller
 	registry *tools.Registry
 }
 
-func (h turnHost) Record(it repo.ItemRow) (repo.ItemRow, error) {
+func (h turnHost) Record(it db.ItemRow) (db.ItemRow, error) {
 	stored, isNew, err := h.o.cfg.DB.RecordItem(h.t.ID, it)
 	if err != nil {
-		return repo.ItemRow{}, err
+		return db.ItemRow{}, err
 	}
 	h.o.emitItem(h.t, h.turn, stored, isNew)
 	return stored, nil
 }
 
-func (h turnHost) Delta(it repo.ItemRow, text string) {
+func (h turnHost) Delta(it db.ItemRow, text string) {
 	h.o.emit(Event{Kind: EventItemDelta, Thread: h.t, Turn: h.turn, Item: &it, Delta: text})
 }
 
-func (h turnHost) Reload() ([]repo.ItemRow, *permission.Checker, error) {
+func (h turnHost) Reload() ([]db.ItemRow, *permission.Checker, error) {
 	items, err := h.o.cfg.DB.TurnItems(h.turn.ID)
 	if err != nil {
 		return nil, nil, err
@@ -49,7 +49,7 @@ func (h turnHost) Reload() ([]repo.ItemRow, *permission.Checker, error) {
 	return items, checker, err
 }
 
-func (h turnHost) Settings() (repo.SettingsRow, error) { return h.o.cfg.DB.Settings(h.t.UserID) }
+func (h turnHost) Settings() (db.SettingsRow, error) { return h.o.cfg.DB.Settings(h.t.UserID) }
 
 func (h turnHost) Skills() []skills.Skill {
 	if h.o.skills == nil {
@@ -72,6 +72,6 @@ func (h turnHost) Attachment(ctx context.Context, path string) ([]byte, error) {
 	return h.o.cfg.Attachments.Get(ctx, path)
 }
 
-func (h turnHost) Background(it repo.ItemRow, args map[string]any) tools.Result {
+func (h turnHost) Background(it db.ItemRow, args map[string]any) tools.Result {
 	return h.o.startBackground(h.t, h.caller, h.registry, it, args)
 }

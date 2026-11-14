@@ -18,7 +18,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
 )
@@ -104,25 +104,25 @@ func TestLoadedToolIsSentWithTheNextRequest(t *testing.T) {
 	fake := &recordingModel{}
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
-	db, err := repo.Open(t.TempDir())
+	store, err := db.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer store.Close()
 	now := time.Now().UTC()
-	if err := db.SaveMemory(repo.MemoryRow{UserID: repo.DefaultUser, ID: "mem_1", Scope: repo.MemoryGlobal, Topic: "回复语言", Kind: "preference", Text: "用户希望用中文回复，结论先行。", Status: repo.MemoryActive, Sources: []repo.MemorySource{}, CreatedAt: now, UpdatedAt: now}); err != nil {
+	if err := store.SaveMemory(db.MemoryRow{UserID: db.DefaultUser, ID: "mem_1", Scope: db.MemoryGlobal, Topic: "回复语言", Kind: "preference", Text: "用户希望用中文回复，结论先行。", Status: db.MemoryActive, Sources: []db.MemorySource{}, CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	mem, err := memory.New(db, nil, memory.Options{Use: true})
+	mem, err := memory.New(store, nil, memory.Options{Use: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	jobs := cron.New(db, time.Local, func(string, string) {})
+	jobs := cron.New(store, time.Local, func(string, string) {})
 	ag := orchestrator.New(orchestrator.Config{
 		Name: "Ollupi", Models: []llm.Model{{Name: "demo", Connection: "fake"}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
-		Providers:   []tools.Provider{githubTools{}, jobs}, Memory: mem, DB: db,
+		Providers:   []tools.Provider{githubTools{}, jobs}, Memory: mem, DB: store,
 	})
 	actx, stop := context.WithCancel(ctx)
 	if err := ag.Start(actx); err != nil {
@@ -130,11 +130,11 @@ func TestLoadedToolIsSentWithTheNextRequest(t *testing.T) {
 	}
 	defer ag.Wait()
 	defer stop()
-	w, err := ag.AddWorkspace(ctx, repo.DefaultUser, t.TempDir(), "app")
+	w, err := ag.AddWorkspace(ctx, db.DefaultUser, t.TempDir(), "app")
 	if err != nil {
 		t.Fatal(err)
 	}
-	th, err := ag.StartThread(repo.DefaultUser, w.ID, "", "", permission.Settings{})
+	th, err := ag.StartThread(db.DefaultUser, w.ID, "", "", permission.Settings{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestLoadedToolIsSentWithTheNextRequest(t *testing.T) {
 			}
 		}
 	}
-	if _, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, orchestrator.Input{Text: "帮我在 GitHub 上提个 issue：登录页在 Safari 上白屏"}); err != nil {
+	if _, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, orchestrator.Input{Text: "帮我在 GitHub 上提个 issue：登录页在 Safari 上白屏"}); err != nil {
 		t.Fatal(err)
 	}
 	wait(3)

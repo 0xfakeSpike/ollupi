@@ -3,7 +3,7 @@ package orchestrator
 import (
 	"log/slog"
 
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
 type EventKind string
@@ -31,15 +31,15 @@ const (
 
 type Event struct {
 	Kind      EventKind
-	Thread    repo.ThreadRow
-	Turn      repo.TurnRow
-	Item      *repo.ItemRow
-	Workspace *repo.WorkspaceRow
+	Thread    db.ThreadRow
+	Turn      db.TurnRow
+	Item      *db.ItemRow
+	Workspace *db.WorkspaceRow
 	// Environment is the environment a conversation can run in, added, renamed or removed.
-	Environment *repo.EnvironmentRow
+	Environment *db.EnvironmentRow
 	CronJobID   string
 	Delta       string
-	Status      repo.ThreadStatus
+	Status      db.ThreadStatus
 	Error       string
 }
 
@@ -47,9 +47,9 @@ func (o *Orchestrator) fault(threadID, turnID string, err error) {
 	slog.Error("orchestrator fault", "thread", threadID, "turn", turnID, "err", err)
 	t, rerr := o.cfg.DB.ThreadRow(threadID)
 	if rerr != nil {
-		t = repo.ThreadRow{ID: threadID}
+		t = db.ThreadRow{ID: threadID}
 	}
-	o.emit(Event{Kind: EventError, Thread: t, Turn: repo.TurnRow{ID: turnID, ThreadID: threadID}, Error: err.Error()})
+	o.emit(Event{Kind: EventError, Thread: t, Turn: db.TurnRow{ID: turnID, ThreadID: threadID}, Error: err.Error()})
 }
 
 func (o *Orchestrator) emit(e Event) {
@@ -72,7 +72,7 @@ func (o *Orchestrator) emitStatus(threadID string) {
 	o.emit(Event{Kind: EventThreadStatusChanged, Thread: t, Status: status})
 }
 
-func (o *Orchestrator) emitRequests(st repo.ThreadState) {
+func (o *Orchestrator) emitRequests(st db.ThreadState) {
 	turn, _ := st.ActiveTurn()
 	for _, it := range st.PendingRequests() {
 		kind := EventApprovalRequested
@@ -83,8 +83,8 @@ func (o *Orchestrator) emitRequests(st repo.ThreadState) {
 	}
 }
 
-func (o *Orchestrator) emitItem(t repo.ThreadRow, turn repo.TurnRow, it repo.ItemRow, isNew bool) {
-	unfinished := it.Status == repo.ItemPending || it.Status == repo.ItemInProgress
+func (o *Orchestrator) emitItem(t db.ThreadRow, turn db.TurnRow, it db.ItemRow, isNew bool) {
+	unfinished := it.Status == db.ItemPending || it.Status == db.ItemInProgress
 	switch {
 	case isNew:
 		started := it
@@ -98,7 +98,7 @@ func (o *Orchestrator) emitItem(t repo.ThreadRow, turn repo.TurnRow, it repo.Ite
 }
 
 // startedTurn logs a turn that starts and tells the clients.
-func (o *Orchestrator) startedTurn(t repo.ThreadRow, turn repo.TurnRow) {
+func (o *Orchestrator) startedTurn(t db.ThreadRow, turn db.TurnRow) {
 	slog.Info("turn started", "thread", t.ID, "turn", turn.ID, "model", turn.Model.Name, "connection", turn.Model.Connection,
 		"subagent", t.ParentThreadID != "", "cronJob", turn.CronJobID)
 	o.emit(Event{Kind: EventTurnStarted, Thread: t, Turn: turn})

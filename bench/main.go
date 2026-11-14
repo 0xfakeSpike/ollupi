@@ -35,7 +35,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
 const askArgs = `{"questions":[{"id":"pick","header":"Pick","question":"Which one?","options":[{"label":"A"},{"label":"B"}]}]}`
@@ -91,7 +91,7 @@ func (t *tracker) on(e orchestrator.Event) {
 		t.asked.Add(1)
 	case orchestrator.EventTurnCompleted:
 		t.ended.Add(1)
-		if e.Turn.Status != repo.TurnCompleted {
+		if e.Turn.Status != db.TurnCompleted {
 			t.failed.Add(1)
 		}
 		t.mu.Lock()
@@ -219,25 +219,25 @@ func parked(args []string) {
 		log.Fatal(err)
 	}
 	defer os.RemoveAll(dir)
-	db, err := repo.Open(dir)
+	store, err := db.Open(dir)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
+	defer store.Close()
 	m := &model{}
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}}
 	ag := orchestrator.New(orchestrator.Config{
 		Name: "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": m},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
-		Slots:       *slots, DB: db, OnEvent: tr.on,
+		Slots:       *slots, DB: store, OnEvent: tr.on,
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := ag.Start(ctx); err != nil {
 		log.Fatal(err)
 	}
 	newThread := func() string {
-		th, err := ag.StartThread(repo.DefaultUser, "", "", "bench", permission.Settings{})
+		th, err := ag.StartThread(db.DefaultUser, "", "", "bench", permission.Settings{})
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -250,7 +250,7 @@ func parked(args []string) {
 		text = "ASK"
 	}
 	for range *parked {
-		tr.start(ag, repo.DefaultUser, newThread(), text)
+		tr.start(ag, db.DefaultUser, newThread(), text)
 	}
 	waitFor("parked conversations", func() bool {
 		if *state == "waiting" {
@@ -294,7 +294,7 @@ func parked(args []string) {
 		go func() {
 			defer wg.Done()
 			for range *rounds {
-				turnID := tr.start(ag, repo.DefaultUser, id, "hello")
+				turnID := tr.start(ag, db.DefaultUser, id, "hello")
 				idsMu.Lock()
 				workload = append(workload, turnID)
 				idsMu.Unlock()

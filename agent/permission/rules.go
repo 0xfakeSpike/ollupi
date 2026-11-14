@@ -6,11 +6,11 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
-type Rules = repo.PermissionRules
+type Rules = db.PermissionRules
 
 type ruleVerdict int
 

@@ -11,7 +11,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -61,7 +61,7 @@ func (rt *Runtime) respond(ctx context.Context, choice llm.ToolChoice) (llm.Chat
 		r.carry(&it, resp.Message.Native)
 		if cutOff {
 			now := time.Now().UTC()
-			it.Status, it.Error, it.CompletedAt = repo.ItemFailed, cutOffCall, &now
+			it.Status, it.Error, it.CompletedAt = db.ItemFailed, cutOffCall, &now
 		}
 		if _, err := rt.record(it); err != nil {
 			return llm.ChatResponse{}, err
@@ -103,8 +103,8 @@ func (rt *Runtime) compact(ctx context.Context) (err error) {
 		return fmt.Errorf("runtime: %w", err)
 	}
 	span.SetAttributes(attribute.Int("ollupi.context.estimated_tokens", prompt.Stats.EstimatedTokens))
-	it, err := rt.record(repo.ItemRow{
-		ID: uuid.NewString(), TurnID: rt.Turn.ID, Type: repo.ItemContextCompaction, Status: repo.ItemInProgress, StartedAt: time.Now().UTC(),
+	it, err := rt.record(db.ItemRow{
+		ID: uuid.NewString(), TurnID: rt.Turn.ID, Type: db.ItemContextCompaction, Status: db.ItemInProgress, StartedAt: time.Now().UTC(),
 		ResponseID: uuid.NewString(), ContextStats: &prompt.Stats,
 	})
 	if err != nil {
@@ -123,13 +123,13 @@ func (rt *Runtime) compact(ctx context.Context) (err error) {
 		err = fmt.Errorf("the summary was truncated by the model output limit")
 	}
 	if err != nil {
-		if _, rerr := rt.complete(withError(it, err.Error()), repo.ItemFailed); rerr != nil {
+		if _, rerr := rt.complete(withError(it, err.Error()), db.ItemFailed); rerr != nil {
 			return rerr
 		}
 		return fmt.Errorf("runtime: compaction: %w", err)
 	}
 	it.Text = summary
-	if _, err := rt.complete(it, repo.ItemCompleted); err != nil {
+	if _, err := rt.complete(it, db.ItemCompleted); err != nil {
 		return err
 	}
 	return rt.loadMemory()
@@ -230,11 +230,11 @@ func (rt *Runtime) logModelCall(ctx context.Context, msg string, started time.Ti
 		"output", resp.Usage.CompletionTokens, "finish", resp.FinishReason, "toolCalls", len(resp.Message.ToolCalls))...)
 }
 
-func responseUsage(resp llm.ChatResponse) *repo.Usage {
+func responseUsage(resp llm.ChatResponse) *db.Usage {
 	if !resp.UsageReported {
 		return nil
 	}
-	return &repo.Usage{
+	return &db.Usage{
 		InputTokens: resp.Usage.PromptTokens, CachedInputTokens: resp.Usage.CachedPromptTokens,
 		CacheWriteInputTokens: resp.Usage.CacheWritePromptTokens, OutputTokens: resp.Usage.CompletionTokens,
 	}
@@ -243,16 +243,16 @@ func responseUsage(resp llm.ChatResponse) *repo.Usage {
 func (rt *Runtime) modelCalls() int {
 	seen := map[string]bool{}
 	for _, it := range rt.Items {
-		if it.ResponseID != "" && it.Type != repo.ItemContextCompaction {
+		if it.ResponseID != "" && it.Type != db.ItemContextCompaction {
 			seen[it.ResponseID] = true
 		}
 	}
 	return len(seen)
 }
 
-func (rt *Runtime) callItem(responseID string, call llm.ToolCall) repo.ItemRow {
-	it := repo.ItemRow{
-		ID: uuid.NewString(), TurnID: rt.Turn.ID, Type: repo.ItemToolCall, Status: repo.ItemPending,
+func (rt *Runtime) callItem(responseID string, call llm.ToolCall) db.ItemRow {
+	it := db.ItemRow{
+		ID: uuid.NewString(), TurnID: rt.Turn.ID, Type: db.ItemToolCall, Status: db.ItemPending,
 		ResponseID: responseID, CallID: call.ID, Tool: call.Name, Arguments: call.Arguments, StartedAt: time.Now().UTC(),
 	}
 	if d, ok := rt.tool(call.Name); ok {

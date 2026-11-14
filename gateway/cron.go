@@ -6,7 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
 )
 
@@ -47,7 +47,7 @@ func (s *Server) cronChanged(user, id, threadID string) {
 			case err == nil:
 				view := cronJobView(job)
 				read.Job = &view
-			case !errors.Is(err, repo.ErrNotFound):
+			case !errors.Is(err, db.ErrNotFound):
 				slog.Error("changed cron task not readable", "job", id, "err", err)
 				return
 			}

@@ -11,7 +11,7 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
 	"github.com/google/uuid"
@@ -26,12 +26,12 @@ type Input struct {
 	CronJobID   string
 }
 
-func (o *Orchestrator) StartTurn(ctx context.Context, user, threadID string, in Input) (repo.TurnRow, error) {
+func (o *Orchestrator) StartTurn(ctx context.Context, user, threadID string, in Input) (db.TurnRow, error) {
 	atts, err := o.attach(ctx, user, threadID, in.Attachments)
 	if err != nil {
-		return repo.TurnRow{}, err
+		return db.TurnRow{}, err
 	}
-	var turn repo.TurnRow
+	var turn db.TurnRow
 	err = o.call(func() (err error) {
 		turn, err = o.startTurn(threadID, in, atts)
 		return err
@@ -53,12 +53,12 @@ func (o *Orchestrator) StartScheduledTurn(threadID, text, jobID string) error {
 	})
 }
 
-func (o *Orchestrator) SteerTurn(ctx context.Context, user, threadID, expectedTurnID string, in Input) (repo.TurnRow, error) {
+func (o *Orchestrator) SteerTurn(ctx context.Context, user, threadID, expectedTurnID string, in Input) (db.TurnRow, error) {
 	atts, err := o.attach(ctx, user, threadID, in.Attachments)
 	if err != nil {
-		return repo.TurnRow{}, err
+		return db.TurnRow{}, err
 	}
-	var turn repo.TurnRow
+	var turn db.TurnRow
 	err = o.call(func() (err error) {
 		turn, err = o.steer(threadID, expectedTurnID, in, atts)
 		return err
@@ -74,7 +74,7 @@ func (o *Orchestrator) SteerTurn(ctx context.Context, user, threadID, expectedTu
 
 // dropUnsent removes the attachments of a message that was refused. When the orchestrator stopped, the loop may have taken
 // the message all the same, so they stay; deleting the thread removes them if not.
-func (o *Orchestrator) dropUnsent(atts []repo.Attachment, err error) {
+func (o *Orchestrator) dropUnsent(atts []db.Attachment, err error) {
 	if err != nil && !errors.Is(err, errStopped) {
 		o.removeAttachments(atts)
 	}
@@ -89,7 +89,7 @@ func (o *Orchestrator) InterruptTurn(user, threadID, expectedTurnID string) erro
 	})
 }
 
-func (o *Orchestrator) ResolveApproval(user, threadID, approvalID string, decision repo.Decision, decidedBy string) error {
+func (o *Orchestrator) ResolveApproval(user, threadID, approvalID string, decision db.Decision, decidedBy string) error {
 	return o.call(func() error {
 		if err := o.owned(user, threadID); err != nil {
 			return err
@@ -114,69 +114,69 @@ func (o *Orchestrator) SkipUserInput(user, threadID, itemID string) error {
 		if err := o.owned(user, threadID); err != nil {
 			return err
 		}
-		return o.respond(threadID, func(it repo.ItemRow) bool { return it.ID == itemID && !it.WaitsForApproval() }, func(it repo.ItemRow) (repo.ItemRow, error) {
+		return o.respond(threadID, func(it db.ItemRow) bool { return it.ID == itemID && !it.WaitsForApproval() }, func(it db.ItemRow) (db.ItemRow, error) {
 			now := time.Now().UTC()
-			it.Status, it.Error, it.CompletedAt = repo.ItemDeclined, "the user skipped these questions; go on without their answers", &now
+			it.Status, it.Error, it.CompletedAt = db.ItemDeclined, "the user skipped these questions; go on without their answers", &now
 			return it, nil
 		})
 	})
 }
 
-func (o *Orchestrator) startTurn(threadID string, in Input, atts []repo.Attachment) (repo.TurnRow, error) {
+func (o *Orchestrator) startTurn(threadID string, in Input, atts []db.Attachment) (db.TurnRow, error) {
 	text, err := checkMessage(in.Text, len(in.Attachments))
 	if err != nil {
-		return repo.TurnRow{}, err
+		return db.TurnRow{}, err
 	}
 	st, err := o.cfg.DB.ThreadState(threadID)
 	if err != nil {
-		return repo.TurnRow{}, fmt.Errorf("orchestrator: thread %s: %w", threadID, err)
+		return db.TurnRow{}, fmt.Errorf("orchestrator: thread %s: %w", threadID, err)
 	}
 	if st.Thread.ParentThreadID != "" {
-		return repo.TurnRow{}, ErrSubagentThread
+		return db.TurnRow{}, ErrSubagentThread
 	}
 	if len(st.QueuedTurns()) >= maxQueuedTurns {
-		return repo.TurnRow{}, ErrQueueFull
+		return db.TurnRow{}, ErrQueueFull
 	}
 	model, err := o.conversationModel(st.Last, in.Connection)
 	if err != nil {
-		return repo.TurnRow{}, err
+		return db.TurnRow{}, err
 	}
 	if err := o.checkLength(model, text); err != nil {
-		return repo.TurnRow{}, err
+		return db.TurnRow{}, err
 	}
 	if err := o.checkImages(threadID, model, atts); err != nil {
-		return repo.TurnRow{}, err
+		return db.TurnRow{}, err
 	}
 	main, err := o.mainRole(model)
 	if err != nil {
-		return repo.TurnRow{}, err
+		return db.TurnRow{}, err
 	}
-	return o.submit(st.Thread, repo.TurnRow{Input: text, Attachments: atts, CronJobID: in.CronJobID, Agent: string(main.Name)}, model)
+	return o.submit(st.Thread, db.TurnRow{Input: text, Attachments: atts, CronJobID: in.CronJobID, Agent: string(main.Name)}, model)
 }
 
-func (o *Orchestrator) submit(t repo.ThreadRow, turn repo.TurnRow, model llm.Model) (repo.TurnRow, error) {
+func (o *Orchestrator) submit(t db.ThreadRow, turn db.TurnRow, model llm.Model) (db.TurnRow, error) {
 	if t.ArchivedAt != nil {
-		return repo.TurnRow{}, ErrThreadArchived
+		return db.TurnRow{}, ErrThreadArchived
 	}
 	if t.ParentThreadID == "" && t.WorkspaceID != "" {
 		w, err := o.workspaceOf(t.WorkspaceID)
 		if err != nil {
-			return repo.TurnRow{}, err
+			return db.TurnRow{}, err
 		}
 		if err := usable(w); err != nil {
-			return repo.TurnRow{}, err
+			return db.TurnRow{}, err
 		}
 		o.moveMu.Lock()
 		defer o.moveMu.Unlock()
 		if o.moving[w.ID] {
-			return repo.TurnRow{}, fmt.Errorf("orchestrator: workspace %s is moving: %w", w.Name, ErrWorkspaceBusy)
+			return db.TurnRow{}, fmt.Errorf("orchestrator: workspace %s is moving: %w", w.Name, ErrWorkspaceBusy)
 		}
 	}
 	now := time.Now().UTC()
 	turn.ID, turn.Model, turn.CreatedAt, turn.StartedAt = uuid.NewString(), model.Clone(), now, now
 	t, turn, message, err := o.cfg.DB.SubmitTurn(t.ID, turn)
 	if err != nil {
-		return repo.TurnRow{}, err
+		return db.TurnRow{}, err
 	}
 	if message != nil {
 		o.startedTurn(t, turn)
@@ -189,31 +189,31 @@ func (o *Orchestrator) submit(t repo.ThreadRow, turn repo.TurnRow, model llm.Mod
 	return turn, nil
 }
 
-func (o *Orchestrator) steer(threadID, expectedTurnID string, in Input, atts []repo.Attachment) (repo.TurnRow, error) {
+func (o *Orchestrator) steer(threadID, expectedTurnID string, in Input, atts []db.Attachment) (db.TurnRow, error) {
 	text, err := checkMessage(in.Text, len(in.Attachments))
 	if err != nil {
-		return repo.TurnRow{}, err
+		return db.TurnRow{}, err
 	}
 	st, err := o.cfg.DB.ThreadState(threadID)
 	if err != nil {
-		return repo.TurnRow{}, fmt.Errorf("orchestrator: thread %s: %w", threadID, err)
+		return db.TurnRow{}, fmt.Errorf("orchestrator: thread %s: %w", threadID, err)
 	}
 	turn, active := st.ActiveTurn()
 	if !active {
-		return repo.TurnRow{}, ErrNoActiveTurn
+		return db.TurnRow{}, ErrNoActiveTurn
 	}
 	if turn.ID != expectedTurnID {
-		return repo.TurnRow{}, fmt.Errorf("%w (expected %s, in progress %s)", ErrTurnMismatch, expectedTurnID, turn.ID)
+		return db.TurnRow{}, fmt.Errorf("%w (expected %s, in progress %s)", ErrTurnMismatch, expectedTurnID, turn.ID)
 	}
 	if err := o.checkLength(turn.Model, text); err != nil {
-		return repo.TurnRow{}, err
+		return db.TurnRow{}, err
 	}
 	if err := o.checkImages(threadID, turn.Model, atts); err != nil {
-		return repo.TurnRow{}, err
+		return db.TurnRow{}, err
 	}
-	stored, closed, err := o.cfg.DB.Steer(threadID, repo.NewUserMessage(uuid.NewString(), turn.ID, text, atts, time.Now().UTC()))
+	stored, closed, err := o.cfg.DB.Steer(threadID, db.NewUserMessage(uuid.NewString(), turn.ID, text, atts, time.Now().UTC()))
 	if err != nil {
-		return repo.TurnRow{}, err
+		return db.TurnRow{}, err
 	}
 	o.emitItem(st.Thread, turn, stored, true)
 	for _, it := range closed {
@@ -245,26 +245,26 @@ func (o *Orchestrator) interrupt(threadID, expectedTurnID string) error {
 	if expectedTurnID != "" && turn.ID != expectedTurnID {
 		return fmt.Errorf("%w (expected %s, in progress %s)", ErrTurnMismatch, expectedTurnID, turn.ID)
 	}
-	reason := map[repo.TurnStatus]string{
-		repo.TurnReady:               "interrupted while waiting for a slot",
-		repo.TurnWaitingOnApproval:   "interrupted while waiting for the user",
-		repo.TurnWaitingOnUserInput:  "interrupted while waiting for the user",
-		repo.TurnWaitingOnAgent:      "interrupted while waiting for subagents",
-		repo.TurnWaitingOnBackground: "interrupted while waiting for background calls",
+	reason := map[db.TurnStatus]string{
+		db.TurnReady:               "interrupted while waiting for a slot",
+		db.TurnWaitingOnApproval:   "interrupted while waiting for the user",
+		db.TurnWaitingOnUserInput:  "interrupted while waiting for the user",
+		db.TurnWaitingOnAgent:      "interrupted while waiting for subagents",
+		db.TurnWaitingOnBackground: "interrupted while waiting for background calls",
 	}[turn.Status]
-	turn.Status, turn.Error = repo.TurnInterrupted, reason
+	turn.Status, turn.Error = db.TurnInterrupted, reason
 	o.endTurn(turn)
 	return nil
 }
 
-func (o *Orchestrator) resolveApproval(threadID, approvalID string, decision repo.Decision, decidedBy string) error {
-	return o.respond(threadID, func(it repo.ItemRow) bool { return it.WaitsForApproval() && it.Approval.ID == approvalID }, func(it repo.ItemRow) (repo.ItemRow, error) {
+func (o *Orchestrator) resolveApproval(threadID, approvalID string, decision db.Decision, decidedBy string) error {
+	return o.respond(threadID, func(it db.ItemRow) bool { return it.WaitsForApproval() && it.Approval.ID == approvalID }, func(it db.ItemRow) (db.ItemRow, error) {
 		if available := it.Approval.AvailableDecisions(); !slices.Contains(available, decision) {
-			return repo.ItemRow{}, fmt.Errorf("orchestrator: %w: %q is not one of %q", ErrInvalidDecision, decision, available)
+			return db.ItemRow{}, fmt.Errorf("orchestrator: %w: %q is not one of %q", ErrInvalidDecision, decision, available)
 		}
-		if decision == repo.DecisionAcceptAlways {
+		if decision == db.DecisionAcceptAlways {
 			if err := o.allowAlways(threadID, it.Approval.Suggested); err != nil {
-				return repo.ItemRow{}, err
+				return db.ItemRow{}, err
 			}
 		}
 		now := time.Now().UTC()
@@ -297,25 +297,25 @@ func (o *Orchestrator) allowAlways(threadID string, rules []string) error {
 }
 
 func (o *Orchestrator) answerUserInput(threadID, itemID string, answers userinput.Answers) error {
-	return o.respond(threadID, func(it repo.ItemRow) bool { return it.ID == itemID && !it.WaitsForApproval() }, func(it repo.ItemRow) (repo.ItemRow, error) {
+	return o.respond(threadID, func(it db.ItemRow) bool { return it.ID == itemID && !it.WaitsForApproval() }, func(it db.ItemRow) (db.ItemRow, error) {
 		req, err := userinput.Decode(it.Await.Request)
 		if err != nil {
-			return repo.ItemRow{}, err
+			return db.ItemRow{}, err
 		}
 		if err := req.Check(answers, maxAnswerRunes); err != nil {
-			return repo.ItemRow{}, fmt.Errorf("orchestrator: %w: %v", ErrInvalidAnswer, err)
+			return db.ItemRow{}, fmt.Errorf("orchestrator: %w: %v", ErrInvalidAnswer, err)
 		}
-		result, _, err := repo.ResultOf(tools.Result{Output: answers})
+		result, _, err := db.ResultOf(tools.Result{Output: answers})
 		if err != nil {
-			return repo.ItemRow{}, err
+			return db.ItemRow{}, err
 		}
 		now := time.Now().UTC()
-		it.Result, it.Status, it.CompletedAt = result, repo.ItemCompleted, &now
+		it.Result, it.Status, it.CompletedAt = result, db.ItemCompleted, &now
 		return it, nil
 	})
 }
 
-func (o *Orchestrator) respond(threadID string, match func(repo.ItemRow) bool, apply func(repo.ItemRow) (repo.ItemRow, error)) error {
+func (o *Orchestrator) respond(threadID string, match func(db.ItemRow) bool, apply func(db.ItemRow) (db.ItemRow, error)) error {
 	if _, scheduled := o.slotByThread[threadID]; scheduled {
 		return ErrNoSuchRequest
 	}

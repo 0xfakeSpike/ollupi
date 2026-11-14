@@ -11,7 +11,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/redact"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
@@ -32,25 +32,25 @@ type Runtime struct {
 	Window   *contextmanager.Manager
 	Host     Host
 
-	Turn   repo.TurnRow
+	Turn   db.TurnRow
 	Caller tools.Caller
 	// Role is the role of agent the turn names, which the run is.
 	Role        role.Role
 	Prompt      string
 	Permissions *permission.Checker
-	History     []repo.ItemRow
-	Items       []repo.ItemRow
+	History     []db.ItemRow
+	Items       []db.ItemRow
 
 	offered  []tools.ToolDescriptor
 	deferred []tools.ToolDescriptor
 	system   string
 	redactor *redact.Redactor
-	usage    repo.Usage
+	usage    db.Usage
 }
 
-func (rt *Runtime) Run(ctx context.Context) (bool, repo.Usage, error) {
+func (rt *Runtime) Run(ctx context.Context) (bool, db.Usage, error) {
 	if err := rt.start(); err != nil {
-		return false, repo.Usage{}, err
+		return false, db.Usage{}, err
 	}
 	final, err := rt.run(ctx)
 	return final, rt.usage, err
@@ -76,12 +76,12 @@ func (rt *Runtime) start() error {
 	return rt.loadMemory()
 }
 
-func hasSnapshot(items []repo.ItemRow) bool {
+func hasSnapshot(items []db.ItemRow) bool {
 	for i := len(items) - 1; i >= 0; i-- {
 		switch it := items[i]; {
-		case it.Type == repo.ItemMemoryContext && it.Status == repo.ItemCompleted:
+		case it.Type == db.ItemMemoryContext && it.Status == db.ItemCompleted:
 			return true
-		case it.Type == repo.ItemContextCompaction && it.Status == repo.ItemCompleted:
+		case it.Type == db.ItemContextCompaction && it.Status == db.ItemCompleted:
 			return false
 		}
 	}
@@ -97,8 +97,8 @@ func (rt *Runtime) loadMemory() error {
 		return nil
 	}
 	now := time.Now().UTC()
-	_, err = rt.record(repo.ItemRow{
-		ID: uuid.NewString(), TurnID: rt.Turn.ID, Type: repo.ItemMemoryContext, Status: repo.ItemCompleted,
+	_, err = rt.record(db.ItemRow{
+		ID: uuid.NewString(), TurnID: rt.Turn.ID, Type: db.ItemMemoryContext, Status: db.ItemCompleted,
 		Memory: snapshot.Entries, Text: snapshot.Text, StartedAt: now, CompletedAt: &now,
 	})
 	return err
@@ -148,8 +148,8 @@ func (rt *Runtime) run(ctx context.Context) (bool, error) {
 				return true, rt.finish(ctx, halt)
 			}
 		}
-		if len(resp.Message.ToolCalls) == 0 && !slices.ContainsFunc(rt.Items, func(it repo.ItemRow) bool {
-			return (it.Type == repo.ItemUserMessage || it.Type == repo.ItemBackgroundResult) && it.Seq > seen
+		if len(resp.Message.ToolCalls) == 0 && !slices.ContainsFunc(rt.Items, func(it db.ItemRow) bool {
+			return (it.Type == db.ItemUserMessage || it.Type == db.ItemBackgroundResult) && it.Seq > seen
 		}) {
 			return true, nil
 		}
@@ -161,8 +161,8 @@ Do not call tools. Write the final answer to the user now, in their language: re
 
 func (rt *Runtime) finish(ctx context.Context, reason string) error {
 	now := time.Now().UTC()
-	if _, err := rt.record(repo.ItemRow{
-		ID: uuid.NewString(), TurnID: rt.Turn.ID, Type: repo.ItemError, Status: repo.ItemCompleted,
+	if _, err := rt.record(db.ItemRow{
+		ID: uuid.NewString(), TurnID: rt.Turn.ID, Type: db.ItemError, Status: db.ItemCompleted,
 		Text: fmt.Sprintf(finalAnswerNotice, reason), StartedAt: now, CompletedAt: &now,
 	}); err != nil {
 		return err
@@ -173,10 +173,10 @@ func (rt *Runtime) finish(ctx context.Context, reason string) error {
 	return nil
 }
 
-func (rt *Runtime) record(it repo.ItemRow) (repo.ItemRow, error) {
+func (rt *Runtime) record(it db.ItemRow) (db.ItemRow, error) {
 	stored, err := rt.Host.Record(it)
 	if err != nil {
-		return repo.ItemRow{}, fmt.Errorf("runtime: record %s item: %w", it.Type, err)
+		return db.ItemRow{}, fmt.Errorf("runtime: record %s item: %w", it.Type, err)
 	}
 	for i := range rt.Items {
 		if rt.Items[i].ID == stored.ID {
@@ -188,24 +188,24 @@ func (rt *Runtime) record(it repo.ItemRow) (repo.ItemRow, error) {
 	return stored, nil
 }
 
-func (rt *Runtime) complete(it repo.ItemRow, status repo.ItemStatus) (repo.ItemRow, error) {
+func (rt *Runtime) complete(it db.ItemRow, status db.ItemStatus) (db.ItemRow, error) {
 	now := time.Now().UTC()
 	it.Status = status
 	it.CompletedAt = &now
 	return rt.record(it)
 }
 
-func withError(it repo.ItemRow, text string) repo.ItemRow {
+func withError(it db.ItemRow, text string) db.ItemRow {
 	it.Error = text
 	return it
 }
 
 func (rt *Runtime) waiting() bool {
-	return slices.ContainsFunc(rt.Items, func(it repo.ItemRow) bool { return it.WaitsOnUser() || it.Awaits() })
+	return slices.ContainsFunc(rt.Items, func(it db.ItemRow) bool { return it.WaitsOnUser() || it.Awaits() })
 }
 
 // caller is the run's caller for the call that it records.
-func (rt *Runtime) caller(it repo.ItemRow) tools.Caller {
+func (rt *Runtime) caller(it db.ItemRow) tools.Caller {
 	c := rt.Caller
 	c.Item = it.ID
 	return c

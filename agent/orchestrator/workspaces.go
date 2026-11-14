@@ -10,35 +10,35 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/google/uuid"
 )
 
 // workspaceTimeout bounds what adding or moving a workspace asks of the user's sandbox, the move itself aside.
 const workspaceTimeout = time.Minute
 
-func (o *Orchestrator) AddWorkspace(ctx context.Context, user, path, name string) (repo.WorkspaceRow, error) {
+func (o *Orchestrator) AddWorkspace(ctx context.Context, user, path, name string) (db.WorkspaceRow, error) {
 	ctx, cancel := context.WithTimeout(ctx, workspaceTimeout)
 	defer cancel()
 	box, err := o.cfg.BoxFor(user)
 	if err != nil {
-		return repo.WorkspaceRow{}, fmt.Errorf("orchestrator: the sandbox of the user: %w", err)
+		return db.WorkspaceRow{}, fmt.Errorf("orchestrator: the sandbox of the user: %w", err)
 	}
 	root, err := box.Directory(ctx, path)
 	if err != nil {
-		return repo.WorkspaceRow{}, fmt.Errorf("orchestrator: %w: %v", ErrInvalidPath, err)
+		return db.WorkspaceRow{}, fmt.Errorf("orchestrator: %w: %v", ErrInvalidPath, err)
 	}
 	if name == "" {
 		name = filepath.Base(root)
 	}
 	if name, err = workspaceName(name); err != nil {
-		return repo.WorkspaceRow{}, err
+		return db.WorkspaceRow{}, err
 	}
 	now := time.Now().UTC()
-	w := repo.WorkspaceRow{ID: uuid.NewString(), UserID: user, Name: name, RootPath: root, CreatedAt: now, UpdatedAt: now}
+	w := db.WorkspaceRow{ID: uuid.NewString(), UserID: user, Name: name, RootPath: root, CreatedAt: now, UpdatedAt: now}
 	w, err = o.cfg.DB.AddWorkspace(w,
-		func(existing repo.WorkspaceRow) bool { return box.Same(ctx, existing.RootPath, root) },
-		func(existing repo.WorkspaceRow) (repo.WorkspaceRow, bool) {
+		func(existing db.WorkspaceRow) bool { return box.Same(ctx, existing.RootPath, root) },
+		func(existing db.WorkspaceRow) (db.WorkspaceRow, bool) {
 			if existing.ArchivedAt == nil {
 				return existing, false
 			}
@@ -46,52 +46,52 @@ func (o *Orchestrator) AddWorkspace(ctx context.Context, user, path, name string
 			return existing, true
 		})
 	if err != nil {
-		return repo.WorkspaceRow{}, err
+		return db.WorkspaceRow{}, err
 	}
 	o.emit(Event{Kind: EventWorkspaceChanged, Workspace: &w})
 	return w, nil
 }
 
-func (o *Orchestrator) RenameWorkspace(user, id, name string) (repo.WorkspaceRow, error) {
+func (o *Orchestrator) RenameWorkspace(user, id, name string) (db.WorkspaceRow, error) {
 	name, err := workspaceName(name)
 	if err != nil {
-		return repo.WorkspaceRow{}, err
+		return db.WorkspaceRow{}, err
 	}
-	return o.changeWorkspace(user, id, func(w *repo.WorkspaceRow) { w.Name = name })
+	return o.changeWorkspace(user, id, func(w *db.WorkspaceRow) { w.Name = name })
 }
 
 // MoveWorkspace moves the workspace's folder to path, a folder that is there and empty, and points the workspace at
 // it. Every thread, memory and task keeps its workspace id, so nothing else is rewritten. A turn in progress would keep
 // calling tools against the folder it started in, so the move is refused until the workspace's conversations are
 // idle, and none starts a turn while the folder moves.
-func (o *Orchestrator) MoveWorkspace(ctx context.Context, user, id, path string) (repo.WorkspaceRow, error) {
+func (o *Orchestrator) MoveWorkspace(ctx context.Context, user, id, path string) (db.WorkspaceRow, error) {
 	// The move itself outlives the request: a folder left half moved because a client went away helps no one.
 	move := context.WithoutCancel(ctx)
 	ctx, cancel := context.WithTimeout(ctx, workspaceTimeout)
 	defer cancel()
-	w, err := o.workspaceFor(user, repo.Ref(id))
+	w, err := o.workspaceFor(user, db.Ref(id))
 	if err != nil {
-		return repo.WorkspaceRow{}, err
+		return db.WorkspaceRow{}, err
 	}
 	if w.ID == "" {
-		return repo.WorkspaceRow{}, fmt.Errorf("orchestrator: workspace %s: %w", id, repo.ErrNotFound)
+		return db.WorkspaceRow{}, fmt.Errorf("orchestrator: workspace %s: %w", id, db.ErrNotFound)
 	}
 	box, err := o.cfg.BoxFor(user)
 	if err != nil {
-		return repo.WorkspaceRow{}, fmt.Errorf("orchestrator: the sandbox of the user: %w", err)
+		return db.WorkspaceRow{}, fmt.Errorf("orchestrator: the sandbox of the user: %w", err)
 	}
 	target, err := box.Directory(ctx, path)
 	if err != nil {
-		return repo.WorkspaceRow{}, fmt.Errorf("orchestrator: %w: %v", ErrInvalidPath, err)
+		return db.WorkspaceRow{}, fmt.Errorf("orchestrator: %w: %v", ErrInvalidPath, err)
 	}
 	if box.Same(ctx, w.RootPath, target) {
 		return w, nil
 	}
 	if sandbox.Within(w.RootPath, target) {
-		return repo.WorkspaceRow{}, fmt.Errorf("orchestrator: %w: %q is inside the workspace", ErrInvalidPath, target)
+		return db.WorkspaceRow{}, fmt.Errorf("orchestrator: %w: %q is inside the workspace", ErrInvalidPath, target)
 	}
 	if err := o.startMove(user, w); err != nil {
-		return repo.WorkspaceRow{}, err
+		return db.WorkspaceRow{}, err
 	}
 	defer func() {
 		o.moveMu.Lock()
@@ -99,28 +99,28 @@ func (o *Orchestrator) MoveWorkspace(ctx context.Context, user, id, path string)
 		o.moveMu.Unlock()
 	}()
 	if entries, err := box.ReadDir(ctx, target); err != nil {
-		return repo.WorkspaceRow{}, fmt.Errorf("orchestrator: %w: %v", ErrInvalidPath, err)
+		return db.WorkspaceRow{}, fmt.Errorf("orchestrator: %w: %v", ErrInvalidPath, err)
 	} else if len(entries) > 0 {
-		return repo.WorkspaceRow{}, fmt.Errorf("orchestrator: %w: %q is not empty", ErrInvalidPath, target)
+		return db.WorkspaceRow{}, fmt.Errorf("orchestrator: %w: %q is not empty", ErrInvalidPath, target)
 	}
 	rows, err := o.cfg.DB.Workspaces(user)
 	if err != nil {
-		return repo.WorkspaceRow{}, err
+		return db.WorkspaceRow{}, err
 	}
 	for _, other := range rows {
 		if other.ID != w.ID && box.Same(ctx, other.RootPath, target) {
-			return repo.WorkspaceRow{}, fmt.Errorf("orchestrator: %w: %q is the folder of the workspace %s", ErrInvalidPath, target, other.Name)
+			return db.WorkspaceRow{}, fmt.Errorf("orchestrator: %w: %q is the folder of the workspace %s", ErrInvalidPath, target, other.Name)
 		}
 	}
 	if err := box.Move(move, w.RootPath, target); err != nil {
-		return repo.WorkspaceRow{}, fmt.Errorf("orchestrator: %w", err)
+		return db.WorkspaceRow{}, fmt.Errorf("orchestrator: %w", err)
 	}
 	moved, err := o.cfg.DB.SetWorkspaceRoot(user, w.ID, target, time.Now().UTC())
 	if err != nil {
 		if back := box.Move(move, target, w.RootPath); back != nil {
-			return repo.WorkspaceRow{}, fmt.Errorf("orchestrator: the folder is now at %s but the workspace still names %s: %w; moving it back failed too: %v", target, w.RootPath, err, back)
+			return db.WorkspaceRow{}, fmt.Errorf("orchestrator: the folder is now at %s but the workspace still names %s: %w; moving it back failed too: %v", target, w.RootPath, err, back)
 		}
-		return repo.WorkspaceRow{}, err
+		return db.WorkspaceRow{}, err
 	}
 	o.emit(Event{Kind: EventWorkspaceChanged, Workspace: &moved})
 	return moved, nil
@@ -128,7 +128,7 @@ func (o *Orchestrator) MoveWorkspace(ctx context.Context, user, id, path string)
 
 // startMove claims the workspace for a move once none of its conversations has a turn open. submit checks the claim
 // under the same lock, so no turn starts between the check and the claim.
-func (o *Orchestrator) startMove(user string, w repo.WorkspaceRow) error {
+func (o *Orchestrator) startMove(user string, w db.WorkspaceRow) error {
 	o.moveMu.Lock()
 	defer o.moveMu.Unlock()
 	if o.moving[w.ID] {
@@ -145,8 +145,8 @@ func (o *Orchestrator) startMove(user string, w repo.WorkspaceRow) error {
 	return nil
 }
 
-func (o *Orchestrator) ArchiveWorkspace(user, id string, archived bool) (repo.WorkspaceRow, error) {
-	return o.changeWorkspace(user, id, func(w *repo.WorkspaceRow) {
+func (o *Orchestrator) ArchiveWorkspace(user, id string, archived bool) (db.WorkspaceRow, error) {
+	return o.changeWorkspace(user, id, func(w *db.WorkspaceRow) {
 		w.ArchivedAt = nil
 		if archived {
 			at := w.UpdatedAt
@@ -155,28 +155,28 @@ func (o *Orchestrator) ArchiveWorkspace(user, id string, archived bool) (repo.Wo
 	})
 }
 
-func (o *Orchestrator) UpdateWorkspaceSettings(user, id string, settings permission.Settings) (repo.WorkspaceRow, error) {
-	w, err := o.workspaceFor(user, repo.Ref(id))
+func (o *Orchestrator) UpdateWorkspaceSettings(user, id string, settings permission.Settings) (db.WorkspaceRow, error) {
+	w, err := o.workspaceFor(user, db.Ref(id))
 	if err != nil {
-		return repo.WorkspaceRow{}, err
+		return db.WorkspaceRow{}, err
 	}
-	if err := o.validateLayer(user, o.layers(repo.WorkspaceRow{}), w.Settings, workspaceLayer(w.Name, settings)); err != nil {
-		return repo.WorkspaceRow{}, err
+	if err := o.validateLayer(user, o.layers(db.WorkspaceRow{}), w.Settings, workspaceLayer(w.Name, settings)); err != nil {
+		return db.WorkspaceRow{}, err
 	}
-	return o.changeWorkspace(user, id, func(w *repo.WorkspaceRow) { w.Settings = settings })
+	return o.changeWorkspace(user, id, func(w *db.WorkspaceRow) { w.Settings = settings })
 }
 
-func (o *Orchestrator) changeWorkspace(user, id string, change func(*repo.WorkspaceRow)) (repo.WorkspaceRow, error) {
-	w, err := o.cfg.DB.UpdateWorkspace(user, id, func(w repo.WorkspaceRow) (repo.WorkspaceRow, error) {
+func (o *Orchestrator) changeWorkspace(user, id string, change func(*db.WorkspaceRow)) (db.WorkspaceRow, error) {
+	w, err := o.cfg.DB.UpdateWorkspace(user, id, func(w db.WorkspaceRow) (db.WorkspaceRow, error) {
 		w.UpdatedAt = time.Now().UTC()
 		change(&w)
 		return w, nil
 	})
-	if errors.Is(err, repo.ErrNotFound) {
-		return repo.WorkspaceRow{}, fmt.Errorf("orchestrator: workspace %s: %w", id, repo.ErrNotFound)
+	if errors.Is(err, db.ErrNotFound) {
+		return db.WorkspaceRow{}, fmt.Errorf("orchestrator: workspace %s: %w", id, db.ErrNotFound)
 	}
 	if err != nil {
-		return repo.WorkspaceRow{}, err
+		return db.WorkspaceRow{}, err
 	}
 	o.emit(Event{Kind: EventWorkspaceChanged, Workspace: &w})
 	return w, nil
@@ -196,7 +196,7 @@ func (o *Orchestrator) validateLayer(user string, base []permission.Layer, previ
 	return nil
 }
 
-func usable(w repo.WorkspaceRow) error {
+func usable(w db.WorkspaceRow) error {
 	if w.ArchivedAt != nil {
 		return fmt.Errorf("orchestrator: workspace %s: %w", w.Name, ErrWorkspaceArchived)
 	}

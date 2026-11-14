@@ -9,7 +9,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"gorm.io/gorm"
 )
 
@@ -24,10 +24,10 @@ type dbStats struct {
 	startStats          sql.DBStats
 }
 
-// watchDB hooks into the database repo.Open returned. The bench reaches the gorm handle repo keeps unexported, so
+// watchDB hooks into the database db.Open returned. The bench reaches the gorm handle repo keeps unexported, so
 // that measuring the database needs nothing in repo that only the bench would use.
-func watchDB(db *repo.DB) *dbStats {
-	field := reflect.ValueOf(db).Elem().FieldByName("gorm")
+func watchDB(store *db.DB) *dbStats {
+	field := reflect.ValueOf(store).Elem().FieldByName("gorm")
 	g := *(**gorm.DB)(unsafe.Pointer(field.UnsafeAddr()))
 	pool, err := g.DB()
 	if err != nil {

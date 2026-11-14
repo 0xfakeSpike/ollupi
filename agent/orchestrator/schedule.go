@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
 func (o *Orchestrator) reconcile(threadID string) {
@@ -21,7 +21,7 @@ func (o *Orchestrator) reconcile(threadID string) {
 		if len(st.QueuedTurns()) == 0 {
 			return
 		}
-		var message repo.ItemRow
+		var message db.ItemRow
 		if st.Thread, turn, message, err = o.cfg.DB.StartQueuedTurn(threadID); err != nil {
 			o.halt(threadID, err)
 			return
@@ -31,7 +31,7 @@ func (o *Orchestrator) reconcile(threadID string) {
 		o.emitStatus(threadID)
 	}
 	if _, err := o.modelOn(turn.Model.Connection); err != nil {
-		turn.Status, turn.Error = repo.TurnFailed, err.Error()
+		turn.Status, turn.Error = db.TurnFailed, err.Error()
 		o.endTurn(turn)
 		return
 	}
@@ -61,7 +61,7 @@ func (o *Orchestrator) reconcile(threadID string) {
 			return
 		}
 	}
-	if turn.Status != repo.TurnReady || len(o.slotByThread) >= o.cfg.Slots || o.slotsOfUser[st.Thread.UserID] >= o.cfg.UserSlots {
+	if turn.Status != db.TurnReady || len(o.slotByThread) >= o.cfg.Slots || o.slotsOfUser[st.Thread.UserID] >= o.cfg.UserSlots {
 		return
 	}
 	if err := o.cfg.DB.Launch(turn.ID); err != nil {
@@ -108,7 +108,7 @@ func (o *Orchestrator) recover() error {
 		if len(closed) > 0 {
 			slog.Warn("items cut off by the restart closed", "thread", id, "items", len(closed))
 		}
-		if turn, err := o.cfg.DB.ActiveTurn(id); err == nil && turn.Status == repo.TurnInProgress {
+		if turn, err := o.cfg.DB.ActiveTurn(id); err == nil && turn.Status == db.TurnInProgress {
 			if _, err := o.cfg.DB.Park(turn.ID); err != nil {
 				return fmt.Errorf("orchestrator: recover thread %s: %w", id, err)
 			}

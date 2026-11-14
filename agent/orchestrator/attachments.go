@@ -20,7 +20,7 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/google/uuid"
 )
 
@@ -45,7 +45,7 @@ var imageTypes = map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "i
 
 // attach stores what a message brings, before the message goes through the loop: a sandbox or blob store that is slow
 // there would hold up every thread on the shard.
-func (o *Orchestrator) attach(ctx context.Context, user, threadID string, ins []AttachmentInput) ([]repo.Attachment, error) {
+func (o *Orchestrator) attach(ctx context.Context, user, threadID string, ins []AttachmentInput) ([]db.Attachment, error) {
 	t, err := o.topThread(user, threadID)
 	if err != nil {
 		return nil, err
@@ -55,7 +55,7 @@ func (o *Orchestrator) attach(ctx context.Context, user, threadID string, ins []
 	return o.storeAttachments(ctx, t, ins)
 }
 
-func (o *Orchestrator) storeAttachments(ctx context.Context, t repo.ThreadRow, ins []AttachmentInput) ([]repo.Attachment, error) {
+func (o *Orchestrator) storeAttachments(ctx context.Context, t db.ThreadRow, ins []AttachmentInput) ([]db.Attachment, error) {
 	if len(ins) == 0 {
 		return nil, nil
 	}
@@ -65,7 +65,7 @@ func (o *Orchestrator) storeAttachments(ctx context.Context, t repo.ThreadRow, i
 	if len(ins) > maxAttachments {
 		return nil, fmt.Errorf("orchestrator: %w: %d attachments; at most %d are accepted", ErrInvalidMessage, len(ins), maxAttachments)
 	}
-	out := make([]repo.Attachment, 0, len(ins))
+	out := make([]db.Attachment, 0, len(ins))
 	for _, in := range ins {
 		att, err := o.storeAttachment(ctx, t, in)
 		if err != nil {
@@ -77,13 +77,13 @@ func (o *Orchestrator) storeAttachments(ctx context.Context, t repo.ThreadRow, i
 	return out, nil
 }
 
-func (o *Orchestrator) storeAttachment(ctx context.Context, t repo.ThreadRow, in AttachmentInput) (repo.Attachment, error) {
+func (o *Orchestrator) storeAttachment(ctx context.Context, t db.ThreadRow, in AttachmentInput) (db.Attachment, error) {
 	if !filepath.IsAbs(in.Path) {
-		return repo.Attachment{}, fmt.Errorf("orchestrator: %w: attachment path %q is not absolute", ErrInvalidMessage, in.Path)
+		return db.Attachment{}, fmt.Errorf("orchestrator: %w: attachment path %q is not absolute", ErrInvalidMessage, in.Path)
 	}
 	src, size, err := o.attachmentSource(ctx, t.UserID, in.Path)
 	if err != nil {
-		return repo.Attachment{}, fmt.Errorf("orchestrator: %w: attachment %s: %v", ErrInvalidMessage, in.Path, err)
+		return db.Attachment{}, fmt.Errorf("orchestrator: %w: attachment %s: %v", ErrInvalidMessage, in.Path, err)
 	}
 	name := in.Name
 	if strings.TrimSpace(name) == "" {
@@ -91,11 +91,11 @@ func (o *Orchestrator) storeAttachment(ctx context.Context, t repo.ThreadRow, in
 	}
 	att, err := describe(src, size, attachmentName(name), in.MimeType)
 	if err != nil {
-		return repo.Attachment{}, fmt.Errorf("orchestrator: %w: %v", ErrInvalidMessage, err)
+		return db.Attachment{}, fmt.Errorf("orchestrator: %w: %v", ErrInvalidMessage, err)
 	}
 	att.File = t.ID + "/" + att.File
 	if err := o.copyAttachment(ctx, src, att); err != nil {
-		return repo.Attachment{}, fmt.Errorf("orchestrator: store attachment %s: %w", att.Name, err)
+		return db.Attachment{}, fmt.Errorf("orchestrator: store attachment %s: %w", att.Name, err)
 	}
 	return att, nil
 }
@@ -124,7 +124,7 @@ func (o *Orchestrator) attachmentSource(ctx context.Context, user, path string) 
 }
 
 // copyAttachment copies exactly the bytes describe measured, so a file that changes meanwhile is refused.
-func (o *Orchestrator) copyAttachment(ctx context.Context, src io.ReadSeeker, att repo.Attachment) error {
+func (o *Orchestrator) copyAttachment(ctx context.Context, src io.ReadSeeker, att db.Attachment) error {
 	if _, err := src.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
@@ -140,28 +140,28 @@ func (o *Orchestrator) copyAttachment(ctx context.Context, src io.ReadSeeker, at
 
 // describe classifies a file as an image or a text file from its first bytes and checks it against the limits
 // of its kind before reading more of it.
-func describe(src io.ReadSeeker, size int64, name, mime string) (repo.Attachment, error) {
+func describe(src io.ReadSeeker, size int64, name, mime string) (db.Attachment, error) {
 	head := make([]byte, 512)
 	n, err := io.ReadFull(src, head)
 	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
-		return repo.Attachment{}, fmt.Errorf("attachment %q cannot be read: %w", name, err)
+		return db.Attachment{}, fmt.Errorf("attachment %q cannot be read: %w", name, err)
 	}
 	head = head[:n]
 	mime = strings.ToLower(strings.TrimSpace(mime))
 	if mime == "" {
 		mime, _, _ = strings.Cut(http.DetectContentType(head), ";")
 	}
-	att := repo.Attachment{ID: uuid.NewString(), Name: name, MimeType: mime, Size: size}
+	att := db.Attachment{ID: uuid.NewString(), Name: name, MimeType: mime, Size: size}
 	if size == 0 {
-		return repo.Attachment{}, fmt.Errorf("attachment %q is empty", name)
+		return db.Attachment{}, fmt.Errorf("attachment %q is empty", name)
 	}
 	if ext, ok := imageTypes[mime]; ok {
 		if size > maxImageBytes {
-			return repo.Attachment{}, fmt.Errorf("image %q has %d bytes; at most %d are accepted", name, size, maxImageBytes)
+			return db.Attachment{}, fmt.Errorf("image %q has %d bytes; at most %d are accepted", name, size, maxImageBytes)
 		}
-		att.Kind, att.File = repo.AttachmentImage, att.ID+ext
+		att.Kind, att.File = db.AttachmentImage, att.ID+ext
 		if _, err := src.Seek(0, io.SeekStart); err != nil {
-			return repo.Attachment{}, err
+			return db.Attachment{}, err
 		}
 		att.Width, att.Height = imageSize(src, head)
 		att.Tokens = imageTokens(att.Width, att.Height)
@@ -169,25 +169,25 @@ func describe(src io.ReadSeeker, size int64, name, mime string) (repo.Attachment
 	}
 	notText := fmt.Errorf("%q (%s) is neither an image (PNG, JPEG, GIF, WebP) nor a text file", name, mime)
 	if bytes.IndexByte(head, 0) >= 0 {
-		return repo.Attachment{}, notText
+		return db.Attachment{}, notText
 	}
 	if size > maxTextFileBytes {
-		return repo.Attachment{}, fmt.Errorf("text file %q has %d bytes; at most %d are accepted", name, size, maxTextFileBytes)
+		return db.Attachment{}, fmt.Errorf("text file %q has %d bytes; at most %d are accepted", name, size, maxTextFileBytes)
 	}
 	if _, err := src.Seek(0, io.SeekStart); err != nil {
-		return repo.Attachment{}, err
+		return db.Attachment{}, err
 	}
 	data, err := io.ReadAll(io.LimitReader(src, maxTextFileBytes+1))
 	if err != nil {
-		return repo.Attachment{}, fmt.Errorf("attachment %q cannot be read: %w", name, err)
+		return db.Attachment{}, fmt.Errorf("attachment %q cannot be read: %w", name, err)
 	}
 	if !utf8.Valid(data) || bytes.IndexByte(data, 0) >= 0 {
-		return repo.Attachment{}, notText
+		return db.Attachment{}, notText
 	}
 	if !strings.HasPrefix(mime, "text/") && mime != "application/json" {
 		att.MimeType = "text/plain"
 	}
-	att.Kind, att.File = repo.AttachmentFile, att.ID+".txt"
+	att.Kind, att.File = db.AttachmentFile, att.ID+".txt"
 	att.Tokens = llm.EstimateTokens(string(data)) + llm.EstimateTokens(name) + 8
 	return att, nil
 }
@@ -242,7 +242,7 @@ func clipRunes(s string, n int) string {
 	return s
 }
 
-func (o *Orchestrator) removeAttachments(atts []repo.Attachment) {
+func (o *Orchestrator) removeAttachments(atts []db.Attachment) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(o.ctx), attachmentTimeout)
 	defer cancel()
 	for _, att := range atts {
@@ -252,29 +252,29 @@ func (o *Orchestrator) removeAttachments(atts []repo.Attachment) {
 	}
 }
 
-func (o *Orchestrator) ReadAttachment(ctx context.Context, user, threadID, id string) (repo.Attachment, []byte, error) {
+func (o *Orchestrator) ReadAttachment(ctx context.Context, user, threadID, id string) (db.Attachment, []byte, error) {
 	if err := o.owned(user, threadID); err != nil {
-		return repo.Attachment{}, nil, err
+		return db.Attachment{}, nil, err
 	}
 	att, err := o.cfg.DB.Attachment(user, threadID, id)
 	if err != nil {
-		return repo.Attachment{}, nil, fmt.Errorf("orchestrator: attachment %s: %w", id, err)
+		return db.Attachment{}, nil, fmt.Errorf("orchestrator: attachment %s: %w", id, err)
 	}
 	ctx, cancel := context.WithTimeout(ctx, attachmentTimeout)
 	defer cancel()
 	data, err := o.cfg.Attachments.Get(ctx, att.File)
 	if err != nil {
-		return repo.Attachment{}, nil, fmt.Errorf("orchestrator: attachment %s: %w", id, err)
+		return db.Attachment{}, nil, fmt.Errorf("orchestrator: attachment %s: %w", id, err)
 	}
 	return att, data, nil
 }
 
-func (o *Orchestrator) checkImages(threadID string, model llm.Model, atts []repo.Attachment) error {
+func (o *Orchestrator) checkImages(threadID string, model llm.Model, atts []db.Attachment) error {
 	if model.Images {
 		return nil
 	}
 	for _, att := range atts {
-		if att.Kind == repo.AttachmentImage {
+		if att.Kind == db.AttachmentImage {
 			return fmt.Errorf("orchestrator: %w: model %s does not accept images; pick a model that does", ErrInvalidMessage, model.Name)
 		}
 	}

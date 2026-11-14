@@ -20,7 +20,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
@@ -221,7 +221,7 @@ func crashChild(args []string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	db, err := repo.Open(*dir)
+	store, err := db.Open(*dir)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -229,7 +229,7 @@ func crashChild(args []string) {
 	answer := func(threadID, itemID string) {
 		go func() {
 			time.Sleep(200 * time.Millisecond)
-			if err := ag.AnswerUserInput(repo.DefaultUser, threadID, itemID, userinput.Answers{"pick": {Answers: []string{"A"}}}); err != nil {
+			if err := ag.AnswerUserInput(db.DefaultUser, threadID, itemID, userinput.Answers{"pick": {Answers: []string{"A"}}}); err != nil {
 				log.Printf("answer %s: %v", itemID, err)
 			}
 		}()
@@ -239,7 +239,7 @@ func crashChild(args []string) {
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(*url, "", *calls, map[string]llm.Limits{"fake": {Context: 200_000, Output: 32_000}})},
 		Providers:   []tools.Provider{work{latency: *toolLatency, log: toolLog}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
-		Slots:       *slots, DB: db, Lease: *lease,
+		Slots:       *slots, DB: store, Lease: *lease,
 		OnEvent: func(e orchestrator.Event) {
 			if e.Kind == orchestrator.EventUserInputRequested {
 				answer(e.Thread.ID, e.Item.ID)
@@ -252,7 +252,7 @@ func crashChild(args []string) {
 		log.Fatal(err)
 	}
 	started := time.Since(startAt)
-	pending, err := ag.AllPendingRequests(repo.DefaultUser)
+	pending, err := ag.AllPendingRequests(db.DefaultUser)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -261,11 +261,11 @@ func crashChild(args []string) {
 	}
 	kinds := []string{kindWork, kindWork, kindWork, kindAsk, kindDelegate}
 	for i := range *submit {
-		th, err := ag.StartThread(repo.DefaultUser, "", "", "bench", permission.Settings{})
+		th, err := ag.StartThread(db.DefaultUser, "", "", "bench", permission.Settings{})
 		if err != nil {
 			log.Fatal(err)
 		}
-		if _, err := ag.StartTurn(ctx, repo.DefaultUser, th.ID, orchestrator.Input{Text: kinds[i%len(kinds)]}); err != nil {
+		if _, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, orchestrator.Input{Text: kinds[i%len(kinds)]}); err != nil {
 			log.Fatal(err)
 		}
 	}
