@@ -11,6 +11,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
+	"github.com/0xfakeSpike/ollupi/pkg/redact"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
@@ -18,32 +19,32 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-func (rt *Runtime) contextInput() contextmanager.Input {
+func (rt *Runtime) contextInput(of offer) contextmanager.Input {
 	return contextmanager.Input{
 		Items:  slices.Concat(rt.History, rt.Items),
-		System: rt.system,
-		Tools:  role.Specs(rt.offered),
+		System: rt.system(of),
+		Tools:  role.Specs(of.offered),
 	}
 }
 
 func (rt *Runtime) respond(ctx context.Context, choice llm.ToolChoice) (llm.ChatResponse, error) {
-	rt.offer()
-	prompt, err := rt.Window.Build(rt.contextInput())
+	of := rt.offer()
+	prompt, err := rt.Window.Build(rt.contextInput(of))
 	if err != nil {
 		return llm.ChatResponse{}, fmt.Errorf("runtime: %w", err)
 	}
 	if prompt.NeedsCompaction {
-		if err := rt.compact(ctx); err != nil {
+		if err := rt.compact(ctx, of); err != nil {
 			return llm.ChatResponse{}, err
 		}
-		if prompt, err = rt.Window.Build(rt.contextInput()); err != nil {
+		if prompt, err = rt.Window.Build(rt.contextInput(of)); err != nil {
 			return llm.ChatResponse{}, fmt.Errorf("runtime: after compaction: %w", err)
 		}
 	}
 	call := rt.modelCalls() + 1
 	r := newResponseRecorder(rt, prompt.Stats)
 	started := time.Now()
-	resp, err := rt.send(ctx, prompt, choice, r.delta)
+	resp, err := rt.send(ctx, of, prompt, choice, r.delta)
 	r.usage = responseUsage(resp)
 	rt.logModelCall(ctx, "model call", started, resp, err)
 	if err == nil {
@@ -57,7 +58,7 @@ func (rt *Runtime) respond(ctx context.Context, choice llm.ToolChoice) (llm.Chat
 	}
 	cutOff := resp.FinishReason == "length"
 	for _, call := range resp.Message.ToolCalls {
-		it := rt.callItem(r.id, call)
+		it := rt.callItem(of, r.id, call)
 		r.carry(&it, resp.Message.Native)
 		if cutOff {
 			now := time.Now().UTC()
@@ -90,7 +91,7 @@ func checkResponse(resp llm.ChatResponse, choice llm.ToolChoice) error {
 	return nil
 }
 
-func (rt *Runtime) compact(ctx context.Context) (err error) {
+func (rt *Runtime) compact(ctx context.Context, of offer) (err error) {
 	ctx, span := tracer.Start(ctx, "ollupi.context.compact")
 	defer func() {
 		if err != nil {
@@ -98,7 +99,7 @@ func (rt *Runtime) compact(ctx context.Context) (err error) {
 		}
 		span.End()
 	}()
-	prompt, err := rt.Window.CompactionPrompt(rt.contextInput())
+	prompt, err := rt.Window.CompactionPrompt(rt.contextInput(of))
 	if err != nil {
 		return fmt.Errorf("runtime: %w", err)
 	}
@@ -111,7 +112,7 @@ func (rt *Runtime) compact(ctx context.Context) (err error) {
 		return err
 	}
 	started := time.Now()
-	resp, err := rt.send(ctx, prompt, llm.ToolChoiceNone, nil)
+	resp, err := rt.send(ctx, of, prompt, llm.ToolChoiceNone, nil)
 	it.Usage = responseUsage(resp)
 	rt.logModelCall(ctx, "context compaction", started, resp, err)
 	summary := strings.TrimSpace(resp.Message.Content)
@@ -135,19 +136,17 @@ func (rt *Runtime) compact(ctx context.Context) (err error) {
 	return rt.loadMemory()
 }
 
-func (rt *Runtime) send(ctx context.Context, prompt contextmanager.Prompt, choice llm.ToolChoice, onDelta func(llm.Delta)) (llm.ChatResponse, error) {
-	settings, err := rt.Host.Settings()
-	if err != nil {
-		return llm.ChatResponse{}, fmt.Errorf("runtime: read the redaction setting: %w", err)
-	}
-	mask := rt.redactor.Mask
-	if !settings.Redaction {
+func (rt *Runtime) send(ctx context.Context, of offer, prompt contextmanager.Prompt, choice llm.ToolChoice, onDelta func(llm.Delta)) (llm.ChatResponse, error) {
+	redactor := redact.New(rt.Settings.RedactionKey)
+	mask := redactor.Mask
+	if !rt.Settings.Redaction {
 		mask = func(s string) string { return s }
 	}
 	messages := make([]llm.ChatMessage, 0, len(prompt.Messages)+1)
 	messages = append(messages, llm.ChatMessage{Role: llm.RoleSystem, Content: mask(prompt.System)})
 	for _, message := range prompt.Messages {
 		message.Content, message.ReasoningContent = mask(message.Content), mask(message.ReasoningContent)
+		var err error
 		if message.Parts, err = rt.loadParts(ctx, message.Parts, mask); err != nil {
 			return llm.ChatResponse{}, err
 		}
@@ -162,7 +161,7 @@ func (rt *Runtime) send(ctx context.Context, prompt contextmanager.Prompt, choic
 		attribute.String("ollupi.connection", rt.Turn.Model.Connection), attribute.Int("ollupi.llm.estimated_input_tokens", prompt.Stats.CalibratedTokens)))
 	defer span.End()
 	started, answering := time.Now(), false
-	content, reasoning := rt.redactor.Stream(), rt.redactor.Stream()
+	content, reasoning := redactor.Stream(), redactor.Stream()
 	restored := func(d llm.Delta) {
 		if !answering && (d.Content != "" || d.Reasoning != "") {
 			answering = true
@@ -175,19 +174,18 @@ func (rt *Runtime) send(ctx context.Context, prompt contextmanager.Prompt, choic
 	}
 	resp, err := rt.LLM.Chat(ctx, llm.ChatRequest{
 		Model:    rt.Turn.Model,
-		Messages: messages, Tools: role.Specs(rt.offered), ToolChoice: choice,
+		Messages: messages, Tools: role.Specs(of.offered), ToolChoice: choice,
 		InputTokens: prompt.Stats.CalibratedTokens,
 	}, restored)
 	if rest := (llm.Delta{Content: content.Flush(), Reasoning: reasoning.Flush()}); onDelta != nil && (rest.Content != "" || rest.Reasoning != "") {
 		onDelta(rest)
 	}
-	resp.Message.Content = rt.redactor.Restore(resp.Message.Content)
-	resp.Message.ReasoningContent = rt.redactor.Restore(resp.Message.ReasoningContent)
+	resp.Message.Content = redactor.Restore(resp.Message.Content)
+	resp.Message.ReasoningContent = redactor.Restore(resp.Message.ReasoningContent)
 	for i := range resp.Message.ToolCalls {
-		resp.Message.ToolCalls[i].Arguments = rt.redactor.RestoreJSON(resp.Message.ToolCalls[i].Arguments)
+		resp.Message.ToolCalls[i].Arguments = redactor.RestoreJSON(resp.Message.ToolCalls[i].Arguments)
 	}
 	if usage := responseUsage(resp); usage != nil {
-		rt.usage.Add(*usage)
 		span.SetAttributes(attribute.Int64("gen_ai.usage.input_tokens", usage.InputTokens), attribute.Int64("gen_ai.usage.output_tokens", usage.OutputTokens),
 			attribute.Int64("ollupi.llm.cached_input_tokens", usage.CachedInputTokens))
 	}
@@ -250,12 +248,12 @@ func (rt *Runtime) modelCalls() int {
 	return len(seen)
 }
 
-func (rt *Runtime) callItem(responseID string, call llm.ToolCall) repo.ItemRow {
+func (rt *Runtime) callItem(of offer, responseID string, call llm.ToolCall) repo.ItemRow {
 	it := repo.ItemRow{
 		ID: uuid.NewString(), TurnID: rt.Turn.ID, Type: repo.ItemToolCall, Status: repo.ItemPending,
 		ResponseID: responseID, CallID: call.ID, Tool: call.Name, Arguments: call.Arguments, StartedAt: time.Now().UTC(),
 	}
-	if d, ok := rt.tool(call.Name); ok {
+	if d, ok := of.tool(call.Name); ok {
 		it.Server = d.Provider
 		annotations := d.Annotations
 		it.Annotations = &annotations

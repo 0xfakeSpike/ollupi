@@ -8,7 +8,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/role"
-	"github.com/0xfakeSpike/ollupi/agent/skills"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
 )
@@ -36,26 +35,21 @@ func (h turnHost) Delta(it repo.ItemRow, text string) {
 	h.o.emit(Event{Kind: EventItemDelta, Thread: h.t, Turn: h.turn, Item: &it, Delta: text})
 }
 
-func (h turnHost) Reload() ([]repo.ItemRow, *permission.Checker, error) {
+func (h turnHost) Reload() ([]repo.ItemRow, *permission.Checker, repo.SettingsRow, error) {
 	items, err := h.o.cfg.DB.TurnItems(h.turn.ID)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, repo.SettingsRow{}, err
 	}
 	current, err := h.o.cfg.DB.ThreadRow(h.t.ID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("orchestrator: thread %s: %w", h.t.ID, err)
+		return nil, nil, repo.SettingsRow{}, fmt.Errorf("orchestrator: thread %s: %w", h.t.ID, err)
 	}
 	checker, _, err := h.o.permissions(current, h.role)
-	return items, checker, err
-}
-
-func (h turnHost) Settings() (repo.SettingsRow, error) { return h.o.cfg.DB.Settings(h.t.UserID) }
-
-func (h turnHost) Skills() []skills.Skill {
-	if h.o.skills == nil {
-		return nil
+	if err != nil {
+		return nil, nil, repo.SettingsRow{}, err
 	}
-	return h.o.skills.All()
+	settings, err := h.o.cfg.DB.Settings(h.t.UserID)
+	return items, checker, settings, err
 }
 
 func (h turnHost) Memory(budget int) (*memory.Snapshot, error) {

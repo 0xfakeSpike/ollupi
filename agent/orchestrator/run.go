@@ -9,6 +9,7 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/agent/runtime"
+	"github.com/0xfakeSpike/ollupi/agent/skills"
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"go.opentelemetry.io/otel/attribute"
@@ -55,7 +56,7 @@ func (o *Orchestrator) run(threadID string, sl *slot) {
 	ctx, cancel := context.WithTimeoutCause(ctx, o.cfg.RunLimit, limit)
 	defer cancel()
 	started := time.Now()
-	final, usage, err := o.runTurn(ctx, t, turn, items)
+	final, err := o.runTurn(ctx, t, turn, items)
 	if err != nil && context.Cause(ctx) == limit {
 		err = limit
 	}
@@ -64,32 +65,40 @@ func (o *Orchestrator) run(threadID string, sl *slot) {
 		span.SetStatus(codes.Error, err.Error())
 	}
 	slog.InfoContext(ctx, "run ended", "thread", threadID, "turn", turn.ID, "ms", time.Since(started).Milliseconds(), "final", final, "items", len(items))
-	if err := o.cfg.DB.AddUsage(threadID, turn.ID, usage); err != nil {
+	if err := o.cfg.DB.CountUsage(turn.ID); err != nil {
 		slog.Error("turn usage not recorded", "thread", threadID, "turn", turn.ID, "err", err)
 	}
 	o.post(func() { o.afterRun(threadID, sl, final, err) })
 }
 
-func (o *Orchestrator) runTurn(ctx context.Context, t repo.ThreadRow, turn repo.TurnRow, thread []repo.ItemRow) (bool, repo.Usage, error) {
+func (o *Orchestrator) runTurn(ctx context.Context, t repo.ThreadRow, turn repo.TurnRow, thread []repo.ItemRow) (bool, error) {
 	window, err := o.windowFor(turn.Model)
 	if err != nil {
-		return false, repo.Usage{}, err
+		return false, err
 	}
 	client, err := o.clientFor(t.UserID, turn.Model.Connection)
 	if err != nil {
-		return false, repo.Usage{}, fmt.Errorf("orchestrator: the model client of the user: %w", err)
+		return false, fmt.Errorf("orchestrator: the model client of the user: %w", err)
 	}
 	registry, err := o.registryFor(t.UserID)
 	if err != nil {
-		return false, repo.Usage{}, err
+		return false, err
 	}
 	r, ok := role.Of(role.Name(turn.Agent))
 	if !ok {
-		return false, repo.Usage{}, fmt.Errorf("orchestrator: turn %s names role %q, which is none of %q", turn.ID, turn.Agent, role.NameValues)
+		return false, fmt.Errorf("orchestrator: turn %s names role %q, which is none of %q", turn.ID, turn.Agent, role.NameValues)
 	}
 	checker, w, err := o.permissions(t, r)
 	if err != nil {
-		return false, repo.Usage{}, err
+		return false, err
+	}
+	settings, err := o.cfg.DB.Settings(t.UserID)
+	if err != nil {
+		return false, err
+	}
+	var catalog []skills.Skill
+	if o.skills != nil {
+		catalog = o.skills.All()
 	}
 	var history, items []repo.ItemRow
 	for _, it := range thread {
@@ -110,6 +119,8 @@ func (o *Orchestrator) runTurn(ctx context.Context, t repo.ThreadRow, turn repo.
 		Role:        r,
 		Prompt:      role.AgentPrompt(o.cfg.Name, o.cfg.Prompt),
 		Permissions: checker,
+		Settings:    settings,
+		Skills:      catalog,
 		History:     history,
 		Items:       items,
 	}
