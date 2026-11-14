@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -58,86 +59,71 @@ type ResourcePage struct {
 	EOF             bool   `json:"eof"`
 }
 
-// A Catalog holds the skills installed for each role of agent. A role's skills are the folders in the directory of
-// its name under the root: root/<role>/<skill>/SKILL.md. A skill that more roles have is installed in each of their
-// directories.
-type Catalog struct {
-	root string
-	// byRole are the skills of each role, by name.
-	byRole map[string]map[string]Skill
+// The skills of a role are the folders in the directory of the role's name under the skills root:
+// root/<role>/<skill>/SKILL.md. A skill that more roles have is installed in each of their directories. They are read
+// where they are used, so that a skill installed or changed takes effect from the next run.
+
+// Load reads the skills of the role under root, by name. A role without a directory has none.
+func Load(root, role string) ([]Skill, error) {
+	root = filepath.Clean(strings.TrimSpace(root))
+	dir := filepath.Join(root, role)
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return nil, nil
+	}
+	byName, err := scanRole(root, dir)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(byName))
+	for name := range byName {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make([]Skill, 0, len(names))
+	for _, name := range names {
+		out = append(out, byName[name])
+	}
+	return out, nil
 }
 
-func New(root string) (*Catalog, error) {
-	root = strings.TrimSpace(root)
-	if root == "" {
-		return nil, fmt.Errorf("skills: root directory is required")
-	}
-	root = filepath.Clean(root)
+// Check reads every directory under root as the skills of a role among roles, so that a directory of no role, a
+// skill outside a role's directory and a skill that cannot be read show when ollupi starts.
+func Check(root string, roles []string) error {
+	root = filepath.Clean(strings.TrimSpace(root))
 	entries, err := os.ReadDir(root)
 	if err != nil {
-		return nil, fmt.Errorf("skills: read root %q: %w", root, err)
+		return fmt.Errorf("skills: read root %q: %w", root, err)
 	}
-	byRole := map[string]map[string]Skill{}
 	for _, entry := range entries {
 		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
 		dir := filepath.Join(root, entry.Name())
 		if _, err := os.Lstat(filepath.Join(dir, skillInstructionsFile)); err == nil {
-			return nil, fmt.Errorf("skills: %q is a skill outside a role's directory; move it to %s", dir, filepath.Join(root, "<role>", entry.Name()))
+			return fmt.Errorf("skills: %q is a skill outside a role's directory; move it to %s", dir, filepath.Join(root, "<role>", entry.Name()))
 		}
-		if byRole[entry.Name()], err = scanRole(root, dir); err != nil {
-			return nil, err
+		if !slices.Contains(roles, entry.Name()) {
+			return fmt.Errorf("skills: %s has skills for %q, which is no role; the roles are %q", root, entry.Name(), roles)
+		}
+		if _, err := scanRole(root, dir); err != nil {
+			return err
 		}
 	}
-	return &Catalog{root: root, byRole: byRole}, nil
+	return nil
 }
 
-// Roles are the roles the catalog has a directory of.
-func (c *Catalog) Roles() []string {
-	roles := make([]string, 0, len(c.byRole))
-	for role := range c.byRole {
-		roles = append(roles, role)
+// Find is the skill of that name among skills.
+func Find(skills []Skill, name string) (Skill, bool) {
+	i := slices.IndexFunc(skills, func(s Skill) bool { return s.Name == strings.TrimSpace(name) })
+	if i < 0 {
+		return Skill{}, false
 	}
-	sort.Strings(roles)
-	return roles
+	return skills[i], true
 }
 
-func (c *Catalog) names(role string) []string {
-	names := make([]string, 0, len(c.byRole[role]))
-	for name := range c.byRole[role] {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
-}
-
-// For are the skills of the role, by name.
-func (c *Catalog) For(role string) []Skill {
-	names := c.names(role)
-	out := make([]Skill, 0, len(names))
-	for _, name := range names {
-		out = append(out, cloneSkill(c.byRole[role][name]))
-	}
-	return out
-}
-
-// Dir is the directory of the role's skills.
-func (c *Catalog) Dir(role string) string { return filepath.Join(c.root, role) }
-
-// Lookup is the skill of the role that has the name.
-func (c *Catalog) Lookup(role, name string) (Skill, bool) {
-	skill, ok := c.byRole[role][strings.TrimSpace(name)]
-	return cloneSkill(skill), ok
-}
-
-// ResourcePage reads a page of runes of a resource of the role's skill: limit of them from offset, or a default
-// number when limit is 0.
-func (c *Catalog) ResourcePage(role, skillName, resourcePath string, offset, limit int) (ResourcePage, error) {
-	skill, ok := c.Lookup(role, skillName)
-	if !ok {
-		return ResourcePage{}, fmt.Errorf("skills: no skill named %q", strings.TrimSpace(skillName))
-	}
+// Page reads a page of runes of a resource of the skill: limit of them from offset, or a default number when limit
+// is 0.
+func (skill Skill) Page(resourcePath string, offset, limit int) (ResourcePage, error) {
 	resourcePath = filepath.ToSlash(strings.TrimSpace(resourcePath))
 	if resourcePath == "" {
 		return ResourcePage{}, fmt.Errorf("skills: resource path is required")
@@ -409,11 +395,6 @@ func mustRelative(root, path string) string {
 		return filepath.Base(path)
 	}
 	return rel
-}
-
-func cloneSkill(in Skill) Skill {
-	in.Resources = append([]Resource(nil), in.Resources...)
-	return in
 }
 
 func version(metadata map[string]any) string {

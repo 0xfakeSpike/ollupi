@@ -19,8 +19,8 @@ var NameValues = []Name{FullMain, CompactMain, GeneralSub, BrowserSub}
 // A Role is one role of agent: its system prompt, the tools it is offered and sent, and how it is launched.
 type Role struct {
 	Name Name
-	// Persona puts the agent's own prompt before Rules, and the conversation's skills, deferred tools and project after
-	// them. Without it Rules are the whole system prompt.
+	// Persona puts the agent's own prompt before Rules, and the conversation's deferred tools and project after them.
+	// Without it Rules and the role's skills are the whole system prompt.
 	Persona bool
 	Rules   string
 	// Permission is the role's own permission layer: the tools it may use, below the user's settings.

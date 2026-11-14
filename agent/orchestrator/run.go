@@ -109,6 +109,7 @@ func (o *Orchestrator) runTurn(ctx context.Context, t db.ThreadRow, turn db.Turn
 		Caller:      caller,
 		Role:        r,
 		Prompt:      role.AgentPrompt(o.cfg.Name, o.cfg.Prompt),
+		SkillsDir:   o.cfg.SkillsDir,
 		Permissions: checker,
 		History:     history,
 		Items:       items,

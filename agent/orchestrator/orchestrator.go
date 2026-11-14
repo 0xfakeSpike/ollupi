@@ -107,7 +107,6 @@ type Orchestrator struct {
 	cfg      Config
 	ctx      context.Context
 	registry *tools.Registry
-	skills   *skills.Catalog
 
 	// providers are what every user's registry starts from.
 	providers  []tools.Provider
@@ -236,16 +235,14 @@ func (o *Orchestrator) buildTools(ctx context.Context) error {
 		providers = append(providers, o.cfg.Memory)
 	}
 	if o.cfg.SkillsDir != "" {
-		var err error
-		if o.skills, err = skills.New(o.cfg.SkillsDir); err != nil {
-			return fmt.Errorf("orchestrator: skills: %w", err)
+		var roles []string
+		for _, name := range role.NameValues {
+			roles = append(roles, string(name))
 		}
-		for _, name := range o.skills.Roles() {
-			if _, ok := role.Of(role.Name(name)); !ok {
-				return fmt.Errorf("orchestrator: skills: %s has skills for %q, which is no role; the roles are %q", o.cfg.SkillsDir, name, role.NameValues)
-			}
+		if err := skills.Check(o.cfg.SkillsDir, roles); err != nil {
+			return fmt.Errorf("orchestrator: %w", err)
 		}
-		providers = append(providers, skilltools.New(o.skills))
+		providers = append(providers, skilltools.New(o.cfg.SkillsDir))
 	}
 	o.providers = providers
 	var err error

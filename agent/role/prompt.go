@@ -2,6 +2,7 @@ package role
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
@@ -12,21 +13,30 @@ import (
 // Input is what a run's system prompt is written from besides the role.
 type Input struct {
 	// Agent is the agent's own prompt, AgentPrompt.
-	Agent       string
-	Root        string
-	Skills      []skills.Skill
+	Agent string
+	Root  string
+	// SkillsDir is where the skills of each role are installed; the role lists its own, within SkillTokens.
+	SkillsDir   string
 	SkillTokens int
 	Deferred    []tools.ToolDescriptor
 }
 
-// System writes the role's system prompt.
-func (r Role) System(in Input) string {
+// System writes the role's system prompt, listing the skills the role has in SkillsDir.
+func (r Role) System(in Input) (string, error) {
+	listed := ""
+	if in.SkillsDir != "" {
+		own, err := skills.Load(in.SkillsDir, string(r.Name))
+		if err != nil {
+			return "", fmt.Errorf("role: the skills of %s: %w", r.Name, err)
+		}
+		listed = listSkills(own, in.SkillTokens)
+	}
 	if !r.Persona {
-		return r.Rules
+		return strings.Join(slices.DeleteFunc([]string{r.Rules, listed}, func(s string) bool { return s == "" }), "\n\n"), nil
 	}
 	parts := []string{strings.TrimSpace(in.Agent), r.Rules}
-	if s := listSkills(in.Skills, in.SkillTokens); s != "" {
-		parts = append(parts, s)
+	if listed != "" {
+		parts = append(parts, listed)
 	}
 	if len(in.Deferred) > 0 {
 		parts = append(parts, listDeferred(in.Deferred))
@@ -34,7 +44,7 @@ func (r Role) System(in Input) string {
 	if in.Root != "" {
 		parts = append(parts, "# PROJECT\nThis conversation works in the project at "+in.Root+"; commands run there unless you set work_dir.")
 	}
-	return strings.Join(parts, "\n\n")
+	return strings.Join(parts, "\n\n"), nil
 }
 
 // AgentPrompt is the agent's own prompt: the operator's, or one that names the agent.

@@ -24,11 +24,7 @@ func TestACallReachesOnlyItsRolesSkills(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	catalog, err := skills.New(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ts := New(catalog)
+	ts := New(root)
 	call := func(role, tool string, args map[string]any) (tools.Result, error) {
 		return ts.Invoke(context.Background(), tools.Caller{Role: role}, tool, args)
 	}

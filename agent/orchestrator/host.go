@@ -9,7 +9,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/repo/db"
-	"github.com/0xfakeSpike/ollupi/repo/skills"
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
@@ -50,13 +49,6 @@ func (h turnHost) Reload() ([]db.ItemRow, *permission.Checker, error) {
 }
 
 func (h turnHost) Settings() (db.SettingsRow, error) { return h.o.cfg.DB.Settings(h.t.UserID) }
-
-func (h turnHost) Skills() []skills.Skill {
-	if h.o.skills == nil {
-		return nil
-	}
-	return h.o.skills.For(string(h.role.Name))
-}
 
 func (h turnHost) Memory(budget int) (*memory.Snapshot, error) {
 	if h.o.cfg.Memory == nil {

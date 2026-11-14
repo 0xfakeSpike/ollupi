@@ -3,6 +3,7 @@ package role
 import (
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
+	skilltools "github.com/0xfakeSpike/ollupi/tools/skills"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
 
@@ -16,8 +17,8 @@ const (
 var browserSub = Role{
 	Name: BrowserSub, Rules: browserSubRules,
 	send: sendFitting,
-	// It works with the browser's tools alone, and reads the outputs they shorten.
-	Permission: permission.Layer{Of: "the browser subagent's role", Providers: []string{BrowserProvider, contextmanager.OutputsProvider}},
+	// It works with the browser's tools alone, reads the outputs they shorten, and uses the skills it has.
+	Permission: permission.Layer{Of: "the browser subagent's role", Providers: []string{BrowserProvider, contextmanager.OutputsProvider, skilltools.ProviderName}},
 }
 
 const browserSubRules = `You are a subagent that does one task in the built-in browser and reports back to the agent that launched you. You do the task by calling the browser's tools in a loop; every result comes back to you as an observation. When the task is done, or cannot go further, reply without calling a tool: that reply is your report.

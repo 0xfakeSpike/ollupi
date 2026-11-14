@@ -6,7 +6,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/repo/db"
-	"github.com/0xfakeSpike/ollupi/repo/skills"
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
@@ -20,8 +19,6 @@ type Host interface {
 	Reload() ([]db.ItemRow, *permission.Checker, error)
 	// Settings are the settings of the turn's user.
 	Settings() (db.SettingsRow, error)
-	// Skills are the skills the system prompt may list.
-	Skills() []skills.Skill
 	// Memory is the snapshot of the user's memory that a run starts with, within budget tokens; nil when the agent
 	// keeps no memory.
 	Memory(budget int) (*memory.Snapshot, error)
