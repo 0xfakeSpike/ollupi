@@ -10,7 +10,7 @@ import (
 const GeneralSub Name = subagent.General
 
 var generalSub = Role{
-	Name: GeneralSub, Persona: true, Rules: generalSubRules, Skills: true, Memory: true,
+	Name: GeneralSub, Persona: true, Rules: generalSubRules, Memory: true,
 	send: sendFitting,
 	// A subagent cannot launch another or schedule tasks, which would come back to its thread after it reported.
 	Permission: permission.Layer{Of: "the general subagent's role", Without: []string{subagent.ProviderName, cron.ProviderName}},

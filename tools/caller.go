@@ -11,6 +11,8 @@ type Caller struct {
 	EnvironmentID string
 	Root          string
 	Subagent      bool
+	// Role is the role of agent that makes the call.
+	Role string
 	// Item is the id of the item that records the call; empty outside a call.
 	Item string
 }

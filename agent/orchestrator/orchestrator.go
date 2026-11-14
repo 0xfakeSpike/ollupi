@@ -7,6 +7,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
+	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/agent/runtime"
 	"github.com/0xfakeSpike/ollupi/pkg/blobs"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
@@ -78,7 +79,8 @@ type Config struct {
 	// Providers are the tools every user has.
 	Providers []tools.Provider
 	// ToolsFor adds the tools one user has, such as their MCP servers.
-	ToolsFor  func(user string) (*tools.Set, error)
+	ToolsFor func(user string) (*tools.Set, error)
+	// SkillsDir holds the skills of each role, in the directory of the role's name: SkillsDir/<role>/<skill>/SKILL.md.
 	SkillsDir string
 	// Attachments keeps the images and files sent with messages; without it messages take none.
 	Attachments blobs.Store
@@ -236,6 +238,11 @@ func (o *Orchestrator) buildTools(ctx context.Context) error {
 		var err error
 		if o.skills, err = skills.New(o.cfg.SkillsDir); err != nil {
 			return fmt.Errorf("orchestrator: skills: %w", err)
+		}
+		for _, name := range o.skills.Roles() {
+			if _, ok := role.Of(role.Name(name)); !ok {
+				return fmt.Errorf("orchestrator: skills: %s has skills for %q, which is no role; the roles are %q", o.cfg.SkillsDir, name, role.NameValues)
+			}
 		}
 		providers = append(providers, o.skills)
 	}

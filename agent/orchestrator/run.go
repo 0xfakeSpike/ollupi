@@ -99,7 +99,7 @@ func (o *Orchestrator) runTurn(ctx context.Context, t repo.ThreadRow, turn repo.
 			history = append(history, it)
 		}
 	}
-	caller := tools.Caller{UserID: t.UserID, ThreadID: t.ID, WorkspaceID: string(t.WorkspaceID), EnvironmentID: string(t.EnvironmentID), Root: w.RootPath, Subagent: t.ParentThreadID != ""}
+	caller := tools.Caller{UserID: t.UserID, ThreadID: t.ID, WorkspaceID: string(t.WorkspaceID), EnvironmentID: string(t.EnvironmentID), Root: w.RootPath, Subagent: t.ParentThreadID != "", Role: string(r.Name)}
 	rt := &runtime.Runtime{
 		LLM:         client,
 		Registry:    registry,

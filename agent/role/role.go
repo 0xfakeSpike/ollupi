@@ -23,8 +23,6 @@ type Role struct {
 	// them. Without it Rules are the whole system prompt.
 	Persona bool
 	Rules   string
-	// Skills lists the skills in the system prompt.
-	Skills bool
 	// Permission is the role's own permission layer: the tools it may use, below the user's settings.
 	Permission permission.Layer
 	// send splits the visible tools into the ones sent to the model and the ones only named in DEFERRED TOOLS.

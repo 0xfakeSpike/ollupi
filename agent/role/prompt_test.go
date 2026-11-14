@@ -22,13 +22,17 @@ func TestDeferredToolsAreListedByProvider(t *testing.T) {
 	}
 }
 
-func TestCompactIsShorterAndListsNoSkills(t *testing.T) {
+func TestAMainAgentListsTheSkillsItHasAndCompactIsShorter(t *testing.T) {
 	catalog := []skills.Skill{{Name: "deploy", Description: "Ship it."}}
-	full := fullMain.System(Input{Agent: "AGENT", Skills: catalog, SkillTokens: 1000})
-	compact := compactMain.System(Input{Agent: "AGENT", Skills: catalog, SkillTokens: 1000})
-	if !strings.Contains(full, "# AVAILABLE SKILLS") || strings.Contains(compact, "# AVAILABLE SKILLS") {
-		t.Errorf("full:\n%s\ncompact:\n%s", full, compact)
+	for _, r := range []Role{fullMain, compactMain} {
+		if !strings.Contains(r.System(Input{Agent: "AGENT", Skills: catalog, SkillTokens: 1000}), "# AVAILABLE SKILLS\n- deploy: Ship it.") {
+			t.Errorf("%s does not list its skills", r.Name)
+		}
+		if strings.Contains(r.System(Input{Agent: "AGENT", SkillTokens: 1000}), "# AVAILABLE SKILLS") {
+			t.Errorf("%s lists skills it has none of", r.Name)
+		}
 	}
+	compact := compactMain.System(Input{Agent: "AGENT"})
 	if !strings.HasPrefix(compact, "AGENT\n\n") || !strings.Contains(compact, "# Safety") {
 		t.Errorf("compact:\n%s", compact)
 	}

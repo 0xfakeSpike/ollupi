@@ -13,8 +13,8 @@ const (
 	compactBelow = 16_384
 )
 
-// compactMain is the main agent for a model with a small input: shorter rules, and no skills, as their tools are
-// deferred.
+// compactMain is the main agent for a model with a small input: shorter rules, and only the core tools sent; the
+// others, the tools of its skills among them, are deferred.
 var compactMain = Role{
 	Name: CompactMain, Persona: true, Rules: compactMainRules, Memory: true,
 	send: sendOnly(tools.ToolLoadTools, workspace.ToolReadFile, workspace.ToolRunCommand),
