@@ -22,7 +22,7 @@ import (
 )
 
 type Options struct {
-	// DB is the agent's database; the gateway reads it for views that need no agent logic.
+	// DB is the orchestrator's database; the gateway reads it for views that need no orchestration.
 	DB *repo.DB
 	// Token is the default user's, for a gateway with one user; Authenticate takes its place for many.
 	Token string
@@ -44,7 +44,7 @@ type Options struct {
 	Load Load
 }
 
-func NewServer(a *agent.Agent, opts Options) (*Server, error) {
+func NewServer(a *agent.Orchestrator, opts Options) (*Server, error) {
 	if opts.Authenticate == nil {
 		if strings.TrimSpace(opts.Token) == "" {
 			return nil, errors.New("gateway: a token is required; clients send it as Authorization: Bearer <token> or, from a browser, as the subprotocol after " + tokenProtocol)
@@ -54,7 +54,7 @@ func NewServer(a *agent.Agent, opts Options) (*Server, error) {
 		}
 	}
 	if opts.DB == nil {
-		return nil, errors.New("gateway: the agent's database is required")
+		return nil, errors.New("gateway: the orchestrator's database is required")
 	}
 	if (opts.Shard == "") != (opts.Placements == nil) {
 		return nil, errors.New("gateway: Shard and Placements go together")
@@ -74,7 +74,7 @@ func NewServer(a *agent.Agent, opts Options) (*Server, error) {
 		return nil, fmt.Errorf("gateway: %w", err)
 	}
 	s := &Server{
-		agent:        a,
+		orchestrator: a,
 		db:           opts.DB,
 		memory:       opts.Memory,
 		jobs:         opts.Jobs,

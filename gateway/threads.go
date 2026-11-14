@@ -10,7 +10,7 @@ import (
 )
 
 func (c *conn) threadStart(ctx context.Context, p ThreadStartParams) (ThreadResult, func(), error) {
-	t, err := c.s.agent.StartThread(c.user, p.WorkspaceID, p.EnvironmentID, p.Title, p.PermissionSettings)
+	t, err := c.s.orchestrator.StartThread(c.user, p.WorkspaceID, p.EnvironmentID, p.Title, p.PermissionSettings)
 	return ThreadResult{Thread: threadRow(t)}, nil, err
 }
 
@@ -41,24 +41,24 @@ func threadPage(resume bool) func(*conn, context.Context, ThreadPageParams) (Thr
 		}
 		var after func()
 		if resume {
-			after = func() { c.requests(c.s.agent.PendingRequests(c.user, p.ThreadID)) }
+			after = func() { c.requests(c.s.orchestrator.PendingRequests(c.user, p.ThreadID)) }
 		}
 		return ThreadPageResult{ThreadView: threadView(view), HasMore: more}, after, nil
 	}
 }
 
 func (c *conn) threadPermissions(ctx context.Context, p ThreadPermissionsParams) (ThreadResult, func(), error) {
-	t, err := c.s.agent.UpdateThreadSettings(c.user, p.ThreadID, p.PermissionSettings)
+	t, err := c.s.orchestrator.UpdateThreadSettings(c.user, p.ThreadID, p.PermissionSettings)
 	return ThreadResult{Thread: threadRow(t)}, nil, err
 }
 
 func (c *conn) threadRename(ctx context.Context, p ThreadRenameParams) (ThreadResult, func(), error) {
-	t, err := c.s.agent.RenameThread(c.user, p.ThreadID, p.Title)
+	t, err := c.s.orchestrator.RenameThread(c.user, p.ThreadID, p.Title)
 	return ThreadResult{Thread: threadRow(t)}, nil, err
 }
 
 func (c *conn) threadMarkRead(ctx context.Context, p ThreadMarkReadParams) (ThreadResult, func(), error) {
-	t, err := c.s.agent.MarkThreadRead(c.user, p.ThreadID)
+	t, err := c.s.orchestrator.MarkThreadRead(c.user, p.ThreadID)
 	return ThreadResult{Thread: threadRow(t)}, nil, err
 }
 
@@ -66,12 +66,12 @@ func (c *conn) threadArchive(ctx context.Context, p ThreadArchiveParams) (Thread
 	if p.Archived == nil {
 		return ThreadResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "archived is required")
 	}
-	t, err := c.s.agent.ArchiveThread(c.user, p.ThreadID, *p.Archived)
+	t, err := c.s.orchestrator.ArchiveThread(c.user, p.ThreadID, *p.Archived)
 	return ThreadResult{Thread: threadRow(t)}, nil, err
 }
 
 func (c *conn) threadDelete(ctx context.Context, p ThreadDeleteParams) (Empty, func(), error) {
-	return Empty{}, nil, c.s.agent.DeleteThread(c.user, p.ThreadID)
+	return Empty{}, nil, c.s.orchestrator.DeleteThread(c.user, p.ThreadID)
 }
 
 func (c *conn) threadList(ctx context.Context, p repo.ThreadFilter) (ThreadListResult, func(), error) {
@@ -81,7 +81,7 @@ func (c *conn) threadList(ctx context.Context, p repo.ThreadFilter) (ThreadListR
 	if p.Limit < 1 || p.Limit > maxLimit {
 		return ThreadListResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "limit must be 1 to %d", maxLimit)
 	}
-	threads, more, err := c.s.agent.ListThreads(c.user, p)
+	threads, more, err := c.s.orchestrator.ListThreads(c.user, p)
 	if err != nil {
 		return ThreadListResult{}, nil, err
 	}
@@ -94,7 +94,7 @@ func (c *conn) turnStart(ctx context.Context, p TurnStartParams) (TurnResult, fu
 		return TurnResult{}, nil, err
 	}
 	in.Connection = p.Connection
-	turn, err := c.s.agent.StartTurn(ctx, c.user, p.ThreadID, in)
+	turn, err := c.s.orchestrator.StartTurn(ctx, c.user, p.ThreadID, in)
 	if err != nil {
 		return TurnResult{}, nil, err
 	}
@@ -109,7 +109,7 @@ func (c *conn) turnSteer(ctx context.Context, p TurnSteerParams) (TurnSteerResul
 	if err != nil {
 		return TurnSteerResult{}, nil, err
 	}
-	turn, err := c.s.agent.SteerTurn(ctx, c.user, p.ThreadID, p.ExpectedTurnID, in)
+	turn, err := c.s.orchestrator.SteerTurn(ctx, c.user, p.ThreadID, p.ExpectedTurnID, in)
 	if err != nil {
 		return TurnSteerResult{}, nil, err
 	}
@@ -120,10 +120,10 @@ func (c *conn) turnInterrupt(ctx context.Context, p TurnInterruptParams) (Empty,
 	if strings.TrimSpace(p.TurnID) == "" {
 		return Empty{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "turnId is required")
 	}
-	return Empty{}, nil, c.s.agent.InterruptTurn(c.user, p.ThreadID, p.TurnID)
+	return Empty{}, nil, c.s.orchestrator.InterruptTurn(c.user, p.ThreadID, p.TurnID)
 }
 
 func (c *conn) attachmentRead(ctx context.Context, p AttachmentReadParams) (AttachmentReadResult, func(), error) {
-	att, data, err := c.s.agent.ReadAttachment(ctx, c.user, p.ThreadID, p.AttachmentID)
+	att, data, err := c.s.orchestrator.ReadAttachment(ctx, c.user, p.ThreadID, p.AttachmentID)
 	return AttachmentReadResult{Attachment: att, Data: base64.StdEncoding.EncodeToString(data)}, nil, err
 }

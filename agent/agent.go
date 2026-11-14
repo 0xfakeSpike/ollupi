@@ -90,15 +90,17 @@ type Config struct {
 	// Lease makes this process claim the shard before it runs it, waiting for as long as another holds it, and keep
 	// the claim alive; a process that dies leaves its claim for this long. Without it the process trusts it is alone.
 	Lease time.Duration
-	// BoxFor gives the sandbox a user's files live in on this machine, which the agent reaches workspaces and
+	// BoxFor gives the sandbox a user's files live in on this machine, which the orchestrator reaches workspaces and
 	// attachments through. A conversation started in another environment reaches its own box: the workspace tools
 	// take that from the call's tools.Caller. By default it is sandbox.Here.
 	BoxFor func(user string) (sandbox.Box, error)
-	// OnLeaseLost tells the host that another process took the shard: the agent has stopped, and all else on DB must.
+	// OnLeaseLost tells the host that another process took the shard: the orchestrator has stopped, and all else on DB must.
 	OnLeaseLost func()
 }
 
-type Agent struct {
+// An Orchestrator runs the agents of a shard: it keeps their threads and turns, schedules turns into slots, launches
+// subagents and runs background calls. The agent of each turn is a role, which the runtime runs one turn at a time.
+type Orchestrator struct {
 	cfg      Config
 	ctx      context.Context
 	registry *tools.Registry
@@ -123,8 +125,8 @@ type Agent struct {
 	done         sync.WaitGroup
 }
 
-func (a *Agent) ListTools(user string) ([]tools.ToolDescriptor, error) {
-	registry, err := a.registryFor(user)
+func (o *Orchestrator) ListTools(user string) ([]tools.ToolDescriptor, error) {
+	registry, err := o.registryFor(user)
 	if err != nil {
 		return nil, err
 	}
@@ -138,108 +140,108 @@ type userRegistry struct {
 }
 
 // registryFor gives the tools a user has. The first call may wait for their servers to connect.
-func (a *Agent) registryFor(user string) (*tools.Registry, error) {
-	if a.cfg.ToolsFor == nil {
-		return a.registry, nil
+func (o *Orchestrator) registryFor(user string) (*tools.Registry, error) {
+	if o.cfg.ToolsFor == nil {
+		return o.registry, nil
 	}
-	set, err := a.cfg.ToolsFor(user)
+	set, err := o.cfg.ToolsFor(user)
 	if err != nil {
 		return nil, fmt.Errorf("agent: the tools of the user: %w", err)
 	}
-	if built, ok := a.registries.Load(user); ok && built.(userRegistry).set == set {
+	if built, ok := o.registries.Load(user); ok && built.(userRegistry).set == set {
 		return built.(userRegistry).registry, nil
 	}
-	registry, err := tools.New(a.ctx, set.Unavailable, slices.Concat(a.providers, set.Providers)...)
+	registry, err := tools.New(o.ctx, set.Unavailable, slices.Concat(o.providers, set.Providers)...)
 	if err != nil {
 		return nil, fmt.Errorf("agent: the tools of the user: %w", err)
 	}
-	a.registries.Store(user, userRegistry{set: set, registry: registry})
+	o.registries.Store(user, userRegistry{set: set, registry: registry})
 	return registry, nil
 }
 
-func New(cfg Config) *Agent {
+func New(cfg Config) *Orchestrator {
 	if cfg.BoxFor == nil {
 		cfg.BoxFor = func(string) (sandbox.Box, error) { return sandbox.Here(), nil }
 	}
-	return &Agent{cfg: cfg, moving: map[string]bool{}, backgroundCancels: map[string]context.CancelFunc{}}
+	return &Orchestrator{cfg: cfg, moving: map[string]bool{}, backgroundCancels: map[string]context.CancelFunc{}}
 }
 
-func (a *Agent) Start(ctx context.Context) error {
-	if strings.TrimSpace(a.cfg.Name) == "" {
+func (o *Orchestrator) Start(ctx context.Context) error {
+	if strings.TrimSpace(o.cfg.Name) == "" {
 		return fmt.Errorf("agent: name is required")
 	}
-	if a.cfg.DB == nil {
+	if o.cfg.DB == nil {
 		return fmt.Errorf("agent: a database is required")
 	}
-	if err := a.buildTools(ctx); err != nil {
+	if err := o.buildTools(ctx); err != nil {
 		return err
 	}
-	if err := a.checkModels(); err != nil {
+	if err := o.checkModels(); err != nil {
 		return err
 	}
-	if err := a.checkPromptFits(); err != nil {
-		return fmt.Errorf("agent %s: %w", a.cfg.Name, err)
+	if err := o.checkPromptFits(); err != nil {
+		return fmt.Errorf("agent %s: %w", o.cfg.Name, err)
 	}
-	if a.cfg.Slots <= 0 {
-		a.cfg.Slots = defaultSlots
+	if o.cfg.Slots <= 0 {
+		o.cfg.Slots = defaultSlots
 	}
-	if a.cfg.UserSlots <= 0 {
-		a.cfg.UserSlots = a.cfg.Slots
+	if o.cfg.UserSlots <= 0 {
+		o.cfg.UserSlots = o.cfg.Slots
 	}
-	if a.cfg.RunLimit <= 0 {
-		a.cfg.RunLimit = defaultRunLimit
+	if o.cfg.RunLimit <= 0 {
+		o.cfg.RunLimit = defaultRunLimit
 	}
-	if a.cfg.BackgroundCalls <= 0 {
-		a.cfg.BackgroundCalls = defaultBackgroundCalls
+	if o.cfg.BackgroundCalls <= 0 {
+		o.cfg.BackgroundCalls = defaultBackgroundCalls
 	}
-	if a.cfg.BackgroundLimit <= 0 {
-		a.cfg.BackgroundLimit = defaultBackgroundLimit
+	if o.cfg.BackgroundLimit <= 0 {
+		o.cfg.BackgroundLimit = defaultBackgroundLimit
 	}
-	if a.cfg.Attachments == nil && a.cfg.AttachmentsDir != "" {
-		a.cfg.Attachments = blobs.Dir(a.cfg.AttachmentsDir)
+	if o.cfg.Attachments == nil && o.cfg.AttachmentsDir != "" {
+		o.cfg.Attachments = blobs.Dir(o.cfg.AttachmentsDir)
 	}
-	a.events, a.slotByThread, a.slotsOfUser = make(chan func()), map[string]*slot{}, map[string]int{}
-	a.ctx = ctx
-	if a.cfg.Lease > 0 {
+	o.events, o.slotByThread, o.slotsOfUser = make(chan func()), map[string]*slot{}, map[string]int{}
+	o.ctx = ctx
+	if o.cfg.Lease > 0 {
 		var err error
-		if a.ctx, err = a.claimShard(ctx); err != nil {
+		if o.ctx, err = o.claimShard(ctx); err != nil {
 			return err
 		}
 	}
-	if _, err := a.cfg.DB.InterruptBackgroundCalls(time.Now()); err != nil {
+	if _, err := o.cfg.DB.InterruptBackgroundCalls(time.Now()); err != nil {
 		return fmt.Errorf("agent: end the background calls of a process that stopped: %w", err)
 	}
-	if err := a.recover(); err != nil {
+	if err := o.recover(); err != nil {
 		return err
 	}
-	a.done.Add(1)
-	go a.loop()
-	undelivered, err := a.cfg.DB.UndeliveredBackgroundThreads()
+	o.done.Add(1)
+	go o.loop()
+	undelivered, err := o.cfg.DB.UndeliveredBackgroundThreads()
 	if err != nil {
 		return fmt.Errorf("agent: background results to deliver: %w", err)
 	}
 	for _, id := range undelivered {
-		a.post(func() { a.deliverBackground(id) })
+		o.post(func() { o.deliverBackground(id) })
 	}
-	slog.Info("agent started", "name", a.cfg.Name, "slots", a.cfg.Slots, "models", len(a.cfg.Models), "tools", len(a.registry.Descriptors()))
+	slog.Info("orchestrator started", "name", o.cfg.Name, "slots", o.cfg.Slots, "models", len(o.cfg.Models), "tools", len(o.registry.Descriptors()))
 	return nil
 }
 
-func (a *Agent) buildTools(ctx context.Context) error {
-	providers := append(slices.Clone(a.cfg.Providers), plan.New(), role.Launchers{}, userinput.New(), contextmanager.NewOutputs(a.cfg.DB), runtime.Loader{}, backgroundTools{a})
-	if a.cfg.Memory != nil {
-		providers = append(providers, a.cfg.Memory)
+func (o *Orchestrator) buildTools(ctx context.Context) error {
+	providers := append(slices.Clone(o.cfg.Providers), plan.New(), role.Launchers{}, userinput.New(), contextmanager.NewOutputs(o.cfg.DB), runtime.Loader{}, backgroundTools{o})
+	if o.cfg.Memory != nil {
+		providers = append(providers, o.cfg.Memory)
 	}
-	if a.cfg.SkillsDir != "" {
+	if o.cfg.SkillsDir != "" {
 		var err error
-		if a.skills, err = skills.New(a.cfg.SkillsDir); err != nil {
+		if o.skills, err = skills.New(o.cfg.SkillsDir); err != nil {
 			return fmt.Errorf("agent: skills: %w", err)
 		}
-		providers = append(providers, a.skills)
+		providers = append(providers, o.skills)
 	}
-	a.providers = providers
+	o.providers = providers
 	var err error
-	if a.registry, err = tools.New(ctx, nil, providers...); err != nil {
+	if o.registry, err = tools.New(ctx, nil, providers...); err != nil {
 		return fmt.Errorf("agent: %w", err)
 	}
 	return nil

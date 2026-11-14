@@ -9,7 +9,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// The agent traces through the global TracerProvider, which the host sets up with its exporter and sampler; until it
+// The orchestrator traces through the global TracerProvider, which the host sets up with its exporter and sampler; until it
 // does, tracing costs nothing.
 var tracer = otel.Tracer("github.com/0xfakeSpike/ollupi/agent")
 

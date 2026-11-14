@@ -12,7 +12,7 @@ import (
 
 // environmentList lists where the user's conversations can run; the first is where one that names none runs.
 func (c *conn) environmentList(ctx context.Context, _ Empty) (EnvironmentListResult, func(), error) {
-	rows, err := c.s.agent.Environments(c.user)
+	rows, err := c.s.orchestrator.Environments(c.user)
 	if err != nil {
 		return EnvironmentListResult{}, nil, err
 	}
@@ -23,7 +23,7 @@ func (c *conn) environmentAdd(ctx context.Context, p EnvironmentAddParams) (Envi
 	if strings.TrimSpace(p.Name) == "" {
 		return EnvironmentResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "name is required")
 	}
-	return environmentResult(c.s.agent.AddEnvironment(c.user, p.Name, p.Kind))
+	return environmentResult(c.s.orchestrator.AddEnvironment(c.user, p.Name, p.Kind))
 }
 
 func (c *conn) environmentRename(ctx context.Context, p EnvironmentRenameParams) (EnvironmentResult, func(), error) {
@@ -33,14 +33,14 @@ func (c *conn) environmentRename(ctx context.Context, p EnvironmentRenameParams)
 	if strings.TrimSpace(p.Name) == "" {
 		return EnvironmentResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "name is required")
 	}
-	return environmentResult(c.s.agent.RenameEnvironment(c.user, p.EnvironmentID, p.Name))
+	return environmentResult(c.s.orchestrator.RenameEnvironment(c.user, p.EnvironmentID, p.Name))
 }
 
 func (c *conn) environmentDelete(ctx context.Context, p EnvironmentDeleteParams) (EnvironmentResult, func(), error) {
 	if strings.TrimSpace(p.EnvironmentID) == "" {
 		return EnvironmentResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "environmentId is required")
 	}
-	return environmentResult(c.s.agent.DeleteEnvironment(c.user, p.EnvironmentID))
+	return environmentResult(c.s.orchestrator.DeleteEnvironment(c.user, p.EnvironmentID))
 }
 
 func environmentResult(env repo.EnvironmentRow, err error) (EnvironmentResult, func(), error) {

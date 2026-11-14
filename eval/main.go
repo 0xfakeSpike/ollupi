@@ -120,7 +120,7 @@ func main() {
 	}
 	defer runner.Close()
 
-	var ag *agent.Agent
+	var ag *agent.Orchestrator
 	ended := make(chan repo.TurnRow, 1)
 	// changed tells the writer below that the turn has a new item, so that -out holds the run so far even when the
 	// harness kills the run at its time limit.
@@ -267,7 +267,7 @@ func logItem(it *repo.ItemRow) {
 	}
 }
 
-func answer(ag *agent.Agent, threadID string, it *repo.ItemRow) {
+func answer(ag *agent.Orchestrator, threadID string, it *repo.ItemRow) {
 	if it == nil {
 		return
 	}

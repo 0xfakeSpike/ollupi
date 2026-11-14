@@ -26,7 +26,7 @@ func (waitForBackground) Constrain(s *jsonschema.Schema) {
 }
 
 // backgroundTools are the tools a conversation keeps its background calls with.
-type backgroundTools struct{ a *Agent }
+type backgroundTools struct{ o *Orchestrator }
 
 func (backgroundTools) Name() (string, string) {
 	return "background", "Keeps the background calls of this conversation."
@@ -63,19 +63,19 @@ func (b backgroundTools) Invoke(ctx context.Context, tool string, arguments map[
 	if err != nil {
 		return tools.Result{}, err
 	}
-	call, err := b.a.cfg.DB.BackgroundCall(args.Background)
+	call, err := b.o.cfg.DB.BackgroundCall(args.Background)
 	if errors.Is(err, repo.ErrNotFound) || err == nil && call.ThreadID != tools.CallerOf(ctx).ThreadID {
 		return tools.Result{}, fmt.Errorf("this conversation has no background call %q", args.Background)
 	}
 	if err != nil {
 		return tools.Result{}, err
 	}
-	cancelled, err := b.a.cancelBackground(call.ID, "the agent cancelled the call")
+	cancelled, err := b.o.cancelBackground(call.ID, "the agent cancelled the call")
 	if err != nil {
 		return tools.Result{}, err
 	}
 	if !cancelled {
-		ended, _ := b.a.cfg.DB.BackgroundCall(call.ID)
+		ended, _ := b.o.cfg.DB.BackgroundCall(call.ID)
 		return tools.Result{}, fmt.Errorf("background call %s already ended: %s", call.ID, ended.Status)
 	}
 	return tools.Result{Output: map[string]any{"background": call.ID, "status": string(repo.BackgroundCancelled)}}, nil
@@ -87,7 +87,7 @@ func (b backgroundTools) wait(ctx context.Context, arguments map[string]any) (to
 		return tools.Result{}, err
 	}
 	for _, id := range args.Background {
-		call, err := b.a.cfg.DB.BackgroundCall(id)
+		call, err := b.o.cfg.DB.BackgroundCall(id)
 		if errors.Is(err, repo.ErrNotFound) || err == nil && call.ThreadID != tools.CallerOf(ctx).ThreadID {
 			return tools.Result{}, fmt.Errorf("this conversation has no background call %q", id)
 		}

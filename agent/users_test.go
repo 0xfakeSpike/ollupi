@@ -315,7 +315,7 @@ func TestAStandbyTakesTheShard(t *testing.T) {
 		t.Cleanup(func() { db.Close() })
 		return db
 	}
-	process := func(db *repo.DB, lost func()) *agent.Agent {
+	process := func(db *repo.DB, lost func()) *agent.Orchestrator {
 		return agent.New(agent.Config{
 			Name: "Ollupi", Models: []llm.Model{{Name: "demo", Connection: "fake"}},
 			Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},

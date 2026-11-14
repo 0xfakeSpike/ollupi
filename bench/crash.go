@@ -224,7 +224,7 @@ func crashChild(args []string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	var ag *agent.Agent
+	var ag *agent.Orchestrator
 	answer := func(threadID, itemID string) {
 		go func() {
 			time.Sleep(200 * time.Millisecond)

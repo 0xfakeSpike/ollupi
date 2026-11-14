@@ -14,17 +14,17 @@ type Request struct {
 	Item   repo.ItemRow
 }
 
-func (a *Agent) PendingRequests(user, threadID string) ([]Request, error) {
-	if err := a.owned(user, threadID); err != nil {
+func (o *Orchestrator) PendingRequests(user, threadID string) ([]Request, error) {
+	if err := o.owned(user, threadID); err != nil {
 		return nil, err
 	}
-	st, err := a.cfg.DB.ThreadState(threadID)
+	st, err := o.cfg.DB.ThreadState(threadID)
 	if err != nil {
 		return nil, fmt.Errorf("agent: thread %s: %w", threadID, err)
 	}
 	out := requestsOf(st)
 	for _, call := range st.AgentCalls() {
-		child, err := a.cfg.DB.ThreadState(call.Await.Handle)
+		child, err := o.cfg.DB.ThreadState(call.Await.Handle)
 		if err != nil {
 			return nil, fmt.Errorf("agent: thread %s: %w", call.Await.Handle, err)
 		}
@@ -33,14 +33,14 @@ func (a *Agent) PendingRequests(user, threadID string) ([]Request, error) {
 	return byRequestTime(out), nil
 }
 
-func (a *Agent) AllPendingRequests(user string) ([]Request, error) {
-	ids, err := a.cfg.DB.ThreadsWaitingOnUser(user)
+func (o *Orchestrator) AllPendingRequests(user string) ([]Request, error) {
+	ids, err := o.cfg.DB.ThreadsWaitingOnUser(user)
 	if err != nil {
 		return nil, fmt.Errorf("agent: threads waiting on the user: %w", err)
 	}
 	var out []Request
 	for _, id := range ids {
-		st, err := a.cfg.DB.ThreadState(id)
+		st, err := o.cfg.DB.ThreadState(id)
 		switch {
 		case errors.Is(err, repo.ErrNotFound):
 		case err != nil:

@@ -45,21 +45,21 @@ var imageTypes = map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "i
 
 // attach stores what a message brings, before the message goes through the loop: a sandbox or blob store that is slow
 // there would hold up every thread on the shard.
-func (a *Agent) attach(ctx context.Context, user, threadID string, ins []AttachmentInput) ([]repo.Attachment, error) {
-	t, err := a.topThread(user, threadID)
+func (o *Orchestrator) attach(ctx context.Context, user, threadID string, ins []AttachmentInput) ([]repo.Attachment, error) {
+	t, err := o.topThread(user, threadID)
 	if err != nil {
 		return nil, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, attachmentTimeout)
 	defer cancel()
-	return a.storeAttachments(ctx, t, ins)
+	return o.storeAttachments(ctx, t, ins)
 }
 
-func (a *Agent) storeAttachments(ctx context.Context, t repo.ThreadRow, ins []AttachmentInput) ([]repo.Attachment, error) {
+func (o *Orchestrator) storeAttachments(ctx context.Context, t repo.ThreadRow, ins []AttachmentInput) ([]repo.Attachment, error) {
 	if len(ins) == 0 {
 		return nil, nil
 	}
-	if a.cfg.Attachments == nil {
+	if o.cfg.Attachments == nil {
 		return nil, fmt.Errorf("agent: %w: this agent takes no attachments", ErrInvalidMessage)
 	}
 	if len(ins) > maxAttachments {
@@ -67,9 +67,9 @@ func (a *Agent) storeAttachments(ctx context.Context, t repo.ThreadRow, ins []At
 	}
 	out := make([]repo.Attachment, 0, len(ins))
 	for _, in := range ins {
-		att, err := a.storeAttachment(ctx, t, in)
+		att, err := o.storeAttachment(ctx, t, in)
 		if err != nil {
-			a.removeAttachments(out)
+			o.removeAttachments(out)
 			return nil, err
 		}
 		out = append(out, att)
@@ -77,11 +77,11 @@ func (a *Agent) storeAttachments(ctx context.Context, t repo.ThreadRow, ins []At
 	return out, nil
 }
 
-func (a *Agent) storeAttachment(ctx context.Context, t repo.ThreadRow, in AttachmentInput) (repo.Attachment, error) {
+func (o *Orchestrator) storeAttachment(ctx context.Context, t repo.ThreadRow, in AttachmentInput) (repo.Attachment, error) {
 	if !filepath.IsAbs(in.Path) {
 		return repo.Attachment{}, fmt.Errorf("agent: %w: attachment path %q is not absolute", ErrInvalidMessage, in.Path)
 	}
-	src, size, err := a.attachmentSource(ctx, t.UserID, in.Path)
+	src, size, err := o.attachmentSource(ctx, t.UserID, in.Path)
 	if err != nil {
 		return repo.Attachment{}, fmt.Errorf("agent: %w: attachment %s: %v", ErrInvalidMessage, in.Path, err)
 	}
@@ -94,15 +94,15 @@ func (a *Agent) storeAttachment(ctx context.Context, t repo.ThreadRow, in Attach
 		return repo.Attachment{}, fmt.Errorf("agent: %w: %v", ErrInvalidMessage, err)
 	}
 	att.File = t.ID + "/" + att.File
-	if err := a.copyAttachment(ctx, src, att); err != nil {
+	if err := o.copyAttachment(ctx, src, att); err != nil {
 		return repo.Attachment{}, fmt.Errorf("agent: store attachment %s: %w", att.Name, err)
 	}
 	return att, nil
 }
 
 // attachmentSource reads the file a user names, from their sandbox: nothing else is theirs to send.
-func (a *Agent) attachmentSource(ctx context.Context, user, path string) (io.ReadSeeker, int64, error) {
-	box, err := a.cfg.BoxFor(user)
+func (o *Orchestrator) attachmentSource(ctx context.Context, user, path string) (io.ReadSeeker, int64, error) {
+	box, err := o.cfg.BoxFor(user)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -124,7 +124,7 @@ func (a *Agent) attachmentSource(ctx context.Context, user, path string) (io.Rea
 }
 
 // copyAttachment copies exactly the bytes describe measured, so a file that changes meanwhile is refused.
-func (a *Agent) copyAttachment(ctx context.Context, src io.ReadSeeker, att repo.Attachment) error {
+func (o *Orchestrator) copyAttachment(ctx context.Context, src io.ReadSeeker, att repo.Attachment) error {
 	if _, err := src.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
@@ -135,7 +135,7 @@ func (a *Agent) copyAttachment(ctx context.Context, src io.ReadSeeker, att repo.
 	if int64(len(data)) != att.Size {
 		return fmt.Errorf("%w: the file changed while it was being attached", ErrInvalidMessage)
 	}
-	return a.cfg.Attachments.Put(ctx, att.File, data)
+	return o.cfg.Attachments.Put(ctx, att.File, data)
 }
 
 // describe classifies a file as an image or a text file from its first bytes and checks it against the limits
@@ -242,34 +242,34 @@ func clipRunes(s string, n int) string {
 	return s
 }
 
-func (a *Agent) removeAttachments(atts []repo.Attachment) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(a.ctx), attachmentTimeout)
+func (o *Orchestrator) removeAttachments(atts []repo.Attachment) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(o.ctx), attachmentTimeout)
 	defer cancel()
 	for _, att := range atts {
-		if err := a.cfg.Attachments.Delete(ctx, att.File); err != nil {
+		if err := o.cfg.Attachments.Delete(ctx, att.File); err != nil {
 			slog.Warn("attachment not removed", "file", att.File, "err", err)
 		}
 	}
 }
 
-func (a *Agent) ReadAttachment(ctx context.Context, user, threadID, id string) (repo.Attachment, []byte, error) {
-	if err := a.owned(user, threadID); err != nil {
+func (o *Orchestrator) ReadAttachment(ctx context.Context, user, threadID, id string) (repo.Attachment, []byte, error) {
+	if err := o.owned(user, threadID); err != nil {
 		return repo.Attachment{}, nil, err
 	}
-	att, err := a.cfg.DB.Attachment(user, threadID, id)
+	att, err := o.cfg.DB.Attachment(user, threadID, id)
 	if err != nil {
 		return repo.Attachment{}, nil, fmt.Errorf("agent: attachment %s: %w", id, err)
 	}
 	ctx, cancel := context.WithTimeout(ctx, attachmentTimeout)
 	defer cancel()
-	data, err := a.cfg.Attachments.Get(ctx, att.File)
+	data, err := o.cfg.Attachments.Get(ctx, att.File)
 	if err != nil {
 		return repo.Attachment{}, nil, fmt.Errorf("agent: attachment %s: %w", id, err)
 	}
 	return att, data, nil
 }
 
-func (a *Agent) checkImages(threadID string, model llm.Model, atts []repo.Attachment) error {
+func (o *Orchestrator) checkImages(threadID string, model llm.Model, atts []repo.Attachment) error {
 	if model.Images {
 		return nil
 	}
@@ -278,7 +278,7 @@ func (a *Agent) checkImages(threadID string, model llm.Model, atts []repo.Attach
 			return fmt.Errorf("agent: %w: model %s does not accept images; pick a model that does", ErrInvalidMessage, model.Name)
 		}
 	}
-	has, err := a.cfg.DB.HasImages(threadID)
+	has, err := o.cfg.DB.HasImages(threadID)
 	if err != nil {
 		return fmt.Errorf("agent: thread %s: %w", threadID, err)
 	}
