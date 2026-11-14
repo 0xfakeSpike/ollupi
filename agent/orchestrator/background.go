@@ -85,9 +85,9 @@ func (o *Orchestrator) forgetBackground(id string) {
 	}
 }
 
-// cancelBackground ends a running call as cancelled before it stops it, so that the result its tool may still return
+// CancelBackground ends a running call as cancelled before it stops it, so that the result its tool may still return
 // does not take the cancellation's place. It reports false for a call that had already ended.
-func (o *Orchestrator) cancelBackground(id, why string) (bool, error) {
+func (o *Orchestrator) CancelBackground(id, why string) (bool, error) {
 	ended, err := o.cfg.DB.EndBackgroundCall(id, db.BackgroundCancelled, nil, why, time.Now())
 	if err != nil || !ended {
 		return false, err
@@ -96,15 +96,15 @@ func (o *Orchestrator) cancelBackground(id, why string) (bool, error) {
 	return true, nil
 }
 
-// cancelBackgroundOf cancels the calls still running in a thread and its subagents' threads, as one that is archived
+// StopBackground cancels the calls still running in a thread and its subagents' threads, as one that is archived
 // or deleted needs none of them.
-func (o *Orchestrator) cancelBackgroundOf(threadID, why string) error {
+func (o *Orchestrator) StopBackground(threadID, why string) error {
 	ids, err := o.cfg.DB.RunningBackgroundCalls(threadID)
 	if err != nil {
 		return fmt.Errorf("orchestrator: background calls of thread %s: %w", threadID, err)
 	}
 	for _, id := range ids {
-		if _, err := o.cancelBackground(id, why); err != nil {
+		if _, err := o.CancelBackground(id, why); err != nil {
 			return fmt.Errorf("orchestrator: cancel background call %s: %w", id, err)
 		}
 	}

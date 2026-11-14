@@ -37,7 +37,7 @@ func (o *Orchestrator) run(threadID string, sl *slot) {
 	}
 	// The run joins the turn's trace, and holds its slot no longer than the time limit.
 	limit := fmt.Errorf("orchestrator: the turn reached its time limit of %s", o.cfg.RunLimit)
-	ctx, cancel := context.WithTimeoutCause(trace.ContextWithRemoteSpanContext(sl.ctx, turnTrace(turn.ID)), o.cfg.RunLimit, limit)
+	ctx, cancel := context.WithTimeoutCause(trace.ContextWithRemoteSpanContext(sl.ctx, TurnTrace(turn.ID)), o.cfg.RunLimit, limit)
 	defer cancel()
 	started := time.Now()
 	final, usage, err := o.runTurn(ctx, t, turn)
@@ -69,11 +69,8 @@ func (o *Orchestrator) runTurn(ctx context.Context, t db.ThreadRow, turn db.Turn
 	rt := &runtime.Runtime{
 		DB: o.cfg.DB, Attachments: o.cfg.Attachments, Memory: o.cfg.Memory,
 		LLM: client, Registry: registry, Window: window,
-		Host: turnHost{o: o, t: t, turn: turn, registry: registry},
-		Config: runtime.Config{
-			Name: o.cfg.Name, Prompt: o.cfg.Prompt, SkillsDir: o.cfg.SkillsDir,
-			Settings: o.cfg.Settings, Shared: o.res.Shared(), Tools: o.cfg.Tools,
-		},
+		Host:   turnHost{o: o, t: t, turn: turn, registry: registry},
+		Config: o.cfg.Runtime,
 		TurnID: turn.ID,
 	}
 	return rt.Run(ctx)
@@ -173,7 +170,7 @@ func (o *Orchestrator) endTurn(turn db.TurnRow) {
 }
 
 func (o *Orchestrator) stopSubagent(threadID string) {
-	if err := o.cancelBackgroundOf(threadID, "the subagent was stopped"); err != nil {
+	if err := o.StopBackground(threadID, "the subagent was stopped"); err != nil {
 		o.ev.Fault(threadID, "", err)
 	}
 	if sl, ok := o.slotByThread[threadID]; ok {

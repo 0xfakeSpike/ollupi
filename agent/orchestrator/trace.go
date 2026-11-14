@@ -10,11 +10,11 @@ import (
 // does, tracing costs nothing. A turn's runs and waits are the runtime's spans, in the turn's trace.
 var tracer = otel.Tracer("github.com/0xfakeSpike/ollupi/agent/orchestrator")
 
-// turnTrace is the trace every run of a turn joins: a turn runs once per slot it takes, perhaps in several processes as
+// TurnTrace is the trace every run of a turn joins: a turn runs once per slot it takes, perhaps in several processes as
 // the shard changes hands, and holds no span open in between. Its trace ID is the turn's ID, so a log line naming the
 // turn leads to its trace, and a sampler that decides on the trace ID, such as TraceIDRatioBased, keeps or drops all
 // of a turn. The parent it names is never recorded: the runs and waits are its children, side by side.
-func turnTrace(turnID string) trace.SpanContext {
+func TurnTrace(turnID string) trace.SpanContext {
 	id, err := uuid.Parse(turnID)
 	if err != nil {
 		return trace.SpanContext{}

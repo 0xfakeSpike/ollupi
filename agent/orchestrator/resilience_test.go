@@ -17,14 +17,14 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/event"
-	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
+	"github.com/0xfakeSpike/ollupi/agent/service"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
-func started(ctx context.Context, t *testing.T, cfg orchestrator.Config, url string) (*orchestrator.Orchestrator, *db.DB) {
+func started(ctx context.Context, t *testing.T, cfg service.Config, url string) (*service.Service, *db.DB) {
 	t.Helper()
 	store, err := db.Open(t.TempDir())
 	if err != nil {
@@ -35,7 +35,7 @@ func started(ctx context.Context, t *testing.T, cfg orchestrator.Config, url str
 	cfg.Models = []llm.Model{{Name: "demo", Connection: "fake"}}
 	cfg.Settings = permission.Settings{ApprovalPolicy: string(permission.Never)}
 	cfg.Connections = map[string]llm.Client{"fake": llm.NewOpenAI(url, "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})}
-	ag := orchestrator.New(cfg)
+	ag := service.New(cfg)
 	actx, stop := context.WithCancel(ctx)
 	if err := ag.Start(actx); err != nil {
 		stop()
@@ -78,7 +78,7 @@ func TestASlowSandboxDoesNotHoldUpOtherThreads(t *testing.T) {
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
 	machine := stuckMachine{asked: make(chan struct{}), release: make(chan struct{})}
-	ag, _ := started(ctx, t, orchestrator.Config{
+	ag, _ := started(ctx, t, service.Config{
 		Attachments: &memoryStore{objects: map[string][]byte{}},
 		BoxFor: func(string) (sandbox.Box, error) {
 			return sandbox.Remote(machine, []string{"/cloud"}, "cloud"), nil
@@ -94,7 +94,7 @@ func TestASlowSandboxDoesNotHoldUpOtherThreads(t *testing.T) {
 	}
 	sent := make(chan error, 1)
 	go func() {
-		_, err := ag.StartTurn(ctx, db.DefaultUser, stuck.ID, orchestrator.Input{Text: "read", Attachments: []orchestrator.AttachmentInput{{Path: "/cloud/note.txt"}}})
+		_, err := ag.StartTurn(ctx, db.DefaultUser, stuck.ID, service.Input{Text: "read", Attachments: []service.AttachmentInput{{Path: "/cloud/note.txt"}}})
 		sent <- err
 	}()
 	<-machine.asked
@@ -124,7 +124,7 @@ func TestACrashFailsTheTurnAndNothingElse(t *testing.T) {
 	srv := httptest.NewServer(&recordingModel{})
 	defer srv.Close()
 	ended := make(chan db.TurnRow, 1)
-	ag, _ := started(ctx, t, orchestrator.Config{
+	ag, _ := started(ctx, t, service.Config{
 		ClientFor: func(string, string) (llm.Client, error) { panic("the secret detail") },
 		OnEvent: func(e event.Event) {
 			if e.Kind == event.TurnCompleted {
@@ -136,7 +136,7 @@ func TestACrashFailsTheTurnAndNothingElse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, orchestrator.Input{Text: "hello"}); err != nil {
+	if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, service.Input{Text: "hello"}); err != nil {
 		t.Fatal(err)
 	}
 	turn := endOf(ctx, t, ended)
@@ -156,7 +156,7 @@ func TestATurnStopsAtItsRunLimit(t *testing.T) {
 	defer srv.Close()
 	defer close(fake.release)
 	ended := make(chan db.TurnRow, 1)
-	ag, _ := started(ctx, t, orchestrator.Config{
+	ag, _ := started(ctx, t, service.Config{
 		RunLimit: 200 * time.Millisecond,
 		OnEvent: func(e event.Event) {
 			if e.Kind == event.TurnCompleted {
@@ -168,7 +168,7 @@ func TestATurnStopsAtItsRunLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, orchestrator.Input{Text: "hello"}); err != nil {
+	if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, service.Input{Text: "hello"}); err != nil {
 		t.Fatal(err)
 	}
 	if turn := endOf(ctx, t, ended); turn.Status != db.TurnFailed || !strings.Contains(turn.Error, "time limit") {
@@ -184,7 +184,7 @@ func TestPendingRequestsReportStorageThatFails(t *testing.T) {
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	ag := orchestrator.New(orchestrator.Config{DB: store})
+	ag := service.New(service.Config{DB: store})
 	if got, err := ag.AllPendingRequests(db.DefaultUser); err == nil {
 		t.Errorf("all requests: %+v", got)
 	}
@@ -229,7 +229,7 @@ func TestACutOffResponseRunsNoCall(t *testing.T) {
 	srv := httptest.NewServer(&cutOffModel{})
 	defer srv.Close()
 	ended := make(chan db.TurnRow, 1)
-	ag, store := started(ctx, t, orchestrator.Config{OnEvent: func(e event.Event) {
+	ag, store := started(ctx, t, service.Config{OnEvent: func(e event.Event) {
 		if e.Kind == event.TurnCompleted {
 			ended <- e.Turn
 		}
@@ -238,7 +238,7 @@ func TestACutOffResponseRunsNoCall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, orchestrator.Input{Text: "hello"}); err != nil {
+	if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, service.Input{Text: "hello"}); err != nil {
 		t.Fatal(err)
 	}
 	if turn := endOf(ctx, t, ended); turn.Status != db.TurnCompleted {
@@ -275,7 +275,7 @@ func TestNoTurnStartsWhileTheWorkspaceMoves(t *testing.T) {
 	srv := httptest.NewServer(&recordingModel{})
 	defer srv.Close()
 	box := slowMove{Box: sandbox.Here(), moving: make(chan struct{}), release: make(chan struct{})}
-	ag, _ := started(ctx, t, orchestrator.Config{BoxFor: func(string) (sandbox.Box, error) { return box, nil }}, srv.URL)
+	ag, _ := started(ctx, t, service.Config{BoxFor: func(string) (sandbox.Box, error) { return box, nil }}, srv.URL)
 	from, to := t.TempDir(), t.TempDir()
 	for _, dir := range []*string{&from, &to} {
 		resolved, err := sandbox.CanonicalDirectory(*dir)
@@ -301,7 +301,7 @@ func TestNoTurnStartsWhileTheWorkspaceMoves(t *testing.T) {
 		moved <- err
 	}()
 	<-box.moving
-	if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, orchestrator.Input{Text: "hello"}); !errors.Is(err, orchestrator.ErrWorkspaceBusy) {
+	if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, service.Input{Text: "hello"}); !errors.Is(err, service.ErrWorkspaceBusy) {
 		t.Errorf("a turn during the move: %v", err)
 	}
 	close(box.release)
@@ -318,17 +318,17 @@ func TestAConversationQueuesOnlySoManyTurns(t *testing.T) {
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
 	defer close(fake.release)
-	ag, _ := started(ctx, t, orchestrator.Config{}, srv.URL)
+	ag, _ := started(ctx, t, service.Config{}, srv.URL)
 	thread, err := ag.StartThread(db.DefaultUser, "", "", "t", permission.Settings{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 21; i++ {
-		if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, orchestrator.Input{Text: fmt.Sprintf("message %d", i)}); err != nil {
+		if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, service.Input{Text: fmt.Sprintf("message %d", i)}); err != nil {
 			t.Fatalf("message %d: %v", i, err)
 		}
 	}
-	if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, orchestrator.Input{Text: "one more"}); !errors.Is(err, orchestrator.ErrQueueFull) {
+	if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, service.Input{Text: "one more"}); !errors.Is(err, service.ErrQueueFull) {
 		t.Errorf("past the queue: %v", err)
 	}
 }
@@ -343,7 +343,7 @@ func TestSkillsForNoRoleKeepTheOrchestratorFromStarting(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, "main-agent"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	ag := orchestrator.New(orchestrator.Config{
+	ag := service.New(service.Config{
 		Name: "Ollupi", DB: store, SkillsDir: dir,
 		Models:      []llm.Model{{Name: "demo", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI("http://127.0.0.1:1", "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
