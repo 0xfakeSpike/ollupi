@@ -19,56 +19,36 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-func (rt *Runtime) contextInput(of offer) contextmanager.Input {
-	return contextmanager.Input{
-		Items:  slices.Concat(rt.History, rt.Items),
-		System: rt.system(of),
-		Tools:  role.Specs(of.offered),
-	}
-}
-
-func (rt *Runtime) respond(ctx context.Context, choice llm.ToolChoice) (llm.ChatResponse, error) {
-	of := rt.offer()
-	prompt, err := rt.Window.Build(rt.contextInput(of))
-	if err != nil {
-		return llm.ChatResponse{}, fmt.Errorf("runtime: %w", err)
-	}
-	if prompt.NeedsCompaction {
-		if err := rt.compact(ctx, of); err != nil {
-			return llm.ChatResponse{}, err
-		}
-		if prompt, err = rt.Window.Build(rt.contextInput(of)); err != nil {
-			return llm.ChatResponse{}, fmt.Errorf("runtime: after compaction: %w", err)
-		}
-	}
-	call := rt.modelCalls() + 1
-	r := newResponseRecorder(rt, prompt.Stats)
+// respond sends the step's request and records the response: its text as it streams, and its calls, pending.
+func (rt *Runtime) respond(ctx context.Context, st CallModel) error {
+	call := modelCalls(rt.Items) + 1
+	r := newResponseRecorder(rt, st.Prompt.Stats)
 	started := time.Now()
-	resp, err := rt.send(ctx, of, prompt, choice, r.delta)
+	resp, err := rt.send(ctx, st.Offer, st.Prompt, st.Choice, r.delta)
 	r.usage = responseUsage(resp)
 	rt.logModelCall(ctx, "model call", started, resp, err)
 	if err == nil {
-		err = checkResponse(resp, choice)
+		err = checkResponse(resp, st.Choice)
 	}
 	if err != nil {
-		return llm.ChatResponse{}, r.fail(fmt.Errorf("runtime: model call %d: %w", call, err))
+		return r.fail(fmt.Errorf("runtime: model call %d: %w", call, err))
 	}
 	if err := r.finish(resp); err != nil {
-		return llm.ChatResponse{}, err
+		return err
 	}
 	cutOff := resp.FinishReason == "length"
 	for _, call := range resp.Message.ToolCalls {
-		it := rt.callItem(of, r.id, call)
+		it := rt.callItem(st.Offer, r.id, call)
 		r.carry(&it, resp.Message.Native)
 		if cutOff {
 			now := time.Now().UTC()
 			it.Status, it.Error, it.CompletedAt = repo.ItemFailed, cutOffCall, &now
 		}
 		if _, err := rt.record(it); err != nil {
-			return llm.ChatResponse{}, err
+			return err
 		}
 	}
-	return resp, nil
+	return nil
 }
 
 // cutOffCall is why no call of a response the output limit cut off runs: the last may be incomplete, and the model
@@ -91,7 +71,7 @@ func checkResponse(resp llm.ChatResponse, choice llm.ToolChoice) error {
 	return nil
 }
 
-func (rt *Runtime) compact(ctx context.Context, of offer) (err error) {
+func (rt *Runtime) compact(ctx context.Context, st Compact) (err error) {
 	ctx, span := tracer.Start(ctx, "ollupi.context.compact")
 	defer func() {
 		if err != nil {
@@ -99,10 +79,7 @@ func (rt *Runtime) compact(ctx context.Context, of offer) (err error) {
 		}
 		span.End()
 	}()
-	prompt, err := rt.Window.CompactionPrompt(rt.contextInput(of))
-	if err != nil {
-		return fmt.Errorf("runtime: %w", err)
-	}
+	prompt := st.Prompt
 	span.SetAttributes(attribute.Int("ollupi.context.estimated_tokens", prompt.Stats.EstimatedTokens))
 	it, err := rt.record(repo.ItemRow{
 		ID: uuid.NewString(), TurnID: rt.Turn.ID, Type: repo.ItemContextCompaction, Status: repo.ItemInProgress, StartedAt: time.Now().UTC(),
@@ -112,7 +89,7 @@ func (rt *Runtime) compact(ctx context.Context, of offer) (err error) {
 		return err
 	}
 	started := time.Now()
-	resp, err := rt.send(ctx, of, prompt, llm.ToolChoiceNone, nil)
+	resp, err := rt.send(ctx, st.Offer, prompt, llm.ToolChoiceNone, nil)
 	it.Usage = responseUsage(resp)
 	rt.logModelCall(ctx, "context compaction", started, resp, err)
 	summary := strings.TrimSpace(resp.Message.Content)
@@ -124,16 +101,14 @@ func (rt *Runtime) compact(ctx context.Context, of offer) (err error) {
 		err = fmt.Errorf("the summary was truncated by the model output limit")
 	}
 	if err != nil {
-		if _, rerr := rt.complete(withError(it, err.Error()), repo.ItemFailed); rerr != nil {
+		if _, rerr := rt.record(completed(withError(it, err.Error()), repo.ItemFailed)); rerr != nil {
 			return rerr
 		}
 		return fmt.Errorf("runtime: compaction: %w", err)
 	}
 	it.Text = summary
-	if _, err := rt.complete(it, repo.ItemCompleted); err != nil {
-		return err
-	}
-	return rt.loadMemory()
+	_, err = rt.record(completed(it, repo.ItemCompleted))
+	return err
 }
 
 func (rt *Runtime) send(ctx context.Context, of offer, prompt contextmanager.Prompt, choice llm.ToolChoice, onDelta func(llm.Delta)) (llm.ChatResponse, error) {
@@ -236,16 +211,6 @@ func responseUsage(resp llm.ChatResponse) *repo.Usage {
 		InputTokens: resp.Usage.PromptTokens, CachedInputTokens: resp.Usage.CachedPromptTokens,
 		CacheWriteInputTokens: resp.Usage.CacheWritePromptTokens, OutputTokens: resp.Usage.CompletionTokens,
 	}
-}
-
-func (rt *Runtime) modelCalls() int {
-	seen := map[string]bool{}
-	for _, it := range rt.Items {
-		if it.ResponseID != "" && it.Type != repo.ItemContextCompaction {
-			seen[it.ResponseID] = true
-		}
-	}
-	return len(seen)
 }
 
 func (rt *Runtime) callItem(of offer, responseID string, call llm.ToolCall) repo.ItemRow {

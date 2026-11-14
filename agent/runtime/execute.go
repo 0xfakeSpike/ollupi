@@ -2,9 +2,9 @@ package runtime
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -15,127 +15,53 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-type callActionKind int
-
-const (
-	actionRun callActionKind = iota
-	actionRunReadOnly
-	actionSkip
-	actionWait
-	actionHalt
-)
-
-type callAction struct {
-	kind   callActionKind
-	item   repo.ItemRow
-	job    *job
-	reason string
+// inspect prepares the call when the step says so, recording how it will run, and reads what it would do.
+func (rt *Runtime) inspect(ctx context.Context, st Inspect) (Inspection, error) {
+	it := st.Call
+	if st.Prepare {
+		prepared, err := rt.Registry.Prepare(ctx, it.Tool, st.Args)
+		if err != nil {
+			return Inspection{Err: err}, nil
+		}
+		if prepared != nil {
+			it.PreparedExecution = prepared
+			if _, err := rt.record(it); err != nil {
+				return Inspection{}, err
+			}
+		}
+	}
+	content, hasContent, err := rt.Registry.PermissionContent(ctx, it.Tool, st.Args)
+	return Inspection{Content: content, HasContent: hasContent, Err: err}, nil
 }
 
-func (rt *Runtime) executePlan(ctx context.Context, of offer, plan []callAction) (bool, error) {
-	var batch []job
-	halt := ""
-	flush := func() (string, error) {
-		if len(batch) == 0 {
-			return "", nil
+// runCalls records what was decided on the pending calls, then runs the step's calls at the same time.
+func (rt *Runtime) runCalls(ctx context.Context, st Calls) error {
+	for _, it := range st.Records {
+		if _, err := rt.record(it); err != nil {
+			return err
 		}
-		var h string
-		results, err := rt.runJobs(ctx, of, batch)
-		if err != nil {
-			return "", err
-		}
-		for i, j := range batch {
-			next, err := rt.finishTool(j, results[i])
-			if err != nil {
-				return h, err
-			}
-			if h == "" {
-				h = next
-			}
-		}
-		batch = batch[:0]
-		return h, ctx.Err()
-	}
-	runOne := func(j job) (string, error) {
-		jobs := []job{j}
-		results, err := rt.runJobs(ctx, of, jobs)
-		if err != nil {
-			return "", err
-		}
-		h, err := rt.finishTool(jobs[0], results[0])
-		return h, errors.Join(err, ctx.Err())
-	}
-	for _, a := range plan {
-		if err := ctx.Err(); err != nil {
-			return false, err
-		}
-		switch a.kind {
-		case actionRunReadOnly:
-			if halt != "" {
-				if err := rt.fail(a.item, "skipped: the turn stopped before this call was executed"); err != nil {
-					return false, err
-				}
-				continue
-			}
-			batch = append(batch, *a.job)
-		case actionRun:
-			h, err := flush()
-			if err != nil {
-				return false, err
-			}
-			if halt == "" {
-				halt = h
-			}
-			if halt != "" {
-				if err := rt.fail(a.item, "skipped: the turn stopped before this call was executed"); err != nil {
-					return false, err
-				}
-				continue
-			}
-			h, err = runOne(*a.job)
-			if err != nil {
-				return false, err
-			}
-			if halt == "" {
-				halt = h
-			}
-		case actionSkip:
-			if _, err := flush(); err != nil {
-				return false, err
-			}
-			if err := rt.fail(a.item, a.reason); err != nil {
-				return false, err
-			}
-		case actionWait:
-			if _, err := flush(); err != nil {
-				return false, err
-			}
-			return false, nil
-		case actionHalt:
-			if _, err := flush(); err != nil {
-				return false, err
-			}
-			halt = a.reason
+		if it.WaitsForApproval() {
+			slog.Info("approval requested", "thread", rt.Caller.ThreadID, "turn", rt.Turn.ID, "item", it.ID, "tool", it.Tool)
 		}
 	}
-	h, err := flush()
+	if len(st.Run) == 0 {
+		return nil
+	}
+	jobs := slices.Clone(st.Run)
+	results, err := rt.runJobs(ctx, st.Deferred, jobs)
 	if err != nil {
-		return false, err
+		return err
 	}
-	if halt == "" {
-		halt = h
+	for i, j := range jobs {
+		if err := rt.finishTool(j, results[i]); err != nil {
+			return err
+		}
 	}
-	if rt.waiting() {
-		return false, nil
-	}
-	if halt != "" {
-		return true, rt.finish(ctx, halt)
-	}
-	return false, nil
+	return nil
 }
 
-func (rt *Runtime) runJobs(ctx context.Context, of offer, jobs []job) ([]tools.Result, error) {
-	ctx = context.WithValue(ctx, deferredKey{}, of.deferred)
+func (rt *Runtime) runJobs(ctx context.Context, deferred []tools.ToolDescriptor, jobs []job) ([]tools.Result, error) {
+	ctx = context.WithValue(ctx, deferredKey{}, deferred)
 	for i := range jobs {
 		jobs[i].it.Status = repo.ItemInProgress
 		stored, err := rt.record(jobs[i].it)
@@ -180,18 +106,18 @@ func (rt *Runtime) execute(ctx context.Context, j job) tools.Result {
 	return result
 }
 
-func (rt *Runtime) finishTool(j job, result tools.Result) (string, error) {
+func (rt *Runtime) finishTool(j job, result tools.Result) error {
 	it := j.it
 	if result.Err == nil && result.Await != nil {
 		it.Await = result.Await
 		_, err := rt.record(it)
-		return "", err
+		return err
 	}
 	stored, errText, err := repo.ResultOf(result)
 	if err != nil {
 		stored, errText, err = repo.ResultOf(tools.Result{Err: fmt.Errorf("tool output cannot be recorded: %w", err)}.For(it.Tool))
 		if err != nil {
-			return "", err
+			return err
 		}
 	}
 	it.Result, it.Error = stored, errText
@@ -199,31 +125,6 @@ func (rt *Runtime) finishTool(j job, result tools.Result) (string, error) {
 	if errText != "" {
 		status = repo.ItemFailed
 	}
-	if _, err := rt.complete(it, status); err != nil {
-		return "", err
-	}
-	if status == repo.ItemCompleted {
-		return "", nil
-	}
-	return rt.haltAfterFailures(errText), nil
-}
-
-func (rt *Runtime) fail(it repo.ItemRow, reason string) error {
-	_, err := rt.complete(withError(it, reason), repo.ItemFailed)
+	_, err = rt.record(completed(it, status))
 	return err
-}
-
-func (rt *Runtime) refuse(it repo.ItemRow, reason string) (string, error) {
-	if err := rt.fail(it, reason); err != nil {
-		return "", err
-	}
-	return rt.haltAfterFailures(reason), nil
-}
-
-// haltAfterFailures returns why the turn stops when the latest tool calls all failed, or "" while it goes on.
-func (rt *Runtime) haltAfterFailures(last string) string {
-	if n := rt.consecutiveFailures(); n >= maxConsecutiveFailures {
-		return fmt.Sprintf("%d consecutive invalid or failed tool calls; last: %s", n, last)
-	}
-	return ""
 }
