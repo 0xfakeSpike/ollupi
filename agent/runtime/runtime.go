@@ -11,6 +11,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
+	"github.com/0xfakeSpike/ollupi/agent/profile"
 	"github.com/0xfakeSpike/ollupi/agent/skills"
 	"github.com/0xfakeSpike/ollupi/agent/systemprompt"
 	"github.com/0xfakeSpike/ollupi/pkg/blobs"
@@ -19,7 +20,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/repo"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
-	"github.com/0xfakeSpike/ollupi/tools/workspace"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 )
@@ -55,6 +55,7 @@ type Runtime struct {
 
 	Attachments blobs.Store
 
+	profile  profile.Profile
 	offered  []tools.ToolDescriptor
 	deferred []tools.ToolDescriptor
 	system   string
@@ -84,9 +85,10 @@ func (rt *Runtime) start() error {
 	if rt.Skills != nil {
 		catalog = rt.Skills.All()
 	}
-	rt.offered, rt.deferred = Offer(rt.Permissions.Tools(), rt.Window, slices.Concat(rt.History, rt.Items))
+	rt.profile = profile.For(rt.Window.InputTokens())
+	rt.offered, rt.deferred = Offer(rt.Permissions.Tools(), rt.profile, rt.Window, slices.Concat(rt.History, rt.Items))
 	rt.system = systemprompt.Build(systemprompt.Input{
-		Agent: rt.Prompt, Compact: rt.Window.Compact(), Subagent: rt.Subagent, Root: rt.Caller.Root,
+		Agent: rt.Prompt, Profile: rt.profile, Subagent: rt.Subagent, Root: rt.Caller.Root,
 		Skills: catalog, SkillTokens: rt.Window.SkillBudget(), Deferred: rt.deferred,
 	})
 	if rt.Subagent != nil && !rt.Subagent.Memory || hasSnapshot(slices.Concat(rt.History, rt.Items)) {
@@ -134,24 +136,20 @@ func (rt *Runtime) tool(name string) (tools.ToolDescriptor, bool) {
 	return rt.offered[i], true
 }
 
-// compactTools are what a model with a small input is always sent: the rest cost more than it can spare, and it can load them.
-var compactTools = []string{tools.ToolLoadTools, workspace.ToolReadFile, workspace.ToolRunCommand}
-
 // Offer splits the visible tools into the ones sent to the model and the ones only named in DEFERRED TOOLS.
 // Tools of external providers are deferred when all visible tools would take more than the tool budget;
 // the ones a load_tools call loaded follow the others in load order, so the tool list only grows.
-func Offer(visible []tools.ToolDescriptor, window *contextmanager.Manager, items []repo.ItemRow) (offered, deferred []tools.ToolDescriptor) {
+func Offer(visible []tools.ToolDescriptor, p profile.Profile, window *contextmanager.Manager, items []repo.ItemRow) (offered, deferred []tools.ToolDescriptor) {
 	external := func(d tools.ToolDescriptor) bool { return strings.Contains(d.Name, tools.ProviderSeparator) }
 	loader := func(d tools.ToolDescriptor) bool { return d.Name == tools.ToolLoadTools }
 	visible = slices.DeleteFunc(slices.Clone(visible), func(d tools.ToolDescriptor) bool {
 		k, ok := subagent.KindOf(d.Name)
 		return ok && k.Provider != "" && !slices.ContainsFunc(visible, func(t tools.ToolDescriptor) bool { return t.Provider == k.Provider })
 	})
-	compact := window.Compact()
 	deferrable := func(d tools.ToolDescriptor) bool {
-		return external(d) || compact && !slices.Contains(compactTools, d.Name)
+		return external(d) || p.Core != nil && !slices.Contains(p.Core, d.Name)
 	}
-	deferring := slices.ContainsFunc(visible, loader) && (compact || slices.ContainsFunc(visible, external) && !window.ToolsFit(Specs(visible)))
+	deferring := slices.ContainsFunc(visible, loader) && (p.Core != nil || slices.ContainsFunc(visible, external) && !window.ToolsFit(Specs(visible)))
 	for _, d := range visible {
 		switch {
 		case deferring && deferrable(d):
@@ -218,7 +216,7 @@ func (rt *Runtime) run(ctx context.Context) (bool, error) {
 			return false, fmt.Errorf("runtime: reload the turn: %w", err)
 		}
 		rt.Items, rt.Permissions = items, permissions
-		rt.offered, rt.deferred = Offer(permissions.Tools(), rt.Window, slices.Concat(rt.History, rt.Items))
+		rt.offered, rt.deferred = Offer(permissions.Tools(), rt.profile, rt.Window, slices.Concat(rt.History, rt.Items))
 		if resp.FinishReason == "length" && len(resp.Message.ToolCalls) > 0 {
 			if halt := rt.haltAfterFailures(cutOffCall); halt != "" {
 				return true, rt.finish(ctx, halt)
