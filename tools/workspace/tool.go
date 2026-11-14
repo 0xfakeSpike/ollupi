@@ -172,7 +172,7 @@ func (r *Provider) inputSchema() map[string]any {
 }
 
 func (r *Provider) ToolList(context.Context) ([]*tools.Spec, error) {
-	return slices.Concat([]*tools.Spec{r.tool()}, r.fileTools(), r.readTools()), nil
+	return slices.Concat([]*tools.Spec{r.tool(), r.claudeTool()}, r.fileTools(), r.readTools()), nil
 }
 
 func parseExecArgsSlice(v any) ([]string, error) {
