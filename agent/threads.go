@@ -102,7 +102,7 @@ func (a *Agent) threadStatus(id string) repo.ThreadStatus {
 			return ""
 		}
 		for _, call := range st.AgentCalls() {
-			if cs := a.threadStatus(call.Await.ThreadID); cs == repo.ThreadWaitingOnApproval || cs == repo.ThreadWaitingOnUserInput {
+			if cs := a.threadStatus(call.Await.Handle); cs == repo.ThreadWaitingOnApproval || cs == repo.ThreadWaitingOnUserInput {
 				return cs
 			}
 		}

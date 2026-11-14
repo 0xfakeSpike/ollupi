@@ -259,7 +259,7 @@
           "$ref": "#/$defs/AwaitBy"
         },
         "request": true,
-        "threadId": {
+        "handle": {
           "type": "string"
         }
       },

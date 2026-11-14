@@ -24,9 +24,9 @@ func (a *Agent) PendingRequests(user, threadID string) ([]Request, error) {
 	}
 	out := requestsOf(st)
 	for _, call := range st.AgentCalls() {
-		child, err := a.cfg.DB.ThreadState(call.Await.ThreadID)
+		child, err := a.cfg.DB.ThreadState(call.Await.Handle)
 		if err != nil {
-			return nil, fmt.Errorf("agent: thread %s: %w", call.Await.ThreadID, err)
+			return nil, fmt.Errorf("agent: thread %s: %w", call.Await.Handle, err)
 		}
 		out = append(out, requestsOf(child)...)
 	}

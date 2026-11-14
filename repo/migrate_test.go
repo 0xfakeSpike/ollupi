@@ -267,3 +267,43 @@ func TestTurnsFromBeforeRolesTakeTheRoleOfTheirThread(t *testing.T) {
 		}
 	}
 }
+
+func TestAWaitFromBeforeHandlesKeepsItsSubagentThread(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, "data", "ollupi.sqlite")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	all, err := shardSteps()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := rawDB(t, path)
+	if err := sqlitedb.Migrate(old, all[:9], 0); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 11, 1, 8, 0, 0, 0, time.UTC)
+	for _, row := range []any{
+		&ThreadRow{UserID: DefaultUser, ID: "main", Title: "main", CreatedAt: at, UpdatedAt: at},
+		&TurnRow{ID: "asked", ThreadID: "main", Seq: 1, Status: TurnWaitingOnAgent, Model: llm.Model{Name: "m", Connection: "c"}, Agent: "full-main-agent", CreatedAt: at, StartedAt: at},
+		&ItemRow{ID: "call", ThreadID: "main", TurnID: "asked", Seq: 1, Type: ItemToolCall, Status: ItemInProgress, Tool: "Agent", StartedAt: at},
+	} {
+		if err := old.Create(row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := old.Exec("UPDATE items SET await = ? WHERE id = 'call'", `{"by":"agent","request":{"prompt":"p"},"threadId":"child"}`).Error; err != nil {
+		t.Fatal(err)
+	}
+	closeRaw(t, old)
+
+	db, err := Open(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	call, err := db.Item("call")
+	if err != nil || call.Await == nil || call.Await.Handle != "child" || call.Await.By != "agent" || string(call.Await.Request) != `{"prompt":"p"}` {
+		t.Errorf("the wait after the step: %+v (%v)", call.Await, err)
+	}
+}
