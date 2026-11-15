@@ -2,8 +2,10 @@ package workspace
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -13,7 +15,10 @@ import (
 func TestUnifiedDiff(t *testing.T) {
 	before := "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n"
 	after := "a\nB\nc\nd\ne\nf\ng\nh\ni\nj\nk"
-	diff, added, removed := unifiedDiff("x.txt", before, after, false)
+	diff, added, removed, err := unifiedDiff("x.txt", before, after, false)
+	if err != nil {
+		t.Fatal(err)
+	}
 	want := `--- a/x.txt
 +++ b/x.txt
 @@ -1,5 +1,5 @@
@@ -33,9 +38,34 @@ func TestUnifiedDiff(t *testing.T) {
 	if diff != want || added != 2 || removed != 1 {
 		t.Errorf("diff (+%d -%d):\n%s", added, removed, diff)
 	}
-	diff, added, _ = unifiedDiff("new.txt", "", "one\n", true)
-	if diff != "--- /dev/null\n+++ b/new.txt\n@@ -0,0 +1,1 @@\n+one\n" || added != 1 {
+	diff, added, _, err = unifiedDiff("new.txt", "", "one\n", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff != "--- /dev/null\n+++ b/new.txt\n@@ -0,0 +1 @@\n+one\n" || added != 1 {
 		t.Errorf("new file diff:\n%s", diff)
+	}
+}
+
+func TestAFileRewrittenWholeDiffsQuickly(t *testing.T) {
+	var before, after strings.Builder
+	for i := range 20000 {
+		fmt.Fprintf(&before, "old line %d\n", i)
+		fmt.Fprintf(&after, "new line %d\n", i)
+	}
+	var stats runtime.MemStats
+	runtime.ReadMemStats(&stats)
+	allocated := stats.TotalAlloc
+	_, added, removed, err := unifiedDiff("x.txt", before.String(), after.String(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if added != 20000 || removed != 20000 {
+		t.Errorf("+%d -%d, want every line replaced", added, removed)
+	}
+	runtime.ReadMemStats(&stats)
+	if used := stats.TotalAlloc - allocated; used > 256<<20 {
+		t.Errorf("the diff allocated %d MB", used>>20)
 	}
 }
 
