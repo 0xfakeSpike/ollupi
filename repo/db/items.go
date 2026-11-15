@@ -299,27 +299,73 @@ func (d *DB) RecordItem(threadID string, item ItemRow) (ItemRow, bool, error) {
 	var stored ItemRow
 	var isNew bool
 	err := d.Tx(func(tx *DB) error {
-		active, err := tx.ActiveTurn(threadID)
-		if errors.Is(err, ErrNotFound) || (err == nil && active.ID != item.TurnID) {
-			return fmt.Errorf("item %s belongs to turn %s, which is not in progress", item.ID, item.TurnID)
-		}
+		active, err := tx.turnOf(threadID, item)
 		if err != nil {
 			return err
 		}
-		if stored, isNew, err = tx.saveItemOf(threadID, item); err != nil || item.Type != ItemToolCall {
-			return err
-		}
-		// A call answered, approved or reported may be the last one its waiting turn awaited.
-		switch active.Status {
-		case TurnWaitingOnApproval, TurnWaitingOnUserInput, TurnWaitingOnAgent, TurnWaitingOnBackground:
-			_, err = tx.settleStatus(active.ID, active.Status)
-		}
+		stored, isNew, err = tx.recordIn(threadID, active, item)
 		return err
 	})
 	if err != nil {
 		return ItemRow{}, false, fmt.Errorf("storage: record item: %w", err)
 	}
 	return stored, isNew, nil
+}
+
+// AnswerRequest records the user's answer to a request, as RecordItem does, if the turn still waits on the user for
+// it; otherwise it returns ErrNoSuchRequest. What the caller read may be stale: a message may have declined the request,
+// or another answer taken it.
+func (d *DB) AnswerRequest(threadID string, answer ItemRow) (ItemRow, error) {
+	var stored ItemRow
+	err := d.Tx(func(tx *DB) error {
+		active, err := tx.turnOf(threadID, answer)
+		if errors.Is(err, errNotCurrent) {
+			return ErrNoSuchRequest
+		}
+		if err != nil {
+			return err
+		}
+		if active.Status != TurnWaitingOnApproval && active.Status != TurnWaitingOnUserInput {
+			return ErrNoSuchRequest
+		}
+		prev, err := tx.Item(answer.ID)
+		if err != nil {
+			return err
+		}
+		if !prev.WaitsOnUser() {
+			return ErrNoSuchRequest
+		}
+		stored, _, err = tx.recordIn(threadID, active, answer)
+		return err
+	})
+	if err != nil {
+		return ItemRow{}, fmt.Errorf("storage: answer request: %w", err)
+	}
+	return stored, nil
+}
+
+var errNotCurrent = errors.New("not the thread's current turn")
+
+// turnOf is the thread's current turn, which the item must belong to.
+func (d *DB) turnOf(threadID string, item ItemRow) (TurnRow, error) {
+	active, err := d.ActiveTurn(threadID)
+	if errors.Is(err, ErrNotFound) || (err == nil && active.ID != item.TurnID) {
+		return TurnRow{}, fmt.Errorf("item %s belongs to turn %s, which is %w", item.ID, item.TurnID, errNotCurrent)
+	}
+	return active, err
+}
+
+func (d *DB) recordIn(threadID string, active TurnRow, item ItemRow) (ItemRow, bool, error) {
+	stored, isNew, err := d.saveItemOf(threadID, item)
+	if err != nil || item.Type != ItemToolCall {
+		return stored, isNew, err
+	}
+	// A call answered, approved or reported may be the last one its waiting turn awaited.
+	switch active.Status {
+	case TurnWaitingOnApproval, TurnWaitingOnUserInput, TurnWaitingOnAgent, TurnWaitingOnBackground:
+		_, err = d.settleStatus(active.ID, active.Status)
+	}
+	return stored, isNew, err
 }
 
 // Steer writes a user message into the current turn. A turn that waits on the user takes the message in place of

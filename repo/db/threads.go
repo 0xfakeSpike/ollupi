@@ -200,6 +200,11 @@ func (d *DB) SetThreadArchived(user, id string, at *time.Time) (ThreadRow, error
 		if _, err := tx.ThreadOf(user, id); err != nil {
 			return err
 		}
+		if at != nil {
+			if err := tx.CheckIdle(id); err != nil {
+				return err
+			}
+		}
 		if err := checkOne(tx.gorm.Model(&ThreadRow{}).Where("id = ?", id).Update("archived_at", nullTime(at))); err != nil {
 			return fmt.Errorf("thread %s: %w", id, err)
 		}
@@ -210,13 +215,27 @@ func (d *DB) SetThreadArchived(user, id string, at *time.Time) (ThreadRow, error
 	return row, err
 }
 
+// DeleteThread deletes a thread that has no turn in progress or queued.
 func (d *DB) DeleteThread(user, id string) error {
-	res := d.gorm.Delete(&ThreadRow{}, "id = ? AND user_id = ?", id, user)
-	if res.Error != nil {
-		return res.Error
+	return d.Tx(func(tx *DB) error {
+		if _, err := tx.ThreadOf(user, id); err != nil {
+			return err
+		}
+		if err := tx.CheckIdle(id); err != nil {
+			return err
+		}
+		return checkOne(tx.gorm.Delete(&ThreadRow{}, "id = ?", id))
+	})
+}
+
+// CheckIdle refuses with ErrThreadBusy a thread that has a turn in progress or queued.
+func (d *DB) CheckIdle(id string) error {
+	var open int64
+	if err := d.gorm.Model(&TurnRow{}).Where("thread_id = ? AND "+openTurn, id).Count(&open).Error; err != nil {
+		return err
 	}
-	if res.RowsAffected == 0 {
-		return ErrNotFound
+	if open > 0 {
+		return ErrThreadBusy
 	}
 	return nil
 }

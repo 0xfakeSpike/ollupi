@@ -85,7 +85,14 @@ var rowTypes = []any{
 	&MemoryRow{}, &MemoryStateRow{}, &SettingsRow{}, &ShardLeaseRow{}, &BackgroundCallRow{},
 }
 
-var ErrNotFound = errors.New("storage: not found")
+var (
+	ErrNotFound = errors.New("storage: not found")
+	// ErrThreadBusy, ErrThreadArchived and ErrNoSuchRequest refuse a write the thread no longer allows, whatever the
+	// caller read before it.
+	ErrThreadBusy     = errors.New("the conversation has a turn in progress or queued; interrupt it first")
+	ErrThreadArchived = errors.New("the conversation is archived; restore it before starting new work")
+	ErrNoSuchRequest  = errors.New("the thread does not wait on this request")
+)
 
 func notFound(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {

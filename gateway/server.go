@@ -310,7 +310,7 @@ func (c *conn) request(threadID string, it db.ItemRow) {
 		if err := c.resolve(threadID, it, result); err != nil {
 			slog.Warn("client response not applied", "item", it.ID, "err", err)
 			c.rpc.Notify(notifyError, ErrorNotification{ThreadID: threadID, TurnID: it.TurnID, ItemID: it.ID, Message: serverError(err).Message})
-			if !errors.Is(err, service.ErrNoSuchRequest) {
+			if !errors.Is(err, db.ErrNoSuchRequest) {
 				c.request(threadID, it)
 			}
 		}
@@ -394,11 +394,11 @@ var errorCodes = []struct {
 	{db.ErrNotFound, errNotFound},
 	{orchestrator.ErrNoActiveTurn, errNoActiveTurn},
 	{orchestrator.ErrTurnMismatch, errTurnMismatch},
-	{service.ErrNoSuchRequest, errNoSuchRequest},
+	{db.ErrNoSuchRequest, errNoSuchRequest},
 	{service.ErrSubagentThread, errSubagentThread},
 	{service.ErrWorkspaceArchived, errWorkspaceArchived},
-	{service.ErrThreadArchived, errThreadArchived},
-	{service.ErrThreadBusy, errThreadBusy},
+	{db.ErrThreadArchived, errThreadArchived},
+	{db.ErrThreadBusy, errThreadBusy},
 	{service.ErrWorkspaceBusy, errThreadBusy},
 	{service.ErrQueueFull, errThreadBusy},
 	{service.ErrEnvironmentInUse, jsonrpc.CodeInvalidParams},

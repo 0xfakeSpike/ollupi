@@ -21,7 +21,7 @@ func TestSearchFindsMessagesBySubstring(t *testing.T) {
 	if err := db.CreateThread(ThreadRow{UserID: DefaultUser, ID: "t", Title: "调研", CreatedAt: at, UpdatedAt: at}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.createTurn(TurnRow{ID: "turn", ThreadID: "t", Seq: 1, Status: TurnInProgress, Model: llm.Model{Name: "m", Connection: "c"}, StartedAt: at}); err != nil {
+	if err := db.createTurn(TurnRow{ID: "turn", ThreadID: "t", Seq: 1, Status: TurnCompleted, Model: llm.Model{Name: "m", Connection: "c"}, StartedAt: at, CompletedAt: &at}); err != nil {
 		t.Fatal(err)
 	}
 	save := func(it ItemRow) {

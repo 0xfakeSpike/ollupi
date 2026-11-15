@@ -149,7 +149,7 @@ func (sv *Service) ArchiveThread(user, id string, archived bool) (db.ThreadRow, 
 	}
 	var at *time.Time
 	if archived {
-		if err := sv.idle(id); err != nil {
+		if err := sv.cfg.DB.CheckIdle(id); err != nil {
 			return db.ThreadRow{}, err
 		}
 		if err := sv.o.StopBackground(id, "the conversation was archived"); err != nil {
@@ -176,7 +176,7 @@ func (sv *Service) DeleteThread(user, id string) error {
 	if err != nil {
 		return err
 	}
-	if err := sv.idle(id); err != nil {
+	if err := sv.cfg.DB.CheckIdle(id); err != nil {
 		return err
 	}
 	if err := sv.o.StopBackground(id, "the conversation was deleted"); err != nil {
@@ -235,15 +235,4 @@ func (sv *Service) topThread(user, id string) (db.ThreadRow, error) {
 		return db.ThreadRow{}, ErrSubagentThread
 	}
 	return t, nil
-}
-
-func (sv *Service) idle(id string) error {
-	st, err := sv.cfg.DB.ThreadState(id)
-	if err != nil {
-		return fmt.Errorf("service: thread %s: %w", id, err)
-	}
-	if _, active := st.ActiveTurn(); active || len(st.QueuedTurns()) > 0 {
-		return ErrThreadBusy
-	}
-	return nil
 }

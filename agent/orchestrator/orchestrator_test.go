@@ -159,9 +159,6 @@ func TestAWokenTurnRunsToTheEnd(t *testing.T) {
 	if ended := s.endOf(t); ended.ID != turn.ID || ended.Status != db.TurnCompleted {
 		t.Fatalf("ended %s as %s (%s), want %s completed", ended.ID, ended.Status, ended.Error, turn.ID)
 	}
-	if s.o.Busy(turn.ThreadID) {
-		t.Error("the thread holds a slot after its turn ended")
-	}
 }
 
 func TestAUserHoldsNoMoreThanItsSlots(t *testing.T) {
@@ -243,8 +240,8 @@ func TestAnInterruptEndsTheRunningTurn(t *testing.T) {
 	turn := s.submit(t, db.DefaultUser, "long")
 	s.o.Wake(turn.ThreadID)
 	fake.next(t)
-	if !s.o.Busy(turn.ThreadID) {
-		t.Error("the running thread is not busy")
+	if running, err := s.store.Turn(turn.ID); err != nil || running.Status != db.TurnInProgress {
+		t.Errorf("the running turn is %s (%v), want in progress", running.Status, err)
 	}
 	if err := s.o.Interrupt(turn.ThreadID, "another"); !errors.Is(err, orchestrator.ErrTurnMismatch) {
 		t.Errorf("interrupt of another turn: %v, want %v", err, orchestrator.ErrTurnMismatch)
