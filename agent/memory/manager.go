@@ -105,10 +105,15 @@ func (m *Manager) RunOnce(ctx context.Context) error {
 }
 
 func (m *Manager) runFor(ctx context.Context, user string) (err error) {
+	var batch *Batch
 	defer func() {
 		if p := recover(); p != nil {
 			slog.Error("memory extraction crashed", "user", user, "panic", fmt.Sprint(p), "stack", string(debug.Stack()))
-			err = errors.New("memory extraction crashed")
+			err = failure{db.MemoryEvidence, errors.New("memory extraction crashed")}
+			// A batch that crashes is put off, and in the end skipped, as one that fails: it would crash every time.
+			if batch != nil {
+				err = m.deferBatch(batch, err)
+			}
 		}
 	}()
 	state, err := m.db.MemoryState(user)
@@ -119,7 +124,9 @@ func (m *Manager) runFor(ctx context.Context, user string) (err error) {
 		return nil
 	}
 	started := time.Now()
-	batch, payload, estimated, err := m.gatherEvidence(user)
+	var payload string
+	var estimated int
+	batch, payload, estimated, err = m.gatherEvidence(user)
 	if batch == nil {
 		return err
 	}
