@@ -18,11 +18,10 @@ import (
 )
 
 const (
-	defaultChatTimeout = 180 * time.Second
-	DefaultCalls       = 4
+	DefaultCalls = 4
 	// retries is how many times a request refused with 408, 429 or a 5xx, or cut off before its answer, is sent
 	// again, waiting from half a second, doubling to at most eight (or, with OpenAI and Anthropic, as long as the
-	// provider's Retry-After asks): about 40 s in all, within defaultChatTimeout. A provider short of quota for a few seconds then slows a turn
+	// provider's Retry-After asks): about 40 s in all. A provider short of quota for a few seconds then slows a turn
 	// instead of failing it. The call keeps its slot while it waits, so the calls in flight stay within the limit.
 	retries = 8
 )
@@ -63,9 +62,13 @@ func (l Limits) check() error {
 	return nil
 }
 
-// httpClient sends every provider request, each try of a retried one in a span of its own under the model call's.
-// It sends no trace context: the providers are not ours to tell how our requests are traced.
-var httpClient = &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport, otelhttp.WithPropagators(propagation.NewCompositeTextMapPropagator()))}
+// httpClient sends every provider request, each try of a retried one in a span of its own under the model call's,
+// and gives a try up once the provider has sent nothing for idleTimeout. It sends no trace context: the providers are
+// not ours to tell how our requests are traced.
+var httpClient = &http.Client{Transport: idleTransport{
+	base: otelhttp.NewTransport(http.DefaultTransport, otelhttp.WithPropagators(propagation.NewCompositeTextMapPropagator())),
+	idle: idleTimeout,
+}}
 
 // connection holds what every provider client shares: the declared model limits and the concurrent call slots.
 type connection struct {
@@ -91,21 +94,16 @@ func (c connection) Limits(model string) (Limits, error) {
 	return l, nil
 }
 
-// acquire takes a call slot and bounds the call with the default timeout unless ctx has a deadline;
-// the returned function frees both.
-func (c connection) acquire(ctx context.Context) (context.Context, func(), error) {
+// acquire takes a call slot; the returned function frees it.
+func (c connection) acquire(ctx context.Context) (func(), error) {
 	waited := time.Now()
 	select {
 	case c.calls <- struct{}{}:
 	case <-ctx.Done():
-		return nil, nil, ctx.Err()
+		return nil, ctx.Err()
 	}
 	trace.SpanFromContext(ctx).SetAttributes(attribute.Int64("ollupi.llm.slot_wait_ms", time.Since(waited).Milliseconds()))
-	cancel := context.CancelFunc(func() {})
-	if _, ok := ctx.Deadline(); !ok {
-		ctx, cancel = context.WithTimeout(ctx, defaultChatTimeout)
-	}
-	return ctx, func() { cancel(); <-c.calls }, nil
+	return func() { <-c.calls }, nil
 }
 
 // safeRequestError reports a failed model request without the provider's response body, which can echo the prompt.
@@ -115,6 +113,9 @@ func safeRequestError(err error) error {
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return context.DeadlineExceeded
+	}
+	if errors.Is(err, errIdle) {
+		return errIdle
 	}
 	var openaiErr *openai.Error
 	var anthropicErr *anthropic.Error
