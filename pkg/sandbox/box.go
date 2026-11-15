@@ -79,25 +79,13 @@ func (s *Sandbox) ReadDir(_ context.Context, path string) ([]fs.DirEntry, error)
 	return os.ReadDir(path)
 }
 
-func (s *Sandbox) Open(_ context.Context, path string) (io.ReadCloser, error) { return os.Open(path) }
+// Open opens a regular file, following its links, and refuses one the read rules close: they are checked on the path
+// it opened, so a link put on the way after the caller's check cannot lead around them.
+func (s *Sandbox) Open(_ context.Context, path string) (io.ReadCloser, error) { return s.open(path) }
 
+// WriteFile writes the canonical path the caller checked: a link put in place of a folder on it since is refused.
 func (s *Sandbox) WriteFile(_ context.Context, path string, data []byte, perm fs.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := errors.Join(tmp.Chmod(perm), tmp.Close()); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
+	return writeFile(path, data, perm)
 }
 
 func (s *Sandbox) Move(_ context.Context, from, to string) error {
