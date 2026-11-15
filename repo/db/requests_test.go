@@ -3,6 +3,7 @@ package db
 import (
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -157,5 +158,20 @@ func TestAPageCarriesOnlyItsTurnsAndTheOpenOnes(t *testing.T) {
 	}
 	if len(view.Items) != 1 || view.Items[0].TurnID != "three" || !slices.Equal(turns, []string{"three", "open"}) {
 		t.Fatalf("page of %d items, turns %v; want the third turn's message with its turn and the open one", len(view.Items), turns)
+	}
+}
+
+func TestAUsersThreadsAreFoundByIndex(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	var plan []struct{ Detail string }
+	if err := store.gorm.Raw("EXPLAIN QUERY PLAN SELECT id FROM threads WHERE user_id = ?", DefaultUser).Scan(&plan).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(plan) == 0 || !strings.Contains(plan[0].Detail, "threads_user") {
+		t.Errorf("a user's threads are found by %+v, want the threads_user index", plan)
 	}
 }

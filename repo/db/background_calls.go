@@ -52,7 +52,7 @@ func (d *DB) StartBackgroundCall(user string, call BackgroundCallRow, max int) e
 	return d.Tx(func(tx *DB) error {
 		var running int64
 		if err := tx.gorm.Model(&BackgroundCallRow{}).
-			Where("status = ? AND thread_id IN (SELECT id FROM threads WHERE user_id = ?)", BackgroundRunning, user).
+			Where("status = ? AND "+ofUser, BackgroundRunning, user).
 			Count(&running).Error; err != nil {
 			return err
 		}

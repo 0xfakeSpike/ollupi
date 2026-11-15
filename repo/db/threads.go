@@ -8,9 +8,12 @@ import (
 	"time"
 )
 
+// ofUser keeps the rows, of a table with a thread_id, of one user's threads; threads_user finds those threads.
+const ofUser = "thread_id IN (SELECT id FROM threads WHERE user_id = ?)"
+
 type ThreadRow struct {
 	ID          string        `gorm:"primaryKey;index:threads_list,priority:4;index:threads_workspace_list,priority:4" json:"id"`
-	UserID      string        `gorm:"not null;default:'';index:threads_list,priority:1" json:"-"`
+	UserID      string        `gorm:"not null;default:'';index:threads_list,priority:1;index:threads_user" json:"-"`
 	User        *UserRow      `gorm:"foreignKey:UserID;constraint:OnDelete:RESTRICT" json:"-"`
 	WorkspaceID Ref           `gorm:"index:threads_workspace;index:threads_workspace_list,priority:1" json:"workspaceId,omitempty"`
 	Workspace   *WorkspaceRow `gorm:"foreignKey:WorkspaceID;constraint:OnDelete:RESTRICT" json:"-"`
