@@ -19,7 +19,10 @@ type OpenAI struct {
 }
 
 func NewOpenAI(baseURL, apiKey string, calls int, limits map[string]Limits) *OpenAI {
-	opts := []option.RequestOption{option.WithAPIKey(apiKey), option.WithMaxRetries(retries), option.WithHTTPClient(httpClient)}
+	// The SDK starts from what the process's environment sets (OPENAI_BASE_URL, OPENAI_ORG_ID, OPENAI_PROJECT_ID...);
+	// these options come after and replace all of it, so a connection goes by its own key and address only.
+	opts := []option.RequestOption{option.WithEnvironmentProduction(), option.WithAPIKey(apiKey), option.WithMaxRetries(retries),
+		option.WithHTTPClient(httpClient), option.WithHeaderDel("OpenAI-Organization"), option.WithHeaderDel("OpenAI-Project")}
 	if apiKey == "" {
 		opts = append(opts, option.WithHeaderDel("Authorization"))
 	}

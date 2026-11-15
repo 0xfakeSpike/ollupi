@@ -24,7 +24,10 @@ type Anthropic struct {
 }
 
 func NewAnthropic(baseURL, apiKey string, calls int, limits map[string]Limits) *Anthropic {
-	opts := []option.RequestOption{option.WithAPIKey(apiKey), option.WithMaxRetries(retries), option.WithHTTPClient(httpClient)}
+	// The connection's key and address are the only ones: the SDK would otherwise read the process's own credentials
+	// and base URL from its environment, and send them where a connection without a key points.
+	opts := []option.RequestOption{option.WithoutEnvironmentDefaults(), option.WithEnvironmentProduction(),
+		option.WithAPIKey(apiKey), option.WithMaxRetries(retries), option.WithHTTPClient(httpClient)}
 	if baseURL != "" {
 		opts = append(opts, option.WithBaseURL(baseURL))
 	}
