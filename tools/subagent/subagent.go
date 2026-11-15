@@ -1,6 +1,6 @@
 // Package subagent gives an agent the tools that launch subagents. A call does not run the subagent: it writes the
-// subagent's conversation and its first turn, queued, and waits on that conversation, which the orchestrator starts
-// and runs as it runs any, and whose final answer comes back as the call's result.
+// subagent's conversation and its first turn, ready, and waits on that conversation, which the orchestrator runs as
+// it runs any, and whose final answer comes back as the call's result.
 package subagent
 
 import (
@@ -83,7 +83,7 @@ func (t *Tools) ToolList(context.Context) ([]*tools.Spec, error) {
 	return specs, nil
 }
 
-// Invoke queues the subagent of the kind whose tool was called, and waits on its conversation.
+// Invoke writes the subagent of the kind whose tool was called, and waits on its conversation.
 func (t *Tools) Invoke(ctx context.Context, caller tools.Caller, name string, arguments map[string]any) (tools.Result, error) {
 	if _, ok := Kinds[name]; !ok {
 		return tools.Result{}, fmt.Errorf("%q launches no subagent", name)
@@ -99,7 +99,7 @@ func (t *Tools) Invoke(ctx context.Context, caller tools.Caller, name string, ar
 	if item == "" {
 		return tools.Result{}, fmt.Errorf("a subagent is launched only by a call of a turn")
 	}
-	child, err := t.db.QueueSubagent(caller.ThreadID, item, c.Description, db.TurnRow{Input: c.Prompt, Agent: name})
+	child, err := t.db.WriteSubagent(caller.ThreadID, item, c.Description, db.TurnRow{Input: c.Prompt, Agent: name})
 	if err != nil {
 		return tools.Result{}, err
 	}
@@ -110,33 +110,18 @@ func (t *Tools) Invoke(ctx context.Context, caller tools.Caller, name string, ar
 	return tools.Result{Await: &tools.Await{By: tools.AwaitAgent, Request: request, Handle: child.ID}}, nil
 }
 
-// A Progress is where a subagent that a call launched stands.
-type Progress int
-
-const (
-	// Queued is a subagent whose turn waits to start.
-	Queued Progress = iota
-	// Running is a subagent whose turn has started and not ended.
-	Running
-	// Ended is a subagent whose turn ended: completed with a final answer, failed or stopped.
-	Ended
-)
-
-// Report is where the subagent the call launched stands, with its conversation, and once it ended the call completed
-// with its report: the subagent's final answer, or why it has none.
-func Report(store *db.DB, call db.ItemRow) (db.ItemRow, Progress, db.ThreadRow, error) {
+// Report says whether the subagent the call launched ended: its turn completed with a final answer, failed or was
+// stopped. Once it did, the call completes with its report: the subagent's final answer, or why it has none.
+func Report(store *db.DB, call db.ItemRow) (db.ItemRow, bool, error) {
 	child, err := store.ThreadState(call.Await.Handle)
 	if err != nil {
-		return db.ItemRow{}, 0, db.ThreadRow{}, fmt.Errorf("subagent: thread %s: %w", call.Await.Handle, err)
+		return db.ItemRow{}, false, fmt.Errorf("subagent: thread %s: %w", call.Await.Handle, err)
 	}
 	if _, active := child.ActiveTurn(); active {
-		return db.ItemRow{}, Running, child.Thread, nil
-	}
-	if len(child.QueuedTurns()) > 0 {
-		return db.ItemRow{}, Queued, child.Thread, nil
+		return db.ItemRow{}, false, nil
 	}
 	if child.Last == nil {
-		return db.ItemRow{}, 0, child.Thread, fmt.Errorf("subagent: thread %s has no turn", child.Thread.ID)
+		return db.ItemRow{}, false, fmt.Errorf("subagent: thread %s has no turn", child.Thread.ID)
 	}
 	ended := *child.Last
 	now := time.Now().UTC()
@@ -145,11 +130,11 @@ func Report(store *db.DB, call db.ItemRow) (db.ItemRow, Progress, db.ThreadRow, 
 	case db.TurnCompleted:
 		answer, err := store.FinalAnswer(child.Thread.ID, ended.ID)
 		if err != nil {
-			return db.ItemRow{}, 0, child.Thread, fmt.Errorf("subagent: %s completed turn %s without a final answer: %w", child.Thread.ID, ended.ID, err)
+			return db.ItemRow{}, false, fmt.Errorf("subagent: %s completed turn %s without a final answer: %w", child.Thread.ID, ended.ID, err)
 		}
 		result, _, err := db.ResultOf(tools.Result{Output: answer})
 		if err != nil {
-			return db.ItemRow{}, 0, child.Thread, err
+			return db.ItemRow{}, false, err
 		}
 		call.Status, call.Result = db.ItemCompleted, result
 	case db.TurnInterrupted:
@@ -157,5 +142,5 @@ func Report(store *db.DB, call db.ItemRow) (db.ItemRow, Progress, db.ThreadRow, 
 	default:
 		call.Status, call.Error = db.ItemFailed, "the subagent failed: "+ended.Error
 	}
-	return call, Ended, child.Thread, nil
+	return call, true, nil
 }

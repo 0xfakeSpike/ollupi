@@ -2766,7 +2766,6 @@
     "TurnStatus": {
       "type": "string",
       "enum": [
-        "queued",
         "ready",
         "inProgress",
         "waitingOnApproval",

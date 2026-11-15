@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"slices"
 	"time"
@@ -16,13 +17,17 @@ import (
 
 type ItemRow struct {
 	ID string `gorm:"primaryKey" json:"id"`
-	// items_compactions and items_carried serve RunItems; their conditions are compactedItem and carriedItem, word for word.
-	ThreadID string     `gorm:"not null;uniqueIndex:items_thread_seq,priority:1;index:items_compactions,priority:1,where:type = 'contextCompaction' AND status = 'completed';index:items_carried,priority:1,where:type = 'userMessage' OR (type = 'toolCall' AND (approval ->> '$.decision' = 'acceptForSession' OR (status = 'completed' AND (tool = 'load_tools' OR result -> '$.artifacts' IS NOT NULL))))" json:"-"`
+	// items_thread_order holds a thread's items in conversationOrder. items_compactions and items_carried serve RunItems;
+	// their conditions are compactedItem and carriedItem, word for word.
+	ThreadID string     `gorm:"not null;uniqueIndex:items_thread_seq,priority:1;index:items_thread_order,priority:1;index:items_compactions,priority:1,where:type = 'contextCompaction' AND status = 'completed';index:items_carried,priority:1,where:type = 'userMessage' OR (type = 'toolCall' AND (approval ->> '$.decision' = 'acceptForSession' OR (status = 'completed' AND (tool = 'load_tools' OR result -> '$.artifacts' IS NOT NULL))))" json:"-"`
 	Thread   *ThreadRow `gorm:"constraint:OnDelete:CASCADE" json:"-"`
 	// items_turn finds a turn's items by type and status: its open tool calls, its messages.
-	TurnID       string             `gorm:"not null;index:items_turn,priority:1" json:"turnId"`
-	Turn         *TurnRow           `gorm:"constraint:OnDelete:CASCADE" json:"-"`
-	Seq          int                `gorm:"not null;uniqueIndex:items_thread_seq,priority:2;index:items_turn,priority:4;index:items_compactions,priority:2;index:items_carried,priority:2" json:"seq"`
+	TurnID string   `gorm:"not null;index:items_turn,priority:1" json:"turnId"`
+	Turn   *TurnRow `gorm:"constraint:OnDelete:CASCADE" json:"-"`
+	// TurnSeq is the seq of the item's turn, which places it in the conversation before Seq does.
+	TurnSeq int `gorm:"not null;default:0;index:items_thread_order,priority:2;index:items_compactions,priority:2;index:items_carried,priority:2" json:"-"`
+	// Seq numbers the thread's items as they were written.
+	Seq          int                `gorm:"not null;uniqueIndex:items_thread_seq,priority:2;index:items_turn,priority:4;index:items_thread_order,priority:3;index:items_compactions,priority:3;index:items_carried,priority:3" json:"seq"`
 	Type         ItemType           `gorm:"not null;index:items_turn,priority:2" json:"type"`
 	Status       ItemStatus         `gorm:"not null;index:items_turn,priority:3" json:"status"`
 	CallID       string             `gorm:"not null;default:''" json:"callId,omitempty"`
@@ -186,9 +191,14 @@ func NewUserMessage(id, turnID, text string, attachments []Attachment, at time.T
 
 func (d *DB) HasImages(threadID string) (bool, error) {
 	var n int64
-	err := d.gorm.Model(&ItemRow{}).Where(`thread_id = ? AND type = 'userMessage'
-		AND seq > COALESCE((SELECT MAX(seq) FROM items WHERE thread_id = ? AND type = 'contextCompaction' AND status = 'completed'), 0)
-		AND EXISTS (SELECT 1 FROM json_each(items.attachments) WHERE json_extract(json_each.value, '$.kind') = 'image')`, threadID, threadID).Count(&n).Error
+	err := d.Tx(func(tx *DB) error {
+		from, err := tx.latestCompaction(threadID, math.MaxInt32)
+		if err != nil {
+			return err
+		}
+		return tx.gorm.Model(&ItemRow{}).Where(`thread_id = ? AND type = 'userMessage' AND (turn_seq, seq) > (?, ?)
+			AND EXISTS (SELECT 1 FROM json_each(items.attachments) WHERE json_extract(json_each.value, '$.kind') = 'image')`, threadID, from.TurnSeq, from.Seq).Count(&n).Error
+	})
 	return n > 0, err
 }
 
@@ -477,6 +487,14 @@ func (d *DB) saveItemOf(threadID string, it ItemRow) (ItemRow, bool, error) {
 		if it.Seq, err = d.nextItemSeq(threadID); err != nil {
 			return ItemRow{}, false, err
 		}
+		var turnSeq []int
+		if err := d.gorm.Model(&TurnRow{}).Where("id = ? AND thread_id = ?", it.TurnID, threadID).Pluck("seq", &turnSeq).Error; err != nil {
+			return ItemRow{}, false, err
+		}
+		if len(turnSeq) == 0 {
+			return ItemRow{}, false, fmt.Errorf("item %s belongs to turn %s, which thread %s does not have", it.ID, it.TurnID, threadID)
+		}
+		it.TurnSeq = turnSeq[0]
 	case err != nil:
 		return ItemRow{}, false, err
 	default:
@@ -490,7 +508,7 @@ func (d *DB) saveItemOf(threadID string, it ItemRow) (ItemRow, bool, error) {
 		if prev.ended() && !it.ended() {
 			return ItemRow{}, false, fmt.Errorf("item %s ended %s and cannot be %s again", it.ID, prev.Status, it.Status)
 		}
-		it.Seq = prev.Seq
+		it.Seq, it.TurnSeq = prev.Seq, prev.TurnSeq
 	}
 	it.ThreadID = threadID
 	it.StartedAt, it.CompletedAt = it.StartedAt.UTC(), nullTime(it.CompletedAt)

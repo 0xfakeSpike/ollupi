@@ -88,7 +88,7 @@ func (rt *Runtime) Run(ctx context.Context) (bool, db.Usage, error) {
 		attribute.String("ollupi.user.id", t.UserID), attribute.String("ollupi.thread.id", t.ID), attribute.String("ollupi.turn.id", rt.turn.ID),
 		attribute.Bool("ollupi.thread.subagent", t.ParentThreadID != ""),
 		attribute.String("gen_ai.request.model", rt.turn.Model.Name), attribute.String("ollupi.connection", rt.turn.Model.Connection))
-	_, wait := tracer.Start(ctx, "ollupi.turn.wait", attrs, trace.WithTimestamp(readySince(rt.turn, rt.items)))
+	_, wait := tracer.Start(ctx, "ollupi.turn.wait", attrs, trace.WithTimestamp(readySince(rt.turn, slices.Concat(rt.history, rt.items))))
 	wait.End()
 	runCtx, span := tracer.Start(ctx, "ollupi.turn.run", attrs)
 	defer span.End()
@@ -108,8 +108,9 @@ func (rt *Runtime) Run(ctx context.Context) (bool, db.Usage, error) {
 	return final, rt.usage, err
 }
 
-// readySince is when the turn last became ready to run: when it became its thread's current turn, or when the last of
-// its items, such as a decided approval or a subagent's answer, changed after that.
+// readySince is when the turn last became ready to run: when it was submitted or, behind another, when that one's
+// last item changed, or when the last of its own items, such as a decided approval or a subagent's answer, changed
+// after that. items are the conversation the turn runs on.
 func readySince(turn db.TurnRow, items []db.ItemRow) time.Time {
 	since := turn.StartedAt
 	for _, it := range items {
@@ -141,7 +142,7 @@ func (rt *Runtime) load() error {
 	if err != nil {
 		return fmt.Errorf("runtime: thread %s: %w", turn.ThreadID, err)
 	}
-	items, err := rt.DB.RunItems(thread.ID)
+	items, err := rt.DB.RunItems(thread.ID, turn.Seq)
 	if err != nil {
 		return fmt.Errorf("runtime: the items of thread %s: %w", thread.ID, err)
 	}

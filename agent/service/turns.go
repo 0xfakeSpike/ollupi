@@ -114,7 +114,7 @@ func (sv *Service) startTurn(threadID string, in Input, atts []db.Attachment) (d
 	if st.Thread.ParentThreadID != "" {
 		return db.TurnRow{}, ErrSubagentThread
 	}
-	if len(st.QueuedTurns()) >= maxQueuedTurns {
+	if len(st.Behind()) >= maxQueuedTurns {
 		return db.TurnRow{}, ErrQueueFull
 	}
 	model, err := sv.res.ConversationModel(st.Last, in.Connection)
@@ -135,37 +135,38 @@ func (sv *Service) startTurn(threadID string, in Input, atts []db.Attachment) (d
 }
 
 func (sv *Service) submit(t db.ThreadRow, turn db.TurnRow, model llm.Model) (db.TurnRow, error) {
-	t, turn, message, err := sv.record(t, turn, model)
+	t, turn, message, behind, err := sv.record(t, turn, model)
 	if err != nil {
 		return db.TurnRow{}, err
 	}
 	defer sv.o.Wake(t.ID)
-	if message != nil {
-		sv.ev.TurnStarted(t, turn)
-		sv.ev.Item(t, turn, *message, true)
-		sv.ev.Status(t.ID)
-	} else {
+	if behind {
 		slog.Info("turn queued", "thread", t.ID, "turn", turn.ID)
 		sv.ev.Emit(event.Event{Kind: event.TurnQueued, Thread: t, Turn: turn})
+	} else {
+		sv.ev.TurnStarted(t, turn)
 	}
+	sv.ev.Item(t, turn, message, true)
+	sv.ev.Status(t.ID)
 	return turn, nil
 }
 
-// record writes the turn, unless the conversation's workspace cannot take it or is moving: the move lock is held
-// while the turn is written, so that a move that starts sees it, and no longer.
-func (sv *Service) record(t db.ThreadRow, turn db.TurnRow, model llm.Model) (db.ThreadRow, db.TurnRow, *db.ItemRow, error) {
+// record writes the turn with its message, unless the conversation's workspace cannot take it or is moving: the move
+// lock is held while the turn is written, so that a move that starts sees it, and no longer. It reports whether the
+// turn waits behind another.
+func (sv *Service) record(t db.ThreadRow, turn db.TurnRow, model llm.Model) (db.ThreadRow, db.TurnRow, db.ItemRow, bool, error) {
 	if t.ParentThreadID == "" && t.WorkspaceID != "" {
 		w, err := sv.workspaceOf(t.WorkspaceID)
 		if err != nil {
-			return db.ThreadRow{}, db.TurnRow{}, nil, err
+			return db.ThreadRow{}, db.TurnRow{}, db.ItemRow{}, false, err
 		}
 		if err := usable(w); err != nil {
-			return db.ThreadRow{}, db.TurnRow{}, nil, err
+			return db.ThreadRow{}, db.TurnRow{}, db.ItemRow{}, false, err
 		}
 		sv.moveMu.Lock()
 		defer sv.moveMu.Unlock()
 		if sv.moving[w.ID] {
-			return db.ThreadRow{}, db.TurnRow{}, nil, fmt.Errorf("service: workspace %s is moving: %w", w.Name, ErrWorkspaceBusy)
+			return db.ThreadRow{}, db.TurnRow{}, db.ItemRow{}, false, fmt.Errorf("service: workspace %s is moving: %w", w.Name, ErrWorkspaceBusy)
 		}
 	}
 	now := time.Now().UTC()

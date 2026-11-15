@@ -264,7 +264,7 @@ func TestTurnsFromBeforeRolesTakeTheRoleOfTheirThread(t *testing.T) {
 	create := func(rows ...any) {
 		t.Helper()
 		for _, row := range rows {
-			if err := old.Omit("Agent", "BackgroundID").Create(row).Error; err != nil {
+			if err := old.Omit("Agent", "BackgroundID", "TurnSeq").Create(row).Error; err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -313,7 +313,7 @@ func TestAWaitFromBeforeHandlesKeepsItsSubagentThread(t *testing.T) {
 		&TurnRow{ID: "asked", ThreadID: "main", Seq: 1, Status: TurnWaitingOnAgent, Model: llm.Model{Name: "m", Connection: "c"}, Agent: "full-main-agent", CreatedAt: at, StartedAt: at},
 		&ItemRow{ID: "call", ThreadID: "main", TurnID: "asked", Seq: 1, Type: ItemToolCall, Status: ItemInProgress, Tool: "Agent", StartedAt: at},
 	} {
-		if err := old.Omit("BackgroundID").Create(row).Error; err != nil {
+		if err := old.Omit("BackgroundID", "TurnSeq").Create(row).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -330,5 +330,61 @@ func TestAWaitFromBeforeHandlesKeepsItsSubagentThread(t *testing.T) {
 	call, err := db.Item("call")
 	if err != nil || call.Await == nil || call.Await.Handle != "child" || call.Await.By != "agent" || string(call.Await.Request) != `{"prompt":"p"}` {
 		t.Errorf("the wait after the step: %+v (%v)", call.Await, err)
+	}
+}
+
+func TestAQueuedTurnFromBeforeWaitsReadyWithItsMessage(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, "data", "ollupi.sqlite")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	all, err := shardSteps()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := rawDB(t, path)
+	if err := sqlitedb.Migrate(old, all[:13], 0); err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range []string{
+		`INSERT INTO threads(id, user_id, title, created_at, updated_at) VALUES ('t', 'default', 't', '2026-11-01 08:00:00+00:00', '2026-11-01 08:00:00+00:00')`,
+		`INSERT INTO turns(id, thread_id, seq, status, model, input_tokens, cached_input_tokens, cache_write_input_tokens, output_tokens, created_at, started_at)
+			VALUES ('running', 't', 1, 'inProgress', '{"name":"m","connection":"c"}', 0, 0, 0, 0, '2026-11-01 08:00:00+00:00', '2026-11-01 08:00:00+00:00')`,
+		`INSERT INTO items(id, thread_id, turn_id, seq, type, status, text, started_at) VALUES ('ask', 't', 'running', 1, 'userMessage', 'completed', 'one', '2026-11-01 08:00:00+00:00')`,
+		`INSERT INTO turns(id, thread_id, seq, status, model, input_tokens, cached_input_tokens, cache_write_input_tokens, output_tokens, created_at, started_at, input)
+			VALUES ('waiting', 't', 2, 'queued', '{"name":"m","connection":"c"}', 0, 0, 0, 0, '2026-11-01 08:01:00+00:00', '2026-11-01 08:01:00+00:00', 'two')`,
+		`INSERT INTO turns(id, thread_id, seq, status, model, input_tokens, cached_input_tokens, cache_write_input_tokens, output_tokens, created_at, started_at, input)
+			VALUES ('last', 't', 3, 'queued', '{"name":"m","connection":"c"}', 0, 0, 0, 0, '2026-11-01 08:02:00+00:00', '2026-11-01 08:02:00+00:00', 'three')`,
+	} {
+		if err := old.Exec(stmt).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	closeRaw(t, old)
+
+	db, err := Open(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	view, err := db.Thread("t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, it := range view.Items {
+		got = append(got, fmt.Sprintf("%s/%d/%s", it.TurnID, it.TurnSeq, it.Text))
+	}
+	if want := []string{"running/1/one", "waiting/2/two", "last/3/three"}; !slices.Equal(got, want) {
+		t.Errorf("items after the step %v, want %v", got, want)
+	}
+	for _, turn := range view.Turns[1:] {
+		if turn.Status != TurnReady {
+			t.Errorf("turn %s is %s after the step, want ready", turn.ID, turn.Status)
+		}
+	}
+	if current, err := db.ActiveTurn("t"); err != nil || current.ID != "running" {
+		t.Errorf("current turn %s (%v), want the one in progress", current.ID, err)
 	}
 }
