@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
+	"sync"
 	"testing"
 
 	"github.com/0xfakeSpike/ollupi/repo/sqlitedb"
@@ -174,5 +176,57 @@ func TestAShardJustAddedTakesASharePerhapsLargerButNotAll(t *testing.T) {
 	placed := assignMany(t, c, "u", 100)
 	if placed["new"] == 0 || placed["new"] >= 50 {
 		t.Errorf("the new shard took %d of 100 new users: %v", placed["new"], placed)
+	}
+}
+
+// Shards and routers open one catalog file each from a process of their own, and may do so at once.
+func TestProcessesShareACatalog(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "catalog", "catalog.sqlite")
+	// The file is there before they start: SQLite may refuse a second process that turns a new file to WAL at once.
+	first, err := sqlitedb.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlitedb.Close(first)
+	const processes = 6
+	catalogs := make([]*Catalog, processes)
+	var wg sync.WaitGroup
+	errs := make([]error, processes)
+	for i := range processes {
+		wg.Go(func() { catalogs[i], errs[i] = Open(path) })
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("process %d opening the catalog with the others: %v", i, err)
+		}
+		t.Cleanup(func() { catalogs[i].Close() })
+	}
+	for _, shard := range []string{"s1", "s2", "s3"} {
+		if err := catalogs[0].Publish(t.Context(), shard, "http://"+shard, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	shards := make([][]string, processes)
+	for i, c := range catalogs {
+		wg.Go(func() {
+			for u := range 20 {
+				shard, err := c.Assign(t.Context(), fmt.Sprint("user", u))
+				if err != nil {
+					errs[i] = err
+					return
+				}
+				shards[i] = append(shards[i], shard)
+			}
+		})
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("process %d placing users with the others: %v", i, err)
+		}
+		if !slices.Equal(shards[i], shards[0]) {
+			t.Errorf("process %d placed users on %v, process 0 on %v", i, shards[i], shards[0])
+		}
 	}
 }
