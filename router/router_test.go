@@ -29,7 +29,7 @@ type shard struct {
 	stop   context.CancelFunc
 }
 
-func startShard(t *testing.T, id, home string, authenticate func(string) (string, bool), placements gateway.Placements) *shard {
+func startShard(t *testing.T, id, home string, authenticate gateway.Authenticate, placements gateway.Placements) *shard {
 	t.Helper()
 	store, err := db.Open(home)
 	if err != nil {
@@ -129,10 +129,7 @@ func TestTheRouterSendsEachUserToTheirShard(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer catalog.Close()
-	authenticate := func(token string) (string, bool) {
-		user, ok := map[string]string{"token-a": "a", "token-b": "b"}[token]
-		return user, ok
-	}
+	authenticate := tokens(map[string]string{"token-a": "a", "token-b": "b"})
 	homes := map[string]string{"one": t.TempDir(), "two": t.TempDir()}
 	shards := map[string]*shard{}
 	for id, home := range homes {
@@ -206,7 +203,7 @@ func TestTheRouterDoesNotWaitOnAShardThatHangs(t *testing.T) {
 	hung := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))
 	defer hung.Close()
 	defer close(release)
-	locator, err := NewLocator(func(string) (string, bool) { return "a", true }, oneShard{hung.URL})
+	locator, err := NewLocator(func(context.Context, string) (string, error) { return "a", nil }, oneShard{hung.URL})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +232,12 @@ func (d failing) Assign(_ context.Context, user string) (string, error) {
 
 // A user, once placed, stays on their shard, so the locator finds them again without the directory.
 func TestTheLocatorRemembersWhereUsersAre(t *testing.T) {
-	locator, err := NewLocator(func(token string) (string, bool) { return token, token != "" }, failing{asked: map[string]bool{}})
+	locator, err := NewLocator(func(_ context.Context, token string) (string, error) {
+		if token == "" {
+			return "", gateway.ErrUnknownToken
+		}
+		return token, nil
+	}, failing{asked: map[string]bool{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,13 +246,13 @@ func TestTheLocatorRemembersWhereUsersAre(t *testing.T) {
 			t.Errorf("a on %q: %v", shard, err)
 		}
 	}
-	if _, _, err := locator.Locate(t.Context(), http.Header{}); !errors.Is(err, ErrUnknownToken) {
+	if _, _, err := locator.Locate(t.Context(), http.Header{}); !errors.Is(err, gateway.ErrUnknownToken) {
 		t.Errorf("no token: %v", err)
 	}
 }
 
 func TestTheRoutersHealthCheckNeedsNoToken(t *testing.T) {
-	locator, err := NewLocator(func(string) (string, bool) { return "", false }, oneShard{})
+	locator, err := NewLocator(tokens(nil), oneShard{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,5 +260,16 @@ func TestTheRoutersHealthCheckNeedsNoToken(t *testing.T) {
 	NewRouter(locator).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "http://10.0.0.7"+gateway.HealthPath, nil))
 	if w.Code != http.StatusOK {
 		t.Errorf("the router answered its health check %d", w.Code)
+	}
+}
+
+// tokens authenticates the tokens of users, one each.
+func tokens(users map[string]string) gateway.Authenticate {
+	return func(_ context.Context, token string) (string, error) {
+		user, ok := users[token]
+		if !ok {
+			return "", gateway.ErrUnknownToken
+		}
+		return user, nil
 	}
 }

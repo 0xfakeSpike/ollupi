@@ -380,8 +380,11 @@ func answerStats() {
 }
 
 // benchUser takes each client's token to be its user.
-func benchUser(token string) (string, bool) {
-	return token, strings.HasPrefix(token, "user")
+func benchUser(_ context.Context, token string) (string, error) {
+	if !strings.HasPrefix(token, "user") {
+		return "", gateway.ErrUnknownToken
+	}
+	return token, nil
 }
 
 // quiet keeps a process the experiment starts from logging each connection that comes and goes, by the thousand.

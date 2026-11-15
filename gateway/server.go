@@ -46,7 +46,7 @@ type Server struct {
 	memory       *memory.Manager
 	jobs         *cron.Jobs
 	mcp          *mcp.Users
-	authenticate func(token string) (string, bool)
+	authenticate Authenticate
 	shard        string
 	placements   Placements
 	load         Load
@@ -72,7 +72,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.served.Add(1)
 	defer s.served.Done()
 	user, status, why := s.authorize(r)
-	if status != 0 {
+	switch status {
+	case 0:
+	case http.StatusServiceUnavailable:
+		s.hub.Refuse(w, why)
+		return
+	default:
 		http.Error(w, why, status)
 		return
 	}

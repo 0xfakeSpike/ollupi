@@ -44,7 +44,7 @@ func TestAShardServesOnlyItsOwnUsers(t *testing.T) {
 	defer store.Close()
 	where := &placements{on: map[string]string{"a": "one", "b": "two"}}
 	s, err := NewServer(service.New(service.Config{DB: store}), Options{
-		DB: store, Authenticate: func(token string) (string, bool) { return token, token != "" }, Shard: "one", Placements: where,
+		DB: store, Authenticate: tokenIsUser, Shard: "one", Placements: where,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -142,7 +142,7 @@ func TestAShardReportsItsLoadWhileItServes(t *testing.T) {
 	defer store.Close()
 	got := &reports{last: map[string]int64{}}
 	s, err := NewServer(service.New(service.Config{DB: store}), Options{
-		DB: store, Authenticate: func(token string) (string, bool) { return token, token != "" },
+		DB: store, Authenticate: tokenIsUser,
 		Shard: "one", Placements: &placements{on: map[string]string{"a": "one", "b": "one"}},
 		Load: Load{Reporter: got, Measure: LoadConnections, Every: 20 * time.Millisecond},
 	})
@@ -205,4 +205,12 @@ func TestALoadNeedsAShardAndAKnownMeasure(t *testing.T) {
 	if s.load.Measure != LoadActiveUsers || s.load.Every != time.Minute || s.load.Window != 7*24*time.Hour {
 		t.Errorf("the defaults: %+v", s.load)
 	}
+}
+
+// tokenIsUser takes a token to be its user's name.
+func tokenIsUser(_ context.Context, token string) (string, error) {
+	if token == "" {
+		return "", ErrUnknownToken
+	}
+	return token, nil
 }
