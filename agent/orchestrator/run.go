@@ -106,12 +106,21 @@ func (o *Orchestrator) afterRun(threadID string, sl *slot, final bool, runErr er
 		turn.Status, turn.Error = db.TurnFailed, runErr.Error()
 		slog.Warn("turn failed", "thread", threadID, "turn", turn.ID, "err", runErr)
 	case final:
-		more, err := o.cfg.DB.InputAfterAnswer(turn.ID)
+		next, err := o.cfg.DB.AfterAnswer(turn.ID)
 		if err != nil {
 			o.halt(threadID, err)
 			return
 		}
-		if !more && st.Thread.ParentThreadID != "" {
+		if next != db.TurnCompleted {
+			if next == db.TurnWaitingOnAgent {
+				slog.Info("turn waiting", "thread", threadID, "turn", turn.ID, "on", "subagents")
+				o.ev.Status(threadID)
+			}
+			o.reconcile(threadID)
+			return
+		}
+		more := false
+		if st.Thread.ParentThreadID != "" {
 			if more, err = o.waitBeforeReport(st.Thread, turn); err != nil {
 				o.halt(threadID, err)
 				return
@@ -129,14 +138,11 @@ func (o *Orchestrator) afterRun(threadID string, sl *slot, final bool, runErr er
 		o.halt(threadID, err)
 		return
 	}
-	o.announceSubagents(st.AgentCalls())
 	o.reconcile(threadID)
 	if n := len(st.PendingRequests()); n > 0 {
 		slog.Info("turn waiting", "thread", threadID, "turn", turn.ID, "on", "user", "requests", n)
 		o.ev.Requests(st)
 		o.ev.Status(threadID)
-	} else if n := len(st.AgentCalls()); n > 0 {
-		slog.Info("turn waiting", "thread", threadID, "turn", turn.ID, "on", "subagents", "subagents", n)
 	}
 }
 
@@ -146,13 +152,17 @@ func (o *Orchestrator) endTurn(turn db.TurnRow) {
 		o.ev.Fault(turn.ThreadID, turn.ID, fmt.Errorf("the turn could not be ended: %w", err))
 		return
 	}
-	thread, ended, closed, err := o.cfg.DB.EndTurn(turn.ThreadID, turn)
+	thread, ended, closed, report, err := o.cfg.DB.EndTurn(turn.ThreadID, turn)
 	if err != nil {
 		o.ev.Fault(turn.ThreadID, turn.ID, fmt.Errorf("the end of the turn could not be recorded: %w", err))
 		return
 	}
 	for _, it := range closed {
 		o.ev.Item(thread, ended, it, false)
+	}
+	if report != nil {
+		o.ev.Item(report.Thread, report.Turn, report.Item, true)
+		o.ev.Status(report.Thread.ID)
 	}
 	attrs := []any{"thread", thread.ID, "turn", ended.ID, "status", ended.Status, "input", ended.Usage.InputTokens, "output", ended.Usage.OutputTokens}
 	if ended.CompletedAt != nil {
@@ -165,8 +175,13 @@ func (o *Orchestrator) endTurn(turn db.TurnRow) {
 		o.ev.TurnStarted(thread, behind[0])
 	}
 	o.ev.Status(turn.ThreadID)
-	for _, call := range st.AgentCalls() {
-		o.stopSubagent(call.Await.Handle)
+	// A turn ends only once its subagents did, but one that fails or is stopped takes those still running with it.
+	running, err := o.cfg.DB.RunningSubagents(ended.ID)
+	if err != nil {
+		o.ev.Fault(turn.ThreadID, turn.ID, fmt.Errorf("the subagents of the turn could not be read to stop them: %w", err))
+	}
+	for _, child := range running {
+		o.stopSubagent(child)
 	}
 	o.reconcile(turn.ThreadID)
 	if st.Thread.ParentThreadID != "" {

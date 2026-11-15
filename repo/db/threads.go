@@ -362,16 +362,6 @@ func (s ThreadState) PendingRequests() []ItemRow {
 	return out
 }
 
-func (s ThreadState) AgentCalls() []ItemRow {
-	var out []ItemRow
-	for _, it := range s.OpenCalls {
-		if it.waitsOnAgent() {
-			out = append(out, it)
-		}
-	}
-	return out
-}
-
 // BackgroundWaits are the open calls that wait for background calls to end.
 func (s ThreadState) BackgroundWaits() []ItemRow {
 	var out []ItemRow

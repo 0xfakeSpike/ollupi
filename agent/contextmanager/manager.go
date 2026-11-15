@@ -250,6 +250,15 @@ func (m *Manager) transcript(obs *observations, items []db.ItemRow, limit int, c
 			header := fmt.Sprintf("[background call %s of %s ended: %s]\n", it.BackgroundID, it.Tool, it.Text)
 			out = append(out, llm.ChatMessage{Role: llm.RoleUser, Content: header + content})
 			i++
+		case it.Type == db.ItemAgentReport:
+			// The report of a subagent this turn launched, which came back as it ended: data too, the subagent's words.
+			content, err := obs.callResult(&items[i], m.observationBudget(1, maxObservationTokens))
+			if err != nil {
+				return nil, 0, err
+			}
+			header := fmt.Sprintf("[report of the %s launched by call %s, %q: %s]\n", it.Tool, it.CallID, it.Text, it.Status)
+			out = append(out, llm.ChatMessage{Role: llm.RoleUser, Content: header + content})
+			i++
 		case it.Type == db.ItemMemoryContext || it.Type == db.ItemContextCompaction:
 
 			i++

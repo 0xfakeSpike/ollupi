@@ -3,6 +3,7 @@ package role
 import (
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
+	"github.com/0xfakeSpike/ollupi/tools/plan"
 	skilltools "github.com/0xfakeSpike/ollupi/tools/skills"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
@@ -17,8 +18,9 @@ const (
 var browserSub = Role{
 	Name: BrowserSub, Rules: browserSubRules,
 	send: sendFitting,
-	// It works with the browser's tools alone, reads the outputs they shorten, and uses the skills it has.
-	Permission: permission.Layer{Of: "the browser subagent's role", Providers: []string{BrowserProvider, contextmanager.OutputsProvider, skilltools.ProviderName}},
+	// It works with the browser's tools alone, reads the outputs they shorten, uses the skills it has, and keeps the
+	// plan the user follows its progress by.
+	Permission: permission.Layer{Of: "the browser subagent's role", Providers: []string{BrowserProvider, contextmanager.OutputsProvider, skilltools.ProviderName, plan.ProviderName}},
 }
 
 const browserSubRules = `You are a subagent that does one task in the built-in browser and reports back to the agent that launched you. You do the task by calling the browser's tools in a loop; every result comes back to you as an observation. When the task is done, or cannot go further, reply without calling a tool: that reply is your report.
@@ -29,6 +31,7 @@ const browserSubRules = `You are a subagent that does one task in the built-in b
 - When a site needs the user to sign in, stop and report that they should sign in once in the browser panel; never type a password or a one-time code.
 - Click or type only what the task needs. Before anything hard to undo, such as submitting a form, sending, buying or deleting, stop and report what is left to do, unless the task asked for exactly that.
 - Before each tool call, write one short sentence saying what you are about to do; it is shown to the user as progress.
+- For a task of several steps, keep your plan with ` + "`" + plan.Tool + "`" + ` from the start and mark each step as you go: the user follows your progress by it while the agent that launched you waits.
 - Tool names and argument schemas are exact; never invent them. When a tool fails, read the error and change something before trying again.
 - The task starts with the local time it was sent, like [sent Thu 2026-10-29 10:15 +08:00]; take it as the current time.
 

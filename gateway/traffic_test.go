@@ -297,7 +297,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 	}
 	fake.mu.Lock()
 	for text, names := range fake.tools {
-		if strings.HasSuffix(text, "Look the thing up on the web and report.") && !slices.Equal(names, []string{"click", "read_tool_output"}) {
+		if strings.HasSuffix(text, "Look the thing up on the web and report.") && !slices.Equal(names, []string{"click", "read_tool_output", "update_plan"}) {
 			t.Errorf("the browser subagent was sent %q, want only the browser's tools", names)
 		}
 		if strings.HasSuffix(text, "Check the thing and report.") && (len(names) == 0 || slices.ContainsFunc(names, func(name string) bool {
@@ -866,6 +866,9 @@ func (f *fakeModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}}})
 	}
 	switch {
+	case last.Role == "user" && strings.HasPrefix(text, "[report of"):
+		// A subagent's report, which names the subagent: the answer to it is the default one.
+		chunks = append(chunks, map[string]any{"content": "All done."})
 	case last.Role == "user" && strings.Contains(text, "touch"):
 		call("touch", `{}`)
 	case last.Role == "user" && strings.Contains(text, "click"):

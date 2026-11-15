@@ -62,7 +62,7 @@ func (o *Outputs) Invoke(ctx context.Context, caller tools.Caller, _ string, arg
 		return tools.Result{}, fmt.Errorf("offset must be at least 0 and length between 1 and %d", maxReadRunes)
 	}
 	it, err := o.db.Item(id)
-	if errors.Is(err, db.ErrNotFound) || err == nil && (it.ThreadID != caller.ThreadID || !it.IsCall() && it.Type != db.ItemBackgroundResult || it.Result == nil) {
+	if errors.Is(err, db.ErrNotFound) || err == nil && (it.ThreadID != caller.ThreadID || !it.IsCall() && it.Type != db.ItemBackgroundResult && it.Type != db.ItemAgentReport || it.Result == nil) {
 		return tools.Result{}, fmt.Errorf("this conversation has no tool output %q", id)
 	}
 	if err != nil {

@@ -209,7 +209,7 @@ func TestATurnBehindAnotherWaitsWithItsMessage(t *testing.T) {
 		t.Fatalf("the first turn's run reads %v, with the message of the turn behind it", got)
 	}
 	first.Status = TurnCompleted
-	if _, _, _, err := db.EndTurn("t", first); err != nil {
+	if _, _, _, _, err := db.EndTurn("t", first); err != nil {
 		t.Fatal(err)
 	}
 	if current, err := db.ActiveTurn("t"); err != nil || current.ID != second.ID {

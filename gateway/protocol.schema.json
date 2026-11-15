@@ -273,7 +273,6 @@
       "type": "string",
       "enum": [
         "user",
-        "agent",
         "background"
       ]
     },
@@ -1283,7 +1282,8 @@
         "contextCompaction",
         "memoryContext",
         "error",
-        "backgroundResult"
+        "backgroundResult",
+        "agentReport"
       ]
     },
     "MCPServerListResult": {

@@ -162,7 +162,7 @@ func TestABatchThatCrashesIsPutOff(t *testing.T) {
 		t.Fatal(err)
 	}
 	turn.Status = db.TurnCompleted
-	if _, _, _, err := store.EndTurn("t", turn); err != nil {
+	if _, _, _, _, err := store.EndTurn("t", turn); err != nil {
 		t.Fatal(err)
 	}
 	m, err := New(store, crashingClient{}, Options{Model: llm.Model{Name: "m", Connection: "c"}, Generate: true})

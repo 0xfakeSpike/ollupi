@@ -77,7 +77,7 @@ func TestAThreadIsUnreadFromATurnsEndUntilMarkedRead(t *testing.T) {
 			t.Fatal(err)
 		}
 		started.Status = TurnCompleted
-		ended, _, _, err := db.EndTurn("t", started)
+		ended, _, _, _, err := db.EndTurn("t", started)
 		if err != nil {
 			t.Fatal(err)
 		}

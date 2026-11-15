@@ -108,12 +108,11 @@ func (d *DB) ThreadsWaitingOnUser(user string) ([]string, error) {
 	return ids, err
 }
 
-// StrandedThreads lists the threads a stopped process may have left without a way forward: a turn it was running,
-// a call awaiting a subagent that may have ended unreported, or a call awaiting background calls that ended as it
-// stopped.
+// StrandedThreads lists the threads a stopped process may have left without a way forward: a turn it was running, or
+// a call awaiting background calls that ended as it stopped. A subagent reports as its turn ends, in the same write.
 func (d *DB) StrandedThreads() ([]string, error) {
 	var ids []string
-	err := d.gorm.Raw(`SELECT DISTINCT thread_id FROM turns WHERE status IN ('inProgress', 'waitingOnAgent', 'waitingOnBackground')`).Scan(&ids).Error
+	err := d.gorm.Raw(`SELECT DISTINCT thread_id FROM turns WHERE status IN ('inProgress', 'waitingOnBackground')`).Scan(&ids).Error
 	return ids, err
 }
 
@@ -155,7 +154,8 @@ func (d *DB) settleStatus(turnID string, from TurnStatus) (TurnStatus, error) {
 }
 
 // waitingOn is the status of a turn out of its slot with these open calls: an approval or an answer to wait for
-// comes first, since only a person can give it; then subagents; with nothing awaited, the turn is ready.
+// comes first, since only a person can give it; then background calls; with nothing awaited, the turn is ready. A turn
+// waits on its subagents only once it answered (AfterAnswer), since they come back as items, not as calls.
 func waitingOn(open []ItemRow) TurnStatus {
 	status := TurnReady
 	for _, it := range open {
@@ -164,8 +164,6 @@ func waitingOn(open []ItemRow) TurnStatus {
 			return TurnWaitingOnApproval
 		case it.WaitsOnUser():
 			status = TurnWaitingOnUserInput
-		case it.waitsOnAgent() && status == TurnReady:
-			status = TurnWaitingOnAgent
 		case it.waitsOnBackground() && status == TurnReady:
 			status = TurnWaitingOnBackground
 		}
@@ -289,9 +287,12 @@ func (d *DB) AddUsage(threadID, turnID string, u Usage) error {
 	})
 }
 
-func (d *DB) EndTurn(threadID string, turn TurnRow) (ThreadRow, TurnRow, []ItemRow, error) {
+// EndTurn ends the thread's current turn: its items not finished fail, and a subagent's report comes back to the turn
+// that launched it, which it returns.
+func (d *DB) EndTurn(threadID string, turn TurnRow) (ThreadRow, TurnRow, []ItemRow, *SubagentReport, error) {
 	var thread ThreadRow
 	var closed []ItemRow
+	var report *SubagentReport
 	err := d.Tx(func(tx *DB) error {
 		active, err := tx.ActiveTurn(threadID)
 		if errors.Is(err, ErrNotFound) || (err == nil && active.ID != turn.ID) {
@@ -329,12 +330,41 @@ func (d *DB) EndTurn(threadID string, turn TurnRow) (ThreadRow, TurnRow, []ItemR
 		if err := checkOne(tx.gorm.Model(&ThreadRow{}).Where("id = ?", threadID).Updates(map[string]any{"updated_at": now, "replied_at": now})); err != nil {
 			return fmt.Errorf("thread %s: %w", threadID, err)
 		}
-		return nil
+		report, err = tx.reportToParent(thread, turn)
+		return err
 	})
 	if err != nil {
-		return ThreadRow{}, TurnRow{}, nil, fmt.Errorf("storage: end turn: %w", err)
+		return ThreadRow{}, TurnRow{}, nil, nil, fmt.Errorf("storage: end turn: %w", err)
 	}
-	return thread, turn, closed, nil
+	return thread, turn, closed, report, nil
+}
+
+// AfterAnswer settles the turn in progress whose run gave its final answer. Input that came after the answer makes it
+// ready, to answer that too; subagents it launched that still run make it wait on them, since a turn ends only once
+// its subagents reported. Otherwise it returns TurnCompleted, for the caller to end the turn.
+func (d *DB) AfterAnswer(turnID string) (TurnStatus, error) {
+	next := TurnCompleted
+	err := d.Tx(func(tx *DB) error {
+		more, err := tx.InputAfterAnswer(turnID)
+		if err != nil {
+			return err
+		}
+		if more {
+			next = TurnReady
+		} else if running, err := tx.RunningSubagents(turnID); err != nil {
+			return err
+		} else if len(running) > 0 {
+			next = TurnWaitingOnAgent
+		}
+		if next == TurnCompleted {
+			return nil
+		}
+		return checkOne(tx.gorm.Model(&TurnRow{}).Where("id = ? AND status = ?", turnID, TurnInProgress).Update("status", next))
+	})
+	if err != nil {
+		return "", fmt.Errorf("storage: settle the answer of turn %s: %w", turnID, err)
+	}
+	return next, nil
 }
 
 func (d *DB) FinalAnswer(threadID, turnID string) (string, error) {
@@ -401,6 +431,6 @@ func (d *DB) TurnItems(turnID string) ([]ItemRow, error) {
 
 func (d *DB) InputAfterAnswer(turnID string) (bool, error) {
 	var n int64
-	err := d.gorm.Model(&ItemRow{}).Where("turn_id = ? AND type IN ('userMessage', 'backgroundResult') AND seq > (SELECT COALESCE(MAX(seq), 0) FROM items WHERE turn_id = ? AND type = 'agentMessage' AND status = 'completed')", turnID, turnID).Count(&n).Error
+	err := d.gorm.Model(&ItemRow{}).Where("turn_id = ? AND type IN ('userMessage', 'backgroundResult', 'agentReport') AND seq > (SELECT COALESCE(MAX(seq), 0) FROM items WHERE turn_id = ? AND type = 'agentMessage' AND status = 'completed')", turnID, turnID).Count(&n).Error
 	return n > 0, err
 }
