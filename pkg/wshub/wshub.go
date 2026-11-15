@@ -96,7 +96,7 @@ func (h *Hub[T]) Serve(ctx context.Context, key string, ws *websocket.Conn, valu
 	ctx, cancel := context.WithCancel(ctx)
 	stop := context.AfterFunc(ctx, func() { ws.Close(websocket.StatusGoingAway, "server shutting down") })
 	var alive sync.WaitGroup
-	alive.Go(func() { h.keepAlive(ctx, ws) })
+	alive.Go(func() { h.keepAlive(ctx, key, ws) })
 
 	err := serve(ctx)
 	stopping := ctx.Err() != nil
@@ -105,10 +105,10 @@ func (h *Hub[T]) Serve(ctx context.Context, key string, ws *websocket.Conn, valu
 	alive.Wait()
 	switch status := websocket.CloseStatus(err); {
 	case status == websocket.StatusNormalClosure || status == websocket.StatusGoingAway || status == StatusReplaced || stopping:
-		slog.Info("client disconnected")
+		slog.Info("client disconnected", "key", key)
 		ws.Close(websocket.StatusNormalClosure, "")
 	default:
-		slog.Warn("client connection failed", "err", err)
+		slog.Warn("client connection failed", "key", key, "err", err)
 		ws.Close(websocket.StatusInternalError, "connection error")
 	}
 }
@@ -144,7 +144,7 @@ func (h *Hub[T]) add(key string, e *entry[T]) {
 	h.held[key] = held
 	h.mu.Unlock()
 	if oldest != nil {
-		slog.Info("client replaced by a newer connection")
+		slog.Info("client replaced by a newer connection", "key", key)
 		go oldest.ws.Close(StatusReplaced, "replaced by a newer connection")
 	}
 }
@@ -162,7 +162,7 @@ func (h *Hub[T]) remove(key string, e *entry[T]) {
 
 // keepAlive pings the peer until ctx ends, and drops the connection without a closing handshake, which a peer that
 // does not answer would not finish, once it misses a pong.
-func (h *Hub[T]) keepAlive(ctx context.Context, ws *websocket.Conn) {
+func (h *Hub[T]) keepAlive(ctx context.Context, key string, ws *websocket.Conn) {
 	tick := time.NewTicker(h.opts.PingEvery)
 	defer tick.Stop()
 	for {
@@ -176,7 +176,7 @@ func (h *Hub[T]) keepAlive(ctx context.Context, ws *websocket.Conn) {
 		cancel()
 		if err != nil {
 			if ctx.Err() == nil {
-				slog.Info("client stopped answering pings; connection dropped", "err", err)
+				slog.Info("client stopped answering pings; connection dropped", "key", key, "err", err)
 				ws.CloseNow()
 			}
 			return
