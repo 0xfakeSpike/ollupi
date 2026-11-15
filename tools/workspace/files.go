@@ -125,7 +125,7 @@ func (r *Provider) change(ctx context.Context, caller tools.Caller, args map[str
 	case st.Size() > maxFileBytes:
 		return dirs{}, fileChange{}, fmt.Errorf("workspace: %s has %d bytes; files over %d bytes are not edited here", c.rel, st.Size(), maxFileBytes)
 	default:
-		body, err := sandbox.ReadFile(ctx, d.box, abs)
+		body, err := sandbox.ReadFile(ctx, d.box, abs, maxFileBytes)
 		if err != nil {
 			return dirs{}, fileChange{}, err
 		}

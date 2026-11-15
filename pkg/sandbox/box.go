@@ -61,14 +61,21 @@ type Process interface {
 	io.ReadWriteCloser
 }
 
-// ReadFile reads a whole file from the box.
-func ReadFile(ctx context.Context, b Box, path string) ([]byte, error) {
+// ReadFile reads a whole file of at most limit bytes from the box; a larger one is refused.
+func ReadFile(ctx context.Context, b Box, path string, limit int64) ([]byte, error) {
 	f, err := b.Open(ctx, path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	return io.ReadAll(f)
+	body, err := io.ReadAll(io.LimitReader(f, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(body)) > limit {
+		return nil, fmt.Errorf("sandbox: %s has more than %d bytes", path, limit)
+	}
+	return body, nil
 }
 
 func (s *Sandbox) Transport() http.RoundTripper { return http.DefaultTransport }

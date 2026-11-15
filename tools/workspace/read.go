@@ -412,6 +412,9 @@ func grep(ctx context.Context, d dirs, args map[string]any) (GrepOutput, error) 
 		return GrepOutput{}, fmt.Errorf("workspace: %w", err)
 	}
 	if !st.IsDir() {
+		if !st.Mode().IsRegular() {
+			return GrepOutput{}, fmt.Errorf("workspace: %s is not a regular file", d.display(path))
+		}
 		if err := search(path, st); err != nil {
 			return GrepOutput{}, err
 		}

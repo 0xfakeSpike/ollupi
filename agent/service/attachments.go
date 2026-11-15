@@ -116,7 +116,7 @@ func (sv *Service) attachmentSource(ctx context.Context, user, path string) (io.
 	if info.Size() > maxImageBytes {
 		return nil, 0, fmt.Errorf("%d bytes; at most %d are accepted", info.Size(), maxImageBytes)
 	}
-	data, err := sandbox.ReadFile(ctx, box, path)
+	data, err := sandbox.ReadFile(ctx, box, path, maxImageBytes)
 	if err != nil {
 		return nil, 0, err
 	}

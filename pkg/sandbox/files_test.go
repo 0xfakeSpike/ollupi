@@ -132,3 +132,25 @@ func TestWriteFileMakesTheFoldersAboveIt(t *testing.T) {
 		t.Errorf("the folder holds %v (%v), want only the file", entries, err)
 	}
 }
+
+func TestReadFileRefusesWhatHasNoEnd(t *testing.T) {
+	s, root, _ := tree(t)
+	ctx := context.Background()
+	zero := filepath.Join(root, ".gitignore")
+	if err := os.Symlink("/dev/zero", zero); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadFile(ctx, s, zero, 1<<20); err == nil {
+		t.Error("a link to a device reads as a file")
+	}
+	big := filepath.Join(root, "big")
+	if err := os.WriteFile(big, make([]byte, 1<<10+1), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadFile(ctx, s, big, 1<<10); err == nil {
+		t.Error("a file over the limit is read")
+	}
+	if body, err := ReadFile(ctx, s, filepath.Join(root, "sub", "note.txt"), 4); err != nil || string(body) != "note" {
+		t.Errorf("a file at the limit: %q, %v", body, err)
+	}
+}

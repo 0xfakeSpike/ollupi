@@ -10,6 +10,9 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 )
 
+// maxIgnoreBytes bounds an ignore file; a larger one is not read, as if it were missing.
+const maxIgnoreBytes = 1 << 20
+
 // compilePattern turns a path pattern into a regexp over slash-separated relative paths: * matches within
 // one name, ** any number of folders, ? one character, [...] a character class ([!...] negates), \ quotes
 // the next character, and with braces {a,b} either alternative.
@@ -142,7 +145,7 @@ func gitIgnores(ctx context.Context, box sandbox.Box, dir string) *ignores {
 		top = parent
 	}
 	g := &ignores{box: box, top: top}
-	if body, err := sandbox.ReadFile(ctx, box, filepath.Join(top, ".git", "info", "exclude")); err == nil {
+	if body, err := sandbox.ReadFile(ctx, box, filepath.Join(top, ".git", "info", "exclude"), maxIgnoreBytes); err == nil {
 		g.files = append(g.files, parseIgnore("", string(body)))
 	}
 	for at := top; at != dir; {
@@ -155,7 +158,7 @@ func gitIgnores(ctx context.Context, box sandbox.Box, dir string) *ignores {
 
 // enter reads dir's .gitignore, if it has one, and reports whether it did; leave undoes it.
 func (g *ignores) enter(ctx context.Context, dir string) bool {
-	body, err := sandbox.ReadFile(ctx, g.box, filepath.Join(dir, ".gitignore"))
+	body, err := sandbox.ReadFile(ctx, g.box, filepath.Join(dir, ".gitignore"), maxIgnoreBytes)
 	if err != nil {
 		return false
 	}
