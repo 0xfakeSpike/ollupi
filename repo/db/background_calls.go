@@ -161,12 +161,12 @@ func (d *DB) DeliverBackgroundCalls(threadID string, next *TurnRow) (ThreadRow, 
 		case errors.Is(err, ErrNotFound) && next == nil:
 			return nil
 		case errors.Is(err, ErrNotFound):
-			var total int64
-			if err := tx.gorm.Model(&TurnRow{}).Where("thread_id = ?", threadID).Count(&total).Error; err != nil {
+			seq, err := tx.nextTurnSeq(threadID)
+			if err != nil {
 				return err
 			}
 			turn = *next
-			turn.ThreadID, turn.Seq, turn.Status, turn.CreatedAt, turn.StartedAt = threadID, int(total)+1, TurnReady, now, now
+			turn.ThreadID, turn.Seq, turn.Status, turn.CreatedAt, turn.StartedAt = threadID, seq, TurnReady, now, now
 			if err := tx.createTurn(turn); err != nil {
 				return err
 			}

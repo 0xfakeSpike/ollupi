@@ -184,6 +184,13 @@ func (d *DB) HasQueuedTurn(threadID, cronJobID string) (bool, error) {
 	return n > 0, err
 }
 
+// nextTurnSeq is the number the thread's next turn takes.
+func (d *DB) nextTurnSeq(threadID string) (int, error) {
+	var total int64
+	err := d.gorm.Model(&TurnRow{}).Where("thread_id = ?", threadID).Count(&total).Error
+	return int(total) + 1, err
+}
+
 func (d *DB) createTurn(row TurnRow) error {
 	row.CreatedAt, row.StartedAt, row.CompletedAt = row.CreatedAt.UTC(), row.StartedAt.UTC(), nullTime(row.CompletedAt)
 	return d.gorm.Create(&row).Error
@@ -229,14 +236,15 @@ func (d *DB) SubmitTurn(threadID string, turn TurnRow) (ThreadRow, TurnRow, *Ite
 		if turn.ID == "" || (strings.TrimSpace(turn.Input) == "" && len(turn.Attachments) == 0) {
 			return fmt.Errorf("a new turn needs an id and an input")
 		}
-		var total, open int64
-		if err := tx.gorm.Model(&TurnRow{}).Where("thread_id = ?", threadID).Count(&total).Error; err != nil {
+		seq, err := tx.nextTurnSeq(threadID)
+		if err != nil {
 			return err
 		}
+		var open int64
 		if err := tx.gorm.Model(&TurnRow{}).Where("thread_id = ? AND "+openTurn, threadID).Count(&open).Error; err != nil {
 			return err
 		}
-		turn.ThreadID, turn.Seq, turn.Status = threadID, int(total)+1, TurnQueued
+		turn.ThreadID, turn.Seq, turn.Status = threadID, seq, TurnQueued
 		if err := tx.createTurn(turn); err != nil {
 			return err
 		}
