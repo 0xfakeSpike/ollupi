@@ -117,9 +117,9 @@ func (sv *Service) startTurn(threadID string, in Input, atts []db.Attachment) (d
 	if len(st.QueuedTurns()) >= maxQueuedTurns {
 		return db.TurnRow{}, ErrQueueFull
 	}
-	model, err := sv.conversationModel(st.Last, in.Connection)
+	model, err := sv.res.ConversationModel(st.Last, in.Connection)
 	if err != nil {
-		return db.TurnRow{}, err
+		return db.TurnRow{}, fmt.Errorf("service: %w: %v", ErrInvalidMessage, err)
 	}
 	if err := sv.checkLength(model, text); err != nil {
 		return db.TurnRow{}, err
@@ -127,7 +127,7 @@ func (sv *Service) startTurn(threadID string, in Input, atts []db.Attachment) (d
 	if err := sv.checkImages(threadID, model, atts); err != nil {
 		return db.TurnRow{}, err
 	}
-	main, err := sv.mainRole(model)
+	main, err := sv.res.MainRole(model)
 	if err != nil {
 		return db.TurnRow{}, err
 	}

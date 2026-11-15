@@ -19,12 +19,12 @@ func (o *Orchestrator) deliverBackground(threadID string) {
 	}
 	var next *db.TurnRow
 	if st.Thread.ParentThreadID == "" {
-		model, err := o.conversationModel(st.Last, "")
+		model, err := o.res.ConversationModel(st.Last, "")
 		if err != nil {
 			slog.Error("background results not delivered", "thread", threadID, "err", err)
 			return
 		}
-		main, err := o.mainRole(model)
+		main, err := o.res.MainRole(model)
 		if err != nil {
 			slog.Error("background results not delivered", "thread", threadID, "err", err)
 			return
