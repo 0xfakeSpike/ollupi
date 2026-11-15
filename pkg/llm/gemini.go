@@ -15,6 +15,7 @@ const (
 	// geminiCallPrefix marks a call id ollupi made up because Gemini returned the call without one;
 	// such ids are not sent back to Gemini.
 	geminiCallPrefix = "gemini-"
+	geminiBaseURL    = "https://generativelanguage.googleapis.com/"
 )
 
 // Gemini talks to the Gemini API. Responses are kept as Native records so the thought signatures Gemini
@@ -25,6 +26,14 @@ type Gemini struct {
 }
 
 func NewGemini(baseURL, apiKey string, calls int, limits map[string]Limits) (*Gemini, error) {
+	// Without a key, or an address, of its own the client would take the process's (GEMINI_API_KEY,
+	// GOOGLE_GEMINI_BASE_URL) from its environment.
+	if apiKey == "" {
+		return nil, fmt.Errorf("llm.Gemini: the connection needs an API key")
+	}
+	if baseURL == "" {
+		baseURL = geminiBaseURL
+	}
 	// Without RetryOptions the client sends a request once; these retry as the other providers' clients do.
 	cfg := &genai.ClientConfig{APIKey: apiKey, Backend: genai.BackendGeminiAPI, HTTPClient: httpClient, HTTPOptions: genai.HTTPOptions{BaseURL: baseURL,
 		RetryOptions: &genai.HTTPRetryOptions{Attempts: genai.Ptr[int32](retries + 1), InitialDelay: genai.Ptr(0.5), MaxDelay: genai.Ptr(8.0)}}}
