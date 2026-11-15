@@ -223,6 +223,9 @@ func (d *DB) SubmitTurn(threadID string, turn TurnRow) (ThreadRow, TurnRow, *Ite
 		if thread, err = tx.ThreadRow(threadID); err != nil {
 			return err
 		}
+		if thread.ArchivedAt != nil {
+			return ErrThreadArchived
+		}
 		if turn.ID == "" || (strings.TrimSpace(turn.Input) == "" && len(turn.Attachments) == 0) {
 			return fmt.Errorf("a new turn needs an id and an input")
 		}

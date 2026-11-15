@@ -23,16 +23,6 @@ func (o *Orchestrator) Wake(threadID string) {
 	o.post(func() { o.reconcile(threadID) })
 }
 
-// Busy says a run of the conversation holds a slot now.
-func (o *Orchestrator) Busy(threadID string) bool {
-	busy := false
-	_ = o.call(func() error {
-		_, busy = o.slotByThread[threadID]
-		return nil
-	})
-	return busy
-}
-
 // Interrupt stops the conversation's turn in progress, which must be expectedTurnID when that is set: a run in its
 // slot is stopped, and a turn that waits ends as interrupted.
 func (o *Orchestrator) Interrupt(threadID, expectedTurnID string) error {

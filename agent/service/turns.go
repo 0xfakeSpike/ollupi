@@ -95,7 +95,7 @@ func (sv *Service) SkipUserInput(user, threadID, itemID string) error {
 	if err := sv.owned(user, threadID); err != nil {
 		return err
 	}
-	return sv.respond(threadID, func(it db.ItemRow) bool { return it.ID == itemID && !it.WaitsForApproval() }, func(it db.ItemRow) (db.ItemRow, error) {
+	return sv.answer(threadID, func(it db.ItemRow) bool { return it.ID == itemID && !it.WaitsForApproval() }, func(it db.ItemRow) (db.ItemRow, error) {
 		now := time.Now().UTC()
 		it.Status, it.Error, it.CompletedAt = db.ItemDeclined, "the user skipped these questions; go on without their answers", &now
 		return it, nil
@@ -135,9 +135,6 @@ func (sv *Service) startTurn(threadID string, in Input, atts []db.Attachment) (d
 }
 
 func (sv *Service) submit(t db.ThreadRow, turn db.TurnRow, model llm.Model) (db.TurnRow, error) {
-	if t.ArchivedAt != nil {
-		return db.TurnRow{}, ErrThreadArchived
-	}
 	if t.ParentThreadID == "" && t.WorkspaceID != "" {
 		w, err := sv.workspaceOf(t.WorkspaceID)
 		if err != nil {
@@ -209,19 +206,25 @@ func (sv *Service) steer(threadID, expectedTurnID string, in Input, atts []db.At
 }
 
 func (sv *Service) resolveApproval(threadID, approvalID string, decision db.Decision, decidedBy string) error {
-	return sv.respond(threadID, func(it db.ItemRow) bool { return it.WaitsForApproval() && it.Approval.ID == approvalID }, func(it db.ItemRow) (db.ItemRow, error) {
+	stored, err := sv.respond(threadID, func(it db.ItemRow) bool { return it.WaitsForApproval() && it.Approval.ID == approvalID }, func(it db.ItemRow) (db.ItemRow, error) {
 		if available := it.Approval.AvailableDecisions(); !slices.Contains(available, decision) {
 			return db.ItemRow{}, fmt.Errorf("service: %w: %q is not one of %q", ErrInvalidDecision, decision, available)
-		}
-		if decision == db.DecisionAcceptAlways {
-			if err := sv.allowAlways(threadID, it.Approval.Suggested); err != nil {
-				return db.ItemRow{}, err
-			}
 		}
 		now := time.Now().UTC()
 		it.Approval.Decision, it.Approval.DecidedBy, it.Approval.DecidedAt = decision, decidedBy, &now
 		return it, nil
 	})
+	if err != nil {
+		return err
+	}
+	defer sv.o.Wake(threadID)
+	// The rule is kept once the approval is: an approval refused, because the thread no longer waited on it, widens nothing.
+	if decision == db.DecisionAcceptAlways {
+		if err := sv.allowAlways(threadID, stored.Approval.Suggested); err != nil {
+			return fmt.Errorf("service: the call was approved, but its rule was not kept: %w", err)
+		}
+	}
+	return nil
 }
 
 func (sv *Service) allowAlways(threadID string, rules []string) error {
@@ -248,7 +251,7 @@ func (sv *Service) allowAlways(threadID string, rules []string) error {
 }
 
 func (sv *Service) answerUserInput(threadID, itemID string, answers userinput.Answers) error {
-	return sv.respond(threadID, func(it db.ItemRow) bool { return it.ID == itemID && !it.WaitsForApproval() }, func(it db.ItemRow) (db.ItemRow, error) {
+	return sv.answer(threadID, func(it db.ItemRow) bool { return it.ID == itemID && !it.WaitsForApproval() }, func(it db.ItemRow) (db.ItemRow, error) {
 		req, err := userinput.Decode(it.Await.Request)
 		if err != nil {
 			return db.ItemRow{}, err
@@ -266,31 +269,38 @@ func (sv *Service) answerUserInput(threadID, itemID string, answers userinput.An
 	})
 }
 
-func (sv *Service) respond(threadID string, match func(db.ItemRow) bool, apply func(db.ItemRow) (db.ItemRow, error)) error {
-	if sv.o.Busy(threadID) {
-		return ErrNoSuchRequest
-	}
+// respond records apply's answer to the request match finds. The thread's state is read before the answer is made,
+// so the database refuses it with db.ErrNoSuchRequest if the thread no longer waits on that request.
+func (sv *Service) respond(threadID string, match func(db.ItemRow) bool, apply func(db.ItemRow) (db.ItemRow, error)) (db.ItemRow, error) {
 	st, err := sv.cfg.DB.ThreadState(threadID)
 	if err != nil {
-		return fmt.Errorf("service: thread %s: %w", threadID, err)
+		return db.ItemRow{}, fmt.Errorf("service: thread %s: %w", threadID, err)
 	}
 	pending := st.PendingRequests()
 	i := slices.IndexFunc(pending, match)
 	if i < 0 {
-		return ErrNoSuchRequest
+		return db.ItemRow{}, db.ErrNoSuchRequest
 	}
 	activeTurn, _ := st.ActiveTurn()
 	answered, err := apply(pending[i])
 	if err != nil {
-		return err
+		return db.ItemRow{}, err
 	}
-	stored, _, err := sv.cfg.DB.RecordItem(threadID, answered)
+	stored, err := sv.cfg.DB.AnswerRequest(threadID, answered)
 	if err != nil {
-		return err
+		return db.ItemRow{}, err
 	}
-	defer sv.o.Wake(threadID)
 	sv.ev.Item(st.Thread, activeTurn, stored, false)
 	sv.ev.Status(threadID)
+	return stored, nil
+}
+
+// answer responds to a request and wakes the thread to go on with it.
+func (sv *Service) answer(threadID string, match func(db.ItemRow) bool, apply func(db.ItemRow) (db.ItemRow, error)) error {
+	if _, err := sv.respond(threadID, match, apply); err != nil {
+		return err
+	}
+	sv.o.Wake(threadID)
 	return nil
 }
 
