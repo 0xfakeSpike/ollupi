@@ -340,10 +340,11 @@ func (c *conn) request(threadID string, it db.ItemRow) {
 	}, answered)
 }
 
+// resolve applies the client's answer to a request, decoded as strictly as the params of a call.
 func (c *conn) resolve(threadID string, it db.ItemRow, result json.RawMessage) error {
 	if !it.WaitsForApproval() {
 		var r UserInputResponse
-		if err := json.Unmarshal(result, &r); err != nil {
+		if err := jsonrpc.DecodeParams(result, &r); err != nil {
 			return err
 		}
 		if r.Skipped {
@@ -352,7 +353,7 @@ func (c *conn) resolve(threadID string, it db.ItemRow, result json.RawMessage) e
 		return c.s.service.AnswerUserInput(c.user, threadID, it.ID, r.Answers)
 	}
 	var r ApprovalResponse
-	if err := json.Unmarshal(result, &r); err != nil {
+	if err := jsonrpc.DecodeParams(result, &r); err != nil {
 		return err
 	}
 	return c.s.service.ResolveApproval(c.user, threadID, it.Approval.ID, r.Decision, "gateway")

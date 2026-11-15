@@ -99,7 +99,10 @@ func (t *Tools) Invoke(_ context.Context, caller tools.Caller, tool string, argu
 		return tools.Result{}, err
 	}
 	if !cancelled {
-		ended, _ := t.db.BackgroundCall(call.ID)
+		ended, err := t.db.BackgroundCall(call.ID)
+		if err != nil {
+			return tools.Result{}, err
+		}
 		return tools.Result{}, fmt.Errorf("background call %s already ended: %s", call.ID, ended.Status)
 	}
 	return tools.Result{Output: map[string]any{"background": call.ID, "status": string(db.BackgroundCancelled)}}, nil

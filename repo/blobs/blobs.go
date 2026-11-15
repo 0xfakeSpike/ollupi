@@ -4,6 +4,7 @@ package blobs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -49,9 +50,9 @@ func (d Dir) Put(_ context.Context, key string, data []byte) error {
 		err = cerr
 	}
 	if err != nil {
-		os.Remove(path)
+		return errors.Join(err, os.Remove(path))
 	}
-	return err
+	return nil
 }
 
 func (d Dir) Get(_ context.Context, key string) ([]byte, error) {
