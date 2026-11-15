@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/google/jsonschema-go/jsonschema"
 	"log/slog"
 	"runtime/debug"
 	"slices"
@@ -18,6 +19,8 @@ type Registry struct {
 	providers   map[string]Provider
 	owner       map[string]Provider
 	specs       map[string]*Spec
+	// schemas are the specs' input schemas, resolved once.
+	schemas     map[string]*jsonschema.Resolved
 	descriptors []ToolDescriptor
 }
 
@@ -36,6 +39,7 @@ func New(ctx context.Context, unavailable []string, providers ...Provider) (*Reg
 		providers:   make(map[string]Provider, len(providers)+1),
 		owner:       make(map[string]Provider),
 		specs:       make(map[string]*Spec),
+		schemas:     make(map[string]*jsonschema.Resolved),
 	}
 	for _, p := range append(providers, newIntrospection(r)) {
 		id, _ := p.Name()
@@ -61,8 +65,13 @@ func New(ctx context.Context, unavailable []string, providers ...Provider) (*Reg
 				prevID, _ := prev.Name()
 				return nil, fmt.Errorf("tool registry: duplicate tool %q (providers %q and %q)", t.Name, prevID, id)
 			}
+			schema, err := resolveSchema(t.InputSchema)
+			if err != nil {
+				return nil, fmt.Errorf("tool registry: tool %q input schema: %w", t.Name, err)
+			}
 			r.owner[t.Name] = p
 			r.specs[t.Name] = t
+			r.schemas[t.Name] = schema
 		}
 	}
 	descriptors, err := r.buildDescriptors()
@@ -155,14 +164,22 @@ func guard(tool string, run func() (Result, error)) (result Result) {
 }
 
 func (r *Registry) dispatch(ctx context.Context, caller Caller, tool string, arguments map[string]any) (Result, error) {
-	p, ok := r.owner[tool]
+	if err := r.check(tool, arguments); err != nil {
+		return Result{}, err
+	}
+	return r.owner[tool].Invoke(ctx, caller, tool, arguments)
+}
+
+// check says the registry has the tool and the arguments fit its schema.
+func (r *Registry) check(tool string, arguments map[string]any) error {
+	schema, ok := r.schemas[tool]
 	if !ok {
-		return Result{}, fmt.Errorf("tool registry: %w %q", ErrUnknownTool, tool)
+		return fmt.Errorf("tool registry: %w %q", ErrUnknownTool, tool)
 	}
-	if err := ValidateArguments(arguments, r.specs[tool].InputSchema); err != nil {
-		return Result{}, fmt.Errorf("tool registry: %w for %q: %v", ErrInvalidArguments, tool, err)
+	if err := validate(schema, arguments); err != nil {
+		return fmt.Errorf("tool registry: %w for %q: %v", ErrInvalidArguments, tool, err)
 	}
-	return p.Invoke(ctx, caller, tool, arguments)
+	return nil
 }
 
 func (r *Registry) HasPermissionContent(tool string) bool {
@@ -191,11 +208,8 @@ func (r *Registry) providerIDs() []string {
 }
 
 func (r *Registry) Prepare(ctx context.Context, caller Caller, tool string, arguments map[string]any) (prepared *Prepared, err error) {
-	if _, ok := r.owner[tool]; !ok {
-		return nil, fmt.Errorf("tool registry: %w %q", ErrUnknownTool, tool)
-	}
-	if err := ValidateArguments(arguments, r.specs[tool].InputSchema); err != nil {
-		return nil, fmt.Errorf("tool registry: %w for %q: %v", ErrInvalidArguments, tool, err)
+	if err := r.check(tool, arguments); err != nil {
+		return nil, err
 	}
 	local := r.specs[tool].Local
 	if local == nil {
@@ -211,11 +225,8 @@ func (r *Registry) Prepare(ctx context.Context, caller Caller, tool string, argu
 }
 
 func (r *Registry) InvokePrepared(ctx context.Context, caller Caller, tool string, arguments map[string]any, prepared *Prepared) Result {
-	if _, ok := r.owner[tool]; !ok {
-		return Result{Err: fmt.Errorf("tool registry: %w %q", ErrUnknownTool, tool)}.For(tool)
-	}
-	if err := ValidateArguments(arguments, r.specs[tool].InputSchema); err != nil {
-		return Result{Err: fmt.Errorf("tool registry: %w for %q: %v", ErrInvalidArguments, tool, err)}.For(tool)
+	if err := r.check(tool, arguments); err != nil {
+		return Result{Err: err}.For(tool)
 	}
 	if local := r.specs[tool].Local; local != nil {
 		return guard(tool, func() (Result, error) { return local.Run(ctx, caller, arguments, prepared) })
@@ -223,5 +234,5 @@ func (r *Registry) InvokePrepared(ctx context.Context, caller Caller, tool strin
 	if prepared != nil {
 		return Result{Err: fmt.Errorf("tool registry: tool %q no longer supports saved execution parameters", tool)}.For(tool)
 	}
-	return r.Invoke(ctx, caller, tool, arguments)
+	return guard(tool, func() (Result, error) { return r.owner[tool].Invoke(ctx, caller, tool, arguments) })
 }

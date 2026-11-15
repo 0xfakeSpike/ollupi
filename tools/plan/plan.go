@@ -3,7 +3,6 @@ package plan
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/0xfakeSpike/ollupi/tools"
@@ -34,17 +33,12 @@ type Plan struct {
 	Steps       []Step `json:"plan"`
 }
 
+// validate checks what the schema cannot say: its constraints (how many steps, which statuses) hold already.
 func (p Plan) validate() error {
-	if len(p.Steps) == 0 || len(p.Steps) > maxSteps {
-		return fmt.Errorf("plan requires 1 to %d steps", maxSteps)
-	}
 	inProgress := 0
 	for i, step := range p.Steps {
 		if strings.TrimSpace(step.Step) == "" {
 			return fmt.Errorf("plan step %d is empty", i+1)
-		}
-		if !slices.Contains(StatusValues, step.Status) {
-			return fmt.Errorf("plan step %d has invalid status %q", i+1, step.Status)
 		}
 		if step.Status == InProgress {
 			inProgress++

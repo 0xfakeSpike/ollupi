@@ -13,8 +13,6 @@ import (
 var (
 	ErrNoActiveTurn = errors.New("the thread has no turn in progress")
 	ErrTurnMismatch = errors.New("the expected turn is not the turn in progress")
-	// ErrStopped says the orchestrator stopped before it took what it was asked; it may still have taken it.
-	ErrStopped = errStopped
 )
 
 // Wake looks at the conversation again: it starts a turn that became ready, takes the results that came back to it,

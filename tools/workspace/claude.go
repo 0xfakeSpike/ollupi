@@ -90,14 +90,7 @@ func (r *Provider) prepareClaude(ctx context.Context, caller tools.Caller, args 
 	if err != nil {
 		return nil, err
 	}
-	requested := ""
-	if raw, ok := args["work_dir"]; ok {
-		requested, ok = raw.(string)
-		if !ok || strings.TrimSpace(requested) == "" {
-			return nil, fmt.Errorf("workspace: argument work_dir must be a non-empty string")
-		}
-	}
-	cwd, err := d.resolve(ctx, requested)
+	cwd, err := d.workDir(ctx, args)
 	if err != nil {
 		return nil, err
 	}
@@ -143,12 +136,8 @@ func (r *Provider) runClaude(ctx context.Context, caller tools.Caller, args map[
 	if err := r.validatePrepared(ctx, d, p, args); err != nil {
 		return tools.Result{}, err
 	}
-	current, err := d.box.Executable(ctx, ToolClaude, p.Cwd)
-	if err != nil {
+	if err := d.sameExecutable(ctx, ToolClaude, p); err != nil {
 		return tools.Result{}, err
-	}
-	if current != p.Program {
-		return tools.Result{}, fmt.Errorf("workspace: approved executable now resolves to a different path")
 	}
 	res, err := d.box.Run(ctx, sandbox.Command{
 		Program: p.Program, Args: p.Args, Cwd: p.Cwd,

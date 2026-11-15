@@ -170,7 +170,6 @@ func (r *Provider) readContent(ctx context.Context, caller tools.Caller, args ma
 	return tools.Content{Text: text, Match: strings.ToLower(shown)}, nil
 }
 
-// readable resolves a path the read tools take, following links, and checks that the sandbox lets it be read.
 // readLine reads one line of br and keeps at most limit bytes of it, so a file without line breaks takes no more
 // memory than that. It returns how many bytes it read, the dropped ones included.
 func readLine(br *bufio.Reader, limit int) (string, int, error) {
@@ -188,6 +187,7 @@ func readLine(br *bufio.Reader, limit int) (string, int, error) {
 	}
 }
 
+// readable resolves a path the read tools take, following links, and checks that the sandbox lets it be read.
 func readable(ctx context.Context, d dirs, raw string) (string, error) {
 	path := strings.TrimSpace(raw)
 	if path == "" {
