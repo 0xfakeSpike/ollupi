@@ -91,25 +91,32 @@ func (o *Orchestrator) Start(ctx context.Context, res *resources.Resources) erro
 		o.cfg.BackgroundLimit = defaultBackgroundLimit
 	}
 	o.events, o.slotByThread, o.slotsOfUser = make(chan func()), map[string]*slot{}, map[string]int{}
+	// What a start that fails part way began, the claim kept alive and runs it launched, ends before it returns.
+	ctx, stop := context.WithCancel(ctx)
+	fail := func(err error) error {
+		stop()
+		o.Wait()
+		return err
+	}
 	o.ctx = ctx
 	if o.cfg.Lease > 0 {
 		var err error
 		if o.ctx, err = o.claimShard(ctx); err != nil {
-			return err
+			return fail(err)
 		}
 	}
 	if _, err := o.cfg.DB.InterruptBackgroundCalls(time.Now()); err != nil {
-		return fmt.Errorf("orchestrator: end the background calls of a process that stopped: %w", err)
+		return fail(fmt.Errorf("orchestrator: end the background calls of a process that stopped: %w", err))
 	}
 	if err := o.recover(); err != nil {
-		return err
+		return fail(err)
+	}
+	undelivered, err := o.cfg.DB.UndeliveredBackgroundThreads()
+	if err != nil {
+		return fail(fmt.Errorf("orchestrator: background results to deliver: %w", err))
 	}
 	o.done.Add(1)
 	go o.loop()
-	undelivered, err := o.cfg.DB.UndeliveredBackgroundThreads()
-	if err != nil {
-		return fmt.Errorf("orchestrator: background results to deliver: %w", err)
-	}
 	for _, id := range undelivered {
 		o.post(func() { o.deliverBackground(id) })
 	}
