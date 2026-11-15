@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
-	"unicode/utf8"
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/redact"
@@ -92,19 +91,6 @@ func isDecorativeLine(line string) bool {
 		}
 	}
 	return runes >= 3 && nonSpace >= 3 && border*100 >= 90*nonSpace
-}
-
-func cutPoints(s string, spans [][2]int, head, tail int) (int, int) {
-	for _, sp := range spans {
-		start, end := utf8.RuneCountInString(s[:sp[0]]), utf8.RuneCountInString(s[:sp[1]])
-		if start < head && head < end {
-			head = start
-		}
-		if start < tail && tail < end {
-			tail = end
-		}
-	}
-	return head, tail
 }
 
 type observations struct {
@@ -215,6 +201,6 @@ func clip(s string, budget int, spans func(string) [][2]int, marker func(from, t
 		}
 	}
 
-	head, tail := cutPoints(s, spans(s), 2*lo/3, len(runes)-(2*lo-2*lo/3))
+	head, tail := redact.Cuts(s, spans(s), 2*lo/3, len(runes)-(2*lo-2*lo/3))
 	return strings.TrimSpace(string(runes[:head])) + marker(head, tail) + strings.TrimSpace(string(runes[tail:]))
 }

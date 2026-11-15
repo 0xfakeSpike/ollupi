@@ -1,6 +1,9 @@
 package redact
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestPlaceholdersFollowTheKey(t *testing.T) {
 	const text = "call 13812345678 or mail a@example.com"
@@ -63,5 +66,31 @@ func TestAMACIsSixPairsOnTheirOwn(t *testing.T) {
 	const fingerprint = "sha256 Fingerprint=20:04:32:92:77:F2:A8:86:9E:0D:FA:77:C9:D6:3C:DE:28:13:8B:D7:D6:C1:68:59:FE:6F:C9:A1:5B:8E:01:02"
 	if got := r.Mask(fingerprint); got != fingerprint {
 		t.Errorf("masked %q to %q", fingerprint, got)
+	}
+}
+
+func TestTheKeysOfTodaysProvidersAreMasked(t *testing.T) {
+	r := New("k")
+	for _, secret := range []string{
+		"sk-proj-" + strings.Repeat("aB3_", 12),
+		"sk-ant-api03-" + strings.Repeat("xY9-", 20),
+		"sk-" + strings.Repeat("a1", 24),
+		"github_pat_" + strings.Repeat("A1b2_", 12),
+		"AIza" + strings.Repeat("S", 35),
+		"Bearer " + strings.Repeat("tok.en-", 5),
+	} {
+		if masked := r.Mask("the key is " + secret + " here"); strings.Contains(masked, secret[4:]) {
+			t.Errorf("%s: masked as %q", secret[:12], masked)
+		}
+	}
+}
+
+func TestCutsKeepASensitiveValueWholeOrNotAtAll(t *testing.T) {
+	key := "sk-" + strings.Repeat("a1", 24)
+	s := "before " + key + " after"
+	inside := len("before ") + 10
+	head, tail := Cuts(s, Spans(s), inside, inside)
+	if head != len("before ") || tail != len("before ")+len(key) {
+		t.Errorf("cuts at %d and %d, want at the key's start %d and end %d", head, tail, len("before "), len("before ")+len(key))
 	}
 }

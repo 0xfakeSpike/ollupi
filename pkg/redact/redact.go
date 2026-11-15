@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 type category string
@@ -35,7 +36,11 @@ var detectors = []detector{
 	{category: catSecret, priority: 100, match: regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----`)},
 	{category: catSecret, priority: 99, match: regexp.MustCompile(`\b(?:AKIA|ASIA)[0-9A-Z]{16}\b`)},
 	{category: catSecret, priority: 99, match: regexp.MustCompile(`\bg(?:hp|ho|hu|hs|hr)_[A-Za-z0-9]{36}\b`)},
-	{category: catSecret, priority: 99, match: regexp.MustCompile(`\bsk-[A-Za-z0-9]{20,}\b`)},
+	// OpenAI's keys, sk-proj-... among them, and Anthropic's, sk-ant-api03-...
+	{category: catSecret, priority: 99, match: regexp.MustCompile(`\bsk-[A-Za-z0-9_-]{20,}`)},
+	{category: catSecret, priority: 99, match: regexp.MustCompile(`\bgithub_pat_[A-Za-z0-9_]{22,}`)},
+	{category: catSecret, priority: 99, match: regexp.MustCompile(`\bAIza[0-9A-Za-z_-]{35}`)},
+	{category: catSecret, priority: 98, match: regexp.MustCompile(`(?i)\bbearer\s+[A-Za-z0-9._~+/-]{20,}=*`)},
 	{category: catSecret, priority: 99, match: regexp.MustCompile(`\bxox[baprs]-[A-Za-z0-9-]{10,}\b`)},
 	{category: catJWT, priority: 95, match: regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b`)},
 	{category: catIDCard, priority: 90, match: regexp.MustCompile(`\b\d{17}[\dXx]\b`), validate: validIDCard},
@@ -151,6 +156,23 @@ func (s *Stream) Flush() string {
 	return out
 }
 
+// Cuts moves the rune offsets head and tail of s, where a text is cut short, out of the sensitive spans of s, which
+// Spans gives: head back to a span's start, tail on to its end. What is kept of a span is then all of it, which Mask
+// still finds, never a part that it would not.
+func Cuts(s string, spans [][2]int, head, tail int) (int, int) {
+	for _, sp := range spans {
+		start, end := utf8.RuneCountInString(s[:sp[0]]), utf8.RuneCountInString(s[:sp[1]])
+		if start < head && head < end {
+			head = start
+		}
+		if start < tail && tail < end {
+			tail = end
+		}
+	}
+	return head, tail
+}
+
+// Spans are the byte offsets of the sensitive values of s.
 func Spans(s string) [][2]int {
 	found := findSpans(s)
 	out := make([][2]int, len(found))
