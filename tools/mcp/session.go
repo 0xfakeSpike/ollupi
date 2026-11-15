@@ -53,7 +53,7 @@ func connect(ctx, running context.Context, client *mcp.Client, box sandbox.Box, 
 				process.Close()
 			}
 		}()
-		transport = &mcp.IOTransport{Reader: process, Writer: process}
+		transport = &mcp.IOTransport{Reader: newStdioMessages(process), Writer: process}
 	} else {
 		endpoint, err := url.Parse(s.URL)
 		if err != nil {
@@ -223,7 +223,7 @@ func (t serverTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		cancel()
 		return nil, err
 	}
-	res.Body = cancelOnClose{ReadCloser: res.Body, cancel: cancel}
+	res.Body = cancelOnClose{ReadCloser: limitBody(res), cancel: cancel}
 	return res, nil
 }
 
