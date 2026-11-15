@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"github.com/0xfakeSpike/ollupi/agent/event"
 	"log/slog"
@@ -32,7 +31,7 @@ func (sv *Service) StartThread(user, workspaceID, environmentID, title string, s
 	if err := usable(w); err != nil {
 		return db.ThreadRow{}, err
 	}
-	if err := sv.validateLayer(user, permission.Base(sv.cfg.Settings, sv.cfg.ToolsFor != nil, w), permission.Settings{}, permission.ThreadLayer(settings)); err != nil {
+	if err := sv.validateLayer(user, permission.Base(sv.cfg.Settings, sv.res.Shared(), w), permission.Settings{}, permission.ThreadLayer(settings)); err != nil {
 		return db.ThreadRow{}, err
 	}
 	return sv.createThread(db.ThreadRow{UserID: user, Title: title, Settings: settings, WorkspaceID: db.Ref(workspaceID), EnvironmentID: db.Ref(env.ID)})
@@ -47,7 +46,7 @@ func (sv *Service) UpdateThreadSettings(user, threadID string, settings permissi
 	if err != nil {
 		return db.ThreadRow{}, err
 	}
-	if err := sv.validateLayer(user, permission.Base(sv.cfg.Settings, sv.cfg.ToolsFor != nil, w), t.Settings, permission.ThreadLayer(settings)); err != nil {
+	if err := sv.validateLayer(user, permission.Base(sv.cfg.Settings, sv.res.Shared(), w), t.Settings, permission.ThreadLayer(settings)); err != nil {
 		return db.ThreadRow{}, err
 	}
 	t, err = sv.cfg.DB.SetThreadSettings(user, threadID, settings)
@@ -80,35 +79,6 @@ func (sv *Service) ListThreads(user string, f db.ThreadFilter) ([]db.ThreadSumma
 		out = append(out, db.ThreadSummary{ThreadRow: r, Status: status})
 	}
 	return out, more, nil
-}
-
-// threadStatus reads a conversation's status off its current turn: waiting on a person when the turn is, or when
-// a subagent it waits on is, and otherwise active or idle.
-func (sv *Service) threadStatus(id string) db.ThreadStatus {
-	turn, err := sv.cfg.DB.ActiveTurn(id)
-	if errors.Is(err, db.ErrNotFound) {
-		return db.ThreadIdle
-	}
-	if err != nil {
-		return ""
-	}
-	switch turn.Status {
-	case db.TurnWaitingOnApproval:
-		return db.ThreadWaitingOnApproval
-	case db.TurnWaitingOnUserInput:
-		return db.ThreadWaitingOnUserInput
-	case db.TurnWaitingOnAgent:
-		st, err := sv.cfg.DB.ThreadState(id)
-		if err != nil {
-			return ""
-		}
-		for _, call := range st.AgentCalls() {
-			if cs := event.ThreadStatus(sv.cfg.DB, call.Await.Handle); cs == db.ThreadWaitingOnApproval || cs == db.ThreadWaitingOnUserInput {
-				return cs
-			}
-		}
-	}
-	return db.ThreadActive
 }
 
 const maxTitleRunes = 120

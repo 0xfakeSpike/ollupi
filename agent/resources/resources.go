@@ -10,7 +10,9 @@ import (
 	"sync"
 
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
+	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
@@ -125,4 +127,26 @@ func (r *Resources) Registry(user string) (*tools.Registry, error) {
 	}
 	r.registries.Store(user, userRegistry{set: set, registry: registry})
 	return registry, nil
+}
+
+// ConversationModel is the model a turn of a conversation runs on: the connection asked for, or else its last turn's,
+// or else the default.
+func (r *Resources) ConversationModel(last *db.TurnRow, requested string) (llm.Model, error) {
+	connection := strings.TrimSpace(requested)
+	if connection == "" && last != nil {
+		connection = last.Model.Connection
+	}
+	if connection == "" {
+		_, connection = r.Models()
+	}
+	return r.Model(connection)
+}
+
+// MainRole is the main role of a turn on the model, by how much input the model takes.
+func (r *Resources) MainRole(model llm.Model) (role.Role, error) {
+	window, err := r.Window(model)
+	if err != nil {
+		return role.Role{}, err
+	}
+	return role.ForMain(window.InputTokens()), nil
 }
