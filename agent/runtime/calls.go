@@ -25,6 +25,8 @@ type job struct {
 func (rt *Runtime) planCalls(ctx context.Context) ([]callAction, error) {
 	var plan []callAction
 	halt := ""
+	// planned counts the calls this plan runs that toolCalls does not count yet, since they are still pending.
+	planned := 0
 	for _, it := range rt.items {
 		if !it.IsCall() || it.Status != db.ItemPending {
 			continue
@@ -33,7 +35,8 @@ func (rt *Runtime) planCalls(ctx context.Context) ([]callAction, error) {
 			plan = append(plan, callAction{kind: actionSkip, item: it, reason: "skipped: the turn stopped before this call was executed"})
 			continue
 		}
-		h, waits, ready, err := rt.handleCall(ctx, it)
+		counted := it.Approval != nil
+		h, waits, ready, err := rt.handleCall(ctx, it, planned)
 		if err != nil {
 			return nil, err
 		}
@@ -42,6 +45,9 @@ func (rt *Runtime) planCalls(ctx context.Context) ([]callAction, error) {
 			plan = append(plan, callAction{kind: actionWait})
 			return plan, nil
 		case ready != nil:
+			if !counted {
+				planned++
+			}
 			kind := actionRun
 			if rt.readOnly(ready.it.Tool) {
 				kind = actionRunReadOnly
@@ -60,7 +66,8 @@ func (rt *Runtime) readOnly(tool string) bool {
 	return ok && d.Annotations.ReadOnlyHint && !d.Serial
 }
 
-func (rt *Runtime) handleCall(ctx context.Context, it db.ItemRow) (string, bool, *job, error) {
+// handleCall decides what becomes of a pending call, the planned others of its plan counting toward the turn's limit.
+func (rt *Runtime) handleCall(ctx context.Context, it db.ItemRow, planned int) (string, bool, *job, error) {
 	var approved *db.Approval
 	if it.Approval != nil {
 		changed, err := rt.changedSinceApproval(ctx, it)
@@ -91,7 +98,7 @@ func (rt *Runtime) handleCall(ctx context.Context, it db.ItemRow) (string, bool,
 		h, err := rt.refuse(it, fmt.Sprintf("invalid arguments for %s: %v", it.Tool, err))
 		return h, false, nil, err
 	}
-	if rt.toolCalls() >= maxToolCalls {
+	if rt.toolCalls()+planned >= maxToolCalls {
 		if err := rt.fail(it, "skipped: the tool call limit for this turn was reached"); err != nil {
 			return "", false, nil, err
 		}

@@ -27,8 +27,10 @@ import (
 var tracer = otel.Tracer("github.com/0xfakeSpike/ollupi/agent/runtime")
 
 const (
-	maxModelCalls          = 200
-	maxToolCalls           = 400
+	maxModelCalls = 200
+	maxToolCalls  = 400
+	// maxParallelCalls bounds the read-only calls of one answer that run at once.
+	maxParallelCalls       = 8
 	maxConsecutiveFailures = 10
 )
 

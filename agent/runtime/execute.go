@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"golang.org/x/sync/errgroup"
 	"log/slog"
-	"sync"
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/repo/db"
@@ -145,12 +145,15 @@ func (rt *Runtime) runJobs(ctx context.Context, jobs []job) ([]tools.Result, err
 		jobs[i].it = stored
 	}
 	results := make([]tools.Result, len(jobs))
-	var wg sync.WaitGroup
+	var g errgroup.Group
+	g.SetLimit(maxParallelCalls)
 	for i, j := range jobs {
-		wg.Go(func() { results[i] = rt.execute(ctx, j) })
+		g.Go(func() error {
+			results[i] = rt.execute(ctx, j)
+			return nil
+		})
 	}
-	wg.Wait()
-	return results, nil
+	return results, g.Wait()
 }
 
 func (rt *Runtime) execute(ctx context.Context, j job) tools.Result {
