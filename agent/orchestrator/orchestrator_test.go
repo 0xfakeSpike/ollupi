@@ -3,6 +3,7 @@ package orchestrator_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -22,10 +23,13 @@ import (
 var model = llm.Model{Name: "demo", Connection: "fake"}
 
 // fakeModel answers each chat, holding it until released when hold is set, and counts the chats running at once.
+// With calls set, its first answer calls the probe tool that many times.
 type fakeModel struct {
+	calls   int
 	hold    chan struct{}
 	asked   chan string
 	mu      sync.Mutex
+	chats   int
 	running int
 	most    int
 }
@@ -52,7 +56,42 @@ func (m *fakeModel) Chat(ctx context.Context, req llm.ChatRequest, _ func(llm.De
 			return llm.ChatResponse{}, context.Cause(ctx)
 		}
 	}
+	m.mu.Lock()
+	first := m.chats == 0
+	m.chats++
+	m.mu.Unlock()
+	if first && m.calls > 0 {
+		calls := make([]llm.ToolCall, m.calls)
+		for i := range calls {
+			calls[i] = llm.ToolCall{ID: fmt.Sprintf("call_%d", i), Name: "probe", Arguments: "{}"}
+		}
+		return llm.ChatResponse{Message: llm.ChatMessage{Role: llm.RoleAssistant, ToolCalls: calls}, FinishReason: "tool_calls"}, nil
+	}
 	return llm.ChatResponse{Message: llm.ChatMessage{Role: llm.RoleAssistant, Content: "done"}, FinishReason: "stop"}, nil
+}
+
+// probeTools has one read-only tool, probe, which counts its calls and how many run at once.
+type probeTools struct {
+	mu                   sync.Mutex
+	calls, running, most int
+}
+
+func (*probeTools) Name() (string, string) { return "probe", "Probe." }
+func (*probeTools) ToolList(context.Context) ([]*tools.Spec, error) {
+	return []*tools.Spec{{Name: "probe", Description: "Probe.", InputSchema: map[string]any{"type": "object"},
+		Annotations: &tools.Annotations{ReadOnlyHint: true, OpenWorldHint: tools.Hint(false)}}}, nil
+}
+func (p *probeTools) Invoke(context.Context, tools.Caller, string, map[string]any) (tools.Result, error) {
+	p.mu.Lock()
+	p.calls++
+	p.running++
+	p.most = max(p.most, p.running)
+	p.mu.Unlock()
+	time.Sleep(time.Millisecond)
+	p.mu.Lock()
+	p.running--
+	p.mu.Unlock()
+	return tools.Result{Output: "ok"}, nil
 }
 
 func (m *fakeModel) Limits(string) (llm.Limits, error) {
@@ -85,7 +124,7 @@ type shard struct {
 	ended chan db.TurnRow
 }
 
-func newShard(t *testing.T, fake *fakeModel, cfg orchestrator.Config) *shard {
+func newShard(t *testing.T, fake *fakeModel, cfg orchestrator.Config, providers ...tools.Provider) *shard {
 	t.Helper()
 	store, err := db.Open(t.TempDir())
 	if err != nil {
@@ -95,7 +134,7 @@ func newShard(t *testing.T, fake *fakeModel, cfg orchestrator.Config) *shard {
 	res, err := resources.New(context.Background(), resources.Config{
 		Models:      []llm.Model{model},
 		Connections: map[string]llm.Client{model.Connection: fake},
-	}, []tools.Provider{runtime.Loader{}})
+	}, append([]tools.Provider{runtime.Loader{}}, providers...))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,5 +311,24 @@ func TestStartRunsTheTurnsAStoppedProcessLeft(t *testing.T) {
 	}
 	if ended[ready.ID] != db.TurnCompleted || ended[launched.ID] != db.TurnCompleted {
 		t.Fatalf("ended %v, want both turns completed", ended)
+	}
+}
+
+func TestOneAnswerRunsNoMoreCallsThanATurnMay(t *testing.T) {
+	probe := &probeTools{}
+	s := newShard(t, &fakeModel{calls: 401}, orchestrator.Config{}, probe)
+	s.start(t)
+	turn := s.submit(t, db.DefaultUser, "probe")
+	s.o.Wake(turn.ThreadID)
+	if ended := s.endOf(t); ended.Status != db.TurnCompleted {
+		t.Fatalf("ended as %s (%s)", ended.Status, ended.Error)
+	}
+	probe.mu.Lock()
+	defer probe.mu.Unlock()
+	if probe.calls != 400 {
+		t.Errorf("%d calls ran, want the turn's limit of 400", probe.calls)
+	}
+	if probe.most > 8 || probe.most < 2 {
+		t.Errorf("%d calls ran at once, want them in parallel, at most 8", probe.most)
 	}
 }
