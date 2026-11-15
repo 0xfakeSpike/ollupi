@@ -38,6 +38,12 @@ func (sv *Service) StartThread(user, workspaceID, environmentID, title string, s
 }
 
 func (sv *Service) UpdateThreadSettings(user, threadID string, settings permission.Settings) (db.ThreadRow, error) {
+	return sv.updateThreadSettings(user, threadID, func(permission.Settings) permission.Settings { return settings })
+}
+
+// updateThreadSettings checks what change makes of the thread's settings as they were read, and writes what it makes
+// of them as they are when written.
+func (sv *Service) updateThreadSettings(user, threadID string, change func(permission.Settings) permission.Settings) (db.ThreadRow, error) {
 	t, err := sv.topThread(user, threadID)
 	if err != nil {
 		return db.ThreadRow{}, err
@@ -46,10 +52,10 @@ func (sv *Service) UpdateThreadSettings(user, threadID string, settings permissi
 	if err != nil {
 		return db.ThreadRow{}, err
 	}
-	if err := sv.validateLayer(user, permission.Base(sv.cfg.Settings, sv.res.Shared(), w), t.Settings, permission.ThreadLayer(settings)); err != nil {
+	if err := sv.validateLayer(user, permission.Base(sv.cfg.Settings, sv.res.Shared(), w), t.Settings, permission.ThreadLayer(change(t.Settings))); err != nil {
 		return db.ThreadRow{}, err
 	}
-	t, err = sv.cfg.DB.SetThreadSettings(user, threadID, settings)
+	t, err = sv.cfg.DB.UpdateThreadSettings(user, threadID, change)
 	if err != nil {
 		return db.ThreadRow{}, fmt.Errorf("service: thread %s: %w", threadID, err)
 	}

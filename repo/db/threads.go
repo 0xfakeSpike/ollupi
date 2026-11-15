@@ -246,19 +246,21 @@ func (d *DB) CheckIdle(id string) error {
 	return nil
 }
 
-func (d *DB) SetThreadSettings(user, id string, settings PermissionSettings) (ThreadRow, error) {
-	raw, err := json.Marshal(settings)
-	if err != nil {
-		return ThreadRow{}, fmt.Errorf("thread %s: encode settings: %w", id, err)
-	}
+// UpdateThreadSettings replaces the thread's settings with what change makes of them, as they are in the transaction:
+// a change that adds to them does not undo one made since its caller read them.
+func (d *DB) UpdateThreadSettings(user, id string, change func(PermissionSettings) PermissionSettings) (ThreadRow, error) {
 	var row ThreadRow
-	err = d.Tx(func(tx *DB) error {
-		res := tx.gorm.Model(&ThreadRow{}).Where("id = ? AND user_id = ?", id, user).Update("settings", string(raw))
-		if res.Error != nil {
-			return res.Error
+	err := d.Tx(func(tx *DB) error {
+		current, err := tx.ThreadOf(user, id)
+		if err != nil {
+			return err
 		}
-		if res.RowsAffected == 0 {
-			return ErrNotFound
+		raw, err := json.Marshal(change(current.Settings))
+		if err != nil {
+			return fmt.Errorf("thread %s: encode settings: %w", id, err)
+		}
+		if err := checkOne(tx.gorm.Model(&ThreadRow{}).Where("id = ?", id).Update("settings", string(raw))); err != nil {
+			return err
 		}
 		row, err = tx.ThreadRow(id)
 		return err

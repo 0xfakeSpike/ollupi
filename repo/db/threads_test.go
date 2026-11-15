@@ -119,7 +119,7 @@ func TestAThreadByIDIsItsUsersAlone(t *testing.T) {
 		"read":    func() error { _, err := db.MarkThreadRead("b", "t", at); return err },
 		"archive": func() error { _, err := db.SetThreadArchived("b", "t", &at); return err },
 		"settings": func() error {
-			_, err := db.SetThreadSettings("b", "t", PermissionSettings{})
+			_, err := db.UpdateThreadSettings("b", "t", func(PermissionSettings) PermissionSettings { return PermissionSettings{} })
 			return err
 		},
 		"attachment": func() error { _, err := db.Attachment("b", "t", "file"); return err },

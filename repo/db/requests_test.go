@@ -175,3 +175,35 @@ func TestAUsersThreadsAreFoundByIndex(t *testing.T) {
 		t.Errorf("a user's threads are found by %+v, want the threads_user index", plan)
 	}
 }
+
+func TestASettingsChangeAppliesToTheSettingsAsTheyAreNow(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	at := time.Now().UTC()
+	if err := store.CreateThread(ThreadRow{UserID: DefaultUser, ID: "t", CreatedAt: at, UpdatedAt: at}); err != nil {
+		t.Fatal(err)
+	}
+	allow := func(rule string) func(PermissionSettings) PermissionSettings {
+		return func(s PermissionSettings) PermissionSettings {
+			s.Rules.Allow = append(slices.Clone(s.Rules.Allow), rule)
+			return s
+		}
+	}
+	// Two approvals of "always" made from the same reading: the second adds to the first rather than replace it.
+	if _, err := store.UpdateThreadSettings(DefaultUser, "t", allow("run_command(make)")); err != nil {
+		t.Fatal(err)
+	}
+	row, err := store.UpdateThreadSettings(DefaultUser, "t", allow("web_fetch(example.com)"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(row.Settings.Rules.Allow, []string{"run_command(make)", "web_fetch(example.com)"}) {
+		t.Errorf("rules %v, want both", row.Settings.Rules.Allow)
+	}
+	if _, err := store.UpdateThreadSettings("someone else", "t", allow("x")); !errors.Is(err, ErrNotFound) {
+		t.Errorf("another user's thread: %v", err)
+	}
+}
