@@ -47,7 +47,7 @@ func (c *Gemini) Chat(ctx context.Context, req ChatRequest, onDelta func(Delta))
 	if err != nil {
 		return ChatResponse{}, fmt.Errorf("llm.Gemini: %w", err)
 	}
-	ctx, release, err := c.acquire(ctx)
+	release, err := c.acquire(ctx)
 	if err != nil {
 		return ChatResponse{}, err
 	}

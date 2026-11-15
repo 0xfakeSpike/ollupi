@@ -36,7 +36,7 @@ func (c *OpenAI) Chat(ctx context.Context, req ChatRequest, onDelta func(Delta))
 	if req.ToolChoice != ToolChoiceAuto && req.ToolChoice != ToolChoiceNone {
 		return ChatResponse{}, fmt.Errorf("llm.OpenAI: unsupported tool choice %q", req.ToolChoice)
 	}
-	ctx, release, err := c.acquire(ctx)
+	release, err := c.acquire(ctx)
 	if err != nil {
 		return ChatResponse{}, err
 	}

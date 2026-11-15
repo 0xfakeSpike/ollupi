@@ -43,7 +43,7 @@ func (c *Anthropic) Chat(ctx context.Context, req ChatRequest, onDelta func(Delt
 	if err != nil {
 		return ChatResponse{}, fmt.Errorf("llm.Anthropic: %w", err)
 	}
-	ctx, release, err := c.acquire(ctx)
+	release, err := c.acquire(ctx)
 	if err != nil {
 		return ChatResponse{}, err
 	}
