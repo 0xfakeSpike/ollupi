@@ -10,7 +10,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
-func TestACallQueuesTheSubagentsConversationAndWaitsOnIt(t *testing.T) {
+func TestACallWritesTheSubagentsConversationAndWaitsOnIt(t *testing.T) {
 	store, err := db.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -21,7 +21,7 @@ func TestACallQueuesTheSubagentsConversationAndWaitsOnIt(t *testing.T) {
 	if err := store.CreateThread(db.ThreadRow{ID: "main", UserID: db.DefaultUser, Title: "main", CreatedAt: at, UpdatedAt: at}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := store.SubmitTurn("main", db.TurnRow{ID: "asked", Model: model, Agent: "full-main-agent", Input: "go", CreatedAt: at, StartedAt: at}); err != nil {
+	if _, _, _, _, err := store.SubmitTurn("main", db.TurnRow{ID: "asked", Model: model, Agent: "full-main-agent", Input: "go", CreatedAt: at, StartedAt: at}); err != nil {
 		t.Fatal(err)
 	}
 	launch := New(store)
@@ -39,10 +39,12 @@ func TestACallQueuesTheSubagentsConversationAndWaitsOnIt(t *testing.T) {
 	if child.Thread.ParentThreadID != "main" || child.Thread.ParentItemID != "call" || child.Thread.Title != "Look it up" {
 		t.Errorf("the subagent's conversation: %+v", child.Thread)
 	}
-	queued := child.QueuedTurns()
-	if _, active := child.ActiveTurn(); active || len(queued) != 1 || queued[0].Agent != Browser ||
-		queued[0].Input != "Find the page and report." || queued[0].Model != model {
-		t.Errorf("the subagent's turn: %+v", queued)
+	turn, active := child.ActiveTurn()
+	if !active || len(child.Open) != 1 || turn.Status != db.TurnReady || turn.Agent != Browser || turn.Model != model {
+		t.Errorf("the subagent's turn: %+v", child.Open)
+	}
+	if items, err := store.TurnItems(turn.ID); err != nil || len(items) != 1 || items[0].Type != db.ItemUserMessage || items[0].Text != "Find the page and report." {
+		t.Errorf("the subagent's task: %+v (%v)", items, err)
 	}
 
 	again, err := launch.Invoke(ctx, caller, Browser, args)
@@ -53,6 +55,6 @@ func TestACallQueuesTheSubagentsConversationAndWaitsOnIt(t *testing.T) {
 		t.Error("a blank task launched a subagent")
 	}
 	if _, err := launch.Invoke(ctx, tools.Caller{UserID: db.DefaultUser, ThreadID: "main"}, Browser, args); err == nil {
-		t.Error("a launch outside a call of a turn queued a subagent")
+		t.Error("a launch outside a call of a turn wrote a subagent")
 	}
 }

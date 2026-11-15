@@ -129,6 +129,7 @@ func (o *Orchestrator) afterRun(threadID string, sl *slot, final bool, runErr er
 		o.halt(threadID, err)
 		return
 	}
+	o.announceSubagents(st.AgentCalls())
 	o.reconcile(threadID)
 	if n := len(st.PendingRequests()); n > 0 {
 		slog.Info("turn waiting", "thread", threadID, "turn", turn.ID, "on", "user", "requests", n)
@@ -159,6 +160,10 @@ func (o *Orchestrator) endTurn(turn db.TurnRow) {
 	}
 	slog.Info("turn ended", attrs...)
 	o.ev.Emit(event.Event{Kind: event.TurnCompleted, Thread: thread, Turn: ended})
+	// The first of the turns behind it is the thread's current turn now.
+	if behind := st.Behind(); len(behind) > 0 {
+		o.ev.TurnStarted(thread, behind[0])
+	}
 	o.ev.Status(turn.ThreadID)
 	for _, call := range st.AgentCalls() {
 		o.stopSubagent(call.Await.Handle)
@@ -179,14 +184,7 @@ func (o *Orchestrator) stopSubagent(threadID string) {
 	}
 	turn, err := o.cfg.DB.ActiveTurn(threadID)
 	if errors.Is(err, db.ErrNotFound) {
-		// A subagent whose turn is still queued never started: its turn starts, to end as stopped.
-		var st db.ThreadState
-		if st, err = o.cfg.DB.ThreadState(threadID); err == nil {
-			if len(st.QueuedTurns()) == 0 {
-				return
-			}
-			_, turn, _, err = o.cfg.DB.StartQueuedTurn(threadID)
-		}
+		return
 	}
 	if err != nil {
 		o.ev.Fault(threadID, "", fmt.Errorf("the subagent could not be stopped: %w", err))

@@ -110,7 +110,7 @@ func TestEndedBackgroundCallsComeBackToTheirThreadOnce(t *testing.T) {
 		t.Errorf("a result came back twice: %d %v", len(again), err)
 	}
 
-	if _, _, _, err := db.SubmitTurn("busy", TurnRow{ID: "asked", Model: model, Agent: "full-main-agent", Input: "go", CreatedAt: at, StartedAt: at}); err != nil {
+	if _, _, _, _, err := db.SubmitTurn("busy", TurnRow{ID: "asked", Model: model, Agent: "full-main-agent", Input: "go", CreatedAt: at, StartedAt: at}); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := db.saveItemOf("busy", ItemRow{ID: "answer", TurnID: "asked", Type: ItemAgentMessage, Status: ItemCompleted, Text: "done", StartedAt: at}); err != nil {

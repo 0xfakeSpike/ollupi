@@ -9,11 +9,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// QueueSubagent writes the conversation of a subagent that the call item of the parent thread launches, with its
-// first turn queued: turn's input as its task and turn's agent as its role, on the model of the parent's current
-// turn. The subagent's conversation is the parent's, in its workspace and environment, under title. A call that
-// launched one already gets it back.
-func (d *DB) QueueSubagent(parentThreadID, itemID, title string, turn TurnRow) (ThreadRow, error) {
+// WriteSubagent writes the conversation of a subagent that the call item of the parent thread launches, with its
+// first turn ready: turn's input as its task, its message, and turn's agent as its role, on the model of the parent's
+// current turn. The subagent's conversation is the parent's, in its workspace and environment, under title. A call
+// that launched one already gets it back.
+func (d *DB) WriteSubagent(parentThreadID, itemID, title string, turn TurnRow) (ThreadRow, error) {
 	var child ThreadRow
 	err := d.Tx(func(tx *DB) error {
 		err := tx.gorm.Where("parent_item_id = ?", itemID).Take(&child).Error
@@ -40,12 +40,12 @@ func (d *DB) QueueSubagent(parentThreadID, itemID, title string, turn TurnRow) (
 		if err := tx.CreateThread(child); err != nil {
 			return err
 		}
-		turn.ID, turn.ThreadID, turn.Seq, turn.Status = uuid.NewString(), child.ID, 1, TurnQueued
-		turn.Model, turn.CreatedAt, turn.StartedAt = current.Model.Clone(), now, now
-		return tx.createTurn(turn)
+		turn.ID, turn.Model, turn.CreatedAt, turn.StartedAt = uuid.NewString(), current.Model.Clone(), now, now
+		child, _, _, err = tx.writeTurn(child, turn)
+		return err
 	})
 	if err != nil {
-		return ThreadRow{}, fmt.Errorf("storage: queue a subagent: %w", err)
+		return ThreadRow{}, fmt.Errorf("storage: write a subagent: %w", err)
 	}
 	return child, nil
 }

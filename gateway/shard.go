@@ -26,7 +26,8 @@ type LoadMeasure string
 const (
 	// LoadActiveUsers counts the users with a conversation that moved within Load.Window.
 	LoadActiveUsers LoadMeasure = "activeUsers"
-	// LoadTurns counts the turns the shard has to run now: queued, ready, running or waiting on a subagent.
+	// LoadTurns counts the turns the shard has to run now: ready, those behind another included, running, or waiting on
+	// a subagent or on background calls.
 	LoadTurns LoadMeasure = "turns"
 	// LoadConnections counts the clients' connections the shard holds now.
 	LoadConnections LoadMeasure = "connections"

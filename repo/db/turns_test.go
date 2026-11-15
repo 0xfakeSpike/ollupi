@@ -46,7 +46,7 @@ func TestRunItemsCarryOnlyWhatOutlastsACompaction(t *testing.T) {
 		}
 	}
 
-	got, err := db.RunItems("t")
+	got, err := db.RunItems("t", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestOnlyReadyTurnsWaitForASlot(t *testing.T) {
 	if err := db.CreateThread(ThreadRow{UserID: DefaultUser, ID: "t", CreatedAt: at, UpdatedAt: at}); err != nil {
 		t.Fatal(err)
 	}
-	_, turn, _, err := db.SubmitTurn("t", TurnRow{ID: "turn", Input: "hi", Model: llm.Model{Name: "m", Connection: "c"}, StartedAt: at})
+	_, turn, _, _, err := db.SubmitTurn("t", TurnRow{ID: "turn", Input: "hi", Model: llm.Model{Name: "m", Connection: "c"}, StartedAt: at})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,4 +137,96 @@ func TestOnlyReadyTurnsWaitForASlot(t *testing.T) {
 		t.Fatal(err)
 	}
 	ready("t")
+}
+
+// A turn submitted behind another is written ready with its message, but only the thread's first open turn runs: the
+// later one takes no slot while the earlier waits on the user, and its message joins the conversation after all of the
+// earlier turn, though it was written before that turn's last items.
+func TestATurnBehindAnotherWaitsWithItsMessage(t *testing.T) {
+	db, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	at := time.Date(2026, 11, 15, 8, 0, 0, 0, time.UTC)
+	if err := db.CreateThread(ThreadRow{UserID: DefaultUser, ID: "t", CreatedAt: at, UpdatedAt: at}); err != nil {
+		t.Fatal(err)
+	}
+	model := llm.Model{Name: "m", Connection: "c"}
+	_, first, _, behind, err := db.SubmitTurn("t", TurnRow{ID: "first", Input: "one", Model: model, StartedAt: at})
+	if err != nil || behind {
+		t.Fatalf("the first turn: behind %v (%v)", behind, err)
+	}
+	if err := db.Launch(first.ID); err != nil {
+		t.Fatal(err)
+	}
+	ask := ItemRow{ID: "ask", TurnID: first.ID, Type: ItemToolCall, Status: ItemInProgress, Tool: "request_user_input", Arguments: "{}",
+		Await: &tools.Await{By: tools.AwaitUser, Request: []byte(`{}`)}, StartedAt: at}
+	if _, _, err := db.RecordItem("t", ask); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Park(first.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	_, second, message, behind, err := db.SubmitTurn("t", TurnRow{ID: "second", Input: "two", Model: model, StartedAt: at})
+	if err != nil || !behind || second.Status != TurnReady || message.TurnID != second.ID || message.Text != "two" {
+		t.Fatalf("the turn behind: behind %v, status %s, message %+v (%v)", behind, second.Status, message, err)
+	}
+	if ready, err := db.ReadyThreads(10, nil); err != nil || len(ready) != 0 {
+		t.Fatalf("ready threads %v (%v) while the current turn waits on the user; want none", ready, err)
+	}
+	if err := db.Launch(second.ID); err == nil {
+		t.Fatal("the turn behind took a slot ahead of the current one")
+	}
+	if current, err := db.ActiveTurn("t"); err != nil || current.ID != first.ID {
+		t.Fatalf("current turn %s (%v), want the first", current.ID, err)
+	}
+
+	ask.Status, ask.Result = ItemCompleted, &ToolResult{}
+	if _, _, err := db.RecordItem("t", ask); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Launch(first.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := db.RecordItem("t", ItemRow{ID: "answer", TurnID: first.ID, Type: ItemAgentMessage, Status: ItemCompleted, Text: "done", StartedAt: at}); err != nil {
+		t.Fatal(err)
+	}
+	ids := func(upTo int) []string {
+		t.Helper()
+		items, err := db.RunItems("t", upTo)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, it := range items {
+			out = append(out, it.ID)
+		}
+		return out
+	}
+	if got := ids(first.Seq); slices.Contains(got, message.ID) {
+		t.Fatalf("the first turn's run reads %v, with the message of the turn behind it", got)
+	}
+	first.Status = TurnCompleted
+	if _, _, _, err := db.EndTurn("t", first); err != nil {
+		t.Fatal(err)
+	}
+	if current, err := db.ActiveTurn("t"); err != nil || current.ID != second.ID {
+		t.Fatalf("current turn after the first ended: %s (%v), want the second", current.ID, err)
+	}
+	if ready, err := db.ReadyThreads(10, nil); err != nil || !slices.Equal(ready, []string{"t"}) {
+		t.Fatalf("ready threads %v (%v), want [t]", ready, err)
+	}
+	got := ids(second.Seq)
+	if len(got) != 4 || got[2] != "answer" || got[3] != message.ID {
+		t.Fatalf("the second turn's run reads %v; want the first turn's message, call and answer, then its own message", got)
+	}
+	page, _, err := db.ThreadPage(DefaultUser, "t", 0, 10)
+	if err != nil || len(page.Items) != 4 || page.Items[3].ID != message.ID {
+		t.Fatalf("the page ends with %+v (%v); want the second turn's message last", page.Items, err)
+	}
+	if before, _, err := db.ThreadPage(DefaultUser, "t", message.Seq, 10); err != nil || len(before.Items) != 3 || before.Items[2].ID != "answer" {
+		t.Fatalf("the page before the second turn's message: %+v (%v); want all of the first turn", before.Items, err)
+	}
 }
