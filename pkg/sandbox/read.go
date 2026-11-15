@@ -7,7 +7,7 @@ import "fmt"
 // them even with the sandbox off. path must be canonical (CanonicalPath), so a link cannot lead around it.
 func (s *Sandbox) CheckRead(path string) error {
 	for _, dir := range s.policy.DenyRead {
-		if Within(dir, path) {
+		if within(dir, path) {
 			return fmt.Errorf("sandbox: %q cannot be read", path)
 		}
 	}
