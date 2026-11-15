@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -177,5 +178,13 @@ func TestABatchThatCrashesIsPutOff(t *testing.T) {
 	}
 	if state.Attempts != 1 || state.NextAttempt == nil || state.LastFailure == nil {
 		t.Fatalf("after the crash: %d attempts, next %v, failure %v; want the batch put off", state.Attempts, state.NextAttempt, state.LastFailure)
+	}
+}
+
+func TestEvidenceIsNotCutInsideAKey(t *testing.T) {
+	key := "-----BEGIN OPENSSH PRIVATE KEY-----\n" + strings.Repeat("b3BlbnNzaC1rZXktdjEAAAAA\n", 120) + "-----END OPENSSH PRIVATE KEY-----"
+	clipped := clipMemory("cat ~/.ssh/id_rsa\n"+key, 3000)
+	if strings.Contains(clipped, "b3BlbnNzaC1rZXktdjEAAAAA") {
+		t.Errorf("the evidence keeps part of the key, which masking no longer finds:\n%.200s", clipped)
 	}
 }

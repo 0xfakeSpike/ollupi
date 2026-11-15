@@ -3,6 +3,7 @@ package memory
 import (
 	"encoding/json"
 	"errors"
+	"github.com/0xfakeSpike/ollupi/pkg/redact"
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/repo/db"
@@ -135,10 +136,13 @@ func itemFact(it db.ItemRow) (Fact, error) {
 	return Fact{Source: db.MemorySource{Table: "items", ID: it.ID, OccurredAt: it.StartedAt.UTC().Format(time.RFC3339Nano)}, Data: raw}, nil
 }
 
+// clipMemory keeps the first n runes of s, or fewer, so as not to cut a sensitive value in two: the part kept would
+// no longer be masked on its way to the model.
 func clipMemory(s string, n int) string {
 	r := []rune(s)
 	if len(r) <= n {
 		return s
 	}
+	n, _ = redact.Cuts(s, redact.Spans(s), n, n)
 	return string(r[:n]) + "\n[truncated]"
 }
