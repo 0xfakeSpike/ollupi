@@ -19,10 +19,19 @@ var (
 	errProgram = errors.New(`workspace: argument "program" must be non-empty string`)
 )
 
-func permissionContent(_ context.Context, _ tools.Caller, arguments map[string]any) (tools.Content, error) {
+// programOf is the program a command names.
+func programOf(arguments map[string]any) (string, error) {
 	program, ok := arguments["program"].(string)
 	if program = strings.TrimSpace(program); !ok || program == "" {
-		return tools.Content{}, errProgram
+		return "", errProgram
+	}
+	return program, nil
+}
+
+func permissionContent(_ context.Context, _ tools.Caller, arguments map[string]any) (tools.Content, error) {
+	program, err := programOf(arguments)
+	if err != nil {
+		return tools.Content{}, err
 	}
 	args, err := parseExecArgsSlice(arguments["args"])
 	if err != nil {

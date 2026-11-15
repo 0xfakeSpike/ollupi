@@ -1,19 +1,37 @@
 package plan
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	"github.com/0xfakeSpike/ollupi/tools"
+)
 
 func TestAPlanHasAtMostOneStepInProgress(t *testing.T) {
-	ok := Plan{Steps: []Step{{Step: "read", Status: Completed}, {Step: "write", Status: InProgress}, {Step: "test", Status: Pending}}}
-	if err := ok.validate(); err != nil {
-		t.Fatalf("a plan in order: %v", err)
+	r, err := tools.New(context.Background(), nil, New())
+	if err != nil {
+		t.Fatal(err)
 	}
-	for name, p := range map[string]Plan{
-		"no steps":          {},
-		"two in progress":   {Steps: []Step{{Step: "a", Status: InProgress}, {Step: "b", Status: InProgress}}},
-		"a blank step":      {Steps: []Step{{Step: " ", Status: Pending}}},
-		"an unknown status": {Steps: []Step{{Step: "a", Status: "done"}}},
+	update := func(steps ...map[string]any) tools.Result {
+		plan := make([]any, len(steps))
+		for i, s := range steps {
+			plan[i] = s
+		}
+		return r.Invoke(context.Background(), tools.Caller{}, Tool, map[string]any{"plan": plan})
+	}
+	step := func(text string, status Status) map[string]any {
+		return map[string]any{"step": text, "status": string(status)}
+	}
+	if res := update(step("read", Completed), step("write", InProgress), step("test", Pending)); res.Err != nil {
+		t.Fatalf("a plan in order: %v", res.Err)
+	}
+	for name, res := range map[string]tools.Result{
+		"no steps":          update(),
+		"two in progress":   update(step("a", InProgress), step("b", InProgress)),
+		"a blank step":      update(step(" ", Pending)),
+		"an unknown status": update(step("a", "done")),
 	} {
-		if err := p.validate(); err == nil {
+		if res.Err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}

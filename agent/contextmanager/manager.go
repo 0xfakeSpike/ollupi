@@ -137,7 +137,7 @@ func (m *Manager) calibrate(s *db.ContextStats, items []db.ItemRow) {
 	}
 }
 
-// Compact says the model's input is too small for the full prompt and tool list.
+// InputTokens is the most input the model takes beside the room kept for its answer.
 func (m *Manager) InputTokens() int { return m.inputTokens }
 
 func (m *Manager) SkillBudget() int {

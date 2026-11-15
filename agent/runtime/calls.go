@@ -93,11 +93,6 @@ func (rt *Runtime) handleCall(ctx context.Context, it db.ItemRow, planned int) (
 		h, err := rt.refuse(it, err.Error())
 		return h, false, nil, err
 	}
-	descriptor, _ := rt.tool(it.Tool)
-	if err := tools.ValidateArguments(args, descriptor.InputSchema); err != nil {
-		h, err := rt.refuse(it, fmt.Sprintf("invalid arguments for %s: %v", it.Tool, err))
-		return h, false, nil, err
-	}
 	if rt.toolCalls()+planned >= maxToolCalls {
 		if err := rt.fail(it, "skipped: the tool call limit for this turn was reached"); err != nil {
 			return "", false, nil, err

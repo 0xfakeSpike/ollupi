@@ -23,23 +23,15 @@ func (r *Provider) prepareCommand(ctx context.Context, caller tools.Caller, args
 	if err != nil {
 		return nil, err
 	}
-	program, ok := args["program"].(string)
-	if !ok || strings.TrimSpace(program) == "" {
-		return nil, fmt.Errorf("workspace: argument program must be a non-empty string")
+	program, err := programOf(args)
+	if err != nil {
+		return nil, err
 	}
-	program = strings.TrimSpace(program)
 	argv, err := parseExecArgsSlice(args["args"])
 	if err != nil {
 		return nil, err
 	}
-	requested := ""
-	if raw, ok := args["work_dir"]; ok {
-		requested, ok = raw.(string)
-		if !ok || strings.TrimSpace(requested) == "" {
-			return nil, fmt.Errorf("workspace: argument work_dir must be a non-empty string")
-		}
-	}
-	cwd, err := d.resolve(ctx, requested)
+	cwd, err := d.workDir(ctx, args)
 	if err != nil {
 		return nil, err
 	}
@@ -156,12 +148,8 @@ func (r *Provider) runCommand(ctx context.Context, caller tools.Caller, args map
 		return tools.Result{}, fmt.Errorf("workspace: incomplete prepared command")
 	}
 
-	current, err := d.box.Executable(ctx, p.Program, p.Cwd)
-	if err != nil {
+	if err := d.sameExecutable(ctx, p.Program, p); err != nil {
 		return tools.Result{}, err
-	}
-	if current != p.Program {
-		return tools.Result{}, fmt.Errorf("workspace: approved executable now resolves to a different path")
 	}
 	// Only the program's name goes into the trace: its path and arguments can name the user's files.
 	ctx, span := tracer.Start(ctx, "ollupi.sandbox.run", trace.WithAttributes(
@@ -205,6 +193,30 @@ func (r *Provider) validatePrepared(ctx context.Context, d dirs, p *tools.Prepar
 	}
 	if cwd != p.Cwd {
 		return fmt.Errorf("workspace: prepared command directory changed")
+	}
+	return nil
+}
+
+// workDir is where a command runs: the work_dir it asks for, or the first root.
+func (d dirs) workDir(ctx context.Context, args map[string]any) (string, error) {
+	requested := ""
+	if raw, ok := args["work_dir"]; ok {
+		requested, ok = raw.(string)
+		if !ok || strings.TrimSpace(requested) == "" {
+			return "", fmt.Errorf("workspace: argument work_dir must be a non-empty string")
+		}
+	}
+	return d.resolve(ctx, requested)
+}
+
+// sameExecutable checks that program still resolves to the executable the user approved for p.
+func (d dirs) sameExecutable(ctx context.Context, program string, p *tools.Prepared) error {
+	current, err := d.box.Executable(ctx, program, p.Cwd)
+	if err != nil {
+		return err
+	}
+	if current != p.Program {
+		return fmt.Errorf("workspace: approved executable now resolves to a different path")
 	}
 	return nil
 }
