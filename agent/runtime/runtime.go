@@ -285,7 +285,7 @@ func (rt *Runtime) run(ctx context.Context) (bool, error) {
 			}
 		}
 		if len(resp.Message.ToolCalls) == 0 && !slices.ContainsFunc(rt.items, func(it db.ItemRow) bool {
-			return (it.Type == db.ItemUserMessage || it.Type == db.ItemBackgroundResult) && it.Seq > seen
+			return (it.Type == db.ItemUserMessage || it.Type == db.ItemBackgroundResult || it.Type == db.ItemAgentReport) && it.Seq > seen
 		}) {
 			return true, nil
 		}

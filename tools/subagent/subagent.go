@@ -1,14 +1,13 @@
 // Package subagent gives an agent the tools that launch subagents. A call does not run the subagent: it writes the
-// subagent's conversation and its first turn, ready, and waits on that conversation, which the orchestrator runs as
-// it runs any, and whose final answer comes back as the call's result.
+// subagent's conversation and its first turn, ready, which the orchestrator runs as it runs any, and completes at
+// once, as a call in the background does. The subagent's report comes back to the turn that launched it as an item
+// of its own when the subagent ends, and that turn does not end before its subagents have.
 package subagent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
@@ -61,14 +60,20 @@ func (Call) Constrain(s *jsonschema.Schema) {
 // Tools provides a tool for each kind of subagent.
 type Tools struct {
 	db *db.DB
+	// started tells the orchestrator of a subagent written, whose turn waits for a slot.
+	started func(threadID string)
 }
 
-func New(store *db.DB) *Tools { return &Tools{db: store} }
+func New(store *db.DB, started func(threadID string)) *Tools {
+	return &Tools{db: store, started: started}
+}
 
 func (*Tools) Name() (string, string) { return ProviderName, "Launches subagents." }
 
 const launching = "It knows nothing of this conversation: put everything it needs in prompt, including what its report must contain. " +
-	"The turn waits until every subagent launched in the response has reported, and each call returns that subagent's final report. Subagents cannot launch subagents."
+	"The call returns at once and the subagent works on its own; its report comes back to you as a message when it ends. " +
+	"Meanwhile go on with what does not need the report, or end your reply: the turn waits for the reports of all its subagents, and answers the user if they write. " +
+	"Subagents cannot launch subagents."
 
 func (t *Tools) ToolList(context.Context) ([]*tools.Spec, error) {
 	specs := make([]*tools.Spec, 0, len(Kinds))
@@ -83,7 +88,7 @@ func (t *Tools) ToolList(context.Context) ([]*tools.Spec, error) {
 	return specs, nil
 }
 
-// Invoke writes the subagent of the kind whose tool was called, and waits on its conversation.
+// Invoke writes the subagent of the kind whose tool was called and returns at once: its report comes back later.
 func (t *Tools) Invoke(ctx context.Context, caller tools.Caller, name string, arguments map[string]any) (tools.Result, error) {
 	if _, ok := Kinds[name]; !ok {
 		return tools.Result{}, fmt.Errorf("%q launches no subagent", name)
@@ -103,44 +108,9 @@ func (t *Tools) Invoke(ctx context.Context, caller tools.Caller, name string, ar
 	if err != nil {
 		return tools.Result{}, err
 	}
-	request, err := json.Marshal(c)
-	if err != nil {
-		return tools.Result{}, err
-	}
-	return tools.Result{Await: &tools.Await{By: tools.AwaitAgent, Request: request, Handle: child.ID}}, nil
-}
-
-// Report says whether the subagent the call launched ended: its turn completed with a final answer, failed or was
-// stopped. Once it did, the call completes with its report: the subagent's final answer, or why it has none.
-func Report(store *db.DB, call db.ItemRow) (db.ItemRow, bool, error) {
-	child, err := store.ThreadState(call.Await.Handle)
-	if err != nil {
-		return db.ItemRow{}, false, fmt.Errorf("subagent: thread %s: %w", call.Await.Handle, err)
-	}
-	if _, active := child.ActiveTurn(); active {
-		return db.ItemRow{}, false, nil
-	}
-	if child.Last == nil {
-		return db.ItemRow{}, false, fmt.Errorf("subagent: thread %s has no turn", child.Thread.ID)
-	}
-	ended := *child.Last
-	now := time.Now().UTC()
-	call.CompletedAt = &now
-	switch ended.Status {
-	case db.TurnCompleted:
-		answer, err := store.FinalAnswer(child.Thread.ID, ended.ID)
-		if err != nil {
-			return db.ItemRow{}, false, fmt.Errorf("subagent: %s completed turn %s without a final answer: %w", child.Thread.ID, ended.ID, err)
-		}
-		result, _, err := db.ResultOf(tools.Result{Output: answer})
-		if err != nil {
-			return db.ItemRow{}, false, err
-		}
-		call.Status, call.Result = db.ItemCompleted, result
-	case db.TurnInterrupted:
-		call.Status, call.Error = db.ItemFailed, "the subagent was stopped: "+ended.Error
-	default:
-		call.Status, call.Error = db.ItemFailed, "the subagent failed: "+ended.Error
-	}
-	return call, true, nil
+	t.started(child.ID)
+	return tools.Result{Output: map[string]any{
+		"subagent": child.ID, "description": child.Title,
+		"note": "It works on its own; its report comes back to this conversation when it ends.",
+	}}, nil
 }

@@ -71,9 +71,12 @@ const (
 	// ItemBackgroundResult is how a background call ended, come back to its thread. It is a tool's output: data, as
 	// any other.
 	ItemBackgroundResult ItemType = "backgroundResult"
+	// ItemAgentReport is how a subagent ended, come back to the turn that launched it: its final answer as the result,
+	// or why it has none. Text is the subagent's task, as its conversation is titled; CallID is the launching call's.
+	ItemAgentReport ItemType = "agentReport"
 )
 
-var ItemTypeValues = []ItemType{ItemUserMessage, ItemAgentMessage, ItemReasoning, ItemToolCall, ItemContextCompaction, ItemMemoryContext, ItemError, ItemBackgroundResult}
+var ItemTypeValues = []ItemType{ItemUserMessage, ItemAgentMessage, ItemReasoning, ItemToolCall, ItemContextCompaction, ItemMemoryContext, ItemError, ItemBackgroundResult, ItemAgentReport}
 
 func (t ItemType) Value() (driver.Value, error) { return enumValue(t, ItemTypeValues) }
 
@@ -226,10 +229,6 @@ func (it ItemRow) Awaits() bool {
 	return it.Type == ItemToolCall && it.Status == ItemInProgress && it.Await != nil
 }
 
-func (it ItemRow) waitsOnAgent() bool {
-	return it.Awaits() && it.Await.By == tools.AwaitAgent
-}
-
 func (it ItemRow) waitsOnBackground() bool {
 	return it.Awaits() && it.Await.By == tools.AwaitBackground
 }
@@ -370,17 +369,19 @@ func (d *DB) recordIn(threadID string, active TurnRow, item ItemRow) (ItemRow, b
 	if err != nil || item.Type != ItemToolCall {
 		return stored, isNew, err
 	}
-	// A call answered, approved or reported may be the last one its waiting turn awaited.
+	// A call answered, approved or fulfilled may be the last one its waiting turn awaited.
 	switch active.Status {
-	case TurnWaitingOnApproval, TurnWaitingOnUserInput, TurnWaitingOnAgent, TurnWaitingOnBackground:
+	case TurnWaitingOnApproval, TurnWaitingOnUserInput, TurnWaitingOnBackground:
 		_, err = d.settleStatus(active.ID, active.Status)
 	}
 	return stored, isNew, err
 }
 
-// Steer writes a user message into the current turn. A turn that waits on the user takes the message in place of
-// what it waits for: the calls of the turn that are still to run, the one awaiting approval or an answer among them,
-// are declined, and the turn is ready again, so its next run reads the message. It returns them as closed.
+// Steer writes a user message into the current turn. A turn that waits takes the message in place of what it waits
+// for, and is ready again, so its next run reads the message: the calls of the turn that are still to run, the one
+// awaiting approval, an answer or background calls among them, are declined, and the background calls go on. A turn
+// that waits on its subagents only is ready again: they go on, and report to it as they end. It returns the declined
+// calls as closed.
 func (d *DB) Steer(threadID string, message ItemRow) (ItemRow, []ItemRow, error) {
 	var stored ItemRow
 	var closed []ItemRow
@@ -398,7 +399,11 @@ func (d *DB) Steer(threadID string, message ItemRow) (ItemRow, []ItemRow, error)
 		if stored, _, err = tx.saveItemOf(threadID, message); err != nil {
 			return err
 		}
-		if active.Status != TurnWaitingOnApproval && active.Status != TurnWaitingOnUserInput {
+		switch active.Status {
+		case TurnWaitingOnAgent:
+			return checkOne(tx.gorm.Model(&TurnRow{}).Where("id = ? AND status = ?", active.ID, TurnWaitingOnAgent).Update("status", TurnReady))
+		case TurnWaitingOnApproval, TurnWaitingOnUserInput, TurnWaitingOnBackground:
+		default:
 			return nil
 		}
 		var open []ItemRow
@@ -412,6 +417,8 @@ func (d *DB) Steer(threadID string, message ItemRow) (ItemRow, []ItemRow, error)
 				it.Error = "the user sent a message instead of approving this call, so it did not run"
 			case it.WaitsOnUser():
 				it.Error = "the user sent a message instead of answering"
+			case it.waitsOnBackground():
+				it.Error = "the user sent a message instead of waiting; the background calls go on, and their results come back as they end"
 			case it.Status == ItemPending:
 				it.Error = "skipped: the user sent a message before this call ran"
 			default:

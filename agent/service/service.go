@@ -138,7 +138,7 @@ func (sv *Service) Start(ctx context.Context) error {
 	if sv.cfg.DB == nil {
 		return fmt.Errorf("service: a database is required")
 	}
-	providers := append(slices.Clone(sv.cfg.Providers), plan.New(), subagent.New(sv.cfg.DB), userinput.New(),
+	providers := append(slices.Clone(sv.cfg.Providers), plan.New(), subagent.New(sv.cfg.DB, sv.o.SubagentStarted), userinput.New(),
 		contextmanager.NewOutputs(sv.cfg.DB), runtime.Loader{}, background.New(sv.cfg.DB, sv.o.CancelBackground))
 	if sv.cfg.Memory != nil {
 		providers = append(providers, sv.cfg.Memory)

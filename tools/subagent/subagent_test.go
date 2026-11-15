@@ -10,7 +10,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
-func TestACallWritesTheSubagentsConversationAndWaitsOnIt(t *testing.T) {
+func TestACallWritesTheSubagentsConversationAndReturnsAtOnce(t *testing.T) {
 	store, err := db.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -24,17 +24,31 @@ func TestACallWritesTheSubagentsConversationAndWaitsOnIt(t *testing.T) {
 	if _, _, _, _, err := store.SubmitTurn("main", db.TurnRow{ID: "asked", Model: model, Agent: "full-main-agent", Input: "go", CreatedAt: at, StartedAt: at}); err != nil {
 		t.Fatal(err)
 	}
-	launch := New(store)
+	var started []string
+	launch := New(store, func(id string) { started = append(started, id) })
 	ctx, caller := context.Background(), tools.Caller{UserID: db.DefaultUser, ThreadID: "main", Item: "call"}
 	args := map[string]any{"description": "Look it up", "prompt": "Find the page and report."}
 
-	res, err := launch.Invoke(ctx, caller, Browser, args)
-	if err != nil || res.Await == nil || res.Await.By != tools.AwaitAgent || res.Await.Handle == "" {
-		t.Fatalf("a launch: %+v %v", res, err)
+	launched := func(res tools.Result) string {
+		t.Helper()
+		out, ok := res.Output.(map[string]any)
+		if !ok || res.Await != nil {
+			t.Fatalf("a launch returned %+v; want its subagent at once, waiting on nothing", res)
+		}
+		id, _ := out["subagent"].(string)
+		return id
 	}
-	child, err := store.ThreadState(res.Await.Handle)
+	res, err := launch.Invoke(ctx, caller, Browser, args)
 	if err != nil {
 		t.Fatal(err)
+	}
+	id := launched(res)
+	child, err := store.ThreadState(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(started) != 1 || started[0] != id {
+		t.Errorf("the orchestrator was told of %v, want [%s]", started, id)
 	}
 	if child.Thread.ParentThreadID != "main" || child.Thread.ParentItemID != "call" || child.Thread.Title != "Look it up" {
 		t.Errorf("the subagent's conversation: %+v", child.Thread)
@@ -48,7 +62,7 @@ func TestACallWritesTheSubagentsConversationAndWaitsOnIt(t *testing.T) {
 	}
 
 	again, err := launch.Invoke(ctx, caller, Browser, args)
-	if err != nil || again.Await == nil || again.Await.Handle != res.Await.Handle {
+	if err != nil || launched(again) != id {
 		t.Errorf("the same call launched another subagent: %+v %v", again, err)
 	}
 	if _, err := launch.Invoke(ctx, caller, Browser, map[string]any{"description": "x", "prompt": "  "}); err == nil {

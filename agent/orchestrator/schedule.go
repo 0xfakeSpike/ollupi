@@ -26,14 +26,6 @@ func (o *Orchestrator) reconcile(threadID string) {
 		return
 	}
 	reported := false
-	for _, call := range st.AgentCalls() {
-		settled, err := o.settle(st.Thread, turn, call)
-		if err != nil {
-			o.halt(threadID, err)
-			return
-		}
-		reported = reported || settled
-	}
 	if waits := st.BackgroundWaits(); len(waits) > 0 {
 		o.deliverBackground(threadID)
 		for _, call := range waits {

@@ -293,7 +293,9 @@ func TestTurnsFromBeforeRolesTakeTheRoleOfTheirThread(t *testing.T) {
 	}
 }
 
-func TestAWaitFromBeforeHandlesKeepsItsSubagentThread(t *testing.T) {
+// A call that waited on its subagent, from before handles and before reports came back as items, completes as a launch
+// naming that subagent, and its turn, with no subagent of its running, is ready again.
+func TestASubagentWaitFromBeforeCompletesAsALaunch(t *testing.T) {
 	home := t.TempDir()
 	path := filepath.Join(home, "data", "ollupi.sqlite")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -328,8 +330,11 @@ func TestAWaitFromBeforeHandlesKeepsItsSubagentThread(t *testing.T) {
 	}
 	defer db.Close()
 	call, err := db.Item("call")
-	if err != nil || call.Await == nil || call.Await.Handle != "child" || call.Await.By != "agent" || string(call.Await.Request) != `{"prompt":"p"}` {
-		t.Errorf("the wait after the step: %+v (%v)", call.Await, err)
+	if err != nil || call.Status != ItemCompleted || call.Await != nil || call.Result == nil || !strings.Contains(string(call.Result.Output), `"subagent":"child"`) {
+		t.Errorf("the wait after the steps: %+v (%v)", call, err)
+	}
+	if turn, err := db.Turn("asked"); err != nil || turn.Status != TurnReady {
+		t.Errorf("the turn that waited is %s (%v), want ready", turn.Status, err)
 	}
 }
 

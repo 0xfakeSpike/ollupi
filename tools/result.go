@@ -16,19 +16,18 @@ type Result struct {
 type AwaitBy string
 
 const (
-	AwaitUser  AwaitBy = "user"
-	AwaitAgent AwaitBy = "agent"
+	AwaitUser AwaitBy = "user"
 	// AwaitBackground waits for background calls to end.
 	AwaitBackground AwaitBy = "background"
 )
 
-var AwaitByValues = []AwaitBy{AwaitUser, AwaitAgent, AwaitBackground}
+var AwaitByValues = []AwaitBy{AwaitUser, AwaitBackground}
 
 type Await struct {
 	By      AwaitBy         `json:"by"`
 	Request json.RawMessage `json:"request"`
-	// Handle names what fulfils the wait once it has started: a subagent's thread. A wait for background calls names
-	// them in its request.
+	// Handle names what fulfils the wait once it has started. A wait for background calls names them in its request
+	// instead.
 	Handle string `json:"handle,omitempty"`
 }
 

@@ -141,7 +141,7 @@ func TestAPageCarriesOnlyItsTurnsAndTheOpenOnes(t *testing.T) {
 			t.Fatal(err)
 		}
 		turn.Status = TurnCompleted
-		if _, _, _, err := store.EndTurn("t", turn); err != nil {
+		if _, _, _, _, err := store.EndTurn("t", turn); err != nil {
 			t.Fatal(err)
 		}
 	}

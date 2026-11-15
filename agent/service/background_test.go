@@ -333,23 +333,48 @@ func TestASubagentReportsOnlyOnceItsBackgroundCallsHaveEnded(t *testing.T) {
 		t.Fatal(err)
 	}
 	child := func() db.TurnRow {
-		v, err := store.Thread(th.ID)
-		if err != nil {
+		running, err := store.RunningSubagents(turn.ID)
+		if err != nil || len(running) == 0 {
 			return db.TurnRow{}
 		}
-		for _, it := range v.Items {
-			if it.Tool == subagent.General && it.Await != nil && it.Await.Handle != "" {
-				if cv, err := store.Thread(it.Await.Handle); err == nil && len(cv.Turns) > 0 {
-					return cv.Turns[len(cv.Turns)-1]
-				}
-			}
-		}
-		return db.TurnRow{}
+		current, _ := store.ActiveTurn(running[0])
+		return current
 	}
 	for child().Status != db.TurnWaitingOnBackground {
 		select {
 		case <-ctx.Done():
 			t.Fatalf("the subagent never waited for its download: %s", child().Status)
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	// The parent answered and waits for its subagent; a message meanwhile gets an answer, and the wait goes on.
+	parentStatus := func() db.TurnStatus {
+		row, _ := store.Turn(turn.ID)
+		return row.Status
+	}
+	for parentStatus() != db.TurnWaitingOnAgent {
+		select {
+		case <-ctx.Done():
+			t.Fatalf("the parent never waited for its subagent: %s", parentStatus())
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	fake.mu.Lock()
+	asked := fake.parent
+	fake.mu.Unlock()
+	if _, err := ag.SteerTurn(ctx, db.DefaultUser, th.ID, turn.ID, service.Input{Text: "下载到哪一步了？"}); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		fake.mu.Lock()
+		answered := fake.parent > asked && strings.Contains(fake.parentLast, "下载到哪一步了？")
+		fake.mu.Unlock()
+		if answered && parentStatus() == db.TurnWaitingOnAgent {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("the parent did not answer the message and wait again: %s", parentStatus())
 		case <-time.After(20 * time.Millisecond):
 		}
 	}

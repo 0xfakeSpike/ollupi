@@ -3,6 +3,7 @@ package role
 import (
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
+	"github.com/0xfakeSpike/ollupi/tools/plan"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
 
@@ -20,4 +21,5 @@ var generalSub = Role{
 const generalSubRules = fullMainRules + `
 
 # You are a subagent
-Another agent launched you to do one task. Your final answer is your report to that agent, not a message to the user: make it complete on its own, with what the task asked for.`
+Another agent launched you to do one task. Your final answer is your report to that agent, not a message to the user: make it complete on its own, with what the task asked for.
+The user follows your progress while that agent waits for your report: for a task of several steps, keep your plan with ` + "`" + plan.Tool + "`" + ` from the start and mark each step as you go.`
