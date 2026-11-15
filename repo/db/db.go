@@ -80,11 +80,6 @@ func checkOne(res *gorm.DB) error {
 	return nil
 }
 
-var rowTypes = []any{
-	&UserRow{}, &EnvironmentRow{}, &WorkspaceRow{}, &ThreadRow{}, &TurnRow{}, &ItemRow{}, &CronJobRow{},
-	&MemoryRow{}, &MemoryStateRow{}, &SettingsRow{}, &ShardLeaseRow{}, &BackgroundCallRow{},
-}
-
 var (
 	ErrNotFound = errors.New("storage: not found")
 	// ErrThreadBusy, ErrThreadArchived and ErrNoSuchRequest refuse a write the thread no longer allows, whatever the

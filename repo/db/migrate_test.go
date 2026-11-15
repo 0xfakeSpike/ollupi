@@ -17,6 +17,12 @@ import (
 	"gorm.io/gorm/logger"
 )
 
+// rowTypes are the rows of the schema, as gorm would make it from them.
+var rowTypes = []any{
+	&UserRow{}, &EnvironmentRow{}, &WorkspaceRow{}, &ThreadRow{}, &TurnRow{}, &ItemRow{}, &CronJobRow{},
+	&MemoryRow{}, &MemoryStateRow{}, &SettingsRow{}, &ShardLeaseRow{}, &BackgroundCallRow{},
+}
+
 // The migrations and the row types are two accounts of one schema: a fresh
 // database after every step has the tables, columns, keys, checks and
 // indexes gorm would make from the rows.
@@ -45,19 +51,22 @@ func TestADatabaseFromBeforeMigrationsKeepsItsRows(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// gorm made the database of the last ollupi before migrations as the first step does, with no schema version.
 	old := rawDB(t, path)
-	if err := old.AutoMigrate(rowTypes...); err != nil {
+	all, err := shardSteps()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := old.Exec(all[0]).Error; err != nil {
 		t.Fatal(err)
 	}
 	at := time.Date(2026, 10, 30, 8, 0, 0, 0, time.UTC)
-	if err := old.Create(&UserRow{ID: DefaultUser, CreatedAt: at}).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := old.Create(&ThreadRow{UserID: DefaultUser, ID: "kept", Title: "kept", CreatedAt: at, UpdatedAt: at}).Error; err != nil {
-		t.Fatal(err)
-	}
 	done := at.Add(time.Minute)
-	if err := old.Create(&TurnRow{ID: "said", ThreadID: "kept", Seq: 1, Status: TurnCompleted, Model: llm.Model{Name: "m", Connection: "c"}, CreatedAt: at, StartedAt: at, CompletedAt: &done}).Error; err != nil {
+	if err := old.Exec("INSERT INTO threads (id, title, created_at, updated_at) VALUES ('kept', 'kept', ?, ?)", at, at).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := old.Exec(`INSERT INTO turns (id, thread_id, seq, status, model, input_tokens, cached_input_tokens, cache_write_input_tokens,
+		output_tokens, started_at, completed_at) VALUES ('said', 'kept', 1, 'completed', '{"name":"m","connection":"c"}', 0, 0, 0, 0, ?, ?)`, at, done).Error; err != nil {
 		t.Fatal(err)
 	}
 	closeRaw(t, old)
@@ -81,6 +90,22 @@ func TestADatabaseFromBeforeMigrationsKeepsItsRows(t *testing.T) {
 	}
 	if kept.RepliedAt == nil || kept.Unread() {
 		t.Errorf("the thread from before is unread (replied %v, read %v)", kept.RepliedAt, kept.ReadAt)
+	}
+}
+
+func TestADatabaseOlderThanTheFirstStepIsRefused(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, "data", "ollupi.sqlite")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := rawDB(t, path)
+	if err := old.Exec("CREATE TABLE workspaces (id text PRIMARY KEY, name text NOT NULL)").Error; err != nil {
+		t.Fatal(err)
+	}
+	closeRaw(t, old)
+	if _, err := Open(home); err == nil || !strings.Contains(err.Error(), "v0.8.1") {
+		t.Fatalf("opening a database older than the first step: %v", err)
 	}
 }
 
