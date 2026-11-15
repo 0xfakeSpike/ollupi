@@ -29,7 +29,7 @@ func newSubagentShard(t *testing.T) *subagentShard {
 	if err := store.CreateThread(ThreadRow{UserID: DefaultUser, ID: "main", Title: "main", CreatedAt: s.at, UpdatedAt: s.at}); err != nil {
 		t.Fatal(err)
 	}
-	if _, s.turn, _, _, err = store.SubmitTurn("main", TurnRow{ID: "asked", Input: "go", Model: s.model, Agent: "full-main-agent", StartedAt: s.at}); err != nil {
+	if _, s.turn, _, _, err = store.SubmitTurn("main", TurnRow{ID: "asked", Model: s.model, Agent: "full-main-agent", StartedAt: s.at}, "go", nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Launch(s.turn.ID); err != nil {
@@ -45,7 +45,7 @@ func (s *subagentShard) launch(call string) ThreadRow {
 		CallID: "c-" + call, Arguments: "{}", Result: &ToolResult{}, StartedAt: s.at}); err != nil {
 		s.t.Fatal(err)
 	}
-	child, err := s.db.WriteSubagent("main", call, "task "+call, TurnRow{Input: "do " + call, Agent: "general-sub-agent"})
+	child, err := s.db.WriteSubagent("main", call, "task "+call, TurnRow{Agent: "general-sub-agent"}, "do "+call)
 	if err != nil {
 		s.t.Fatal(err)
 	}

@@ -34,7 +34,7 @@ func TestTheCountsALoadIsMeasuredBy(t *testing.T) {
 		t.Errorf("turns under way before any: %d, %v", n, err)
 	}
 	for _, thread := range []string{"recent", "lapsed"} {
-		if _, _, _, _, err := db.SubmitTurn(thread, TurnRow{ID: thread, Input: "hi", Model: llm.Model{Name: "m", Connection: "c"}, StartedAt: now}); err != nil {
+		if _, _, _, _, err := db.SubmitTurn(thread, TurnRow{ID: thread, Model: llm.Model{Name: "m", Connection: "c"}, StartedAt: now}, "hi", nil); err != nil {
 			t.Fatal(err)
 		}
 	}

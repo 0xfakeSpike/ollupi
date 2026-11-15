@@ -36,15 +36,15 @@ import (
 const (
 	// maxAnswerRunes is the most an answer to one of the model's questions may say.
 	maxAnswerRunes = 4000
-	// maxQueuedTurns is how many turns one conversation may have waiting behind the one in progress.
-	maxQueuedTurns = 20
+	// maxQueuedMessages is how many messages one conversation may have waiting behind its current turn.
+	maxQueuedMessages = 20
 )
 
 var (
 	ErrSubagentThread    = errors.New("a subagent thread takes no input; send it to its parent conversation")
 	ErrWorkspaceArchived = errors.New("the workspace is archived; restore it before starting new work")
 	ErrWorkspaceBusy     = errors.New("a conversation in the workspace has a turn or a background call in progress, or queued; interrupt it first")
-	ErrQueueFull         = fmt.Errorf("the conversation has %d messages waiting already; send this one once they start", maxQueuedTurns)
+	ErrQueueFull         = fmt.Errorf("the conversation has %d messages waiting already; send this one once they start", maxQueuedMessages)
 	ErrInvalidMessage    = errors.New("invalid message")
 	ErrInvalidAnswer     = errors.New("invalid answer")
 	ErrInvalidDecision   = errors.New("invalid decision")

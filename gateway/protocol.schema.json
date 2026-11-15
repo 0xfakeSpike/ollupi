@@ -2711,18 +2711,6 @@
             "string"
           ],
           "format": "date-time"
-        },
-        "attachments": {
-          "type": [
-            "null",
-            "array"
-          ],
-          "items": {
-            "$ref": "#/$defs/Attachment"
-          }
-        },
-        "input": {
-          "type": "string"
         }
       },
       "required": [

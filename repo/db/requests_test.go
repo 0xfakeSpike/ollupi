@@ -23,7 +23,7 @@ func waitingOnApproval(t *testing.T) (*DB, ItemRow) {
 	if err := store.CreateThread(ThreadRow{UserID: DefaultUser, ID: "t", CreatedAt: at, UpdatedAt: at}); err != nil {
 		t.Fatal(err)
 	}
-	_, turn, _, _, err := store.SubmitTurn("t", TurnRow{ID: "turn", Input: "hi", Model: llm.Model{Name: "m", Connection: "c"}, StartedAt: at})
+	_, turn, _, _, err := store.SubmitTurn("t", TurnRow{ID: "turn", Model: llm.Model{Name: "m", Connection: "c"}, StartedAt: at}, "hi", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestAnArchivedThreadTakesNoTurn(t *testing.T) {
 	if _, err := store.SetThreadArchived(DefaultUser, "t", &at); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, _, err := store.SubmitTurn("t", TurnRow{ID: "turn", Input: "hi", Model: llm.Model{Name: "m", Connection: "c"}, StartedAt: at}); !errors.Is(err, ErrThreadArchived) {
+	if _, _, _, _, err := store.SubmitTurn("t", TurnRow{ID: "turn", Model: llm.Model{Name: "m", Connection: "c"}, StartedAt: at}, "hi", nil); !errors.Is(err, ErrThreadArchived) {
 		t.Fatalf("submit to an archived thread: %v, want %v", err, ErrThreadArchived)
 	}
 }
@@ -133,7 +133,7 @@ func TestAPageCarriesOnlyItsTurnsAndTheOpenOnes(t *testing.T) {
 	}
 	model := llm.Model{Name: "m", Connection: "c"}
 	for _, id := range []string{"one", "two", "three"} {
-		_, turn, _, _, err := store.SubmitTurn("t", TurnRow{ID: id, Input: id, Model: model, StartedAt: at})
+		_, turn, _, _, err := store.SubmitTurn("t", TurnRow{ID: id, Model: model, StartedAt: at}, id, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -145,7 +145,7 @@ func TestAPageCarriesOnlyItsTurnsAndTheOpenOnes(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, _, _, _, err := store.SubmitTurn("t", TurnRow{ID: "open", Input: "open", Model: model, StartedAt: at}); err != nil {
+	if _, _, _, _, err := store.SubmitTurn("t", TurnRow{ID: "open", Model: model, StartedAt: at}, "open", nil); err != nil {
 		t.Fatal(err)
 	}
 	view, _, err := store.ThreadPage(DefaultUser, "t", 4, 1)

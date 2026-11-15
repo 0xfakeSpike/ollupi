@@ -45,27 +45,24 @@ func threadSummary(t db.ThreadSummary) ThreadSummary {
 }
 
 type TurnRow struct {
-	ID          string          `json:"id"`
-	ThreadID    string          `json:"threadId"`
-	Seq         int             `json:"seq"`
-	Status      db.TurnStatus   `json:"status"`
-	Model       llm.Model       `json:"model"`
-	Agent       role.Name       `json:"agent"`
-	Usage       db.Usage        `json:"usage"`
-	Error       string          `json:"error,omitempty"`
-	CronJobID   string          `json:"cronJobId,omitempty"`
-	CreatedAt   time.Time       `json:"createdAt"`
-	StartedAt   time.Time       `json:"startedAt"`
-	CompletedAt *time.Time      `json:"completedAt,omitempty"`
-	Attachments []db.Attachment `json:"attachments,omitempty"`
-	Input       string          `json:"input,omitempty"`
+	ID          string        `json:"id"`
+	ThreadID    string        `json:"threadId"`
+	Seq         int           `json:"seq"`
+	Status      db.TurnStatus `json:"status"`
+	Model       llm.Model     `json:"model"`
+	Agent       role.Name     `json:"agent"`
+	Usage       db.Usage      `json:"usage"`
+	Error       string        `json:"error,omitempty"`
+	CronJobID   string        `json:"cronJobId,omitempty"`
+	CreatedAt   time.Time     `json:"createdAt"`
+	StartedAt   time.Time     `json:"startedAt"`
+	CompletedAt *time.Time    `json:"completedAt,omitempty"`
 }
 
 func turnRow(t db.TurnRow) TurnRow {
 	return TurnRow{
 		ID: t.ID, ThreadID: t.ThreadID, Seq: t.Seq, Status: t.Status, Model: t.Model, Agent: role.Name(t.Agent), Usage: t.Usage, Error: t.Error,
 		CronJobID: t.CronJobID, CreatedAt: t.CreatedAt, StartedAt: t.StartedAt, CompletedAt: t.CompletedAt,
-		Attachments: t.Attachments, Input: t.Input,
 	}
 }
 

@@ -46,9 +46,6 @@ type TurnRow struct {
 	StartedAt time.Time `gorm:"not null;index:turns_ready,where:status = 'ready'" json:"startedAt"`
 	// turns_ended orders the ended turns for memory extraction; its condition is endedTurn, word for word.
 	CompletedAt *time.Time `gorm:"index:turns_ended,priority:1,where:(status = 'completed' OR status = 'failed' OR status = 'interrupted') AND completed_at IS NOT NULL" json:"completedAt,omitempty"`
-	// The columns that can be large come last.
-	Attachments []Attachment `gorm:"serializer:json" json:"attachments,omitempty"`
-	Input       string       `gorm:"not null;default:''" json:"input,omitempty"`
 }
 
 func (TurnRow) TableName() string { return "turns" }
@@ -217,12 +214,27 @@ func (d *DB) EndedTurn(id string) (TurnRow, error) {
 	return row, notFound(d.gorm.Where("id = ? AND status IN ('completed', 'failed', 'interrupted')", id).Take(&row).Error)
 }
 
-// SubmitTurn writes the thread's next turn with its message, and reports whether it waits behind a turn of the thread
-// that has not ended: that one stays the thread's current turn until it ends.
-func (d *DB) SubmitTurn(threadID string, turn TurnRow) (ThreadRow, TurnRow, ItemRow, bool, error) {
+// A Submission is how a message submitted to a thread was taken.
+type Submission int
+
+const (
+	// Started is a message that started the thread's current turn.
+	Started Submission = iota
+	// Queued is a message that started a turn behind the current one.
+	Queued
+	// Joined is a message that joined the user's turn waiting behind the current one, which answers it together with
+	// the messages before it.
+	Joined
+)
+
+// SubmitTurn takes a message to the thread, with attachments: into turn, which it writes as the thread's next turn,
+// or, when the thread's last turn is one of the user's waiting behind the current one, into that turn, which takes
+// turn's model and role, since it has not run yet. A scheduled task's turn joins none, and none joins it: a task
+// skips while its last run waits (HasTurnBehind). It returns the turn the message is in.
+func (d *DB) SubmitTurn(threadID string, turn TurnRow, text string, attachments []Attachment) (ThreadRow, TurnRow, ItemRow, Submission, error) {
 	var thread ThreadRow
 	var message ItemRow
-	var behind bool
+	how := Started
 	err := d.Tx(func(tx *DB) error {
 		var err error
 		if thread, err = tx.ThreadRow(threadID); err != nil {
@@ -231,25 +243,47 @@ func (d *DB) SubmitTurn(threadID string, turn TurnRow) (ThreadRow, TurnRow, Item
 		if thread.ArchivedAt != nil {
 			return ErrThreadArchived
 		}
-		if turn.ID == "" || (strings.TrimSpace(turn.Input) == "" && len(turn.Attachments) == 0) {
-			return fmt.Errorf("a new turn needs an id and an input")
+		if turn.ID == "" || (strings.TrimSpace(text) == "" && len(attachments) == 0) {
+			return fmt.Errorf("a message needs a turn id and a text or an attachment")
 		}
-		var open int64
-		if err := tx.gorm.Model(&TurnRow{}).Where("thread_id = ? AND "+openTurn, threadID).Count(&open).Error; err != nil {
+		var open []TurnRow
+		if err := tx.gorm.Table("turns INDEXED BY turns_open").Where("thread_id = ? AND "+openTurn, threadID).Order("seq").Find(&open).Error; err != nil {
 			return err
 		}
-		behind = open > 0
-		thread, turn, message, err = tx.writeTurn(thread, turn)
+		if len(open) > 0 {
+			how = Queued
+		}
+		if last := len(open) - 1; last > 0 && open[last].CronJobID == "" && turn.CronJobID == "" {
+			waiting := open[last]
+			waiting.Model, waiting.Agent = turn.Model, turn.Agent
+			res := tx.gorm.Model(&TurnRow{}).Where("id = ? AND status = ?", waiting.ID, TurnReady).Select("model", "agent").Updates(&TurnRow{Model: waiting.Model, Agent: waiting.Agent})
+			if err := checkOne(res); err != nil {
+				return fmt.Errorf("turn %s: %w", waiting.ID, err)
+			}
+			how, turn = Joined, waiting
+			thread, message, err = tx.writeMessage(thread, turn, text, attachments)
+			return err
+		}
+		thread, turn, message, err = tx.writeTurn(thread, turn, text, attachments)
 		return err
 	})
 	if err != nil {
-		return ThreadRow{}, TurnRow{}, ItemRow{}, false, fmt.Errorf("storage: submit turn: %w", err)
+		return ThreadRow{}, TurnRow{}, ItemRow{}, 0, fmt.Errorf("storage: submit turn: %w", err)
 	}
-	return thread, turn, message, behind, nil
+	return thread, turn, message, how, nil
 }
 
-// writeTurn writes the thread's next turn, ready, with its input as its message.
-func (d *DB) writeTurn(t ThreadRow, turn TurnRow) (ThreadRow, TurnRow, ItemRow, error) {
+// QueuedMessages counts the messages of the thread that wait behind its current turn.
+func (d *DB) QueuedMessages(threadID string) (int64, error) {
+	var n int64
+	err := d.gorm.Table("turns").Joins("JOIN items ON items.turn_id = turns.id").
+		Where("turns.thread_id = ? AND items.type = 'userMessage' AND NOT (turns.status = 'completed' OR turns.status = 'failed' OR turns.status = 'interrupted') AND NOT "+firstOpen, threadID).
+		Count(&n).Error
+	return n, err
+}
+
+// writeTurn writes the thread's next turn, ready, with text and attachments as its message.
+func (d *DB) writeTurn(t ThreadRow, turn TurnRow, text string, attachments []Attachment) (ThreadRow, TurnRow, ItemRow, error) {
 	seq, err := d.nextTurnSeq(t.ID)
 	if err != nil {
 		return ThreadRow{}, TurnRow{}, ItemRow{}, err
@@ -258,16 +292,22 @@ func (d *DB) writeTurn(t ThreadRow, turn TurnRow) (ThreadRow, TurnRow, ItemRow, 
 	if err := d.createTurn(turn); err != nil {
 		return ThreadRow{}, TurnRow{}, ItemRow{}, err
 	}
+	t, message, err := d.writeMessage(t, turn, text, attachments)
+	return t, turn, message, err
+}
+
+// writeMessage writes a user message into the turn, which has not run yet, and touches the thread.
+func (d *DB) writeMessage(t ThreadRow, turn TurnRow, text string, attachments []Attachment) (ThreadRow, ItemRow, error) {
 	now := time.Now().UTC()
-	message, _, err := d.saveItemOf(t.ID, NewUserMessage(uuid.NewString(), turn.ID, turn.Input, turn.Attachments, now))
+	message, _, err := d.saveItemOf(t.ID, NewUserMessage(uuid.NewString(), turn.ID, text, attachments, now))
 	if err != nil {
-		return ThreadRow{}, TurnRow{}, ItemRow{}, err
+		return ThreadRow{}, ItemRow{}, err
 	}
 	t.UpdatedAt = now
 	if err := d.touchThread(t.ID, now); err != nil {
-		return ThreadRow{}, TurnRow{}, ItemRow{}, err
+		return ThreadRow{}, ItemRow{}, err
 	}
-	return t, turn, message, nil
+	return t, message, nil
 }
 
 func (d *DB) AddUsage(threadID, turnID string, u Usage) error {

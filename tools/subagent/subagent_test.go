@@ -21,7 +21,7 @@ func TestACallWritesTheSubagentsConversationAndReturnsAtOnce(t *testing.T) {
 	if err := store.CreateThread(db.ThreadRow{ID: "main", UserID: db.DefaultUser, Title: "main", CreatedAt: at, UpdatedAt: at}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, _, err := store.SubmitTurn("main", db.TurnRow{ID: "asked", Model: model, Agent: "full-main-agent", Input: "go", CreatedAt: at, StartedAt: at}); err != nil {
+	if _, _, _, _, err := store.SubmitTurn("main", db.TurnRow{ID: "asked", Model: model, Agent: "full-main-agent", CreatedAt: at, StartedAt: at}, "go", nil); err != nil {
 		t.Fatal(err)
 	}
 	var started []string
