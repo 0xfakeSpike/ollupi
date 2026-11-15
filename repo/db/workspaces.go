@@ -114,7 +114,7 @@ func (d *DB) SetWorkspaceRoot(user, id, root string, at time.Time) (WorkspaceRow
 	return out, err
 }
 
-// WorkspaceBusy says whether a conversation in the workspace has a turn in progress or queued, or a background call
+// WorkspaceBusy says whether a conversation in the workspace has a turn that has not ended, or a background call
 // running or yet to bring back its result: they name paths in the folder, so the folder cannot move out from under them.
 func (d *DB) WorkspaceBusy(user, workspace string) (bool, error) {
 	var n int64

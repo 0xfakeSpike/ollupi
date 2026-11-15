@@ -227,7 +227,7 @@ func (d *DB) SetThreadArchived(user, id string, at *time.Time) (ThreadRow, error
 	return row, err
 }
 
-// DeleteThread deletes a thread that has no turn in progress or queued.
+// DeleteThread deletes a thread that has no turn that has not ended.
 func (d *DB) DeleteThread(user, id string) error {
 	return d.Tx(func(tx *DB) error {
 		if _, err := tx.ThreadOf(user, id); err != nil {
@@ -240,7 +240,7 @@ func (d *DB) DeleteThread(user, id string) error {
 	})
 }
 
-// CheckIdle refuses with ErrThreadBusy a thread that has a turn in progress or queued.
+// CheckIdle refuses with ErrThreadBusy a thread that has a turn that has not ended.
 func (d *DB) CheckIdle(id string) error {
 	var open int64
 	if err := d.gorm.Model(&TurnRow{}).Where("thread_id = ? AND "+openTurn, id).Count(&open).Error; err != nil {
