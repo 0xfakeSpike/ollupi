@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -16,6 +17,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/runtime"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo/db"
+	"github.com/0xfakeSpike/ollupi/repo/sqlitedb"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/google/uuid"
 )
@@ -330,5 +332,37 @@ func TestOneAnswerRunsNoMoreCallsThanATurnMay(t *testing.T) {
 	}
 	if probe.most > 8 || probe.most < 2 {
 		t.Errorf("%d calls ran at once, want them in parallel, at most 8", probe.most)
+	}
+}
+
+func TestAStartThatFailsLeavesNothingRunning(t *testing.T) {
+	home := t.TempDir()
+	store, err := db.Open(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	// Recovery reads the turns, which are gone: the start fails after it claimed the shard.
+	raw, err := sqlitedb.Open(filepath.Join(home, "data", "ollupi.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := raw.Exec("ALTER TABLE turns RENAME TO gone").Error; err != nil {
+		t.Fatal(err)
+	}
+	sqlitedb.Close(raw)
+	res, err := resources.New(context.Background(), resources.Config{
+		Models: []llm.Model{model}, Connections: map[string]llm.Client{model.Connection: &fakeModel{}},
+	}, []tools.Provider{runtime.Loader{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := orchestrator.New(orchestrator.Config{DB: store, Lease: time.Minute})
+	if err := o.Start(context.Background(), res); err == nil {
+		t.Fatal("the start did not fail")
+	}
+	// The claim was released and is no longer kept alive: another process takes the shard at once.
+	if held, err := store.ClaimShard("another", time.Now(), time.Minute); err != nil || !held {
+		t.Errorf("another process claims the shard: %v %v", held, err)
 	}
 }
