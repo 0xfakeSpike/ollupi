@@ -33,3 +33,27 @@ func TestCheckRead(t *testing.T) {
 		}
 	}
 }
+
+func TestTheRulesHoldInAnyCaseWhereNamesHaveNone(t *testing.T) {
+	if !caselessNames {
+		t.Skip("names keep their case on this system")
+	}
+	s := &Sandbox{policy: policy{Mode: ModeWorkspaceWrite, WritableRoots: []string{"/p"}, DenyRead: []string{"/h/.ssh"},
+		ProtectedNames: append([]string{"AGENTS.md"}, defaultProtectedNames...)}}
+	for _, path := range []string{"/h/.SSH/id_rsa", "/H/.ssh"} {
+		if err := s.CheckRead(path); err == nil {
+			t.Errorf("%s can be read", path)
+		}
+	}
+	for _, path := range []string{"/p/.VSCODE/tasks.json", "/p/.Envrc", "/p/agents.md"} {
+		if err := s.CheckWrite([]string{"/p"}, path); err == nil {
+			t.Errorf("%s can be written", path)
+		}
+	}
+	if err := s.CheckWrite([]string{"/p"}, "/P/src/a.go"); err != nil {
+		t.Errorf("a file of the root in another case: %v", err)
+	}
+	if err := validateRoot("/users/x", "/Users/x"); err == nil {
+		t.Error("the home folder in another case can be a command directory")
+	}
+}

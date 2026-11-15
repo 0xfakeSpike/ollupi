@@ -14,7 +14,7 @@ func (s *Sandbox) CheckWrite(roots []string, path string) error {
 	if s.policy.Mode == ModeReadOnly {
 		return fmt.Errorf("sandbox: files are read-only")
 	}
-	i := slices.IndexFunc(roots, func(r string) bool { return Within(r, path) })
+	i := slices.IndexFunc(roots, func(r string) bool { return within(r, path) })
 	if i < 0 {
 		return fmt.Errorf("sandbox: %q is outside the command directories", path)
 	}
@@ -22,7 +22,7 @@ func (s *Sandbox) CheckWrite(roots []string, path string) error {
 		return nil
 	}
 	for _, dir := range slices.Concat(s.policy.DenyRead, s.policy.ReadOnly) {
-		if Within(dir, path) {
+		if within(dir, path) {
 			return fmt.Errorf("sandbox: %q is protected and cannot be written", path)
 		}
 	}
@@ -31,7 +31,7 @@ func (s *Sandbox) CheckWrite(roots []string, path string) error {
 		return err
 	}
 	for part := range strings.SplitSeq(rel, string(filepath.Separator)) {
-		if slices.Contains(s.policy.ProtectedNames, part) {
+		if slices.ContainsFunc(s.policy.ProtectedNames, func(name string) bool { return name == part || caselessNames && strings.EqualFold(name, part) }) {
 			return fmt.Errorf("sandbox: %q is protected (%s) and cannot be written", path, part)
 		}
 	}

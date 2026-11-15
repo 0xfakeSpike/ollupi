@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -75,7 +76,7 @@ func validateRoot(root, home string) error {
 		return nil
 	}
 	for _, protected := range []string{home, filepath.Join(home, "Library")} {
-		if Within(root, protected) {
+		if within(root, protected) {
 			return fmt.Errorf("sandbox: %q cannot be a command directory because it contains %s; choose a project folder inside it", root, protected)
 		}
 	}
@@ -193,6 +194,18 @@ func CanonicalDirectory(path string) (string, error) {
 		return "", fmt.Errorf("%q is not a directory", resolved)
 	}
 	return filepath.Clean(resolved), nil
+}
+
+// caselessNames says this machine's filesystems match names in any case, as they do by default on macOS and Windows: a
+// rule on ~/.ssh must then hold for ~/.SSH too, as the seatbelt profile's rules do.
+var caselessNames = runtime.GOOS == "darwin" || runtime.GOOS == "windows"
+
+// within is Within for this machine's paths.
+func within(root, path string) bool {
+	if caselessNames {
+		root, path = strings.ToLower(root), strings.ToLower(path)
+	}
+	return Within(root, path)
 }
 
 func Within(root, path string) bool {
