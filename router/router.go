@@ -29,7 +29,7 @@ type Directory interface {
 // found is, since a user stays on their shard once placed: the reconnections that follow an outage reach the
 // directory only for users it has not seen.
 type Locator struct {
-	authenticate func(token string) (string, bool)
+	authenticate gateway.Authenticate
 	directory    Directory
 	placed       *lru.Cache[string, string]
 }
@@ -37,10 +37,7 @@ type Locator struct {
 // rememberedUsers bounds what a Locator remembers, to some tens of MB.
 const rememberedUsers = 1 << 18
 
-// ErrUnknownToken says a connection carried no token, or one that is no one's.
-var ErrUnknownToken = errors.New("router: invalid or missing token")
-
-func NewLocator(authenticate func(token string) (string, bool), directory Directory) (*Locator, error) {
+func NewLocator(authenticate gateway.Authenticate, directory Directory) (*Locator, error) {
 	if authenticate == nil || directory == nil {
 		return nil, errors.New("router: a locator needs to authenticate users and find their shards")
 	}
@@ -51,11 +48,15 @@ func NewLocator(authenticate func(token string) (string, bool), directory Direct
 	return &Locator{authenticate: authenticate, directory: directory, placed: placed}, nil
 }
 
-// Locate says whose token the headers of a connection carry and which shard they are on.
+// Locate says whose token the headers of a connection carry and which shard they are on; gateway.ErrUnknownToken
+// when it is no one's.
 func (l *Locator) Locate(ctx context.Context, header http.Header) (user, shard string, err error) {
-	user, ok := l.authenticate(gateway.TokenOf(header))
-	if !ok {
-		return "", "", ErrUnknownToken
+	user, err = l.authenticate(ctx, gateway.TokenOf(header))
+	if errors.Is(err, gateway.ErrUnknownToken) {
+		return "", "", err
+	}
+	if err != nil {
+		return "", "", fmt.Errorf("router: the token could not be checked: %w", err)
 	}
 	shard, err = l.shardOf(ctx, user)
 	return user, shard, err
@@ -98,7 +99,7 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, shard, err := rt.locator.Locate(r.Context(), r.Header)
-	if errors.Is(err, ErrUnknownToken) {
+	if errors.Is(err, gateway.ErrUnknownToken) {
 		http.Error(w, "invalid or missing gateway token", http.StatusUnauthorized)
 		return
 	}

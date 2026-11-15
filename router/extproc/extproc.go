@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/0xfakeSpike/ollupi/gateway"
 	"github.com/0xfakeSpike/ollupi/router"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	extprocv3 "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
@@ -79,7 +80,7 @@ func (c *Callout) place(ctx context.Context, headers *corev3.HeaderMap) *extproc
 	}
 	user, shard, err := c.locator.Locate(ctx, header)
 	if err != nil {
-		if !errors.Is(err, router.ErrUnknownToken) {
+		if !errors.Is(err, gateway.ErrUnknownToken) {
 			slog.Error("user not placed on a shard; the router takes the connection", "user", user, "err", err)
 		}
 		return &extprocv3.CommonResponse{HeaderMutation: &extprocv3.HeaderMutation{RemoveHeaders: []string{ShardHeader}}}

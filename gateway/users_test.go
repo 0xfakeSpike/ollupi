@@ -116,9 +116,12 @@ func TestEachUserHasTheirOwnConnectionAndEvents(t *testing.T) {
 	}
 	defer store.Close()
 	tokens := map[string]string{"token-a": "a", "token-b": "b"}
-	s, err := NewServer(service.New(service.Config{DB: store}), Options{DB: store, Authenticate: func(token string) (string, bool) {
+	s, err := NewServer(service.New(service.Config{DB: store}), Options{DB: store, Authenticate: func(_ context.Context, token string) (string, error) {
 		user, ok := tokens[token]
-		return user, ok
+		if !ok {
+			return "", ErrUnknownToken
+		}
+		return user, nil
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -217,5 +220,29 @@ func TestOnlyLocalAndAllowedHostsAreServed(t *testing.T) {
 		if status != want || want == 0 && user != db.DefaultUser {
 			t.Errorf("%s: user %q, status %d", host, user, status)
 		}
+	}
+}
+
+func TestATokenThatCannotBeCheckedNowIsRefusedForLater(t *testing.T) {
+	store, err := db.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	s, err := NewServer(nil, Options{DB: store, Authenticate: func(ctx context.Context, token string) (string, error) {
+		if _, ok := ctx.Deadline(); !ok {
+			t.Error("Authenticate has no deadline")
+		}
+		return "", errors.New("the account service did not answer")
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest(http.MethodGet, "http://localhost/", nil)
+	r.Header.Set("Authorization", "Bearer someone")
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, r)
+	if w.Code != http.StatusServiceUnavailable || w.Header().Get("Retry-After") == "" {
+		t.Errorf("status %d, Retry-After %q; want 503 with a Retry-After", w.Code, w.Header().Get("Retry-After"))
 	}
 }

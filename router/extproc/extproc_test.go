@@ -5,6 +5,7 @@ import (
 	"net"
 	"testing"
 
+	"github.com/0xfakeSpike/ollupi/gateway"
 	"github.com/0xfakeSpike/ollupi/router"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	extprocv3 "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
@@ -21,9 +22,11 @@ func (shards) Address(context.Context, string) (string, error)         { return 
 // callout runs the callout on a gRPC server in memory and opens one stream to it, as a load balancer would.
 func callout(t *testing.T) extprocv3.ExternalProcessor_ProcessClient {
 	t.Helper()
-	locator, err := router.NewLocator(func(token string) (string, bool) {
-		user, ok := map[string]string{"token-a": "a"}[token]
-		return user, ok
+	locator, err := router.NewLocator(func(_ context.Context, token string) (string, error) {
+		if token != "token-a" {
+			return "", gateway.ErrUnknownToken
+		}
+		return "a", nil
 	}, shards{"a": "17"})
 	if err != nil {
 		t.Fatal(err)

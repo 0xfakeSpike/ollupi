@@ -21,13 +21,23 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools/mcp"
 )
 
+// Authenticate says whose token this is: ErrUnknownToken for one that is no one's, or for none; any other error says
+// it could not be told now, as when the service that gave the tokens out does not answer, and the client tries again.
+type Authenticate func(ctx context.Context, token string) (user string, err error)
+
+// ErrUnknownToken says a connection carried no token, or one that is no one's.
+var ErrUnknownToken = errors.New("invalid or missing token")
+
+// authenticateTimeout bounds how long Authenticate may take for one connection.
+const authenticateTimeout = 10 * time.Second
+
 type Options struct {
 	// DB is the shard's database; the gateway reads it for views that need no orchestration.
 	DB *db.DB
 	// Token is the default user's, for a gateway with one user; Authenticate takes its place for many.
 	Token string
 	// Authenticate says whose token this is. Logging in happens before ollupi: it only checks what that gave out.
-	Authenticate   func(token string) (user string, ok bool)
+	Authenticate   Authenticate
 	AllowedOrigins []string
 	// AllowedHosts are the names clients reach this gateway by, besides the local ones.
 	AllowedHosts []string
@@ -49,8 +59,11 @@ func NewServer(a *service.Service, opts Options) (*Server, error) {
 		if strings.TrimSpace(opts.Token) == "" {
 			return nil, errors.New("gateway: a token is required; clients send it as Authorization: Bearer <token> or, from a browser, as the subprotocol after " + tokenProtocol)
 		}
-		opts.Authenticate = func(token string) (string, bool) {
-			return db.DefaultUser, subtle.ConstantTimeCompare([]byte(token), []byte(opts.Token)) == 1
+		opts.Authenticate = func(_ context.Context, token string) (string, error) {
+			if subtle.ConstantTimeCompare([]byte(token), []byte(opts.Token)) != 1 {
+				return "", ErrUnknownToken
+			}
+			return db.DefaultUser, nil
 		}
 	}
 	if opts.DB == nil {
@@ -175,9 +188,15 @@ func (s *Server) authorize(r *http.Request) (string, int, string) {
 	if !slices.Contains(s.hosts, strings.Trim(host, "[]")) {
 		return "", http.StatusForbidden, "host not allowed"
 	}
-	user, ok := s.authenticate(TokenOf(r.Header))
-	if !ok {
+	ctx, cancel := context.WithTimeout(r.Context(), authenticateTimeout)
+	defer cancel()
+	user, err := s.authenticate(ctx, TokenOf(r.Header))
+	switch {
+	case errors.Is(err, ErrUnknownToken):
 		return "", http.StatusUnauthorized, "invalid or missing gateway token"
+	case err != nil:
+		slog.Error("token not checked", "err", err)
+		return "", http.StatusServiceUnavailable, "the token cannot be checked now; try again"
 	}
 	return user, 0, ""
 }
