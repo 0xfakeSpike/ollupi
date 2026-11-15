@@ -135,3 +135,26 @@ func TestWhatIsSentWhileACallHoldsComesAfterItsReply(t *testing.T) {
 		t.Errorf("a call that does not hold: then came %+v", m)
 	}
 }
+
+func TestAReplyLargerThanTheOutboxGoesOutAlone(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	_, client := serve(ctx, t, func(*Conn) Handler {
+		return handlerFunc(func(_ context.Context, method string, _ json.RawMessage) (any, func(), *Error) {
+			if method == "big" {
+				return strings.Repeat("a", maxOutboxBytes+1), nil, nil
+			}
+			return "ok", nil, nil
+		})
+	})
+	client.SetReadLimit(2 * maxOutboxBytes)
+	write(ctx, t, client, `{"jsonrpc":"2.0","id":1,"method":"big"}`)
+	var big string
+	if m := next(ctx, t, client); m.Error != nil || json.Unmarshal(m.Result, &big) != nil || len(big) != maxOutboxBytes+1 {
+		t.Fatalf("the large reply: %d bytes, %v", len(big), m.Error)
+	}
+	write(ctx, t, client, `{"jsonrpc":"2.0","id":2,"method":"small"}`)
+	if m := next(ctx, t, client); m.Error != nil || string(m.Result) != `"ok"` {
+		t.Fatalf("after the large reply: %s, %v", m.Result, m.Error)
+	}
+}

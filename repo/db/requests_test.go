@@ -2,6 +2,7 @@ package db
 
 import (
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -116,5 +117,45 @@ func TestAnArchivedThreadTakesNoTurn(t *testing.T) {
 	}
 	if _, _, _, err := store.SubmitTurn("t", TurnRow{ID: "turn", Input: "hi", Model: llm.Model{Name: "m", Connection: "c"}, StartedAt: at}); !errors.Is(err, ErrThreadArchived) {
 		t.Fatalf("submit to an archived thread: %v, want %v", err, ErrThreadArchived)
+	}
+}
+
+func TestAPageCarriesOnlyItsTurnsAndTheOpenOnes(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	at := time.Date(2026, 11, 15, 8, 0, 0, 0, time.UTC)
+	if err := store.CreateThread(ThreadRow{UserID: DefaultUser, ID: "t", CreatedAt: at, UpdatedAt: at}); err != nil {
+		t.Fatal(err)
+	}
+	model := llm.Model{Name: "m", Connection: "c"}
+	for _, id := range []string{"one", "two", "three"} {
+		_, turn, _, err := store.SubmitTurn("t", TurnRow{ID: id, Input: id, Model: model, StartedAt: at})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.Launch(turn.ID); err != nil {
+			t.Fatal(err)
+		}
+		turn.Status = TurnCompleted
+		if _, _, _, err := store.EndTurn("t", turn); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, _, err := store.SubmitTurn("t", TurnRow{ID: "open", Input: "open", Model: model, StartedAt: at}); err != nil {
+		t.Fatal(err)
+	}
+	view, _, err := store.ThreadPage(DefaultUser, "t", 4, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var turns []string
+	for _, turn := range view.Turns {
+		turns = append(turns, turn.ID)
+	}
+	if len(view.Items) != 1 || view.Items[0].TurnID != "three" || !slices.Equal(turns, []string{"three", "open"}) {
+		t.Fatalf("page of %d items, turns %v; want the third turn's message with its turn and the open one", len(view.Items), turns)
 	}
 }

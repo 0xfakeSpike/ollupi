@@ -3,6 +3,7 @@ package db
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"time"
 )
@@ -70,10 +71,7 @@ func (d *DB) ThreadPage(user, id string, before, limit int) (ThreadView, bool, e
 		if err := notFound(tx.gorm.Where("id = ? AND user_id = ?", id, user).Take(&out.Thread).Error); err != nil {
 			return err
 		}
-		if err := tx.gorm.Where("thread_id = ?", id).Order("seq").Find(&out.Turns).Error; err != nil {
-			return err
-		}
-		// The page is for a client, which never sees native records; only the runtime reads them, through Thread.
+		// The page is for a client, which never sees native records; only the runtime reads them.
 		q := tx.gorm.Omit("native").Where("thread_id = ?", id)
 		if before > 0 {
 			q = q.Where("seq < ?", before)
@@ -85,7 +83,12 @@ func (d *DB) ThreadPage(user, id string, before, limit int) (ThreadView, bool, e
 			more, out.Items = true, out.Items[:limit]
 		}
 		slices.Reverse(out.Items)
-		return nil
+		// The turns are the page's, and those not ended yet; a thread of many turns does not send all of them.
+		turns := map[string]bool{}
+		for _, it := range out.Items {
+			turns[it.TurnID] = true
+		}
+		return tx.gorm.Where("thread_id = ? AND (id IN ? OR "+openTurn+")", id, slices.Collect(maps.Keys(turns))).Order("seq").Find(&out.Turns).Error
 	})
 	if err != nil {
 		return ThreadView{}, false, err
