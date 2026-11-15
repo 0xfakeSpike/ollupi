@@ -107,9 +107,24 @@ func (d *DB) RunningBackgroundCalls(threadID string) ([]string, error) {
 
 const undeliveredCall = "delivered_at IS NULL AND (status = 'completed' OR status = 'failed' OR status = 'interrupted')"
 
+// archivedWork says the thread or its workspace is archived.
+func (d *DB) archivedWork(t ThreadRow) (bool, error) {
+	if t.ArchivedAt != nil {
+		return true, nil
+	}
+	if t.WorkspaceID == "" {
+		return false, nil
+	}
+	var w WorkspaceRow
+	if err := d.gorm.Select("archived_at").Where("id = ?", t.WorkspaceID).Take(&w).Error; err != nil {
+		return false, err
+	}
+	return w.ArchivedAt != nil, nil
+}
+
 // DeliverBackgroundCalls brings the results of the thread's ended background calls back to it, into its current turn.
 // A thread with no current turn takes them in next, a turn they start; without next they are dropped, as a subagent's
-// thread that has reported takes none. It reports the turn they went into and whether it started there.
+// thread that has reported takes none, and so they are in an archived thread or workspace. It reports the turn they went into and whether it started there.
 func (d *DB) DeliverBackgroundCalls(threadID string, next *TurnRow) (ThreadRow, TurnRow, []ItemRow, bool, error) {
 	var thread ThreadRow
 	var turn TurnRow
@@ -136,6 +151,12 @@ func (d *DB) DeliverBackgroundCalls(threadID string, next *TurnRow) (ThreadRow, 
 			return err
 		}
 		turn, err = tx.ActiveTurn(threadID)
+		if errors.Is(err, ErrNotFound) && next != nil {
+			// No new work starts in an archived conversation or workspace, results included.
+			if archived, err := tx.archivedWork(thread); err != nil || archived {
+				return err
+			}
+		}
 		switch {
 		case errors.Is(err, ErrNotFound) && next == nil:
 			return nil

@@ -131,3 +131,81 @@ func TestEndedBackgroundCallsComeBackToTheirThreadOnce(t *testing.T) {
 		t.Errorf("results left to deliver: %q %v", threads, err)
 	}
 }
+
+// inWorkspace opens a database with thread "t" in workspace "w", whose turn ended, and a background call "b" of it
+// still running.
+func inWorkspace(t *testing.T) *DB {
+	t.Helper()
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	at := time.Date(2026, 11, 15, 9, 0, 0, 0, time.UTC)
+	if err := store.saveWorkspace(WorkspaceRow{ID: "w", UserID: DefaultUser, Name: "w", RootPath: "/w", CreatedAt: at, UpdatedAt: at}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateThread(ThreadRow{ID: "t", UserID: DefaultUser, WorkspaceID: "w", Title: "t", CreatedAt: at, UpdatedAt: at}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.StartBackgroundCall(DefaultUser, BackgroundCallRow{ID: "b", ThreadID: "t", ItemID: "call", Tool: "run_command", StartedAt: at}, 1); err != nil {
+		t.Fatal(err)
+	}
+	return store
+}
+
+func TestABackgroundCallKeepsItsWorkspaceBusyUntilItsResultIsBack(t *testing.T) {
+	store := inWorkspace(t)
+	busy := func(want bool) {
+		t.Helper()
+		if got, err := store.WorkspaceBusy(DefaultUser, "w"); err != nil || got != want {
+			t.Fatalf("busy %v (%v), want %v", got, err, want)
+		}
+	}
+	busy(true)
+	if _, err := store.EndBackgroundCall("b", BackgroundCompleted, &ToolResult{Output: json.RawMessage(`"done"`)}, "", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	busy(true)
+	next := &TurnRow{ID: "results", Model: llm.Model{Name: "m", Connection: "c"}, Agent: "full-main-agent"}
+	if _, _, _, _, err := store.DeliverBackgroundCalls("t", next); err != nil {
+		t.Fatal(err)
+	}
+	busy(true)
+	if err := store.gorm.Exec("UPDATE turns SET status = 'completed' WHERE id = 'results'").Error; err != nil {
+		t.Fatal(err)
+	}
+	busy(false)
+}
+
+func TestACancelledBackgroundCallLeavesItsWorkspaceFree(t *testing.T) {
+	store := inWorkspace(t)
+	if _, err := store.EndBackgroundCall("b", BackgroundCancelled, nil, "cancelled", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if busy, err := store.WorkspaceBusy(DefaultUser, "w"); err != nil || busy {
+		t.Fatalf("busy %v (%v) after the call was cancelled", busy, err)
+	}
+}
+
+func TestResultsStartNoTurnInArchivedWork(t *testing.T) {
+	for _, archive := range []string{"threads", "workspaces"} {
+		t.Run(archive, func(t *testing.T) {
+			store := inWorkspace(t)
+			if err := store.gorm.Exec("UPDATE "+archive+" SET archived_at = ?", time.Now().UTC()).Error; err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.EndBackgroundCall("b", BackgroundCompleted, &ToolResult{Output: json.RawMessage(`"done"`)}, "", time.Now()); err != nil {
+				t.Fatal(err)
+			}
+			next := &TurnRow{ID: "results", Model: llm.Model{Name: "m", Connection: "c"}, Agent: "full-main-agent"}
+			_, _, items, started, err := store.DeliverBackgroundCalls("t", next)
+			if err != nil || started || len(items) > 0 {
+				t.Fatalf("delivered %d results, started %v (%v), want none", len(items), started, err)
+			}
+			if undelivered, err := store.UndeliveredBackgroundThreads(); err != nil || len(undelivered) > 0 {
+				t.Errorf("still to deliver: %v (%v)", undelivered, err)
+			}
+		})
+	}
+}

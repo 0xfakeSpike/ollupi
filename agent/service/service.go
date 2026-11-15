@@ -43,7 +43,7 @@ const (
 var (
 	ErrSubagentThread    = errors.New("a subagent thread takes no input; send it to its parent conversation")
 	ErrWorkspaceArchived = errors.New("the workspace is archived; restore it before starting new work")
-	ErrWorkspaceBusy     = errors.New("a conversation in the workspace has a turn in progress or queued; interrupt it first")
+	ErrWorkspaceBusy     = errors.New("a conversation in the workspace has a turn or a background call in progress, or queued; interrupt it first")
 	ErrQueueFull         = fmt.Errorf("the conversation has %d messages waiting already; send this one once they start", maxQueuedTurns)
 	ErrInvalidMessage    = errors.New("invalid message")
 	ErrInvalidAnswer     = errors.New("invalid answer")
