@@ -135,23 +135,7 @@ func (sv *Service) startTurn(threadID string, in Input, atts []db.Attachment) (d
 }
 
 func (sv *Service) submit(t db.ThreadRow, turn db.TurnRow, model llm.Model) (db.TurnRow, error) {
-	if t.ParentThreadID == "" && t.WorkspaceID != "" {
-		w, err := sv.workspaceOf(t.WorkspaceID)
-		if err != nil {
-			return db.TurnRow{}, err
-		}
-		if err := usable(w); err != nil {
-			return db.TurnRow{}, err
-		}
-		sv.moveMu.Lock()
-		defer sv.moveMu.Unlock()
-		if sv.moving[w.ID] {
-			return db.TurnRow{}, fmt.Errorf("service: workspace %s is moving: %w", w.Name, ErrWorkspaceBusy)
-		}
-	}
-	now := time.Now().UTC()
-	turn.ID, turn.Model, turn.CreatedAt, turn.StartedAt = uuid.NewString(), model.Clone(), now, now
-	t, turn, message, err := sv.cfg.DB.SubmitTurn(t.ID, turn)
+	t, turn, message, err := sv.record(t, turn, model)
 	if err != nil {
 		return db.TurnRow{}, err
 	}
@@ -165,6 +149,28 @@ func (sv *Service) submit(t db.ThreadRow, turn db.TurnRow, model llm.Model) (db.
 		sv.ev.Emit(event.Event{Kind: event.TurnQueued, Thread: t, Turn: turn})
 	}
 	return turn, nil
+}
+
+// record writes the turn, unless the conversation's workspace cannot take it or is moving: the move lock is held
+// while the turn is written, so that a move that starts sees it, and no longer.
+func (sv *Service) record(t db.ThreadRow, turn db.TurnRow, model llm.Model) (db.ThreadRow, db.TurnRow, *db.ItemRow, error) {
+	if t.ParentThreadID == "" && t.WorkspaceID != "" {
+		w, err := sv.workspaceOf(t.WorkspaceID)
+		if err != nil {
+			return db.ThreadRow{}, db.TurnRow{}, nil, err
+		}
+		if err := usable(w); err != nil {
+			return db.ThreadRow{}, db.TurnRow{}, nil, err
+		}
+		sv.moveMu.Lock()
+		defer sv.moveMu.Unlock()
+		if sv.moving[w.ID] {
+			return db.ThreadRow{}, db.TurnRow{}, nil, fmt.Errorf("service: workspace %s is moving: %w", w.Name, ErrWorkspaceBusy)
+		}
+	}
+	now := time.Now().UTC()
+	turn.ID, turn.Model, turn.CreatedAt, turn.StartedAt = uuid.NewString(), model.Clone(), now, now
+	return sv.cfg.DB.SubmitTurn(t.ID, turn)
 }
 
 func (sv *Service) steer(threadID, expectedTurnID string, in Input, atts []db.Attachment) (db.TurnRow, error) {
@@ -238,15 +244,12 @@ func (sv *Service) allowAlways(threadID string, rules []string) error {
 		}
 	}
 	allow := permission.Settings{Rules: permission.Rules{Allow: rules}}
+	widen := func(s permission.Settings) permission.Settings { return permission.Resolve(s, allow) }
 	if t.WorkspaceID == "" {
-		_, err := sv.UpdateThreadSettings(t.UserID, t.ID, permission.Resolve(t.Settings, allow))
+		_, err := sv.updateThreadSettings(t.UserID, t.ID, widen)
 		return err
 	}
-	w, err := sv.workspaceOf(t.WorkspaceID)
-	if err != nil {
-		return err
-	}
-	_, err = sv.UpdateWorkspaceSettings(t.UserID, w.ID, permission.Resolve(w.Settings, allow))
+	_, err = sv.updateWorkspaceSettings(t.UserID, string(t.WorkspaceID), widen)
 	return err
 }
 

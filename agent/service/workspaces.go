@@ -157,14 +157,20 @@ func (sv *Service) ArchiveWorkspace(user, id string, archived bool) (db.Workspac
 }
 
 func (sv *Service) UpdateWorkspaceSettings(user, id string, settings permission.Settings) (db.WorkspaceRow, error) {
+	return sv.updateWorkspaceSettings(user, id, func(permission.Settings) permission.Settings { return settings })
+}
+
+// updateWorkspaceSettings checks what change makes of the workspace's settings as they were read, and writes what it
+// makes of them as they are when written.
+func (sv *Service) updateWorkspaceSettings(user, id string, change func(permission.Settings) permission.Settings) (db.WorkspaceRow, error) {
 	w, err := sv.workspaceFor(user, db.Ref(id))
 	if err != nil {
 		return db.WorkspaceRow{}, err
 	}
-	if err := sv.validateLayer(user, permission.Base(sv.cfg.Settings, sv.res.Shared(), db.WorkspaceRow{}), w.Settings, permission.WorkspaceLayer(w.Name, settings)); err != nil {
+	if err := sv.validateLayer(user, permission.Base(sv.cfg.Settings, sv.res.Shared(), db.WorkspaceRow{}), w.Settings, permission.WorkspaceLayer(w.Name, change(w.Settings))); err != nil {
 		return db.WorkspaceRow{}, err
 	}
-	return sv.changeWorkspace(user, id, func(w *db.WorkspaceRow) { w.Settings = settings })
+	return sv.changeWorkspace(user, id, func(w *db.WorkspaceRow) { w.Settings = change(w.Settings) })
 }
 
 func (sv *Service) changeWorkspace(user, id string, change func(*db.WorkspaceRow)) (db.WorkspaceRow, error) {
