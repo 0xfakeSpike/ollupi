@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 type crashing struct{}
@@ -20,7 +21,8 @@ func (crashing) Invoke(_ context.Context, _ Caller, tool string, _ map[string]an
 		var m map[string]int
 		m["boom"]++
 	}
-	return Result{Output: strings.Repeat("x", 2*maxOutputBytes)}, nil
+	// Three-byte characters after two bytes put the limit inside a character.
+	return Result{Output: "ab" + strings.Repeat("中", maxOutputBytes)}, nil
 }
 
 // A tool that panics, answers too much, or is called wrongly comes back as a result, and the process goes on.
@@ -32,8 +34,8 @@ func TestTheRegistryTurnsEveryFailureIntoAResult(t *testing.T) {
 	if res := r.Invoke(context.Background(), Caller{}, "crash", map[string]any{}); res.Err == nil || !strings.Contains(res.Err.Error(), "crashed") {
 		t.Errorf("a panic: %+v", res)
 	}
-	if res := r.Invoke(context.Background(), Caller{}, "flood", map[string]any{}); res.Err != nil || !strings.Contains(res.Output.(string), "output truncated") {
-		t.Errorf("an answer over the limit: %v", res.Err)
+	if res := r.Invoke(context.Background(), Caller{}, "flood", map[string]any{}); res.Err != nil || !strings.Contains(res.Output.(string), "output truncated") || !utf8.ValidString(res.Output.(string)) {
+		t.Errorf("an answer over the limit: %v, valid UTF-8 %v", res.Err, utf8.ValidString(res.Output.(string)))
 	}
 	if res := r.Invoke(context.Background(), Caller{}, "flood", map[string]any{"n": "one"}); res.Err == nil {
 		t.Error("arguments that do not fit the schema were run")

@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 type Registry struct {
@@ -142,7 +143,12 @@ func guard(tool string, run func() (Result, error)) (result Result) {
 		case err != nil:
 			result = Result{Err: fmt.Errorf("the tool returned output that cannot be encoded as JSON: %v", err)}
 		case len(raw) > maxOutputBytes:
-			result.Output = string(raw[:maxOutputBytes]) + fmt.Sprintf("\n[output truncated: %d of %d bytes shown]", maxOutputBytes, len(raw))
+			// The cut goes back to the start of a character, so the text kept stays valid UTF-8.
+			cut := maxOutputBytes
+			for cut > 0 && !utf8.RuneStart(raw[cut]) {
+				cut--
+			}
+			result.Output = string(raw[:cut]) + fmt.Sprintf("\n[output truncated: %d of %d bytes shown]", cut, len(raw))
 		}
 	}
 	return result.For(tool)
