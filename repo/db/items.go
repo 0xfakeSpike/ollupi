@@ -460,8 +460,12 @@ func (d *DB) RecoverItems(threadID string) ([]ItemRow, error) {
 	return closed, nil
 }
 
+func (it ItemRow) ended() bool {
+	return it.Status == ItemCompleted || it.Status == ItemFailed || it.Status == ItemDeclined
+}
+
 // saveItemOf writes the item and returns it as stored, saying whether it is new; it reads only the item as it was,
-// which may not change its thread, type or turn, nor a prepared execution once it has one.
+// which may not change its thread, type or turn, nor a prepared execution once it has one, nor end and start again.
 func (d *DB) saveItemOf(threadID string, it ItemRow) (ItemRow, bool, error) {
 	if it.ID == "" || it.TurnID == "" || it.Type == "" || it.Status == "" {
 		return ItemRow{}, false, fmt.Errorf("item needs an id, turn, type, and status")
@@ -481,6 +485,10 @@ func (d *DB) saveItemOf(threadID string, it ItemRow) (ItemRow, bool, error) {
 		}
 		if prev.PreparedExecution != nil && (!reflect.DeepEqual(prev.PreparedExecution, it.PreparedExecution) || prev.Arguments != it.Arguments || prev.Tool != it.Tool || prev.Server != it.Server) {
 			return ItemRow{}, false, fmt.Errorf("item %s cannot change its prepared execution or tool arguments", it.ID)
+		}
+		// An item that ended stays ended: a copy read before it did cannot open it again.
+		if prev.ended() && !it.ended() {
+			return ItemRow{}, false, fmt.Errorf("item %s ended %s and cannot be %s again", it.ID, prev.Status, it.Status)
 		}
 		it.Seq = prev.Seq
 	}

@@ -207,3 +207,19 @@ func TestASettingsChangeAppliesToTheSettingsAsTheyAreNow(t *testing.T) {
 		t.Errorf("another user's thread: %v", err)
 	}
 }
+
+func TestAnItemThatEndedIsNotOpenedAgain(t *testing.T) {
+	store, call := waitingOnApproval(t)
+	now := time.Now().UTC()
+	done := call
+	done.Status, done.CompletedAt = ItemDeclined, &now
+	if _, _, err := store.RecordItem("t", done); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := store.RecordItem("t", call); err == nil {
+		t.Error("a copy read before the call ended opened it again")
+	}
+	if got, err := store.Item("call"); err != nil || got.Status != ItemDeclined {
+		t.Errorf("the call is %s (%v), want declined", got.Status, err)
+	}
+}
