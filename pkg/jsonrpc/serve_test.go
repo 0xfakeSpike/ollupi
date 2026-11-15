@@ -3,6 +3,7 @@ package jsonrpc
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -156,5 +157,28 @@ func TestAReplyLargerThanTheOutboxGoesOutAlone(t *testing.T) {
 	write(ctx, t, client, `{"jsonrpc":"2.0","id":2,"method":"small"}`)
 	if m := next(ctx, t, client); m.Error != nil || string(m.Result) != `"ok"` {
 		t.Fatalf("after the large reply: %s, %v", m.Result, m.Error)
+	}
+}
+
+func TestAFloodingClientIsReadAtItsPace(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	_, client := serve(ctx, t, func(*Conn) Handler {
+		return handlerFunc(func(context.Context, string, json.RawMessage) (any, func(), *Error) { return "ok", nil, nil })
+	})
+	const sent = messageBurst + messagesPerSecond
+	go func() {
+		for i := range sent {
+			if client.Write(ctx, websocket.MessageText, []byte(fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"m"}`, i))) != nil {
+				return
+			}
+		}
+	}()
+	started := time.Now()
+	for range sent {
+		next(ctx, t, client)
+	}
+	if elapsed := time.Since(started); elapsed < 800*time.Millisecond {
+		t.Errorf("%d calls were answered in %s, past the pace of %d a second after %d", sent, elapsed, messagesPerSecond, messageBurst)
 	}
 }

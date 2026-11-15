@@ -11,6 +11,7 @@ import (
 
 	"github.com/coder/websocket"
 	"golang.org/x/sync/semaphore"
+	"golang.org/x/time/rate"
 )
 
 type Message struct {
@@ -59,6 +60,10 @@ const (
 	// reading waits for room.
 	maxInboxMessages = 64
 	maxInboxBytes    = 16 << 20
+	// A client is read at most this many messages a second, after a first burst, so that one that floods its
+	// connection, with calls or with messages that are not, slows down rather than takes the server's time and log.
+	messagesPerSecond = 50
+	messageBurst      = 200
 )
 
 type Conn struct {
@@ -121,7 +126,11 @@ func (c *Conn) Serve(ctx context.Context, h Handler) (err error) {
 
 // read passes the client's text messages to inbox until reading fails.
 func (c *Conn) read(ctx context.Context, room *semaphore.Weighted, inbox chan<- []byte) error {
+	pace := rate.NewLimiter(messagesPerSecond, messageBurst)
 	for {
+		if err := pace.Wait(ctx); err != nil {
+			return err
+		}
 		kind, data, err := c.ws.Read(ctx)
 		if err != nil {
 			return err
