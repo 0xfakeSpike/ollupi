@@ -172,13 +172,16 @@ func newContent(c fileChange, args map[string]any) (string, error) {
 	return text, nil
 }
 
-func (c fileChange) frozen() tools.FileChange {
-	diff, added, removed := unifiedDiff(c.rel, c.before, c.after, !c.exists)
+func (c fileChange) frozen() (tools.FileChange, error) {
+	diff, added, removed, err := unifiedDiff(c.rel, c.before, c.after, !c.exists)
+	if err != nil {
+		return tools.FileChange{}, err
+	}
 	f := tools.FileChange{Path: c.rel, After: sha(c.after), Diff: diff, Added: added, Removed: removed}
 	if c.exists {
 		f.Before = sha(c.before)
 	}
-	return f
+	return f, nil
 }
 
 func (r *Provider) fileContent(ctx context.Context, caller tools.Caller, args map[string]any) (tools.Content, error) {
@@ -186,7 +189,11 @@ func (r *Provider) fileContent(ctx context.Context, caller tools.Caller, args ma
 	if err != nil {
 		return tools.Content{}, err
 	}
-	return tools.Content{Text: c.frozen().Diff, Match: strings.ToLower(c.rel)}, nil
+	f, err := c.frozen()
+	if err != nil {
+		return tools.Content{}, err
+	}
+	return tools.Content{Text: f.Diff, Match: strings.ToLower(c.rel)}, nil
 }
 
 func (r *Provider) prepareFile(ctx context.Context, caller tools.Caller, args map[string]any) (*tools.Prepared, error) {
@@ -194,9 +201,13 @@ func (r *Provider) prepareFile(ctx context.Context, caller tools.Caller, args ma
 	if err != nil {
 		return nil, err
 	}
+	f, err := c.frozen()
+	if err != nil {
+		return nil, err
+	}
 	return &tools.Prepared{
 		Cwd: d.roots[0], SettingsDigest: r.settingsDigest(d), ArgumentsDigest: digest(args),
-		Sandboxed: d.box.Enforced(), Files: []tools.FileChange{c.frozen()},
+		Sandboxed: d.box.Enforced(), Files: []tools.FileChange{f},
 	}, nil
 }
 
@@ -216,7 +227,11 @@ func (r *Provider) runFile(ctx context.Context, caller tools.Caller, args map[st
 		return tools.Result{}, fmt.Errorf("%w; the file changed after this edit was prepared, so nothing was written", err)
 	}
 	want := p.Files[0]
-	if now := c.frozen(); now.Path != want.Path || now.Before != want.Before || now.After != want.After {
+	now, err := c.frozen()
+	if err != nil {
+		return tools.Result{}, err
+	}
+	if now.Path != want.Path || now.Before != want.Before || now.After != want.After {
 		return tools.Result{}, fmt.Errorf("workspace: %s changed after this edit was prepared, so nothing was written; read it again and redo the edit", want.Path)
 	}
 	if err := d.box.WriteFile(ctx, c.abs, []byte(c.after), c.mode); err != nil {

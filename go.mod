@@ -6,6 +6,7 @@ toolchain go1.26.11
 
 require (
 	github.com/anthropics/anthropic-sdk-go v1.84.0
+	github.com/aymanbagabas/go-udiff v0.4.1
 	github.com/coder/websocket v1.8.15
 	github.com/envoyproxy/go-control-plane/envoy v1.40.0
 	github.com/google/jsonschema-go v0.4.2
