@@ -72,7 +72,7 @@ func TestAThreadIsUnreadFromATurnsEndUntilMarkedRead(t *testing.T) {
 	}
 	turn := func(id string) {
 		t.Helper()
-		_, started, _, _, err := db.SubmitTurn("t", TurnRow{ID: id, Input: "hi", Model: llm.Model{Name: "m", Connection: "c"}, StartedAt: at})
+		_, started, _, _, err := db.SubmitTurn("t", TurnRow{ID: id, Model: llm.Model{Name: "m", Connection: "c"}, StartedAt: at}, "hi", nil)
 		if err != nil {
 			t.Fatal(err)
 		}

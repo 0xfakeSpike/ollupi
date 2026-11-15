@@ -11,10 +11,9 @@ import (
 )
 
 // WriteSubagent writes the conversation of a subagent that the call item of the parent thread launches, with its
-// first turn ready: turn's input as its task, its message, and turn's agent as its role, on the model of the parent's
-// current turn. The subagent's conversation is the parent's, in its workspace and environment, under title. A call
+// first turn ready: task as its message, and turn's agent as its role, on the model of the parent's current turn. The subagent's conversation is the parent's, in its workspace and environment, under title. A call
 // that launched one already gets it back.
-func (d *DB) WriteSubagent(parentThreadID, itemID, title string, turn TurnRow) (ThreadRow, error) {
+func (d *DB) WriteSubagent(parentThreadID, itemID, title string, turn TurnRow, task string) (ThreadRow, error) {
 	var child ThreadRow
 	err := d.Tx(func(tx *DB) error {
 		err := tx.gorm.Where("parent_item_id = ?", itemID).Take(&child).Error
@@ -42,7 +41,7 @@ func (d *DB) WriteSubagent(parentThreadID, itemID, title string, turn TurnRow) (
 			return err
 		}
 		turn.ID, turn.Model, turn.CreatedAt, turn.StartedAt = uuid.NewString(), current.Model.Clone(), now, now
-		child, _, _, err = tx.writeTurn(child, turn)
+		child, _, _, err = tx.writeTurn(child, turn, task, nil)
 		return err
 	})
 	if err != nil {

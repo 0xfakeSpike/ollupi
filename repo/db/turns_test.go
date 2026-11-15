@@ -74,7 +74,7 @@ func TestOnlyReadyTurnsWaitForASlot(t *testing.T) {
 	if err := db.CreateThread(ThreadRow{UserID: DefaultUser, ID: "t", CreatedAt: at, UpdatedAt: at}); err != nil {
 		t.Fatal(err)
 	}
-	_, turn, _, _, err := db.SubmitTurn("t", TurnRow{ID: "turn", Input: "hi", Model: llm.Model{Name: "m", Connection: "c"}, StartedAt: at})
+	_, turn, _, _, err := db.SubmitTurn("t", TurnRow{ID: "turn", Model: llm.Model{Name: "m", Connection: "c"}, StartedAt: at}, "hi", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,8 @@ func TestOnlyReadyTurnsWaitForASlot(t *testing.T) {
 
 // A turn submitted behind another is written ready with its message, but only the thread's first open turn runs: the
 // later one takes no slot while the earlier waits on the user, and its message joins the conversation after all of the
-// earlier turn, though it was written before that turn's last items.
+// earlier turn, though it was written before that turn's last items. The messages sent after it join it, to be answered
+// together, and it takes the model of the latest.
 func TestATurnBehindAnotherWaitsWithItsMessage(t *testing.T) {
 	db, err := Open(t.TempDir())
 	if err != nil {
@@ -153,9 +154,9 @@ func TestATurnBehindAnotherWaitsWithItsMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 	model := llm.Model{Name: "m", Connection: "c"}
-	_, first, _, behind, err := db.SubmitTurn("t", TurnRow{ID: "first", Input: "one", Model: model, StartedAt: at})
-	if err != nil || behind {
-		t.Fatalf("the first turn: behind %v (%v)", behind, err)
+	_, first, _, how, err := db.SubmitTurn("t", TurnRow{ID: "first", Model: model, StartedAt: at}, "one", nil)
+	if err != nil || how != Started {
+		t.Fatalf("the first turn: %v (%v), want started", how, err)
 	}
 	if err := db.Launch(first.ID); err != nil {
 		t.Fatal(err)
@@ -169,9 +170,20 @@ func TestATurnBehindAnotherWaitsWithItsMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, second, message, behind, err := db.SubmitTurn("t", TurnRow{ID: "second", Input: "two", Model: model, StartedAt: at})
-	if err != nil || !behind || second.Status != TurnReady || message.TurnID != second.ID || message.Text != "two" {
-		t.Fatalf("the turn behind: behind %v, status %s, message %+v (%v)", behind, second.Status, message, err)
+	_, second, message, how, err := db.SubmitTurn("t", TurnRow{ID: "second", Model: model, StartedAt: at}, "two", nil)
+	if err != nil || how != Queued || second.Status != TurnReady || message.TurnID != second.ID || message.Text != "two" {
+		t.Fatalf("the turn behind: %v, status %s, message %+v (%v)", how, second.Status, message, err)
+	}
+	other := llm.Model{Name: "m2", Connection: "c"}
+	_, joined, third, how, err := db.SubmitTurn("t", TurnRow{ID: "third", Model: other, Agent: "compact-main-agent", StartedAt: at}, "three", nil)
+	if err != nil || how != Joined || joined.ID != second.ID || third.TurnID != second.ID {
+		t.Fatalf("a message behind the turn behind: %v, turn %s, message %+v (%v); want it in the turn behind", how, joined.ID, third, err)
+	}
+	if stored, err := db.Turn(second.ID); err != nil || stored.Model != other || stored.Agent != "compact-main-agent" {
+		t.Fatalf("the turn behind after the message joined: %+v (%v); want the latest message's model and role", stored, err)
+	}
+	if n, err := db.QueuedMessages("t"); err != nil || n != 2 {
+		t.Fatalf("queued messages %d (%v), want 2", n, err)
 	}
 	if ready, err := db.ReadyThreads(10, nil); err != nil || len(ready) != 0 {
 		t.Fatalf("ready threads %v (%v) while the current turn waits on the user; want none", ready, err)
@@ -219,14 +231,52 @@ func TestATurnBehindAnotherWaitsWithItsMessage(t *testing.T) {
 		t.Fatalf("ready threads %v (%v), want [t]", ready, err)
 	}
 	got := ids(second.Seq)
-	if len(got) != 4 || got[2] != "answer" || got[3] != message.ID {
-		t.Fatalf("the second turn's run reads %v; want the first turn's message, call and answer, then its own message", got)
+	if len(got) != 5 || got[2] != "answer" || got[3] != message.ID || got[4] != third.ID {
+		t.Fatalf("the second turn's run reads %v; want the first turn's message, call and answer, then its own two messages", got)
+	}
+	if n, err := db.QueuedMessages("t"); err != nil || n != 0 {
+		t.Fatalf("queued messages %d (%v) once their turn is current, want 0", n, err)
 	}
 	page, _, err := db.ThreadPage(DefaultUser, "t", 0, 10)
-	if err != nil || len(page.Items) != 4 || page.Items[3].ID != message.ID {
-		t.Fatalf("the page ends with %+v (%v); want the second turn's message last", page.Items, err)
+	if err != nil || len(page.Items) != 5 || page.Items[4].ID != third.ID {
+		t.Fatalf("the page ends with %+v (%v); want the second turn's messages last", page.Items, err)
 	}
 	if before, _, err := db.ThreadPage(DefaultUser, "t", message.Seq, 10); err != nil || len(before.Items) != 3 || before.Items[2].ID != "answer" {
 		t.Fatalf("the page before the second turn's message: %+v (%v); want all of the first turn", before.Items, err)
+	}
+}
+
+// A scheduled task's turn takes no one's messages and joins no one's turn: a message behind it starts a turn of its
+// own, which the next message joins, and a task's turn behind that is a turn of its own again.
+func TestAScheduledTurnJoinsNoMessages(t *testing.T) {
+	db, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	at := time.Date(2026, 11, 15, 8, 0, 0, 0, time.UTC)
+	if err := db.CreateThread(ThreadRow{UserID: DefaultUser, ID: "t", CreatedAt: at, UpdatedAt: at}); err != nil {
+		t.Fatal(err)
+	}
+	model := llm.Model{Name: "m", Connection: "c"}
+	submit := func(id, job string, want Submission) TurnRow {
+		t.Helper()
+		_, turn, _, how, err := db.SubmitTurn("t", TurnRow{ID: id, Model: model, CronJobID: job, StartedAt: at}, id, nil)
+		if err != nil || how != want {
+			t.Fatalf("message %s: %v (%v), want %v", id, how, err, want)
+		}
+		return turn
+	}
+	submit("now", "", Started)
+	task := submit("task", "standup", Queued)
+	asked := submit("asked", "", Queued)
+	if again := submit("again", "", Joined); again.ID != asked.ID {
+		t.Fatalf("the second message joined turn %s, want %s", again.ID, asked.ID)
+	}
+	if later := submit("later", "standup", Queued); later.ID == asked.ID || later.ID == task.ID {
+		t.Fatalf("the task's turn behind the user's is %s, want a turn of its own", later.ID)
+	}
+	if waiting, err := db.HasTurnBehind("t", "standup"); err != nil || !waiting {
+		t.Fatalf("the task's run waits behind another: %v (%v), want true", waiting, err)
 	}
 }

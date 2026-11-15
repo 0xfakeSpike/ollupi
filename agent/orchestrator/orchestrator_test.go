@@ -174,7 +174,7 @@ func (s *shard) submit(t *testing.T, user, input string) db.TurnRow {
 	if err := s.store.CreateThread(thread); err != nil {
 		t.Fatal(err)
 	}
-	_, turn, _, _, err := s.store.SubmitTurn(thread.ID, db.TurnRow{ID: uuid.NewString(), Input: input, Model: model, Agent: "full-main-agent", CreatedAt: now, StartedAt: now})
+	_, turn, _, _, err := s.store.SubmitTurn(thread.ID, db.TurnRow{ID: uuid.NewString(), Model: model, Agent: "full-main-agent", CreatedAt: now, StartedAt: now}, input, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

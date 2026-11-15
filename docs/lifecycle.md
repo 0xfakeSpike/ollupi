@@ -82,7 +82,15 @@ stateDiagram-v2
 | 子 agent 被调用 | `subagent.Invoke` → `db.WriteSubagent` | `userMessage`（任务） |
 | 后台调用结束、会话空闲 | `db.DeliverBackgroundCalls` | `backgroundResult` |
 
-轮次一写入就是 `ready`，第一条消息也在同一个事务里写好。会话正忙时提交的轮次一样是 `ready`，只是排在当前轮次后面，等它结束；这时服务端先发 `turn/queued`，等前一个轮次结束、它成为当前轮次时再发 `turn/started`。
+轮次一写入就是 `ready`，第一条消息也在同一个事务里写好。轮次自己不存消息内容，它的消息就是它的 `userMessage` 条目。
+
+会话正忙时发来的消息不各开一个轮次，而是合并进同一个等待中的轮次（`db.SubmitTurn` 返回的 `Submission`）：
+
+- 会话空闲：消息开启当前轮次（`Started`），服务端发 `turn/started`。
+- 会话忙，最后一个轮次不是用户在排队的轮次：消息开启一个排在后面的新轮次（`Queued`），服务端发 `turn/queued`。
+- 会话忙，最后一个轮次正是用户在排队的轮次：消息并入它（`Joined`）。这个轮次还没运行过，所以换用最新那条消息的模型和角色，服务端再发一次 `turn/queued`，带上它现在的样子。
+
+等前一个轮次结束、排队的轮次成为当前轮次时，服务端发 `turn/started`，主 agent 一次读到排队的全部消息，只回一次。排队上限按消息数算（`maxQueuedMessages`，20 条，`db.QueuedMessages`）。定时任务的轮次不并入用户的消息，也不接收用户的消息：它有自己的"上一次还在排队就跳过"规则。
 
 ### 状态
 
@@ -142,7 +150,7 @@ stateDiagram-v2
 4. 每个子 agent 结束时，`db.EndTurn` 在同一事务里把报告写进父轮次：完成的写它的最终回答，失败或被停止的写原因。最后一个结束的子 agent 把等待中的父轮次改回 `ready`，主 agent 读到全部报告后再回答。
 5. 子 agent 用 `update_plan` 记录进度。客户端从子会话的 `parentItemId` 找到启动它的调用，把子会话的计划和状态显示在那里。
 
-定时任务提交的轮次和用户的轮次一样排队、一样按先后拿槽位。上一次运行还排在别的轮次后面时，这一次跳过（`db.HasTurnBehind`）。
+定时任务提交的轮次和用户的轮次一样排队、一样按先后拿槽位，但总是一个单独的轮次。上一次运行还排在别的轮次后面时，这一次跳过（`db.HasTurnBehind`）。
 
 代码：[repo/db/turns.go](../repo/db/turns.go)、[agent/orchestrator/schedule.go](../agent/orchestrator/schedule.go)、[agent/orchestrator/run.go](../agent/orchestrator/run.go)、[agent/service/turns.go](../agent/service/turns.go)。
 
@@ -154,7 +162,7 @@ stateDiagram-v2
 
 | 类型 | 含义 |
 |---|---|
-| `userMessage` | 用户消息：轮次的第一条消息、插话、子 agent 的任务 |
+| `userMessage` | 用户消息：开启轮次的消息、合并进排队轮次的消息、插话、子 agent 的任务 |
 | `agentMessage` | 模型回答的正文；轮次的最终回答是最后一条完成的 `agentMessage` |
 | `reasoning` | 模型的思考内容 |
 | `toolCall` | 一次工具调用，参数、审批、等待、结果都在这一行 |
@@ -205,7 +213,7 @@ stateDiagram-v2
 - `seq`：会话内按写入顺序递增（`MAX(seq) + 1`），唯一。客户端分页的 `beforeSeq` 用它指代一个条目。
 - `turn_seq`：条目所属轮次的 `seq`，写入时从轮次抄过来。
 
-会话的对话顺序是 `(turn_seq, seq)`（`conversationOrder`）：先按轮次，轮次内按写入先后。会话正忙时提交的轮次，第一条消息写入得比当前轮次后面的条目早，`seq` 更小，但在对话里它排在当前轮次的全部条目之后。
+会话的对话顺序是 `(turn_seq, seq)`（`conversationOrder`）：先按轮次，轮次内按写入先后。会话正忙时发来的消息写入得比当前轮次后面的条目早，`seq` 更小，但在对话里它们排在当前轮次的全部条目之后。
 
 一次运行读的是 `db.RunItems(thread, upTo)`：只读到它所在的轮次为止（排在后面的轮次还不是它的对话），从最近一次完成的压缩开始全部读入，压缩之前只读跨压缩仍然有效的条目（`carriedItem`：用户消息、`acceptForSession` 的调用、`load_tools`、带 artifacts 的结果）。整个会话的读取（`db.Thread`）和分页（`db.ThreadPage`）也按 `(turn_seq, seq)`。
 

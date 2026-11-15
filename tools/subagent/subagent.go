@@ -104,7 +104,7 @@ func (t *Tools) Invoke(ctx context.Context, caller tools.Caller, name string, ar
 	if item == "" {
 		return tools.Result{}, fmt.Errorf("a subagent is launched only by a call of a turn")
 	}
-	child, err := t.db.WriteSubagent(caller.ThreadID, item, c.Description, db.TurnRow{Input: c.Prompt, Agent: name})
+	child, err := t.db.WriteSubagent(caller.ThreadID, item, c.Description, db.TurnRow{Agent: name}, c.Prompt)
 	if err != nil {
 		return tools.Result{}, err
 	}
