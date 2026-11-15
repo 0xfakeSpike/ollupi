@@ -215,6 +215,8 @@ func (s *Sandbox) Start(ctx context.Context, c Command, stderr io.Writer) (Proce
 		return nil, err
 	}
 	cmd.Stderr = stderr
+	// A program the command started may keep its stderr open after it ends; Wait stops copying it then.
+	cmd.WaitDelay = stopDelay
 	tag := runTag(s.runMarker())
 	cmd.Env = append(cmd.Env, tag)
 	ownProcessGroup(cmd, tag)
@@ -222,14 +224,16 @@ func (s *Sandbox) Start(ctx context.Context, c Command, stderr io.Writer) (Proce
 		stop()
 		return nil, fmt.Errorf("sandbox: start %s: %w", c.Program, err)
 	}
-	return &process{ReadCloser: stdout, WriteCloser: stdin, cmd: cmd, stop: stop}, nil
+	return &process{ReadCloser: stdout, WriteCloser: stdin, cmd: cmd, tag: tag, stop: stop}, nil
 }
 
-// process is a command of this machine. Closing its input lets it end by itself; one that does not is killed.
+// process is a command of this machine. Closing its input lets it end by itself; one that does not is killed, and
+// so is what it started, whether it ended or not.
 type process struct {
 	io.ReadCloser
 	io.WriteCloser
 	cmd  *exec.Cmd
+	tag  string
 	stop func()
 	once sync.Once
 }
@@ -244,11 +248,11 @@ func (p *process) Close() error {
 		}()
 		select {
 		case <-ended:
-			p.stop()
 		case <-time.After(stopDelay):
-			p.stop()
-			<-ended
 		}
+		killRun(p.cmd, p.tag)
+		p.stop()
+		<-ended
 	})
 	return nil
 }
