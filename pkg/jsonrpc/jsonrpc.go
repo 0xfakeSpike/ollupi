@@ -237,7 +237,9 @@ func (c *Conn) enqueue(data []byte, reply bool) {
 		c.mu.Unlock()
 		return
 	}
-	if c.queued+len(data) > maxOutboxBytes {
+	// The bound is on what waits behind the client, not on one message: a reply larger than it, such as an image,
+	// goes out alone when nothing else waits.
+	if c.queued > 0 && c.queued+len(data) > maxOutboxBytes {
 		c.closed, c.outbox, c.held, c.queued = true, nil, nil, 0
 		c.mu.Unlock()
 		slog.Warn("client fell behind; connection closed", "bytes", maxOutboxBytes)
