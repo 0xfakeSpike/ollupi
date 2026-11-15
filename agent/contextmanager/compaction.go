@@ -23,7 +23,7 @@ func (m *Manager) CompactionPrompt(in Input) (Prompt, error) {
 	if latestCompaction(in.Items) >= 0 {
 		keep = 1
 	}
-	obs := newObservations()
+	obs := newObservations(in.Items, m.artifactBudget())
 	rendered := map[int][]llm.ChatMessage{}
 	render := func(limit int) ([]llm.ChatMessage, error) {
 		if messages, ok := rendered[limit]; ok {

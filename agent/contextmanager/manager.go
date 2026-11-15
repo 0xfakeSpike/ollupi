@@ -61,7 +61,7 @@ type Prompt struct {
 
 func (m *Manager) Build(in Input) (Prompt, error) {
 	compactable, natural := 0, 0
-	obs := newObservations()
+	obs := newObservations(in.Items, m.artifactBudget())
 	p, err := m.fitted(func(limit int) (Prompt, error) {
 		messages, fixed, err := m.transcript(obs, in.Items, limit, false)
 		if err != nil {
