@@ -6,8 +6,8 @@ package role
 
 import (
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
-	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
+	"github.com/0xfakeSpike/ollupi/memory"
 )
 
 // Name is a role as a turn stores it.
