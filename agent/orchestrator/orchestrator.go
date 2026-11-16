@@ -2,11 +2,10 @@ package orchestrator
 
 import (
 	"context"
-	"fmt"
 	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/agent/memory"
+	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/resources"
-	"github.com/0xfakeSpike/ollupi/agent/runtime"
 	"github.com/0xfakeSpike/ollupi/repo/blobs"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"log/slog"
@@ -17,9 +16,6 @@ import (
 const (
 	defaultSlots    = 32
 	defaultRunLimit = 4 * time.Hour
-	// defaultBackgroundCalls and defaultBackgroundLimit bound the calls one user runs in the background.
-	defaultBackgroundCalls = 4
-	defaultBackgroundLimit = 4 * time.Hour
 )
 
 // Config is what the orchestrator schedules and runs turns with.
@@ -29,18 +25,19 @@ type Config struct {
 	Attachments blobs.Store
 	Memory      *memory.Manager
 	OnEvent     func(event.Event)
-	// Runtime is what every run goes by from the deployment's configuration.
-	Runtime runtime.Config
-	Slots   int
+	// Name and Prompt make the agent's own prompt, and SkillsDir is where each role's skills are installed: every run
+	// goes by them.
+	Name, Prompt, SkillsDir string
+	// Settings are the default permission settings of every run, which serve users with different tools when Shared.
+	// Tools, when set, are the only tools a turn may use.
+	Settings permission.Settings
+	Shared   bool
+	Tools    []string
+	Slots    int
 	// UserSlots is the most slots one user may hold, so that one user's turns cannot fill a shard; by default, all.
 	UserSlots int
 	// RunLimit is how long a turn may run in its slot before it fails; by default, four hours.
 	RunLimit time.Duration
-	// BackgroundCalls is the most calls one user may run in the background at once; by default, four. A background
-	// call holds no slot.
-	BackgroundCalls int
-	// BackgroundLimit is how long a background call may run before it fails; by default, four hours.
-	BackgroundLimit time.Duration
 	// Lease makes this process claim the shard before it runs it, waiting for as long as another holds it, and keep
 	// the claim alive; a process that dies leaves its claim for this long. Without it the process trusts it is alone.
 	Lease time.Duration
@@ -48,17 +45,12 @@ type Config struct {
 	OnLeaseLost func()
 }
 
-// An Orchestrator schedules the turns of a shard into slots and runs them, launches subagents and runs background
-// calls. What clients ask of the shard is the service's; it tells the orchestrator what to look at.
+// An Orchestrator schedules the turns of a shard into slots and runs them, and launches subagents. // calls. What clients ask of the shard is the service's; it tells the orchestrator what to look at.
 type Orchestrator struct {
 	cfg Config
 	ctx context.Context
 	res *resources.Resources
 	ev  event.Emitter
-
-	// backgroundCancels stop the background calls running on this process, by id.
-	backgroundMu      sync.Mutex
-	backgroundCancels map[string]context.CancelFunc
 
 	events       chan func()
 	slotByThread map[string]*slot
@@ -68,7 +60,7 @@ type Orchestrator struct {
 }
 
 func New(cfg Config) *Orchestrator {
-	return &Orchestrator{cfg: cfg, ev: event.Emitter{DB: cfg.DB, OnEvent: cfg.OnEvent}, backgroundCancels: map[string]context.CancelFunc{}}
+	return &Orchestrator{cfg: cfg, ev: event.Emitter{DB: cfg.DB, OnEvent: cfg.OnEvent}}
 }
 
 // Start runs the turns of the shard on res until ctx ends: it ends what a process that stopped left running, and
@@ -83,12 +75,6 @@ func (o *Orchestrator) Start(ctx context.Context, res *resources.Resources) erro
 	}
 	if o.cfg.RunLimit <= 0 {
 		o.cfg.RunLimit = defaultRunLimit
-	}
-	if o.cfg.BackgroundCalls <= 0 {
-		o.cfg.BackgroundCalls = defaultBackgroundCalls
-	}
-	if o.cfg.BackgroundLimit <= 0 {
-		o.cfg.BackgroundLimit = defaultBackgroundLimit
 	}
 	o.events, o.slotByThread, o.slotsOfUser = make(chan func()), map[string]*slot{}, map[string]int{}
 	// What a start that fails part way began, the claim kept alive and runs it launched, ends before it returns.
@@ -105,22 +91,12 @@ func (o *Orchestrator) Start(ctx context.Context, res *resources.Resources) erro
 			return fail(err)
 		}
 	}
-	if _, err := o.cfg.DB.InterruptBackgroundCalls(time.Now()); err != nil {
-		return fail(fmt.Errorf("orchestrator: end the background calls of a process that stopped: %w", err))
-	}
 	if err := o.recover(); err != nil {
 		return fail(err)
 	}
-	undelivered, err := o.cfg.DB.UndeliveredBackgroundThreads()
-	if err != nil {
-		return fail(fmt.Errorf("orchestrator: background results to deliver: %w", err))
-	}
 	o.done.Add(1)
 	go o.loop()
-	for _, id := range undelivered {
-		o.post(func() { o.deliverBackground(id) })
-	}
 	models, _ := o.res.Models()
-	slog.Info("orchestrator started", "name", o.cfg.Runtime.Name, "slots", o.cfg.Slots, "models", len(models), "tools", len(o.res.Tools().Descriptors()))
+	slog.Info("orchestrator started", "name", o.cfg.Name, "slots", o.cfg.Slots, "models", len(models), "tools", len(o.res.Tools().Descriptors()))
 	return nil
 }

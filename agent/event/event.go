@@ -134,15 +134,14 @@ func ThreadStatus(store *db.DB, id string) db.ThreadStatus {
 		return db.ThreadWaitingOnApproval
 	case db.TurnWaitingOnUserInput:
 		return db.ThreadWaitingOnUserInput
-	case db.TurnWaitingOnAgent:
-		st, err := store.ThreadState(id)
-		if err != nil {
-			return ""
-		}
-		for _, call := range st.AgentCalls() {
-			if cs := ThreadStatus(store, call.Await.Handle); cs == db.ThreadWaitingOnApproval || cs == db.ThreadWaitingOnUserInput {
-				return cs
-			}
+	}
+	running, err := store.RunningSubagents(turn.ID)
+	if err != nil {
+		return ""
+	}
+	for _, child := range running {
+		if cs := ThreadStatus(store, child); cs == db.ThreadWaitingOnApproval || cs == db.ThreadWaitingOnUserInput {
+			return cs
 		}
 	}
 	return db.ThreadActive

@@ -54,13 +54,18 @@ func (d *DB) Thread(id string) (ThreadView, error) {
 		if err := tx.gorm.Where("thread_id = ?", id).Order("seq").Find(&out.Turns).Error; err != nil {
 			return err
 		}
-		return tx.gorm.Where("thread_id = ?", id).Order("seq").Find(&out.Items).Error
+		return tx.gorm.Where("thread_id = ?", id).Order(conversationOrder).Find(&out.Items).Error
 	})
 	if err != nil {
 		return ThreadView{}, err
 	}
+	seqs := make([]int, len(out.Items))
 	for i, it := range out.Items {
-		if it.Seq != i+1 {
+		seqs[i] = it.Seq
+	}
+	slices.Sort(seqs)
+	for i, seq := range seqs {
+		if seq != i+1 {
 			return ThreadView{}, fmt.Errorf("storage: thread %s items have a gap at seq %d", id, i+1)
 		}
 	}
@@ -75,11 +80,12 @@ func (d *DB) ThreadPage(user, id string, before, limit int) (ThreadView, bool, e
 			return err
 		}
 		// The page is for a client, which never sees native records; only the runtime reads them.
-		q := tx.gorm.Omit("native").Where("thread_id = ?", id)
+		// before is the seq of an item; the page ends where that item stands in conversationOrder.
+		q := tx.gorm.Table("items INDEXED BY items_thread_order").Omit("native").Where("thread_id = ?", id)
 		if before > 0 {
-			q = q.Where("seq < ?", before)
+			q = q.Where("(turn_seq, seq) < (SELECT turn_seq, seq FROM items WHERE thread_id = ? AND seq = ?)", id, before)
 		}
-		if err := q.Order("seq DESC").Limit(limit + 1).Find(&out.Items).Error; err != nil {
+		if err := q.Order("turn_seq DESC, seq DESC").Limit(limit + 1).Find(&out.Items).Error; err != nil {
 			return err
 		}
 		if len(out.Items) > limit {
@@ -221,7 +227,7 @@ func (d *DB) SetThreadArchived(user, id string, at *time.Time) (ThreadRow, error
 	return row, err
 }
 
-// DeleteThread deletes a thread that has no turn in progress or queued.
+// DeleteThread deletes a thread that has no turn that has not ended.
 func (d *DB) DeleteThread(user, id string) error {
 	return d.Tx(func(tx *DB) error {
 		if _, err := tx.ThreadOf(user, id); err != nil {
@@ -234,7 +240,7 @@ func (d *DB) DeleteThread(user, id string) error {
 	})
 }
 
-// CheckIdle refuses with ErrThreadBusy a thread that has a turn in progress or queued.
+// CheckIdle refuses with ErrThreadBusy a thread that has a turn that has not ended.
 func (d *DB) CheckIdle(id string) error {
 	var open int64
 	if err := d.gorm.Model(&TurnRow{}).Where("thread_id = ? AND "+openTurn, id).Count(&open).Error; err != nil {
@@ -294,8 +300,9 @@ func (v ThreadView) ActiveTurn() (TurnRow, bool) {
 	return activeTurn(v.Turns)
 }
 
-// ThreadState is what scheduling needs of a thread: its open turns (in progress or queued, in order), its last
-// turn, and the unfinished tool calls of the turn in progress. Ended turns other than the last are not read.
+// ThreadState is what scheduling needs of a thread: its open turns in order, the first of them its current turn and
+// the others waiting behind it, its last turn, and the unfinished tool calls of its current turn. Ended turns other
+// than the last are not read.
 type ThreadState struct {
 	Thread    ThreadRow
 	Open      []TurnRow
@@ -337,14 +344,12 @@ func (s ThreadState) ActiveTurn() (TurnRow, bool) {
 	return activeTurn(s.Open)
 }
 
-func (s ThreadState) QueuedTurns() []TurnRow {
-	var out []TurnRow
-	for _, t := range s.Open {
-		if t.Status == TurnQueued {
-			out = append(out, t)
-		}
+// Behind are the open turns that wait for the current one to end.
+func (s ThreadState) Behind() []TurnRow {
+	if len(s.Open) < 2 {
+		return nil
 	}
-	return out
+	return s.Open[1:]
 }
 
 func (s ThreadState) PendingRequests() []ItemRow {
@@ -357,31 +362,11 @@ func (s ThreadState) PendingRequests() []ItemRow {
 	return out
 }
 
-func (s ThreadState) AgentCalls() []ItemRow {
-	var out []ItemRow
-	for _, it := range s.OpenCalls {
-		if it.waitsOnAgent() {
-			out = append(out, it)
-		}
-	}
-	return out
-}
-
-// BackgroundWaits are the open calls that wait for background calls to end.
-func (s ThreadState) BackgroundWaits() []ItemRow {
-	var out []ItemRow
-	for _, it := range s.OpenCalls {
-		if it.waitsOnBackground() {
-			out = append(out, it)
-		}
-	}
-	return out
-}
-
+// activeTurn is the current turn of turns in order: the first that has not ended.
 func activeTurn(turns []TurnRow) (TurnRow, bool) {
-	for i := len(turns) - 1; i >= 0; i-- {
-		if turns[i].Status.Active() {
-			return turns[i], true
+	for _, t := range turns {
+		if !t.Status.Ended() {
+			return t, true
 		}
 	}
 	return TurnRow{}, false

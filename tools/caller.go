@@ -15,4 +15,6 @@ type Caller struct {
 	Role string
 	// Item is the id of the item that records the call; empty outside a call.
 	Item string
+	// Deferred are the names of the tools the run defers, named to the model for load_tools to load.
+	Deferred []string
 }

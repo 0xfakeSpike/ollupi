@@ -89,9 +89,10 @@ func mix(args []string) {
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 		Slots:       *slots, DB: store,
 		OnEvent: func(e event.Event) {
-			if e.Kind == event.TurnStarted && e.Thread.ParentThreadID != "" {
+			// A subagent's task is the first message of its turn.
+			if e.Kind == event.ItemStarted && e.Thread.ParentThreadID != "" && e.Item.Type == db.ItemUserMessage {
 				mu.Lock()
-				turns[e.Turn.Input] = &mixTurn{kind: "sub", thread: string(e.Thread.ParentThreadID), turnID: e.Turn.ID, submitted: time.Now()}
+				turns[e.Item.Text] = &mixTurn{kind: "sub", thread: string(e.Thread.ParentThreadID), turnID: e.Turn.ID, submitted: time.Now()}
 				mu.Unlock()
 			}
 			tr.on(e)

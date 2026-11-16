@@ -272,9 +272,7 @@
     "AwaitBy": {
       "type": "string",
       "enum": [
-        "user",
-        "agent",
-        "background"
+        "user"
       ]
     },
     "ClientInfo": {
@@ -1223,9 +1221,6 @@
             "$ref": "#/$defs/Attachment"
           }
         },
-        "backgroundId": {
-          "type": "string"
-        },
         "text": {
           "type": "string"
         },
@@ -1283,7 +1278,7 @@
         "contextCompaction",
         "memoryContext",
         "error",
-        "backgroundResult"
+        "agentReport"
       ]
     },
     "MCPServerListResult": {
@@ -2574,9 +2569,6 @@
         "input_schema": {
           "type": "object",
           "additionalProperties": true
-        },
-        "background": {
-          "type": "boolean"
         }
       },
       "required": [
@@ -2711,18 +2703,6 @@
             "string"
           ],
           "format": "date-time"
-        },
-        "attachments": {
-          "type": [
-            "null",
-            "array"
-          ],
-          "items": {
-            "$ref": "#/$defs/Attachment"
-          }
-        },
-        "input": {
-          "type": "string"
         }
       },
       "required": [
@@ -2766,13 +2746,11 @@
     "TurnStatus": {
       "type": "string",
       "enum": [
-        "queued",
         "ready",
         "inProgress",
         "waitingOnApproval",
         "waitingOnUserInput",
         "waitingOnAgent",
-        "waitingOnBackground",
         "completed",
         "interrupted",
         "failed"

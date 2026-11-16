@@ -23,10 +23,18 @@ func (sv *Service) PendingRequests(user, threadID string) ([]Request, error) {
 		return nil, fmt.Errorf("service: thread %s: %w", threadID, err)
 	}
 	out := requestsOf(st)
-	for _, call := range st.AgentCalls() {
-		child, err := sv.cfg.DB.ThreadState(call.Await.Handle)
+	turn, active := st.ActiveTurn()
+	if !active {
+		return out, nil
+	}
+	running, err := sv.cfg.DB.RunningSubagents(turn.ID)
+	if err != nil {
+		return nil, fmt.Errorf("service: the subagents of thread %s: %w", threadID, err)
+	}
+	for _, id := range running {
+		child, err := sv.cfg.DB.ThreadState(id)
 		if err != nil {
-			return nil, fmt.Errorf("service: thread %s: %w", call.Await.Handle, err)
+			return nil, fmt.Errorf("service: thread %s: %w", id, err)
 		}
 		out = append(out, requestsOf(child)...)
 	}

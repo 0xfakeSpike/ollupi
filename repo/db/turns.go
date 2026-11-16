@@ -28,7 +28,7 @@ func (u *Usage) Add(v Usage) {
 
 type TurnRow struct {
 	ID       string     `gorm:"primaryKey;index:turns_ended,priority:2" json:"id"`
-	ThreadID string     `gorm:"not null;uniqueIndex:turns_thread_seq,priority:1;uniqueIndex:turns_one_active,where:NOT (status = 'queued' OR status = 'completed' OR status = 'failed' OR status = 'interrupted');index:turns_open,where:NOT (status = 'completed' OR status = 'failed' OR status = 'interrupted')" json:"threadId"`
+	ThreadID string     `gorm:"not null;uniqueIndex:turns_thread_seq,priority:1;uniqueIndex:turns_one_running,where:status = 'inProgress';index:turns_open,where:NOT (status = 'completed' OR status = 'failed' OR status = 'interrupted')" json:"threadId"`
 	Thread   *ThreadRow `gorm:"constraint:OnDelete:CASCADE" json:"-"`
 	Seq      int        `gorm:"not null;uniqueIndex:turns_thread_seq,priority:2" json:"seq"`
 	Status   TurnStatus `gorm:"not null" json:"status"`
@@ -39,39 +39,34 @@ type TurnRow struct {
 	Error string `gorm:"not null;default:''" json:"error,omitempty"`
 	// turns_cron_job finds the turns a scheduled task sent, newest last; the others stay out of it.
 	CronJobID string `gorm:"not null;default:'';index:turns_cron_job,priority:1,where:cron_job_id <> ''" json:"cronJobId,omitempty"`
-	// CreatedAt is when the turn was submitted; StartedAt, when it became its thread's current turn.
+	// CreatedAt is when the turn was submitted, and StartedAt too: a turn that waits behind another runs once that
+	// one ends, which the items of the thread tell.
 	CreatedAt time.Time `gorm:"not null;autoCreateTime:false;index:turns_cron_job,priority:2" json:"createdAt"`
 	// turns_ready orders the turns that wait for a slot; its condition is readyTurn, word for word.
 	StartedAt time.Time `gorm:"not null;index:turns_ready,where:status = 'ready'" json:"startedAt"`
 	// turns_ended orders the ended turns for memory extraction; its condition is endedTurn, word for word.
 	CompletedAt *time.Time `gorm:"index:turns_ended,priority:1,where:(status = 'completed' OR status = 'failed' OR status = 'interrupted') AND completed_at IS NOT NULL" json:"completedAt,omitempty"`
-	// The columns that can be large come last.
-	Attachments []Attachment `gorm:"serializer:json" json:"attachments,omitempty"`
-	Input       string       `gorm:"not null;default:''" json:"input,omitempty"`
 }
 
 func (TurnRow) TableName() string { return "turns" }
 
 type TurnStatus string
 
-// A thread runs one turn at a time. Its later turns wait queued; its current turn is ready for a slot,
-// in progress in one, or waiting on what its open calls await, holding none.
+// A thread runs one turn at a time: its current turn is its first that has not ended, and the later ones wait for it to
+// end. A turn not ended is ready for a slot, in progress in one, or waiting on what its open calls await, holding none.
 const (
-	TurnQueued             TurnStatus = "queued"
 	TurnReady              TurnStatus = "ready"
 	TurnInProgress         TurnStatus = "inProgress"
 	TurnWaitingOnApproval  TurnStatus = "waitingOnApproval"
 	TurnWaitingOnUserInput TurnStatus = "waitingOnUserInput"
 	TurnWaitingOnAgent     TurnStatus = "waitingOnAgent"
-	// TurnWaitingOnBackground waits for background calls of its thread to end.
-	TurnWaitingOnBackground TurnStatus = "waitingOnBackground"
-	TurnCompleted           TurnStatus = "completed"
-	TurnInterrupted         TurnStatus = "interrupted"
-	TurnFailed              TurnStatus = "failed"
+	TurnCompleted          TurnStatus = "completed"
+	TurnInterrupted        TurnStatus = "interrupted"
+	TurnFailed             TurnStatus = "failed"
 )
 
-var TurnStatusValues = []TurnStatus{TurnQueued, TurnReady, TurnInProgress, TurnWaitingOnApproval, TurnWaitingOnUserInput,
-	TurnWaitingOnAgent, TurnWaitingOnBackground, TurnCompleted, TurnInterrupted, TurnFailed}
+var TurnStatusValues = []TurnStatus{TurnReady, TurnInProgress, TurnWaitingOnApproval, TurnWaitingOnUserInput,
+	TurnWaitingOnAgent, TurnCompleted, TurnInterrupted, TurnFailed}
 
 func (s TurnStatus) Value() (driver.Value, error) { return enumValue(s, TurnStatusValues) }
 
@@ -79,22 +74,19 @@ func (s TurnStatus) Ended() bool {
 	return s == TurnCompleted || s == TurnInterrupted || s == TurnFailed
 }
 
-// Active says the turn is its thread's current one: started and not ended.
-func (s TurnStatus) Active() bool { return s != TurnQueued && !s.Ended() }
-
-// The conditions of the turns_one_active, turns_open and turns_ready indexes, word for word;
-// INDEXED BY makes a drift an error.
+// The conditions of the turns_open and turns_ready indexes, word for word; INDEXED BY makes a drift an error.
 const (
-	currentTurn = "NOT (status = 'queued' OR status = 'completed' OR status = 'failed' OR status = 'interrupted')"
-	openTurn    = "NOT (status = 'completed' OR status = 'failed' OR status = 'interrupted')"
-	readyTurn   = "status = 'ready'"
+	openTurn  = "NOT (status = 'completed' OR status = 'failed' OR status = 'interrupted')"
+	readyTurn = "status = 'ready'"
+	// firstOpen holds for a turn of the turns table that no earlier open turn of its thread is ahead of.
+	firstOpen = "NOT EXISTS (SELECT 1 FROM turns ahead WHERE ahead.thread_id = turns.thread_id AND ahead.seq < turns.seq AND NOT (ahead.status = 'completed' OR ahead.status = 'failed' OR ahead.status = 'interrupted'))"
 )
 
-// ReadyThreads lists up to limit threads whose turn waits for a slot, conversations before subagents
-// and, within each, the turn that started first. The users in except are left out: they hold all the slots they may.
+// ReadyThreads lists up to limit threads whose current turn waits for a slot, conversations before subagents
+// and, within each, the turn submitted first. The users in except are left out: they hold all the slots they may.
 func (d *DB) ReadyThreads(limit int, except []string) ([]string, error) {
 	var ids []string
-	q := d.gorm.Table("turns INDEXED BY turns_ready").Joins("JOIN threads ON threads.id = turns.thread_id").Where("turns." + readyTurn)
+	q := d.gorm.Table("turns INDEXED BY turns_ready").Joins("JOIN threads ON threads.id = turns.thread_id").Where("turns." + readyTurn + " AND " + firstOpen)
 	if len(except) > 0 {
 		q = q.Where("threads.user_id NOT IN ?", except)
 	}
@@ -111,20 +103,17 @@ func (d *DB) ThreadsWaitingOnUser(user string) ([]string, error) {
 	return ids, err
 }
 
-// StrandedThreads lists the threads a stopped process may have left without a way forward: a turn it was running,
-// a call awaiting a subagent that may have ended unreported or never started, a call awaiting background calls that
-// ended as it stopped, or queued turns behind no current one.
+// StrandedThreads lists the threads a stopped process may have left without a way forward: a turn it was running. A
+// subagent reports as its turn ends, in the same write.
 func (d *DB) StrandedThreads() ([]string, error) {
 	var ids []string
-	err := d.gorm.Raw(`SELECT thread_id FROM turns WHERE status IN ('inProgress', 'waitingOnAgent', 'waitingOnBackground')
-		UNION SELECT thread_id FROM turns q WHERE q.status = 'queued'
-			AND NOT EXISTS (SELECT 1 FROM turns a WHERE a.thread_id = q.thread_id AND ` + currentTurn + `)`).Scan(&ids).Error
+	err := d.gorm.Raw(`SELECT DISTINCT thread_id FROM turns WHERE status = 'inProgress'`).Scan(&ids).Error
 	return ids, err
 }
 
-// Launch records that the ready turn took a slot.
+// Launch records that the ready turn took a slot, which only its thread's current turn may.
 func (d *DB) Launch(turnID string) error {
-	res := d.gorm.Model(&TurnRow{}).Where("id = ? AND "+readyTurn, turnID).Update("status", TurnInProgress)
+	res := d.gorm.Model(&TurnRow{}).Where("id = ? AND "+readyTurn+" AND "+firstOpen, turnID).Update("status", TurnInProgress)
 	if err := checkOne(res); err != nil {
 		return fmt.Errorf("storage: launch turn %s: %w", turnID, err)
 	}
@@ -159,8 +148,9 @@ func (d *DB) settleStatus(turnID string, from TurnStatus) (TurnStatus, error) {
 	return status, nil
 }
 
-// waitingOn is the status of a turn out of its slot with these open calls: an approval or an answer to wait for
-// comes first, since only a person can give it; then subagents; with nothing awaited, the turn is ready.
+// waitingOn is the status of a turn out of its slot with these open calls: an approval or an answer to wait for, or
+// with nothing awaited ready. A turn waits on its subagents only once it answered (AfterAnswer), since they come back
+// as items, not as calls.
 func waitingOn(open []ItemRow) TurnStatus {
 	status := TurnReady
 	for _, it := range open {
@@ -169,18 +159,15 @@ func waitingOn(open []ItemRow) TurnStatus {
 			return TurnWaitingOnApproval
 		case it.WaitsOnUser():
 			status = TurnWaitingOnUserInput
-		case it.waitsOnAgent() && status == TurnReady:
-			status = TurnWaitingOnAgent
-		case it.waitsOnBackground() && status == TurnReady:
-			status = TurnWaitingOnBackground
 		}
 	}
 	return status
 }
 
-func (d *DB) HasQueuedTurn(threadID, cronJobID string) (bool, error) {
+// HasTurnBehind says whether a turn the scheduled task sent to the thread still waits behind another of its turns.
+func (d *DB) HasTurnBehind(threadID, cronJobID string) (bool, error) {
 	var n int64
-	err := d.gorm.Model(&TurnRow{}).Where("thread_id = ? AND status = 'queued' AND cron_job_id = ?", threadID, cronJobID).Count(&n).Error
+	err := d.gorm.Model(&TurnRow{}).Where("thread_id = ? AND cron_job_id = ? AND "+openTurn+" AND NOT "+firstOpen, threadID, cronJobID).Count(&n).Error
 	return n > 0, err
 }
 
@@ -207,9 +194,10 @@ func (d *DB) updateTurn(row TurnRow) error {
 	return nil
 }
 
+// ActiveTurn is the thread's current turn: its first that has not ended.
 func (d *DB) ActiveTurn(threadID string) (TurnRow, error) {
 	var row TurnRow
-	return row, notFound(d.gorm.Where("thread_id = ? AND "+currentTurn, threadID).Take(&row).Error)
+	return row, notFound(d.gorm.Table("turns INDEXED BY turns_open").Where("thread_id = ? AND "+openTurn, threadID).Order("seq").Take(&row).Error)
 }
 
 func (d *DB) Turn(id string) (TurnRow, error) {
@@ -222,9 +210,27 @@ func (d *DB) EndedTurn(id string) (TurnRow, error) {
 	return row, notFound(d.gorm.Where("id = ? AND status IN ('completed', 'failed', 'interrupted')", id).Take(&row).Error)
 }
 
-func (d *DB) SubmitTurn(threadID string, turn TurnRow) (ThreadRow, TurnRow, *ItemRow, error) {
+// A Submission is how a message submitted to a thread was taken.
+type Submission int
+
+const (
+	// Started is a message that started the thread's current turn.
+	Started Submission = iota
+	// Queued is a message that started a turn behind the current one.
+	Queued
+	// Joined is a message that joined the user's turn waiting behind the current one, which answers it together with
+	// the messages before it.
+	Joined
+)
+
+// SubmitTurn takes a message to the thread, with attachments: into turn, which it writes as the thread's next turn,
+// or, when the thread's last turn is one of the user's waiting behind the current one, into that turn, which takes
+// turn's model and role, since it has not run yet. A scheduled task's turn joins none, and none joins it: a task
+// skips while its last run waits (HasTurnBehind). It returns the turn the message is in.
+func (d *DB) SubmitTurn(threadID string, turn TurnRow, text string, attachments []Attachment) (ThreadRow, TurnRow, ItemRow, Submission, error) {
 	var thread ThreadRow
-	var message *ItemRow
+	var message ItemRow
+	how := Started
 	err := d.Tx(func(tx *DB) error {
 		var err error
 		if thread, err = tx.ThreadRow(threadID); err != nil {
@@ -233,74 +239,71 @@ func (d *DB) SubmitTurn(threadID string, turn TurnRow) (ThreadRow, TurnRow, *Ite
 		if thread.ArchivedAt != nil {
 			return ErrThreadArchived
 		}
-		if turn.ID == "" || (strings.TrimSpace(turn.Input) == "" && len(turn.Attachments) == 0) {
-			return fmt.Errorf("a new turn needs an id and an input")
+		if turn.ID == "" || (strings.TrimSpace(text) == "" && len(attachments) == 0) {
+			return fmt.Errorf("a message needs a turn id and a text or an attachment")
 		}
-		seq, err := tx.nextTurnSeq(threadID)
-		if err != nil {
+		var open []TurnRow
+		if err := tx.gorm.Table("turns INDEXED BY turns_open").Where("thread_id = ? AND "+openTurn, threadID).Order("seq").Find(&open).Error; err != nil {
 			return err
 		}
-		var open int64
-		if err := tx.gorm.Model(&TurnRow{}).Where("thread_id = ? AND "+openTurn, threadID).Count(&open).Error; err != nil {
+		if len(open) > 0 {
+			how = Queued
+		}
+		if last := len(open) - 1; last > 0 && open[last].CronJobID == "" && turn.CronJobID == "" {
+			waiting := open[last]
+			waiting.Model, waiting.Agent = turn.Model, turn.Agent
+			res := tx.gorm.Model(&TurnRow{}).Where("id = ? AND status = ?", waiting.ID, TurnReady).Select("model", "agent").Updates(&TurnRow{Model: waiting.Model, Agent: waiting.Agent})
+			if err := checkOne(res); err != nil {
+				return fmt.Errorf("turn %s: %w", waiting.ID, err)
+			}
+			how, turn = Joined, waiting
+			thread, message, err = tx.writeMessage(thread, turn, text, attachments)
 			return err
 		}
-		turn.ThreadID, turn.Seq, turn.Status = threadID, seq, TurnQueued
-		if err := tx.createTurn(turn); err != nil {
-			return err
-		}
-		if open > 0 {
-			return nil
-		}
-		var it ItemRow
-		thread, turn, it, err = tx.startIn(thread, turn)
-		message = &it
+		thread, turn, message, err = tx.writeTurn(thread, turn, text, attachments)
 		return err
 	})
 	if err != nil {
-		return ThreadRow{}, TurnRow{}, nil, fmt.Errorf("storage: submit turn: %w", err)
+		return ThreadRow{}, TurnRow{}, ItemRow{}, 0, fmt.Errorf("storage: submit turn: %w", err)
 	}
-	return thread, turn, message, nil
+	return thread, turn, message, how, nil
 }
 
-func (d *DB) StartQueuedTurn(threadID string) (ThreadRow, TurnRow, ItemRow, error) {
-	var thread ThreadRow
-	var turn TurnRow
-	var message ItemRow
-	err := d.Tx(func(tx *DB) error {
-		var err error
-		if thread, err = tx.ThreadRow(threadID); err != nil {
-			return err
-		}
-		var queued TurnRow
-		if err := notFound(tx.gorm.Where("thread_id = ? AND status = 'queued'", threadID).Order("seq").Take(&queued).Error); err != nil {
-			return err
-		}
-		thread, turn, message, err = tx.startIn(thread, queued)
-		return err
-	})
-	if err != nil {
-		return ThreadRow{}, TurnRow{}, ItemRow{}, fmt.Errorf("storage: start queued turn: %w", err)
-	}
-	return thread, turn, message, nil
+// QueuedMessages counts the messages of the thread that wait behind its current turn.
+func (d *DB) QueuedMessages(threadID string) (int64, error) {
+	var n int64
+	err := d.gorm.Table("turns").Joins("JOIN items ON items.turn_id = turns.id").
+		Where("turns.thread_id = ? AND items.type = 'userMessage' AND NOT (turns.status = 'completed' OR turns.status = 'failed' OR turns.status = 'interrupted') AND NOT "+firstOpen, threadID).
+		Count(&n).Error
+	return n, err
 }
 
-func (d *DB) startIn(t ThreadRow, turn TurnRow) (ThreadRow, TurnRow, ItemRow, error) {
-	now := time.Now().UTC()
-	res := d.gorm.Model(&TurnRow{}).Where("id = ? AND status = 'queued'", turn.ID).Updates(map[string]any{"status": TurnReady, "started_at": now})
-	if err := checkOne(res); err != nil {
-		return ThreadRow{}, TurnRow{}, ItemRow{}, fmt.Errorf("turn %s: %w", turn.ID, err)
-	}
-	turn.Status, turn.StartedAt = TurnReady, now
-	message := NewUserMessage(uuid.NewString(), turn.ID, turn.Input, turn.Attachments, now)
-	stored, _, err := d.saveItemOf(t.ID, message)
+// writeTurn writes the thread's next turn, ready, with text and attachments as its message.
+func (d *DB) writeTurn(t ThreadRow, turn TurnRow, text string, attachments []Attachment) (ThreadRow, TurnRow, ItemRow, error) {
+	seq, err := d.nextTurnSeq(t.ID)
 	if err != nil {
 		return ThreadRow{}, TurnRow{}, ItemRow{}, err
+	}
+	turn.ThreadID, turn.Seq, turn.Status = t.ID, seq, TurnReady
+	if err := d.createTurn(turn); err != nil {
+		return ThreadRow{}, TurnRow{}, ItemRow{}, err
+	}
+	t, message, err := d.writeMessage(t, turn, text, attachments)
+	return t, turn, message, err
+}
+
+// writeMessage writes a user message into the turn, which has not run yet, and touches the thread.
+func (d *DB) writeMessage(t ThreadRow, turn TurnRow, text string, attachments []Attachment) (ThreadRow, ItemRow, error) {
+	now := time.Now().UTC()
+	message, _, err := d.saveItemOf(t.ID, NewUserMessage(uuid.NewString(), turn.ID, text, attachments, now))
+	if err != nil {
+		return ThreadRow{}, ItemRow{}, err
 	}
 	t.UpdatedAt = now
 	if err := d.touchThread(t.ID, now); err != nil {
-		return ThreadRow{}, TurnRow{}, ItemRow{}, err
+		return ThreadRow{}, ItemRow{}, err
 	}
-	return t, turn, stored, nil
+	return t, message, nil
 }
 
 func (d *DB) AddUsage(threadID, turnID string, u Usage) error {
@@ -320,9 +323,12 @@ func (d *DB) AddUsage(threadID, turnID string, u Usage) error {
 	})
 }
 
-func (d *DB) EndTurn(threadID string, turn TurnRow) (ThreadRow, TurnRow, []ItemRow, error) {
+// EndTurn ends the thread's current turn: its items not finished fail, and a subagent's report comes back to the turn
+// that launched it, which it returns.
+func (d *DB) EndTurn(threadID string, turn TurnRow) (ThreadRow, TurnRow, []ItemRow, *SubagentReport, error) {
 	var thread ThreadRow
 	var closed []ItemRow
+	var report *SubagentReport
 	err := d.Tx(func(tx *DB) error {
 		active, err := tx.ActiveTurn(threadID)
 		if errors.Is(err, ErrNotFound) || (err == nil && active.ID != turn.ID) {
@@ -360,12 +366,41 @@ func (d *DB) EndTurn(threadID string, turn TurnRow) (ThreadRow, TurnRow, []ItemR
 		if err := checkOne(tx.gorm.Model(&ThreadRow{}).Where("id = ?", threadID).Updates(map[string]any{"updated_at": now, "replied_at": now})); err != nil {
 			return fmt.Errorf("thread %s: %w", threadID, err)
 		}
-		return nil
+		report, err = tx.reportToParent(thread, turn)
+		return err
 	})
 	if err != nil {
-		return ThreadRow{}, TurnRow{}, nil, fmt.Errorf("storage: end turn: %w", err)
+		return ThreadRow{}, TurnRow{}, nil, nil, fmt.Errorf("storage: end turn: %w", err)
 	}
-	return thread, turn, closed, nil
+	return thread, turn, closed, report, nil
+}
+
+// AfterAnswer settles the turn in progress whose run gave its final answer. Input that came after the answer makes it
+// ready, to answer that too; subagents it launched that still run make it wait on them, since a turn ends only once
+// its subagents reported. Otherwise it returns TurnCompleted, for the caller to end the turn.
+func (d *DB) AfterAnswer(turnID string) (TurnStatus, error) {
+	next := TurnCompleted
+	err := d.Tx(func(tx *DB) error {
+		more, err := tx.InputAfterAnswer(turnID)
+		if err != nil {
+			return err
+		}
+		if more {
+			next = TurnReady
+		} else if running, err := tx.RunningSubagents(turnID); err != nil {
+			return err
+		} else if len(running) > 0 {
+			next = TurnWaitingOnAgent
+		}
+		if next == TurnCompleted {
+			return nil
+		}
+		return checkOne(tx.gorm.Model(&TurnRow{}).Where("id = ? AND status = ?", turnID, TurnInProgress).Update("status", next))
+	})
+	if err != nil {
+		return "", fmt.Errorf("storage: settle the answer of turn %s: %w", turnID, err)
+	}
+	return next, nil
 }
 
 func (d *DB) FinalAnswer(threadID, turnID string) (string, error) {
@@ -381,21 +416,41 @@ const (
 	carriedItem = "type = 'userMessage' OR (type = 'toolCall' AND (approval ->> '$.decision' = 'acceptForSession' OR (status = 'completed' AND (tool = 'load_tools' OR result -> '$.artifacts' IS NOT NULL))))"
 )
 
-// RunItems reads, in order, the items a run works from: every item from the thread's latest completed compaction
-// on, and before it only the carried ones, without their native records. A run that needs more of the earlier
+// conversationOrder is the order of a thread's items: by their turns, and within a turn as they were written. A turn
+// submitted behind another has its message written first, yet it follows all of that turn.
+const conversationOrder = "turn_seq, seq"
+
+// position is where an item stands in its thread's conversationOrder.
+type position struct{ TurnSeq, Seq int }
+
+// latestCompaction is the position of the thread's latest completed compaction up to the turn numbered upTo, or the
+// zero position, before every item, when there is none.
+func (d *DB) latestCompaction(threadID string, upTo int) (position, error) {
+	var at []position
+	err := d.gorm.Table("items INDEXED BY items_compactions").Where("thread_id = ? AND turn_seq <= ? AND "+compactedItem, threadID, upTo).
+		Order("turn_seq DESC, seq DESC").Limit(1).Select("turn_seq, seq").Scan(&at).Error
+	if err != nil || len(at) == 0 {
+		return position{}, err
+	}
+	return at[0], nil
+}
+
+// RunItems reads, in order, the items a run of the turn numbered upTo works from: of that turn and those before it,
+// every item from the latest completed compaction on, and before it only the carried ones, without their native
+// records. The turns after it, which wait for it, are not its conversation yet. A run that needs more of the earlier
 // items must widen carriedItem and its index. INDEXED BY makes a condition that drifted from its index an error.
-func (d *DB) RunItems(threadID string) ([]ItemRow, error) {
+func (d *DB) RunItems(threadID string, upTo int) ([]ItemRow, error) {
 	var rows []ItemRow
 	err := d.Tx(func(tx *DB) error {
-		var from int
-		if err := tx.gorm.Table("items INDEXED BY items_compactions").Where("thread_id = ? AND "+compactedItem, threadID).Select("COALESCE(MAX(seq), 0)").Scan(&from).Error; err != nil {
+		from, err := tx.latestCompaction(threadID, upTo)
+		if err != nil {
 			return err
 		}
-		if err := tx.gorm.Table("items INDEXED BY items_carried").Omit("native").Where("thread_id = ? AND seq < ? AND ("+carriedItem+")", threadID, from).Order("seq").Find(&rows).Error; err != nil {
+		if err := tx.gorm.Table("items INDEXED BY items_carried").Omit("native").Where("thread_id = ? AND (turn_seq, seq) < (?, ?) AND ("+carriedItem+")", threadID, from.TurnSeq, from.Seq).Order(conversationOrder).Find(&rows).Error; err != nil {
 			return err
 		}
 		var recent []ItemRow
-		if err := tx.gorm.Where("thread_id = ? AND seq >= ?", threadID, from).Order("seq").Find(&recent).Error; err != nil {
+		if err := tx.gorm.Table("items INDEXED BY items_thread_order").Where("thread_id = ? AND (turn_seq, seq) >= (?, ?) AND turn_seq <= ?", threadID, from.TurnSeq, from.Seq, upTo).Order(conversationOrder).Find(&recent).Error; err != nil {
 			return err
 		}
 		rows = append(rows, recent...)
@@ -412,6 +467,6 @@ func (d *DB) TurnItems(turnID string) ([]ItemRow, error) {
 
 func (d *DB) InputAfterAnswer(turnID string) (bool, error) {
 	var n int64
-	err := d.gorm.Model(&ItemRow{}).Where("turn_id = ? AND type IN ('userMessage', 'backgroundResult') AND seq > (SELECT COALESCE(MAX(seq), 0) FROM items WHERE turn_id = ? AND type = 'agentMessage' AND status = 'completed')", turnID, turnID).Count(&n).Error
+	err := d.gorm.Model(&ItemRow{}).Where("turn_id = ? AND type IN ('userMessage', 'agentReport') AND seq > (SELECT COALESCE(MAX(seq), 0) FROM items WHERE turn_id = ? AND type = 'agentMessage' AND status = 'completed')", turnID, turnID).Count(&n).Error
 	return n > 0, err
 }

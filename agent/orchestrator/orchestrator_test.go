@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/0xfakeSpike/ollupi/tools/loader"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -14,7 +15,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/resources"
-	"github.com/0xfakeSpike/ollupi/agent/runtime"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/repo/sqlitedb"
@@ -136,13 +136,13 @@ func newShard(t *testing.T, fake *fakeModel, cfg orchestrator.Config, providers 
 	res, err := resources.New(context.Background(), resources.Config{
 		Models:      []llm.Model{model},
 		Connections: map[string]llm.Client{model.Connection: fake},
-	}, append([]tools.Provider{runtime.Loader{}}, providers...))
+	}, append([]tools.Provider{loader.New()}, providers...))
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := &shard{store: store, res: res, ended: make(chan db.TurnRow, 16)}
-	cfg.DB, cfg.Runtime.Name = store, "Ollupi"
-	cfg.Runtime.Settings = permission.Settings{ApprovalPolicy: string(permission.Never)}
+	cfg.DB, cfg.Name = store, "Ollupi"
+	cfg.Settings = permission.Settings{ApprovalPolicy: string(permission.Never)}
 	cfg.OnEvent = func(e event.Event) {
 		if e.Kind == event.TurnCompleted {
 			s.ended <- e.Turn
@@ -174,7 +174,7 @@ func (s *shard) submit(t *testing.T, user, input string) db.TurnRow {
 	if err := s.store.CreateThread(thread); err != nil {
 		t.Fatal(err)
 	}
-	_, turn, _, err := s.store.SubmitTurn(thread.ID, db.TurnRow{ID: uuid.NewString(), Input: input, Model: model, Agent: "full-main-agent", CreatedAt: now, StartedAt: now})
+	_, turn, _, _, err := s.store.SubmitTurn(thread.ID, db.TurnRow{ID: uuid.NewString(), Model: model, Agent: "full-main-agent", CreatedAt: now, StartedAt: now}, input, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -353,7 +353,7 @@ func TestAStartThatFailsLeavesNothingRunning(t *testing.T) {
 	sqlitedb.Close(raw)
 	res, err := resources.New(context.Background(), resources.Config{
 		Models: []llm.Model{model}, Connections: map[string]llm.Client{model.Connection: &fakeModel{}},
-	}, []tools.Provider{runtime.Loader{}})
+	}, []tools.Provider{loader.New()})
 	if err != nil {
 		t.Fatal(err)
 	}

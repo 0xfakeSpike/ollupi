@@ -2,12 +2,12 @@ package db
 
 import "time"
 
-// TurnsUnderWay counts the turns this shard has to run: queued, ready, running, or waiting on a subagent or on
-// background calls, which run here too. A turn waiting on a person asks nothing of the shard meanwhile.
+// TurnsUnderWay counts the turns this shard has to run: ready, those behind another included, running, or waiting on
+// a subagent, which runs here too. A turn waiting on a person asks nothing of the shard meanwhile.
 func (d *DB) TurnsUnderWay() (int64, error) {
 	var n int64
 	err := d.gorm.Model(&TurnRow{}).Where(openTurn+" AND status IN ?",
-		[]TurnStatus{TurnQueued, TurnReady, TurnInProgress, TurnWaitingOnAgent, TurnWaitingOnBackground}).Count(&n).Error
+		[]TurnStatus{TurnReady, TurnInProgress, TurnWaitingOnAgent}).Count(&n).Error
 	return n, err
 }
 

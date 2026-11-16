@@ -154,7 +154,7 @@ func TestABatchThatCrashesIsPutOff(t *testing.T) {
 	if err := store.CreateThread(db.ThreadRow{ID: "t", UserID: db.DefaultUser, Title: "t", CreatedAt: at, UpdatedAt: at}); err != nil {
 		t.Fatal(err)
 	}
-	_, turn, _, err := store.SubmitTurn("t", db.TurnRow{ID: "turn", Input: "I prefer tea", Model: llm.Model{Name: "m", Connection: "c"}, Agent: "full-main-agent", CreatedAt: at, StartedAt: at})
+	_, turn, _, _, err := store.SubmitTurn("t", db.TurnRow{ID: "turn", Model: llm.Model{Name: "m", Connection: "c"}, Agent: "full-main-agent", CreatedAt: at, StartedAt: at}, "I prefer tea", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +162,7 @@ func TestABatchThatCrashesIsPutOff(t *testing.T) {
 		t.Fatal(err)
 	}
 	turn.Status = db.TurnCompleted
-	if _, _, _, err := store.EndTurn("t", turn); err != nil {
+	if _, _, _, _, err := store.EndTurn("t", turn); err != nil {
 		t.Fatal(err)
 	}
 	m, err := New(store, crashingClient{}, Options{Model: llm.Model{Name: "m", Connection: "c"}, Generate: true})

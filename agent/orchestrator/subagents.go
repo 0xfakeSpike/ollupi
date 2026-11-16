@@ -1,31 +1,36 @@
 package orchestrator
 
 import (
+	"fmt"
+
 	"github.com/0xfakeSpike/ollupi/agent/event"
-	"github.com/0xfakeSpike/ollupi/repo/db"
-	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
 
-// settle reports to the parent the subagent that its call launched, once the subagent's turn ended. Until then it
-// starts that turn, which the call queued, as a thread starts a queued turn: the orchestrator runs it when a slot is
-// free. It reports whether it reported.
-func (o *Orchestrator) settle(parent db.ThreadRow, turn db.TurnRow, call db.ItemRow) (bool, error) {
-	report, progress, child, err := subagent.Report(o.cfg.DB, call)
-	if err != nil {
-		return false, err
-	}
-	switch progress {
-	case subagent.Queued:
-		o.ev.Emit(event.Event{Kind: event.ThreadStarted, Thread: child})
-		o.reconcile(child.ID)
-		return false, nil
-	case subagent.Running:
-		return false, nil
-	}
-	stored, _, err := o.cfg.DB.RecordItem(parent.ID, report)
-	if err != nil {
-		return false, err
-	}
-	o.ev.Item(parent, turn, stored, false)
-	return true, nil
+// SubagentStarted tells of a subagent that a call wrote, as a conversation tells of a turn it starts, and runs its
+// turn when a slot is free. The call has returned already: the subagent reports to the turn that launched it as it
+// ends (db.EndTurn).
+func (o *Orchestrator) SubagentStarted(threadID string) {
+	o.post(func() {
+		st, err := o.cfg.DB.ThreadState(threadID)
+		if err != nil {
+			o.ev.Fault(threadID, "", fmt.Errorf("the subagent could not be read: %w", err))
+			return
+		}
+		turn, active := st.ActiveTurn()
+		if !active {
+			return
+		}
+		items, err := o.cfg.DB.TurnItems(turn.ID)
+		if err != nil {
+			o.ev.Fault(threadID, turn.ID, fmt.Errorf("the subagent's task could not be read: %w", err))
+			return
+		}
+		o.ev.Emit(event.Event{Kind: event.ThreadStarted, Thread: st.Thread})
+		o.ev.TurnStarted(st.Thread, turn)
+		for _, it := range items {
+			o.ev.Item(st.Thread, turn, it, true)
+		}
+		o.ev.Status(threadID)
+		o.reconcile(threadID)
+	})
 }

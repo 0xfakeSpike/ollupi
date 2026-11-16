@@ -69,7 +69,10 @@ type Provider struct{}
 
 func New() *Provider { return &Provider{} }
 
-func (*Provider) Name() (string, string) { return "plan", "Keeps the task plan the user sees." }
+// ProviderName is the provider of the plan tool.
+const ProviderName = "plan"
+
+func (*Provider) Name() (string, string) { return ProviderName, "Keeps the task plan the user sees." }
 
 func (*Provider) ToolList(context.Context) ([]*tools.Spec, error) {
 	return []*tools.Spec{{

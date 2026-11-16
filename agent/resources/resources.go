@@ -143,10 +143,10 @@ func (r *Resources) ConversationModel(last *db.TurnRow, requested string) (llm.M
 }
 
 // MainRole is the main role of a turn on the model, by how much input the model takes.
-func (r *Resources) MainRole(model llm.Model) (role.Role, error) {
+func (r *Resources) MainRole(model llm.Model) (role.Name, error) {
 	window, err := r.Window(model)
 	if err != nil {
-		return role.Role{}, err
+		return "", err
 	}
 	return role.ForMain(window.InputTokens()), nil
 }

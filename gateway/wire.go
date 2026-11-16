@@ -45,27 +45,24 @@ func threadSummary(t db.ThreadSummary) ThreadSummary {
 }
 
 type TurnRow struct {
-	ID          string          `json:"id"`
-	ThreadID    string          `json:"threadId"`
-	Seq         int             `json:"seq"`
-	Status      db.TurnStatus   `json:"status"`
-	Model       llm.Model       `json:"model"`
-	Agent       role.Name       `json:"agent"`
-	Usage       db.Usage        `json:"usage"`
-	Error       string          `json:"error,omitempty"`
-	CronJobID   string          `json:"cronJobId,omitempty"`
-	CreatedAt   time.Time       `json:"createdAt"`
-	StartedAt   time.Time       `json:"startedAt"`
-	CompletedAt *time.Time      `json:"completedAt,omitempty"`
-	Attachments []db.Attachment `json:"attachments,omitempty"`
-	Input       string          `json:"input,omitempty"`
+	ID          string        `json:"id"`
+	ThreadID    string        `json:"threadId"`
+	Seq         int           `json:"seq"`
+	Status      db.TurnStatus `json:"status"`
+	Model       llm.Model     `json:"model"`
+	Agent       role.Name     `json:"agent"`
+	Usage       db.Usage      `json:"usage"`
+	Error       string        `json:"error,omitempty"`
+	CronJobID   string        `json:"cronJobId,omitempty"`
+	CreatedAt   time.Time     `json:"createdAt"`
+	StartedAt   time.Time     `json:"startedAt"`
+	CompletedAt *time.Time    `json:"completedAt,omitempty"`
 }
 
 func turnRow(t db.TurnRow) TurnRow {
 	return TurnRow{
 		ID: t.ID, ThreadID: t.ThreadID, Seq: t.Seq, Status: t.Status, Model: t.Model, Agent: role.Name(t.Agent), Usage: t.Usage, Error: t.Error,
 		CronJobID: t.CronJobID, CreatedAt: t.CreatedAt, StartedAt: t.StartedAt, CompletedAt: t.CompletedAt,
-		Attachments: t.Attachments, Input: t.Input,
 	}
 }
 
@@ -89,7 +86,6 @@ type ItemRow struct {
 	ContextStats      *db.ContextStats     `json:"contextStats,omitempty"`
 	Memory            []db.MemoryReference `json:"memory,omitempty"`
 	Attachments       []db.Attachment      `json:"attachments,omitempty"`
-	BackgroundID      string               `json:"backgroundId,omitempty"`
 	Text              string               `json:"text,omitempty"`
 	Arguments         string               `json:"arguments,omitempty"`
 	PreparedExecution *tools.Prepared      `json:"preparedExecution,omitempty"`
@@ -101,7 +97,7 @@ func itemRow(it db.ItemRow) ItemRow {
 		ID: it.ID, TurnID: it.TurnID, Seq: it.Seq, Type: it.Type, Status: it.Status, CallID: it.CallID, Tool: it.Tool,
 		Server: it.Server, ResponseID: it.ResponseID, Error: it.Error, StartedAt: it.StartedAt, CompletedAt: it.CompletedAt,
 		Approval: it.Approval, Await: it.Await, Annotations: it.Annotations, Usage: it.Usage, ContextStats: it.ContextStats,
-		Memory: it.Memory, Attachments: it.Attachments, BackgroundID: it.BackgroundID, Text: it.Text, Arguments: it.Arguments,
+		Memory: it.Memory, Attachments: it.Attachments, Text: it.Text, Arguments: it.Arguments,
 		PreparedExecution: it.PreparedExecution, Result: it.Result,
 	}
 }

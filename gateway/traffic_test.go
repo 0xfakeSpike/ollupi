@@ -297,7 +297,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 	}
 	fake.mu.Lock()
 	for text, names := range fake.tools {
-		if strings.HasSuffix(text, "Look the thing up on the web and report.") && !slices.Equal(names, []string{"click", "read_tool_output"}) {
+		if strings.HasSuffix(text, "Look the thing up on the web and report.") && !slices.Equal(names, []string{"click", "read_tool_output", "update_plan"}) {
 			t.Errorf("the browser subagent was sent %q, want only the browser's tools", names)
 		}
 		if strings.HasSuffix(text, "Check the thing and report.") && (len(names) == 0 || slices.ContainsFunc(names, func(name string) bool {
@@ -348,29 +348,6 @@ func TestTrafficMatchesContract(t *testing.T) {
 		return it.Tool == web.Tool && it.Result != nil && strings.Contains(string(it.Result.Output), "# Welcome")
 	}) {
 		t.Errorf("web_fetch did not return the page text (%v)", err)
-	}
-
-	// The same fetch in the background. Its page comes back to the conversation: into the turn that started it while
-	// that turn still runs, as it may with a site this near, or in a turn of its own.
-	turn = c.startTurn(threadID, "fetch later "+site.URL+"/docs")
-	approval = c.await(requestApproval, nil)
-	json.Unmarshal(approval.Params, &asked)
-	if asked.Content != site.URL+"/docs" {
-		t.Errorf("the background fetch's approval shows %q", asked.Content)
-	}
-	c.respond(approval, ApprovalResponse{Decision: db.DecisionAccept})
-	result := c.await("item/completed", func(params json.RawMessage) bool {
-		var n ItemNotification
-		return json.Unmarshal(params, &n) == nil && n.Item.Type == db.ItemBackgroundResult
-	})
-	var came ItemNotification
-	json.Unmarshal(result.Params, &came)
-	if came.Item.BackgroundID == "" || came.Item.Result == nil || !strings.Contains(string(came.Item.Result.Output), "# Welcome") {
-		t.Errorf("the background fetch came back as %+v", came.Item)
-	}
-	c.awaitTurnEnd(turn, db.TurnCompleted)
-	if came.TurnID != turn {
-		c.awaitTurnEnd(came.TurnID, db.TurnCompleted)
 	}
 
 	var daily db.CronJobRow
@@ -866,6 +843,9 @@ func (f *fakeModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}}})
 	}
 	switch {
+	case last.Role == "user" && strings.HasPrefix(text, "[report of"):
+		// A subagent's report, which names the subagent: the answer to it is the default one.
+		chunks = append(chunks, map[string]any{"content": "All done."})
 	case last.Role == "user" && strings.Contains(text, "touch"):
 		call("touch", `{}`)
 	case last.Role == "user" && strings.Contains(text, "click"):
@@ -888,9 +868,6 @@ func (f *fakeModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		call(workspace.ToolGlob, `{"pattern":"**/*.txt"}`)
 	case last.Role == "user" && strings.Contains(text, "search notes"):
 		call(workspace.ToolGrep, `{"pattern":"there","context":1}`)
-	case last.Role == "user" && strings.Contains(text, "fetch later http"):
-		words := strings.Fields(text)
-		call(web.Tool, fmt.Sprintf(`{"url":%q,"run_in_background":true}`, words[len(words)-1]))
 	case last.Role == "user" && strings.Contains(text, "fetch http"):
 		words := strings.Fields(text)
 		call(web.Tool, fmt.Sprintf(`{"url":%q}`, words[len(words)-1]))
