@@ -52,6 +52,13 @@ type Call struct {
 	Prompt      string `json:"prompt" jsonschema:"The complete task for the subagent, self-contained."`
 }
 
+// Launch is what a launch returns at once: the subagent's conversation, which a client opens, and its task.
+type Launch struct {
+	Subagent    string `json:"subagent"`
+	Description string `json:"description"`
+	Note        string `json:"note"`
+}
+
 func (Call) Constrain(s *jsonschema.Schema) {
 	s.Properties["description"].MinLength, s.Properties["description"].MaxLength = jsonschema.Ptr(1), jsonschema.Ptr(80)
 	s.Properties["prompt"].MinLength, s.Properties["prompt"].MaxLength = jsonschema.Ptr(1), jsonschema.Ptr(20000)
@@ -99,8 +106,8 @@ func (t *Tools) Invoke(ctx context.Context, caller tools.Caller, name string, ar
 		return tools.Result{}, err
 	}
 	t.started(child.ID)
-	return tools.Result{Output: map[string]any{
-		"subagent": child.ID, "description": child.Title,
-		"note": "It works on its own; its report comes back to this conversation when it ends.",
+	return tools.Result{Output: Launch{
+		Subagent: child.ID, Description: child.Title,
+		Note: "It works on its own; its report comes back to this conversation when it ends.",
 	}}, nil
 }

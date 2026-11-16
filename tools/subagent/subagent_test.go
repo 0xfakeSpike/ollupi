@@ -31,12 +31,11 @@ func TestACallWritesTheSubagentsConversationAndReturnsAtOnce(t *testing.T) {
 
 	launched := func(res tools.Result) string {
 		t.Helper()
-		out, ok := res.Output.(map[string]any)
-		if !ok || res.Await != nil {
+		out, ok := res.Output.(Launch)
+		if !ok || res.Await != nil || out.Subagent == "" || out.Description != "Look it up" {
 			t.Fatalf("a launch returned %+v; want its subagent at once, waiting on nothing", res)
 		}
-		id, _ := out["subagent"].(string)
-		return id
+		return out.Subagent
 	}
 	res, err := launch.Invoke(ctx, caller, Browser, args)
 	if err != nil {

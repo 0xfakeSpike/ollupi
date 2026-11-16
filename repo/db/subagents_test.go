@@ -121,7 +121,7 @@ func TestSubagentsReportToTheTurnThatLaunchedThem(t *testing.T) {
 
 	report := s.end(first, TurnCompleted)
 	if report == nil || report.Turn.ID != s.turn.ID || report.Item.Type != ItemAgentReport || report.Item.Status != ItemCompleted ||
-		report.Item.CallID != "c-one" || report.Item.Text != "task one" || report.Item.Result == nil {
+		report.Item.CallID != "c-one" || report.Item.LaunchItemID != "one" || report.Item.Text != "task one" || report.Item.Result == nil {
 		t.Fatalf("the first report: %+v", report)
 	}
 	if got := s.status(); got != TurnWaitingOnAgent {

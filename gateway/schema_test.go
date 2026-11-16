@@ -60,8 +60,8 @@ type toolSchemas struct {
 
 var builtinTools = map[string]struct{ arguments, output reflect.Type }{
 	plan.Tool:                {arguments: reflect.TypeFor[plan.Plan]()},
-	subagent.General:         {arguments: reflect.TypeFor[subagent.Call]()},
-	subagent.Browser:         {arguments: reflect.TypeFor[subagent.Call]()},
+	subagent.General:         {arguments: reflect.TypeFor[subagent.Call](), output: reflect.TypeFor[subagent.Launch]()},
+	subagent.Browser:         {arguments: reflect.TypeFor[subagent.Call](), output: reflect.TypeFor[subagent.Launch]()},
 	userinput.Tool:           {arguments: reflect.TypeFor[userinput.Request](), output: reflect.TypeFor[userinput.Answers]()},
 	workspace.ToolRunCommand: {output: reflect.TypeFor[workspace.CommandOutput]()},
 	workspace.ToolEditFile:   {output: reflect.TypeFor[workspace.FileOutput]()},

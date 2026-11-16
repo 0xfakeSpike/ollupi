@@ -83,7 +83,7 @@ func (d *DB) reportToParent(child ThreadRow, ended TurnRow) (*SubagentReport, er
 		return nil, err
 	}
 	now := time.Now().UTC()
-	report := ItemRow{ID: uuid.NewString(), TurnID: parent.ID, Type: ItemAgentReport, Status: ItemFailed, Tool: call.Tool, CallID: call.CallID,
+	report := ItemRow{ID: uuid.NewString(), TurnID: parent.ID, Type: ItemAgentReport, Status: ItemFailed, Tool: call.Tool, CallID: call.CallID, LaunchItemID: call.ID,
 		Text: child.Title, StartedAt: now, CompletedAt: &now}
 	switch ended.Status {
 	case TurnCompleted:

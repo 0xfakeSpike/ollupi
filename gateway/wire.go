@@ -67,12 +67,15 @@ func turnRow(t db.TurnRow) TurnRow {
 }
 
 type ItemRow struct {
-	ID                string               `json:"id"`
-	TurnID            string               `json:"turnId"`
+	ID     string `json:"id"`
+	TurnID string `json:"turnId"`
+	// TurnSeq and Seq place the item in its conversation: by its turn's seq, then its own.
+	TurnSeq           int                  `json:"turnSeq"`
 	Seq               int                  `json:"seq"`
 	Type              db.ItemType          `json:"type"`
 	Status            db.ItemStatus        `json:"status"`
 	CallID            string               `json:"callId,omitempty"`
+	LaunchItemID      string               `json:"launchItemId,omitempty"`
 	Tool              string               `json:"tool,omitempty"`
 	Server            string               `json:"server,omitempty"`
 	ResponseID        string               `json:"responseId,omitempty"`
@@ -94,7 +97,8 @@ type ItemRow struct {
 
 func itemRow(it db.ItemRow) ItemRow {
 	return ItemRow{
-		ID: it.ID, TurnID: it.TurnID, Seq: it.Seq, Type: it.Type, Status: it.Status, CallID: it.CallID, Tool: it.Tool,
+		ID: it.ID, TurnID: it.TurnID, TurnSeq: it.TurnSeq, Seq: it.Seq, Type: it.Type, Status: it.Status, CallID: it.CallID,
+		LaunchItemID: it.LaunchItemID, Tool: it.Tool,
 		Server: it.Server, ResponseID: it.ResponseID, Error: it.Error, StartedAt: it.StartedAt, CompletedAt: it.CompletedAt,
 		Approval: it.Approval, Await: it.Await, Annotations: it.Annotations, Usage: it.Usage, ContextStats: it.ContextStats,
 		Memory: it.Memory, Attachments: it.Attachments, Text: it.Text, Arguments: it.Arguments,

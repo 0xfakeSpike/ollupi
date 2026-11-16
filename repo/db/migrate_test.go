@@ -264,7 +264,7 @@ func TestTurnsFromBeforeRolesTakeTheRoleOfTheirThread(t *testing.T) {
 	create := func(rows ...any) {
 		t.Helper()
 		for _, row := range rows {
-			if err := old.Omit("Agent", "TurnSeq").Create(row).Error; err != nil {
+			if err := old.Omit("Agent", "TurnSeq", "LaunchItemID").Create(row).Error; err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -315,7 +315,7 @@ func TestASubagentWaitFromBeforeCompletesAsALaunch(t *testing.T) {
 		&TurnRow{ID: "asked", ThreadID: "main", Seq: 1, Status: TurnWaitingOnAgent, Model: llm.Model{Name: "m", Connection: "c"}, Agent: "full-main-agent", CreatedAt: at, StartedAt: at},
 		&ItemRow{ID: "call", ThreadID: "main", TurnID: "asked", Seq: 1, Type: ItemToolCall, Status: ItemInProgress, Tool: "Agent", StartedAt: at},
 	} {
-		if err := old.Omit("TurnSeq").Create(row).Error; err != nil {
+		if err := old.Omit("TurnSeq", "LaunchItemID").Create(row).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -443,5 +443,54 @@ func TestBackgroundCallsFromBeforeEndWithTheirStep(t *testing.T) {
 	var tables int64
 	if err := db.gorm.Raw("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'background_calls'").Scan(&tables).Error; err != nil || tables != 0 {
 		t.Errorf("background_calls is still there: %d (%v)", tables, err)
+	}
+}
+
+// A report from before it named its launch names the latest call of its call id before it, so two launches a provider
+// gave the same call id in different responses each have their own report.
+func TestAReportFromBeforeNamesItsLaunch(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, "data", "ollupi.sqlite")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	all, err := shardSteps()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := rawDB(t, path)
+	if err := sqlitedb.Migrate(old, all[:17], 0); err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range []string{
+		`INSERT INTO threads(id, user_id, title, created_at, updated_at) VALUES ('t', 'default', 't', '2026-11-01 08:00:00+00:00', '2026-11-01 08:00:00+00:00')`,
+		`INSERT INTO turns(id, thread_id, seq, status, model, agent, input_tokens, cached_input_tokens, cache_write_input_tokens, output_tokens, created_at, started_at)
+			VALUES ('u', 't', 1, 'completed', '{"name":"m","connection":"c"}', 'full-main-agent', 0, 0, 0, 0, '2026-11-01 08:00:00+00:00', '2026-11-01 08:00:00+00:00')`,
+	} {
+		if err := old.Exec(stmt).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i, id := range []string{"first", "report1", "second", "report2"} {
+		typ := "toolCall"
+		if i%2 == 1 {
+			typ = "agentReport"
+		}
+		if err := old.Exec(`INSERT INTO items(id, thread_id, turn_id, turn_seq, seq, type, status, call_id, tool, started_at)
+			VALUES (?, 't', 'u', 1, ?, ?, 'completed', 'call_0', 'general-sub-agent', '2026-11-01 08:00:00+00:00')`, id, i+1, typ).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	closeRaw(t, old)
+
+	db, err := Open(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for report, launch := range map[string]string{"report1": "first", "report2": "second"} {
+		if it, err := db.Item(report); err != nil || it.LaunchItemID != launch {
+			t.Errorf("%s names %q (%v), want %s", report, it.LaunchItemID, err, launch)
+		}
 	}
 }

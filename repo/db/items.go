@@ -26,10 +26,13 @@ type ItemRow struct {
 	// TurnSeq is the seq of the item's turn, which places it in the conversation before Seq does.
 	TurnSeq int `gorm:"not null;default:0;index:items_thread_order,priority:2;index:items_compactions,priority:2;index:items_carried,priority:2" json:"-"`
 	// Seq numbers the thread's items as they were written.
-	Seq          int                `gorm:"not null;uniqueIndex:items_thread_seq,priority:2;index:items_turn,priority:4;index:items_thread_order,priority:3;index:items_compactions,priority:3;index:items_carried,priority:3" json:"seq"`
-	Type         ItemType           `gorm:"not null;index:items_turn,priority:2" json:"type"`
-	Status       ItemStatus         `gorm:"not null;index:items_turn,priority:3" json:"status"`
-	CallID       string             `gorm:"not null;default:''" json:"callId,omitempty"`
+	Seq    int        `gorm:"not null;uniqueIndex:items_thread_seq,priority:2;index:items_turn,priority:4;index:items_thread_order,priority:3;index:items_compactions,priority:3;index:items_carried,priority:3" json:"seq"`
+	Type   ItemType   `gorm:"not null;index:items_turn,priority:2" json:"type"`
+	Status ItemStatus `gorm:"not null;index:items_turn,priority:3" json:"status"`
+	CallID string     `gorm:"not null;default:''" json:"callId,omitempty"`
+	// LaunchItemID is, on an agentReport, the call that launched the subagent: its call id cannot name it, since a
+	// provider may number calls afresh in each response.
+	LaunchItemID string             `gorm:"not null;default:''" json:"launchItemId,omitempty"`
 	Tool         string             `gorm:"not null;default:''" json:"tool,omitempty"`
 	Server       string             `gorm:"not null;default:''" json:"server,omitempty"`
 	ResponseID   string             `gorm:"not null;default:''" json:"responseId,omitempty"`
@@ -66,7 +69,8 @@ const (
 	ItemMemoryContext     ItemType = "memoryContext"
 	ItemError             ItemType = "error"
 	// ItemAgentReport is how a subagent ended, come back to the turn that launched it: its final answer as the result,
-	// or why it has none. Text is the subagent's task, as its conversation is titled; CallID is the launching call's.
+	// or why it has none. Text is the subagent's task, as its conversation is titled; LaunchItemID is the launching
+	// call, and CallID its call id.
 	ItemAgentReport ItemType = "agentReport"
 )
 
