@@ -98,9 +98,11 @@ type Config struct {
 type Service struct {
 	cfg Config
 	ctx context.Context
-	o   *orchestrator.Orchestrator
-	res *resources.Resources
-	ev  event.Emitter
+	// permissions are what the deployment permits, on which every conversation's permissions are made.
+	permissions permission.Deployment
+	o           *orchestrator.Orchestrator
+	res         *resources.Resources
+	ev          event.Emitter
 
 	// moving holds the workspaces whose folder is being moved, which take no new turn meanwhile.
 	moveMu sync.Mutex
@@ -117,7 +119,8 @@ func New(cfg Config) *Service {
 		Slots: cfg.Slots, UserSlots: cfg.UserSlots, RunLimit: cfg.RunLimit,
 		Lease: cfg.Lease, OnLeaseLost: cfg.OnLeaseLost,
 	})
-	return &Service{cfg: cfg, o: o, ev: event.Emitter{DB: cfg.DB, OnEvent: cfg.OnEvent}, moving: map[string]bool{}}
+	permissions := permission.Deployment{Settings: cfg.Settings, Shared: cfg.ToolsFor != nil, Tools: cfg.Tools}
+	return &Service{cfg: cfg, permissions: permissions, o: o, ev: event.Emitter{DB: cfg.DB, OnEvent: cfg.OnEvent}, moving: map[string]bool{}}
 }
 
 // Start makes what turns run on, checks that each model takes the main agent's prompt, and starts the orchestrator.
@@ -170,7 +173,7 @@ func (sv *Service) checkPromptFits() error {
 		if err != nil {
 			return err
 		}
-		main, _ := role.New(role.ForMain(window.InputTokens()), sv.cfg.Name, sv.cfg.Prompt, sv.cfg.SkillsDir, sv.cfg.Settings, sv.res.Shared(), sv.cfg.Tools, sv.cfg.Memory, window)
+		main, _ := role.New(role.ForMain(window.InputTokens()), sv.cfg.Name, sv.cfg.Prompt, sv.cfg.SkillsDir, sv.permissions, sv.cfg.Memory, window)
 		main.Registry = sv.res.Tools()
 		if err := main.Permit(db.WorkspaceRow{}); err != nil {
 			return err
