@@ -1121,6 +1121,9 @@
         "turnId": {
           "type": "string"
         },
+        "turnSeq": {
+          "type": "integer"
+        },
         "seq": {
           "type": "integer"
         },
@@ -1131,6 +1134,9 @@
           "$ref": "#/$defs/ItemStatus"
         },
         "callId": {
+          "type": "string"
+        },
+        "launchItemId": {
           "type": "string"
         },
         "tool": {
@@ -1254,6 +1260,7 @@
       "required": [
         "id",
         "turnId",
+        "turnSeq",
         "seq",
         "type",
         "status",
@@ -1283,6 +1290,26 @@
         "error",
         "agentReport"
       ]
+    },
+    "Launch": {
+      "type": "object",
+      "properties": {
+        "subagent": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "subagent",
+        "description",
+        "note"
+      ],
+      "additionalProperties": false
     },
     "MCPServerListResult": {
       "type": "object",
@@ -3608,6 +3635,9 @@
     "browser-sub-agent": {
       "arguments": {
         "$ref": "#/$defs/SubagentCall"
+      },
+      "output": {
+        "$ref": "#/$defs/Launch"
       }
     },
     "edit_file": {
@@ -3618,6 +3648,9 @@
     "general-sub-agent": {
       "arguments": {
         "$ref": "#/$defs/SubagentCall"
+      },
+      "output": {
+        "$ref": "#/$defs/Launch"
       }
     },
     "glob": {
