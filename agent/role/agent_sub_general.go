@@ -2,7 +2,7 @@ package role
 
 import (
 	"github.com/0xfakeSpike/ollupi/agent/permission"
-	"github.com/0xfakeSpike/ollupi/cron"
+	"github.com/0xfakeSpike/ollupi/tools/cron"
 	"github.com/0xfakeSpike/ollupi/tools/plan"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
