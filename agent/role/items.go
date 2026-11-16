@@ -8,17 +8,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
-func (rt *Runtime) start(turn db.TurnRow, conversation []db.ItemRow) {
-	rt.turn, rt.history, rt.items = turn, nil, nil
-	for _, it := range conversation {
-		if it.TurnID == turn.ID {
-			rt.items = append(rt.items, it)
-		} else {
-			rt.history = append(rt.history, it)
-		}
-	}
-}
-
 // conversation is the conversation's items up to the turn's latest: the history before it, and the turn's own.
 func (rt *Runtime) conversation() []db.ItemRow { return slices.Concat(rt.history, rt.items) }
 

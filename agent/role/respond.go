@@ -117,24 +117,6 @@ func (rt *Runtime) respond(ctx context.Context, choice llm.ToolChoice) error {
 	return nil
 }
 
-const finalAnswerNotice = `[runtime] Tool use has stopped: %s.
-Do not call tools. Write the final answer to the user now, in their language: report what was accomplished, citing the observations above; state clearly what could not be done and why; and give the most useful next step.`
-
-// conclude tells the model that tool use stopped, and why, and asks it for its final answer.
-func (rt *Runtime) conclude(ctx context.Context, reason string) error {
-	now := time.Now().UTC()
-	if _, err := rt.record(db.ItemRow{
-		ID: uuid.NewString(), TurnID: rt.turn.ID, Type: db.ItemError, Status: db.ItemCompleted,
-		Text: fmt.Sprintf(finalAnswerNotice, reason), StartedAt: now, CompletedAt: &now,
-	}); err != nil {
-		return err
-	}
-	if err := rt.respond(ctx, llm.ToolChoiceNone); err != nil {
-		return fmt.Errorf("%w (tool use stopped: %s)", err, reason)
-	}
-	return nil
-}
-
 // cutOffCall is why no call of a response the output limit cut off runs: the last may be incomplete, and the model
 // would read a missing piece as a failed call instead of a request too long for one response.
 const cutOffCall = "not run: the response reached the model's output limit before it was complete; do this in smaller steps, such as a long file written in parts"
