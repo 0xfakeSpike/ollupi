@@ -1,0 +1,65 @@
+package workspace
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+
+	"github.com/0xfakeSpike/ollupi/tools"
+)
+
+func (r *Provider) settingsDigest(d dirs) string {
+	return digest(struct {
+		Sandbox    any
+		TimeoutSec int
+		Blacklist  []string
+		Roots      []string
+	}{d.box.Fingerprint(), r.timeoutSec, r.blacklist, d.roots})
+}
+
+func sha(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func digest(value any) string {
+	body, err := json.Marshal(value)
+	if err != nil {
+		panic(fmt.Sprintf("workspace: digest non-JSON value: %v", err))
+	}
+	return sha(string(body))
+}
+
+func (r *Provider) validatePrepared(ctx context.Context, d dirs, p *tools.Prepared, args map[string]any) error {
+	if p == nil {
+		return fmt.Errorf("workspace: missing prepared command")
+	}
+	if p.SettingsDigest != r.settingsDigest(d) {
+		return fmt.Errorf("workspace: the command settings or the project directory changed after this call was prepared, so it was not run; call run_command again")
+	}
+	if p.ArgumentsDigest != digest(args) {
+		return fmt.Errorf("workspace: prepared command arguments changed")
+	}
+	cwd, err := d.resolve(ctx, p.Cwd)
+	if err != nil {
+		return err
+	}
+	if cwd != p.Cwd {
+		return fmt.Errorf("workspace: prepared command directory changed")
+	}
+	return nil
+}
+
+// sameExecutable checks that program still resolves to the executable the user approved for p.
+func (d dirs) sameExecutable(ctx context.Context, program string, p *tools.Prepared) error {
+	current, err := d.box.Executable(ctx, program, p.Cwd)
+	if err != nil {
+		return err
+	}
+	if current != p.Program {
+		return fmt.Errorf("workspace: approved executable now resolves to a different path")
+	}
+	return nil
+}

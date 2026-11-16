@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/google/jsonschema-go/jsonschema"
 	"log/slog"
 	"runtime/debug"
 	"slices"
 	"sort"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/google/jsonschema-go/jsonschema"
 )
 
 type Registry struct {
@@ -65,7 +66,7 @@ func New(ctx context.Context, unavailable []string, providers ...Provider) (*Reg
 				prevID, _ := prev.Name()
 				return nil, fmt.Errorf("tool registry: duplicate tool %q (providers %q and %q)", t.Name, prevID, id)
 			}
-			schema, err := resolveSchema(t.InputSchema)
+			schema, err := ResolveSchema(t.InputSchema)
 			if err != nil {
 				return nil, fmt.Errorf("tool registry: tool %q input schema: %w", t.Name, err)
 			}
@@ -129,11 +130,12 @@ var (
 	ErrInvalidArguments = errors.New("invalid arguments")
 )
 
-const maxOutputBytes = 1 << 20
-
-func (r *Registry) Invoke(ctx context.Context, caller Caller, tool string, arguments map[string]any) Result {
-	return guard(tool, func() (Result, error) { return r.dispatch(ctx, caller, tool, arguments) })
-}
+// A tool's output, and what it says of its failure, are kept up to these sizes: both are stored with the call and sent
+// to those who watch it, and a server may fail with as much text as it answers with.
+const (
+	maxOutputBytes = 1 << 20
+	maxErrorBytes  = 16 << 10
+)
 
 func guard(tool string, run func() (Result, error)) (result Result) {
 	defer func() {
@@ -146,28 +148,31 @@ func guard(tool string, run func() (Result, error)) (result Result) {
 	if err != nil {
 		result.Err = err
 	}
-	if result.Err == nil && result.Output != nil {
+	if result.Output != nil {
 		raw, err := json.Marshal(result.Output)
 		switch {
 		case err != nil:
 			result = Result{Err: fmt.Errorf("the tool returned output that cannot be encoded as JSON: %v", err)}
 		case len(raw) > maxOutputBytes:
-			// The cut goes back to the start of a character, so the text kept stays valid UTF-8.
-			cut := maxOutputBytes
-			for cut > 0 && !utf8.RuneStart(raw[cut]) {
-				cut--
-			}
-			result.Output = string(raw[:cut]) + fmt.Sprintf("\n[output truncated: %d of %d bytes shown]", cut, len(raw))
+			result.Output = clip(string(raw), maxOutputBytes, "output")
+		}
+	}
+	if result.Err != nil {
+		if why := result.Err.Error(); len(why) > maxErrorBytes {
+			result.Err = errors.New(clip(why, maxErrorBytes, "error"))
 		}
 	}
 	return result.For(tool)
 }
 
-func (r *Registry) dispatch(ctx context.Context, caller Caller, tool string, arguments map[string]any) (Result, error) {
-	if err := r.check(tool, arguments); err != nil {
-		return Result{}, err
+// clip keeps the first limit bytes of text and says how much that is. The cut goes back to the start of a character,
+// so the text kept stays valid UTF-8.
+func clip(text string, limit int, what string) string {
+	cut := limit
+	for cut > 0 && !utf8.RuneStart(text[cut]) {
+		cut--
 	}
-	return r.owner[tool].Invoke(ctx, caller, tool, arguments)
+	return text[:cut] + fmt.Sprintf("\n[%s truncated: %d of %d bytes shown]", what, cut, len(text))
 }
 
 // check says the registry has the tool and the arguments fit its schema.

@@ -1,16 +1,21 @@
 package gateway
 
-//go:generate go test -run ^TestProtocolSchema$ . -update
-
 import (
 	"context"
 	"crypto/sha256"
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
 	"reflect"
 
+	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
+	"github.com/0xfakeSpike/ollupi/agent/permission"
+	"github.com/0xfakeSpike/ollupi/agent/service"
+	"github.com/0xfakeSpike/ollupi/cron"
+	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/wshub"
@@ -20,6 +25,8 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
 	"github.com/coder/websocket"
 )
+
+//go:generate go test -run ^TestProtocolSchema$ . -update
 
 const (
 	errNotInitialized    = -32002
@@ -31,6 +38,7 @@ const (
 	errWorkspaceArchived = -32014
 	errThreadArchived    = -32015
 	errThreadBusy        = -32016
+	errSearchTimedOut    = -32017
 )
 
 const (
@@ -97,6 +105,7 @@ var protocol = struct {
 	// refused with.
 	closes     map[int]Ending
 	handshakes map[int]Ending
+	limits     Limits
 }{
 	methods: map[string]method{
 		methodInitialize:              handle((*conn).initialize),
@@ -180,6 +189,7 @@ var protocol = struct {
 		errWorkspaceArchived:       "workspaceArchived",
 		errThreadArchived:          "threadArchived",
 		errThreadBusy:              "threadBusy",
+		errSearchTimedOut:          "searchTimedOut",
 	},
 	closes: map[int]Ending{
 		// The server is stopping, or the connection reached its age.
@@ -201,6 +211,14 @@ var protocol = struct {
 		// Too many connections are starting, or the user's shard cannot be reached now.
 		http.StatusServiceUnavailable: {"unavailable", ReconnectRetryAfter},
 	},
+	limits: Limits{SearchRunes: maxSearchRunes, SearchTerms: maxSearchTerms},
+}
+
+// Limits are the bounds the gateway holds a request to, so that a client can keep within them before it asks.
+type Limits struct {
+	// SearchRunes and SearchTerms bound a search's query: its characters, and its words.
+	SearchRunes int `json:"searchRunes"`
+	SearchTerms int `json:"searchTerms"`
 }
 
 type method struct {
@@ -375,8 +393,11 @@ type TurnInterruptParams struct {
 	TurnID   string `json:"turnId"`
 }
 
+// TurnResult is the turn a message went into, and how: it started the thread's current turn, started a turn behind it,
+// or joined the turn already waiting there, which answers it with the messages before it.
 type TurnResult struct {
-	Turn TurnRow `json:"turn"`
+	Turn       TurnRow       `json:"turn"`
+	Submission db.Submission `json:"submission"`
 }
 
 type TurnNotification struct {
@@ -573,4 +594,45 @@ type UserInputResponse struct {
 	// Skipped declines the questions without answers (send answers as {}): the call ends declined and the agent goes
 	// on without them.
 	Skipped bool `json:"skipped,omitempty"`
+}
+
+var errorCodes = []struct {
+	err  error
+	code int
+}{
+	{db.ErrNotFound, errNotFound},
+	{orchestrator.ErrNoActiveTurn, errNoActiveTurn},
+	{orchestrator.ErrTurnMismatch, errTurnMismatch},
+	{db.ErrNoSuchRequest, errNoSuchRequest},
+	{service.ErrSubagentThread, errSubagentThread},
+	{service.ErrWorkspaceArchived, errWorkspaceArchived},
+	{db.ErrThreadArchived, errThreadArchived},
+	{db.ErrThreadBusy, errThreadBusy},
+	{service.ErrWorkspaceBusy, errThreadBusy},
+	{service.ErrQueueFull, errThreadBusy},
+	{service.ErrEnvironmentInUse, jsonrpc.CodeInvalidParams},
+	{service.ErrInvalidMessage, jsonrpc.CodeInvalidParams},
+	{service.ErrInvalidAnswer, jsonrpc.CodeInvalidParams},
+	{service.ErrInvalidDecision, jsonrpc.CodeInvalidParams},
+	{service.ErrInvalidName, jsonrpc.CodeInvalidParams},
+	{service.ErrInvalidPath, jsonrpc.CodeInvalidParams},
+	{permission.ErrInvalidSettings, jsonrpc.CodeInvalidParams},
+	{memory.ErrInvalidChange, jsonrpc.CodeInvalidParams},
+	{tools.ErrUnknownTool, jsonrpc.CodeInvalidParams},
+	{tools.ErrInvalidArguments, jsonrpc.CodeInvalidParams},
+	{cron.ErrInvalidJob, jsonrpc.CodeInvalidParams},
+}
+
+func serverError(err error) *jsonrpc.Error {
+	var rpcErr *jsonrpc.Error
+	if errors.As(err, &rpcErr) {
+		return rpcErr
+	}
+	for _, e := range errorCodes {
+		if errors.Is(err, e.err) {
+			return jsonrpc.Errorf(e.code, "%v", err)
+		}
+	}
+	slog.Error("request failed", "err", err)
+	return jsonrpc.Errorf(jsonrpc.CodeServerError, "the request could not be completed")
 }

@@ -2,12 +2,14 @@ package role
 
 import (
 	"fmt"
-	"github.com/0xfakeSpike/ollupi/tools/loader"
+	"slices"
 	"strings"
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo/skills"
 	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/0xfakeSpike/ollupi/tools/loader"
+	"github.com/0xfakeSpike/ollupi/tools/workspace"
 )
 
 // projectSection names the project a run works in, by its root.
@@ -24,16 +26,50 @@ const defaultAgentPrompt = `You are %s, a personal assistant working on the user
 # Talking with the user
 - Write plainly and warmly, as a capable colleague would. Lead with the outcome, then the details that matter to the user.`
 
-// listSkills lists the skills installed for the role named role in skillsDir, where each role has its own, within
-// budget tokens, saying how many more there are when they do not all fit: "" when there are none.
-func listSkills(role Name, skillsDir string, budget int) (string, error) {
-	if skillsDir == "" {
+// System writes the role's system prompt for the run, as its permissions and workspace are now: the agent's own prompt
+// first when the role answers the user, the role's rules, the skills installed for it within the window's budget for
+// them, the deferred tools for load_tools to load, and the workspace's project, for a run that has the tools working
+// in it.
+func (rt *Runtime) System() (string, error) {
+	offered, deferred := rt.Offer()
+	inProject := slices.ContainsFunc(slices.Concat(offered, deferred), func(d tools.ToolDescriptor) bool { return d.Provider == workspace.ProviderName })
+	listed, err := rt.listSkills()
+	if err != nil {
+		return "", err
+	}
+	var parts []string
+	if rt.role.answersUser {
+		own := strings.TrimSpace(rt.prompt)
+		if own == "" {
+			own = fmt.Sprintf(defaultAgentPrompt, rt.agent)
+		}
+		parts = append(parts, own)
+	}
+	parts = append(parts, rt.role.rules)
+	if listed != "" {
+		parts = append(parts, listed)
+	}
+	if len(deferred) > 0 {
+		parts = append(parts, listDeferred(deferred))
+	}
+	if inProject && rt.workspace.RootPath != "" {
+		parts = append(parts, fmt.Sprintf(projectSection, rt.workspace.RootPath))
+	}
+	return strings.Join(parts, "\n\n"), nil
+}
+
+// listSkills lists the skills installed for the role in the deployment's skills directory, where each role has its
+// own, within the window's budget for them, saying how many more there are when they do not all fit: "" when there are
+// none.
+func (rt *Runtime) listSkills() (string, error) {
+	if rt.skillsDir == "" {
 		return "", nil
 	}
-	catalog, err := skills.Load(skillsDir, string(role))
+	catalog, err := skills.Load(rt.skillsDir, string(rt.role.name))
 	if err != nil {
-		return "", fmt.Errorf("role: the skills of %s: %w", role, err)
+		return "", fmt.Errorf("role: the skills of %s: %w", rt.role.name, err)
 	}
+	budget := rt.window.SkillBudget()
 	if len(catalog) == 0 {
 		return "", nil
 	}

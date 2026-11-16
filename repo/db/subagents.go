@@ -83,7 +83,7 @@ func (d *DB) reportToParent(child ThreadRow, ended TurnRow) (*SubagentReport, er
 		return nil, err
 	}
 	now := time.Now().UTC()
-	report := ItemRow{ID: uuid.NewString(), TurnID: parent.ID, Type: ItemAgentReport, Status: ItemFailed, Tool: call.Tool, CallID: call.CallID,
+	report := ItemRow{ID: uuid.NewString(), TurnID: parent.ID, Type: ItemAgentReport, Status: ItemFailed, Tool: call.Tool, CallID: call.CallID, LaunchItemID: call.ID,
 		Text: child.Title, StartedAt: now, CompletedAt: &now}
 	switch ended.Status {
 	case TurnCompleted:
@@ -95,12 +95,8 @@ func (d *DB) reportToParent(child ThreadRow, ended TurnRow) (*SubagentReport, er
 		if err != nil {
 			return nil, err
 		}
-		if report.Result, report.Error, err = ResultOf(tools.Result{Output: answer}); err != nil {
-			return nil, err
-		}
-		if report.Error == "" {
-			report.Status = ItemCompleted
-		}
+		report.Result, _, _ = ResultOf(tools.Result{Output: answer}) // a text: it cannot fail
+		report.Status = ItemCompleted
 	case TurnInterrupted:
 		report.Error = "the subagent was stopped: " + ended.Error
 	default:
@@ -127,4 +123,10 @@ func (d *DB) reportToParent(child ThreadRow, ended TurnRow) (*SubagentReport, er
 		return nil, err
 	}
 	return &SubagentReport{Thread: thread, Turn: parent, Item: stored}, nil
+}
+
+func (d *DB) FinalAnswer(threadID, turnID string) (string, error) {
+	var row ItemRow
+	err := notFound(d.gorm.Where("thread_id = ? AND turn_id = ? AND type = 'agentMessage' AND status = 'completed'", threadID, turnID).Order("seq DESC").Take(&row).Error)
+	return row.Text, err
 }

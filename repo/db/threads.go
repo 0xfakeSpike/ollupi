@@ -17,8 +17,7 @@ type ThreadRow struct {
 	User        *UserRow      `gorm:"foreignKey:UserID;constraint:OnDelete:RESTRICT" json:"-"`
 	WorkspaceID Ref           `gorm:"index:threads_workspace;index:threads_workspace_list,priority:1" json:"workspaceId,omitempty"`
 	Workspace   *WorkspaceRow `gorm:"foreignKey:WorkspaceID;constraint:OnDelete:RESTRICT" json:"-"`
-	// EnvironmentID is where the conversation runs. Empty is the user's environment on this machine, which is what a
-	// conversation from before environments ran in.
+	// EnvironmentID is where the conversation runs.
 	EnvironmentID Ref                `gorm:"index:threads_environment" json:"environmentId,omitempty"`
 	Environment   *EnvironmentRow    `gorm:"foreignKey:EnvironmentID;constraint:OnDelete:RESTRICT" json:"-"`
 	Title         string             `gorm:"not null" json:"title"`
@@ -58,16 +57,6 @@ func (d *DB) Thread(id string) (ThreadView, error) {
 	})
 	if err != nil {
 		return ThreadView{}, err
-	}
-	seqs := make([]int, len(out.Items))
-	for i, it := range out.Items {
-		seqs[i] = it.Seq
-	}
-	slices.Sort(seqs)
-	for i, seq := range seqs {
-		if seq != i+1 {
-			return ThreadView{}, fmt.Errorf("storage: thread %s items have a gap at seq %d", id, i+1)
-		}
 	}
 	return out, nil
 }
@@ -261,10 +250,7 @@ func (d *DB) UpdateThreadSettings(user, id string, change func(PermissionSetting
 		if err != nil {
 			return err
 		}
-		raw, err := json.Marshal(change(current.Settings))
-		if err != nil {
-			return fmt.Errorf("thread %s: encode settings: %w", id, err)
-		}
+		raw, _ := json.Marshal(change(current.Settings)) // strings alone: it cannot fail
 		if err := checkOne(tx.gorm.Model(&ThreadRow{}).Where("id = ?", id).Update("settings", string(raw))); err != nil {
 			return err
 		}

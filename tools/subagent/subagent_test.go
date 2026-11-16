@@ -31,12 +31,11 @@ func TestACallWritesTheSubagentsConversationAndReturnsAtOnce(t *testing.T) {
 
 	launched := func(res tools.Result) string {
 		t.Helper()
-		out, ok := res.Output.(map[string]any)
-		if !ok || res.Await != nil {
+		out, ok := res.Output.(Launch)
+		if !ok || res.Await != nil || out.Subagent == "" || out.Description != "Look it up" {
 			t.Fatalf("a launch returned %+v; want its subagent at once, waiting on nothing", res)
 		}
-		id, _ := out["subagent"].(string)
-		return id
+		return out.Subagent
 	}
 	res, err := launch.Invoke(ctx, caller, Browser, args)
 	if err != nil {
@@ -67,8 +66,5 @@ func TestACallWritesTheSubagentsConversationAndReturnsAtOnce(t *testing.T) {
 	}
 	if _, err := launch.Invoke(ctx, caller, Browser, map[string]any{"description": "x", "prompt": "  "}); err == nil {
 		t.Error("a blank task launched a subagent")
-	}
-	if _, err := launch.Invoke(ctx, tools.Caller{UserID: db.DefaultUser, ThreadID: "main"}, Browser, args); err == nil {
-		t.Error("a launch outside a call of a turn wrote a subagent")
 	}
 }

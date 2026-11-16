@@ -99,9 +99,6 @@ func seatbeltArgs(p policy, tempDirs []string, argv []string) ([]string, error) 
 	if err != nil {
 		return nil, err
 	}
-	if len(argv) == 0 {
-		return nil, fmt.Errorf("sandbox: empty command")
-	}
 	args := []string{"-p", profile}
 	for _, kv := range params {
 		args = append(args, "-D", kv[0]+"="+kv[1])
@@ -113,9 +110,6 @@ func seatbeltArgs(p policy, tempDirs []string, argv []string) ([]string, error) 
 func seatbeltProfile(p policy, tempDirs []string) (string, [][2]string, error) {
 	if err := p.Validate(); err != nil {
 		return "", nil, err
-	}
-	if p.Mode == ModeFullAccess {
-		return "", nil, fmt.Errorf("sandbox: %s is not run under a profile", ModeFullAccess)
 	}
 	var params [][2]string
 	param := func(prefix string, i int, path string) string {

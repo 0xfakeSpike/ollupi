@@ -138,14 +138,8 @@ func (skill Skill) Page(resourcePath string, offset, limit int) (ResourcePage, e
 	if !known {
 		return ResourcePage{}, fmt.Errorf("skills: resource %q is not exposed by skill %q", resourcePath, skill.Name)
 	}
-	if offset < 0 {
-		return ResourcePage{}, fmt.Errorf("skills: resource offset must be >= 0")
-	}
 	if limit <= 0 {
 		limit = defaultResourceRunes
-	}
-	if limit > MaxResourceRunes {
-		return ResourcePage{}, fmt.Errorf("skills: resource limit must be <= %d", MaxResourceRunes)
 	}
 
 	fullPath, err := safeResourcePath(skill.RootDir, resourcePath)
@@ -225,9 +219,6 @@ func scanRole(root, dir string) (map[string]Skill, error) {
 		if skill.Name != entry.Name() {
 			return nil, fmt.Errorf("skills: directory %q must match frontmatter name %q", entry.Name(), skill.Name)
 		}
-		if _, exists := loaded[skill.Name]; exists {
-			return nil, fmt.Errorf("skills: duplicate skill name %q", skill.Name)
-		}
 		loaded[skill.Name] = skill
 	}
 	return loaded, nil
@@ -270,6 +261,7 @@ func parseSkill(root, skillDir, sourcePath string, byteSize int64) (Skill, error
 	if err != nil {
 		return Skill{}, err
 	}
+	sourceFile, _ := filepath.Rel(root, sourcePath) // sourcePath is joined under root
 	digestBytes := sha256.Sum256(raw)
 	return Skill{
 		Name:         name,
@@ -277,7 +269,7 @@ func parseSkill(root, skillDir, sourcePath string, byteSize int64) (Skill, error
 		Version:      version(fm.Metadata),
 		RootDir:      skillDir,
 		SourcePath:   sourcePath,
-		SourceFile:   filepath.ToSlash(mustRelative(root, sourcePath)),
+		SourceFile:   filepath.ToSlash(sourceFile),
 		Instructions: instructions,
 		Digest:       hex.EncodeToString(digestBytes[:]),
 		ByteSize:     byteSize,
@@ -336,10 +328,7 @@ func scanResources(skillDir string) ([]Resource, error) {
 		if err != nil {
 			return err
 		}
-		rel, err := filepath.Rel(skillDir, path)
-		if err != nil {
-			return err
-		}
+		rel, _ := filepath.Rel(skillDir, path) // the walk gives paths under skillDir
 		resources = append(resources, Resource{Path: filepath.ToSlash(rel), ByteSize: info.Size()})
 		if len(resources) > maxListedResources {
 			return fmt.Errorf("skill %q exposes more than %d readable resources", skillDir, maxListedResources)
@@ -387,14 +376,6 @@ func safeResourcePath(root, resourcePath string) (string, error) {
 		}
 	}
 	return fullPath, nil
-}
-
-func mustRelative(root, path string) string {
-	rel, err := filepath.Rel(root, path)
-	if err != nil {
-		return filepath.Base(path)
-	}
-	return rel
 }
 
 func version(metadata map[string]any) string {

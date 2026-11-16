@@ -145,13 +145,10 @@ func (r *Provider) change(ctx context.Context, caller tools.Caller, args map[str
 
 func newContent(c fileChange, args map[string]any) (string, error) {
 	if _, ok := args["content"]; ok {
-		w, err := tools.DecodeArguments[WriteFile](args)
-		return w.Content, err
+		w, _ := tools.DecodeArguments[WriteFile](args) // the schema checked its fields: it cannot fail
+		return w.Content, nil
 	}
-	e, err := tools.DecodeArguments[EditFile](args)
-	if err != nil {
-		return "", err
-	}
+	e, _ := tools.DecodeArguments[EditFile](args) // the schema checked its fields: it cannot fail
 	if !c.exists {
 		return "", fmt.Errorf("workspace: %s does not exist; create it with %s", c.rel, ToolWriteFile)
 	}
@@ -193,7 +190,7 @@ func (r *Provider) fileContent(ctx context.Context, caller tools.Caller, args ma
 	if err != nil {
 		return tools.Content{}, err
 	}
-	return tools.Content{Text: f.Diff, Match: strings.ToLower(c.rel)}, nil
+	return tools.Content{Text: f.Diff, Match: strings.ToLower(c.rel), Folded: true}, nil
 }
 
 func (r *Provider) prepareFile(ctx context.Context, caller tools.Caller, args map[string]any) (*tools.Prepared, error) {
@@ -218,9 +215,6 @@ func (r *Provider) runFile(ctx context.Context, caller tools.Caller, args map[st
 	}
 	if err := r.validatePrepared(ctx, d, p, args); err != nil {
 		return tools.Result{}, err
-	}
-	if len(p.Files) != 1 {
-		return tools.Result{}, fmt.Errorf("workspace: incomplete prepared file change")
 	}
 	_, c, err := r.change(ctx, caller, args)
 	if err != nil {

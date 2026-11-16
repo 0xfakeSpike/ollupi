@@ -87,7 +87,8 @@ func soak(args []string) {
 	dbs := watchDB(store)
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}, done: map[string]chan struct{}{}}
 	ag := service.New(service.Config{
-		Name: "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
+		BoxFor: here,
+		Name:   "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(url, "", *calls, map[string]llm.Limits{"fake": {Context: 200_000, Output: 32_000}})},
 		Providers:   []tools.Provider{work{latency: *toolLatency}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},

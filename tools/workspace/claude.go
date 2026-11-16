@@ -64,8 +64,8 @@ func claudeArgs(prompt string) []string {
 }
 
 func claudePrompt(args map[string]any) (string, error) {
-	prompt, ok := args["prompt"].(string)
-	if prompt = strings.TrimSpace(prompt); !ok || prompt == "" {
+	prompt, _ := args["prompt"].(string)
+	if prompt = strings.TrimSpace(prompt); prompt == "" {
 		return "", fmt.Errorf("workspace: argument prompt must be a non-empty string")
 	}
 	return prompt, nil

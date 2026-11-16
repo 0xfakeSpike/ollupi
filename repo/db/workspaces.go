@@ -40,17 +40,14 @@ func (d *DB) saveWorkspace(w WorkspaceRow) error {
 	return nil
 }
 
-func (d *DB) UpdateWorkspace(user, id string, change func(WorkspaceRow) (WorkspaceRow, error)) (WorkspaceRow, error) {
+func (d *DB) UpdateWorkspace(user, id string, change func(WorkspaceRow) WorkspaceRow) (WorkspaceRow, error) {
 	var out WorkspaceRow
 	err := d.Tx(func(tx *DB) error {
 		row, err := tx.WorkspaceOf(user, id)
 		if err != nil {
 			return err
 		}
-		next, err := change(row)
-		if err != nil {
-			return err
-		}
+		next := change(row)
 		out = next
 		return tx.saveWorkspace(next)
 	})

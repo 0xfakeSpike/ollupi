@@ -17,12 +17,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/role"
+	"github.com/0xfakeSpike/ollupi/cron"
+	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
-	"github.com/0xfakeSpike/ollupi/tools/cron"
 	"github.com/0xfakeSpike/ollupi/tools/plan"
 	"github.com/0xfakeSpike/ollupi/tools/skills"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
@@ -43,6 +43,7 @@ type contract struct {
 	Errors              map[int]string                `json:"errors"`
 	Closes              map[int]Ending                `json:"closes"`
 	Handshakes          map[int]Ending                `json:"handshakes"`
+	Limits              Limits                        `json:"limits"`
 	BuiltinTools        map[string]toolSchemas        `json:"builtinTools"`
 	Providers           []string                      `json:"providers"`
 }
@@ -59,8 +60,8 @@ type toolSchemas struct {
 
 var builtinTools = map[string]struct{ arguments, output reflect.Type }{
 	plan.Tool:                {arguments: reflect.TypeFor[plan.Plan]()},
-	subagent.General:         {arguments: reflect.TypeFor[subagent.Call]()},
-	subagent.Browser:         {arguments: reflect.TypeFor[subagent.Call]()},
+	subagent.General:         {arguments: reflect.TypeFor[subagent.Call](), output: reflect.TypeFor[subagent.Launch]()},
+	subagent.Browser:         {arguments: reflect.TypeFor[subagent.Call](), output: reflect.TypeFor[subagent.Launch]()},
 	userinput.Tool:           {arguments: reflect.TypeFor[userinput.Request](), output: reflect.TypeFor[userinput.Answers]()},
 	workspace.ToolRunCommand: {output: reflect.TypeFor[workspace.CommandOutput]()},
 	workspace.ToolEditFile:   {output: reflect.TypeFor[workspace.FileOutput]()},
@@ -74,7 +75,7 @@ var providers = []string{cron.ProviderName, skills.ProviderName, memory.Provider
 
 var enums = []any{
 	db.ItemTypeValues, db.ItemStatusValues, db.TurnStatusValues, db.ThreadStatusValues,
-	db.DecisionValues, db.MemoryRowStatusValues, db.MemoryScopeValues, db.MemoryFailureCodeValues, permission.PolicyValues, role.NameValues, plan.StatusValues, tools.AwaitByValues, db.AttachmentKindValues, db.EnvironmentKindValues,
+	db.DecisionValues, db.SubmissionValues, db.MemoryRowStatusValues, db.MemoryScopeValues, db.MemoryFailureCodeValues, permission.PolicyValues, role.NameValues, plan.StatusValues, tools.AwaitByValues, db.AttachmentKindValues, db.EnvironmentKindValues,
 }
 
 var plainStrings = []reflect.Type{reflect.TypeFor[db.Ref]()}
@@ -313,6 +314,7 @@ func generateSchema() ([]byte, error) {
 		Errors:              protocol.errors,
 		Closes:              protocol.closes,
 		Handshakes:          protocol.handshakes,
+		Limits:              protocol.limits,
 		BuiltinTools:        map[string]toolSchemas{},
 		Providers:           providers,
 	}

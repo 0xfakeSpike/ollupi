@@ -402,6 +402,9 @@
         },
         "calibratedTokens": {
           "type": "integer"
+        },
+        "throughSeq": {
+          "type": "integer"
         }
       },
       "required": [
@@ -1118,6 +1121,9 @@
         "turnId": {
           "type": "string"
         },
+        "turnSeq": {
+          "type": "integer"
+        },
         "seq": {
           "type": "integer"
         },
@@ -1128,6 +1134,9 @@
           "$ref": "#/$defs/ItemStatus"
         },
         "callId": {
+          "type": "string"
+        },
+        "launchItemId": {
           "type": "string"
         },
         "tool": {
@@ -1251,6 +1260,7 @@
       "required": [
         "id",
         "turnId",
+        "turnSeq",
         "seq",
         "type",
         "status",
@@ -1280,6 +1290,26 @@
         "error",
         "agentReport"
       ]
+    },
+    "Launch": {
+      "type": "object",
+      "properties": {
+        "subagent": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "subagent",
+        "description",
+        "note"
+      ],
+      "additionalProperties": false
     },
     "MCPServerListResult": {
       "type": "object",
@@ -2142,6 +2172,14 @@
       ],
       "additionalProperties": false
     },
+    "Submission": {
+      "type": "string",
+      "enum": [
+        "started",
+        "queued",
+        "joined"
+      ]
+    },
     "ThreadArchiveParams": {
       "type": "object",
       "properties": {
@@ -2652,10 +2690,14 @@
       "properties": {
         "turn": {
           "$ref": "#/$defs/TurnRow"
+        },
+        "submission": {
+          "$ref": "#/$defs/Submission"
         }
       },
       "required": [
-        "turn"
+        "turn",
+        "submission"
       ],
       "additionalProperties": false
     },
@@ -3534,6 +3576,7 @@
     "-32014": "workspaceArchived",
     "-32015": "threadArchived",
     "-32016": "threadBusy",
+    "-32017": "searchTimedOut",
     "-32600": "invalidRequest",
     "-32601": "methodNotFound",
     "-32602": "invalidParams",
@@ -3584,10 +3627,17 @@
       "reconnect": "retryAfter"
     }
   },
+  "limits": {
+    "searchRunes": 200,
+    "searchTerms": 8
+  },
   "builtinTools": {
     "browser-sub-agent": {
       "arguments": {
         "$ref": "#/$defs/SubagentCall"
+      },
+      "output": {
+        "$ref": "#/$defs/Launch"
       }
     },
     "edit_file": {
@@ -3598,6 +3648,9 @@
     "general-sub-agent": {
       "arguments": {
         "$ref": "#/$defs/SubagentCall"
+      },
+      "output": {
+        "$ref": "#/$defs/Launch"
       }
     },
     "glob": {

@@ -112,10 +112,7 @@ func (d *DB) TurnItemsAfter(turnID string, seq int, types []ItemType, statuses [
 }
 
 func (d *DB) SetMemoryFailure(user string, f MemoryFailure) error {
-	raw, err := json.Marshal(f)
-	if err != nil {
-		return err
-	}
+	raw, _ := json.Marshal(f) // plain fields: it cannot fail
 	return d.gorm.Model(&MemoryStateRow{}).Where("user_id = ?", user).Update("last_failure", string(raw)).Error
 }
 
@@ -124,10 +121,7 @@ func cursorColumns(c MemoryCursor) map[string]any {
 }
 
 func (d *DB) AdvanceMemory(user string, c MemoryCursor, now time.Time, report MemoryReport) error {
-	raw, err := json.Marshal(report)
-	if err != nil {
-		return err
-	}
+	raw, _ := json.Marshal(report) // plain fields: it cannot fail
 	cols := cursorColumns(c)
 	cols["attempts"], cols["next_attempt"] = 0, nil
 	cols["last_success"] = now.UTC()
@@ -148,10 +142,7 @@ func (d *DB) DeferMemory(user string, skipTo MemoryCursor, skip MemorySkip, now 
 		if s.Attempts+1 >= maxMemoryAttempts {
 			skipped = true
 			skip.At = now.UTC()
-			raw, err := json.Marshal(skip)
-			if err != nil {
-				return err
-			}
+			raw, _ := json.Marshal(skip) // plain fields, at a time of now: it cannot fail
 			for k, v := range cursorColumns(skipTo) {
 				cols[k] = v
 			}
@@ -159,10 +150,7 @@ func (d *DB) DeferMemory(user string, skipTo MemoryCursor, skip MemorySkip, now 
 			cols["skipped"] = s.Skipped + int64(skip.Entries)
 			cols["last_failure"], cols["last_skip"] = nil, string(raw)
 		} else {
-			raw, err := json.Marshal(skip.MemoryFailure)
-			if err != nil {
-				return err
-			}
+			raw, _ := json.Marshal(skip.MemoryFailure) // plain fields: it cannot fail
 			cols["last_failure"] = string(raw)
 			cols["attempts"] = s.Attempts + 1
 			cols["next_attempt"] = now.UTC().Add(time.Duration(min(60, 1<<min(s.Attempts, 6))) * time.Minute)

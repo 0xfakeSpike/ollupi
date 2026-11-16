@@ -236,7 +236,8 @@ func crashChild(args []string) {
 		}()
 	}
 	ag = service.New(service.Config{
-		Name: "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
+		BoxFor: here,
+		Name:   "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(*url, "", *calls, map[string]llm.Limits{"fake": {Context: 200_000, Output: 32_000}})},
 		Providers:   []tools.Provider{work{latency: *toolLatency, log: toolLog}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
@@ -266,7 +267,7 @@ func crashChild(args []string) {
 		if err != nil {
 			log.Fatal(err)
 		}
-		if _, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, service.Input{Text: kinds[i%len(kinds)]}); err != nil {
+		if _, _, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, service.Input{Text: kinds[i%len(kinds)]}); err != nil {
 			log.Fatal(err)
 		}
 	}

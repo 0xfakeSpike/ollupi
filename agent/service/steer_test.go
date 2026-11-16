@@ -90,7 +90,8 @@ func TestAMessageTakesThePlaceOfWhatTheTurnWaitsFor(t *testing.T) {
 			defer store.Close()
 			writes := &atomic.Int32{}
 			ag := service.New(service.Config{
-				Name: "Ollupi", Models: []llm.Model{{Name: "demo", Connection: "fake"}},
+				BoxFor: here,
+				Name:   "Ollupi", Models: []llm.Model{{Name: "demo", Connection: "fake"}},
 				Settings:    permission.Settings{ApprovalPolicy: string(permission.Untrusted)},
 				Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
 				Providers:   []tools.Provider{noteTools{writes}}, DB: store,
@@ -109,7 +110,7 @@ func TestAMessageTakesThePlaceOfWhatTheTurnWaitsFor(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			turn, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, service.Input{Text: "记一下买牛奶"})
+			turn, _, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, service.Input{Text: "记一下买牛奶"})
 			if err != nil {
 				t.Fatal(err)
 			}

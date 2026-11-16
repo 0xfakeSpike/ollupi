@@ -1,7 +1,6 @@
 package orchestrator
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -12,13 +11,6 @@ var (
 	errStopped = errors.New("orchestrator: the orchestrator is shutting down")
 	errCrashed = errors.New("orchestrator: an internal error stopped this")
 )
-
-type slot struct {
-	user   string
-	turnID string
-	ctx    context.Context
-	cancel context.CancelFunc
-}
 
 func (o *Orchestrator) Wait() {
 	o.done.Wait()
@@ -75,33 +67,5 @@ func (o *Orchestrator) call(fn func() error) error {
 		return err
 	case <-o.ctx.Done():
 		return errStopped
-	}
-}
-
-func (o *Orchestrator) launch(user, threadID, turnID string) {
-	ctx, cancel := context.WithCancel(o.ctx)
-	sl := &slot{user: user, turnID: turnID, ctx: ctx, cancel: cancel}
-	o.slotByThread[threadID] = sl
-	o.slotsOfUser[user]++
-	o.done.Add(1)
-	go func() {
-		defer o.done.Done()
-		defer func() {
-			if p := recover(); p != nil {
-				slog.Error("turn crashed", "thread", threadID, "turn", turnID, "panic", fmt.Sprint(p), "stack", string(debug.Stack()))
-				o.post(func() { o.afterRun(threadID, sl, false, errCrashed) })
-			}
-		}()
-		o.run(threadID, sl)
-	}()
-}
-
-func (o *Orchestrator) release(threadID string) {
-	if sl, exists := o.slotByThread[threadID]; exists {
-		sl.cancel()
-		delete(o.slotByThread, threadID)
-		if o.slotsOfUser[sl.user]--; o.slotsOfUser[sl.user] == 0 {
-			delete(o.slotsOfUser, sl.user)
-		}
 	}
 }
