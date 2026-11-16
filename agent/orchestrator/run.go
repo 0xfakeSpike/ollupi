@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/0xfakeSpike/ollupi/agent/event"
 	"log/slog"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/agent/event"
+
+	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/agent/runtime"
 	"github.com/0xfakeSpike/ollupi/repo/db"
-	"go.opentelemetry.io/otel/trace"
 )
 
 func (o *Orchestrator) run(threadID string, sl *slot) {
@@ -35,9 +36,9 @@ func (o *Orchestrator) run(threadID string, sl *slot) {
 		})
 		return
 	}
-	// The run joins the turn's trace, and holds its slot no longer than the time limit.
+	// The run holds its slot no longer than the time limit.
 	limit := fmt.Errorf("orchestrator: the turn reached its time limit of %s", o.cfg.RunLimit)
-	ctx, cancel := context.WithTimeoutCause(trace.ContextWithRemoteSpanContext(sl.ctx, TurnTrace(turn.ID)), o.cfg.RunLimit, limit)
+	ctx, cancel := context.WithTimeoutCause(sl.ctx, o.cfg.RunLimit, limit)
 	defer cancel()
 	started := time.Now()
 	final, usage, err := o.runTurn(ctx, t, turn)
@@ -66,14 +67,16 @@ func (o *Orchestrator) runTurn(ctx context.Context, t db.ThreadRow, turn db.Turn
 	if err != nil {
 		return false, db.Usage{}, err
 	}
-	rt := &runtime.Runtime{
-		DB: o.cfg.DB, Attachments: o.cfg.Attachments, Memory: o.cfg.Memory,
-		LLM: client, Registry: registry, Window: window,
-		Host:   turnHost{o: o, t: t, turn: turn, registry: registry},
-		Config: o.cfg.Runtime,
-		TurnID: turn.ID,
+	r, ok := role.New(role.Name(turn.Agent), o.cfg.Name, o.cfg.Prompt, o.cfg.SkillsDir, o.cfg.Settings, o.cfg.Shared, o.cfg.Tools, o.cfg.Memory, window)
+	if !ok {
+		return false, db.Usage{}, fmt.Errorf("orchestrator: turn %s names role %q, which is none of %q", turn.ID, turn.Agent, role.NameValues)
 	}
-	return rt.Run(ctx)
+	rt := &runtime.Runtime{
+		DB: o.cfg.DB, Attachments: o.cfg.Attachments,
+		LLM: client, Registry: registry,
+		Events: o.ev, Role: r,
+	}
+	return rt.Run(ctx, turn.ID)
 }
 
 func (o *Orchestrator) afterRun(threadID string, sl *slot, final bool, runErr error) {
@@ -119,16 +122,7 @@ func (o *Orchestrator) afterRun(threadID string, sl *slot, final bool, runErr er
 			o.reconcile(threadID)
 			return
 		}
-		more := false
-		if st.Thread.ParentThreadID != "" {
-			if more, err = o.waitBeforeReport(st.Thread, turn); err != nil {
-				o.halt(threadID, err)
-				return
-			}
-		}
-		if !more {
-			turn.Status = db.TurnCompleted
-		}
+		turn.Status = db.TurnCompleted
 	}
 	if turn.Status != db.TurnInProgress {
 		o.endTurn(turn)
@@ -190,9 +184,6 @@ func (o *Orchestrator) endTurn(turn db.TurnRow) {
 }
 
 func (o *Orchestrator) stopSubagent(threadID string) {
-	if err := o.StopBackground(threadID, "the subagent was stopped"); err != nil {
-		o.ev.Fault(threadID, "", err)
-	}
 	if sl, ok := o.slotByThread[threadID]; ok {
 		sl.cancel()
 		return

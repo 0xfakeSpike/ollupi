@@ -25,24 +25,6 @@ func (o *Orchestrator) reconcile(threadID string) {
 		o.endTurn(turn)
 		return
 	}
-	reported := false
-	if waits := st.BackgroundWaits(); len(waits) > 0 {
-		o.deliverBackground(threadID)
-		for _, call := range waits {
-			fulfilled, err := o.fulfil(st.Thread, turn, call)
-			if err != nil {
-				o.halt(threadID, err)
-				return
-			}
-			reported = reported || fulfilled
-		}
-	}
-	if reported {
-		if turn, err = o.cfg.DB.Turn(turn.ID); err != nil {
-			o.halt(threadID, err)
-			return
-		}
-	}
 	if turn.Status != db.TurnReady || len(o.slotByThread) >= o.cfg.Slots || o.slotsOfUser[st.Thread.UserID] >= o.cfg.UserSlots {
 		return
 	}

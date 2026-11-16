@@ -2,20 +2,22 @@ package role
 
 import (
 	"encoding/json"
+	"github.com/0xfakeSpike/ollupi/tools/loader"
+	"github.com/0xfakeSpike/ollupi/tools/outputs"
 	"slices"
-	"strings"
 
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
-	"github.com/0xfakeSpike/ollupi/pkg/llm"
+	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
 
-// Offer splits the visible tools into the ones sent to the model and the ones only named in DEFERRED TOOLS, as the
-// role sends them. The ones a load_tools call loaded follow the others in load order, so the tool list only grows.
-func (r Role) Offer(visible []tools.ToolDescriptor, window *contextmanager.Manager, items []db.ItemRow) (offered, deferred []tools.ToolDescriptor) {
-	offered, deferred = r.send(launchable(visible), window)
+// offer is what a role offers of the visible tools: the ones the window fits around core, the built-in tools the role
+// is sent whatever it holds (none: every built-in tool), and the ones a load_tools call loaded, which follow the
+// others in load order, so the tool list only grows.
+func offer(visible []tools.ToolDescriptor, window *contextmanager.Manager, items []db.ItemRow, core []string) (offered, deferred []tools.ToolDescriptor) {
+	offered, deferred = window.Split(launchable(visible), core)
 	for _, name := range loadedTools(items) {
 		i := slices.IndexFunc(deferred, func(d tools.ToolDescriptor) bool { return d.Name == name })
 		if i >= 0 && !slices.ContainsFunc(offered, func(d tools.ToolDescriptor) bool { return d.Name == name }) {
@@ -25,14 +27,15 @@ func (r Role) Offer(visible []tools.ToolDescriptor, window *contextmanager.Manag
 	return offered, deferred
 }
 
-// launchable leaves out the tool of each kind of subagent whose role's permission keeps none of the visible tools: its
+// launchable leaves out the tool of each kind of subagent whose role's layer keeps none of the visible tools: its
 // subagent would have nothing to work with.
 func launchable(visible []tools.ToolDescriptor) []tools.ToolDescriptor {
+	layers := map[string]permission.Layer{string(GeneralSub): generalSubLayer, string(BrowserSub): browserSubLayer}
 	out := slices.Clone(visible)
 	for name := range subagent.Kinds {
-		r, ok := Of(Name(name))
+		layer, ok := layers[name]
 		if ok && slices.ContainsFunc(visible, func(t tools.ToolDescriptor) bool {
-			return t.Provider != contextmanager.OutputsProvider && r.Permission.Keeps(t)
+			return t.Provider != outputs.ProviderName && layer.Keeps(t)
 		}) {
 			continue
 		}
@@ -41,47 +44,10 @@ func launchable(visible []tools.ToolDescriptor) []tools.ToolDescriptor {
 	return out
 }
 
-func external(d tools.ToolDescriptor) bool { return strings.Contains(d.Name, tools.ProviderSeparator) }
-
-func loader(d tools.ToolDescriptor) bool { return d.Name == tools.ToolLoadTools }
-
-// sendFitting sends every tool, but defers the tools of external providers when all the tools would take more than the
-// tool budget and load_tools can load them. load_tools is sent only when there are deferred tools to load.
-func sendFitting(visible []tools.ToolDescriptor, window *contextmanager.Manager) (sent, deferred []tools.ToolDescriptor) {
-	deferring := slices.ContainsFunc(visible, loader) && slices.ContainsFunc(visible, external) && !window.ToolsFit(Specs(visible))
-	for _, d := range visible {
-		switch {
-		case deferring && external(d):
-			deferred = append(deferred, d)
-		case deferring || !loader(d):
-			sent = append(sent, d)
-		}
-	}
-	return sent, deferred
-}
-
-// sendOnly sends only the core tools, and defers the others for load_tools to load; without load_tools it sends every
-// tool.
-func sendOnly(core ...string) func([]tools.ToolDescriptor, *contextmanager.Manager) ([]tools.ToolDescriptor, []tools.ToolDescriptor) {
-	return func(visible []tools.ToolDescriptor, _ *contextmanager.Manager) (sent, deferred []tools.ToolDescriptor) {
-		if !slices.ContainsFunc(visible, loader) {
-			return visible, nil
-		}
-		for _, d := range visible {
-			if slices.Contains(core, d.Name) && !external(d) {
-				sent = append(sent, d)
-			} else {
-				deferred = append(deferred, d)
-			}
-		}
-		return sent, deferred
-	}
-}
-
 func loadedTools(items []db.ItemRow) []string {
 	var names []string
 	for _, it := range items {
-		if it.Tool != tools.ToolLoadTools || it.Status != db.ItemCompleted || it.Result == nil {
+		if it.Tool != loader.Tool || it.Status != db.ItemCompleted || it.Result == nil {
 			continue
 		}
 		var out struct {
@@ -92,13 +58,4 @@ func loadedTools(items []db.ItemRow) []string {
 		}
 	}
 	return names
-}
-
-// Specs are the tools as the model is sent them.
-func Specs(descriptors []tools.ToolDescriptor) []llm.ToolSpec {
-	specs := make([]llm.ToolSpec, 0, len(descriptors))
-	for _, d := range descriptors {
-		specs = append(specs, llm.ToolSpec{Name: d.Name, Description: strings.TrimSpace(d.Description), Parameters: d.ModelSchema()})
-	}
-	return specs
 }

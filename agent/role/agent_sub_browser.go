@@ -1,8 +1,13 @@
 package role
 
 import (
+	"github.com/0xfakeSpike/ollupi/tools/outputs"
+	"strings"
+
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
+	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
+	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/plan"
 	skilltools "github.com/0xfakeSpike/ollupi/tools/skills"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
@@ -15,13 +20,35 @@ const (
 	BrowserProvider = "browser"
 )
 
-var browserSub = Role{
-	Name: BrowserSub, Rules: browserSubRules,
-	send: sendFitting,
-	// It works with the browser's tools alone, reads the outputs they shorten, uses the skills it has, and keeps the
-	// plan the user follows its progress by.
-	Permission: permission.Layer{Of: "the browser subagent's role", Providers: []string{BrowserProvider, contextmanager.OutputsProvider, skilltools.ProviderName, plan.ProviderName}},
+// browserSub reports to the agent that launched it, so its own rules are the whole of its prompt's beginning. It works
+// with the browser's tools alone, reads the outputs they shorten, uses the skills it has, and keeps the plan the user
+// follows its progress by; it loads no memory.
+type browserSub struct{ runState }
+
+// NewBrowserSub makes the browser subagent of the deployment\'s agent: see New.
+func NewBrowserSub(name, prompt, skillsDir string, settings permission.Settings, shared bool, tools []string, _ *memory.Manager, window *contextmanager.Manager) Role {
+	return &browserSub{runState{agent: name, prompt: prompt, skillsDir: skillsDir, own: []permission.Layer{browserSubLayer}, settings: settings, shared: shared, tools: tools, window: window}}
 }
+
+func (browserSub) Name() Name { return BrowserSub }
+
+// System is the browser subagent's own rules and its skills: it reports to the agent that launched it, cannot load
+// tools, and has no tools that work in a project.
+func (r *browserSub) System(_ string, _ []tools.ToolDescriptor) (string, error) {
+	listed, err := listSkills(BrowserSub, r.skillsDir, r.window.SkillBudget())
+	if err != nil {
+		return "", err
+	}
+	parts := []string{browserSubRules}
+	if listed != "" {
+		parts = append(parts, listed)
+	}
+	return strings.Join(parts, "\n\n"), nil
+}
+
+// browserSubLayer leaves the browser subagent the browser's tools alone, with the outputs they shorten, its skills, and
+// the plan the user follows its progress by.
+var browserSubLayer = permission.Layer{Of: "the browser subagent's role", Providers: []string{BrowserProvider, outputs.ProviderName, skilltools.ProviderName, plan.ProviderName}}
 
 const browserSubRules = `You are a subagent that does one task in the built-in browser and reports back to the agent that launched you. You do the task by calling the browser's tools in a loop; every result comes back to you as an observation. When the task is done, or cannot go further, reply without calling a tool: that reply is your report.
 

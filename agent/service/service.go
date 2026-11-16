@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/0xfakeSpike/ollupi/tools/loader"
+	"github.com/0xfakeSpike/ollupi/tools/outputs"
 	"slices"
 	"strings"
 	"sync"
@@ -19,14 +21,12 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/resources"
 	"github.com/0xfakeSpike/ollupi/agent/role"
-	"github.com/0xfakeSpike/ollupi/agent/runtime"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/repo/blobs"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/repo/skills"
 	"github.com/0xfakeSpike/ollupi/tools"
-	"github.com/0xfakeSpike/ollupi/tools/background"
 	"github.com/0xfakeSpike/ollupi/tools/plan"
 	skilltools "github.com/0xfakeSpike/ollupi/tools/skills"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
@@ -43,7 +43,7 @@ const (
 var (
 	ErrSubagentThread    = errors.New("a subagent thread takes no input; send it to its parent conversation")
 	ErrWorkspaceArchived = errors.New("the workspace is archived; restore it before starting new work")
-	ErrWorkspaceBusy     = errors.New("a conversation in the workspace has a turn or a background call in progress, or queued; interrupt it first")
+	ErrWorkspaceBusy     = errors.New("a conversation in the workspace has a turn in progress or queued; interrupt it first")
 	ErrQueueFull         = fmt.Errorf("the conversation has %d messages waiting already; send this one once they start", maxQueuedMessages)
 	ErrInvalidMessage    = errors.New("invalid message")
 	ErrInvalidAnswer     = errors.New("invalid answer")
@@ -64,11 +64,6 @@ type Config struct {
 	UserSlots int
 	// RunLimit is how long a turn may run in its slot before it fails; by default, four hours.
 	RunLimit time.Duration
-	// BackgroundCalls is the most calls one user may run in the background at once; by default, four. A background
-	// call holds no slot.
-	BackgroundCalls int
-	// BackgroundLimit is how long a background call may run before it fails; by default, four hours.
-	BackgroundLimit time.Duration
 
 	Connections map[string]llm.Client
 	// ClientFor gives the client a user's turns call a connection through, so that they run on the user's own key
@@ -120,11 +115,8 @@ func New(cfg Config) *Service {
 	}
 	o := orchestrator.New(orchestrator.Config{
 		DB: cfg.DB, Attachments: cfg.Attachments, Memory: cfg.Memory, OnEvent: cfg.OnEvent,
-		Runtime: runtime.Config{
-			Name: cfg.Name, Prompt: cfg.Prompt, SkillsDir: cfg.SkillsDir, Settings: cfg.Settings, Shared: cfg.ToolsFor != nil, Tools: cfg.Tools,
-		},
+		Name: cfg.Name, Prompt: cfg.Prompt, SkillsDir: cfg.SkillsDir, Settings: cfg.Settings, Shared: cfg.ToolsFor != nil, Tools: cfg.Tools,
 		Slots: cfg.Slots, UserSlots: cfg.UserSlots, RunLimit: cfg.RunLimit,
-		BackgroundCalls: cfg.BackgroundCalls, BackgroundLimit: cfg.BackgroundLimit,
 		Lease: cfg.Lease, OnLeaseLost: cfg.OnLeaseLost,
 	})
 	return &Service{cfg: cfg, o: o, ev: event.Emitter{DB: cfg.DB, OnEvent: cfg.OnEvent}, moving: map[string]bool{}}
@@ -139,7 +131,7 @@ func (sv *Service) Start(ctx context.Context) error {
 		return fmt.Errorf("service: a database is required")
 	}
 	providers := append(slices.Clone(sv.cfg.Providers), plan.New(), subagent.New(sv.cfg.DB, sv.o.SubagentStarted), userinput.New(),
-		contextmanager.NewOutputs(sv.cfg.DB), runtime.Loader{}, background.New(sv.cfg.DB, sv.o.CancelBackground))
+		outputs.New(sv.cfg.DB), loader.New())
 	if sv.cfg.Memory != nil {
 		providers = append(providers, sv.cfg.Memory)
 	}
@@ -171,26 +163,22 @@ func (sv *Service) Wait() { sv.o.Wait() }
 
 // checkPromptFits checks that each model's input takes its main agent's system prompt and tools.
 func (sv *Service) checkPromptFits() error {
-	checker, err := permission.New(permission.Base(sv.cfg.Settings, sv.res.Shared(), db.WorkspaceRow{}), sv.cfg.Tools, sv.res.Tools())
-	if err != nil {
-		return err
-	}
-	descriptors := checker.Tools()
 	models, _ := sv.res.Models()
 	for _, m := range models {
 		window, err := sv.res.Window(m)
 		if err != nil {
 			return err
 		}
-		main := role.ForMain(window.InputTokens())
-		offered, deferred := main.Offer(descriptors, window, nil)
-		system, err := main.System(role.Input{
-			Name: sv.cfg.Name, Prompt: sv.cfg.Prompt, SkillsDir: sv.cfg.SkillsDir, SkillTokens: window.SkillBudget(), Deferred: deferred,
-		})
+		main, _ := role.New(role.ForMain(window.InputTokens()), sv.cfg.Name, sv.cfg.Prompt, sv.cfg.SkillsDir, sv.cfg.Settings, sv.res.Shared(), sv.cfg.Tools, sv.cfg.Memory, window)
+		if err := main.Permit(db.WorkspaceRow{}, sv.res.Tools()); err != nil {
+			return err
+		}
+		offered, deferred := main.Offer()
+		system, err := main.System("", deferred)
 		if err != nil {
 			return err
 		}
-		if err := window.Fits(system, role.Specs(offered)); err != nil {
+		if err := window.Fits(system, contextmanager.Specs(offered)); err != nil {
 			return err
 		}
 	}

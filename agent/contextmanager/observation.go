@@ -1,97 +1,16 @@
 package contextmanager
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
-	"unicode"
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/redact"
+	"github.com/0xfakeSpike/ollupi/pkg/render"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/0xfakeSpike/ollupi/tools/outputs"
 )
-
-func observationText(r tools.Result) string {
-	if r.Err != nil {
-		return strings.TrimSpace(r.Err.Error())
-	}
-	v := compactStructured(r.Output)
-	if s, ok := v.(string); ok {
-		return strings.TrimSpace(s)
-	}
-
-	b, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		panic(fmt.Sprintf("contextmanager: render output of %s: %v", r.Tool, err))
-	}
-	return strings.TrimSpace(string(b))
-}
-
-func compactStructured(v any) any {
-	switch x := v.(type) {
-	case string:
-		return compactDecorativeLines(x)
-	case map[string]any:
-		out := make(map[string]any, len(x))
-		for k, value := range x {
-			out[k] = compactStructured(value)
-		}
-		return out
-	case []any:
-		out := make([]any, len(x))
-		for i := range x {
-			out[i] = compactStructured(x[i])
-		}
-		return out
-	default:
-		return v
-	}
-}
-
-func compactDecorativeLines(s string) string {
-	if s == "" {
-		return s
-	}
-	var b strings.Builder
-	skipping, first := false, true
-	for line := range strings.SplitSeq(s, "\n") {
-		if isDecorativeLine(line) {
-			if !skipping {
-				if !first {
-					b.WriteByte('\n')
-				}
-				b.WriteString("...")
-				first = false
-				skipping = true
-			}
-			continue
-		}
-		skipping = false
-		if !first {
-			b.WriteByte('\n')
-		}
-		b.WriteString(line)
-		first = false
-	}
-	return b.String()
-}
-
-func isDecorativeLine(line string) bool {
-	t := strings.TrimSpace(line)
-	var runes, nonSpace, border int
-	for _, r := range t {
-		runes++
-		if unicode.IsSpace(r) {
-			continue
-		}
-		nonSpace++
-		if (r >= 0x2500 && r <= 0x257f) || strings.ContainsRune("-=*_+|", r) {
-			border++
-		}
-	}
-	return runes >= 3 && nonSpace >= 3 && border*100 >= 90*nonSpace
-}
 
 type observations struct {
 	results  map[string]tools.Result
@@ -182,7 +101,7 @@ func (o *observations) render(it *db.ItemRow, budget int) (string, error) {
 	}
 	text, ok := o.texts[it.ID]
 	if !ok {
-		text = observationText(result)
+		text = render.Output(result.Output, result.Err)
 		o.texts[it.ID] = text
 	}
 	spans := func(string) [][2]int {
@@ -218,7 +137,7 @@ func omitted(from, to int) string {
 
 func readable(id string) func(from, to int) string {
 	return func(from, to int) string {
-		return fmt.Sprintf("\n[... characters %d-%d of this output omitted; call %s with output_id %q and offset %d to read them ...]\n", from, to, ToolReadOutput, id, from)
+		return fmt.Sprintf("\n[... characters %d-%d of this output omitted; call %s with output_id %q and offset %d to read them ...]\n", from, to, outputs.Tool, id, from)
 	}
 }
 

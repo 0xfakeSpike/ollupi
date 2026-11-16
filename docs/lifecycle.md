@@ -19,7 +19,7 @@ flowchart LR
 |---|---|---|---|---|
 | 工作区 | 用户沙箱里的一个项目文件夹，带一层权限设置 | `workspaces` | 用户 | 只能归档，不能删除 |
 | 会话 | 一段对话，运行在某个环境、某个工作区里 | `threads` | 用户；子会话还属于父会话的一个调用 | 归档或删除，二者都要求没有未结束的轮次 |
-| 轮次 | 用户（或定时任务、后台结果、父 agent）交给 agent 的一件事 | `turns` | 会话 | `completed` / `failed` / `interrupted` |
+| 轮次 | 用户（或定时任务、父 agent）交给 agent 的一件事 | `turns` | 会话 | `completed` / `failed` / `interrupted` |
 | 条目 | 轮次里的一步：一条消息、一段思考、一次工具调用…… | `items` | 会话和轮次 | `completed` / `failed` / `declined` |
 
 ## 工作区
@@ -39,8 +39,8 @@ stateDiagram-v2
 ```
 
 - **添加**：`service.AddWorkspace` 先让沙箱确认路径是个目录（`box.Directory`），再按文件夹去重。同一用户已有指向同一文件夹的工作区（`box.Same`）就返回它，已归档的会顺带恢复，不会再建一个。
-- **移动**：`service.MoveWorkspace` 把文件夹搬到一个已存在且为空的目录，只改 `root_path`。会话、记忆、定时任务都按工作区 id 引用它，所以不用改别的行。移动要求工作区空闲：它名下的会话没有未结束的轮次，也没有在跑或结果还没送回的后台调用（`db.WorkspaceBusy`）。移动期间 `sv.moving` 拦住新轮次，检查和占用在同一把锁下完成。
-- **归档**：已归档的工作区不能新建会话（`StartThread`），名下的会话也不能提交新轮次（`service.record` 里的 `usable`）；后台调用的结果不会再为它启动新轮次（`archivedWork`）。工作区没有删除操作，因为会话、记忆、定时任务都挂在它的 id 上。
+- **移动**：`service.MoveWorkspace` 把文件夹搬到一个已存在且为空的目录，只改 `root_path`。会话、记忆、定时任务都按工作区 id 引用它，所以不用改别的行。移动要求工作区空闲：它名下的会话没有未结束的轮次（`db.WorkspaceBusy`）。移动期间 `sv.moving` 拦住新轮次，检查和占用在同一把锁下完成。
+- **归档**：已归档的工作区不能新建会话（`StartThread`），名下的会话也不能提交新轮次（`service.record` 里的 `usable`）。工作区没有删除操作，因为会话、记忆、定时任务都挂在它的 id 上。
 
 代码：[repo/db/workspaces.go](../repo/db/workspaces.go)、[agent/service/workspaces.go](../agent/service/workspaces.go)。
 
@@ -66,21 +66,20 @@ stateDiagram-v2
 - **当前轮次**：会话的当前轮次是它 seq 最小、还没结束的那个轮次（`db.ActiveTurn`、`ThreadState.ActiveTurn`）。其余未结束的轮次排在它后面（`ThreadState.Behind`）。同一会话任何时刻只运行当前轮次。
 - **会话状态**不是一列，而是从当前轮次读出来的（`event.ThreadStatus`）：没有当前轮次是 `idle`；当前轮次在等审批或等回答，或者它启动的、还在运行的子 agent 正在等人，就是 `waitingOnApproval` / `waitingOnUserInput`；其余是 `active`。
 - **未读**：一个轮次结束时写 `replied_at`；用户标记已读时写 `read_at`。`replied_at` 晚于 `read_at` 就是未读（`ThreadRow.Unread`）。
-- **归档**：要求会话没有未结束的轮次（`CheckIdle`），并停掉它的后台调用。已归档的会话不能提交新轮次（`ErrThreadArchived`）。
-- **删除**：同样要求空闲。删除会级联删掉它的轮次、条目、后台调用和子会话，再删掉它的附件。
+- **归档**：要求会话没有未结束的轮次（`CheckIdle`）。已归档的会话不能提交新轮次（`ErrThreadArchived`）。
+- **删除**：同样要求空闲。删除会级联删掉它的轮次、条目和子会话，再删掉它的附件。
 
 代码：[repo/db/threads.go](../repo/db/threads.go)、[agent/service/threads.go](../agent/service/threads.go)。
 
 ## 轮次
 
-轮次是交给 agent 的一件事。它有四个来源：
+轮次是交给 agent 的一件事。它有三个来源：
 
 | 来源 | 写入 | 第一个条目 |
 |---|---|---|
 | 用户发消息 | `service.StartTurn` → `db.SubmitTurn` | `userMessage` |
 | 定时任务到点 | `service.StartScheduledTurn` → `db.SubmitTurn`（`cron_job_id` 非空） | `userMessage` |
 | 子 agent 被调用 | `subagent.Invoke` → `db.WriteSubagent` | `userMessage`（任务） |
-| 后台调用结束、会话空闲 | `db.DeliverBackgroundCalls` | `backgroundResult` |
 
 轮次一写入就是 `ready`，第一条消息也在同一个事务里写好。轮次自己不存消息内容，它的消息就是它的 `userMessage` 条目。
 
@@ -101,14 +100,13 @@ stateDiagram-v2
 | `waitingOnApproval` | 等用户审批一个工具调用 | 否 |
 | `waitingOnUserInput` | 等用户回答 `request_user_input` | 否 |
 | `waitingOnAgent` | 已经回答，等它启动的子 agent 全部结束 | 否 |
-| `waitingOnBackground` | 等后台调用结束 | 否 |
 | `completed` | 结束：有最终回答 | 否 |
 | `failed` | 结束：出错 | 否 |
 | `interrupted` | 结束：被中断，或随父轮次一起停止 | 否 |
 
 ```mermaid
 stateDiagram-v2
-  [*] --> ready: SubmitTurn / WriteSubagent<br/>/ DeliverBackgroundCalls
+  [*] --> ready: SubmitTurn / WriteSubagent
   ready --> inProgress: Launch<br/>是当前轮次且有空槽位
   inProgress --> waiting: Park：有调用在等<br/>或回答后还有子 agent 在运行
   inProgress --> ready: Park<br/>无可等（回答后又有插话等）
@@ -122,7 +120,6 @@ stateDiagram-v2
     waitingOnApproval
     waitingOnUserInput
     waitingOnAgent
-    waitingOnBackground
   }
   state ended {
     completed
@@ -134,15 +131,15 @@ stateDiagram-v2
 各转换在哪里发生：
 
 - **拿到槽位**：调度循环每一步之后调用 `admit`，用 `db.ReadyThreads` 取出当前轮次为 `ready` 的会话（顶层会话优先，再按提交先后）。`reconcile` 再检查一次，然后 `db.Launch` 把它改成 `inProgress`。`ReadyThreads` 和 `Launch` 都带着条件 `firstOpen`：前面没有未结束的轮次。所以当前轮次在等审批时，排在后面的轮次不会抢先运行。唯一索引 `turns_one_running` 保证每个会话最多一个 `inProgress`。
-- **离开槽位**：一次运行结束后，如果轮次既没结束也没出错，`db.Park` 按这一轮未结束的工具调用算出新状态（`waitingOn`）。等审批优先，其次等回答，因为这两样只有人能给；再其次是等后台；什么都不等就是 `ready`。
-- **回答之后**：运行给出最终回答时，`db.AfterAnswer` 决定下一步。回答之后又来了输入（插话、后台结果、子 agent 的报告），轮次回到 `ready`，接着回答；它启动的子 agent 还有在运行的（`db.RunningSubagents`），轮次进入 `waitingOnAgent`，因为一个轮次要等它的子 agent 全部结束才能结束；都不是，轮次才结束为 `completed`。
-- **解除等待**：写入工具调用条目时（`recordIn`），如果当前轮次在等审批、回答或后台，就在同一事务里重算状态（`settleStatus`）。还有等待项时状态不变，全部有了结果就回到 `ready`。审批和回答来自用户，后台结果由 `fulfil` 写入。`waitingOnAgent` 的解除在子 agent 那一侧：子 agent 的轮次结束时写入报告，如果它是最后一个还在运行的，父轮次回到 `ready`。
-- **插话**：`service.SteerTurn` 把用户消息写进当前轮次（`db.Steer`）。轮次在等审批、回答或后台时，这条消息替代它们：在等的调用和还没执行的调用记为 `declined`（后台调用本身继续运行），轮次回到 `ready`，下一次运行读到这条消息。轮次在等子 agent 时，它直接回到 `ready`：主 agent 回复用户，子 agent 继续运行，回复完再回到 `waitingOnAgent`。
+- **离开槽位**：一次运行结束后，如果轮次既没结束也没出错，`db.Park` 按这一轮未结束的工具调用算出新状态（`waitingOn`）。等审批优先，其次等回答，因为这两样只有人能给；什么都不等就是 `ready`。
+- **回答之后**：运行给出最终回答时，`db.AfterAnswer` 决定下一步。回答之后又来了输入（插话、子 agent 的报告），轮次回到 `ready`，接着回答；它启动的子 agent 还有在运行的（`db.RunningSubagents`），轮次进入 `waitingOnAgent`，因为一个轮次要等它的子 agent 全部结束才能结束；都不是，轮次才结束为 `completed`。
+- **解除等待**：写入工具调用条目时（`recordIn`），如果当前轮次在等审批或回答，就在同一事务里重算状态（`settleStatus`）。还有等待项时状态不变，全部有了结果就回到 `ready`。审批和回答都来自用户。`waitingOnAgent` 的解除在子 agent 那一侧：子 agent 的轮次结束时写入报告，如果它是最后一个还在运行的，父轮次回到 `ready`。
+- **插话**：`service.SteerTurn` 把用户消息写进当前轮次（`db.Steer`）。轮次在等审批或回答时，这条消息替代它们：在等的调用和还没执行的调用记为 `declined`，轮次回到 `ready`，下一次运行读到这条消息。轮次在等子 agent 时，它直接回到 `ready`：主 agent 回复用户，子 agent 继续运行，回复完再回到 `waitingOnAgent`。
 - **结束**：`orchestrator.endTurn` → `db.EndTurn`。轮次写上结束状态和 `completed_at`；它名下还没结束的条目一律记为 `failed`（"the turn ended before this item finished"）；会话的 `replied_at` 更新。如果这是子会话的轮次，同一事务里把报告写进父轮次（`reportToParent`）。如果后面还有轮次，排在第一的就成了当前轮次，并发出 `turn/started`。轮次因中断或出错而结束时，它启动的、还在运行的子 agent 被一起停止（`stopSubagent`），它们的报告不再写回。
 - **中断**：`orchestrator.Interrupt` 中断当前轮次。在槽位里的取消运行，结束为 `interrupted`；不在槽位里的直接结束。排在后面的轮次不受影响，接着运行。
-- **重启恢复**：进程启动时 `recover` 找出可能被卡住的会话（`db.StrandedThreads`：在 `inProgress`、`waitingOnBackground` 的轮次；子 agent 的报告和它的结束在同一个事务里，不会漏报）。`RecoverItems` 把运行到一半的条目记为 `failed`，`inProgress` 的轮次 `Park` 回去，再逐个 `reconcile`。`ready` 的轮次不用恢复，`admit` 会照常取到。
+- **重启恢复**：进程启动时 `recover` 找出可能被卡住的会话（`db.StrandedThreads`：在 `inProgress` 的轮次；子 agent 的报告和它的结束在同一个事务里，不会漏报）。`RecoverItems` 把运行到一半的条目记为 `failed`，`inProgress` 的轮次 `Park` 回去，再逐个 `reconcile`。`ready` 的轮次不用恢复，`admit` 会照常取到。
 
-子 agent 按后台调用的方式工作：启动它的调用当场完成，结果里是子会话的 id；子 agent 的报告在它结束时作为一条 `agentReport` 条目回到启动它的轮次。具体是：
+子 agent 是引擎里唯一的异步工作：要做得久的事，比如下载或长构建，主 agent 派一个子 agent 去做。启动它的调用当场完成，结果里是子会话的 id；子 agent 的报告在它结束时作为一条 `agentReport` 条目回到启动它的轮次。具体是：
 
 1. `subagent.Invoke` 调 `WriteSubagent` 写出子会话和一个 `ready` 的首个轮次，再通知编排器（`SubagentStarted`），后者发 `thread/started`、`turn/started`，子轮次像其他轮次一样拿槽位运行，和父轮次并行。
 2. 父轮次继续运行，可以做别的事，也可以先回答；回答时子 agent 还在运行，就进入 `waitingOnAgent`。
@@ -169,7 +166,6 @@ stateDiagram-v2
 | `contextCompaction` | 一次上下文压缩，`text` 是摘要 |
 | `memoryContext` | 这一轮载入的记忆 |
 | `error` | 模型调用失败，或运行时发给模型的通知 |
-| `backgroundResult` | 一个后台调用的结束结果，送回它的会话 |
 | `agentReport` | 一个子 agent 的报告，送回启动它的轮次：结果是它的最终回答，失败时 `error` 写原因；`text` 是子 agent 的任务标题，`call_id` 是启动它的调用的 |
 
 ### 状态
@@ -182,7 +178,7 @@ stateDiagram-v2
 | `failed` | 失败，`error` 写原因 |
 | `declined` | 用户拒绝了这次调用、跳过了提问，或用户的插话替掉了它 |
 
-消息类条目（`userMessage`、`backgroundResult`）写入时就是 `completed`，`agentReport` 写入时是 `completed` 或 `failed`。流式输出的条目（`agentMessage`、`reasoning`）和压缩从 `inProgress` 开始，完成时变 `completed`。工具调用的生命周期最长：
+消息类条目（`userMessage`）写入时就是 `completed`，`agentReport` 写入时是 `completed` 或 `failed`。流式输出的条目（`agentMessage`、`reasoning`）和压缩从 `inProgress` 开始，完成时变 `completed`。工具调用的生命周期最长：
 
 ```mermaid
 stateDiagram-v2
@@ -191,10 +187,10 @@ stateDiagram-v2
   pending --> inProgress: 判定可执行 / 审批通过
   pending --> declined: 用户拒绝 / 插话替掉
   pending --> failed: 判定拒绝 / 轮次已停下 / 轮次结束
-  inProgress --> inProgress: 结果是 await<br/>等用户 / 后台
+  inProgress --> inProgress: 结果是 await<br/>等用户
   inProgress --> completed: 执行成功 / 等到结果
   inProgress --> failed: 执行失败 / 轮次结束 / 重启时中断
-  inProgress --> declined: 用户跳过提问 / 插话替掉等待
+  inProgress --> declined: 用户跳过提问 / 插话替掉提问
   completed --> [*]
   failed --> [*]
   declined --> [*]
@@ -203,7 +199,7 @@ stateDiagram-v2
 几个"在等"的判断没有单独的列，看字段：
 
 - 等审批（`WaitsForApproval`）：`toolCall`、`pending`、`approval` 非空且 `decision` 为空。
-- 等用户 / 后台（`Awaits`）：`toolCall`、`inProgress`、`await` 非空，`await.by` 是 `user` 或 `background`。启动子 agent 的调用不等：它当场完成。
+- 等用户（`Awaits`）：`toolCall`、`inProgress`、`await` 非空，`await.by` 是 `user`。启动子 agent 的调用不等：它当场完成。
 - 未结束的调用（`openCalls`）：`type = 'toolCall' AND status IN ('pending', 'inProgress')`。轮次离开槽位时的状态就从这些调用算出。
 
 ### 顺序
@@ -234,9 +230,9 @@ stateDiagram-v2
 
 | 操作 | 要求 | 对下层的影响 |
 |---|---|---|
-| 归档工作区 | 无 | 不能新建会话，名下会话不能提交新轮次，后台结果不再为它启动新轮次 |
-| 移动工作区 | 名下没有未结束的轮次、没有未送回的后台调用 | 只改 `root_path`，其余都按 id 引用 |
-| 归档会话 | 没有未结束的轮次 | 后台调用停止；不能提交新轮次 |
-| 删除会话 | 没有未结束的轮次 | 轮次、条目、后台调用、子会话、附件一起删除 |
+| 归档工作区 | 无 | 不能新建会话，名下会话不能提交新轮次 |
+| 移动工作区 | 名下没有未结束的轮次 | 只改 `root_path`，其余都按 id 引用 |
+| 归档会话 | 没有未结束的轮次 | 不能提交新轮次 |
+| 删除会话 | 没有未结束的轮次 | 轮次、条目、子会话、附件一起删除 |
 | 结束轮次 | 是会话的当前轮次；正常结束还要求它启动的子 agent 都已结束 | 未结束的条目记为 `failed`；中断或出错时还在运行的子 agent 被停止；子会话的轮次结束时把报告写回父轮次；下一个轮次成为当前轮次 |
 | 写入条目 | 属于会话的当前轮次 | 可能解除轮次的等待 |

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/0xfakeSpike/ollupi/tools/loader"
 	"io"
 	"log/slog"
 	"net/http"
@@ -56,7 +57,7 @@ func (m *recordingModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	finish := "tool_calls"
 	switch n {
 	case 1:
-		call(tools.ToolLoadTools, `{"names":["github__create_issue"]}`)
+		call(loader.Tool, `{"names":["github__create_issue"]}`)
 	case 2:
 		call("github__create_issue", `{"title":"登录页在 Safari 上白屏"}`)
 	case 3:
@@ -184,7 +185,7 @@ func TestLoadedToolIsSentWithTheNextRequest(t *testing.T) {
 		}
 		return names
 	}
-	if names := sent(reqs[0]); slices.Contains(names, "github__create_issue") || !slices.Contains(names, tools.ToolLoadTools) ||
+	if names := sent(reqs[0]); slices.Contains(names, "github__create_issue") || !slices.Contains(names, loader.Tool) ||
 		!strings.Contains(reqs[0].Messages[0].Content, "# DEFERRED TOOLS") || !strings.Contains(reqs[0].Messages[0].Content, "- github: github__create_issue, github__list_pulls") {
 		t.Errorf("first request sends %q with system prompt:\n%s", names, reqs[0].Messages[0].Content)
 	}

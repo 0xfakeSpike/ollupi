@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -9,35 +10,36 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
-	"github.com/0xfakeSpike/ollupi/agent/role"
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo/db"
+	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/0xfakeSpike/ollupi/tools/workspace"
 	"github.com/google/uuid"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 )
 
 // contextInput is what the next request is built from: the run's items, the role's system prompt and the offered
 // tools, as they are now.
 func (rt *Runtime) contextInput() (contextmanager.Input, error) {
-	system, err := rt.role.System(role.Input{
-		Name: rt.Config.Name, Prompt: rt.Config.Prompt, SkillsDir: rt.Config.SkillsDir,
-		SkillTokens: rt.Window.SkillBudget(), Root: rt.workspace.RootPath, Deferred: rt.deferred,
-	})
+	offered, deferred := rt.Role.Offer()
+	// The project is named to a run that has the tools that work in it.
+	root := ""
+	if slices.ContainsFunc(slices.Concat(offered, deferred), func(d tools.ToolDescriptor) bool { return d.Provider == workspace.ProviderName }) {
+		root = rt.Role.Workspace().RootPath
+	}
+	system, err := rt.Role.System(root, deferred)
 	if err != nil {
 		return contextmanager.Input{}, fmt.Errorf("runtime: %w", err)
 	}
-	return contextmanager.Input{Items: slices.Concat(rt.history, rt.items), System: system, Tools: role.Specs(rt.offered)}, nil
+	return contextmanager.Input{Items: rt.Role.Conversation(), System: system, Tools: contextmanager.Specs(offered)}, nil
 }
 
 func (rt *Runtime) respond(ctx context.Context, choice llm.ToolChoice) (llm.ChatResponse, error) {
-	rt.offer()
 	in, err := rt.contextInput()
 	if err != nil {
 		return llm.ChatResponse{}, err
 	}
-	prompt, err := rt.Window.Build(in)
+	prompt, err := rt.Role.Window().Build(in)
 	if err != nil {
 		return llm.ChatResponse{}, fmt.Errorf("runtime: %w", err)
 	}
@@ -48,24 +50,53 @@ func (rt *Runtime) respond(ctx context.Context, choice llm.ToolChoice) (llm.Chat
 		if in, err = rt.contextInput(); err != nil {
 			return llm.ChatResponse{}, err
 		}
-		if prompt, err = rt.Window.Build(in); err != nil {
+		if prompt, err = rt.Role.Window().Build(in); err != nil {
 			return llm.ChatResponse{}, fmt.Errorf("runtime: after compaction: %w", err)
 		}
 	}
 	call := rt.modelCalls() + 1
-	r := newResponseRecorder(rt, prompt.Stats)
+	r := newResponseRecorder(rt.Role.Turn().ID, prompt.Stats)
+	// The text streams into items recorded as it starts and told as it comes; one not recorded stops the rest.
+	var streamErr error
 	started := time.Now()
-	resp, err := rt.send(ctx, prompt, choice, r.delta)
+	resp, err := rt.send(ctx, prompt, choice, func(d llm.Delta) {
+		if streamErr != nil {
+			return
+		}
+		for _, s := range r.delta(d) {
+			if s.isNew {
+				stored, err := rt.record(*s.item)
+				if err != nil {
+					streamErr = err
+					return
+				}
+				*s.item = stored
+			}
+			it := *s.item
+			rt.Events.Emit(event.Event{Kind: event.ItemDelta, Thread: rt.Role.Thread(), Turn: rt.Role.Turn(), Item: &it, Delta: s.text})
+		}
+	})
 	r.usage = responseUsage(resp)
 	rt.logModelCall(ctx, "model call", started, resp, err)
 	if err == nil {
 		err = checkResponse(resp, choice)
 	}
 	if err != nil {
-		return llm.ChatResponse{}, r.fail(fmt.Errorf("runtime: model call %d: %w", call, err))
+		cause := fmt.Errorf("runtime: model call %d: %w", call, err)
+		for _, it := range r.fail(cause) {
+			if _, rerr := rt.record(it); rerr != nil {
+				return llm.ChatResponse{}, errors.Join(cause, rerr)
+			}
+		}
+		return llm.ChatResponse{}, cause
 	}
-	if err := r.finish(resp); err != nil {
-		return llm.ChatResponse{}, err
+	if streamErr != nil {
+		return llm.ChatResponse{}, streamErr
+	}
+	for _, it := range r.finish(resp) {
+		if _, err := rt.record(it); err != nil {
+			return llm.ChatResponse{}, err
+		}
 	}
 	cutOff := resp.FinishReason == "length"
 	for _, call := range resp.Message.ToolCalls {
@@ -102,25 +133,17 @@ func checkResponse(resp llm.ChatResponse, choice llm.ToolChoice) error {
 	return nil
 }
 
-func (rt *Runtime) compact(ctx context.Context) (err error) {
-	ctx, span := tracer.Start(ctx, "ollupi.context.compact")
-	defer func() {
-		if err != nil {
-			span.SetStatus(codes.Error, err.Error())
-		}
-		span.End()
-	}()
+func (rt *Runtime) compact(ctx context.Context) error {
 	in, err := rt.contextInput()
 	if err != nil {
 		return err
 	}
-	prompt, err := rt.Window.CompactionPrompt(in)
+	prompt, err := rt.Role.Window().CompactionPrompt(in)
 	if err != nil {
 		return fmt.Errorf("runtime: %w", err)
 	}
-	span.SetAttributes(attribute.Int("ollupi.context.estimated_tokens", prompt.Stats.EstimatedTokens))
 	it, err := rt.record(db.ItemRow{
-		ID: uuid.NewString(), TurnID: rt.turn.ID, Type: db.ItemContextCompaction, Status: db.ItemInProgress, StartedAt: time.Now().UTC(),
+		ID: uuid.NewString(), TurnID: rt.Role.Turn().ID, Type: db.ItemContextCompaction, Status: db.ItemInProgress, StartedAt: time.Now().UTC(),
 		ResponseID: uuid.NewString(), ContextStats: &prompt.Stats,
 	})
 	if err != nil {
@@ -152,11 +175,11 @@ func (rt *Runtime) compact(ctx context.Context) (err error) {
 }
 
 func (rt *Runtime) send(ctx context.Context, prompt contextmanager.Prompt, choice llm.ToolChoice, onDelta func(llm.Delta)) (llm.ChatResponse, error) {
-	settings, err := rt.DB.Settings(rt.thread.UserID)
+	settings, err := rt.DB.Settings(rt.Role.Thread().UserID)
 	if err != nil {
 		return llm.ChatResponse{}, fmt.Errorf("runtime: read the redaction setting: %w", err)
 	}
-	mask := rt.redactor.Mask
+	mask := rt.Role.Mask
 	if !settings.Redaction {
 		mask = func(s string) string { return s }
 	}
@@ -173,45 +196,29 @@ func (rt *Runtime) send(ctx context.Context, prompt contextmanager.Prompt, choic
 		}
 		messages = append(messages, message)
 	}
-	ctx, span := tracer.Start(ctx, "chat "+rt.turn.Model.Name, trace.WithSpanKind(trace.SpanKindClient), trace.WithAttributes(
-		attribute.String("gen_ai.operation.name", "chat"), attribute.String("gen_ai.request.model", rt.turn.Model.Name),
-		attribute.String("ollupi.connection", rt.turn.Model.Connection), attribute.Int("ollupi.llm.estimated_input_tokens", prompt.Stats.CalibratedTokens)))
-	defer span.End()
-	started, answering := time.Now(), false
-	content, reasoning := rt.redactor.Stream(), rt.redactor.Stream()
+	content, reasoning := rt.Role.Stream(), rt.Role.Stream()
 	restored := func(d llm.Delta) {
-		if !answering && (d.Content != "" || d.Reasoning != "") {
-			answering = true
-			span.SetAttributes(attribute.Int64("ollupi.llm.first_token_ms", time.Since(started).Milliseconds()))
-		}
 		d.Content, d.Reasoning = content.Write(d.Content), reasoning.Write(d.Reasoning)
 		if onDelta != nil && (d.Content != "" || d.Reasoning != "") {
 			onDelta(d)
 		}
 	}
+	offered, _ := rt.Role.Offer()
 	resp, err := rt.LLM.Chat(ctx, llm.ChatRequest{
-		Model:    rt.turn.Model,
-		Messages: messages, Tools: role.Specs(rt.offered), ToolChoice: choice,
+		Model:    rt.Role.Turn().Model,
+		Messages: messages, Tools: contextmanager.Specs(offered), ToolChoice: choice,
 		InputTokens: prompt.Stats.CalibratedTokens,
 	}, restored)
 	if rest := (llm.Delta{Content: content.Flush(), Reasoning: reasoning.Flush()}); onDelta != nil && (rest.Content != "" || rest.Reasoning != "") {
 		onDelta(rest)
 	}
-	resp.Message.Content = rt.redactor.Restore(resp.Message.Content)
-	resp.Message.ReasoningContent = rt.redactor.Restore(resp.Message.ReasoningContent)
+	resp.Message.Content = rt.Role.Restore(resp.Message.Content)
+	resp.Message.ReasoningContent = rt.Role.Restore(resp.Message.ReasoningContent)
 	for i := range resp.Message.ToolCalls {
-		resp.Message.ToolCalls[i].Arguments = rt.redactor.RestoreJSON(resp.Message.ToolCalls[i].Arguments)
+		resp.Message.ToolCalls[i].Arguments = rt.Role.RestoreJSON(resp.Message.ToolCalls[i].Arguments)
 	}
 	if usage := responseUsage(resp); usage != nil {
-		rt.usage.Add(*usage)
-		span.SetAttributes(attribute.Int64("gen_ai.usage.input_tokens", usage.InputTokens), attribute.Int64("gen_ai.usage.output_tokens", usage.OutputTokens),
-			attribute.Int64("ollupi.llm.cached_input_tokens", usage.CachedInputTokens))
-	}
-	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
-	} else {
-		span.SetAttributes(attribute.StringSlice("gen_ai.response.finish_reasons", []string{resp.FinishReason}),
-			attribute.Int("ollupi.llm.tool_calls", len(resp.Message.ToolCalls)))
+		rt.Role.AddUsage(*usage)
 	}
 	return resp, err
 }
@@ -240,7 +247,7 @@ func (rt *Runtime) loadParts(ctx context.Context, parts []llm.ContentPart, mask 
 
 // logModelCall records one model request: its model, duration, tokens and how it ended, never its text.
 func (rt *Runtime) logModelCall(ctx context.Context, msg string, started time.Time, resp llm.ChatResponse, err error) {
-	attrs := []any{"thread", rt.thread.ID, "turn", rt.turn.ID, "model", rt.turn.Model.Name, "ms", time.Since(started).Milliseconds()}
+	attrs := []any{"thread", rt.Role.Thread().ID, "turn", rt.Role.Turn().ID, "model", rt.Role.Turn().Model.Name, "ms", time.Since(started).Milliseconds()}
 	if err != nil {
 		slog.WarnContext(ctx, msg+" failed", append(attrs, "err", err)...)
 		return
@@ -261,7 +268,7 @@ func responseUsage(resp llm.ChatResponse) *db.Usage {
 
 func (rt *Runtime) modelCalls() int {
 	seen := map[string]bool{}
-	for _, it := range rt.items {
+	for _, it := range rt.Role.Items() {
 		if it.ResponseID != "" && it.Type != db.ItemContextCompaction {
 			seen[it.ResponseID] = true
 		}
@@ -271,10 +278,10 @@ func (rt *Runtime) modelCalls() int {
 
 func (rt *Runtime) callItem(responseID string, call llm.ToolCall) db.ItemRow {
 	it := db.ItemRow{
-		ID: uuid.NewString(), TurnID: rt.turn.ID, Type: db.ItemToolCall, Status: db.ItemPending,
+		ID: uuid.NewString(), TurnID: rt.Role.Turn().ID, Type: db.ItemToolCall, Status: db.ItemPending,
 		ResponseID: responseID, CallID: call.ID, Tool: call.Name, Arguments: call.Arguments, StartedAt: time.Now().UTC(),
 	}
-	if d, ok := rt.tool(call.Name); ok {
+	if d, ok := rt.Role.Tool(call.Name); ok {
 		it.Server = d.Provider
 		annotations := d.Annotations
 		it.Annotations = &annotations

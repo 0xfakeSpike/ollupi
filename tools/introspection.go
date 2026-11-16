@@ -9,8 +9,6 @@ const (
 	introspectionProvider = "tool_registry"
 	ToolListProviders     = "list_tool_providers"
 	ToolListProviderTools = "list_tools_for_provider"
-	// ToolLoadTools is given by agent/runtime, which decides which tools are deferred.
-	ToolLoadTools = "load_tools"
 )
 
 type introspection struct {
