@@ -114,19 +114,12 @@ func (d *DB) SetWorkspaceRoot(user, id, root string, at time.Time) (WorkspaceRow
 	return out, err
 }
 
-// WorkspaceBusy says whether a conversation in the workspace has a turn in progress or queued, or a background call
-// running or yet to bring back its result: they name paths in the folder, so the folder cannot move out from under them.
+// WorkspaceBusy says whether a conversation in the workspace has a turn that has not ended: it names paths in the
+// folder, so the folder cannot move out from under it.
 func (d *DB) WorkspaceBusy(user, workspace string) (bool, error) {
 	var n int64
 	err := d.gorm.Table("turns AS u").Joins("JOIN threads AS t ON t.id = u.thread_id").
 		Where("t.user_id = ? AND t.workspace_id = ? AND u.status NOT IN ?", user, workspace,
 			[]TurnStatus{TurnCompleted, TurnInterrupted, TurnFailed}).Count(&n).Error
-	if err != nil || n > 0 {
-		return n > 0, err
-	}
-	// A background call works in the folder too, and one that ended starts a turn there with its result.
-	err = d.gorm.Table("background_calls AS b").Joins("JOIN threads AS t ON t.id = b.thread_id").
-		Where("t.user_id = ? AND t.workspace_id = ? AND (b.status = ? OR ("+undeliveredCall+"))", user, workspace, BackgroundRunning).
-		Count(&n).Error
 	return n > 0, err
 }

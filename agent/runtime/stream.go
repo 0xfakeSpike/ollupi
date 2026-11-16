@@ -1,7 +1,6 @@
 package runtime
 
 import (
-	"errors"
 	"strings"
 	"time"
 
@@ -10,46 +9,59 @@ import (
 	"github.com/google/uuid"
 )
 
+// A responseRecorder keeps what one model response of a turn has made so far: the items its streamed text goes into,
+// the text, and its context stats and usage. It records nothing itself: its methods say what the runtime records.
 type responseRecorder struct {
-	rt    *Runtime
-	id    string
-	stats db.ContextStats
-	usage *db.Usage
+	turnID string
+	id     string
+	stats  db.ContextStats
+	usage  *db.Usage
 
 	reasoning     *db.ItemRow
 	agent         *db.ItemRow
 	reasoningText strings.Builder
 	agentText     strings.Builder
-	err           error
 	carried       bool
 }
 
-func newResponseRecorder(rt *Runtime, stats db.ContextStats) *responseRecorder {
-	return &responseRecorder{rt: rt, id: uuid.NewString(), stats: stats}
+func newResponseRecorder(turnID string, stats db.ContextStats) *responseRecorder {
+	return &responseRecorder{turnID: turnID, id: uuid.NewString(), stats: stats}
 }
 
-func (r *responseRecorder) delta(d llm.Delta) {
-	r.add(&r.reasoning, &r.reasoningText, db.ItemReasoning, d.Reasoning)
-	r.add(&r.agent, &r.agentText, db.ItemAgentMessage, d.Content)
+// streamed is text the model streamed into item, which is new, to record before the text is told, when the text is
+// its first. The runtime puts the item as recorded back where it points.
+type streamed struct {
+	item  *db.ItemRow
+	isNew bool
+	text  string
 }
 
-func (r *responseRecorder) add(target **db.ItemRow, text *strings.Builder, kind db.ItemType, content string) {
-	if content == "" || r.err != nil {
-		return
-	}
-	if *target == nil {
-		started, err := r.rt.record(db.ItemRow{
-			ID: uuid.NewString(), TurnID: r.rt.turn.ID, Type: kind, Status: db.ItemInProgress,
-			ResponseID: r.id, StartedAt: time.Now().UTC(),
-		})
-		if err != nil {
-			r.err = err
-			return
+// delta takes a part of the response as it streams: the text each of its items takes.
+func (r *responseRecorder) delta(d llm.Delta) []streamed {
+	var out []streamed
+	for _, part := range []struct {
+		item    **db.ItemRow
+		text    *strings.Builder
+		kind    db.ItemType
+		content string
+	}{
+		{&r.reasoning, &r.reasoningText, db.ItemReasoning, d.Reasoning},
+		{&r.agent, &r.agentText, db.ItemAgentMessage, d.Content},
+	} {
+		if part.content == "" {
+			continue
 		}
-		*target = &started
+		isNew := *part.item == nil
+		if isNew {
+			*part.item = &db.ItemRow{
+				ID: uuid.NewString(), TurnID: r.turnID, Type: part.kind, Status: db.ItemInProgress,
+				ResponseID: r.id, StartedAt: time.Now().UTC(),
+			}
+		}
+		part.text.WriteString(part.content)
+		out = append(out, streamed{item: *part.item, isNew: isNew, text: part.content})
 	}
-	text.WriteString(content)
-	r.rt.Host.Delta(**target, content)
+	return out
 }
 
 type responsePart struct {
@@ -58,30 +70,26 @@ type responsePart struct {
 	text string
 }
 
-func (r *responseRecorder) finish(resp llm.ChatResponse) error {
-	if r.err != nil {
-		return r.err
-	}
-	parts := []responsePart{
+// finish is the response's agent message and reasoning as it completed, to record.
+func (r *responseRecorder) finish(resp llm.ChatResponse) []db.ItemRow {
+	var out []db.ItemRow
+	for _, part := range []responsePart{
 		{db.ItemAgentMessage, r.agent, resp.Message.Content},
 		{db.ItemReasoning, r.reasoning, resp.Message.ReasoningContent},
-	}
-	for _, part := range parts {
+	} {
 		if part.text == "" && part.item == nil {
 			continue
 		}
 		now := time.Now().UTC()
-		it := part.item
-		if it == nil {
-			it = &db.ItemRow{ID: uuid.NewString(), TurnID: r.rt.turn.ID, Type: part.kind, ResponseID: r.id, StartedAt: now}
+		it := db.ItemRow{ID: uuid.NewString(), TurnID: r.turnID, Type: part.kind, ResponseID: r.id, StartedAt: now}
+		if part.item != nil {
+			it = *part.item
 		}
 		it.Text, it.Status, it.CompletedAt = part.text, db.ItemCompleted, &now
-		r.carry(it, resp.Message.Native)
-		if _, err := r.rt.record(*it); err != nil {
-			return err
-		}
+		r.carry(&it, resp.Message.Native)
+		out = append(out, it)
 	}
-	return nil
+	return out
 }
 
 // carry puts the response's context stats, usage and native message on the first of its items recorded:
@@ -94,19 +102,19 @@ func (r *responseRecorder) carry(it *db.ItemRow, native []byte) {
 	it.ContextStats, it.Usage, it.Native = &r.stats, r.usage, native
 }
 
-func (r *responseRecorder) fail(cause error) error {
+// fail is the response as it failed for cause, to record: what it streamed, failed, or an error item when it streamed
+// nothing.
+func (r *responseRecorder) fail(cause error) []db.ItemRow {
 	if r.reasoning == nil && r.agent == nil {
 		now := time.Now().UTC()
 		it := db.ItemRow{
-			ID: uuid.NewString(), TurnID: r.rt.turn.ID, Type: db.ItemError, Status: db.ItemFailed,
+			ID: uuid.NewString(), TurnID: r.turnID, Type: db.ItemError, Status: db.ItemFailed,
 			ResponseID: r.id, Text: cause.Error(), Error: cause.Error(), StartedAt: now, CompletedAt: &now,
 		}
 		r.carry(&it, nil)
-		if _, err := r.rt.record(it); err != nil {
-			return errors.Join(cause, err)
-		}
-		return cause
+		return []db.ItemRow{it}
 	}
+	var out []db.ItemRow
 	for _, part := range []responsePart{
 		{db.ItemAgentMessage, r.agent, r.agentText.String()},
 		{db.ItemReasoning, r.reasoning, r.reasoningText.String()},
@@ -115,12 +123,10 @@ func (r *responseRecorder) fail(cause error) error {
 			continue
 		}
 		now := time.Now().UTC()
-		it := part.item
+		it := *part.item
 		it.Text, it.Status, it.Error, it.CompletedAt = part.text, db.ItemFailed, cause.Error(), &now
-		r.carry(it, nil)
-		if _, err := r.rt.record(*it); err != nil {
-			return errors.Join(cause, err)
-		}
+		r.carry(&it, nil)
+		out = append(out, it)
 	}
-	return cause
+	return out
 }

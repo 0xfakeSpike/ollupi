@@ -216,13 +216,13 @@ func (j *Jobs) sendDue(ctx context.Context, send func(threadID, text, jobID stri
 		if ctx.Err() != nil {
 			return
 		}
-		waiting, err := j.db.HasQueuedTurn(job.ThreadID, job.ID)
+		waiting, err := j.db.HasTurnBehind(job.ThreadID, job.ID)
 		if err != nil {
 			slog.Error("cron task not checked", "job", job.ID, "err", err)
 			continue
 		}
 		if waiting {
-			slog.Info("cron task skipped while its last run is queued", "job", job.ID, "thread", job.ThreadID)
+			slog.Info("cron task skipped while its last run waits behind another turn", "job", job.ID, "thread", job.ThreadID)
 		} else if err := send(job.ThreadID, job.Prompt, job.ID); err == nil {
 			slog.Info("cron task sent", "job", job.ID, "thread", job.ThreadID)
 		} else if ctx.Err() == nil {

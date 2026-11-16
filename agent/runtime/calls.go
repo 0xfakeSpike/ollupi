@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/0xfakeSpike/ollupi/tools/loader"
 	"log/slog"
 	"slices"
 	"strings"
@@ -18,136 +19,97 @@ import (
 type job struct {
 	it   db.ItemRow
 	args map[string]any
-	// background is what the call asked with ArgBackground.
-	background bool
 }
 
-func (rt *Runtime) planCalls(ctx context.Context) ([]callAction, error) {
-	var plan []callAction
-	halt := ""
-	// planned counts the calls this plan runs that toolCalls does not count yet, since they are still pending.
-	planned := 0
-	for _, it := range rt.items {
-		if !it.IsCall() || it.Status != db.ItemPending {
-			continue
-		}
-		if halt != "" {
-			plan = append(plan, callAction{kind: actionSkip, item: it, reason: "skipped: the turn stopped before this call was executed"})
-			continue
-		}
-		counted := it.Approval != nil
-		h, waits, ready, err := rt.handleCall(ctx, it, planned)
-		if err != nil {
-			return nil, err
-		}
-		switch {
-		case waits:
-			plan = append(plan, callAction{kind: actionWait})
-			return plan, nil
-		case ready != nil:
-			if !counted {
-				planned++
-			}
-			kind := actionRun
-			if rt.readOnly(ready.it.Tool) {
-				kind = actionRunReadOnly
-			}
-			plan = append(plan, callAction{kind: kind, item: ready.it, job: ready})
-		case h != "":
-			plan = append(plan, callAction{kind: actionHalt, reason: h})
-			halt = h
-		}
-	}
-	return plan, nil
+// A decision is what becomes of a pending call: it runs as job; or the turn waits for the user to approve it; or it
+// stops the turn for halt, as one the user declined does; or, with none of these, it is done, as a refused call is.
+type decision struct {
+	job  *job
+	wait bool
+	halt string
 }
 
 func (rt *Runtime) readOnly(tool string) bool {
-	d, ok := rt.tool(tool)
+	d, ok := rt.Role.Tool(tool)
 	return ok && d.Annotations.ReadOnlyHint && !d.Serial
 }
 
-// handleCall decides what becomes of a pending call, the planned others of its plan counting toward the turn's limit.
-func (rt *Runtime) handleCall(ctx context.Context, it db.ItemRow, planned int) (string, bool, *job, error) {
+// handleCall decides what becomes of a pending call, the calls waiting to run with it counting toward the turn's limit.
+func (rt *Runtime) handleCall(ctx context.Context, it db.ItemRow, waiting int) (decision, error) {
 	var approved *db.Approval
 	if it.Approval != nil {
 		changed, err := rt.changedSinceApproval(ctx, it)
 		if err != nil {
-			h, err := rt.refuse(it, err.Error())
-			return h, false, nil, err
+			return rt.refuse(it, err.Error())
 		}
 		if !changed {
 			return rt.decided(it)
 		}
 		approved, it.Approval = it.Approval, nil
 	}
-	if _, offered := rt.tool(it.Tool); !offered {
+	if _, offered := rt.Role.Tool(it.Tool); !offered {
 		reason := fmt.Sprintf("tool %q is not available in this turn; use an exact tool name from the tool list", it.Tool)
-		if slices.ContainsFunc(rt.deferred, func(d tools.ToolDescriptor) bool { return d.Name == it.Tool }) {
-			reason = fmt.Sprintf("tool %q is not loaded yet; call %s with its name first", it.Tool, tools.ToolLoadTools)
+		if _, deferred := rt.Role.Offer(); slices.ContainsFunc(deferred, func(d tools.ToolDescriptor) bool { return d.Name == it.Tool }) {
+			reason = fmt.Sprintf("tool %q is not loaded yet; call %s with its name first", it.Tool, loader.Tool)
 		}
-		h, err := rt.refuse(it, reason)
-		return h, false, nil, err
+		return rt.refuse(it, reason)
 	}
-	args, background, err := rt.arguments(it)
+	args, err := callArguments(it)
 	if err != nil {
-		h, err := rt.refuse(it, err.Error())
-		return h, false, nil, err
+		return rt.refuse(it, err.Error())
 	}
-	if rt.toolCalls()+planned >= maxToolCalls {
+	if rt.toolCalls()+waiting >= maxToolCalls {
 		if err := rt.fail(it, "skipped: the tool call limit for this turn was reached"); err != nil {
-			return "", false, nil, err
+			return decision{}, err
 		}
-		return fmt.Sprintf("reached the tool call limit (%d)", maxToolCalls), false, nil, nil
+		return decision{halt: fmt.Sprintf("reached the tool call limit (%d)", maxToolCalls)}, nil
 	}
 	if it.PreparedExecution == nil {
 		prepared, err := rt.Registry.Prepare(ctx, rt.caller(it), it.Tool, args)
 		if err != nil {
-			h, err := rt.refuse(it, err.Error())
-			return h, false, nil, err
+			return rt.refuse(it, err.Error())
 		}
 		if prepared != nil {
 			it.PreparedExecution = prepared
 			stored, err := rt.record(it)
 			if err != nil {
-				return "", false, nil, err
+				return decision{}, err
 			}
 			it = stored
 		}
 	}
 	content, hasContent, err := rt.Registry.PermissionContent(ctx, rt.caller(it), it.Tool, args)
 	if err != nil {
-		h, err := rt.refuse(it, err.Error())
-		return h, false, nil, err
+		return rt.refuse(it, err.Error())
 	}
 	annotations := tools.Annotations{}
 	if it.Annotations != nil {
 		annotations = *it.Annotations
 	}
 	call := permission.Call{Tool: it.Tool, Annotations: annotations, Content: content, HasContent: hasContent, Prepared: it.PreparedExecution}
-	decision := rt.permissions.Decide(call, slices.Concat(rt.history, rt.items))
-	if decision.Verdict == permission.Deny {
-		h, err := rt.refuse(it, decision.Reason)
-		return h, false, nil, err
+	verdict := rt.Role.Decide(call)
+	if verdict.Verdict == permission.Deny {
+		return rt.refuse(it, verdict.Reason)
 	}
-	if decision.Verdict == permission.Ask {
-		it.Approval = decision.Approval(uuid.NewString(), call, time.Now().UTC())
+	if verdict.Verdict == permission.Ask {
+		it.Approval = verdict.Approval(uuid.NewString(), call, time.Now().UTC())
 		if approved != nil {
 			it.Approval.Reason = strings.TrimSpace(fmt.Sprintf("This call changed after you approved it, which was for: %s. %s", approved.Content, it.Approval.Reason))
 		}
 		if _, err := rt.record(it); err != nil {
-			return "", false, nil, err
+			return decision{}, err
 		}
-		slog.Info("approval requested", "thread", rt.thread.ID, "turn", rt.turn.ID, "item", it.ID, "tool", it.Tool)
-		return "", true, nil, nil
+		slog.Info("approval requested", "thread", rt.Role.Thread().ID, "turn", rt.Role.Turn().ID, "item", it.ID, "tool", it.Tool)
+		return decision{wait: true}, nil
 	}
-	return "", false, &job{it: it, args: args, background: background}, nil
+	return decision{job: &job{it: it, args: args}}, nil
 }
 
 func (rt *Runtime) changedSinceApproval(ctx context.Context, it db.ItemRow) (bool, error) {
 	if it.Approval.Decision == db.DecisionDecline {
 		return false, nil
 	}
-	args, _, err := rt.arguments(it)
+	args, err := callArguments(it)
 	if err != nil {
 		return false, nil
 	}
@@ -158,37 +120,23 @@ func (rt *Runtime) changedSinceApproval(ctx context.Context, it db.ItemRow) (boo
 	return ok && content.Text != it.Approval.Content, nil
 }
 
-func (rt *Runtime) decided(it db.ItemRow) (string, bool, *job, error) {
+// decided is what becomes of a call the user decided on, unchanged since.
+func (rt *Runtime) decided(it db.ItemRow) (decision, error) {
 	switch it.Approval.Decision {
 	case db.DecisionAccept, db.DecisionAcceptForSession, db.DecisionAcceptAlways:
-		args, background, err := rt.arguments(it)
+		args, err := callArguments(it)
 		if err != nil {
-			h, err := rt.refuse(it, fmt.Sprintf("the approved call has invalid arguments: %v", err))
-			return h, false, nil, err
+			return rt.refuse(it, fmt.Sprintf("the approved call has invalid arguments: %v", err))
 		}
-		return "", false, &job{it: it, args: args, background: background}, nil
+		return decision{job: &job{it: it, args: args}}, nil
 	case db.DecisionDecline:
 		if _, err := rt.complete(withError(it, "the user declined this call"), db.ItemDeclined); err != nil {
-			return "", false, nil, err
+			return decision{}, err
 		}
-		return fmt.Sprintf("the user declined %s", it.Tool), false, nil, nil
+		return decision{halt: fmt.Sprintf("the user declined %s", it.Tool)}, nil
 	default:
-		return "", false, nil, fmt.Errorf("runtime: call %s has no approval decision", it.ID)
+		return decision{}, fmt.Errorf("runtime: call %s has no approval decision", it.ID)
 	}
-}
-
-// arguments are the call's arguments for its tool and whether it asked to run in the background.
-func (rt *Runtime) arguments(it db.ItemRow) (map[string]any, bool, error) {
-	args, err := callArguments(it)
-	if err != nil {
-		return nil, false, err
-	}
-	d, _ := rt.tool(it.Tool)
-	background, err := d.TakeBackground(args)
-	if err != nil {
-		return nil, false, err
-	}
-	return args, background, nil
 }
 
 func callArguments(it db.ItemRow) (map[string]any, error) {
@@ -207,7 +155,7 @@ func callArguments(it db.ItemRow) (map[string]any, error) {
 
 func (rt *Runtime) toolCalls() int {
 	n := 0
-	for _, it := range rt.items {
+	for _, it := range rt.Role.Items() {
 		if !it.IsCall() {
 			continue
 		}
@@ -221,7 +169,7 @@ func (rt *Runtime) toolCalls() int {
 
 func (rt *Runtime) consecutiveFailures() int {
 	n := 0
-	items := rt.items
+	items := rt.Role.Items()
 	for i := len(items) - 1; i >= 0; i-- {
 		if !items[i].IsCall() || items[i].Status == db.ItemPending || items[i].Status == db.ItemInProgress {
 			continue

@@ -1,37 +1,42 @@
-package contextmanager
+// Package outputs gives the model read_tool_output, which reads the part of a tool output that the conversation shows
+// shortened: agent/contextmanager cuts a long output, and names the characters it left out, of the output's text as
+// pkg/render renders it.
+package outputs
 
 import (
 	"context"
 	"errors"
 	"fmt"
 
+	"github.com/0xfakeSpike/ollupi/pkg/render"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
 const (
-	ToolReadOutput = "read_tool_output"
+	// Tool reads a shortened tool output.
+	Tool = "read_tool_output"
+	// ProviderName is the provider of Tool.
+	ProviderName = "context"
 
 	defaultReadRunes = 8000
 	maxReadRunes     = 20000
 )
 
-type Outputs struct {
+// Provider gives Tool, reading the outputs from the conversations' items.
+type Provider struct {
 	db *db.DB
 }
 
-func NewOutputs(store *db.DB) *Outputs { return &Outputs{db: store} }
+func New(store *db.DB) *Provider { return &Provider{db: store} }
 
-// OutputsProvider is the provider of ToolReadOutput.
-const OutputsProvider = "context"
-
-func (*Outputs) Name() (string, string) {
-	return OutputsProvider, "Reads tool output that was shortened in this conversation."
+func (*Provider) Name() (string, string) {
+	return ProviderName, "Reads tool output that was shortened in this conversation."
 }
 
-func (*Outputs) ToolList(context.Context) ([]*tools.Spec, error) {
+func (*Provider) ToolList(context.Context) ([]*tools.Spec, error) {
 	return []*tools.Spec{{
-		Name: ToolReadOutput,
+		Name: Tool,
 		Description: "Reads characters of a tool output that the conversation shows shortened. " +
 			"A shortened output names its output_id and the offset of the omitted characters; read only the part you need.",
 		InputSchema: map[string]any{
@@ -48,7 +53,7 @@ func (*Outputs) ToolList(context.Context) ([]*tools.Spec, error) {
 	}}, nil
 }
 
-func (o *Outputs) Invoke(ctx context.Context, caller tools.Caller, _ string, args map[string]any) (tools.Result, error) {
+func (p *Provider) Invoke(ctx context.Context, caller tools.Caller, _ string, args map[string]any) (tools.Result, error) {
 	id, _ := args["output_id"].(string)
 	offset, err := intArg(args, "offset", 0)
 	if err != nil {
@@ -61,8 +66,8 @@ func (o *Outputs) Invoke(ctx context.Context, caller tools.Caller, _ string, arg
 	if offset < 0 || length < 1 || length > maxReadRunes {
 		return tools.Result{}, fmt.Errorf("offset must be at least 0 and length between 1 and %d", maxReadRunes)
 	}
-	it, err := o.db.Item(id)
-	if errors.Is(err, db.ErrNotFound) || err == nil && (it.ThreadID != caller.ThreadID || !it.IsCall() && it.Type != db.ItemBackgroundResult || it.Result == nil) {
+	it, err := p.db.Item(id)
+	if errors.Is(err, db.ErrNotFound) || err == nil && (it.ThreadID != caller.ThreadID || !it.IsCall() && it.Type != db.ItemAgentReport || it.Result == nil) {
 		return tools.Result{}, fmt.Errorf("this conversation has no tool output %q", id)
 	}
 	if err != nil {
@@ -72,7 +77,7 @@ func (o *Outputs) Invoke(ctx context.Context, caller tools.Caller, _ string, arg
 	if err != nil {
 		return tools.Result{}, err
 	}
-	text := []rune(observationText(result))
+	text := []rune(render.Output(result.Output, result.Err))
 	if offset >= len(text) {
 		return tools.Result{}, fmt.Errorf("offset %d is past the end of the output, which has %d characters", offset, len(text))
 	}
