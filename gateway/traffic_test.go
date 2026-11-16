@@ -43,6 +43,9 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// here gives every user this machine's files, as a host with one user does.
+func here(string) (sandbox.Box, error) { return sandbox.Here(), nil }
+
 func TestTrafficMatchesContract(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -85,6 +88,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 	}
 	defer runner.Close()
 	ag := service.New(service.Config{
+		BoxFor: here,
 		Name:   "test",
 		Models: []llm.Model{{Name: "gpt-4o", Connection: "fake"}, {Name: "gpt-4o", Connection: "vision", Images: true}},
 		Settings: permission.Settings{ApprovalPolicy: string(permission.OnRequest),
@@ -439,6 +443,11 @@ func TestTrafficMatchesContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	c.refused("turn/start", TurnStartParams{ThreadID: general.Thread.ID, Input: []UserInput{{Type: "file", Path: "dot.png"}}}, jsonrpc.CodeInvalidParams, "not absolute")
+	binary := filepath.Join(files, "key.png")
+	if err := os.WriteFile(binary, []byte("\x00\x01secret\x00"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c.refused("turn/start", TurnStartParams{ThreadID: general.Thread.ID, Input: []UserInput{{Type: "file", Path: binary, MimeType: "image/png"}}}, jsonrpc.CodeInvalidParams, "neither an image")
 	pictured := []UserInput{{Type: "text", Text: "what is this"}, {Type: "file", Path: dot}, {Type: "file", Path: notes, Name: "Notes.md"}}
 	c.refused("turn/start", TurnStartParams{ThreadID: general.Thread.ID, Input: pictured}, jsonrpc.CodeInvalidParams, "does not accept images")
 	var shown ThreadResult
@@ -563,9 +572,9 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.refused("workspace/updatePermissions", WorkspacePermissionsParams{WorkspaceID: workspaceID,
 		PermissionSettings: db.PermissionSettings{Rules: db.PermissionRules{Allow: []string{"broken__creat_issue"}}}},
 		jsonrpc.CodeInvalidParams, `the MCP server "broken" is not connected`)
-	if _, err := store.UpdateWorkspace(db.DefaultUser, workspaceID, func(w db.WorkspaceRow) (db.WorkspaceRow, error) {
+	if _, err := store.UpdateWorkspace(db.DefaultUser, workspaceID, func(w db.WorkspaceRow) db.WorkspaceRow {
 		w.Settings.Rules.Allow = []string{"gitlab__merge"}
-		return w, nil
+		return w
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -650,6 +659,8 @@ func TestTrafficMatchesContract(t *testing.T) {
 		t.Error("search touch found no messages in the workspace")
 	}
 	c.refused("search", SearchParams{Query: "  "}, jsonrpc.CodeInvalidParams, "query")
+	c.refused("search", SearchParams{Query: strings.Repeat("词", 201)}, jsonrpc.CodeInvalidParams, "200 characters")
+	c.refused("search", SearchParams{Query: "a b c d e f g h i"}, jsonrpc.CodeInvalidParams, "8 words")
 
 	c.mu.Lock()
 	defer c.mu.Unlock()

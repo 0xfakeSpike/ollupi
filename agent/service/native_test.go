@@ -84,7 +84,8 @@ func TestThinkingIsReplayedAcrossTurns(t *testing.T) {
 	}
 	defer store.Close()
 	ag := service.New(service.Config{
-		Name: "Ollupi", Models: []llm.Model{{Name: "claude", Connection: "anthropic"}},
+		BoxFor: here,
+		Name:   "Ollupi", Models: []llm.Model{{Name: "claude", Connection: "anthropic"}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 		Connections: map[string]llm.Client{"anthropic": llm.NewAnthropic(srv.URL, "key", 4, map[string]llm.Limits{"claude": {Context: 200_000, Output: 32_000}})},
 		Providers:   []tools.Provider{githubTools{}}, DB: store,

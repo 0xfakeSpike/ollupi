@@ -4,6 +4,7 @@ package event
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 
 	"github.com/0xfakeSpike/ollupi/repo/db"
@@ -94,7 +95,12 @@ func (e Emitter) Status(threadID string) {
 		e.Status(string(t.ParentThreadID))
 		return
 	}
-	e.Emit(Event{Kind: ThreadStatusChanged, Thread: t, Status: ThreadStatus(e.DB, threadID)})
+	status, err := ThreadStatus(e.DB, threadID)
+	if err != nil {
+		slog.Warn("thread status not sent", "thread", threadID, "err", err)
+		return
+	}
+	e.Emit(Event{Kind: ThreadStatusChanged, Thread: t, Status: status})
 }
 
 // Requests tells of what the conversation's turn waits on the user for.
@@ -109,40 +115,45 @@ func (e Emitter) Requests(st db.ThreadState) {
 	}
 }
 
-// Fault logs what went wrong with a conversation's turn and tells of it.
-func (e Emitter) Fault(threadID, turnID string, err error) {
-	slog.Error("orchestrator fault", "thread", threadID, "turn", turnID, "err", err)
+// Fault logs what went wrong with a conversation's turn and tells of it. The client is told what could not be done;
+// the cause stays in the log, since it is the storage's own words, with its paths and tables.
+func (e Emitter) Fault(threadID, turnID, what string, cause error) {
+	slog.Error("orchestrator fault", "thread", threadID, "turn", turnID, "what", what, "err", cause)
 	t, rerr := e.DB.ThreadRow(threadID)
 	if rerr != nil {
 		t = db.ThreadRow{ID: threadID}
 	}
-	e.Emit(Event{Kind: Error, Thread: t, Turn: db.TurnRow{ID: turnID, ThreadID: threadID}, Error: err.Error()})
+	e.Emit(Event{Kind: Error, Thread: t, Turn: db.TurnRow{ID: turnID, ThreadID: threadID}, Error: what})
 }
 
 // ThreadStatus reads a conversation's status off its current turn: waiting on a person when the turn is, or when a
 // subagent it waits on is, and otherwise active or idle.
-func ThreadStatus(store *db.DB, id string) db.ThreadStatus {
+func ThreadStatus(store *db.DB, id string) (db.ThreadStatus, error) {
 	turn, err := store.ActiveTurn(id)
 	if errors.Is(err, db.ErrNotFound) {
-		return db.ThreadIdle
+		return db.ThreadIdle, nil
 	}
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("the status of thread %s: %w", id, err)
 	}
 	switch turn.Status {
 	case db.TurnWaitingOnApproval:
-		return db.ThreadWaitingOnApproval
+		return db.ThreadWaitingOnApproval, nil
 	case db.TurnWaitingOnUserInput:
-		return db.ThreadWaitingOnUserInput
+		return db.ThreadWaitingOnUserInput, nil
 	}
 	running, err := store.RunningSubagents(turn.ID)
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("the status of thread %s: %w", id, err)
 	}
 	for _, child := range running {
-		if cs := ThreadStatus(store, child); cs == db.ThreadWaitingOnApproval || cs == db.ThreadWaitingOnUserInput {
-			return cs
+		cs, err := ThreadStatus(store, child)
+		if err != nil {
+			return "", err
+		}
+		if cs == db.ThreadWaitingOnApproval || cs == db.ThreadWaitingOnUserInput {
+			return cs, nil
 		}
 	}
-	return db.ThreadActive
+	return db.ThreadActive, nil
 }

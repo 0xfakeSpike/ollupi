@@ -21,8 +21,12 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/service"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
+	"github.com/0xfakeSpike/ollupi/repo/blobs"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 )
+
+// here gives every user this machine's files, as a host with one user does.
+func here(string) (sandbox.Box, error) { return sandbox.Here(), nil }
 
 func started(ctx context.Context, t *testing.T, cfg service.Config, url string) (*service.Service, *db.DB) {
 	t.Helper()
@@ -32,6 +36,9 @@ func started(ctx context.Context, t *testing.T, cfg service.Config, url string) 
 	}
 	t.Cleanup(func() { store.Close() })
 	cfg.Name, cfg.DB = "Ollupi", store
+	if cfg.BoxFor == nil {
+		cfg.BoxFor = here
+	}
 	cfg.Models = []llm.Model{{Name: "demo", Connection: "fake"}}
 	cfg.Settings = permission.Settings{ApprovalPolicy: string(permission.Never)}
 	cfg.Connections = map[string]llm.Client{"fake": llm.NewOpenAI(url, "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})}
@@ -184,7 +191,7 @@ func TestPendingRequestsReportStorageThatFails(t *testing.T) {
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	ag := service.New(service.Config{DB: store})
+	ag := service.New(service.Config{DB: store, BoxFor: here})
 	if got, err := ag.AllPendingRequests(db.DefaultUser); err == nil {
 		t.Errorf("all requests: %+v", got)
 	}
@@ -344,7 +351,8 @@ func TestSkillsForNoRoleKeepTheOrchestratorFromStarting(t *testing.T) {
 		t.Fatal(err)
 	}
 	ag := service.New(service.Config{
-		Name: "Ollupi", DB: store, SkillsDir: dir,
+		BoxFor: here,
+		Name:   "Ollupi", DB: store, SkillsDir: dir,
 		Models:      []llm.Model{{Name: "demo", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI("http://127.0.0.1:1", "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
 	})
@@ -352,5 +360,54 @@ func TestSkillsForNoRoleKeepTheOrchestratorFromStarting(t *testing.T) {
 	defer stop()
 	if err := ag.Start(ctx); err == nil || !strings.Contains(err.Error(), `"main-agent", which is no role`) {
 		t.Errorf("skills for no role: %v", err)
+	}
+}
+
+// lostStore keeps what it is given in a folder and cannot find it again, as a store whose disk went away does.
+type lostStore struct{ blobs.Dir }
+
+func (s lostStore) Get(ctx context.Context, key string) ([]byte, error) {
+	return s.Dir.Get(ctx, key+".lost")
+}
+
+// A turn that fails on a blob the store cannot read tells its user which object it was, not where the server keeps
+// its files.
+func TestAStorageErrorIsNotShownToTheUser(t *testing.T) {
+	dir := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	srv := httptest.NewServer(&recordingModel{})
+	defer srv.Close()
+	ended := make(chan db.TurnRow, 1)
+	ag, store := started(ctx, t, service.Config{
+		Attachments: lostStore{blobs.Dir(dir)},
+		BoxFor: func(string) (sandbox.Box, error) {
+			return sandbox.Remote(noteMachine{}, []string{"/cloud"}, "cloud"), nil
+		},
+		OnEvent: func(e event.Event) {
+			if e.Kind == event.TurnCompleted {
+				ended <- e.Turn
+			}
+		},
+	}, srv.URL)
+	thread, err := ag.StartThread(db.DefaultUser, "", "", "t", permission.Settings{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, service.Input{Text: "read", Attachments: []service.AttachmentInput{{Path: "/cloud/note.txt"}}}); err != nil {
+		t.Fatal(err)
+	}
+	turn := endOf(ctx, t, ended)
+	if turn.Status != db.TurnFailed || turn.Error == "" || strings.Contains(turn.Error, dir) {
+		t.Errorf("the turn: %s %q", turn.Status, turn.Error)
+	}
+	items, err := store.TurnItems(turn.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range items {
+		if strings.Contains(it.Error, dir) || strings.Contains(it.Text, dir) {
+			t.Errorf("item %s tells of the server's files: %q %q", it.Type, it.Error, it.Text)
+		}
 	}
 }

@@ -98,7 +98,8 @@ func users(args []string) {
 	var failed sync.Map // user → *atomic.Int64
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}, done: map[string]chan struct{}{}}
 	ag := service.New(service.Config{
-		Name: "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
+		BoxFor: here,
+		Name:   "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": clients[heavyUser]},
 		ClientFor: func(user, _ string) (llm.Client, error) {
 			if cl := clients[user]; cl != nil {

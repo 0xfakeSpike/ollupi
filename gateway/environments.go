@@ -20,18 +20,12 @@ func (c *conn) environmentList(ctx context.Context, _ Empty) (EnvironmentListRes
 }
 
 func (c *conn) environmentAdd(ctx context.Context, p EnvironmentAddParams) (EnvironmentResult, func(), error) {
-	if strings.TrimSpace(p.Name) == "" {
-		return EnvironmentResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "name is required")
-	}
 	return environmentResult(c.s.service.AddEnvironment(c.user, p.Name, p.Kind))
 }
 
 func (c *conn) environmentRename(ctx context.Context, p EnvironmentRenameParams) (EnvironmentResult, func(), error) {
 	if strings.TrimSpace(p.EnvironmentID) == "" {
 		return EnvironmentResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "environmentId is required")
-	}
-	if strings.TrimSpace(p.Name) == "" {
-		return EnvironmentResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "name is required")
 	}
 	return environmentResult(c.s.service.RenameEnvironment(c.user, p.EnvironmentID, p.Name))
 }

@@ -81,7 +81,10 @@ func (sv *Service) ListThreads(user string, f db.ThreadFilter) ([]db.ThreadSumma
 	}
 	out := make([]db.ThreadSummary, 0, len(rows))
 	for _, r := range rows {
-		status := event.ThreadStatus(sv.cfg.DB, r.ID)
+		status, err := event.ThreadStatus(sv.cfg.DB, r.ID)
+		if err != nil {
+			return nil, false, fmt.Errorf("service: %w", err)
+		}
 		out = append(out, db.ThreadSummary{ThreadRow: r, Status: status})
 	}
 	return out, more, nil

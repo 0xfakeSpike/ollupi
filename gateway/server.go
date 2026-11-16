@@ -3,36 +3,34 @@ package gateway
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/http"
 	"runtime/debug"
-	"strings"
 	"sync"
 
 	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/agent/memory"
-	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
-	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/service"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/pkg/wshub"
 	"github.com/0xfakeSpike/ollupi/repo/db"
-	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
 	"github.com/0xfakeSpike/ollupi/tools/mcp"
-	"github.com/0xfakeSpike/ollupi/tools/userinput"
 	"github.com/coder/websocket"
 )
 
 // Requests are traced through the global TracerProvider, which the host sets up.
 
 const (
-	maxMessageBytes = 32 << 20
-	defaultLimit    = 20
-	maxLimit        = 100
-	defaultItems    = 100
-	maxItems        = 500
+	// The largest message a client has reason to send is one user message, held to a quarter of a model's input
+	// (service.checkLength): files go by path. A megabyte is about that for a million tokens of input.
+	maxMessageBytes = 4 << 20
+	// What a client sent is logged up to this many bytes, so that it cannot fill the log.
+	maxLoggedBytes = 200
+	defaultLimit   = 20
+	maxLimit       = 100
+	defaultItems   = 100
+	maxItems       = 500
 )
 
 type Server struct {
@@ -101,25 +99,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.hub.Serve(r.Context(), user, ws, c, func(ctx context.Context) error { return c.rpc.Serve(ctx, c) })
 }
 
-// mine says whether user is on this shard, and when not, refuses the connection for now: the router placed it by what
-// it knew, and a client that comes back reaches the right shard once that is put right.
-func (s *Server) mine(w http.ResponseWriter, r *http.Request, user string) bool {
-	if s.placements == nil {
-		return true
-	}
-	shard, err := s.placements.ShardOf(r.Context(), user)
-	switch {
-	case err != nil:
-		slog.Error("user's shard not found", "user", user, "err", err)
-	case shard != s.shard:
-		slog.Warn("connection refused on the wrong shard", "user", user, "shard", s.shard, "theirs", shard)
-	default:
-		return true
-	}
-	s.hub.Refuse(w, "this user is not on this shard now; try again")
-	return false
-}
-
 // Deliver sends an event to the connections of the user it belongs to; one that names no user goes to nobody, the
 // log has it.
 func (s *Server) Deliver(e event.Event) {
@@ -168,7 +147,7 @@ func (c *conn) isInitialized() bool {
 
 func (c *conn) Notify(method string, _ json.RawMessage) {
 	if _, ok := protocol.clientNotifications[method]; !ok {
-		slog.Warn("client notification ignored", "method", method)
+		slog.Warn("client notification ignored", "method", method[:min(len(method), maxLoggedBytes)])
 	}
 }
 
@@ -197,31 +176,6 @@ func (c *conn) initialize(ctx context.Context, _ InitializeParams) (InitializeRe
 		c.requests(c.s.service.AllPendingRequests(c.user))
 	}
 	return InitializeResult{ServerInfo: ServerInfo{Name: "ollupi", Version: version()}, ProtocolSHA256: protocolSHA256}, after, nil
-}
-
-func (c *conn) modelList(ctx context.Context, _ Empty) (ModelListResult, func(), error) {
-	models, fallback := c.s.service.ListModels()
-	return ModelListResult{Data: nonNil(models), Default: fallback}, nil, nil
-}
-
-func (c *conn) toolList(ctx context.Context, _ Empty) (ToolListResult, func(), error) {
-	list, err := c.s.service.ListTools(c.user)
-	if err != nil {
-		return ToolListResult{}, nil, err
-	}
-	return ToolListResult{Data: nonNil(list)}, nil, nil
-}
-
-func (c *conn) mcpServerList(ctx context.Context, _ Empty) (MCPServerListResult, func(), error) {
-	var servers []mcp.ServerStatus
-	if c.s.mcp != nil {
-		mine, err := c.s.mcp.For(c.user)
-		if err != nil {
-			return MCPServerListResult{}, nil, err
-		}
-		servers = mine.Statuses()
-	}
-	return MCPServerListResult{Data: nonNil(servers)}, nil, nil
 }
 
 func (c *conn) event(e event.Event) {
@@ -262,158 +216,11 @@ func (c *conn) event(e event.Event) {
 	}
 }
 
-// requests asks the client what is waiting on it. A client that cannot be told would wait without knowing, so one that
-// could not be told is dropped and asked again when it comes back.
-func (c *conn) requests(pending []service.Request, err error) {
-	if errors.Is(err, db.ErrNotFound) {
-		return
-	}
-	if err != nil {
-		slog.Error("pending requests not read", "user", c.user, "err", err)
-		go c.ws.Close(websocket.StatusInternalError, "pending requests could not be read")
-		return
-	}
-	for _, r := range pending {
-		c.request(r.Thread.ID, r.Item)
-	}
-}
-
-func (c *conn) request(threadID string, it db.ItemRow) {
-	c.mu.Lock()
-	if c.asked[it.ID] {
-		c.mu.Unlock()
-		return
-	}
-	c.asked[it.ID] = true
-	c.mu.Unlock()
-	answered := func(result json.RawMessage, rerr *jsonrpc.Error) {
-		c.mu.Lock()
-		delete(c.asked, it.ID)
-		c.mu.Unlock()
-		if rerr != nil {
-			slog.Warn("client refused a request", "item", it.ID, "err", rerr)
-			return
-		}
-		if err := c.resolve(threadID, it, result); err != nil {
-			slog.Warn("client response not applied", "item", it.ID, "err", err)
-			c.rpc.Notify(notifyError, ErrorNotification{ThreadID: threadID, TurnID: it.TurnID, ItemID: it.ID, Message: serverError(err).Message})
-			if !errors.Is(err, db.ErrNoSuchRequest) {
-				c.request(threadID, it)
-			}
-		}
-	}
-	if !it.WaitsForApproval() {
-		req, err := userinput.Decode(it.Await.Request)
-		if err != nil {
-			slog.Error("request not sent", "item", it.ID, "err", err)
-			return
-		}
-		c.rpc.Request(requestUserInput, UserInputRequestParams{ThreadID: threadID, TurnID: it.TurnID, ItemID: it.ID, Questions: nonNil(req.Questions)}, answered)
-		return
-	}
-	args := json.RawMessage(it.Arguments)
-	if strings.TrimSpace(it.Arguments) == "" {
-		args = json.RawMessage("{}")
-	}
-	c.rpc.Request(requestApproval, ApprovalRequestParams{
-		ThreadID: threadID, TurnID: it.TurnID, ItemID: it.ID, ApprovalID: it.Approval.ID,
-		Server: it.Server, Tool: it.Tool, Arguments: args, PreparedExecution: it.PreparedExecution,
-		Reason: it.Approval.Reason, Content: it.Approval.Content, SuggestedRules: it.Approval.Suggested, AvailableDecisions: it.Approval.AvailableDecisions(),
-	}, answered)
-}
-
-// resolve applies the client's answer to a request, decoded as strictly as the params of a call.
-func (c *conn) resolve(threadID string, it db.ItemRow, result json.RawMessage) error {
-	if !it.WaitsForApproval() {
-		var r UserInputResponse
-		if err := jsonrpc.DecodeParams(result, &r); err != nil {
-			return err
-		}
-		if r.Skipped {
-			return c.s.service.SkipUserInput(c.user, threadID, it.ID)
-		}
-		return c.s.service.AnswerUserInput(c.user, threadID, it.ID, r.Answers)
-	}
-	var r ApprovalResponse
-	if err := jsonrpc.DecodeParams(result, &r); err != nil {
-		return err
-	}
-	return c.s.service.ResolveApproval(c.user, threadID, it.Approval.ID, r.Decision, "gateway")
-}
-
-const pageBytes = 4 << 20
-
-func itemBytes(it db.ItemRow) int {
-	raw, err := json.Marshal(it)
-	if err != nil {
-		return pageBytes
-	}
-	return len(raw)
-}
-
-func agentInput(input []UserInput) (service.Input, error) {
-	var in service.Input
-	texts := make([]string, 0, len(input))
-	for _, part := range input {
-		switch part.Type {
-		case "text":
-			texts = append(texts, part.Text)
-		case "file":
-			in.Attachments = append(in.Attachments, service.AttachmentInput{Path: part.Path, Name: part.Name, MimeType: part.MimeType})
-		default:
-			return service.Input{}, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "input type %q is not supported", part.Type)
-		}
-	}
-	in.Text = strings.Join(texts, "\n")
-	return in, nil
-}
-
 func nonNil[T any](s []T) []T {
 	if s == nil {
 		return []T{}
 	}
 	return s
-}
-
-var errorCodes = []struct {
-	err  error
-	code int
-}{
-	{db.ErrNotFound, errNotFound},
-	{orchestrator.ErrNoActiveTurn, errNoActiveTurn},
-	{orchestrator.ErrTurnMismatch, errTurnMismatch},
-	{db.ErrNoSuchRequest, errNoSuchRequest},
-	{service.ErrSubagentThread, errSubagentThread},
-	{service.ErrWorkspaceArchived, errWorkspaceArchived},
-	{db.ErrThreadArchived, errThreadArchived},
-	{db.ErrThreadBusy, errThreadBusy},
-	{service.ErrWorkspaceBusy, errThreadBusy},
-	{service.ErrQueueFull, errThreadBusy},
-	{service.ErrEnvironmentInUse, jsonrpc.CodeInvalidParams},
-	{service.ErrInvalidMessage, jsonrpc.CodeInvalidParams},
-	{service.ErrInvalidAnswer, jsonrpc.CodeInvalidParams},
-	{service.ErrInvalidDecision, jsonrpc.CodeInvalidParams},
-	{service.ErrInvalidName, jsonrpc.CodeInvalidParams},
-	{service.ErrInvalidPath, jsonrpc.CodeInvalidParams},
-	{permission.ErrInvalidSettings, jsonrpc.CodeInvalidParams},
-	{memory.ErrInvalidChange, jsonrpc.CodeInvalidParams},
-	{tools.ErrUnknownTool, jsonrpc.CodeInvalidParams},
-	{tools.ErrInvalidArguments, jsonrpc.CodeInvalidParams},
-	{cron.ErrInvalidJob, jsonrpc.CodeInvalidParams},
-}
-
-func serverError(err error) *jsonrpc.Error {
-	var rpcErr *jsonrpc.Error
-	if errors.As(err, &rpcErr) && rpcErr != nil {
-		return rpcErr
-	}
-	for _, e := range errorCodes {
-		if errors.Is(err, e.err) {
-			return jsonrpc.Errorf(e.code, "%v", err)
-		}
-	}
-	slog.Error("request failed", "err", err)
-	return jsonrpc.Errorf(jsonrpc.CodeServerError, "the request could not be completed")
 }
 
 func version() string {

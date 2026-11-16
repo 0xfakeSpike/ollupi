@@ -116,7 +116,7 @@ func TestEachUserHasTheirOwnConnectionAndEvents(t *testing.T) {
 	}
 	defer store.Close()
 	tokens := map[string]string{"token-a": "a", "token-b": "b"}
-	s, err := NewServer(service.New(service.Config{DB: store}), Options{DB: store, Authenticate: func(_ context.Context, token string) (string, error) {
+	s, err := NewServer(service.New(service.Config{DB: store, BoxFor: here}), Options{DB: store, Authenticate: func(_ context.Context, token string) (string, error) {
 		user, ok := tokens[token]
 		if !ok {
 			return "", ErrUnknownToken

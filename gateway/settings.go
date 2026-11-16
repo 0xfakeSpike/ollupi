@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 )
 

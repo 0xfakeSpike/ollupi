@@ -30,7 +30,6 @@ const (
 	maxTextFileBytes  = 256 << 10
 	maxImageSide      = 1568
 	minImageTokens    = 85
-	defaultImageToken = 1600
 	attachmentTimeout = time.Minute
 )
 
@@ -81,7 +80,7 @@ func (sv *Service) storeAttachment(ctx context.Context, t db.ThreadRow, in Attac
 	if !filepath.IsAbs(in.Path) {
 		return db.Attachment{}, fmt.Errorf("service: %w: attachment path %q is not absolute", ErrInvalidMessage, in.Path)
 	}
-	src, size, err := sv.attachmentSource(ctx, t.UserID, in.Path)
+	data, err := sv.attachmentSource(ctx, t.UserID, in.Path)
 	if err != nil {
 		return db.Attachment{}, fmt.Errorf("service: %w: attachment %s: %v", ErrInvalidMessage, in.Path, err)
 	}
@@ -89,102 +88,69 @@ func (sv *Service) storeAttachment(ctx context.Context, t db.ThreadRow, in Attac
 	if strings.TrimSpace(name) == "" {
 		name = in.Path
 	}
-	att, err := describe(src, size, attachmentName(name), in.MimeType)
+	att, err := describe(data, attachmentName(name), in.MimeType)
 	if err != nil {
 		return db.Attachment{}, fmt.Errorf("service: %w: %v", ErrInvalidMessage, err)
 	}
 	att.File = t.ID + "/" + att.File
-	if err := sv.copyAttachment(ctx, src, att); err != nil {
+	if err := sv.cfg.Attachments.Put(ctx, att.File, data); err != nil {
 		return db.Attachment{}, fmt.Errorf("service: store attachment %s: %w", att.Name, err)
 	}
 	return att, nil
 }
 
 // attachmentSource reads the file a user names, from their sandbox: nothing else is theirs to send.
-func (sv *Service) attachmentSource(ctx context.Context, user, path string) (io.ReadSeeker, int64, error) {
+func (sv *Service) attachmentSource(ctx context.Context, user, path string) ([]byte, error) {
 	box, err := sv.cfg.BoxFor(user)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	info, err := box.Stat(ctx, path)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	if !info.Mode().IsRegular() {
-		return nil, 0, errors.New("not a file")
+		return nil, errors.New("not a file")
 	}
 	if info.Size() > maxImageBytes {
-		return nil, 0, fmt.Errorf("%d bytes; at most %d are accepted", info.Size(), maxImageBytes)
+		return nil, fmt.Errorf("%d bytes; at most %d are accepted", info.Size(), maxImageBytes)
 	}
-	data, err := sandbox.ReadFile(ctx, box, path, maxImageBytes)
-	if err != nil {
-		return nil, 0, err
-	}
-	return bytes.NewReader(data), int64(len(data)), nil
+	return sandbox.ReadFile(ctx, box, path, maxImageBytes)
 }
 
-// copyAttachment copies exactly the bytes describe measured, so a file that changes meanwhile is refused.
-func (sv *Service) copyAttachment(ctx context.Context, src io.ReadSeeker, att db.Attachment) error {
-	if _, err := src.Seek(0, io.SeekStart); err != nil {
-		return err
-	}
-	data, err := io.ReadAll(io.LimitReader(src, att.Size+1))
-	if err != nil {
-		return err
-	}
-	if int64(len(data)) != att.Size {
-		return fmt.Errorf("%w: the file changed while it was being attached", ErrInvalidMessage)
-	}
-	return sv.cfg.Attachments.Put(ctx, att.File, data)
-}
-
-// describe classifies a file as an image or a text file from its first bytes and checks it against the limits
-// of its kind before reading more of it.
-func describe(src io.ReadSeeker, size int64, name, mime string) (db.Attachment, error) {
-	head := make([]byte, 512)
-	n, err := io.ReadFull(src, head)
-	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
-		return db.Attachment{}, fmt.Errorf("attachment %q cannot be read: %w", name, err)
-	}
-	head = head[:n]
-	mime = strings.ToLower(strings.TrimSpace(mime))
-	if mime == "" {
-		mime, _, _ = strings.Cut(http.DetectContentType(head), ";")
-	}
-	att := db.Attachment{ID: uuid.NewString(), Name: name, MimeType: mime, Size: size}
-	if size == 0 {
+// describe classifies a file as an image or a text file from its first bytes, whatever its sender calls it, and
+// checks it against the limits of its kind.
+func describe(data []byte, name, mime string) (db.Attachment, error) {
+	if len(data) == 0 {
 		return db.Attachment{}, fmt.Errorf("attachment %q is empty", name)
 	}
-	if ext, ok := imageTypes[mime]; ok {
-		if size > maxImageBytes {
-			return db.Attachment{}, fmt.Errorf("image %q has %d bytes; at most %d are accepted", name, size, maxImageBytes)
-		}
+	head := data[:min(len(data), 512)]
+	sniffed, _, _ := strings.Cut(http.DetectContentType(head), ";")
+	att := db.Attachment{ID: uuid.NewString(), Name: name, MimeType: sniffed, Size: int64(len(data))}
+	if ext, ok := imageTypes[sniffed]; ok {
 		att.Kind, att.File = db.AttachmentImage, att.ID+ext
-		if _, err := src.Seek(0, io.SeekStart); err != nil {
-			return db.Attachment{}, err
+		att.Width, att.Height = imageSize(bytes.NewReader(data), head)
+		if att.Width <= 0 || att.Height <= 0 {
+			return db.Attachment{}, fmt.Errorf("image %q cannot be read", name)
 		}
-		att.Width, att.Height = imageSize(src, head)
 		att.Tokens = imageTokens(att.Width, att.Height)
 		return att, nil
 	}
-	notText := fmt.Errorf("%q (%s) is neither an image (PNG, JPEG, GIF, WebP) nor a text file", name, mime)
+	notText := fmt.Errorf("%q (%s) is neither an image (PNG, JPEG, GIF, WebP) nor a text file", name, sniffed)
 	if bytes.IndexByte(head, 0) >= 0 {
 		return db.Attachment{}, notText
 	}
-	if size > maxTextFileBytes {
-		return db.Attachment{}, fmt.Errorf("text file %q has %d bytes; at most %d are accepted", name, size, maxTextFileBytes)
-	}
-	if _, err := src.Seek(0, io.SeekStart); err != nil {
-		return db.Attachment{}, err
-	}
-	data, err := io.ReadAll(io.LimitReader(src, maxTextFileBytes+1))
-	if err != nil {
-		return db.Attachment{}, fmt.Errorf("attachment %q cannot be read: %w", name, err)
+	if len(data) > maxTextFileBytes {
+		return db.Attachment{}, fmt.Errorf("text file %q has %d bytes; at most %d are accepted", name, len(data), maxTextFileBytes)
 	}
 	if !utf8.Valid(data) || bytes.IndexByte(data, 0) >= 0 {
 		return db.Attachment{}, notText
 	}
-	if !strings.HasPrefix(mime, "text/") && mime != "application/json" {
+	// Text is of the kind its sender calls it, which its bytes do not tell.
+	if mime = strings.ToLower(strings.TrimSpace(mime)); mime != "" {
+		att.MimeType = mime
+	}
+	if !strings.HasPrefix(att.MimeType, "text/") && att.MimeType != "application/json" {
 		att.MimeType = "text/plain"
 	}
 	att.Kind, att.File = db.AttachmentFile, att.ID+".txt"
@@ -226,9 +192,6 @@ func webpSize(b []byte) (int, int) {
 
 // imageTokens estimates what a provider charges for an image scaled to fit maxImageSide: about one token per 750 pixels.
 func imageTokens(w, h int) int {
-	if w <= 0 || h <= 0 {
-		return defaultImageToken
-	}
 	if long := max(w, h); long > maxImageSide {
 		w, h = w*maxImageSide/long, h*maxImageSide/long
 	}

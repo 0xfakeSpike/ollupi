@@ -1,13 +1,7 @@
 package role
 
 import (
-	"fmt"
-	"strings"
-
-	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
-	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
-	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
 	"github.com/0xfakeSpike/ollupi/tools/plan"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
@@ -19,34 +13,7 @@ const GeneralSub Name = subagent.General
 // generalSub reports to the agent that launched it, so its own rules are the whole of its prompt's beginning. It has its
 // parent's tools but those that launch subagents or schedule tasks, which would come back to its thread after it
 // reported.
-type generalSub struct{ runState }
-
-// NewGeneralSub makes the general subagent of the deployment\'s agent: see New.
-func NewGeneralSub(name, prompt, skillsDir string, settings permission.Settings, shared bool, tools []string, memory *memory.Manager, window *contextmanager.Manager) Role {
-	return &generalSub{runState{agent: name, prompt: prompt, skillsDir: skillsDir, own: []permission.Layer{generalSubLayer}, settings: settings, shared: shared, tools: tools, memory: memory, window: window}}
-}
-
-func (generalSub) Name() Name { return GeneralSub }
-
-// System starts with the general subagent's own rules, since it reports to the agent that launched it, then its
-// skills, the tools it may load and the project it works in.
-func (r *generalSub) System(root string, deferred []tools.ToolDescriptor) (string, error) {
-	listed, err := listSkills(GeneralSub, r.skillsDir, r.window.SkillBudget())
-	if err != nil {
-		return "", err
-	}
-	parts := []string{generalSubRules}
-	if listed != "" {
-		parts = append(parts, listed)
-	}
-	if len(deferred) > 0 {
-		parts = append(parts, listDeferred(deferred))
-	}
-	if root != "" {
-		parts = append(parts, fmt.Sprintf(projectSection, root))
-	}
-	return strings.Join(parts, "\n\n"), nil
-}
+var generalSub = Role{name: GeneralSub, rules: generalSubRules, own: []permission.Layer{generalSubLayer}, recalls: true, maxModelCalls: 200, maxToolCalls: 400, maxConsecutiveFailures: 10}
 
 // generalSubLayer keeps the general subagent from the tools that launch subagents or schedule tasks, which would come
 // back to its thread after it reported.

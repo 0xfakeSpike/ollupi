@@ -36,6 +36,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/service"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
+	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
@@ -49,6 +50,9 @@ type model struct {
 	answer  string
 	onCall  atomic.Pointer[func()]
 }
+
+// here gives every user this machine's files, as a host with one user does.
+func here(string) (sandbox.Box, error) { return sandbox.Here(), nil }
 
 func (m *model) Chat(ctx context.Context, req llm.ChatRequest, _ func(llm.Delta)) (llm.ChatResponse, error) {
 	n := m.calls.Add(1)
@@ -228,7 +232,8 @@ func parked(args []string) {
 	m := &model{}
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}}
 	ag := service.New(service.Config{
-		Name: "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
+		BoxFor: here,
+		Name:   "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": m},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 		Slots:       *slots, DB: store, OnEvent: tr.on,

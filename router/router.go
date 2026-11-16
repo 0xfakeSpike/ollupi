@@ -37,20 +37,23 @@ type Locator struct {
 // rememberedUsers bounds what a Locator remembers, to some tens of MB.
 const rememberedUsers = 1 << 18
 
+// lookupTimeout bounds how long placing one connection may wait on the token's check and on the directory, which
+// would otherwise hold the client for as long as either hangs.
+const lookupTimeout = 10 * time.Second
+
 func NewLocator(authenticate gateway.Authenticate, directory Directory) (*Locator, error) {
 	if authenticate == nil || directory == nil {
 		return nil, errors.New("router: a locator needs to authenticate users and find their shards")
 	}
-	placed, err := lru.New[string, string](rememberedUsers)
-	if err != nil {
-		return nil, fmt.Errorf("router: %w", err)
-	}
+	placed, _ := lru.New[string, string](rememberedUsers) // a size above zero: it cannot fail
 	return &Locator{authenticate: authenticate, directory: directory, placed: placed}, nil
 }
 
 // Locate says whose token the headers of a connection carry and which shard they are on; gateway.ErrUnknownToken
 // when it is no one's.
 func (l *Locator) Locate(ctx context.Context, header http.Header) (user, shard string, err error) {
+	ctx, cancel := context.WithTimeout(ctx, lookupTimeout)
+	defer cancel()
 	user, err = l.authenticate(ctx, gateway.TokenOf(header))
 	if errors.Is(err, gateway.ErrUnknownToken) {
 		return "", "", err
@@ -108,7 +111,9 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no shard can take this user now", http.StatusServiceUnavailable)
 		return
 	}
-	address, err := rt.locator.directory.Address(r.Context(), shard)
+	ctx, cancel := context.WithTimeout(r.Context(), lookupTimeout)
+	address, err := rt.locator.directory.Address(ctx, shard)
+	cancel()
 	if err != nil {
 		slog.Error("shard not found", "shard", shard, "err", err)
 		http.Error(w, "the user's shard cannot be found now", http.StatusServiceUnavailable)

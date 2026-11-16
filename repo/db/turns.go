@@ -4,7 +4,6 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
@@ -239,9 +238,6 @@ func (d *DB) SubmitTurn(threadID string, turn TurnRow, text string, attachments 
 		if thread.ArchivedAt != nil {
 			return ErrThreadArchived
 		}
-		if turn.ID == "" || (strings.TrimSpace(text) == "" && len(attachments) == 0) {
-			return fmt.Errorf("a message needs a turn id and a text or an attachment")
-		}
 		var open []TurnRow
 		if err := tx.gorm.Table("turns INDEXED BY turns_open").Where("thread_id = ? AND "+openTurn, threadID).Order("seq").Find(&open).Error; err != nil {
 			return err
@@ -330,43 +326,8 @@ func (d *DB) EndTurn(threadID string, turn TurnRow) (ThreadRow, TurnRow, []ItemR
 	var closed []ItemRow
 	var report *SubagentReport
 	err := d.Tx(func(tx *DB) error {
-		active, err := tx.ActiveTurn(threadID)
-		if errors.Is(err, ErrNotFound) || (err == nil && active.ID != turn.ID) {
-			return fmt.Errorf("turn %s is not in progress", turn.ID)
-		}
-		if err != nil {
-			return err
-		}
-		if !turn.Status.Ended() {
-			return fmt.Errorf("turn %s must end with a final status", turn.ID)
-		}
-		now := time.Now().UTC()
-		turn.ThreadID, turn.Seq, turn.CompletedAt = threadID, active.Seq, &now
-		if err := tx.updateTurn(turn); err != nil {
-			return err
-		}
-		var open []ItemRow
-		if err := tx.gorm.Where("thread_id = ? AND turn_id = ? AND status IN ('pending', 'inProgress')", threadID, turn.ID).Order("seq").Find(&open).Error; err != nil {
-			return err
-		}
-		for _, it := range open {
-			it.Status = ItemFailed
-			it.Error = fmt.Sprintf("the turn ended (%s) before this item finished", turn.Status)
-			it.CompletedAt = &now
-			if _, _, err := tx.saveItemOf(threadID, it); err != nil {
-				return err
-			}
-			closed = append(closed, it)
-		}
-		if thread, err = tx.ThreadRow(threadID); err != nil {
-			return err
-		}
-		// The turn's end is news to whoever has not read the thread since.
-		thread.UpdatedAt, thread.RepliedAt = now, &now
-		if err := checkOne(tx.gorm.Model(&ThreadRow{}).Where("id = ?", threadID).Updates(map[string]any{"updated_at": now, "replied_at": now})); err != nil {
-			return fmt.Errorf("thread %s: %w", threadID, err)
-		}
-		report, err = tx.reportToParent(thread, turn)
+		var err error
+		thread, turn, closed, report, err = tx.endTurn(threadID, turn)
 		return err
 	})
 	if err != nil {
@@ -375,88 +336,82 @@ func (d *DB) EndTurn(threadID string, turn TurnRow) (ThreadRow, TurnRow, []ItemR
 	return thread, turn, closed, report, nil
 }
 
-// AfterAnswer settles the turn in progress whose run gave its final answer. Input that came after the answer makes it
-// ready, to answer that too; subagents it launched that still run make it wait on them, since a turn ends only once
-// its subagents reported. Otherwise it returns TurnCompleted, for the caller to end the turn.
-func (d *DB) AfterAnswer(turnID string) (TurnStatus, error) {
-	next := TurnCompleted
+func (tx *DB) endTurn(threadID string, turn TurnRow) (ThreadRow, TurnRow, []ItemRow, *SubagentReport, error) {
+	active, err := tx.ActiveTurn(threadID)
+	if errors.Is(err, ErrNotFound) || (err == nil && active.ID != turn.ID) {
+		return ThreadRow{}, TurnRow{}, nil, nil, fmt.Errorf("turn %s is not in progress", turn.ID)
+	}
+	if err != nil {
+		return ThreadRow{}, TurnRow{}, nil, nil, err
+	}
+	now := time.Now().UTC()
+	turn.ThreadID, turn.Seq, turn.CompletedAt = threadID, active.Seq, &now
+	if err := tx.updateTurn(turn); err != nil {
+		return ThreadRow{}, TurnRow{}, nil, nil, err
+	}
+	var open, closed []ItemRow
+	if err := tx.gorm.Where("thread_id = ? AND turn_id = ? AND status IN ('pending', 'inProgress')", threadID, turn.ID).Order("seq").Find(&open).Error; err != nil {
+		return ThreadRow{}, TurnRow{}, nil, nil, err
+	}
+	for _, it := range open {
+		it.Status = ItemFailed
+		it.Error = fmt.Sprintf("the turn ended (%s) before this item finished", turn.Status)
+		it.CompletedAt = &now
+		if _, _, err := tx.saveItemOf(threadID, it); err != nil {
+			return ThreadRow{}, TurnRow{}, nil, nil, err
+		}
+		closed = append(closed, it)
+	}
+	thread, err := tx.ThreadRow(threadID)
+	if err != nil {
+		return ThreadRow{}, TurnRow{}, nil, nil, err
+	}
+	// The turn's end is news to whoever has not read the thread since.
+	thread.UpdatedAt, thread.RepliedAt = now, &now
+	if err := checkOne(tx.gorm.Model(&ThreadRow{}).Where("id = ?", threadID).Updates(map[string]any{"updated_at": now, "replied_at": now})); err != nil {
+		return ThreadRow{}, TurnRow{}, nil, nil, fmt.Errorf("thread %s: %w", threadID, err)
+	}
+	report, err := tx.reportToParent(thread, turn)
+	if err != nil {
+		return ThreadRow{}, TurnRow{}, nil, nil, err
+	}
+	return thread, turn, closed, report, nil
+}
+
+// AfterAnswer settles the turn in progress whose run gave its final answer, and says what became of it by the status
+// of the turn it returns. Input that came after the answer makes it ready, to answer that too; subagents it launched
+// that still run make it wait on them, since a turn ends only once its subagents reported. Otherwise it ends
+// completed, as EndTurn ends a turn, in the same write as the look: a message cannot come to the turn between them
+// and be left unanswered.
+func (d *DB) AfterAnswer(threadID string, turn TurnRow) (ThreadRow, TurnRow, []ItemRow, *SubagentReport, error) {
+	var thread ThreadRow
+	var closed []ItemRow
+	var report *SubagentReport
 	err := d.Tx(func(tx *DB) error {
-		more, err := tx.InputAfterAnswer(turnID)
+		more, err := tx.InputAfterAnswer(turn.ID)
 		if err != nil {
 			return err
 		}
-		if more {
-			next = TurnReady
-		} else if running, err := tx.RunningSubagents(turnID); err != nil {
+		running, err := tx.RunningSubagents(turn.ID)
+		if err != nil {
 			return err
-		} else if len(running) > 0 {
-			next = TurnWaitingOnAgent
 		}
-		if next == TurnCompleted {
-			return nil
+		switch {
+		case more:
+			turn.Status = TurnReady
+		case len(running) > 0:
+			turn.Status = TurnWaitingOnAgent
+		default:
+			turn.Status = TurnCompleted
+			thread, turn, closed, report, err = tx.endTurn(threadID, turn)
+			return err
 		}
-		return checkOne(tx.gorm.Model(&TurnRow{}).Where("id = ? AND status = ?", turnID, TurnInProgress).Update("status", next))
+		return checkOne(tx.gorm.Model(&TurnRow{}).Where("id = ? AND status = ?", turn.ID, TurnInProgress).Update("status", turn.Status))
 	})
 	if err != nil {
-		return "", fmt.Errorf("storage: settle the answer of turn %s: %w", turnID, err)
+		return ThreadRow{}, TurnRow{}, nil, nil, fmt.Errorf("storage: settle the answer of turn %s: %w", turn.ID, err)
 	}
-	return next, nil
-}
-
-func (d *DB) FinalAnswer(threadID, turnID string) (string, error) {
-	var row ItemRow
-	err := notFound(d.gorm.Where("thread_id = ? AND turn_id = ? AND type = 'agentMessage' AND status = 'completed'", threadID, turnID).Order("seq DESC").Take(&row).Error)
-	return row.Text, err
-}
-
-const (
-	compactedItem = "type = 'contextCompaction' AND status = 'completed'"
-	// carriedItem marks the items before the latest compaction whose effect outlasts it: user messages, which the
-	// compacted history quotes; calls allowed for the conversation; and loaded tools and skills, which stay active.
-	carriedItem = "type = 'userMessage' OR (type = 'toolCall' AND (approval ->> '$.decision' = 'acceptForSession' OR (status = 'completed' AND (tool = 'load_tools' OR result -> '$.artifacts' IS NOT NULL))))"
-)
-
-// conversationOrder is the order of a thread's items: by their turns, and within a turn as they were written. A turn
-// submitted behind another has its message written first, yet it follows all of that turn.
-const conversationOrder = "turn_seq, seq"
-
-// position is where an item stands in its thread's conversationOrder.
-type position struct{ TurnSeq, Seq int }
-
-// latestCompaction is the position of the thread's latest completed compaction up to the turn numbered upTo, or the
-// zero position, before every item, when there is none.
-func (d *DB) latestCompaction(threadID string, upTo int) (position, error) {
-	var at []position
-	err := d.gorm.Table("items INDEXED BY items_compactions").Where("thread_id = ? AND turn_seq <= ? AND "+compactedItem, threadID, upTo).
-		Order("turn_seq DESC, seq DESC").Limit(1).Select("turn_seq, seq").Scan(&at).Error
-	if err != nil || len(at) == 0 {
-		return position{}, err
-	}
-	return at[0], nil
-}
-
-// RunItems reads, in order, the items a run of the turn numbered upTo works from: of that turn and those before it,
-// every item from the latest completed compaction on, and before it only the carried ones, without their native
-// records. The turns after it, which wait for it, are not its conversation yet. A run that needs more of the earlier
-// items must widen carriedItem and its index. INDEXED BY makes a condition that drifted from its index an error.
-func (d *DB) RunItems(threadID string, upTo int) ([]ItemRow, error) {
-	var rows []ItemRow
-	err := d.Tx(func(tx *DB) error {
-		from, err := tx.latestCompaction(threadID, upTo)
-		if err != nil {
-			return err
-		}
-		if err := tx.gorm.Table("items INDEXED BY items_carried").Omit("native").Where("thread_id = ? AND (turn_seq, seq) < (?, ?) AND ("+carriedItem+")", threadID, from.TurnSeq, from.Seq).Order(conversationOrder).Find(&rows).Error; err != nil {
-			return err
-		}
-		var recent []ItemRow
-		if err := tx.gorm.Table("items INDEXED BY items_thread_order").Where("thread_id = ? AND (turn_seq, seq) >= (?, ?) AND turn_seq <= ?", threadID, from.TurnSeq, from.Seq, upTo).Order(conversationOrder).Find(&recent).Error; err != nil {
-			return err
-		}
-		rows = append(rows, recent...)
-		return nil
-	})
-	return rows, err
+	return thread, turn, closed, report, nil
 }
 
 func (d *DB) TurnItems(turnID string) ([]ItemRow, error) {

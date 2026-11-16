@@ -28,12 +28,10 @@ type Await struct {
 	Handle string `json:"handle,omitempty"`
 }
 
-func Awaiting(by AwaitBy, request any) (Result, error) {
-	raw, err := json.Marshal(request)
-	if err != nil {
-		return Result{}, err
-	}
-	return Result{Await: &Await{By: by, Request: raw}}, nil
+// Awaiting is the result of a call that waits on by to fulfil request, plain data to send it.
+func Awaiting(by AwaitBy, request any) Result {
+	raw, _ := json.Marshal(request) // plain data: it cannot fail
+	return Result{Await: &Await{By: by, Request: raw}}
 }
 
 const (

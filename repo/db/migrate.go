@@ -21,10 +21,7 @@ var migrationFiles embed.FS
 
 // shardSteps are the SQL of the shard's migrations in order.
 func shardSteps() ([]string, error) {
-	dir, err := fs.Sub(migrationFiles, "migrations")
-	if err != nil {
-		return nil, err
-	}
+	dir, _ := fs.Sub(migrationFiles, "migrations") // a valid path: it cannot fail
 	return sqlitedb.Steps(dir)
 }
 

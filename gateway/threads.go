@@ -3,7 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/base64"
-	"strings"
+	"encoding/json"
 
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/repo/db"
@@ -23,9 +23,6 @@ func threadPage(resume bool) func(*conn, context.Context, ThreadPageParams) (Thr
 			return ThreadPageResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "limit must be 1 to %d and beforeSeq not negative", maxItems)
 		}
 		store := c.s.db.WithContext(ctx)
-		if _, err := store.ThreadOf(c.user, p.ThreadID); err != nil {
-			return ThreadPageResult{}, nil, err
-		}
 		c.rpc.HoldUntilReplied()
 		view, more, err := store.ThreadPage(c.user, p.ThreadID, p.BeforeSeq, p.Limit)
 		if err != nil {
@@ -88,42 +85,17 @@ func (c *conn) threadList(ctx context.Context, p db.ThreadFilter) (ThreadListRes
 	return ThreadListResult{Data: each(threads, threadSummary), HasMore: more}, nil, nil
 }
 
-func (c *conn) turnStart(ctx context.Context, p TurnStartParams) (TurnResult, func(), error) {
-	in, err := agentInput(p.Input)
-	if err != nil {
-		return TurnResult{}, nil, err
-	}
-	in.Connection = p.Connection
-	turn, err := c.s.service.StartTurn(ctx, c.user, p.ThreadID, in)
-	if err != nil {
-		return TurnResult{}, nil, err
-	}
-	return TurnResult{Turn: turnRow(turn)}, nil, nil
-}
-
-func (c *conn) turnSteer(ctx context.Context, p TurnSteerParams) (TurnSteerResult, func(), error) {
-	if p.ExpectedTurnID == "" {
-		return TurnSteerResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "expectedTurnId is required")
-	}
-	in, err := agentInput(p.Input)
-	if err != nil {
-		return TurnSteerResult{}, nil, err
-	}
-	turn, err := c.s.service.SteerTurn(ctx, c.user, p.ThreadID, p.ExpectedTurnID, in)
-	if err != nil {
-		return TurnSteerResult{}, nil, err
-	}
-	return TurnSteerResult{TurnID: turn.ID}, nil, nil
-}
-
-func (c *conn) turnInterrupt(ctx context.Context, p TurnInterruptParams) (Empty, func(), error) {
-	if strings.TrimSpace(p.TurnID) == "" {
-		return Empty{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "turnId is required")
-	}
-	return Empty{}, nil, c.s.service.InterruptTurn(c.user, p.ThreadID, p.TurnID)
-}
-
 func (c *conn) attachmentRead(ctx context.Context, p AttachmentReadParams) (AttachmentReadResult, func(), error) {
 	att, data, err := c.s.service.ReadAttachment(ctx, c.user, p.ThreadID, p.AttachmentID)
 	return AttachmentReadResult{Attachment: att, Data: base64.StdEncoding.EncodeToString(data)}, nil, err
+}
+
+const pageBytes = 4 << 20
+
+func itemBytes(it db.ItemRow) int {
+	raw, err := json.Marshal(it)
+	if err != nil {
+		return pageBytes
+	}
+	return len(raw)
 }

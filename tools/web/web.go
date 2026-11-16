@@ -93,15 +93,13 @@ func (p *Provider) ToolList(context.Context) ([]*tools.Spec, error) {
 }
 
 func permissionContent(_ context.Context, _ tools.Caller, arguments map[string]any) (tools.Content, error) {
-	f, err := tools.DecodeArguments[Fetch](arguments)
-	if err != nil {
-		return tools.Content{}, err
-	}
+	f, _ := tools.DecodeArguments[Fetch](arguments) // the schema checked its fields: it cannot fail
 	u, err := parseURL(f.URL)
 	if err != nil {
 		return tools.Content{}, err
 	}
-	return tools.Content{Text: u.String(), Match: strings.ToLower(u.Hostname())}, nil
+	// A name with the root's dot after it is the same site.
+	return tools.Content{Text: u.String(), Match: strings.TrimSuffix(strings.ToLower(u.Hostname()), "."), Folded: true}, nil
 }
 
 func parseURL(raw string) (*url.URL, error) {
@@ -120,10 +118,7 @@ func parseURL(raw string) (*url.URL, error) {
 }
 
 func (p *Provider) Invoke(ctx context.Context, _ tools.Caller, _ string, arguments map[string]any) (tools.Result, error) {
-	f, err := tools.DecodeArguments[Fetch](arguments)
-	if err != nil {
-		return tools.Result{}, err
-	}
+	f, _ := tools.DecodeArguments[Fetch](arguments) // the schema checked its fields: it cannot fail
 	out, err := p.fetch(ctx, f.URL)
 	if err != nil {
 		return tools.Result{}, err

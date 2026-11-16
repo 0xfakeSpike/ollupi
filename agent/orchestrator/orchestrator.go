@@ -2,15 +2,16 @@ package orchestrator
 
 import (
 	"context"
+	"log/slog"
+	"sync"
+	"time"
+
 	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/resources"
 	"github.com/0xfakeSpike/ollupi/repo/blobs"
 	"github.com/0xfakeSpike/ollupi/repo/db"
-	"log/slog"
-	"sync"
-	"time"
 )
 
 const (

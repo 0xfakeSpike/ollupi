@@ -21,8 +21,8 @@ func TestAWorkspaceMovesWithTheFilesInIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	// Without BoxFor the agent works on this machine's files, as the desktop's backend does.
-	ag := service.New(service.Config{DB: store})
+	// here is this machine's files, as the desktop's backend gives its one user.
+	ag := service.New(service.Config{DB: store, BoxFor: here})
 
 	root := canonical(t, t.TempDir())
 	if err := os.WriteFile(filepath.Join(root, "notes.txt"), []byte("kept\n"), 0o644); err != nil {
@@ -71,7 +71,7 @@ func TestAWorkspaceDoesNotMoveOntoAFolderThatIsTaken(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	ag := service.New(service.Config{DB: store})
+	ag := service.New(service.Config{DB: store, BoxFor: here})
 
 	root := canonical(t, t.TempDir())
 	w, err := ag.AddWorkspace(ctx, db.DefaultUser, root, "app")

@@ -1,4 +1,4 @@
-package runtime
+package role
 
 import (
 	"context"
@@ -13,49 +13,53 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo/db"
-	"github.com/0xfakeSpike/ollupi/tools"
-	"github.com/0xfakeSpike/ollupi/tools/workspace"
 	"github.com/google/uuid"
 )
 
 // contextInput is what the next request is built from: the run's items, the role's system prompt and the offered
 // tools, as they are now.
 func (rt *Runtime) contextInput() (contextmanager.Input, error) {
-	offered, deferred := rt.Role.Offer()
-	// The project is named to a run that has the tools that work in it.
-	root := ""
-	if slices.ContainsFunc(slices.Concat(offered, deferred), func(d tools.ToolDescriptor) bool { return d.Provider == workspace.ProviderName }) {
-		root = rt.Role.Workspace().RootPath
-	}
-	system, err := rt.Role.System(root, deferred)
+	system, err := rt.System()
 	if err != nil {
-		return contextmanager.Input{}, fmt.Errorf("runtime: %w", err)
+		return contextmanager.Input{}, fmt.Errorf("role: %w", err)
 	}
-	return contextmanager.Input{Items: rt.Role.Conversation(), System: system, Tools: contextmanager.Specs(offered)}, nil
+	offered, _ := rt.Offer()
+	return contextmanager.Input{Items: rt.conversation(), System: system, Tools: contextmanager.Specs(offered)}, nil
 }
 
-func (rt *Runtime) respond(ctx context.Context, choice llm.ToolChoice) (llm.ChatResponse, error) {
+// respond asks the model for its next response, with the tools choice allows, and records it: what it streams as it
+// comes, its answer and its calls, pending. The role takes in the user's memory first, as it does again after the
+// conversation was compacted to fit the window.
+func (rt *Runtime) respond(ctx context.Context, choice llm.ToolChoice) error {
+	if err := rt.loadMemory(); err != nil {
+		return err
+	}
 	in, err := rt.contextInput()
 	if err != nil {
-		return llm.ChatResponse{}, err
+		return err
 	}
-	prompt, err := rt.Role.Window().Build(in)
+	prompt, err := rt.window.Build(in)
 	if err != nil {
-		return llm.ChatResponse{}, fmt.Errorf("runtime: %w", err)
+		return fmt.Errorf("role: %w", err)
 	}
 	if prompt.NeedsCompaction {
 		if err := rt.compact(ctx); err != nil {
-			return llm.ChatResponse{}, err
+			return err
+		}
+		if err := rt.loadMemory(); err != nil {
+			return err
 		}
 		if in, err = rt.contextInput(); err != nil {
-			return llm.ChatResponse{}, err
+			return err
 		}
-		if prompt, err = rt.Role.Window().Build(in); err != nil {
-			return llm.ChatResponse{}, fmt.Errorf("runtime: after compaction: %w", err)
+		if prompt, err = rt.window.Build(in); err != nil {
+			return fmt.Errorf("role: after compaction: %w", err)
 		}
 	}
-	call := rt.modelCalls() + 1
-	r := newResponseRecorder(rt.Role.Turn().ID, prompt.Stats)
+	for _, it := range in.Items {
+		prompt.Stats.ThroughSeq = max(prompt.Stats.ThroughSeq, it.Seq)
+	}
+	r := newResponseRecorder(rt.turn.ID, prompt.Stats)
 	// The text streams into items recorded as it starts and told as it comes; one not recorded stops the rest.
 	var streamErr error
 	started := time.Now()
@@ -73,7 +77,7 @@ func (rt *Runtime) respond(ctx context.Context, choice llm.ToolChoice) (llm.Chat
 				*s.item = stored
 			}
 			it := *s.item
-			rt.Events.Emit(event.Event{Kind: event.ItemDelta, Thread: rt.Role.Thread(), Turn: rt.Role.Turn(), Item: &it, Delta: s.text})
+			rt.Events.Emit(event.Event{Kind: event.ItemDelta, Thread: rt.thread, Turn: rt.turn, Item: &it, Delta: s.text})
 		}
 	})
 	r.usage = responseUsage(resp)
@@ -82,20 +86,20 @@ func (rt *Runtime) respond(ctx context.Context, choice llm.ToolChoice) (llm.Chat
 		err = checkResponse(resp, choice)
 	}
 	if err != nil {
-		cause := fmt.Errorf("runtime: model call %d: %w", call, err)
+		cause := fmt.Errorf("role: model call: %w", err)
 		for _, it := range r.fail(cause) {
 			if _, rerr := rt.record(it); rerr != nil {
-				return llm.ChatResponse{}, errors.Join(cause, rerr)
+				return errors.Join(cause, rerr)
 			}
 		}
-		return llm.ChatResponse{}, cause
+		return cause
 	}
 	if streamErr != nil {
-		return llm.ChatResponse{}, streamErr
+		return streamErr
 	}
 	for _, it := range r.finish(resp) {
 		if _, err := rt.record(it); err != nil {
-			return llm.ChatResponse{}, err
+			return err
 		}
 	}
 	cutOff := resp.FinishReason == "length"
@@ -107,10 +111,28 @@ func (rt *Runtime) respond(ctx context.Context, choice llm.ToolChoice) (llm.Chat
 			it.Status, it.Error, it.CompletedAt = db.ItemFailed, cutOffCall, &now
 		}
 		if _, err := rt.record(it); err != nil {
-			return llm.ChatResponse{}, err
+			return err
 		}
 	}
-	return resp, nil
+	return nil
+}
+
+const finalAnswerNotice = `[runtime] Tool use has stopped: %s.
+Do not call tools. Write the final answer to the user now, in their language: report what was accomplished, citing the observations above; state clearly what could not be done and why; and give the most useful next step.`
+
+// conclude tells the model that tool use stopped, and why, and asks it for its final answer.
+func (rt *Runtime) conclude(ctx context.Context, reason string) error {
+	now := time.Now().UTC()
+	if _, err := rt.record(db.ItemRow{
+		ID: uuid.NewString(), TurnID: rt.turn.ID, Type: db.ItemError, Status: db.ItemCompleted,
+		Text: fmt.Sprintf(finalAnswerNotice, reason), StartedAt: now, CompletedAt: &now,
+	}); err != nil {
+		return err
+	}
+	if err := rt.respond(ctx, llm.ToolChoiceNone); err != nil {
+		return fmt.Errorf("%w (tool use stopped: %s)", err, reason)
+	}
+	return nil
 }
 
 // cutOffCall is why no call of a response the output limit cut off runs: the last may be incomplete, and the model
@@ -120,12 +142,12 @@ const cutOffCall = "not run: the response reached the model's output limit befor
 func checkResponse(resp llm.ChatResponse, choice llm.ToolChoice) error {
 	if len(resp.Message.ToolCalls) > 0 {
 		if choice == llm.ToolChoiceNone {
-			return fmt.Errorf("model requested tools after tool use was stopped")
+			return errors.New("model requested tools after tool use was stopped")
 		}
 		return nil
 	}
 	if resp.FinishReason == "length" {
-		return fmt.Errorf("final answer truncated by the model output limit")
+		return errors.New("final answer truncated by the model output limit")
 	}
 	if strings.TrimSpace(resp.Message.Content) == "" {
 		return fmt.Errorf("model returned neither a tool call nor an answer (finish_reason=%s)", resp.FinishReason)
@@ -138,12 +160,12 @@ func (rt *Runtime) compact(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	prompt, err := rt.Role.Window().CompactionPrompt(in)
+	prompt, err := rt.window.CompactionPrompt(in)
 	if err != nil {
-		return fmt.Errorf("runtime: %w", err)
+		return fmt.Errorf("role: %w", err)
 	}
 	it, err := rt.record(db.ItemRow{
-		ID: uuid.NewString(), TurnID: rt.Role.Turn().ID, Type: db.ItemContextCompaction, Status: db.ItemInProgress, StartedAt: time.Now().UTC(),
+		ID: uuid.NewString(), TurnID: rt.turn.ID, Type: db.ItemContextCompaction, Status: db.ItemInProgress, StartedAt: time.Now().UTC(),
 		ResponseID: uuid.NewString(), ContextStats: &prompt.Stats,
 	})
 	if err != nil {
@@ -159,87 +181,87 @@ func (rt *Runtime) compact(ctx context.Context) error {
 	case len(resp.Message.ToolCalls) > 0 || summary == "":
 		err = fmt.Errorf("the model returned no summary (finish_reason=%s)", resp.FinishReason)
 	case resp.FinishReason == "length":
-		err = fmt.Errorf("the summary was truncated by the model output limit")
+		err = errors.New("the summary was truncated by the model output limit")
 	}
 	if err != nil {
 		if _, rerr := rt.complete(withError(it, err.Error()), db.ItemFailed); rerr != nil {
 			return rerr
 		}
-		return fmt.Errorf("runtime: compaction: %w", err)
+		return fmt.Errorf("role: compaction: %w", err)
 	}
 	it.Text = summary
-	if _, err := rt.complete(it, db.ItemCompleted); err != nil {
-		return err
-	}
-	return rt.loadMemory()
+	_, err = rt.complete(it, db.ItemCompleted)
+	return err
 }
 
 func (rt *Runtime) send(ctx context.Context, prompt contextmanager.Prompt, choice llm.ToolChoice, onDelta func(llm.Delta)) (llm.ChatResponse, error) {
-	settings, err := rt.DB.Settings(rt.Role.Thread().UserID)
-	if err != nil {
-		return llm.ChatResponse{}, fmt.Errorf("runtime: read the redaction setting: %w", err)
-	}
-	mask := rt.Role.Mask
-	if !settings.Redaction {
-		mask = func(s string) string { return s }
-	}
+	var err error
 	messages := make([]llm.ChatMessage, 0, len(prompt.Messages)+1)
-	messages = append(messages, llm.ChatMessage{Role: llm.RoleSystem, Content: mask(prompt.System)})
+	messages = append(messages, llm.ChatMessage{Role: llm.RoleSystem, Content: rt.mask(prompt.System)})
 	for _, message := range prompt.Messages {
-		message.Content, message.ReasoningContent = mask(message.Content), mask(message.ReasoningContent)
-		if message.Parts, err = rt.loadParts(ctx, message.Parts, mask); err != nil {
+		message.Content, message.ReasoningContent = rt.mask(message.Content), rt.mask(message.ReasoningContent)
+		if message.Parts, err = rt.loadParts(ctx, message.Parts); err != nil {
 			return llm.ChatResponse{}, err
 		}
 		message.ToolCalls = slices.Clone(message.ToolCalls)
 		for i := range message.ToolCalls {
-			message.ToolCalls[i].Arguments = mask(message.ToolCalls[i].Arguments)
+			message.ToolCalls[i].Arguments = rt.mask(message.ToolCalls[i].Arguments)
 		}
 		messages = append(messages, message)
 	}
-	content, reasoning := rt.Role.Stream(), rt.Role.Stream()
+	content, reasoning := rt.redactor.Stream(), rt.redactor.Stream()
 	restored := func(d llm.Delta) {
 		d.Content, d.Reasoning = content.Write(d.Content), reasoning.Write(d.Reasoning)
 		if onDelta != nil && (d.Content != "" || d.Reasoning != "") {
 			onDelta(d)
 		}
 	}
-	offered, _ := rt.Role.Offer()
+	offered, _ := rt.Offer()
 	resp, err := rt.LLM.Chat(ctx, llm.ChatRequest{
-		Model:    rt.Role.Turn().Model,
+		Model:    rt.turn.Model,
 		Messages: messages, Tools: contextmanager.Specs(offered), ToolChoice: choice,
 		InputTokens: prompt.Stats.CalibratedTokens,
 	}, restored)
 	if rest := (llm.Delta{Content: content.Flush(), Reasoning: reasoning.Flush()}); onDelta != nil && (rest.Content != "" || rest.Reasoning != "") {
 		onDelta(rest)
 	}
-	resp.Message.Content = rt.Role.Restore(resp.Message.Content)
-	resp.Message.ReasoningContent = rt.Role.Restore(resp.Message.ReasoningContent)
+	resp.Message.Content = rt.redactor.Restore(resp.Message.Content)
+	resp.Message.ReasoningContent = rt.redactor.Restore(resp.Message.ReasoningContent)
 	for i := range resp.Message.ToolCalls {
-		resp.Message.ToolCalls[i].Arguments = rt.Role.RestoreJSON(resp.Message.ToolCalls[i].Arguments)
+		resp.Message.ToolCalls[i].Arguments = rt.redactor.RestoreJSON(resp.Message.ToolCalls[i].Arguments)
 	}
 	if usage := responseUsage(resp); usage != nil {
-		rt.Role.AddUsage(*usage)
+		rt.usage.Add(*usage)
 	}
 	return resp, err
 }
 
-func (rt *Runtime) loadParts(ctx context.Context, parts []llm.ContentPart, mask func(string) string) ([]llm.ContentPart, error) {
+// mask hides the user's secrets from the model, with their key, in what it is sent, when their settings say to; the
+// redactor puts them back in what it answers.
+func (rt *Runtime) mask(text string) string {
+	if !rt.masking {
+		return text
+	}
+	return rt.redactor.Mask(text)
+}
+
+func (rt *Runtime) loadParts(ctx context.Context, parts []llm.ContentPart) ([]llm.ContentPart, error) {
 	if len(parts) == 0 {
 		return nil, nil
 	}
 	out := slices.Clone(parts)
 	for i, p := range out {
 		if rt.Attachments == nil {
-			return nil, fmt.Errorf("runtime: the conversation has attachments, but this agent keeps none")
+			return nil, fmt.Errorf("role: the conversation has attachments, but this agent keeps none")
 		}
 		data, err := rt.Attachments.Get(ctx, p.Path)
 		if err != nil {
-			return nil, fmt.Errorf("runtime: attachment %s: %w", p.Name, err)
+			return nil, fmt.Errorf("role: attachment %s: %w", p.Name, err)
 		}
 		if p.Type == llm.PartImage {
 			out[i].Data = data
 		} else {
-			out[i].Text = mask("--- file: " + p.Name + " ---\n" + string(data))
+			out[i].Text = rt.mask("--- file: " + p.Name + " ---\n" + string(data))
 		}
 	}
 	return out, nil
@@ -247,7 +269,7 @@ func (rt *Runtime) loadParts(ctx context.Context, parts []llm.ContentPart, mask 
 
 // logModelCall records one model request: its model, duration, tokens and how it ended, never its text.
 func (rt *Runtime) logModelCall(ctx context.Context, msg string, started time.Time, resp llm.ChatResponse, err error) {
-	attrs := []any{"thread", rt.Role.Thread().ID, "turn", rt.Role.Turn().ID, "model", rt.Role.Turn().Model.Name, "ms", time.Since(started).Milliseconds()}
+	attrs := []any{"thread", rt.thread.ID, "turn", rt.turn.ID, "model", rt.turn.Model.Name, "ms", time.Since(started).Milliseconds()}
 	if err != nil {
 		slog.WarnContext(ctx, msg+" failed", append(attrs, "err", err)...)
 		return
@@ -266,22 +288,12 @@ func responseUsage(resp llm.ChatResponse) *db.Usage {
 	}
 }
 
-func (rt *Runtime) modelCalls() int {
-	seen := map[string]bool{}
-	for _, it := range rt.Role.Items() {
-		if it.ResponseID != "" && it.Type != db.ItemContextCompaction {
-			seen[it.ResponseID] = true
-		}
-	}
-	return len(seen)
-}
-
 func (rt *Runtime) callItem(responseID string, call llm.ToolCall) db.ItemRow {
 	it := db.ItemRow{
-		ID: uuid.NewString(), TurnID: rt.Role.Turn().ID, Type: db.ItemToolCall, Status: db.ItemPending,
+		ID: uuid.NewString(), TurnID: rt.turn.ID, Type: db.ItemToolCall, Status: db.ItemPending,
 		ResponseID: responseID, CallID: call.ID, Tool: call.Name, Arguments: call.Arguments, StartedAt: time.Now().UTC(),
 	}
-	if d, ok := rt.Role.Tool(call.Name); ok {
+	if d, ok := rt.tool(call.Name); ok {
 		it.Server = d.Provider
 		annotations := d.Annotations
 		it.Annotations = &annotations

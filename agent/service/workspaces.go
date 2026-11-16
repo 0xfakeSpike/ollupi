@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/0xfakeSpike/ollupi/agent/event"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/repo/db"
@@ -174,10 +174,10 @@ func (sv *Service) updateWorkspaceSettings(user, id string, change func(permissi
 }
 
 func (sv *Service) changeWorkspace(user, id string, change func(*db.WorkspaceRow)) (db.WorkspaceRow, error) {
-	w, err := sv.cfg.DB.UpdateWorkspace(user, id, func(w db.WorkspaceRow) (db.WorkspaceRow, error) {
+	w, err := sv.cfg.DB.UpdateWorkspace(user, id, func(w db.WorkspaceRow) db.WorkspaceRow {
 		w.UpdatedAt = time.Now().UTC()
 		change(&w)
-		return w, nil
+		return w
 	})
 	if errors.Is(err, db.ErrNotFound) {
 		return db.WorkspaceRow{}, fmt.Errorf("service: workspace %s: %w", id, db.ErrNotFound)
@@ -190,9 +190,6 @@ func (sv *Service) changeWorkspace(user, id string, change func(*db.WorkspaceRow
 }
 
 func (sv *Service) validateLayer(user string, base []permission.Layer, previous permission.Settings, layer permission.Layer) error {
-	if sv.res == nil {
-		return fmt.Errorf("service: the tool registry is not ready")
-	}
 	registry, err := sv.res.Registry(user)
 	if err != nil {
 		return err
@@ -216,4 +213,27 @@ func workspaceName(name string) (string, error) {
 		return "", fmt.Errorf("service: %w: a workspace name must be 1 to 120 characters", ErrInvalidName)
 	}
 	return name, nil
+}
+
+func (sv *Service) workspaceOf(id db.Ref) (db.WorkspaceRow, error) {
+	if id == "" {
+		return db.WorkspaceRow{}, nil
+	}
+	w, err := sv.cfg.DB.Workspace(string(id))
+	if err != nil {
+		return db.WorkspaceRow{}, fmt.Errorf("service: workspace %s: %w", id, err)
+	}
+	return w, nil
+}
+
+// workspaceFor reads a workspace the user names; one of another user's does not exist for them.
+func (sv *Service) workspaceFor(user string, id db.Ref) (db.WorkspaceRow, error) {
+	if id == "" {
+		return db.WorkspaceRow{}, nil
+	}
+	w, err := sv.cfg.DB.WorkspaceOf(user, string(id))
+	if err != nil {
+		return db.WorkspaceRow{}, fmt.Errorf("service: workspace %s: %w", id, err)
+	}
+	return w, nil
 }

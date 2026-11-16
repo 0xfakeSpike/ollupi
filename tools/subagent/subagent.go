@@ -90,21 +90,11 @@ func (t *Tools) ToolList(context.Context) ([]*tools.Spec, error) {
 
 // Invoke writes the subagent of the kind whose tool was called and returns at once: its report comes back later.
 func (t *Tools) Invoke(ctx context.Context, caller tools.Caller, name string, arguments map[string]any) (tools.Result, error) {
-	if _, ok := Kinds[name]; !ok {
-		return tools.Result{}, fmt.Errorf("%q launches no subagent", name)
-	}
-	c, err := tools.DecodeArguments[Call](arguments)
-	if err != nil {
-		return tools.Result{}, err
-	}
+	c, _ := tools.DecodeArguments[Call](arguments) // the schema checked its fields: it cannot fail
 	if strings.TrimSpace(c.Prompt) == "" || strings.TrimSpace(c.Description) == "" {
 		return tools.Result{}, fmt.Errorf("description and prompt must not be blank")
 	}
-	item := caller.Item
-	if item == "" {
-		return tools.Result{}, fmt.Errorf("a subagent is launched only by a call of a turn")
-	}
-	child, err := t.db.WriteSubagent(caller.ThreadID, item, c.Description, db.TurnRow{Agent: name}, c.Prompt)
+	child, err := t.db.WriteSubagent(caller.ThreadID, caller.Item, c.Description, db.TurnRow{Agent: name}, c.Prompt)
 	if err != nil {
 		return tools.Result{}, err
 	}

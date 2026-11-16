@@ -99,6 +99,7 @@ func main() {
 	// harness kills the run at its time limit.
 	changed := make(chan struct{}, 1)
 	ag = service.New(service.Config{
+		BoxFor:      func(string) (sandbox.Box, error) { return sandbox.Here(), nil },
 		Name:        "ollupi",
 		Models:      []llm.Model{{Name: model, Connection: "model"}},
 		Connections: map[string]llm.Client{"model": client},

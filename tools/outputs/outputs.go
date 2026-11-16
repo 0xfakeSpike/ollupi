@@ -55,16 +55,11 @@ func (*Provider) ToolList(context.Context) ([]*tools.Spec, error) {
 
 func (p *Provider) Invoke(ctx context.Context, caller tools.Caller, _ string, args map[string]any) (tools.Result, error) {
 	id, _ := args["output_id"].(string)
-	offset, err := intArg(args, "offset", 0)
-	if err != nil {
-		return tools.Result{}, err
-	}
-	length, err := intArg(args, "length", defaultReadRunes)
-	if err != nil {
-		return tools.Result{}, err
-	}
-	if offset < 0 || length < 1 || length > maxReadRunes {
-		return tools.Result{}, fmt.Errorf("offset must be at least 0 and length between 1 and %d", maxReadRunes)
+	// The schema holds offset and length to whole numbers in their ranges.
+	offset, _ := args["offset"].(float64)
+	length := float64(defaultReadRunes)
+	if l, ok := args["length"].(float64); ok {
+		length = l
 	}
 	it, err := p.db.Item(id)
 	if errors.Is(err, db.ErrNotFound) || err == nil && (it.ThreadID != caller.ThreadID || !it.IsCall() && it.Type != db.ItemAgentReport || it.Result == nil) {
@@ -78,21 +73,10 @@ func (p *Provider) Invoke(ctx context.Context, caller tools.Caller, _ string, ar
 		return tools.Result{}, err
 	}
 	text := []rune(render.Output(result.Output, result.Err))
-	if offset >= len(text) {
-		return tools.Result{}, fmt.Errorf("offset %d is past the end of the output, which has %d characters", offset, len(text))
+	start := int(offset)
+	if start >= len(text) {
+		return tools.Result{}, fmt.Errorf("offset %d is past the end of the output, which has %d characters", start, len(text))
 	}
-	end := min(len(text), offset+length)
-	return tools.Result{Output: fmt.Sprintf("Characters %d-%d of %d:\n%s", offset, end, len(text), string(text[offset:end]))}, nil
-}
-
-func intArg(args map[string]any, name string, fallback int) (int, error) {
-	v, ok := args[name]
-	if !ok {
-		return fallback, nil
-	}
-	f, ok := v.(float64)
-	if !ok || f != float64(int(f)) {
-		return 0, fmt.Errorf("%s must be an integer", name)
-	}
-	return int(f), nil
+	end := min(len(text), start+int(length))
+	return tools.Result{Output: fmt.Sprintf("Characters %d-%d of %d:\n%s", start, end, len(text), string(text[start:end]))}, nil
 }

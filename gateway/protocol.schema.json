@@ -402,6 +402,9 @@
         },
         "calibratedTokens": {
           "type": "integer"
+        },
+        "throughSeq": {
+          "type": "integer"
         }
       },
       "required": [

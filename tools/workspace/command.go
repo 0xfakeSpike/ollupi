@@ -21,8 +21,8 @@ var (
 
 // programOf is the program a command names.
 func programOf(arguments map[string]any) (string, error) {
-	program, ok := arguments["program"].(string)
-	if program = strings.TrimSpace(program); !ok || program == "" {
+	program, _ := arguments["program"].(string)
+	if program = strings.TrimSpace(program); program == "" {
 		return "", errProgram
 	}
 	return program, nil
@@ -33,10 +33,7 @@ func permissionContent(_ context.Context, _ tools.Caller, arguments map[string]a
 	if err != nil {
 		return tools.Content{}, err
 	}
-	args, err := parseExecArgsSlice(arguments["args"])
-	if err != nil {
-		return tools.Content{}, err
-	}
+	args := parseExecArgsSlice(arguments["args"])
 	env, err := commandEnvironment(arguments["env"])
 	if err != nil {
 		return tools.Content{}, err
@@ -127,11 +124,15 @@ func expand(words []string, depth int) ([]string, bool) {
 	return whole, false
 }
 
+// shellFlags are the one-letter options that take no argument in any of the shells: after any other option the next
+// word may be the option's own and not the script, so the command is not read.
+const shellFlags = "aehiklmnuvx"
+
 func shellScript(args []string) (string, bool, bool) {
 	takesC := false
 	for _, a := range args {
 		switch {
-		case len(a) > 1 && a[0] == '-' && a[1] != '-' && onlyLetters(a[1:]):
+		case len(a) > 1 && a[0] == '-' && strings.Trim(a[1:], shellFlags+"c") == "":
 			if strings.ContainsRune(a[1:], 'c') {
 				takesC = true
 			}
@@ -142,15 +143,6 @@ func shellScript(args []string) (string, bool, bool) {
 		}
 	}
 	return "", false, takesC
-}
-
-func onlyLetters(s string) bool {
-	for _, r := range s {
-		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z') {
-			return false
-		}
-	}
-	return true
 }
 
 func isWrapper(name string) bool {

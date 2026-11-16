@@ -65,11 +65,7 @@ func nextBatch(store *db.DB, user string, limit int) (*Batch, error) {
 			if blocked[sourceKey(db.MemorySource{Table: "items", ID: it.ID})] {
 				continue
 			}
-			f, err := itemFact(it)
-			if err != nil {
-				return err
-			}
-			b.Facts = append(b.Facts, f)
+			b.Facts = append(b.Facts, itemFact(it))
 		}
 		batch = b
 		return nil
@@ -99,7 +95,7 @@ func forgottenSources(entries []db.MemoryRow) map[string]bool {
 
 const factRunes = 4000
 
-func itemFact(it db.ItemRow) (Fact, error) {
+func itemFact(it db.ItemRow) Fact {
 	textBound := 3000
 	if it.Type == db.ItemUserMessage {
 		textBound = 1500
@@ -129,11 +125,8 @@ func itemFact(it db.ItemRow) (Fact, error) {
 		data[f.key] = text
 		remaining -= len([]rune(text))
 	}
-	raw, err := json.Marshal(data)
-	if err != nil {
-		return Fact{}, err
-	}
-	return Fact{Source: db.MemorySource{Table: "items", ID: it.ID, OccurredAt: it.StartedAt.UTC().Format(time.RFC3339Nano)}, Data: raw}, nil
+	raw, _ := json.Marshal(data) // strings alone: it cannot fail
+	return Fact{Source: db.MemorySource{Table: "items", ID: it.ID, OccurredAt: it.StartedAt.UTC().Format(time.RFC3339Nano)}, Data: raw}
 }
 
 // clipMemory keeps the first n runes of s, or fewer, so as not to cut a sensitive value in two: the part kept would

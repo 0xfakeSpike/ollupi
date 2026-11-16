@@ -120,7 +120,8 @@ func TestLoadedToolIsSentWithTheNextRequest(t *testing.T) {
 	}
 	jobs := cron.New(store, time.Local, func(string, string) {})
 	ag := service.New(service.Config{
-		Name: "Ollupi", Models: []llm.Model{{Name: "demo", Connection: "fake"}},
+		BoxFor: here,
+		Name:   "Ollupi", Models: []llm.Model{{Name: "demo", Connection: "fake"}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
 		Providers:   []tools.Provider{githubTools{}, jobs}, Memory: mem, DB: store,

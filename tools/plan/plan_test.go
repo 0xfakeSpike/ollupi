@@ -17,7 +17,7 @@ func TestAPlanHasAtMostOneStepInProgress(t *testing.T) {
 		for i, s := range steps {
 			plan[i] = s
 		}
-		return r.Invoke(context.Background(), tools.Caller{}, Tool, map[string]any{"plan": plan})
+		return r.InvokePrepared(context.Background(), tools.Caller{}, Tool, map[string]any{"plan": plan}, nil)
 	}
 	step := func(text string, status Status) map[string]any {
 		return map[string]any{"step": text, "status": string(status)}
