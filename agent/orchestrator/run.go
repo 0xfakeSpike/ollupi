@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 )
@@ -64,7 +65,8 @@ func (o *Orchestrator) runTurn(ctx context.Context, t db.ThreadRow, turn db.Turn
 	if err != nil {
 		return false, db.Usage{}, err
 	}
-	r, ok := role.New(role.Name(turn.Agent), o.cfg.Name, o.cfg.Prompt, o.cfg.SkillsDir, o.cfg.Settings, o.cfg.Shared, o.cfg.Tools, o.cfg.Memory, window)
+	r, ok := role.New(role.Name(turn.Agent), o.cfg.Name, o.cfg.Prompt, o.cfg.SkillsDir,
+		permission.Deployment{Settings: o.cfg.Settings, Shared: o.cfg.Shared, Tools: o.cfg.Tools}, o.cfg.Memory, window)
 	if !ok {
 		return false, db.Usage{}, fmt.Errorf("orchestrator: turn %s names role %q, which is none of %q", turn.ID, turn.Agent, role.NameValues)
 	}
