@@ -22,10 +22,13 @@ const (
 	ruleOpaque
 )
 
+// A rule's specifier is compared as the content it names is: a command by its program in lower case and its
+// arguments as written, folded content in lower case throughout.
 type rule struct {
 	text    string
 	tool    string
 	pattern *regexp.Regexp
+	folded  *regexp.Regexp
 }
 
 func parseRule(text string) (rule, error) {
@@ -41,6 +44,7 @@ func parseRule(text string) (rule, error) {
 		case strings.TrimSpace(spec) == "":
 			return rule{}, fmt.Errorf("permission rule %q: empty specifier; write the tool name alone to match every call", text)
 		case spec != "*":
+			r.folded = specifierPattern(strings.ToLower(spec))
 			if first, rest, found := strings.Cut(spec, " "); found {
 				spec = strings.ToLower(first) + " " + rest
 			} else {
@@ -74,12 +78,15 @@ func specifierPattern(spec string) *regexp.Regexp {
 	return regexp.MustCompile(expr + "$")
 }
 
-func (r rule) matches(tool, content string, hasContent bool) bool {
+func (r rule) matches(tool, content string, hasContent, folded bool) bool {
 	if r.tool != tool {
 		return false
 	}
 	if r.pattern == nil {
 		return true
+	}
+	if folded {
+		return hasContent && r.folded.MatchString(content)
 	}
 	return hasContent && r.pattern.MatchString(content)
 }
@@ -127,7 +134,7 @@ func (s ruleSet) decide(tool string, content tools.Content, hasContent bool) (ru
 	}{{s.deny, ruleDeny}, {s.ask, ruleAsk}} {
 		for _, r := range group.rules {
 			for _, entry := range entries {
-				if r.matches(tool, entry, hasContent) {
+				if r.matches(tool, entry, hasContent, content.Folded) {
 					return group.kind, r.text
 				}
 			}
@@ -157,7 +164,7 @@ func (s ruleSet) decide(tool string, content tools.Content, hasContent bool) (ru
 	}
 	var used []string
 	for _, part := range content.Parts {
-		i := slices.IndexFunc(s.allow, func(r rule) bool { return r.matches(tool, part, true) })
+		i := slices.IndexFunc(s.allow, func(r rule) bool { return r.matches(tool, part, true, content.Folded) })
 		if i < 0 {
 			return ruleNone, ""
 		}
@@ -195,7 +202,7 @@ func suggest(call Call) []string {
 			spec = words[0] + " " + words[1] + ":*"
 		}
 		text := call.Tool + "(" + spec + ")"
-		if r, err := parseRule(text); err != nil || !r.matches(call.Tool, part, true) {
+		if r, err := parseRule(text); err != nil || !r.matches(call.Tool, part, true, call.Content.Folded) {
 			return nil
 		}
 		if !slices.Contains(out, text) {

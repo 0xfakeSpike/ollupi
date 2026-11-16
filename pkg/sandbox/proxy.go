@@ -23,184 +23,6 @@ const (
 	maxBlockedHosts  = 20
 )
 
-type DomainRules struct {
-	Allowed []string
-	Denied  []string
-}
-
-type domainEntry struct {
-	host string
-	port int
-}
-
-func ParseDomains(entries []string) ([]string, error) {
-	out := make([]string, 0, len(entries))
-	for _, raw := range entries {
-		e, err := parseDomainEntry(raw)
-		if err != nil {
-			return nil, err
-		}
-		s := e.host
-		if e.port != 0 {
-			s = net.JoinHostPort(e.host, strconv.Itoa(e.port))
-		}
-		out = append(out, s)
-	}
-	return out, nil
-}
-
-func parseDomainEntry(raw string) (domainEntry, error) {
-	s := strings.ToLower(strings.TrimSpace(raw))
-	if s == "" || strings.ContainsAny(s, "/@?# \t") || strings.Contains(s, "://") {
-		return domainEntry{}, fmt.Errorf("sandbox: domain %q must be a host name, *.domain, *, or an IP address, with an optional :port", raw)
-	}
-	host, port := s, 0
-	if h, p, err := net.SplitHostPort(s); err == nil {
-		n, err := strconv.Atoi(p)
-		if err != nil || n <= 0 || n > 65535 {
-			return domainEntry{}, fmt.Errorf("sandbox: domain %q has an invalid port", raw)
-		}
-		host, port = h, n
-	}
-	host = strings.Trim(host, "[]")
-	if host != "*." {
-		host = strings.TrimSuffix(host, ".")
-	}
-	switch {
-	case host == "*":
-	case strings.HasPrefix(host, "*."):
-		if !validHostName(host[2:]) {
-			return domainEntry{}, fmt.Errorf("sandbox: domain %q is not a valid wildcard", raw)
-		}
-	case net.ParseIP(host) != nil:
-	case !validHostName(host) || strings.Contains(host, "*"):
-		return domainEntry{}, fmt.Errorf("sandbox: domain %q is not a valid host name", raw)
-	}
-	return domainEntry{host: host, port: port}, nil
-}
-
-func validHostName(h string) bool {
-	if h == "" || len(h) > 253 {
-		return false
-	}
-	for _, label := range strings.Split(h, ".") {
-		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
-			return false
-		}
-		for _, r := range label {
-			if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' || r == '_') {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-type compiledRules struct {
-	allow, deny []domainEntry
-}
-
-func compileRules(r DomainRules) (compiledRules, error) {
-	var c compiledRules
-	for _, list := range []struct {
-		in  []string
-		out *[]domainEntry
-	}{{r.Allowed, &c.allow}, {r.Denied, &c.deny}} {
-		for _, raw := range list.in {
-			e, err := parseDomainEntry(raw)
-			if err != nil {
-				return compiledRules{}, err
-			}
-			*list.out = append(*list.out, e)
-		}
-	}
-	return c, nil
-}
-
-func (e domainEntry) matches(host string, port int) bool {
-	if e.port != 0 && e.port != port {
-		return false
-	}
-	switch {
-	case e.host == "*":
-		return true
-	case strings.HasPrefix(e.host, "*."):
-		return strings.HasSuffix(host, e.host[1:])
-	default:
-		return host == e.host
-	}
-}
-
-func (c compiledRules) decide(host string, port int) (allowed, literal bool) {
-	host = strings.TrimSuffix(strings.ToLower(strings.Trim(host, "[]")), ".")
-	for _, e := range c.deny {
-		if e.matches(host, port) {
-			return false, false
-		}
-	}
-	for _, e := range c.allow {
-		if e.matches(host, port) {
-			allowed = true
-			if e.host == host {
-				literal = true
-			}
-		}
-	}
-	return allowed, literal
-}
-
-var sharedAddressSpace = netip.MustParsePrefix("100.64.0.0/10")
-
-// SensitiveAddr reports whether a is a loopback, private, link-local, shared or multicast address.
-func SensitiveAddr(a netip.Addr) bool {
-	a = a.Unmap()
-	return a.IsLoopback() || a.IsUnspecified() || a.IsPrivate() || sharedAddressSpace.Contains(a) ||
-		a.IsLinkLocalUnicast() || a.IsLinkLocalMulticast() || a.IsInterfaceLocalMulticast() || a.IsMulticast()
-}
-
-// ErrLocalAddress is why PublicTransport refuses a host.
-var ErrLocalAddress = errors.New("resolves to a local or private address")
-
-// PublicTransport carries HTTP requests to public addresses only, and so keeps them off the network this process is on.
-func PublicTransport() *http.Transport {
-	dialer := &net.Dialer{Timeout: 10 * time.Second}
-	return &http.Transport{
-		// No proxy from the environment: a proxy would make the dial below check the proxy instead of the site.
-		Proxy: nil,
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return dialPublic(ctx, dialer, network, addr)
-		},
-		TLSHandshakeTimeout: 10 * time.Second,
-		ForceAttemptHTTP2:   true,
-	}
-}
-
-// dialPublic connects only to public addresses. It checks the addresses the name resolves to at dial time,
-// so a name cannot point at the local network after it was approved.
-func dialPublic(ctx context.Context, dialer *net.Dialer, network, addr string) (net.Conn, error) {
-	host, port, err := net.SplitHostPort(addr)
-	if err != nil {
-		return nil, err
-	}
-	addrs, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
-	if err != nil {
-		return nil, err
-	}
-	var lastErr error = fmt.Errorf("sandbox: %s has no address", host)
-	for _, a := range addrs {
-		if SensitiveAddr(a) {
-			lastErr = fmt.Errorf("sandbox: %s %w", host, ErrLocalAddress)
-			continue
-		}
-		c, err := dialer.DialContext(ctx, network, net.JoinHostPort(a.Unmap().String(), port))
-		if err == nil {
-			return c, nil
-		}
-		lastErr = err
-	}
-	return nil, lastErr
-}
-
 type proxy struct {
 	ln      net.Listener
 	rules   compiledRules
@@ -339,7 +161,7 @@ func (p *proxy) serve() {
 	}
 }
 
-func (p *proxy) dial(ctx context.Context, host string, port int) (net.Conn, error) {
+func (p *proxy) dial(host string, port int) (net.Conn, error) {
 	target := net.JoinHostPort(host, strconv.Itoa(port))
 	allowed, literal := p.rules.decide(host, port)
 	if !allowed {
@@ -350,7 +172,7 @@ func (p *proxy) dial(ctx context.Context, host string, port int) (net.Conn, erro
 	if a, err := netip.ParseAddr(strings.Trim(host, "[]")); err == nil {
 		addrs = []netip.Addr{a}
 	} else {
-		ctx, cancel := context.WithTimeout(ctx, proxyDialTimeout)
+		ctx, cancel := context.WithTimeout(p.ctx, proxyDialTimeout)
 		defer cancel()
 		if addrs, err = p.resolve(ctx, host); err != nil {
 			return nil, err
@@ -364,7 +186,7 @@ func (p *proxy) dial(ctx context.Context, host string, port int) (net.Conn, erro
 			continue
 		}
 		d := net.Dialer{Timeout: proxyDialTimeout}
-		c, err := d.DialContext(ctx, "tcp", netip.AddrPortFrom(a.Unmap(), uint16(port)).String())
+		c, err := d.DialContext(p.ctx, "tcp", netip.AddrPortFrom(a.Unmap(), uint16(port)).String())
 		if err == nil {
 			return c, nil
 		}
@@ -418,7 +240,7 @@ func (p *proxy) serveConnect(c net.Conn, br *bufio.Reader, req *http.Request) {
 		p.refuseHTTP(c, err)
 		return
 	}
-	up, err := p.dial(p.ctx, host, port)
+	up, err := p.dial(host, port)
 	if err != nil {
 		p.refuseHTTP(c, err)
 		return
@@ -452,7 +274,7 @@ func (p *proxy) forward(c net.Conn, req *http.Request) bool {
 		p.refuseHTTP(c, err)
 		return false
 	}
-	up, err := p.dial(p.ctx, host, port)
+	up, err := p.dial(host, port)
 	if err != nil {
 		p.refuseHTTP(c, err)
 		return false
@@ -550,7 +372,7 @@ func (p *proxy) serveSOCKS(c net.Conn, br *bufio.Reader) {
 		return
 	}
 	port := int(binary.BigEndian.Uint16(pb))
-	up, err := p.dial(p.ctx, host, port)
+	up, err := p.dial(host, port)
 	if err != nil {
 		if errors.Is(err, errBlocked) {
 			reply(0x02)

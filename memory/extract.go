@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
+	"github.com/0xfakeSpike/ollupi/pkg/redact"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
@@ -194,4 +196,42 @@ func sourceKey(s db.MemorySource) string { return s.Table + "/" + s.ID }
 
 func normalizeTopic(topic string) string {
 	return strings.ToLower(strings.Join(strings.Fields(topic), " "))
+}
+
+func (m *Manager) extract(ctx context.Context, batch *Batch, payload string, report *db.MemoryReport) ([]Operation, error) {
+	callCtx, cancel := context.WithTimeout(ctx, extractTimeout)
+	defer cancel()
+	settings, err := m.db.Settings(batch.UserID)
+	if err != nil {
+		return nil, failure{db.MemoryStorage, fmt.Errorf("could not read the redaction setting: %w", err)}
+	}
+	redactor := redact.New(settings.RedactionKey)
+	if settings.Redaction {
+		payload = redactor.Mask(payload)
+	}
+	client := m.model
+	if m.opts.ClientFor != nil {
+		if client, err = m.opts.ClientFor(batch.UserID); err != nil {
+			return nil, failure{db.MemoryModelRequest, fmt.Errorf("could not get the model client of the user: %w", err)}
+		}
+	}
+	response, err := client.Chat(callCtx, llm.ChatRequest{
+		Model:       m.opts.Model,
+		Messages:    []llm.ChatMessage{{Role: llm.RoleSystem, Content: extractionInstructions}, {Role: llm.RoleUser, Content: payload}},
+		ToolChoice:  llm.ToolChoiceNone,
+		InputTokens: llm.EstimateTokens(extractionInstructions) + llm.EstimateTokens(payload),
+	}, nil)
+	if err != nil {
+		return nil, failure{db.MemoryModelRequest, fmt.Errorf("memory extraction model request failed: %w", err)}
+	}
+	if len(response.Message.ToolCalls) != 0 || (response.FinishReason != "" && response.FinishReason != "stop") {
+		return nil, failure{db.MemoryInvalidResponse, errors.New("memory extraction did not produce a complete text response")}
+	}
+	ops, err := parseOperations(response.Message.Content, batch, redactor.Restore)
+	if err != nil {
+		return nil, failure{db.MemoryInvalidResponse, err}
+	}
+	report.InputTokens, report.OutputTokens = response.Usage.PromptTokens, response.Usage.CompletionTokens
+	report.UsageReported = response.UsageReported
+	return ops, nil
 }

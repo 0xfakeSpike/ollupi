@@ -15,13 +15,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/service"
+	"github.com/0xfakeSpike/ollupi/cron"
+	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
-	"github.com/0xfakeSpike/ollupi/tools/cron"
 )
 
 type githubTools struct{}
@@ -120,7 +120,8 @@ func TestLoadedToolIsSentWithTheNextRequest(t *testing.T) {
 	}
 	jobs := cron.New(store, time.Local, func(string, string) {})
 	ag := service.New(service.Config{
-		Name: "Ollupi", Models: []llm.Model{{Name: "demo", Connection: "fake"}},
+		BoxFor: here,
+		Name:   "Ollupi", Models: []llm.Model{{Name: "demo", Connection: "fake"}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
 		Providers:   []tools.Provider{githubTools{}, jobs}, Memory: mem, DB: store,
@@ -155,7 +156,7 @@ func TestLoadedToolIsSentWithTheNextRequest(t *testing.T) {
 			}
 		}
 	}
-	if _, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, service.Input{Text: "帮我在 GitHub 上提个 issue：登录页在 Safari 上白屏"}); err != nil {
+	if _, _, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, service.Input{Text: "帮我在 GitHub 上提个 issue：登录页在 Safari 上白屏"}); err != nil {
 		t.Fatal(err)
 	}
 	wait(3)

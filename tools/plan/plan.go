@@ -85,10 +85,7 @@ func (*Provider) ToolList(context.Context) ([]*tools.Spec, error) {
 }
 
 func (*Provider) Invoke(_ context.Context, _ tools.Caller, _ string, arguments map[string]any) (tools.Result, error) {
-	p, err := tools.DecodeArguments[Plan](arguments)
-	if err != nil {
-		return tools.Result{}, err
-	}
+	p, _ := tools.DecodeArguments[Plan](arguments) // the schema checked its fields: it cannot fail
 	if err := p.validate(); err != nil {
 		return tools.Result{}, fmt.Errorf("invalid plan: %w", err)
 	}

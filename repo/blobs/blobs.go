@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 )
@@ -22,8 +23,18 @@ type Store interface {
 	DeletePrefix(ctx context.Context, prefix string) error
 }
 
-// Dir is a Store in a folder on this machine.
+// Dir is a Store in a folder on this machine. Its errors name an object by its key, not by where the folder is: they
+// may reach those who sent the object, who are not to learn the server's paths.
 type Dir string
+
+// keyed names the object in err by its key.
+func keyed(key string, err error) error {
+	var pe *fs.PathError
+	if errors.As(err, &pe) {
+		return &fs.PathError{Op: pe.Op, Path: key, Err: pe.Err}
+	}
+	return err
+}
 
 func (d Dir) path(key string) (string, error) {
 	path := filepath.FromSlash(key)
@@ -39,18 +50,18 @@ func (d Dir) Put(_ context.Context, key string, data []byte) error {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
+		return keyed(key, err)
 	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
-		return err
+		return keyed(key, err)
 	}
 	_, err = f.Write(data)
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
 	if err != nil {
-		return errors.Join(err, os.Remove(path))
+		return errors.Join(keyed(key, err), keyed(key, os.Remove(path)))
 	}
 	return nil
 }
@@ -60,7 +71,8 @@ func (d Dir) Get(_ context.Context, key string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return os.ReadFile(path)
+	data, err := os.ReadFile(path)
+	return data, keyed(key, err)
 }
 
 func (d Dir) Delete(_ context.Context, key string) error {
@@ -69,7 +81,7 @@ func (d Dir) Delete(_ context.Context, key string) error {
 		return err
 	}
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return err
+		return keyed(key, err)
 	}
 	return nil
 }
@@ -79,5 +91,5 @@ func (d Dir) DeletePrefix(_ context.Context, prefix string) error {
 	if err != nil {
 		return err
 	}
-	return os.RemoveAll(path)
+	return keyed(prefix, os.RemoveAll(path))
 }

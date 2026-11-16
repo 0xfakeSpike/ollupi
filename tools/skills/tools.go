@@ -101,10 +101,7 @@ func (*Tools) ToolList(context.Context) ([]*tools.Spec, error) {
 }
 
 func (t *Tools) activate(role string, arguments map[string]any) (tools.Result, error) {
-	args, err := tools.DecodeArguments[activateArgs](arguments)
-	if err != nil {
-		return tools.Result{}, err
-	}
+	args, _ := tools.DecodeArguments[activateArgs](arguments) // the schema checked its fields: it cannot fail
 	name := strings.TrimSpace(args.Name)
 	skill, ok, err := t.find(role, name)
 	if err != nil {

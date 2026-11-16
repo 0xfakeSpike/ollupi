@@ -119,12 +119,9 @@ func (*Provider) ToolList(context.Context) ([]*tools.Spec, error) {
 }
 
 func (*Provider) Invoke(_ context.Context, _ tools.Caller, _ string, arguments map[string]any) (tools.Result, error) {
-	r, err := tools.DecodeArguments[Request](arguments)
-	if err != nil {
-		return tools.Result{}, err
-	}
+	r, _ := tools.DecodeArguments[Request](arguments) // the schema checked its fields: it cannot fail
 	if err := r.validate(); err != nil {
 		return tools.Result{}, fmt.Errorf("invalid questions: %w", err)
 	}
-	return tools.Awaiting(tools.AwaitUser, r)
+	return tools.Awaiting(tools.AwaitUser, r), nil
 }

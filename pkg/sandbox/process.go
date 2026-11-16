@@ -45,9 +45,6 @@ func runProcess(ctx context.Context, cmd *exec.Cmd, program string, limit time.D
 	}
 	defer errR.Close()
 	cmd.Stdout, cmd.Stderr = outW, errW
-	if cmd.Env == nil {
-		cmd.Env = os.Environ()
-	}
 	tag := runTag(marker)
 	cmd.Env = append(cmd.Env, tag)
 	ownProcessGroup(cmd, tag)
@@ -165,3 +162,77 @@ func (b *cappedBuffer) String() string {
 	}
 	return string(b.head) + fmt.Sprintf("\n[… %d bytes omitted …]\n", b.dropped) + string(b.tail)
 }
+
+func (s *Sandbox) Start(ctx context.Context, c Command, stderr io.Writer) (Process, error) {
+	if c.Program == "" {
+		return nil, errors.New("sandbox: incomplete command")
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	cmd, px, tagID, err := s.command(ctx, c)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	stop := func() {
+		cancel()
+		if px != nil {
+			px.close()
+		}
+		if tagID != "" {
+			s.denials.collect(tagID, false)
+		}
+	}
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		stop()
+		return nil, err
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		stop()
+		return nil, err
+	}
+	cmd.Stderr = stderr
+	// A program the command started may keep its stderr open after it ends; Wait stops copying it then.
+	cmd.WaitDelay = stopDelay
+	tag := runTag(s.runMarker())
+	cmd.Env = append(cmd.Env, tag)
+	ownProcessGroup(cmd, tag)
+	if err := cmd.Start(); err != nil {
+		stop()
+		return nil, fmt.Errorf("sandbox: start %s: %w", c.Program, err)
+	}
+	return &process{ReadCloser: stdout, WriteCloser: stdin, cmd: cmd, tag: tag, stop: stop}, nil
+}
+
+// process is a command of this machine. Closing its input lets it end by itself; one that does not is killed, and
+// so is what it started, whether it ended or not.
+type process struct {
+	io.ReadCloser
+	io.WriteCloser
+	cmd  *exec.Cmd
+	tag  string
+	stop func()
+	once sync.Once
+}
+
+func (p *process) Close() error {
+	p.once.Do(func() {
+		p.WriteCloser.Close()
+		ended := make(chan struct{})
+		go func() {
+			p.cmd.Wait()
+			close(ended)
+		}()
+		select {
+		case <-ended:
+		case <-time.After(stopDelay):
+		}
+		killRun(p.cmd, p.tag)
+		p.stop()
+		<-ended
+	})
+	return nil
+}
+
+const stopDelay = 2 * time.Second

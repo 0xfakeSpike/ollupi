@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"gorm.io/gorm"
 )
@@ -52,9 +53,14 @@ func (d *DB) Search(user string, terms []string, workspaceID string, limit int) 
 		Joins("JOIN threads t ON t.id = i.thread_id").
 		Where("t.user_id = ? AND t.parent_thread_id IS NULL AND i.type IN ? AND i.status = ?", user, []ItemType{ItemUserMessage, ItemAgentMessage}, ItemCompleted)
 	for _, t := range terms {
+		q = q.Where(`i.text LIKE ? ESCAPE '\'`, likePattern(t))
 		// The index takes LIKE only without ESCAPE, so it narrows to a superset, reading % and _ in the term as
-		// wildcards; the escaped LIKE on items then keeps the exact matches.
-		q = q.Where(`i.rowid IN (SELECT rowid FROM items_search WHERE text LIKE ?) AND i.text LIKE ? ESCAPE '\'`, "%"+t+"%", likePattern(t))
+		// wildcards, and the escaped LIKE on items keeps the exact matches. It holds every user's messages and
+		// indexes three characters at a time: a shorter term would read all of it, so that one is left to the
+		// user's own messages.
+		if utf8.RuneCountInString(t) >= 3 {
+			q = q.Where("i.rowid IN (SELECT rowid FROM items_search WHERE text LIKE ?)", "%"+t+"%")
+		}
 	}
 	if err := inWorkspace(q, "t.workspace_id").Order("i.started_at DESC, i.id").Limit(limit).Scan(&rows).Error; err != nil {
 		return Found{}, err

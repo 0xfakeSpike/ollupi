@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"reflect"
 	"slices"
 	"time"
@@ -27,10 +26,13 @@ type ItemRow struct {
 	// TurnSeq is the seq of the item's turn, which places it in the conversation before Seq does.
 	TurnSeq int `gorm:"not null;default:0;index:items_thread_order,priority:2;index:items_compactions,priority:2;index:items_carried,priority:2" json:"-"`
 	// Seq numbers the thread's items as they were written.
-	Seq          int                `gorm:"not null;uniqueIndex:items_thread_seq,priority:2;index:items_turn,priority:4;index:items_thread_order,priority:3;index:items_compactions,priority:3;index:items_carried,priority:3" json:"seq"`
-	Type         ItemType           `gorm:"not null;index:items_turn,priority:2" json:"type"`
-	Status       ItemStatus         `gorm:"not null;index:items_turn,priority:3" json:"status"`
-	CallID       string             `gorm:"not null;default:''" json:"callId,omitempty"`
+	Seq    int        `gorm:"not null;uniqueIndex:items_thread_seq,priority:2;index:items_turn,priority:4;index:items_thread_order,priority:3;index:items_compactions,priority:3;index:items_carried,priority:3" json:"seq"`
+	Type   ItemType   `gorm:"not null;index:items_turn,priority:2" json:"type"`
+	Status ItemStatus `gorm:"not null;index:items_turn,priority:3" json:"status"`
+	CallID string     `gorm:"not null;default:''" json:"callId,omitempty"`
+	// LaunchItemID is, on an agentReport, the call that launched the subagent: its call id cannot name it, since a
+	// provider may number calls afresh in each response.
+	LaunchItemID string             `gorm:"not null;default:''" json:"launchItemId,omitempty"`
 	Tool         string             `gorm:"not null;default:''" json:"tool,omitempty"`
 	Server       string             `gorm:"not null;default:''" json:"server,omitempty"`
 	ResponseID   string             `gorm:"not null;default:''" json:"responseId,omitempty"`
@@ -67,7 +69,8 @@ const (
 	ItemMemoryContext     ItemType = "memoryContext"
 	ItemError             ItemType = "error"
 	// ItemAgentReport is how a subagent ended, come back to the turn that launched it: its final answer as the result,
-	// or why it has none. Text is the subagent's task, as its conversation is titled; CallID is the launching call's.
+	// or why it has none. Text is the subagent's task, as its conversation is titled; LaunchItemID is the launching
+	// call, and CallID its call id.
 	ItemAgentReport ItemType = "agentReport"
 )
 
@@ -101,6 +104,8 @@ type ContextStats struct {
 	ToolsTokens      int          `json:"toolsTokens"`
 	EstimatedTokens  int          `json:"estimatedTokens"`
 	CalibratedTokens int          `json:"calibratedTokens,omitempty"`
+	// ThroughSeq is the seq of the latest item the prompt was built from: input after it the response did not see.
+	ThroughSeq int `json:"throughSeq,omitempty"`
 }
 
 type MemoryStats struct {
@@ -118,10 +123,6 @@ type MemoryNote struct {
 	ID    string `json:"id"`
 	Topic string `json:"topic,omitempty"`
 	Text  string `json:"text"`
-}
-
-func (e MemoryRow) Reference() MemoryReference {
-	return MemoryReference{MemoryNote: MemoryNote{ID: e.ID, Topic: e.Topic, Text: e.Text}, Scope: e.Scope, WorkspaceID: e.WorkspaceID}
 }
 
 type AttachmentKind string
@@ -187,19 +188,6 @@ func NewUserMessage(id, turnID, text string, attachments []Attachment, at time.T
 	return ItemRow{ID: id, TurnID: turnID, Type: ItemUserMessage, Status: ItemCompleted, Text: text, Attachments: attachments, StartedAt: at, CompletedAt: &at}
 }
 
-func (d *DB) HasImages(threadID string) (bool, error) {
-	var n int64
-	err := d.Tx(func(tx *DB) error {
-		from, err := tx.latestCompaction(threadID, math.MaxInt32)
-		if err != nil {
-			return err
-		}
-		return tx.gorm.Model(&ItemRow{}).Where(`thread_id = ? AND type = 'userMessage' AND (turn_seq, seq) > (?, ?)
-			AND EXISTS (SELECT 1 FROM json_each(items.attachments) WHERE json_extract(json_each.value, '$.kind') = 'image')`, threadID, from.TurnSeq, from.Seq).Count(&n).Error
-	})
-	return n > 0, err
-}
-
 func (d *DB) Attachment(user, threadID, id string) (Attachment, error) {
 	var rows []ItemRow
 	err := d.gorm.Where("thread_id = ? AND "+ofUser+" AND type = 'userMessage' AND EXISTS (SELECT 1 FROM json_each(items.attachments) WHERE json_extract(json_each.value, '$.id') = ?)", threadID, user, id).Find(&rows).Error
@@ -225,7 +213,7 @@ func (it ItemRow) Awaits() bool {
 }
 
 func (it ItemRow) WaitsOnUser() bool {
-	return it.WaitsForApproval() || (it.Awaits() && it.Await.By == tools.AwaitUser)
+	return it.WaitsForApproval() || it.Awaits()
 }
 
 func (it ItemRow) WaitsForApproval() bool {
@@ -233,9 +221,6 @@ func (it ItemRow) WaitsForApproval() bool {
 }
 
 func (it ItemRow) LiveResult() (tools.Result, error) {
-	if it.Result == nil {
-		return tools.Result{}, fmt.Errorf("item %s has no tool result", it.ID)
-	}
 	o := it.Result
 	r := tools.Result{Tool: it.Tool, Artifacts: o.Artifacts}
 	if len(o.Output) > 0 {
@@ -278,9 +263,6 @@ func (d *DB) nextItemSeq(threadID string) (int, error) {
 }
 
 func (d *DB) saveItem(row ItemRow) error {
-	if row.Await != nil && !slices.Contains(tools.AwaitByValues, row.Await.By) {
-		return fmt.Errorf("item %s: awaits %q, which is not one of %q", row.ID, row.Await.By, tools.AwaitByValues)
-	}
 	row.StartedAt, row.CompletedAt = row.StartedAt.UTC(), nullTime(row.CompletedAt)
 	res := d.gorm.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "id"}},
@@ -383,9 +365,6 @@ func (d *DB) Steer(threadID string, message ItemRow) (ItemRow, []ItemRow, error)
 		if err != nil {
 			return err
 		}
-		if message.Type != ItemUserMessage {
-			return fmt.Errorf("item %s is not a user message", message.ID)
-		}
 		if stored, _, err = tx.saveItemOf(threadID, message); err != nil {
 			return err
 		}
@@ -472,9 +451,6 @@ func (it ItemRow) ended() bool {
 // saveItemOf writes the item and returns it as stored, saying whether it is new; it reads only the item as it was,
 // which may not change its thread, type or turn, nor a prepared execution once it has one, nor end and start again.
 func (d *DB) saveItemOf(threadID string, it ItemRow) (ItemRow, bool, error) {
-	if it.ID == "" || it.TurnID == "" || it.Type == "" || it.Status == "" {
-		return ItemRow{}, false, fmt.Errorf("item needs an id, turn, type, and status")
-	}
 	prev, err := d.Item(it.ID)
 	isNew := errors.Is(err, ErrNotFound)
 	switch {

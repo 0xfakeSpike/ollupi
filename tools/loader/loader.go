@@ -48,10 +48,7 @@ func (*Provider) ToolList(context.Context) ([]*tools.Spec, error) {
 }
 
 func (*Provider) Invoke(_ context.Context, caller tools.Caller, _ string, arguments map[string]any) (tools.Result, error) {
-	args, err := tools.DecodeArguments[loadArgs](arguments)
-	if err != nil {
-		return tools.Result{}, err
-	}
+	args, _ := tools.DecodeArguments[loadArgs](arguments) // the schema checked its fields: it cannot fail
 	loaded := make([]string, 0, len(args.Names))
 	for _, name := range args.Names {
 		if !slices.Contains(caller.Deferred, name) {

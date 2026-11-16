@@ -41,7 +41,8 @@ func resume(args []string) {
 	answer := strings.Repeat("A paragraph of an answer, about as long as a short reply in a chat. ", 6)
 	open := func(m *model, tr *tracker) (*service.Service, context.CancelFunc, time.Duration) {
 		ag := service.New(service.Config{
-			Name: "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
+			BoxFor: here,
+			Name:   "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 			Connections: map[string]llm.Client{"fake": m},
 			Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 			Slots:       *running + 32, DB: store, OnEvent: tr.on,

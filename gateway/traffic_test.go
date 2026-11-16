@@ -23,15 +23,15 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/event"
-	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/service"
+	"github.com/0xfakeSpike/ollupi/cron"
+	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
-	"github.com/0xfakeSpike/ollupi/tools/cron"
 	"github.com/0xfakeSpike/ollupi/tools/mcp"
 	"github.com/0xfakeSpike/ollupi/tools/plan"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
@@ -42,6 +42,9 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// here gives every user this machine's files, as a host with one user does.
+func here(string) (sandbox.Box, error) { return sandbox.Here(), nil }
 
 func TestTrafficMatchesContract(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -85,6 +88,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 	}
 	defer runner.Close()
 	ag := service.New(service.Config{
+		BoxFor: here,
 		Name:   "test",
 		Models: []llm.Model{{Name: "gpt-4o", Connection: "fake"}, {Name: "gpt-4o", Connection: "vision", Images: true}},
 		Settings: permission.Settings{ApprovalPolicy: string(permission.OnRequest),
@@ -211,7 +215,14 @@ func TestTrafficMatchesContract(t *testing.T) {
 
 	turn = c.startTurn(threadID, "please touch the file")
 	approval := c.await(requestApproval, nil)
-	queued := c.startTurn(threadID, "and then say hi")
+	// Messages sent while the turn waits go into one turn behind it, and turn/start says how each was taken.
+	var behind, joined TurnResult
+	c.call("turn/start", TurnStartParams{ThreadID: threadID, Input: []UserInput{{Type: "text", Text: "and then say hi"}}}, &behind)
+	c.call("turn/start", TurnStartParams{ThreadID: threadID, Input: []UserInput{{Type: "text", Text: "and wave"}}}, &joined)
+	if behind.Submission != db.Queued || joined.Submission != db.Joined || joined.Turn.ID != behind.Turn.ID {
+		t.Errorf("turn/start behind a waiting turn: %s %s, then %s %s; want queued, then joined into the same turn", behind.Submission, behind.Turn.ID, joined.Submission, joined.Turn.ID)
+	}
+	queued := behind.Turn.ID
 	c.await("turn/queued", nil)
 	// A message sent while the call waits for approval answers in its place: the call is declined and the turn goes on.
 	var asked ApprovalRequestParams
@@ -365,7 +376,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	go jobs.Run(agentCtx, func(threadID, text, jobID string) error {
-		_, err := ag.StartTurn(ctx, db.DefaultUser, threadID, service.Input{Text: text, CronJobID: jobID})
+		_, _, err := ag.StartTurn(ctx, db.DefaultUser, threadID, service.Input{Text: text, CronJobID: jobID})
 		return err
 	})
 	ran := c.await("turn/completed", func(params json.RawMessage) bool {
@@ -439,6 +450,11 @@ func TestTrafficMatchesContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	c.refused("turn/start", TurnStartParams{ThreadID: general.Thread.ID, Input: []UserInput{{Type: "file", Path: "dot.png"}}}, jsonrpc.CodeInvalidParams, "not absolute")
+	binary := filepath.Join(files, "key.png")
+	if err := os.WriteFile(binary, []byte("\x00\x01secret\x00"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c.refused("turn/start", TurnStartParams{ThreadID: general.Thread.ID, Input: []UserInput{{Type: "file", Path: binary, MimeType: "image/png"}}}, jsonrpc.CodeInvalidParams, "neither an image")
 	pictured := []UserInput{{Type: "text", Text: "what is this"}, {Type: "file", Path: dot}, {Type: "file", Path: notes, Name: "Notes.md"}}
 	c.refused("turn/start", TurnStartParams{ThreadID: general.Thread.ID, Input: pictured}, jsonrpc.CodeInvalidParams, "does not accept images")
 	var shown ThreadResult
@@ -563,9 +579,9 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.refused("workspace/updatePermissions", WorkspacePermissionsParams{WorkspaceID: workspaceID,
 		PermissionSettings: db.PermissionSettings{Rules: db.PermissionRules{Allow: []string{"broken__creat_issue"}}}},
 		jsonrpc.CodeInvalidParams, `the MCP server "broken" is not connected`)
-	if _, err := store.UpdateWorkspace(db.DefaultUser, workspaceID, func(w db.WorkspaceRow) (db.WorkspaceRow, error) {
+	if _, err := store.UpdateWorkspace(db.DefaultUser, workspaceID, func(w db.WorkspaceRow) db.WorkspaceRow {
 		w.Settings.Rules.Allow = []string{"gitlab__merge"}
-		return w, nil
+		return w
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -650,6 +666,8 @@ func TestTrafficMatchesContract(t *testing.T) {
 		t.Error("search touch found no messages in the workspace")
 	}
 	c.refused("search", SearchParams{Query: "  "}, jsonrpc.CodeInvalidParams, "query")
+	c.refused("search", SearchParams{Query: strings.Repeat("词", 201)}, jsonrpc.CodeInvalidParams, "200 characters")
+	c.refused("search", SearchParams{Query: "a b c d e f g h i"}, jsonrpc.CodeInvalidParams, "8 words")
 
 	c.mu.Lock()
 	defer c.mu.Unlock()

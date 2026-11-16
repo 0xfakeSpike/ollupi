@@ -75,8 +75,14 @@ func connect(ctx, running context.Context, client *mcp.Client, box sandbox.Box, 
 			sess.Close()
 			return nil, out.withStderr(fmt.Errorf("list tools: %w", err))
 		}
+		// A tool the registry would refuse is left out here, so that it does not take the user's other tools with
+		// it: one whose name the model API refuses, that another of the server's tools has, or whose input schema
+		// is not an object the registry can check arguments against.
 		name := s.Name + tools.ProviderSeparator + t.Name
-		if !toolName.MatchString(name) {
+		_, isObject := t.InputSchema.(map[string]any)
+		_, taken := out.tools[name]
+		_, err := tools.ResolveSchema(t.InputSchema)
+		if !toolName.MatchString(name) || taken || !isObject || err != nil {
 			out.skipped = append(out.skipped, t.Name)
 			continue
 		}
@@ -116,15 +122,15 @@ func (s *Session) ToolList(context.Context) ([]*tools.Spec, error) {
 	return s.specs, nil
 }
 
+// toSpec leaves out what the server says of a tool that would let it run unasked: that it only reads, and that it
+// reaches nothing outside. That is the server's word about itself, and a rule the user writes for the tool is theirs.
 func toSpec(name string, t *mcp.Tool) *tools.Spec {
 	spec := &tools.Spec{Name: name, Description: t.Description, InputSchema: t.InputSchema}
 	if t.Annotations != nil {
 		spec.Annotations = &tools.Annotations{
 			Title:           t.Annotations.Title,
-			ReadOnlyHint:    t.Annotations.ReadOnlyHint,
 			DestructiveHint: t.Annotations.DestructiveHint,
 			IdempotentHint:  t.Annotations.IdempotentHint,
-			OpenWorldHint:   t.Annotations.OpenWorldHint,
 		}
 	}
 	return spec

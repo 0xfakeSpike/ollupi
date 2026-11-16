@@ -2,11 +2,9 @@ package workspace
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/tools"
@@ -70,24 +68,14 @@ func (d dirs) resolve(ctx context.Context, requested string) (string, error) {
 	return "", fmt.Errorf("workspace: directory %q is outside the command directories", requested)
 }
 
-func (r *Provider) settingsDigest(d dirs) string {
-	return digest(struct {
-		Sandbox    any
-		TimeoutSec int
-		Blacklist  []string
-		Roots      []string
-	}{d.box.Fingerprint(), r.timeoutSec, r.blacklist, d.roots})
-}
-
-func sha(s string) string {
-	sum := sha256.Sum256([]byte(s))
-	return "sha256:" + hex.EncodeToString(sum[:])
-}
-
-func digest(value any) string {
-	body, err := json.Marshal(value)
-	if err != nil {
-		panic(fmt.Sprintf("workspace: digest non-JSON value: %v", err))
+// workDir is where a command runs: the work_dir it asks for, or the first root.
+func (d dirs) workDir(ctx context.Context, args map[string]any) (string, error) {
+	requested := ""
+	if raw, ok := args["work_dir"]; ok {
+		requested, _ = raw.(string)
+		if strings.TrimSpace(requested) == "" {
+			return "", fmt.Errorf("workspace: argument work_dir must be a non-empty string")
+		}
 	}
-	return sha(string(body))
+	return d.resolve(ctx, requested)
 }

@@ -1,8 +1,10 @@
 package orchestrator
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 
 	"github.com/0xfakeSpike/ollupi/repo/db"
 )
@@ -49,7 +51,7 @@ func (o *Orchestrator) admit() {
 	}
 	ids, err := o.cfg.DB.ReadyThreads(free, full)
 	if err != nil {
-		o.ev.Fault("", "", fmt.Errorf("threads ready for a slot could not be listed: %w", err))
+		o.ev.Fault("", "", "threads ready for a slot could not be listed", err)
 		return
 	}
 	for _, id := range ids {
@@ -72,7 +74,11 @@ func (o *Orchestrator) recover() error {
 		if len(closed) > 0 {
 			slog.Warn("items cut off by the restart closed", "thread", id, "items", len(closed))
 		}
-		if turn, err := o.cfg.DB.ActiveTurn(id); err == nil && turn.Status == db.TurnInProgress {
+		turn, err := o.cfg.DB.ActiveTurn(id)
+		if err != nil {
+			return fmt.Errorf("orchestrator: recover thread %s: %w", id, err)
+		}
+		if turn.Status == db.TurnInProgress {
 			if _, err := o.cfg.DB.Park(turn.ID); err != nil {
 				return fmt.Errorf("orchestrator: recover thread %s: %w", id, err)
 			}
@@ -81,4 +87,39 @@ func (o *Orchestrator) recover() error {
 	}
 	o.admit()
 	return nil
+}
+
+type slot struct {
+	user   string
+	turnID string
+	ctx    context.Context
+	cancel context.CancelFunc
+}
+
+func (o *Orchestrator) launch(user, threadID, turnID string) {
+	ctx, cancel := context.WithCancel(o.ctx)
+	sl := &slot{user: user, turnID: turnID, ctx: ctx, cancel: cancel}
+	o.slotByThread[threadID] = sl
+	o.slotsOfUser[user]++
+	o.done.Add(1)
+	go func() {
+		defer o.done.Done()
+		defer func() {
+			if p := recover(); p != nil {
+				slog.Error("turn crashed", "thread", threadID, "turn", turnID, "panic", fmt.Sprint(p), "stack", string(debug.Stack()))
+				o.post(func() { o.afterRun(threadID, sl, false, errCrashed) })
+			}
+		}()
+		o.run(threadID, sl)
+	}()
+}
+
+func (o *Orchestrator) release(threadID string) {
+	if sl, exists := o.slotByThread[threadID]; exists {
+		sl.cancel()
+		delete(o.slotByThread, threadID)
+		if o.slotsOfUser[sl.user]--; o.slotsOfUser[sl.user] == 0 {
+			delete(o.slotsOfUser, sl.user)
+		}
+	}
 }

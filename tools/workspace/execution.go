@@ -21,10 +21,7 @@ func (r *Provider) prepareCommand(ctx context.Context, caller tools.Caller, args
 	if err != nil {
 		return nil, err
 	}
-	argv, err := parseExecArgsSlice(args["args"])
-	if err != nil {
-		return nil, err
-	}
+	argv := parseExecArgsSlice(args["args"])
 	cwd, err := d.workDir(ctx, args)
 	if err != nil {
 		return nil, err
@@ -62,25 +59,12 @@ func (r *Provider) prepareCommand(ctx context.Context, caller tools.Caller, args
 }
 
 func escalation(box sandbox.Box, args map[string]any) (bool, string, error) {
-	mode := sandboxUseDefault
-	if raw, ok := args["sandbox_permissions"]; ok {
-		s, ok := raw.(string)
-		if !ok || (s != sandboxUseDefault && s != sandboxRequireEscalated) {
-			return false, "", fmt.Errorf("workspace: argument sandbox_permissions must be %q or %q", sandboxUseDefault, sandboxRequireEscalated)
-		}
-		mode = s
-	}
-	justification := ""
-	if raw, ok := args["justification"]; ok {
-		s, ok := raw.(string)
-		if !ok {
-			return false, "", fmt.Errorf("workspace: argument justification must be a string")
-		}
-		justification = strings.TrimSpace(s)
-	}
-	if mode != sandboxRequireEscalated {
+	// The schema offers sandbox_permissions, as one of its two values, only where commands can escalate.
+	if args["sandbox_permissions"] != sandboxRequireEscalated {
 		return false, "", nil
 	}
+	justification, _ := args["justification"].(string)
+	justification = strings.TrimSpace(justification)
 	if !box.Enforced() {
 		return false, "", fmt.Errorf("workspace: commands already run without a sandbox here; omit sandbox_permissions")
 	}
@@ -97,20 +81,13 @@ func commandEnvironment(raw any) (map[string]string, error) {
 	if raw == nil {
 		return nil, nil
 	}
-	values, ok := raw.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("workspace: argument env must be an object")
-	}
-
+	values, _ := raw.(map[string]any)
 	if len(values) == 0 {
 		return nil, nil
 	}
 	out := make(map[string]string, len(values))
 	for k, v := range values {
-		value, ok := v.(string)
-		if !ok {
-			return nil, fmt.Errorf("workspace: env value for %q must be string", k)
-		}
+		value, _ := v.(string)
 		if sandbox.ValidateEnvNames([]string{k}) != nil || strings.ContainsRune(value, 0) {
 			return nil, fmt.Errorf("workspace: invalid environment variable %q; names are letters, digits and _, not starting with a digit", k)
 		}
@@ -138,10 +115,6 @@ func (r *Provider) runCommand(ctx context.Context, caller tools.Caller, args map
 	if err := r.validatePrepared(ctx, d, p, args); err != nil {
 		return tools.Result{}, err
 	}
-	if p.Program == "" || p.TimeoutSec <= 0 {
-		return tools.Result{}, fmt.Errorf("workspace: incomplete prepared command")
-	}
-
 	if err := d.sameExecutable(ctx, p.Program, p); err != nil {
 		return tools.Result{}, err
 	}
@@ -163,46 +136,116 @@ func (r *Provider) runCommand(ctx context.Context, caller tools.Caller, args map
 	return tools.Result{Output: out}, nil
 }
 
-func (r *Provider) validatePrepared(ctx context.Context, d dirs, p *tools.Prepared, args map[string]any) error {
-	if p == nil {
-		return fmt.Errorf("workspace: missing prepared command")
+const ToolRunCommand = "run_command"
+
+const (
+	sandboxUseDefault       = "use_default"
+	sandboxRequireEscalated = "require_escalated"
+)
+
+func (r *Provider) tool() *tools.Spec {
+	desc := "Run a command: set arguments.program to argv0 (a binary on PATH or an absolute path). work_dir defaults to the project root, or outside a project to " + r.box.Roots()[0] +
+		", and must stay inside the project (outside a project: inside " + strings.Join(r.box.Roots(), ", ") + "). " + r.box.Summary() +
+		". A non-zero exit_code is returned with the output, not as an error. To read, find or search files use " +
+		ToolReadFile + ", " + ToolGlob + " and " + ToolGrep + ", not cat, find or grep"
+	if r.box.Enforced() {
+		desc += ". Commands run in the sandbox without asking the user"
 	}
-	if p.SettingsDigest != r.settingsDigest(d) {
-		return fmt.Errorf("workspace: the command settings or the project directory changed after this call was prepared, so it was not run; call run_command again")
+	if r.box.CanEscalate() {
+		desc += ". A result's sandbox_denials lists what the sandbox stopped. " +
+			"When a command fails because of the sandbox (a write outside the command directories or to a protected file, " +
+			"a host outside the allowed domains, the network, a local socket), " +
+			"retry it with sandbox_permissions \"require_escalated\" and a one-sentence justification: " +
+			"the command then runs on the host without the sandbox, and the user is asked first unless the approval policy never asks. " +
+			"Do not escalate to get around a denied path on purpose, and do not escalate commands that work in the sandbox"
 	}
-	if p.ArgumentsDigest != digest(args) {
-		return fmt.Errorf("workspace: prepared command arguments changed")
+	if r.boxIn != nil {
+		desc += ". A conversation runs in the environment it was started in, whose folders need not be this machine's"
 	}
-	cwd, err := d.resolve(ctx, p.Cwd)
-	if err != nil {
-		return err
+
+	return &tools.Spec{
+		Name:        ToolRunCommand,
+		Description: desc,
+		InputSchema: r.inputSchema(),
+		Annotations: &tools.Annotations{DestructiveHint: tools.Hint(true), OpenWorldHint: tools.Hint(true)},
+
+		PermissionContent: permissionContent,
+		Local:             &tools.Local{Prepare: r.prepareCommand, Run: r.runCommand},
 	}
-	if cwd != p.Cwd {
-		return fmt.Errorf("workspace: prepared command directory changed")
-	}
-	return nil
 }
 
-// workDir is where a command runs: the work_dir it asks for, or the first root.
-func (d dirs) workDir(ctx context.Context, args map[string]any) (string, error) {
-	requested := ""
-	if raw, ok := args["work_dir"]; ok {
-		requested, ok = raw.(string)
-		if !ok || strings.TrimSpace(requested) == "" {
-			return "", fmt.Errorf("workspace: argument work_dir must be a non-empty string")
-		}
+func toolInputSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"program": map[string]any{
+				"type":        "string",
+				"description": "argv0: executable name or path (e.g. opencli, npm, git, sh, bash)",
+			},
+			"args": map[string]any{
+				"type":  "array",
+				"items": map[string]any{"type": "string"},
+				"description": "Argv after program. For sh/bash/zsh/dash: use [\"-c\", \"whole shell command\"] for one-liners; " +
+					"otherwise the first arg is a script path and the rest are its arguments (sh myscript.sh a b). For other programs use normal argv.",
+			},
+			"work_dir": map[string]any{
+				"type":        "string",
+				"description": "Optional command directory, relative to the current project/default command directory; must stay within this turn's allowed directories",
+			},
+			"timeout_sec": map[string]any{
+				"type":        "integer",
+				"description": "Optional timeout in seconds",
+			},
+			"env": map[string]any{
+				"type":                 "object",
+				"description":          "Optional environment variables",
+				"additionalProperties": map[string]any{"type": "string"},
+			},
+		},
+		"required":             []string{"program"},
+		"additionalProperties": false,
 	}
-	return d.resolve(ctx, requested)
 }
 
-// sameExecutable checks that program still resolves to the executable the user approved for p.
-func (d dirs) sameExecutable(ctx context.Context, program string, p *tools.Prepared) error {
-	current, err := d.box.Executable(ctx, program, p.Cwd)
-	if err != nil {
-		return err
+func (r *Provider) inputSchema() map[string]any {
+	schema := toolInputSchema()
+	if !r.box.CanEscalate() {
+		return schema
 	}
-	if current != p.Program {
-		return fmt.Errorf("workspace: approved executable now resolves to a different path")
+	props := schema["properties"].(map[string]any)
+	props["sandbox_permissions"] = map[string]any{
+		"type":        "string",
+		"enum":        []string{sandboxUseDefault, sandboxRequireEscalated},
+		"description": "use_default (the default) runs in the sandbox; require_escalated runs this command outside the sandbox, and its justification is shown to the user",
 	}
-	return nil
+	props["justification"] = map[string]any{
+		"type":        "string",
+		"description": "Required with require_escalated: one sentence telling the user what the command needs that the sandbox does not allow, such as writing /usr/local or reaching a host",
+	}
+	return schema
+}
+
+// parseExecArgsSlice is a command's args, which the tool's schema makes an array of strings.
+func parseExecArgsSlice(v any) []string {
+	if v == nil {
+		return nil
+	}
+	arr, _ := v.([]any)
+	out := make([]string, len(arr))
+	for i, el := range arr {
+		out[i], _ = el.(string)
+	}
+	return out
+}
+
+// parseTimeoutSec is a call's timeout_sec, which the tool's schema makes an integer, up to limit.
+func parseTimeoutSec(v any, limit int) (int, error) {
+	sec, _ := v.(float64)
+	if sec <= 0 {
+		return 0, fmt.Errorf("workspace: argument \"timeout_sec\" must be > 0")
+	}
+	if sec > float64(limit) {
+		return 0, fmt.Errorf("workspace: argument \"timeout_sec\" must be at most %d", limit)
+	}
+	return int(sec), nil
 }

@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"slices"
 	"sort"
-	"strings"
-	"unicode"
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo/db"
@@ -117,62 +115,4 @@ func rank(entries []db.MemoryRow, score func(db.MemoryRow) int) []scored {
 		return out[i].entry.ID < out[j].entry.ID
 	})
 	return out
-}
-
-func termScore(e db.MemoryRow, terms []string) int {
-	text := strings.ToLower(e.Topic + " " + e.Text)
-	score := 0
-	for _, term := range terms {
-		if strings.Contains(text, term) {
-			score += 1 + min(8, len([]rune(term)))
-		}
-	}
-	return score
-}
-
-func kindPriority(e db.MemoryRow) int {
-	switch e.Kind {
-	case "preference":
-		return 12
-	case "decision":
-		return 6
-	}
-	return 0
-}
-
-func searchTerms(text string) []string {
-	seen := map[string]bool{}
-	terms := []string{}
-	add := func(s string) {
-		if len([]rune(s)) >= 2 && !seen[s] && len(terms) < 512 {
-			seen[s] = true
-			terms = append(terms, s)
-		}
-	}
-	var word []rune
-	var han rune
-	flush := func() {
-		if len(word) > 0 {
-			add(string(word))
-			word = nil
-		}
-	}
-	for _, r := range strings.ToLower(text) {
-		if unicode.Is(unicode.Han, r) {
-			flush()
-			if han != 0 {
-				add(string([]rune{han, r}))
-			}
-			han = r
-			continue
-		}
-		han = 0
-		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-' {
-			word = append(word, r)
-		} else {
-			flush()
-		}
-	}
-	flush()
-	return terms
 }

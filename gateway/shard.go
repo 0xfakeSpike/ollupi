@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"slices"
 	"time"
 )
@@ -111,4 +112,25 @@ func (s *Server) measureLoad() (int64, error) {
 	default:
 		return s.db.ActiveUsers(time.Now().Add(-s.load.Window))
 	}
+}
+
+// mine says whether user is on this shard, and when not, refuses the connection for now: the router placed it by what
+// it knew, and a client that comes back reaches the right shard once that is put right.
+func (s *Server) mine(w http.ResponseWriter, r *http.Request, user string) bool {
+	if s.placements == nil {
+		return true
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), lookupTimeout)
+	defer cancel()
+	shard, err := s.placements.ShardOf(ctx, user)
+	switch {
+	case err != nil:
+		slog.Error("user's shard not found", "user", user, "err", err)
+	case shard != s.shard:
+		slog.Warn("connection refused on the wrong shard", "user", user, "shard", s.shard, "theirs", shard)
+	default:
+		return true
+	}
+	s.hub.Refuse(w, "this user is not on this shard now; try again")
+	return false
 }

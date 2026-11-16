@@ -65,7 +65,7 @@ func TestUsersOnAShardSeeOnlyTheirOwn(t *testing.T) {
 		if _, err := db.Memory(user, "m-"+other); !errors.Is(err, ErrNotFound) {
 			t.Errorf("%s reads the memory of %s: %v", user, other, err)
 		}
-		if _, err := db.UpdateWorkspace(user, "w-"+other, func(w WorkspaceRow) (WorkspaceRow, error) { return w, nil }); !errors.Is(err, ErrNotFound) {
+		if _, err := db.UpdateWorkspace(user, "w-"+other, func(w WorkspaceRow) WorkspaceRow { return w }); !errors.Is(err, ErrNotFound) {
 			t.Errorf("%s changes the workspace of %s: %v", user, other, err)
 		}
 

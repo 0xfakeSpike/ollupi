@@ -285,3 +285,30 @@ func TestALayerKeepsOnlyTheProvidersItNames(t *testing.T) {
 		t.Errorf("a layer without files leaves %q", got)
 	}
 }
+
+// A rule names a path or a site in any case, wherever in it the capitals are, while a command's arguments are matched
+// as written.
+func TestRulesFoldTheCaseOfFoldedContent(t *testing.T) {
+	registry := testRegistry(t)
+	note := Call{Tool: "click", Content: tools.Content{Text: "Private Notes/a.txt", Match: "private notes/a.txt", Folded: true}, HasContent: true}
+	for _, tc := range []struct {
+		rule string
+		call Call
+		want Verdict
+	}{
+		{"click(Private Notes/*)", note, Deny},
+		{"exec(rm -rf Build)", command("rm -rf Build"), Deny},
+		{"exec(rm -rf Build)", command("rm -rf build"), Run},
+	} {
+		checker, err := New([]Layer{
+			{Of: "the defaults", Settings: Settings{ApprovalPolicy: string(Never)}},
+			{Of: "the workspace", Settings: Settings{Rules: Rules{Deny: []string{tc.rule}}}},
+		}, nil, registry)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d := checker.Decide(tc.call, nil); d.Verdict != tc.want {
+			t.Errorf("deny %s on %q: verdict %v, want %v", tc.rule, tc.call.Content.Text, d.Verdict, tc.want)
+		}
+	}
+}

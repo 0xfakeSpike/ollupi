@@ -101,8 +101,8 @@ func TestSubagentsReportToTheTurnThatLaunchedThem(t *testing.T) {
 		t.Fatalf("running subagents %v (%v), want both", running, err)
 	}
 	s.answer("main", s.turn.ID, "launched both")
-	if next, err := s.db.AfterAnswer(s.turn.ID); err != nil || next != TurnWaitingOnAgent {
-		t.Fatalf("after the answer: %s (%v), want waitingOnAgent", next, err)
+	if _, settled, _, _, err := s.db.AfterAnswer("main", s.turn); err != nil || settled.Status != TurnWaitingOnAgent {
+		t.Fatalf("after the answer: %s (%v), want waitingOnAgent", settled.Status, err)
 	}
 
 	if _, closed, err := s.db.Steer("main", NewUserMessage("steer", s.turn.ID, "how is it going?", nil, s.at)); err != nil || len(closed) != 0 {
@@ -115,13 +115,13 @@ func TestSubagentsReportToTheTurnThatLaunchedThem(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.answer("main", s.turn.ID, "still working on it")
-	if next, err := s.db.AfterAnswer(s.turn.ID); err != nil || next != TurnWaitingOnAgent {
-		t.Fatalf("after answering the message: %s (%v), want waitingOnAgent", next, err)
+	if _, settled, _, _, err := s.db.AfterAnswer("main", s.turn); err != nil || settled.Status != TurnWaitingOnAgent {
+		t.Fatalf("after answering the message: %s (%v), want waitingOnAgent", settled.Status, err)
 	}
 
 	report := s.end(first, TurnCompleted)
 	if report == nil || report.Turn.ID != s.turn.ID || report.Item.Type != ItemAgentReport || report.Item.Status != ItemCompleted ||
-		report.Item.CallID != "c-one" || report.Item.Text != "task one" || report.Item.Result == nil {
+		report.Item.CallID != "c-one" || report.Item.LaunchItemID != "one" || report.Item.Text != "task one" || report.Item.Result == nil {
 		t.Fatalf("the first report: %+v", report)
 	}
 	if got := s.status(); got != TurnWaitingOnAgent {
@@ -152,8 +152,16 @@ func TestSubagentsReportToTheTurnThatLaunchedThem(t *testing.T) {
 		t.Errorf("the run reads %d reports, want 2", reports)
 	}
 	s.answer("main", s.turn.ID, "both done")
-	if next, err := s.db.AfterAnswer(s.turn.ID); err != nil || next != TurnCompleted {
-		t.Fatalf("after the last answer: %s (%v), want completed", next, err)
+	if _, settled, _, _, err := s.db.AfterAnswer("main", s.turn); err != nil || settled.Status != TurnCompleted {
+		t.Fatalf("after the last answer: %s (%v), want completed", settled.Status, err)
+	}
+	// The answer was settled and the turn ended in one write, so a message that comes now is refused, not stored in
+	// a turn that will not read it.
+	if _, _, err := s.db.Steer("main", NewUserMessage("late", s.turn.ID, "one more thing", nil, s.at)); err == nil {
+		t.Fatal("a message was taken by the turn that had ended")
+	}
+	if got := s.status(); got != TurnCompleted {
+		t.Fatalf("the turn is %s, want completed", got)
 	}
 }
 
