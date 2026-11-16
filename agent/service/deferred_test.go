@@ -156,7 +156,7 @@ func TestLoadedToolIsSentWithTheNextRequest(t *testing.T) {
 			}
 		}
 	}
-	if _, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, service.Input{Text: "帮我在 GitHub 上提个 issue：登录页在 Safari 上白屏"}); err != nil {
+	if _, _, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, service.Input{Text: "帮我在 GitHub 上提个 issue：登录页在 Safari 上白屏"}); err != nil {
 		t.Fatal(err)
 	}
 	wait(3)

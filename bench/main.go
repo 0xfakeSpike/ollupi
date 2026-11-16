@@ -112,7 +112,7 @@ func (t *tracker) on(e event.Event) {
 // start holds no lock while StartTurn runs: the agent's loop delivers events to on, which takes it.
 func (t *tracker) start(ag *service.Service, user, threadID, text string) string {
 	at := time.Now()
-	turn, err := ag.StartTurn(context.Background(), user, threadID, service.Input{Text: text})
+	turn, _, err := ag.StartTurn(context.Background(), user, threadID, service.Input{Text: text})
 	if err != nil {
 		log.Fatalf("start turn: %v", err)
 	}

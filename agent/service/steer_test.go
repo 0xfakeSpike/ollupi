@@ -110,7 +110,7 @@ func TestAMessageTakesThePlaceOfWhatTheTurnWaitsFor(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			turn, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, service.Input{Text: "记一下买牛奶"})
+			turn, _, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, service.Input{Text: "记一下买牛奶"})
 			if err != nil {
 				t.Fatal(err)
 			}

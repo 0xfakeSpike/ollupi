@@ -21,22 +21,24 @@ type Input struct {
 	CronJobID   string
 }
 
-func (sv *Service) StartTurn(ctx context.Context, user, threadID string, in Input) (db.TurnRow, error) {
+// StartTurn takes the message to the thread and says how: it started the thread's current turn, started a turn behind
+// it, or joined the turn already waiting there, which it returns.
+func (sv *Service) StartTurn(ctx context.Context, user, threadID string, in Input) (db.TurnRow, db.Submission, error) {
 	atts, err := sv.attach(ctx, user, threadID, in.Attachments)
 	if err != nil {
-		return db.TurnRow{}, err
+		return db.TurnRow{}, "", err
 	}
-	turn, err := sv.startTurn(threadID, in, atts)
+	turn, how, err := sv.startTurn(threadID, in, atts)
 	if err != nil {
 		sv.removeAttachments(atts)
-		return db.TurnRow{}, err
+		return db.TurnRow{}, "", err
 	}
-	return turn, nil
+	return turn, how, nil
 }
 
 // StartScheduledTurn runs a scheduled task in its thread, whose owner set it; no caller asks for this one.
 func (sv *Service) StartScheduledTurn(threadID, text, jobID string) error {
-	_, err := sv.startTurn(threadID, Input{Text: text, CronJobID: jobID}, nil)
+	_, _, err := sv.startTurn(threadID, Input{Text: text, CronJobID: jobID}, nil)
 	return err
 }
 
@@ -60,46 +62,46 @@ func (sv *Service) InterruptTurn(user, threadID, expectedTurnID string) error {
 	return sv.o.Interrupt(threadID, expectedTurnID)
 }
 
-func (sv *Service) startTurn(threadID string, in Input, atts []db.Attachment) (db.TurnRow, error) {
+func (sv *Service) startTurn(threadID string, in Input, atts []db.Attachment) (db.TurnRow, db.Submission, error) {
 	text, err := checkMessage(in.Text, len(in.Attachments))
 	if err != nil {
-		return db.TurnRow{}, err
+		return db.TurnRow{}, "", err
 	}
 	st, err := sv.cfg.DB.ThreadState(threadID)
 	if err != nil {
-		return db.TurnRow{}, fmt.Errorf("service: thread %s: %w", threadID, err)
+		return db.TurnRow{}, "", fmt.Errorf("service: thread %s: %w", threadID, err)
 	}
 	if st.Thread.ParentThreadID != "" {
-		return db.TurnRow{}, ErrSubagentThread
+		return db.TurnRow{}, "", ErrSubagentThread
 	}
 	if queued, err := sv.cfg.DB.QueuedMessages(threadID); err != nil {
-		return db.TurnRow{}, fmt.Errorf("service: thread %s: %w", threadID, err)
+		return db.TurnRow{}, "", fmt.Errorf("service: thread %s: %w", threadID, err)
 	} else if queued >= maxQueuedMessages {
-		return db.TurnRow{}, ErrQueueFull
+		return db.TurnRow{}, "", ErrQueueFull
 	}
 	model, err := sv.res.ConversationModel(st.Last, in.Connection)
 	if err != nil {
-		return db.TurnRow{}, fmt.Errorf("service: %w: %v", ErrInvalidMessage, err)
+		return db.TurnRow{}, "", fmt.Errorf("service: %w: %v", ErrInvalidMessage, err)
 	}
 	if err := sv.checkLength(model, text); err != nil {
-		return db.TurnRow{}, err
+		return db.TurnRow{}, "", err
 	}
 	if err := sv.checkImages(threadID, model, atts); err != nil {
-		return db.TurnRow{}, err
+		return db.TurnRow{}, "", err
 	}
 	main, err := sv.res.MainRole(model)
 	if err != nil {
-		return db.TurnRow{}, err
+		return db.TurnRow{}, "", err
 	}
 	return sv.submit(st.Thread, db.TurnRow{CronJobID: in.CronJobID, Agent: string(main)}, model, text, atts)
 }
 
 // submit takes the message to the thread. A message that joins the turn waiting behind the current one tells of that
 // turn again, as it is now, with the model and role of its latest message.
-func (sv *Service) submit(t db.ThreadRow, turn db.TurnRow, model llm.Model, text string, atts []db.Attachment) (db.TurnRow, error) {
+func (sv *Service) submit(t db.ThreadRow, turn db.TurnRow, model llm.Model, text string, atts []db.Attachment) (db.TurnRow, db.Submission, error) {
 	t, turn, message, how, err := sv.record(t, turn, model, text, atts)
 	if err != nil {
-		return db.TurnRow{}, err
+		return db.TurnRow{}, "", err
 	}
 	defer sv.o.Wake(t.ID)
 	switch how {
@@ -111,7 +113,7 @@ func (sv *Service) submit(t db.ThreadRow, turn db.TurnRow, model llm.Model, text
 	}
 	sv.ev.Item(t, turn, message, true)
 	sv.ev.Status(t.ID)
-	return turn, nil
+	return turn, how, nil
 }
 
 // record takes the message to the thread (db.SubmitTurn), unless the conversation's workspace cannot take it or is
@@ -120,15 +122,15 @@ func (sv *Service) record(t db.ThreadRow, turn db.TurnRow, model llm.Model, text
 	if t.WorkspaceID != "" {
 		w, err := sv.workspaceOf(t.WorkspaceID)
 		if err != nil {
-			return db.ThreadRow{}, db.TurnRow{}, db.ItemRow{}, 0, err
+			return db.ThreadRow{}, db.TurnRow{}, db.ItemRow{}, "", err
 		}
 		if err := usable(w); err != nil {
-			return db.ThreadRow{}, db.TurnRow{}, db.ItemRow{}, 0, err
+			return db.ThreadRow{}, db.TurnRow{}, db.ItemRow{}, "", err
 		}
 		sv.moveMu.Lock()
 		defer sv.moveMu.Unlock()
 		if sv.moving[w.ID] {
-			return db.ThreadRow{}, db.TurnRow{}, db.ItemRow{}, 0, fmt.Errorf("service: workspace %s is moving: %w", w.Name, ErrWorkspaceBusy)
+			return db.ThreadRow{}, db.TurnRow{}, db.ItemRow{}, "", fmt.Errorf("service: workspace %s is moving: %w", w.Name, ErrWorkspaceBusy)
 		}
 	}
 	now := time.Now().UTC()

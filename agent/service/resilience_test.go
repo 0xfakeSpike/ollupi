@@ -101,7 +101,7 @@ func TestASlowSandboxDoesNotHoldUpOtherThreads(t *testing.T) {
 	}
 	sent := make(chan error, 1)
 	go func() {
-		_, err := ag.StartTurn(ctx, db.DefaultUser, stuck.ID, service.Input{Text: "read", Attachments: []service.AttachmentInput{{Path: "/cloud/note.txt"}}})
+		_, _, err := ag.StartTurn(ctx, db.DefaultUser, stuck.ID, service.Input{Text: "read", Attachments: []service.AttachmentInput{{Path: "/cloud/note.txt"}}})
 		sent <- err
 	}()
 	<-machine.asked
@@ -143,7 +143,7 @@ func TestACrashFailsTheTurnAndNothingElse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, service.Input{Text: "hello"}); err != nil {
+	if _, _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, service.Input{Text: "hello"}); err != nil {
 		t.Fatal(err)
 	}
 	turn := endOf(ctx, t, ended)
@@ -175,7 +175,7 @@ func TestATurnStopsAtItsRunLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, service.Input{Text: "hello"}); err != nil {
+	if _, _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, service.Input{Text: "hello"}); err != nil {
 		t.Fatal(err)
 	}
 	if turn := endOf(ctx, t, ended); turn.Status != db.TurnFailed || !strings.Contains(turn.Error, "time limit") {
@@ -245,7 +245,7 @@ func TestACutOffResponseRunsNoCall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, service.Input{Text: "hello"}); err != nil {
+	if _, _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, service.Input{Text: "hello"}); err != nil {
 		t.Fatal(err)
 	}
 	if turn := endOf(ctx, t, ended); turn.Status != db.TurnCompleted {
@@ -308,7 +308,7 @@ func TestNoTurnStartsWhileTheWorkspaceMoves(t *testing.T) {
 		moved <- err
 	}()
 	<-box.moving
-	if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, service.Input{Text: "hello"}); !errors.Is(err, service.ErrWorkspaceBusy) {
+	if _, _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, service.Input{Text: "hello"}); !errors.Is(err, service.ErrWorkspaceBusy) {
 		t.Errorf("a turn during the move: %v", err)
 	}
 	close(box.release)
@@ -331,11 +331,11 @@ func TestAConversationQueuesOnlySoManyTurns(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := 0; i < 21; i++ {
-		if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, service.Input{Text: fmt.Sprintf("message %d", i)}); err != nil {
+		if _, _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, service.Input{Text: fmt.Sprintf("message %d", i)}); err != nil {
 			t.Fatalf("message %d: %v", i, err)
 		}
 	}
-	if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, service.Input{Text: "one more"}); !errors.Is(err, service.ErrQueueFull) {
+	if _, _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, service.Input{Text: "one more"}); !errors.Is(err, service.ErrQueueFull) {
 		t.Errorf("past the queue: %v", err)
 	}
 }
@@ -394,7 +394,7 @@ func TestAStorageErrorIsNotShownToTheUser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, service.Input{Text: "read", Attachments: []service.AttachmentInput{{Path: "/cloud/note.txt"}}}); err != nil {
+	if _, _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, service.Input{Text: "read", Attachments: []service.AttachmentInput{{Path: "/cloud/note.txt"}}}); err != nil {
 		t.Fatal(err)
 	}
 	turn := endOf(ctx, t, ended)

@@ -94,7 +94,7 @@ func TestAParentAnswersWhileItsSubagentWorks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	turn, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, service.Input{Text: "让子 agent 去下载"})
+	turn, _, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, service.Input{Text: "让子 agent 去下载"})
 	if err != nil {
 		t.Fatal(err)
 	}

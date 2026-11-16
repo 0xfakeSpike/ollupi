@@ -215,7 +215,14 @@ func TestTrafficMatchesContract(t *testing.T) {
 
 	turn = c.startTurn(threadID, "please touch the file")
 	approval := c.await(requestApproval, nil)
-	queued := c.startTurn(threadID, "and then say hi")
+	// Messages sent while the turn waits go into one turn behind it, and turn/start says how each was taken.
+	var behind, joined TurnResult
+	c.call("turn/start", TurnStartParams{ThreadID: threadID, Input: []UserInput{{Type: "text", Text: "and then say hi"}}}, &behind)
+	c.call("turn/start", TurnStartParams{ThreadID: threadID, Input: []UserInput{{Type: "text", Text: "and wave"}}}, &joined)
+	if behind.Submission != db.Queued || joined.Submission != db.Joined || joined.Turn.ID != behind.Turn.ID {
+		t.Errorf("turn/start behind a waiting turn: %s %s, then %s %s; want queued, then joined into the same turn", behind.Submission, behind.Turn.ID, joined.Submission, joined.Turn.ID)
+	}
+	queued := behind.Turn.ID
 	c.await("turn/queued", nil)
 	// A message sent while the call waits for approval answers in its place: the call is declined and the turn goes on.
 	var asked ApprovalRequestParams
@@ -369,7 +376,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	go jobs.Run(agentCtx, func(threadID, text, jobID string) error {
-		_, err := ag.StartTurn(ctx, db.DefaultUser, threadID, service.Input{Text: text, CronJobID: jobID})
+		_, _, err := ag.StartTurn(ctx, db.DefaultUser, threadID, service.Input{Text: text, CronJobID: jobID})
 		return err
 	})
 	ran := c.await("turn/completed", func(params json.RawMessage) bool {

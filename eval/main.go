@@ -137,7 +137,7 @@ func main() {
 		log.Fatalf("eval: %v", err)
 	}
 	startedAt := time.Now()
-	started, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, service.Input{Text: instruction})
+	started, _, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, service.Input{Text: instruction})
 	if err != nil {
 		log.Fatalf("eval: %v", err)
 	}

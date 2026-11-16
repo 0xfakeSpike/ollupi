@@ -94,7 +94,7 @@ func TestAUserCannotReachAnotherUsersThread(t *testing.T) {
 		"archive the thread": func() error { _, err := ag.ArchiveThread("b", thread.ID, true); return err },
 		"delete the thread":  func() error { return ag.DeleteThread("b", thread.ID) },
 		"start a turn": func() error {
-			_, err := ag.StartTurn(ctx, "b", thread.ID, service.Input{Text: "hello"})
+			_, _, err := ag.StartTurn(ctx, "b", thread.ID, service.Input{Text: "hello"})
 			return err
 		},
 		"steer": func() error {
@@ -198,7 +198,7 @@ func TestAUserHoldsNoMoreSlotsThanTheirLimit(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := ag.StartTurn(ctx, user, thread.ID, service.Input{Text: "hello"}); err != nil {
+		if _, _, err := ag.StartTurn(ctx, user, thread.ID, service.Input{Text: "hello"}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -278,7 +278,7 @@ func TestTurnsRunOnTheUsersClient(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		turn, err := ag.StartTurn(ctx, user, thread.ID, service.Input{Text: "hello"})
+		turn, _, err := ag.StartTurn(ctx, user, thread.ID, service.Input{Text: "hello"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -514,10 +514,10 @@ func TestAttachmentsLiveInTheStore(t *testing.T) {
 	if err := os.WriteFile(onHost, []byte("of this machine"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, service.Input{Text: "read", Attachments: []service.AttachmentInput{{Path: onHost}}}); err == nil {
+	if _, _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, service.Input{Text: "read", Attachments: []service.AttachmentInput{{Path: onHost}}}); err == nil {
 		t.Fatal("a user with a sandbox attached a file of this machine")
 	}
-	if _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, service.Input{Text: "read", Attachments: []service.AttachmentInput{{Path: "/cloud/note.txt"}}}); err != nil {
+	if _, _, err := ag.StartTurn(ctx, db.DefaultUser, thread.ID, service.Input{Text: "read", Attachments: []service.AttachmentInput{{Path: "/cloud/note.txt"}}}); err != nil {
 		t.Fatal(err)
 	}
 	select {

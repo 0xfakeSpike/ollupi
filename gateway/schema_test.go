@@ -43,6 +43,7 @@ type contract struct {
 	Errors              map[int]string                `json:"errors"`
 	Closes              map[int]Ending                `json:"closes"`
 	Handshakes          map[int]Ending                `json:"handshakes"`
+	Limits              Limits                        `json:"limits"`
 	BuiltinTools        map[string]toolSchemas        `json:"builtinTools"`
 	Providers           []string                      `json:"providers"`
 }
@@ -74,7 +75,7 @@ var providers = []string{cron.ProviderName, skills.ProviderName, memory.Provider
 
 var enums = []any{
 	db.ItemTypeValues, db.ItemStatusValues, db.TurnStatusValues, db.ThreadStatusValues,
-	db.DecisionValues, db.MemoryRowStatusValues, db.MemoryScopeValues, db.MemoryFailureCodeValues, permission.PolicyValues, role.NameValues, plan.StatusValues, tools.AwaitByValues, db.AttachmentKindValues, db.EnvironmentKindValues,
+	db.DecisionValues, db.SubmissionValues, db.MemoryRowStatusValues, db.MemoryScopeValues, db.MemoryFailureCodeValues, permission.PolicyValues, role.NameValues, plan.StatusValues, tools.AwaitByValues, db.AttachmentKindValues, db.EnvironmentKindValues,
 }
 
 var plainStrings = []reflect.Type{reflect.TypeFor[db.Ref]()}
@@ -313,6 +314,7 @@ func generateSchema() ([]byte, error) {
 		Errors:              protocol.errors,
 		Closes:              protocol.closes,
 		Handshakes:          protocol.handshakes,
+		Limits:              protocol.limits,
 		BuiltinTools:        map[string]toolSchemas{},
 		Providers:           providers,
 	}
