@@ -17,17 +17,14 @@ type AwaitBy string
 
 const (
 	AwaitUser AwaitBy = "user"
-	// AwaitBackground waits for background calls to end.
-	AwaitBackground AwaitBy = "background"
 )
 
-var AwaitByValues = []AwaitBy{AwaitUser, AwaitBackground}
+var AwaitByValues = []AwaitBy{AwaitUser}
 
 type Await struct {
 	By      AwaitBy         `json:"by"`
 	Request json.RawMessage `json:"request"`
-	// Handle names what fulfils the wait once it has started. A wait for background calls names them in its request
-	// instead.
+	// Handle names what fulfils the wait once it has started.
 	Handle string `json:"handle,omitempty"`
 }
 

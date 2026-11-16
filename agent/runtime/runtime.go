@@ -2,29 +2,18 @@ package runtime
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
-	"github.com/0xfakeSpike/ollupi/agent/memory"
-	"github.com/0xfakeSpike/ollupi/agent/permission"
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/pkg/redact"
 	"github.com/0xfakeSpike/ollupi/repo/blobs"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/google/uuid"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 )
-
-// The runtime traces through the global TracerProvider, as the agent does.
-var tracer = otel.Tracer("github.com/0xfakeSpike/ollupi/agent/runtime")
 
 const (
 	maxModelCalls = 200
@@ -34,262 +23,82 @@ const (
 	maxConsecutiveFailures = 10
 )
 
-// Config is what every run goes by from the deployment's configuration.
-type Config struct {
-	// Name and Prompt make the agent's own prompt, and SkillsDir is where each role's skills are installed.
-	Name, Prompt, SkillsDir string
-	// Settings are the default permission settings, which serve users with different tools when Shared. Tools, when
-	// set, are the only tools a turn may use.
-	Settings permission.Settings
-	Shared   bool
-	Tools    []string
-}
-
 // A Runtime runs one turn. It is given where the data is kept and what its user runs on, and reads the rest itself:
 // the turn, its conversation and workspace, the items, the user's settings and the permissions.
 type Runtime struct {
-	DB *db.DB
-	// Attachments keeps the files sent with messages; without it messages have none. Memory keeps the users' memory;
-	// without it a run loads none.
+	LLM llm.Client
+
+	DB          *db.DB
 	Attachments blobs.Store
-	Memory      *memory.Manager
-	LLM         llm.Client
 	Registry    *tools.Registry
-	Window      *contextmanager.Manager
-	Host        Host
-	Config      Config
-	// TurnID is the turn to run.
-	TurnID string
+	// Events tells those who watch the thread of the items the run records and the text the model streams.
+	Events event.Emitter
 
-	turn db.TurnRow
-	// thread is the turn's conversation, and workspace the workspace it works in, if any.
-	thread    db.ThreadRow
-	workspace db.WorkspaceRow
-	// role is the role of agent the turn names, which the run is.
-	role        role.Role
-	permissions *permission.Checker
-	history     []db.ItemRow
-	items       []db.ItemRow
-
-	offered  []tools.ToolDescriptor
-	deferred []tools.ToolDescriptor
-	redactor *redact.Redactor
-	usage    db.Usage
+	// Role is the role the turn names, which Run loads the turn into and runs it as.
+	Role role.Role
 }
 
-// Run runs the turn until it ends with the final answer, which it reports, or waits. In the trace of ctx it records
-// how long the turn waited to run, and the run.
-func (rt *Runtime) Run(ctx context.Context) (bool, db.Usage, error) {
-	if err := rt.load(); err != nil {
+// Run runs the turn, which names Role, until it ends with the final answer, which it reports, or waits. It loads the
+// turn into the role, which keeps the user's secrets with their key and takes in their memory, before the first
+// model call.
+func (rt *Runtime) Run(ctx context.Context, turnID string) (bool, db.Usage, error) {
+	if err := rt.Role.Load(rt.DB, rt.Registry, turnID); err != nil {
+		return false, db.Usage{}, fmt.Errorf("runtime: %w", err)
+	}
+	if rt.waiting() {
+		return false, db.Usage{}, fmt.Errorf("runtime: turn %s still waits for an answer", rt.Role.Turn().ID)
+	}
+	settings, err := rt.DB.Settings(rt.Role.Thread().UserID)
+	if err != nil {
+		return false, db.Usage{}, fmt.Errorf("runtime: read the settings: %w", err)
+	}
+	rt.Role.Redact(settings.RedactionKey)
+	if err := rt.loadMemory(); err != nil {
 		return false, db.Usage{}, err
 	}
-	t := rt.thread
-	attrs := trace.WithAttributes(
-		attribute.String("ollupi.user.id", t.UserID), attribute.String("ollupi.thread.id", t.ID), attribute.String("ollupi.turn.id", rt.turn.ID),
-		attribute.Bool("ollupi.thread.subagent", t.ParentThreadID != ""),
-		attribute.String("gen_ai.request.model", rt.turn.Model.Name), attribute.String("ollupi.connection", rt.turn.Model.Connection))
-	_, wait := tracer.Start(ctx, "ollupi.turn.wait", attrs, trace.WithTimestamp(readySince(rt.turn, slices.Concat(rt.history, rt.items))))
-	wait.End()
-	runCtx, span := tracer.Start(ctx, "ollupi.turn.run", attrs)
-	defer span.End()
-	var final bool
-	err := rt.start()
-	if err == nil {
-		final, err = rt.run(runCtx)
-	}
-	span.SetAttributes(attribute.Bool("ollupi.run.final", final))
-	// A run its slot stopped did not fail; one past its time limit did, for the limit's reason.
-	if cause := context.Cause(ctx); err != nil && !errors.Is(cause, context.Canceled) {
-		if cause == nil {
-			cause = err
-		}
-		span.SetStatus(codes.Error, cause.Error())
-	}
-	return final, rt.usage, err
-}
-
-// readySince is when the turn last became ready to run: when it was submitted or, behind another, when that one's
-// last item changed, or when the last of its own items, such as a decided approval or a subagent's answer, changed
-// after that. items are the conversation the turn runs on.
-func readySince(turn db.TurnRow, items []db.ItemRow) time.Time {
-	since := turn.StartedAt
-	for _, it := range items {
-		changes := []*time.Time{&it.StartedAt, it.CompletedAt}
-		if it.Approval != nil {
-			changes = append(changes, it.Approval.DecidedAt)
-		}
-		for _, changed := range changes {
-			if changed != nil && changed.After(since) {
-				since = *changed
-			}
-		}
-	}
-	return since
-}
-
-// load reads the turn, its conversation and the items of the conversation's turns, and makes the permissions of the
-// turn's role.
-func (rt *Runtime) load() error {
-	turn, err := rt.DB.Turn(rt.TurnID)
-	if err != nil {
-		return fmt.Errorf("runtime: turn %s: %w", rt.TurnID, err)
-	}
-	r, ok := role.Of(role.Name(turn.Agent))
-	if !ok {
-		return fmt.Errorf("runtime: turn %s names role %q, which is none of %q", turn.ID, turn.Agent, role.NameValues)
-	}
-	thread, err := rt.DB.ThreadRow(turn.ThreadID)
-	if err != nil {
-		return fmt.Errorf("runtime: thread %s: %w", turn.ThreadID, err)
-	}
-	items, err := rt.DB.RunItems(thread.ID, turn.Seq)
-	if err != nil {
-		return fmt.Errorf("runtime: the items of thread %s: %w", thread.ID, err)
-	}
-	rt.turn, rt.role = turn, r
-	for _, it := range items {
-		if it.TurnID == turn.ID {
-			rt.items = append(rt.items, it)
-		} else {
-			rt.history = append(rt.history, it)
-		}
-	}
-	return rt.permit(thread)
-}
-
-// permit makes the permissions of the turn's role in the conversation as it is now, with its workspace's: the role's
-// own layer, below the default, workspace and conversation settings, with the tools the configuration allows.
-func (rt *Runtime) permit(t db.ThreadRow) error {
-	var w db.WorkspaceRow
-	if t.WorkspaceID != "" {
-		var err error
-		if w, err = rt.DB.Workspace(string(t.WorkspaceID)); err != nil {
-			return fmt.Errorf("runtime: workspace %s: %w", t.WorkspaceID, err)
-		}
-	}
-	// The role's layer comes first, so that the user's settings decide over it.
-	layers := append([]permission.Layer{rt.role.Permission}, permission.Base(rt.Config.Settings, rt.Config.Shared, w)...)
-	if t.ParentThreadID == "" {
-		layers = append(layers, permission.ThreadLayer(t.Settings))
-	} else {
-		parent, err := rt.DB.ThreadRow(string(t.ParentThreadID))
-		if err != nil {
-			return fmt.Errorf("runtime: parent thread %s: %w", t.ParentThreadID, err)
-		}
-		layers = append(layers, permission.ParentLayer(parent.Settings))
-	}
-	var allowlist []string
-	if rt.Config.Tools != nil {
-		allowlist = []string{}
-		for _, d := range rt.Registry.Descriptors() {
-			if slices.Contains(rt.Config.Tools, d.Name) {
-				allowlist = append(allowlist, d.Name)
-			}
-		}
-	}
-	checker, err := permission.New(layers, allowlist, rt.Registry)
-	if err != nil {
-		return err
-	}
-	rt.thread, rt.workspace, rt.permissions = t, w, checker
-	return nil
-}
-
-func (rt *Runtime) start() error {
-	if rt.waiting() {
-		return fmt.Errorf("runtime: turn %s still waits for an answer", rt.turn.ID)
-	}
-	settings, err := rt.DB.Settings(rt.thread.UserID)
-	if err != nil {
-		return fmt.Errorf("runtime: read the settings: %w", err)
-	}
-	rt.redactor = redact.New(settings.RedactionKey)
-	rt.offer()
-	if !rt.role.Memory || hasSnapshot(slices.Concat(rt.history, rt.items)) {
-		return nil
-	}
-	return rt.loadMemory()
-}
-
-func hasSnapshot(items []db.ItemRow) bool {
-	for i := len(items) - 1; i >= 0; i-- {
-		switch it := items[i]; {
-		case it.Type == db.ItemMemoryContext && it.Status == db.ItemCompleted:
-			return true
-		case it.Type == db.ItemContextCompaction && it.Status == db.ItemCompleted:
-			return false
-		}
-	}
-	return false
-}
-
-func (rt *Runtime) loadMemory() error {
-	if rt.Memory == nil {
-		return nil
-	}
-	snapshot, err := rt.Memory.Snapshot(rt.thread.UserID, string(rt.thread.WorkspaceID), rt.Window.MemoryBudget())
-	if err != nil {
-		return fmt.Errorf("runtime: load memory: %w", err)
-	}
-	if snapshot == nil {
-		return nil
-	}
-	now := time.Now().UTC()
-	_, err = rt.record(db.ItemRow{
-		ID: uuid.NewString(), TurnID: rt.turn.ID, Type: db.ItemMemoryContext, Status: db.ItemCompleted,
-		Memory: snapshot.Entries, Text: snapshot.Text, StartedAt: now, CompletedAt: &now,
-	})
-	return err
-}
-
-func (rt *Runtime) tool(name string) (tools.ToolDescriptor, bool) {
-	i := slices.IndexFunc(rt.offered, func(d tools.ToolDescriptor) bool { return d.Name == name })
-	if i < 0 {
-		return tools.ToolDescriptor{}, false
-	}
-	return rt.offered[i], true
-}
-
-// offer keeps the role's split of the tools the run may use.
-func (rt *Runtime) offer() {
-	rt.offered, rt.deferred = rt.role.Offer(rt.permissions.Tools(), rt.Window, slices.Concat(rt.history, rt.items))
-}
-
-func (rt *Runtime) run(ctx context.Context) (bool, error) {
 	for {
-		plan, err := rt.planCalls(ctx)
-		if err != nil {
-			return false, err
-		}
-		if final, err := rt.executePlan(ctx, plan); final || err != nil || rt.waiting() {
-			return final, err
+		if final, err := rt.callTools(ctx); final || err != nil || rt.waiting() {
+			return final, rt.Role.Usage(), err
 		}
 		if rt.modelCalls() >= maxModelCalls {
-			return true, rt.finish(ctx, fmt.Sprintf("reached the model call limit (%d)", maxModelCalls))
+			return true, rt.Role.Usage(), rt.finish(ctx, fmt.Sprintf("reached the model call limit (%d)", maxModelCalls))
 		}
 		seen := 0
-		if n := len(rt.items); n > 0 {
-			seen = rt.items[n-1].Seq
+		if n := len(rt.Role.Items()); n > 0 {
+			seen = rt.Role.Items()[n-1].Seq
 		}
 		resp, err := rt.respond(ctx, llm.ToolChoiceAuto)
 		if err != nil {
-			return false, err
+			return false, rt.Role.Usage(), err
 		}
-		if err := rt.reload(); err != nil {
-			return false, err
+		if err := rt.Role.Reload(rt.DB, rt.Registry); err != nil {
+			return false, rt.Role.Usage(), err
 		}
-		rt.offer()
 		if resp.FinishReason == "length" && len(resp.Message.ToolCalls) > 0 {
 			if halt := rt.haltAfterFailures(cutOffCall); halt != "" {
-				return true, rt.finish(ctx, halt)
+				return true, rt.Role.Usage(), rt.finish(ctx, halt)
 			}
 		}
-		if len(resp.Message.ToolCalls) == 0 && !slices.ContainsFunc(rt.items, func(it db.ItemRow) bool {
-			return (it.Type == db.ItemUserMessage || it.Type == db.ItemBackgroundResult || it.Type == db.ItemAgentReport) && it.Seq > seen
+		// The answer is final unless it called tools or input came while it streamed.
+		if len(resp.Message.ToolCalls) == 0 && !slices.ContainsFunc(rt.Role.Items(), func(it db.ItemRow) bool {
+			return (it.Type == db.ItemUserMessage || it.Type == db.ItemAgentReport) && it.Seq > seen
 		}) {
-			return true, nil
+			return true, rt.Role.Usage(), nil
 		}
 	}
+}
+
+// loadMemory records the memory snapshot the role recalls now, if any.
+func (rt *Runtime) loadMemory() error {
+	it, err := rt.Role.Recall()
+	if err != nil {
+		return fmt.Errorf("runtime: load memory: %w", err)
+	}
+	if it == nil {
+		return nil
+	}
+	_, err = rt.record(*it)
+	return err
 }
 
 const finalAnswerNotice = `[runtime] Tool use has stopped: %s.
@@ -298,7 +107,7 @@ Do not call tools. Write the final answer to the user now, in their language: re
 func (rt *Runtime) finish(ctx context.Context, reason string) error {
 	now := time.Now().UTC()
 	if _, err := rt.record(db.ItemRow{
-		ID: uuid.NewString(), TurnID: rt.turn.ID, Type: db.ItemError, Status: db.ItemCompleted,
+		ID: uuid.NewString(), TurnID: rt.Role.Turn().ID, Type: db.ItemError, Status: db.ItemCompleted,
 		Text: fmt.Sprintf(finalAnswerNotice, reason), StartedAt: now, CompletedAt: &now,
 	}); err != nil {
 		return err
@@ -310,18 +119,12 @@ func (rt *Runtime) finish(ctx context.Context, reason string) error {
 }
 
 func (rt *Runtime) record(it db.ItemRow) (db.ItemRow, error) {
-	stored, isNew, err := rt.DB.RecordItem(rt.thread.ID, it)
+	stored, isNew, err := rt.DB.RecordItem(rt.Role.Thread().ID, it)
 	if err != nil {
 		return db.ItemRow{}, fmt.Errorf("runtime: record %s item: %w", it.Type, err)
 	}
-	rt.Host.Notify(stored, isNew)
-	for i := range rt.items {
-		if rt.items[i].ID == stored.ID {
-			rt.items[i] = stored
-			return stored, nil
-		}
-	}
-	rt.items = append(rt.items, stored)
+	rt.Events.Item(rt.Role.Thread(), rt.Role.Turn(), stored, isNew)
+	rt.Role.Keep(stored)
 	return stored, nil
 }
 
@@ -338,28 +141,20 @@ func withError(it db.ItemRow, text string) db.ItemRow {
 }
 
 func (rt *Runtime) waiting() bool {
-	return slices.ContainsFunc(rt.items, func(it db.ItemRow) bool { return it.WaitsOnUser() || it.Awaits() })
+	return slices.ContainsFunc(rt.Role.Items(), func(it db.ItemRow) bool { return it.WaitsOnUser() || it.Awaits() })
 }
 
 // caller is who makes the call that the item records: the run's role, in its conversation.
 func (rt *Runtime) caller(it db.ItemRow) tools.Caller {
-	t := rt.thread
+	t := rt.Role.Thread()
+	_, deferred := rt.Role.Offer()
+	names := make([]string, len(deferred))
+	for i, d := range deferred {
+		names[i] = d.Name
+	}
 	return tools.Caller{
 		UserID: t.UserID, ThreadID: t.ID, WorkspaceID: string(t.WorkspaceID), EnvironmentID: string(t.EnvironmentID),
-		Root: rt.workspace.RootPath, Subagent: t.ParentThreadID != "", Role: string(rt.role.Name), Item: it.ID,
+		Root: rt.Role.Workspace().RootPath, Subagent: t.ParentThreadID != "", Role: string(rt.Role.Name()), Item: it.ID,
+		Deferred: names,
 	}
-}
-
-// reload reads the turn's items again, with the permissions of its conversation as they are now.
-func (rt *Runtime) reload() error {
-	items, err := rt.DB.TurnItems(rt.turn.ID)
-	if err != nil {
-		return fmt.Errorf("runtime: reload the turn: %w", err)
-	}
-	current, err := rt.DB.ThreadRow(rt.thread.ID)
-	if err != nil {
-		return fmt.Errorf("runtime: thread %s: %w", rt.thread.ID, err)
-	}
-	rt.items = items
-	return rt.permit(current)
 }

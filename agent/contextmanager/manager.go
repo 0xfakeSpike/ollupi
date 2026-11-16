@@ -153,10 +153,6 @@ func (m *Manager) MemoryBudget() int {
 	return max(0, min(4000, m.inputTokens*8/100))
 }
 
-func (m *Manager) ToolsFit(tools any) bool {
-	return llm.EstimateTokens(prettyJSON(tools)) <= share(m.inputTokens, toolPercent)
-}
-
 func (m *Manager) artifactBudget() int {
 	return share(m.inputTokens, artifactPercent)
 }
@@ -240,15 +236,6 @@ func (m *Manager) transcript(obs *observations, items []db.ItemRow, limit int, c
 				content = "[sent " + it.StartedAt.In(time.Local).Format(sentLayout) + "]\n" + content
 			}
 			out = append(out, llm.ChatMessage{Role: llm.RoleUser, Content: content, Parts: attachmentParts(it.Attachments)})
-			i++
-		case it.Type == db.ItemBackgroundResult:
-			// Like the memory snapshot, it goes as a message with no [sent ...] line: data, not the user's words.
-			content, err := obs.callResult(&items[i], m.observationBudget(1, maxObservationTokens))
-			if err != nil {
-				return nil, 0, err
-			}
-			header := fmt.Sprintf("[background call %s of %s ended: %s]\n", it.BackgroundID, it.Tool, it.Text)
-			out = append(out, llm.ChatMessage{Role: llm.RoleUser, Content: header + content})
 			i++
 		case it.Type == db.ItemAgentReport:
 			// The report of a subagent this turn launched, which came back as it ended: data too, the subagent's words.

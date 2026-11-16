@@ -16,8 +16,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
 	"github.com/google/uuid"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
 )
 
 type Input struct {
@@ -37,7 +35,6 @@ func (sv *Service) StartTurn(ctx context.Context, user, threadID string, in Inpu
 		sv.removeAttachments(atts)
 		return db.TurnRow{}, err
 	}
-	linkTurn(ctx, turn)
 	return turn, nil
 }
 
@@ -57,15 +54,7 @@ func (sv *Service) SteerTurn(ctx context.Context, user, threadID, expectedTurnID
 		sv.removeAttachments(atts)
 		return db.TurnRow{}, err
 	}
-	linkTurn(ctx, turn)
 	return turn, nil
-}
-
-// linkTurn names the turn on the request's span and links it to the turn's trace, where the turn's runs are.
-func linkTurn(ctx context.Context, turn db.TurnRow) {
-	span := trace.SpanFromContext(ctx)
-	span.SetAttributes(attribute.String("ollupi.turn.id", turn.ID))
-	span.AddLink(trace.Link{SpanContext: orchestrator.TurnTrace(turn.ID)})
 }
 
 func (sv *Service) InterruptTurn(user, threadID, expectedTurnID string) error {
@@ -133,7 +122,7 @@ func (sv *Service) startTurn(threadID string, in Input, atts []db.Attachment) (d
 	if err != nil {
 		return db.TurnRow{}, err
 	}
-	return sv.submit(st.Thread, db.TurnRow{CronJobID: in.CronJobID, Agent: string(main.Name)}, model, text, atts)
+	return sv.submit(st.Thread, db.TurnRow{CronJobID: in.CronJobID, Agent: string(main)}, model, text, atts)
 }
 
 // submit takes the message to the thread. A message that joins the turn waiting behind the current one tells of that

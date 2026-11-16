@@ -60,15 +60,13 @@ const (
 	TurnWaitingOnApproval  TurnStatus = "waitingOnApproval"
 	TurnWaitingOnUserInput TurnStatus = "waitingOnUserInput"
 	TurnWaitingOnAgent     TurnStatus = "waitingOnAgent"
-	// TurnWaitingOnBackground waits for background calls of its thread to end.
-	TurnWaitingOnBackground TurnStatus = "waitingOnBackground"
-	TurnCompleted           TurnStatus = "completed"
-	TurnInterrupted         TurnStatus = "interrupted"
-	TurnFailed              TurnStatus = "failed"
+	TurnCompleted          TurnStatus = "completed"
+	TurnInterrupted        TurnStatus = "interrupted"
+	TurnFailed             TurnStatus = "failed"
 )
 
 var TurnStatusValues = []TurnStatus{TurnReady, TurnInProgress, TurnWaitingOnApproval, TurnWaitingOnUserInput,
-	TurnWaitingOnAgent, TurnWaitingOnBackground, TurnCompleted, TurnInterrupted, TurnFailed}
+	TurnWaitingOnAgent, TurnCompleted, TurnInterrupted, TurnFailed}
 
 func (s TurnStatus) Value() (driver.Value, error) { return enumValue(s, TurnStatusValues) }
 
@@ -105,11 +103,11 @@ func (d *DB) ThreadsWaitingOnUser(user string) ([]string, error) {
 	return ids, err
 }
 
-// StrandedThreads lists the threads a stopped process may have left without a way forward: a turn it was running, or
-// a call awaiting background calls that ended as it stopped. A subagent reports as its turn ends, in the same write.
+// StrandedThreads lists the threads a stopped process may have left without a way forward: a turn it was running. A
+// subagent reports as its turn ends, in the same write.
 func (d *DB) StrandedThreads() ([]string, error) {
 	var ids []string
-	err := d.gorm.Raw(`SELECT DISTINCT thread_id FROM turns WHERE status IN ('inProgress', 'waitingOnBackground')`).Scan(&ids).Error
+	err := d.gorm.Raw(`SELECT DISTINCT thread_id FROM turns WHERE status = 'inProgress'`).Scan(&ids).Error
 	return ids, err
 }
 
@@ -150,9 +148,9 @@ func (d *DB) settleStatus(turnID string, from TurnStatus) (TurnStatus, error) {
 	return status, nil
 }
 
-// waitingOn is the status of a turn out of its slot with these open calls: an approval or an answer to wait for
-// comes first, since only a person can give it; then background calls; with nothing awaited, the turn is ready. A turn
-// waits on its subagents only once it answered (AfterAnswer), since they come back as items, not as calls.
+// waitingOn is the status of a turn out of its slot with these open calls: an approval or an answer to wait for, or
+// with nothing awaited ready. A turn waits on its subagents only once it answered (AfterAnswer), since they come back
+// as items, not as calls.
 func waitingOn(open []ItemRow) TurnStatus {
 	status := TurnReady
 	for _, it := range open {
@@ -161,8 +159,6 @@ func waitingOn(open []ItemRow) TurnStatus {
 			return TurnWaitingOnApproval
 		case it.WaitsOnUser():
 			status = TurnWaitingOnUserInput
-		case it.waitsOnBackground() && status == TurnReady:
-			status = TurnWaitingOnBackground
 		}
 	}
 	return status
@@ -471,6 +467,6 @@ func (d *DB) TurnItems(turnID string) ([]ItemRow, error) {
 
 func (d *DB) InputAfterAnswer(turnID string) (bool, error) {
 	var n int64
-	err := d.gorm.Model(&ItemRow{}).Where("turn_id = ? AND type IN ('userMessage', 'backgroundResult', 'agentReport') AND seq > (SELECT COALESCE(MAX(seq), 0) FROM items WHERE turn_id = ? AND type = 'agentMessage' AND status = 'completed')", turnID, turnID).Count(&n).Error
+	err := d.gorm.Model(&ItemRow{}).Where("turn_id = ? AND type IN ('userMessage', 'agentReport') AND seq > (SELECT COALESCE(MAX(seq), 0) FROM items WHERE turn_id = ? AND type = 'agentMessage' AND status = 'completed')", turnID, turnID).Count(&n).Error
 	return n > 0, err
 }

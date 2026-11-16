@@ -272,8 +272,7 @@
     "AwaitBy": {
       "type": "string",
       "enum": [
-        "user",
-        "background"
+        "user"
       ]
     },
     "ClientInfo": {
@@ -1222,9 +1221,6 @@
             "$ref": "#/$defs/Attachment"
           }
         },
-        "backgroundId": {
-          "type": "string"
-        },
         "text": {
           "type": "string"
         },
@@ -1282,7 +1278,6 @@
         "contextCompaction",
         "memoryContext",
         "error",
-        "backgroundResult",
         "agentReport"
       ]
     },
@@ -2574,9 +2569,6 @@
         "input_schema": {
           "type": "object",
           "additionalProperties": true
-        },
-        "background": {
-          "type": "boolean"
         }
       },
       "required": [
@@ -2759,7 +2751,6 @@
         "waitingOnApproval",
         "waitingOnUserInput",
         "waitingOnAgent",
-        "waitingOnBackground",
         "completed",
         "interrupted",
         "failed"

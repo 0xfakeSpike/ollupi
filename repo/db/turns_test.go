@@ -1,6 +1,7 @@
 package db
 
 import (
+	"github.com/0xfakeSpike/ollupi/tools/loader"
 	"slices"
 	"testing"
 	"time"
@@ -34,7 +35,7 @@ func TestRunItemsCarryOnlyWhatOutlastsACompaction(t *testing.T) {
 		{ID: "answer", Type: ItemAgentMessage, Status: ItemCompleted, Text: "old answer", Native: []byte(`{}`)},
 		call("plain", "run_command", ItemCompleted),
 		skill,
-		call("load", tools.ToolLoadTools, ItemCompleted),
+		call("load", loader.Tool, ItemCompleted),
 		session,
 		{ID: "compaction", Type: ItemContextCompaction, Status: ItemCompleted, Text: "summary"},
 		{ID: "recent", Type: ItemAgentMessage, Status: ItemCompleted, Text: "new answer", Native: []byte(`{"kept":true}`)},

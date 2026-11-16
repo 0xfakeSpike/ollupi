@@ -56,7 +56,6 @@ func (r *Provider) claudeTool() *tools.Spec {
 		Annotations:       &tools.Annotations{Title: "Claude Code", DestructiveHint: tools.Hint(true), OpenWorldHint: tools.Hint(true)},
 		PermissionContent: claudePermissionContent,
 		Local:             &tools.Local{Prepare: r.prepareClaude, Run: r.runClaude},
-		Background:        true,
 	}
 }
 

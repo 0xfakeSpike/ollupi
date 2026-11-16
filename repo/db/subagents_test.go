@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/google/uuid"
 )
 
@@ -168,26 +167,5 @@ func TestASubagentOfAnEndedTurnReportsToNoOne(t *testing.T) {
 	}
 	if report := s.end(child, TurnInterrupted); report != nil {
 		t.Errorf("the subagent reported to an ended turn: %+v", report)
-	}
-}
-
-// A message to a turn that waits on background calls takes the wait's place: the wait is declined and the turn is
-// ready, while the background calls go on.
-func TestAMessageEndsAWaitOnBackgroundCalls(t *testing.T) {
-	s := newSubagentShard(t)
-	wait := ItemRow{ID: "wait", TurnID: s.turn.ID, Type: ItemToolCall, Status: ItemInProgress, Tool: "wait_background", Arguments: "{}",
-		Await: &tools.Await{By: tools.AwaitBackground, Request: []byte(`{}`)}, StartedAt: s.at}
-	if _, _, err := s.db.RecordItem("main", wait); err != nil {
-		t.Fatal(err)
-	}
-	if got, err := s.db.Park(s.turn.ID); err != nil || got != TurnWaitingOnBackground {
-		t.Fatalf("parked as %s (%v), want waitingOnBackground", got, err)
-	}
-	_, closed, err := s.db.Steer("main", NewUserMessage("steer", s.turn.ID, "never mind", nil, s.at))
-	if err != nil || len(closed) != 1 || closed[0].ID != "wait" || closed[0].Status != ItemDeclined {
-		t.Fatalf("closed %+v (%v); want the wait declined", closed, err)
-	}
-	if got := s.status(); got != TurnReady {
-		t.Errorf("after the message the turn is %s, want ready", got)
 	}
 }

@@ -76,8 +76,11 @@ func New(o Options) (*Provider, error) {
 
 func (r *Provider) Close() error { return r.box.Close() }
 
+// ProviderName is the provider of the tools that run commands and edit files.
+const ProviderName = "workspace"
+
 func (r *Provider) Name() (string, string) {
-	return "workspace", "Run commands and edit files in the working folders, under the sandbox unless it is turned off."
+	return ProviderName, "Run commands and edit files in the working folders, under the sandbox unless it is turned off."
 }
 
 func (r *Provider) tool() *tools.Spec {
@@ -108,7 +111,6 @@ func (r *Provider) tool() *tools.Spec {
 
 		PermissionContent: permissionContent,
 		Local:             &tools.Local{Prepare: r.prepareCommand, Run: r.runCommand},
-		Background:        true,
 	}
 }
 

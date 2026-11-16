@@ -362,17 +362,6 @@ func (s ThreadState) PendingRequests() []ItemRow {
 	return out
 }
 
-// BackgroundWaits are the open calls that wait for background calls to end.
-func (s ThreadState) BackgroundWaits() []ItemRow {
-	var out []ItemRow
-	for _, it := range s.OpenCalls {
-		if it.waitsOnBackground() {
-			out = append(out, it)
-		}
-	}
-	return out
-}
-
 // activeTurn is the current turn of turns in order: the first that has not ended.
 func activeTurn(turns []TurnRow) (TurnRow, bool) {
 	for _, t := range turns {

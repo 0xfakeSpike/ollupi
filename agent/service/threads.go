@@ -128,9 +128,6 @@ func (sv *Service) ArchiveThread(user, id string, archived bool) (db.ThreadRow, 
 		if err := sv.cfg.DB.CheckIdle(id); err != nil {
 			return db.ThreadRow{}, err
 		}
-		if err := sv.o.StopBackground(id, "the conversation was archived"); err != nil {
-			return db.ThreadRow{}, err
-		}
 		now := time.Now().UTC()
 		at = &now
 	}
@@ -153,9 +150,6 @@ func (sv *Service) DeleteThread(user, id string) error {
 		return err
 	}
 	if err := sv.cfg.DB.CheckIdle(id); err != nil {
-		return err
-	}
-	if err := sv.o.StopBackground(id, "the conversation was deleted"); err != nil {
 		return err
 	}
 	jobs, err := sv.cfg.DB.CronJobViews(user, id)

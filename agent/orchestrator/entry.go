@@ -7,8 +7,8 @@ import (
 	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
-// What the service asks of the orchestrator: to look at a conversation again, whether it holds a slot, to interrupt
-// its turn, and to stop or cancel background calls.
+// What the service asks of the orchestrator: to look at a conversation again, whether it holds a slot, and to interrupt
+// its turn.
 
 var (
 	ErrNoActiveTurn = errors.New("the thread has no turn in progress")
@@ -47,11 +47,10 @@ func (o *Orchestrator) interrupt(threadID, expectedTurnID string) error {
 		return fmt.Errorf("%w (expected %s, in progress %s)", ErrTurnMismatch, expectedTurnID, turn.ID)
 	}
 	reason := map[db.TurnStatus]string{
-		db.TurnReady:               "interrupted while waiting for a slot",
-		db.TurnWaitingOnApproval:   "interrupted while waiting for the user",
-		db.TurnWaitingOnUserInput:  "interrupted while waiting for the user",
-		db.TurnWaitingOnAgent:      "interrupted while waiting for subagents",
-		db.TurnWaitingOnBackground: "interrupted while waiting for background calls",
+		db.TurnReady:              "interrupted while waiting for a slot",
+		db.TurnWaitingOnApproval:  "interrupted while waiting for the user",
+		db.TurnWaitingOnUserInput: "interrupted while waiting for the user",
+		db.TurnWaitingOnAgent:     "interrupted while waiting for subagents",
 	}[turn.Status]
 	turn.Status, turn.Error = db.TurnInterrupted, reason
 	o.endTurn(turn)

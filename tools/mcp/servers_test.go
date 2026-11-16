@@ -138,13 +138,16 @@ func TestConnect(t *testing.T) {
 			t.Errorf("%s: %v, %v; want %q", tool, r.Output, r.Err, want)
 		}
 	}
-	for c, want := range map[tools.Caller]string{
-		{}: "null",
-		{ThreadID: "t1", WorkspaceID: "w1", Root: "/home/me/project"}: `{"threadId":"t1","workspaceId":"w1"}`,
-		{ThreadID: "t2", Subagent: true}:                              `{"subagent":true,"threadId":"t2"}`,
+	for _, tc := range []struct {
+		caller tools.Caller
+		want   string
+	}{
+		{tools.Caller{}, "null"},
+		{tools.Caller{ThreadID: "t1", WorkspaceID: "w1", Root: "/home/me/project"}, `{"threadId":"t1","workspaceId":"w1"}`},
+		{tools.Caller{ThreadID: "t2", Subagent: true}, `{"subagent":true,"threadId":"t2"}`},
 	} {
-		if r := reg.Invoke(ctx, c, "local__whoami", map[string]any{}); r.Err != nil || r.Output != want {
-			t.Errorf("caller %+v reached the server as %v, %v; want %s", c, r.Output, r.Err, want)
+		if r := reg.Invoke(ctx, tc.caller, "local__whoami", map[string]any{}); r.Err != nil || r.Output != tc.want {
+			t.Errorf("caller %+v reached the server as %v, %v; want %s", tc.caller, r.Output, r.Err, tc.want)
 		}
 	}
 }
