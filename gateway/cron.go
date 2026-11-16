@@ -5,9 +5,9 @@ import (
 	"errors"
 	"log/slog"
 
-	"github.com/0xfakeSpike/ollupi/cron"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/repo/db"
+	"github.com/0xfakeSpike/ollupi/tools/cron"
 )
 
 func (c *conn) cronJobs() (*cron.Jobs, error) {
