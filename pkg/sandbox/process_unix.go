@@ -19,9 +19,6 @@ func ownProcessGroup(cmd *exec.Cmd, tag string) {
 }
 
 func killRun(cmd *exec.Cmd, tag string) {
-	if cmd.Process == nil {
-		return
-	}
 	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 	killTagged(tag, cmd.Process.Pid)
 }

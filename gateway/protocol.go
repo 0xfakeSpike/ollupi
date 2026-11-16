@@ -1,25 +1,32 @@
 package gateway
 
-//go:generate go test -run ^TestProtocolSchema$ . -update
-
 import (
 	"context"
 	"crypto/sha256"
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
 	"reflect"
 
+	"github.com/0xfakeSpike/ollupi/agent/memory"
+	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
+	"github.com/0xfakeSpike/ollupi/agent/permission"
+	"github.com/0xfakeSpike/ollupi/agent/service"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/wshub"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/0xfakeSpike/ollupi/tools/cron"
 	"github.com/0xfakeSpike/ollupi/tools/mcp"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
 	"github.com/coder/websocket"
 )
+
+//go:generate go test -run ^TestProtocolSchema$ . -update
 
 const (
 	errNotInitialized    = -32002
@@ -573,4 +580,45 @@ type UserInputResponse struct {
 	// Skipped declines the questions without answers (send answers as {}): the call ends declined and the agent goes
 	// on without them.
 	Skipped bool `json:"skipped,omitempty"`
+}
+
+var errorCodes = []struct {
+	err  error
+	code int
+}{
+	{db.ErrNotFound, errNotFound},
+	{orchestrator.ErrNoActiveTurn, errNoActiveTurn},
+	{orchestrator.ErrTurnMismatch, errTurnMismatch},
+	{db.ErrNoSuchRequest, errNoSuchRequest},
+	{service.ErrSubagentThread, errSubagentThread},
+	{service.ErrWorkspaceArchived, errWorkspaceArchived},
+	{db.ErrThreadArchived, errThreadArchived},
+	{db.ErrThreadBusy, errThreadBusy},
+	{service.ErrWorkspaceBusy, errThreadBusy},
+	{service.ErrQueueFull, errThreadBusy},
+	{service.ErrEnvironmentInUse, jsonrpc.CodeInvalidParams},
+	{service.ErrInvalidMessage, jsonrpc.CodeInvalidParams},
+	{service.ErrInvalidAnswer, jsonrpc.CodeInvalidParams},
+	{service.ErrInvalidDecision, jsonrpc.CodeInvalidParams},
+	{service.ErrInvalidName, jsonrpc.CodeInvalidParams},
+	{service.ErrInvalidPath, jsonrpc.CodeInvalidParams},
+	{permission.ErrInvalidSettings, jsonrpc.CodeInvalidParams},
+	{memory.ErrInvalidChange, jsonrpc.CodeInvalidParams},
+	{tools.ErrUnknownTool, jsonrpc.CodeInvalidParams},
+	{tools.ErrInvalidArguments, jsonrpc.CodeInvalidParams},
+	{cron.ErrInvalidJob, jsonrpc.CodeInvalidParams},
+}
+
+func serverError(err error) *jsonrpc.Error {
+	var rpcErr *jsonrpc.Error
+	if errors.As(err, &rpcErr) {
+		return rpcErr
+	}
+	for _, e := range errorCodes {
+		if errors.Is(err, e.err) {
+			return jsonrpc.Errorf(e.code, "%v", err)
+		}
+	}
+	slog.Error("request failed", "err", err)
+	return jsonrpc.Errorf(jsonrpc.CodeServerError, "the request could not be completed")
 }

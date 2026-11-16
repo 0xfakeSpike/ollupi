@@ -406,7 +406,8 @@ func connsShard(args []string) {
 	defer store.Close()
 	var server *gateway.Server
 	ag := service.New(service.Config{
-		Name: "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
+		BoxFor: here,
+		Name:   "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": &model{}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 		DB:          store, OnEvent: func(e event.Event) { server.Deliver(e) },

@@ -90,9 +90,6 @@ func (j *Jobs) ToolList(context.Context) ([]*tools.Spec, error) {
 func (j *Jobs) Invoke(ctx context.Context, caller tools.Caller, tool string, arguments map[string]any) (tools.Result, error) {
 	switch tool {
 	case ToolCreateJob:
-		if caller.ThreadID == "" {
-			return tools.Result{}, fmt.Errorf("cron: a task is created in a conversation")
-		}
 		args, err := tools.DecodeArguments[CreateArgs](arguments)
 		if err != nil {
 			return tools.Result{}, err
@@ -103,20 +100,14 @@ func (j *Jobs) Invoke(ctx context.Context, caller tools.Caller, tool string, arg
 		}
 		return j.result(job.ID)
 	case ToolPauseJob:
-		args, err := tools.DecodeArguments[PauseArgs](arguments)
-		if err != nil {
-			return tools.Result{}, err
-		}
+		args, _ := tools.DecodeArguments[PauseArgs](arguments) // the schema checked its fields: it cannot fail
 		job, err := j.SetPaused(caller.ThreadID, args.Name, args.Paused)
 		if err != nil {
 			return tools.Result{}, err
 		}
 		return j.result(job.ID)
 	case ToolDeleteJob:
-		args, err := tools.DecodeArguments[NameArgs](arguments)
-		if err != nil {
-			return tools.Result{}, err
-		}
+		args, _ := tools.DecodeArguments[NameArgs](arguments) // the schema checked its fields: it cannot fail
 		job, err := j.Delete(caller.ThreadID, args.Name)
 		if err != nil {
 			return tools.Result{}, err

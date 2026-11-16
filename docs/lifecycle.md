@@ -132,7 +132,7 @@ stateDiagram-v2
 
 - **拿到槽位**：调度循环每一步之后调用 `admit`，用 `db.ReadyThreads` 取出当前轮次为 `ready` 的会话（顶层会话优先，再按提交先后）。`reconcile` 再检查一次，然后 `db.Launch` 把它改成 `inProgress`。`ReadyThreads` 和 `Launch` 都带着条件 `firstOpen`：前面没有未结束的轮次。所以当前轮次在等审批时，排在后面的轮次不会抢先运行。唯一索引 `turns_one_running` 保证每个会话最多一个 `inProgress`。
 - **离开槽位**：一次运行结束后，如果轮次既没结束也没出错，`db.Park` 按这一轮未结束的工具调用算出新状态（`waitingOn`）。等审批优先，其次等回答，因为这两样只有人能给；什么都不等就是 `ready`。
-- **回答之后**：运行给出最终回答时，`db.AfterAnswer` 决定下一步。回答之后又来了输入（插话、子 agent 的报告），轮次回到 `ready`，接着回答；它启动的子 agent 还有在运行的（`db.RunningSubagents`），轮次进入 `waitingOnAgent`，因为一个轮次要等它的子 agent 全部结束才能结束；都不是，轮次才结束为 `completed`。
+- **回答之后**：运行给出最终回答时，`db.AfterAnswer` 决定下一步。回答之后又来了输入（插话、子 agent 的报告），轮次回到 `ready`，接着回答；它启动的子 agent 还有在运行的（`db.RunningSubagents`），轮次进入 `waitingOnAgent`，因为一个轮次要等它的子 agent 全部结束才能结束；都不是，轮次才结束为 `completed`，这个判断和结束在同一次写入里，所以判断之后到来的插话不会落进已经结束的轮次。
 - **解除等待**：写入工具调用条目时（`recordIn`），如果当前轮次在等审批或回答，就在同一事务里重算状态（`settleStatus`）。还有等待项时状态不变，全部有了结果就回到 `ready`。审批和回答都来自用户。`waitingOnAgent` 的解除在子 agent 那一侧：子 agent 的轮次结束时写入报告，如果它是最后一个还在运行的，父轮次回到 `ready`。
 - **插话**：`service.SteerTurn` 把用户消息写进当前轮次（`db.Steer`）。轮次在等审批或回答时，这条消息替代它们：在等的调用和还没执行的调用记为 `declined`，轮次回到 `ready`，下一次运行读到这条消息。轮次在等子 agent 时，它直接回到 `ready`：主 agent 回复用户，子 agent 继续运行，回复完再回到 `waitingOnAgent`。
 - **结束**：`orchestrator.endTurn` → `db.EndTurn`。轮次写上结束状态和 `completed_at`；它名下还没结束的条目一律记为 `failed`（"the turn ended before this item finished"）；会话的 `replied_at` 更新。如果这是子会话的轮次，同一事务里把报告写进父轮次（`reportToParent`）。如果后面还有轮次，排在第一的就成了当前轮次，并发出 `turn/started`。轮次因中断或出错而结束时，它启动的、还在运行的子 agent 被一起停止（`stopSubagent`），它们的报告不再写回。
@@ -224,7 +224,7 @@ stateDiagram-v2
 
 `RecordItem` 还要求条目属于会话的当前轮次，否则拒绝。
 
-代码：[repo/db/items.go](../repo/db/items.go)、[agent/runtime/](../agent/runtime/)。
+代码：[repo/db/items.go](../repo/db/items.go)、[agent/role/](../agent/role/)。
 
 ## 四者之间的约束
 

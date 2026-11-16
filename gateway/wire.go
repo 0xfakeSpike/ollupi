@@ -233,7 +233,7 @@ type Found struct {
 }
 
 func found(f db.Found) Found {
-	return Found{Threads: each(f.Threads, threadRow), Messages: nonNil(f.Messages), Tasks: each(f.Tasks, cronJobView)}
+	return Found{Threads: each(f.Threads, threadRow), Messages: f.Messages, Tasks: each(f.Tasks, cronJobView)}
 }
 
 // each converts rows for the wire, and gives a list that is never null.

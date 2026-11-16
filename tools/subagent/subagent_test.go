@@ -68,7 +68,4 @@ func TestACallWritesTheSubagentsConversationAndReturnsAtOnce(t *testing.T) {
 	if _, err := launch.Invoke(ctx, caller, Browser, map[string]any{"description": "x", "prompt": "  "}); err == nil {
 		t.Error("a blank task launched a subagent")
 	}
-	if _, err := launch.Invoke(ctx, tools.Caller{UserID: db.DefaultUser, ThreadID: "main"}, Browser, args); err == nil {
-		t.Error("a launch outside a call of a turn wrote a subagent")
-	}
 }

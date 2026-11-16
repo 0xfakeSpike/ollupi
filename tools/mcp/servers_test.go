@@ -41,6 +41,11 @@ func testServer() *mcp.Server {
 	}
 	mcp.AddTool(s, &mcp.Tool{Name: "greet", Description: "Greets."}, greet)
 	mcp.AddTool(s, &mcp.Tool{Name: "a.dotted.name", Description: "Has a name the model API refuses."}, greet)
+	s.AddTool(&mcp.Tool{Name: "lookahead", Description: "Has a pattern the registry cannot compile.", InputSchema: map[string]any{
+		"type": "object", "properties": map[string]any{"q": map[string]any{"type": "string", "pattern": "^(?!x).*$"}},
+	}}, func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return &mcp.CallToolResult{}, nil
+	})
 	mcp.AddTool(s, &mcp.Tool{Name: "whoami", Description: "Tells who called."}, func(_ context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
 		raw, err := json.Marshal(req.Params.Meta[metaCaller])
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(raw)}}}, nil, err
@@ -107,7 +112,7 @@ func TestConnect(t *testing.T) {
 	}
 	for _, name := range []string{"local", "web"} {
 		st := byName[name]
-		if !st.Connected || st.Tools != 2 || !slices.Equal(st.SkippedTools, []string{"a.dotted.name"}) || st.Error != "" {
+		if !st.Connected || st.Tools != 2 || !slices.Equal(st.SkippedTools, []string{"a.dotted.name", "lookahead"}) || st.Error != "" {
 			t.Errorf("%s: %+v", name, st)
 		}
 	}
@@ -133,7 +138,7 @@ func TestConnect(t *testing.T) {
 		t.Fatal(err)
 	}
 	for tool, want := range map[string]string{"local__greet": "hello from config", "web__greet": "hello from the parent"} {
-		r := reg.Invoke(ctx, tools.Caller{}, tool, map[string]any{})
+		r := reg.InvokePrepared(ctx, tools.Caller{}, tool, map[string]any{}, nil)
 		if r.Err != nil || r.Output != want {
 			t.Errorf("%s: %v, %v; want %q", tool, r.Output, r.Err, want)
 		}
@@ -146,7 +151,7 @@ func TestConnect(t *testing.T) {
 		{tools.Caller{ThreadID: "t1", WorkspaceID: "w1", Root: "/home/me/project"}, `{"threadId":"t1","workspaceId":"w1"}`},
 		{tools.Caller{ThreadID: "t2", Subagent: true}, `{"subagent":true,"threadId":"t2"}`},
 	} {
-		if r := reg.Invoke(ctx, tc.caller, "local__whoami", map[string]any{}); r.Err != nil || r.Output != tc.want {
+		if r := reg.InvokePrepared(ctx, tc.caller, "local__whoami", map[string]any{}, nil); r.Err != nil || r.Output != tc.want {
 			t.Errorf("caller %+v reached the server as %v, %v; want %s", tc.caller, r.Output, r.Err, tc.want)
 		}
 	}
@@ -244,5 +249,15 @@ func TestContentThatIsNotTextIsNamedNotDumped(t *testing.T) {
 	})
 	if got != "done\n[image: image/png, 3 bytes, not shown]\ninside" {
 		t.Errorf("%q", got)
+	}
+}
+
+// What a server says of its own tool does not let the tool run unasked: it comes in as one that may change things
+// and reach anywhere, whatever the server calls it.
+func TestAServersWordDoesNotMakeAToolReadOnly(t *testing.T) {
+	closed := false
+	spec := toSpec("srv__send", &mcp.Tool{Name: "send", Annotations: &mcp.ToolAnnotations{Title: "Send", ReadOnlyHint: true, OpenWorldHint: &closed}})
+	if a := spec.Annotations; a.ReadOnlyHint || !tools.OpenWorld(*a) || a.Title != "Send" {
+		t.Errorf("annotations %+v, want the title alone", a)
 	}
 }

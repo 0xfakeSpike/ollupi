@@ -1,52 +1,13 @@
 package role
 
-import (
-	"fmt"
-	"strings"
-
-	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
-	"github.com/0xfakeSpike/ollupi/agent/memory"
-	"github.com/0xfakeSpike/ollupi/agent/permission"
-	"github.com/0xfakeSpike/ollupi/tools"
-)
+import ()
 
 // FullMain is the name of the full main agent.
 const FullMain Name = "full-main-agent"
 
 // fullMain is the main agent for a model whose input holds the whole prompt and tool list. It answers the user, so its
 // prompt starts with the agent's own; it has every tool the user's settings allow.
-type fullMain struct{ runState }
-
-// NewFullMain makes the full main agent of the deployment\'s agent: see New.
-func NewFullMain(name, prompt, skillsDir string, settings permission.Settings, shared bool, tools []string, memory *memory.Manager, window *contextmanager.Manager) Role {
-	return &fullMain{runState{agent: name, prompt: prompt, skillsDir: skillsDir, settings: settings, shared: shared, tools: tools, memory: memory, window: window}}
-}
-
-func (fullMain) Name() Name { return FullMain }
-
-// System starts with the agent's own prompt, since the full main agent answers the user, then its rules, its skills,
-// the tools it may load and the project it works in.
-func (r *fullMain) System(root string, deferred []tools.ToolDescriptor) (string, error) {
-	listed, err := listSkills(FullMain, r.skillsDir, r.window.SkillBudget())
-	if err != nil {
-		return "", err
-	}
-	own := strings.TrimSpace(r.prompt)
-	if own == "" {
-		own = fmt.Sprintf(defaultAgentPrompt, r.agent)
-	}
-	parts := []string{own, fullMainRules}
-	if listed != "" {
-		parts = append(parts, listed)
-	}
-	if len(deferred) > 0 {
-		parts = append(parts, listDeferred(deferred))
-	}
-	if root != "" {
-		parts = append(parts, fmt.Sprintf(projectSection, root))
-	}
-	return strings.Join(parts, "\n\n"), nil
-}
+var fullMain = Role{name: FullMain, rules: fullMainRules, answersUser: true, recalls: true, maxModelCalls: 200, maxToolCalls: 400, maxConsecutiveFailures: 10}
 
 const fullMainRules = `You complete the user's request by calling tools in a loop. Every tool result comes back to you as an observation. Keep working until the request is done, then reply to the user without calling any tool; that reply is shown to the user as the final answer.
 

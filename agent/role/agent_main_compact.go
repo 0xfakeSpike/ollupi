@@ -1,13 +1,6 @@
 package role
 
 import (
-	"fmt"
-	"strings"
-
-	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
-	"github.com/0xfakeSpike/ollupi/agent/memory"
-	"github.com/0xfakeSpike/ollupi/agent/permission"
-	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/workspace"
 )
 
@@ -21,38 +14,7 @@ const (
 
 // compactMain is the main agent for a model with a small input: shorter rules, and, when its tools do not fit, only
 // reading files and running commands sent; the others, the tools of its skills among them, wait for load_tools.
-type compactMain struct{ runState }
-
-// NewCompactMain makes the compact main agent of the deployment\'s agent: see New.
-func NewCompactMain(name, prompt, skillsDir string, settings permission.Settings, shared bool, tools []string, memory *memory.Manager, window *contextmanager.Manager) Role {
-	return &compactMain{runState{agent: name, prompt: prompt, skillsDir: skillsDir, core: []string{workspace.ToolReadFile, workspace.ToolRunCommand}, settings: settings, shared: shared, tools: tools, memory: memory, window: window}}
-}
-
-func (compactMain) Name() Name { return CompactMain }
-
-// System starts with the agent's own prompt, since the compact main agent answers the user, then its rules, its skills,
-// the tools it may load and the project it works in.
-func (r *compactMain) System(root string, deferred []tools.ToolDescriptor) (string, error) {
-	listed, err := listSkills(CompactMain, r.skillsDir, r.window.SkillBudget())
-	if err != nil {
-		return "", err
-	}
-	own := strings.TrimSpace(r.prompt)
-	if own == "" {
-		own = fmt.Sprintf(defaultAgentPrompt, r.agent)
-	}
-	parts := []string{own, compactMainRules}
-	if listed != "" {
-		parts = append(parts, listed)
-	}
-	if len(deferred) > 0 {
-		parts = append(parts, listDeferred(deferred))
-	}
-	if root != "" {
-		parts = append(parts, fmt.Sprintf(projectSection, root))
-	}
-	return strings.Join(parts, "\n\n"), nil
-}
+var compactMain = Role{name: CompactMain, rules: compactMainRules, answersUser: true, core: []string{workspace.ToolReadFile, workspace.ToolRunCommand}, recalls: true, maxModelCalls: 200, maxToolCalls: 400, maxConsecutiveFailures: 10}
 
 const compactMainRules = `You complete the user's request by calling tools in a loop, then reply without calling a tool; that reply is the final answer.
 

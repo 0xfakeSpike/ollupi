@@ -37,7 +37,7 @@ func newObservations(items []db.ItemRow, artifactBudget int) *observations {
 	o := &observations{results: map[string]tools.Result{}, texts: map[string]string{}, spans: map[string][][2]int{}, rendered: map[observationKey]string{},
 		shown: map[shownArtifact]bool{}, last: map[[2]string]string{}}
 	for _, it := range items {
-		if it.IsCall() && it.Status == db.ItemCompleted && it.Result != nil {
+		if it.IsCall() && it.Status == db.ItemCompleted {
 			for _, a := range it.Result.Artifacts {
 				o.last[[2]string{a.Kind, a.Name}] = it.ID
 			}

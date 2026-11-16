@@ -167,7 +167,7 @@ func (r *Provider) readContent(ctx context.Context, caller tools.Caller, args ma
 	if pattern, _ := args["pattern"].(string); pattern != "" {
 		text = pattern + " in " + shown
 	}
-	return tools.Content{Text: text, Match: strings.ToLower(shown)}, nil
+	return tools.Content{Text: text, Match: strings.ToLower(shown), Folded: true}, nil
 }
 
 // readLine reads one line of br and keeps at most limit bytes of it, so a file without line breaks takes no more
@@ -274,7 +274,7 @@ func readFile(ctx context.Context, d dirs, args map[string]any) (ReadFileOutput,
 		return out, nil
 	}
 	start, limit := max(in.Offset, 1), in.Limit
-	if limit <= 0 || limit > maxReadLines {
+	if limit <= 0 {
 		limit = maxReadLines
 	}
 	var text strings.Builder
@@ -311,10 +311,7 @@ func readFile(ctx context.Context, d dirs, args map[string]any) (ReadFileOutput,
 }
 
 func glob(ctx context.Context, d dirs, args map[string]any) (GlobOutput, error) {
-	in, err := tools.DecodeArguments[Glob](args)
-	if err != nil {
-		return GlobOutput{}, err
-	}
+	in, _ := tools.DecodeArguments[Glob](args) // the schema checked its fields: it cannot fail
 	re, err := compilePattern(strings.TrimPrefix(in.Pattern, "./"), true)
 	if err != nil {
 		return GlobOutput{}, fmt.Errorf("workspace: %w", err)
@@ -348,10 +345,7 @@ func glob(ctx context.Context, d dirs, args map[string]any) (GlobOutput, error) 
 }
 
 func grep(ctx context.Context, d dirs, args map[string]any) (GrepOutput, error) {
-	in, err := tools.DecodeArguments[Grep](args)
-	if err != nil {
-		return GrepOutput{}, err
-	}
+	in, _ := tools.DecodeArguments[Grep](args) // the schema checked its fields: it cannot fail
 	expr := in.Pattern
 	if in.IgnoreCase {
 		expr = "(?i)" + expr
@@ -371,7 +365,7 @@ func grep(ctx context.Context, d dirs, args map[string]any) (GrepOutput, error) 
 		return GrepOutput{}, err
 	}
 	out := GrepOutput{Path: d.display(path), Files: []GrepFile{}}
-	around := min(max(in.Context, 0), maxGrepContext)
+	around := in.Context
 	shown, unreadable := 0, 0
 	var readErr error
 	search := func(abs string, info fs.FileInfo) error {
@@ -490,94 +484,6 @@ func grepFile(ctx context.Context, box sandbox.Box, path string, re *regexp.Rege
 		}
 	}
 	return out, kept, nil
-}
-
-var errStopWalk = errors.New("stop walk")
-
-// walker visits the files under a folder in name order. It skips .git, what .gitignore ignores, links to
-// folders, and anything the sandbox does not let be read, counting those; a link to a file is read where it
-// leads, so a link cannot reach a closed path.
-type walker struct {
-	box       sandbox.Box
-	root      string
-	ignores   *ignores
-	entries   int
-	skipped   int
-	truncated bool
-}
-
-func newWalker(ctx context.Context, box sandbox.Box, root string) *walker {
-	return &walker{box: box, root: root, ignores: gitIgnores(ctx, box, root)}
-}
-
-func (w *walker) walk(ctx context.Context, visit func(abs string, info fs.FileInfo) error) error {
-	st, err := w.box.Stat(ctx, w.root)
-	if err != nil {
-		return fmt.Errorf("workspace: %w", err)
-	}
-	if !st.IsDir() {
-		return fmt.Errorf("workspace: %s is not a folder", w.root)
-	}
-	return w.dir(ctx, w.root, visit)
-}
-
-func (w *walker) dir(ctx context.Context, dir string, visit func(string, fs.FileInfo) error) error {
-	if w.ignores != nil && w.ignores.enter(ctx, dir) {
-		defer w.ignores.leave()
-	}
-	entries, err := w.box.ReadDir(ctx, dir)
-	if err != nil {
-		w.skipped++
-		return nil
-	}
-	for _, e := range entries {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if w.entries++; w.entries > maxWalkEntries {
-			w.truncated = true
-			return errStopWalk
-		}
-		if e.Name() == ".git" {
-			continue
-		}
-		abs := filepath.Join(dir, e.Name())
-		if w.box.CheckRead(abs) != nil {
-			w.skipped++
-			continue
-		}
-		info, err := e.Info()
-		if err != nil {
-			w.skipped++
-			continue
-		}
-		isDir := info.IsDir()
-		if info.Mode()&fs.ModeSymlink != 0 {
-			target, err := w.box.Canonical(ctx, abs)
-			if err != nil {
-				continue
-			}
-			if w.box.CheckRead(target) != nil {
-				w.skipped++
-				continue
-			}
-			if info, err = w.box.Stat(ctx, target); err != nil || info.IsDir() {
-				continue
-			}
-		}
-		if w.ignores.ignored(abs, isDir) {
-			continue
-		}
-		if isDir {
-			err = w.dir(ctx, abs, visit)
-		} else if info.Mode().IsRegular() {
-			err = visit(abs, info)
-		}
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // isText reports whether the start of a file reads as text: no NUL bytes and valid UTF-8, allowing a

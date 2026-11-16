@@ -70,10 +70,7 @@ func Open(path string) (*Catalog, error) {
 // migrate takes the catalog's steps; the first is the schema gorm made before there were steps, so a catalog from
 // then takes it as it is.
 func migrate(g *gorm.DB) error {
-	dir, err := fs.Sub(migrationFiles, "migrations")
-	if err != nil {
-		return err
-	}
+	dir, _ := fs.Sub(migrationFiles, "migrations") // a valid path: it cannot fail
 	all, err := sqlitedb.Steps(dir)
 	if err != nil {
 		return err

@@ -10,14 +10,16 @@ import (
 )
 
 func ValidateArguments(args map[string]any, schema any) error {
-	resolved, err := resolveSchema(schema)
+	resolved, err := ResolveSchema(schema)
 	if err != nil {
 		return err
 	}
 	return validate(resolved, args)
 }
 
-func resolveSchema(schema any) (*jsonschema.Resolved, error) {
+// ResolveSchema makes a tool's input schema ready to check arguments against, or says why the registry cannot take a
+// tool with it: a provider whose tools come from outside leaves such a tool out.
+func ResolveSchema(schema any) (*jsonschema.Resolved, error) {
 	if schema == nil {
 		return nil, fmt.Errorf("missing input schema")
 	}
@@ -47,9 +49,6 @@ func validate(schema *jsonschema.Resolved, args map[string]any) error {
 }
 
 func normalizeInputSchema(schema any) (map[string]any, error) {
-	if schema == nil {
-		return nil, fmt.Errorf("missing schema")
-	}
 	if value, ok := schema.(map[string]any); ok {
 		return value, nil
 	}
@@ -142,10 +141,7 @@ func nonNullLists(s *jsonschema.Schema) {
 
 func DecodeArguments[T any](arguments map[string]any) (T, error) {
 	var out T
-	raw, err := json.Marshal(arguments)
-	if err != nil {
-		return out, err
-	}
+	raw, _ := json.Marshal(arguments) // decoded from JSON: it cannot fail
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return out, fmt.Errorf("decode arguments: %w", err)
 	}

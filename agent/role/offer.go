@@ -2,25 +2,26 @@ package role
 
 import (
 	"encoding/json"
-	"github.com/0xfakeSpike/ollupi/tools/loader"
-	"github.com/0xfakeSpike/ollupi/tools/outputs"
 	"slices"
 
-	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/0xfakeSpike/ollupi/tools/loader"
+	"github.com/0xfakeSpike/ollupi/tools/outputs"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
 
-// offer is what a role offers of the visible tools: the ones the window fits around core, the built-in tools the role
-// is sent whatever it holds (none: every built-in tool), and the ones a load_tools call loaded, which follow the
-// others in load order, so the tool list only grows.
-func offer(visible []tools.ToolDescriptor, window *contextmanager.Manager, items []db.ItemRow, core []string) (offered, deferred []tools.ToolDescriptor) {
-	offered, deferred = window.Split(launchable(visible), core)
-	for _, name := range loadedTools(items) {
+// Offer splits the tools the role's permissions let the run see into the ones sent to the model and the ones only named
+// in DEFERRED TOOLS, for load_tools to load: it sends the ones the window fits around the role's core tools, the
+// built-in tools it is sent whatever the window holds (none: every built-in tool), and the ones the conversation's
+// load_tools calls loaded, which follow the others in load order, so the tool list only grows.
+func (rt *Runtime) Offer() (offered, deferred []tools.ToolDescriptor) {
+	offered, deferred = rt.window.Split(launchable(rt.checker.Tools()), rt.role.core)
+	for _, name := range rt.loadedTools() {
 		i := slices.IndexFunc(deferred, func(d tools.ToolDescriptor) bool { return d.Name == name })
-		if i >= 0 && !slices.ContainsFunc(offered, func(d tools.ToolDescriptor) bool { return d.Name == name }) {
+		alreadyOffered := slices.ContainsFunc(offered, func(d tools.ToolDescriptor) bool { return d.Name == name })
+		if i >= 0 && !alreadyOffered {
 			offered = append(offered, deferred[i])
 		}
 	}
@@ -33,10 +34,11 @@ func launchable(visible []tools.ToolDescriptor) []tools.ToolDescriptor {
 	layers := map[string]permission.Layer{string(GeneralSub): generalSubLayer, string(BrowserSub): browserSubLayer}
 	out := slices.Clone(visible)
 	for name := range subagent.Kinds {
-		layer, ok := layers[name]
-		if ok && slices.ContainsFunc(visible, func(t tools.ToolDescriptor) bool {
+		layer := layers[name]
+		workable := slices.ContainsFunc(visible, func(t tools.ToolDescriptor) bool {
 			return t.Provider != outputs.ProviderName && layer.Keeps(t)
-		}) {
+		})
+		if workable {
 			continue
 		}
 		out = slices.DeleteFunc(out, func(d tools.ToolDescriptor) bool { return d.Name == name })
@@ -44,10 +46,11 @@ func launchable(visible []tools.ToolDescriptor) []tools.ToolDescriptor {
 	return out
 }
 
-func loadedTools(items []db.ItemRow) []string {
+// loadedTools are the tools the conversation's load_tools calls loaded, in load order.
+func (rt *Runtime) loadedTools() []string {
 	var names []string
-	for _, it := range items {
-		if it.Tool != loader.Tool || it.Status != db.ItemCompleted || it.Result == nil {
+	for _, it := range rt.conversation() {
+		if it.Tool != loader.Tool || it.Status != db.ItemCompleted {
 			continue
 		}
 		var out struct {
@@ -58,4 +61,14 @@ func loadedTools(items []db.ItemRow) []string {
 		}
 	}
 	return names
+}
+
+// tool is the tool of that name the role offers the run, as the conversation is now.
+func (rt *Runtime) tool(name string) (tools.ToolDescriptor, bool) {
+	offered, _ := rt.Offer()
+	i := slices.IndexFunc(offered, func(d tools.ToolDescriptor) bool { return d.Name == name })
+	if i < 0 {
+		return tools.ToolDescriptor{}, false
+	}
+	return offered[i], true
 }

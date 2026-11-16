@@ -28,6 +28,8 @@ type Content struct {
 	Match  string
 	Parts  []string
 	Opaque bool
+	// Folded says Match is in lower case throughout, as a path or a site is compared, so a rule's specifier is too.
+	Folded bool
 }
 
 type Local struct {

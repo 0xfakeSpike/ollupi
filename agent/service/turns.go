@@ -3,18 +3,14 @@ package service
 import (
 	"context"
 	"fmt"
-	"github.com/0xfakeSpike/ollupi/agent/event"
 	"log/slog"
-	"slices"
 	"strings"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
-	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo/db"
-	"github.com/0xfakeSpike/ollupi/tools"
-	"github.com/0xfakeSpike/ollupi/tools/userinput"
 	"github.com/google/uuid"
 )
 
@@ -62,33 +58,6 @@ func (sv *Service) InterruptTurn(user, threadID, expectedTurnID string) error {
 		return err
 	}
 	return sv.o.Interrupt(threadID, expectedTurnID)
-}
-
-func (sv *Service) ResolveApproval(user, threadID, approvalID string, decision db.Decision, decidedBy string) error {
-	if err := sv.owned(user, threadID); err != nil {
-		return err
-	}
-	return sv.resolveApproval(threadID, approvalID, decision, decidedBy)
-}
-
-func (sv *Service) AnswerUserInput(user, threadID, itemID string, answers userinput.Answers) error {
-	if err := sv.owned(user, threadID); err != nil {
-		return err
-	}
-	return sv.answerUserInput(threadID, itemID, answers)
-}
-
-// SkipUserInput declines a question the agent asked: the call ends declined, telling the model the user chose not to
-// answer, and the turn goes on.
-func (sv *Service) SkipUserInput(user, threadID, itemID string) error {
-	if err := sv.owned(user, threadID); err != nil {
-		return err
-	}
-	return sv.answer(threadID, func(it db.ItemRow) bool { return it.ID == itemID && !it.WaitsForApproval() }, func(it db.ItemRow) (db.ItemRow, error) {
-		now := time.Now().UTC()
-		it.Status, it.Error, it.CompletedAt = db.ItemDeclined, "the user skipped these questions; go on without their answers", &now
-		return it, nil
-	})
 }
 
 func (sv *Service) startTurn(threadID string, in Input, atts []db.Attachment) (db.TurnRow, error) {
@@ -148,7 +117,7 @@ func (sv *Service) submit(t db.ThreadRow, turn db.TurnRow, model llm.Model, text
 // record takes the message to the thread (db.SubmitTurn), unless the conversation's workspace cannot take it or is
 // moving: the move lock is held while it is written, so that a move that starts sees it, and no longer.
 func (sv *Service) record(t db.ThreadRow, turn db.TurnRow, model llm.Model, text string, atts []db.Attachment) (db.ThreadRow, db.TurnRow, db.ItemRow, db.Submission, error) {
-	if t.ParentThreadID == "" && t.WorkspaceID != "" {
+	if t.WorkspaceID != "" {
 		w, err := sv.workspaceOf(t.WorkspaceID)
 		if err != nil {
 			return db.ThreadRow{}, db.TurnRow{}, db.ItemRow{}, 0, err
@@ -203,102 +172,6 @@ func (sv *Service) steer(threadID, expectedTurnID string, in Input, atts []db.At
 		sv.ev.Status(threadID)
 	}
 	return turn, nil
-}
-
-func (sv *Service) resolveApproval(threadID, approvalID string, decision db.Decision, decidedBy string) error {
-	stored, err := sv.respond(threadID, func(it db.ItemRow) bool { return it.WaitsForApproval() && it.Approval.ID == approvalID }, func(it db.ItemRow) (db.ItemRow, error) {
-		if available := it.Approval.AvailableDecisions(); !slices.Contains(available, decision) {
-			return db.ItemRow{}, fmt.Errorf("service: %w: %q is not one of %q", ErrInvalidDecision, decision, available)
-		}
-		now := time.Now().UTC()
-		it.Approval.Decision, it.Approval.DecidedBy, it.Approval.DecidedAt = decision, decidedBy, &now
-		return it, nil
-	})
-	if err != nil {
-		return err
-	}
-	defer sv.o.Wake(threadID)
-	// The rule is kept once the approval is: an approval refused, because the thread no longer waited on it, widens nothing.
-	if decision == db.DecisionAcceptAlways {
-		if err := sv.allowAlways(threadID, stored.Approval.Suggested); err != nil {
-			return fmt.Errorf("service: the call was approved, but its rule was not kept: %w", err)
-		}
-	}
-	return nil
-}
-
-func (sv *Service) allowAlways(threadID string, rules []string) error {
-	t, err := sv.cfg.DB.ThreadRow(threadID)
-	if err != nil {
-		return fmt.Errorf("service: thread %s: %w", threadID, err)
-	}
-	if parent := string(t.ParentThreadID); parent != "" {
-		if t, err = sv.cfg.DB.ThreadRow(parent); err != nil {
-			return fmt.Errorf("service: parent thread %s: %w", parent, err)
-		}
-	}
-	allow := permission.Settings{Rules: permission.Rules{Allow: rules}}
-	widen := func(s permission.Settings) permission.Settings { return permission.Resolve(s, allow) }
-	if t.WorkspaceID == "" {
-		_, err := sv.updateThreadSettings(t.UserID, t.ID, widen)
-		return err
-	}
-	_, err = sv.updateWorkspaceSettings(t.UserID, string(t.WorkspaceID), widen)
-	return err
-}
-
-func (sv *Service) answerUserInput(threadID, itemID string, answers userinput.Answers) error {
-	return sv.answer(threadID, func(it db.ItemRow) bool { return it.ID == itemID && !it.WaitsForApproval() }, func(it db.ItemRow) (db.ItemRow, error) {
-		req, err := userinput.Decode(it.Await.Request)
-		if err != nil {
-			return db.ItemRow{}, err
-		}
-		if err := req.Check(answers, maxAnswerRunes); err != nil {
-			return db.ItemRow{}, fmt.Errorf("service: %w: %v", ErrInvalidAnswer, err)
-		}
-		result, _, err := db.ResultOf(tools.Result{Output: answers})
-		if err != nil {
-			return db.ItemRow{}, err
-		}
-		now := time.Now().UTC()
-		it.Result, it.Status, it.CompletedAt = result, db.ItemCompleted, &now
-		return it, nil
-	})
-}
-
-// respond records apply's answer to the request match finds. The thread's state is read before the answer is made,
-// so the database refuses it with db.ErrNoSuchRequest if the thread no longer waits on that request.
-func (sv *Service) respond(threadID string, match func(db.ItemRow) bool, apply func(db.ItemRow) (db.ItemRow, error)) (db.ItemRow, error) {
-	st, err := sv.cfg.DB.ThreadState(threadID)
-	if err != nil {
-		return db.ItemRow{}, fmt.Errorf("service: thread %s: %w", threadID, err)
-	}
-	pending := st.PendingRequests()
-	i := slices.IndexFunc(pending, match)
-	if i < 0 {
-		return db.ItemRow{}, db.ErrNoSuchRequest
-	}
-	activeTurn, _ := st.ActiveTurn()
-	answered, err := apply(pending[i])
-	if err != nil {
-		return db.ItemRow{}, err
-	}
-	stored, err := sv.cfg.DB.AnswerRequest(threadID, answered)
-	if err != nil {
-		return db.ItemRow{}, err
-	}
-	sv.ev.Item(st.Thread, activeTurn, stored, false)
-	sv.ev.Status(threadID)
-	return stored, nil
-}
-
-// answer responds to a request and wakes the thread to go on with it.
-func (sv *Service) answer(threadID string, match func(db.ItemRow) bool, apply func(db.ItemRow) (db.ItemRow, error)) error {
-	if _, err := sv.respond(threadID, match, apply); err != nil {
-		return err
-	}
-	sv.o.Wake(threadID)
-	return nil
 }
 
 func checkMessage(text string, attachments int) (string, error) {

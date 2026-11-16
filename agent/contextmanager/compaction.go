@@ -8,7 +8,6 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo/db"
-	"github.com/0xfakeSpike/ollupi/tools"
 )
 
 const compactionInstructions = `You are performing a CONTEXT CHECKPOINT COMPACTION. Write a handoff summary for another language model that will resume this conversation. Include:
@@ -83,7 +82,7 @@ const summaryPrefix = "Another language model started this conversation and prod
 func (m *Manager) compactedHistory(before []db.ItemRow, summary string) string {
 	var b strings.Builder
 	for i := len(before) - 1; i >= 0; i-- {
-		if it := before[i]; it.Type == db.ItemUserMessage && !it.StartedAt.IsZero() {
+		if it := before[i]; it.Type == db.ItemUserMessage {
 			b.WriteString("Latest user message before this summary: [sent " + it.StartedAt.In(time.Local).Format(sentLayout) + "]\n\n")
 			break
 		}
@@ -104,25 +103,6 @@ func (m *Manager) compactedHistory(before []db.ItemRow, summary string) string {
 		fmt.Fprintf(&b, "\n\n--- %s %s was active earlier; its content no longer fits here, so load it again if it is still needed ---", artifact.Kind, artifact.Name)
 	}
 	return b.String()
-}
-
-func recentArtifacts(active []tools.ContextArtifact, budget int) (kept, dropped []tools.ContextArtifact) {
-	used := 0
-	fits := make([]bool, len(active))
-	for i := len(active) - 1; i >= 0; i-- {
-		if cost := llm.EstimateTokens(renderArtifact(active[i])); used+cost <= budget {
-			used += cost
-			fits[i] = true
-		}
-	}
-	for i, artifact := range active {
-		if fits[i] {
-			kept = append(kept, artifact)
-		} else {
-			dropped = append(dropped, artifact)
-		}
-	}
-	return kept, dropped
 }
 
 func recentUserMessages(items []db.ItemRow, budget int) []string {

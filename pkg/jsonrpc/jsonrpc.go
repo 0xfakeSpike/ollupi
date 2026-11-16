@@ -59,7 +59,7 @@ const (
 	// A client may send this many messages, and this many bytes of them, ahead of the one being handled before
 	// reading waits for room.
 	maxInboxMessages = 64
-	maxInboxBytes    = 16 << 20
+	maxInboxBytes    = 8 << 20
 	// A client is read at most this many messages a second, after a first burst, so that one that floods its
 	// connection, with calls or with messages that are not, slows down rather than takes the server's time and log.
 	messagesPerSecond = 50
@@ -214,7 +214,7 @@ func (c *Conn) response(m Message) {
 	delete(c.pending, string(m.ID))
 	c.mu.Unlock()
 	if !ok {
-		slog.Warn("response to unknown request", "id", string(m.ID))
+		slog.Warn("response to unknown request", "id", string(m.ID[:min(len(m.ID), 200)]))
 		return
 	}
 	onResponse(m.Result, m.Error)

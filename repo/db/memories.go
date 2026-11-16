@@ -82,3 +82,7 @@ func (d *DB) SaveMemory(m MemoryRow) error {
 		DoUpdates: clause.AssignmentColumns([]string{"scope", "workspace_id", "origin_workspace_id", "topic", "kind", "text", "status", "sources", "updated_at", "user_edited"}),
 	}).Create(&m).Error
 }
+
+func (e MemoryRow) Reference() MemoryReference {
+	return MemoryReference{MemoryNote: MemoryNote{ID: e.ID, Topic: e.Topic, Text: e.Text}, Scope: e.Scope, WorkspaceID: e.WorkspaceID}
+}

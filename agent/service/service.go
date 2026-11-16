@@ -87,7 +87,8 @@ type Config struct {
 	Lease time.Duration
 	// BoxFor gives the sandbox a user's files live in on this machine, which the service reaches workspaces and
 	// attachments through. A conversation started in another environment reaches its own box: the workspace tools
-	// take that from the call's tools.Caller. By default it is sandbox.Here.
+	// take that from the call's tools.Caller. It is required: a client names the paths it reads, so a host with one
+	// user says so by giving sandbox.Here, and no host gives every user this machine by leaving it out.
 	BoxFor func(user string) (sandbox.Box, error)
 	// OnLeaseLost tells the host that another process took the shard: the shard has stopped, and all else on DB must.
 	OnLeaseLost func()
@@ -107,9 +108,6 @@ type Service struct {
 }
 
 func New(cfg Config) *Service {
-	if cfg.BoxFor == nil {
-		cfg.BoxFor = func(string) (sandbox.Box, error) { return sandbox.Here(), nil }
-	}
 	if cfg.Attachments == nil && cfg.AttachmentsDir != "" {
 		cfg.Attachments = blobs.Dir(cfg.AttachmentsDir)
 	}
@@ -129,6 +127,9 @@ func (sv *Service) Start(ctx context.Context) error {
 	}
 	if sv.cfg.DB == nil {
 		return fmt.Errorf("service: a database is required")
+	}
+	if sv.cfg.BoxFor == nil {
+		return fmt.Errorf("service: BoxFor is required")
 	}
 	providers := append(slices.Clone(sv.cfg.Providers), plan.New(), subagent.New(sv.cfg.DB, sv.o.SubagentStarted), userinput.New(),
 		outputs.New(sv.cfg.DB), loader.New())
@@ -170,14 +171,15 @@ func (sv *Service) checkPromptFits() error {
 			return err
 		}
 		main, _ := role.New(role.ForMain(window.InputTokens()), sv.cfg.Name, sv.cfg.Prompt, sv.cfg.SkillsDir, sv.cfg.Settings, sv.res.Shared(), sv.cfg.Tools, sv.cfg.Memory, window)
-		if err := main.Permit(db.WorkspaceRow{}, sv.res.Tools()); err != nil {
+		main.Registry = sv.res.Tools()
+		if err := main.Permit(db.WorkspaceRow{}); err != nil {
 			return err
 		}
-		offered, deferred := main.Offer()
-		system, err := main.System("", deferred)
+		system, err := main.System()
 		if err != nil {
 			return err
 		}
+		offered, _ := main.Offer()
 		if err := window.Fits(system, contextmanager.Specs(offered)); err != nil {
 			return err
 		}
