@@ -210,17 +210,19 @@ func (d *DB) EndedTurn(id string) (TurnRow, error) {
 }
 
 // A Submission is how a message submitted to a thread was taken.
-type Submission int
+type Submission string
 
 const (
 	// Started is a message that started the thread's current turn.
-	Started Submission = iota
+	Started Submission = "started"
 	// Queued is a message that started a turn behind the current one.
-	Queued
+	Queued Submission = "queued"
 	// Joined is a message that joined the user's turn waiting behind the current one, which answers it together with
 	// the messages before it.
-	Joined
+	Joined Submission = "joined"
 )
+
+var SubmissionValues = []Submission{Started, Queued, Joined}
 
 // SubmitTurn takes a message to the thread, with attachments: into turn, which it writes as the thread's next turn,
 // or, when the thread's last turn is one of the user's waiting behind the current one, into that turn, which takes
@@ -260,7 +262,7 @@ func (d *DB) SubmitTurn(threadID string, turn TurnRow, text string, attachments 
 		return err
 	})
 	if err != nil {
-		return ThreadRow{}, TurnRow{}, ItemRow{}, 0, fmt.Errorf("storage: submit turn: %w", err)
+		return ThreadRow{}, TurnRow{}, ItemRow{}, "", fmt.Errorf("storage: submit turn: %w", err)
 	}
 	return thread, turn, message, how, nil
 }

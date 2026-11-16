@@ -2145,6 +2145,14 @@
       ],
       "additionalProperties": false
     },
+    "Submission": {
+      "type": "string",
+      "enum": [
+        "started",
+        "queued",
+        "joined"
+      ]
+    },
     "ThreadArchiveParams": {
       "type": "object",
       "properties": {
@@ -2655,10 +2663,14 @@
       "properties": {
         "turn": {
           "$ref": "#/$defs/TurnRow"
+        },
+        "submission": {
+          "$ref": "#/$defs/Submission"
         }
       },
       "required": [
-        "turn"
+        "turn",
+        "submission"
       ],
       "additionalProperties": false
     },
@@ -3537,6 +3549,7 @@
     "-32014": "workspaceArchived",
     "-32015": "threadArchived",
     "-32016": "threadBusy",
+    "-32017": "searchTimedOut",
     "-32600": "invalidRequest",
     "-32601": "methodNotFound",
     "-32602": "invalidParams",
@@ -3586,6 +3599,10 @@
       "name": "unavailable",
       "reconnect": "retryAfter"
     }
+  },
+  "limits": {
+    "searchRunes": 200,
+    "searchTerms": 8
   },
   "builtinTools": {
     "browser-sub-agent": {

@@ -38,6 +38,7 @@ const (
 	errWorkspaceArchived = -32014
 	errThreadArchived    = -32015
 	errThreadBusy        = -32016
+	errSearchTimedOut    = -32017
 )
 
 const (
@@ -104,6 +105,7 @@ var protocol = struct {
 	// refused with.
 	closes     map[int]Ending
 	handshakes map[int]Ending
+	limits     Limits
 }{
 	methods: map[string]method{
 		methodInitialize:              handle((*conn).initialize),
@@ -187,6 +189,7 @@ var protocol = struct {
 		errWorkspaceArchived:       "workspaceArchived",
 		errThreadArchived:          "threadArchived",
 		errThreadBusy:              "threadBusy",
+		errSearchTimedOut:          "searchTimedOut",
 	},
 	closes: map[int]Ending{
 		// The server is stopping, or the connection reached its age.
@@ -208,6 +211,14 @@ var protocol = struct {
 		// Too many connections are starting, or the user's shard cannot be reached now.
 		http.StatusServiceUnavailable: {"unavailable", ReconnectRetryAfter},
 	},
+	limits: Limits{SearchRunes: maxSearchRunes, SearchTerms: maxSearchTerms},
+}
+
+// Limits are the bounds the gateway holds a request to, so that a client can keep within them before it asks.
+type Limits struct {
+	// SearchRunes and SearchTerms bound a search's query: its characters, and its words.
+	SearchRunes int `json:"searchRunes"`
+	SearchTerms int `json:"searchTerms"`
 }
 
 type method struct {
@@ -382,8 +393,11 @@ type TurnInterruptParams struct {
 	TurnID   string `json:"turnId"`
 }
 
+// TurnResult is the turn a message went into, and how: it started the thread's current turn, started a turn behind it,
+// or joined the turn already waiting there, which answers it with the messages before it.
 type TurnResult struct {
-	Turn TurnRow `json:"turn"`
+	Turn       TurnRow       `json:"turn"`
+	Submission db.Submission `json:"submission"`
 }
 
 type TurnNotification struct {

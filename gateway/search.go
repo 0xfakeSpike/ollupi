@@ -36,7 +36,7 @@ func (c *conn) search(ctx context.Context, p SearchParams) (SearchResult, func()
 	defer cancel()
 	hits, err := c.s.db.WithContext(ctx).Search(c.user, terms, p.WorkspaceID, p.Limit)
 	if errors.Is(err, context.DeadlineExceeded) {
-		return SearchResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeServerError, "the search took too long; try longer or fewer words")
+		return SearchResult{}, nil, jsonrpc.Errorf(errSearchTimedOut, "the search took too long; try longer or fewer words")
 	}
 	if err != nil {
 		return SearchResult{}, nil, err

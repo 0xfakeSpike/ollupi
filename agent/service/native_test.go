@@ -106,7 +106,7 @@ func TestThinkingIsReplayedAcrossTurns(t *testing.T) {
 	}
 	ask := func(text string, requests int) {
 		t.Helper()
-		turn, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, service.Input{Text: text})
+		turn, _, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, service.Input{Text: text})
 		if err != nil {
 			t.Fatal(err)
 		}

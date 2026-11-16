@@ -14,11 +14,11 @@ func (c *conn) turnStart(ctx context.Context, p TurnStartParams) (TurnResult, fu
 		return TurnResult{}, nil, err
 	}
 	in.Connection = p.Connection
-	turn, err := c.s.service.StartTurn(ctx, c.user, p.ThreadID, in)
+	turn, how, err := c.s.service.StartTurn(ctx, c.user, p.ThreadID, in)
 	if err != nil {
 		return TurnResult{}, nil, err
 	}
-	return TurnResult{Turn: turnRow(turn)}, nil, nil
+	return TurnResult{Turn: turnRow(turn), Submission: how}, nil, nil
 }
 
 func (c *conn) turnSteer(ctx context.Context, p TurnSteerParams) (TurnSteerResult, func(), error) {
