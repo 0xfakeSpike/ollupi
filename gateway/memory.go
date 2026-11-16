@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/0xfakeSpike/ollupi/agent/memory"
+	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 )
 
