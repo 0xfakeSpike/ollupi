@@ -4,19 +4,8 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 )
-
-// Base are the layers every conversation's settings go on: the default settings, which serve users with different
-// tools when they are shared, and the settings of the conversation's workspace, when it has one.
-func Base(defaults Settings, shared bool, w db.WorkspaceRow) []Layer {
-	out := []Layer{{Of: "the default permission settings", Settings: defaults, Shared: shared}}
-	if w.ID != "" {
-		out = append(out, WorkspaceLayer(w.Name, w.Settings))
-	}
-	return out
-}
 
 // WorkspaceLayer, ThreadLayer and ParentLayer name the layers both where settings are validated and where they are
 // enforced.

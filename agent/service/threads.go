@@ -31,7 +31,7 @@ func (sv *Service) StartThread(user, workspaceID, environmentID, title string, s
 	if err := usable(w); err != nil {
 		return db.ThreadRow{}, err
 	}
-	if err := sv.validateLayer(user, permission.Base(sv.cfg.Settings, sv.res.Shared(), w), permission.Settings{}, permission.ThreadLayer(settings)); err != nil {
+	if err := sv.validateLayer(user, sv.permissions.Base(w), permission.Settings{}, permission.ThreadLayer(settings)); err != nil {
 		return db.ThreadRow{}, err
 	}
 	return sv.createThread(db.ThreadRow{UserID: user, Title: title, Settings: settings, WorkspaceID: db.Ref(workspaceID), EnvironmentID: db.Ref(env.ID)})
@@ -52,7 +52,7 @@ func (sv *Service) updateThreadSettings(user, threadID string, change func(permi
 	if err != nil {
 		return db.ThreadRow{}, err
 	}
-	if err := sv.validateLayer(user, permission.Base(sv.cfg.Settings, sv.res.Shared(), w), t.Settings, permission.ThreadLayer(change(t.Settings))); err != nil {
+	if err := sv.validateLayer(user, sv.permissions.Base(w), t.Settings, permission.ThreadLayer(change(t.Settings))); err != nil {
 		return db.ThreadRow{}, err
 	}
 	t, err = sv.cfg.DB.UpdateThreadSettings(user, threadID, change)

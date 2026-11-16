@@ -40,15 +40,15 @@ type Role struct {
 var roles = map[Name]Role{FullMain: fullMain, CompactMain: compactMain, GeneralSub: generalSub, BrowserSub: browserSub}
 
 // New makes the runtime of the role a turn names, as it stores it, for the deployment's agent: called name, which the
-// operator's prompt may describe, with each role's skills installed in skillsDir; its default permission settings
-// serve users with different tools when shared, and tools, when set, are the only tools a turn may use; memory keeps
-// the users' memory, which the roles that take it in recall; window is the context window of the turn's model.
-func New(role Name, name, prompt, skillsDir string, settings permission.Settings, shared bool, tools []string, memory *memory.Manager, window *contextmanager.Manager) (*Runtime, bool) {
+// operator's prompt may describe, with each role's skills installed in skillsDir, under what the deployment permits;
+// memory keeps the users' memory, which the roles that take it in recall; window is the context window of the turn's
+// model.
+func New(role Name, name, prompt, skillsDir string, permissions permission.Deployment, memory *memory.Manager, window *contextmanager.Manager) (*Runtime, bool) {
 	r, ok := roles[role]
 	if !ok {
 		return nil, false
 	}
-	return &Runtime{role: r, agent: name, prompt: prompt, skillsDir: skillsDir, settings: settings, shared: shared, tools: tools, memory: memory, window: window}, true
+	return &Runtime{role: r, agent: name, prompt: prompt, skillsDir: skillsDir, permissions: permissions, memory: memory, window: window}, true
 }
 
 // ForMain is the main role for a model that takes inputTokens of input.

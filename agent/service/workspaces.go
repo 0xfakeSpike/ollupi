@@ -167,7 +167,7 @@ func (sv *Service) updateWorkspaceSettings(user, id string, change func(permissi
 	if err != nil {
 		return db.WorkspaceRow{}, err
 	}
-	if err := sv.validateLayer(user, permission.Base(sv.cfg.Settings, sv.res.Shared(), db.WorkspaceRow{}), w.Settings, permission.WorkspaceLayer(w.Name, change(w.Settings))); err != nil {
+	if err := sv.validateLayer(user, sv.permissions.Base(db.WorkspaceRow{}), w.Settings, permission.WorkspaceLayer(w.Name, change(w.Settings))); err != nil {
 		return db.WorkspaceRow{}, err
 	}
 	return sv.changeWorkspace(user, id, func(w *db.WorkspaceRow) { w.Settings = change(w.Settings) })
