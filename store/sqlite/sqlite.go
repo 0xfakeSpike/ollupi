@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
-	"sort"
 	"sync/atomic"
 
+	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/pkg/sqlitedb"
 	"github.com/0xfakeSpike/ollupi/store"
 	"gorm.io/gorm"
@@ -71,8 +71,8 @@ func (s *Store) Fence(epoch int64) error {
 	return nil
 }
 
-func (s *Store) Reader(ctx context.Context) store.Reader {
-	return reader{g: s.g.WithContext(ctx)}
+func (s *Store) Read(ctx context.Context, fn func(store.Reader) error) error {
+	return s.g.WithContext(ctx).Transaction(func(g *gorm.DB) error { return fn(reader{g: g}) })
 }
 
 // SQLite's one writer keeps the epoch from changing between the check and the writes after it.
@@ -88,17 +88,26 @@ func (s *Store) Update(ctx context.Context, fn func(store.Tx) error) error {
 				return store.ErrShardLost
 			}
 		}
-		t := &tx{reader: reader{g: g}, pending: map[string]*pending{}}
+		t := &tx{reader: reader{g: g}, views: map[string]conversation.View{}, threads: map[string]*pending{}}
 		if err := fn(t); err != nil {
 			return err
 		}
 		events = t.events()
+		if len(events) == 0 {
+			return nil
+		}
+		var seq int64
+		if err := g.Raw("UPDATE feed SET seq = seq + 1 WHERE id = 1 RETURNING seq").Scan(&seq).Error; err != nil {
+			return fmt.Errorf("store: number the commit: %w", err)
+		}
+		for i := range events {
+			events[i].Seq = seq
+		}
 		return nil
 	})
 	if err != nil {
 		return err
 	}
-	sort.Slice(events, func(i, j int) bool { return events[i].Seq < events[j].Seq })
 	for _, e := range events {
 		s.feed.Publish(e)
 	}
