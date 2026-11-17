@@ -213,7 +213,7 @@ func (v *View) Apply(e Entry) {
 		stats := b.Stats
 		v.add(e, Item{Kind: ItemCompaction, Status: Done, Text: b.Summary, Through: b.Through, Response: b.Response, Stats: &stats})
 	case Recalled:
-		v.add(e, Item{Kind: ItemMemory, Status: Done, Memories: b.Memories})
+		v.add(e, Item{Kind: ItemMemory, Status: Done, Text: b.Text, Memories: b.Memories})
 	case Notice:
 		v.add(e, Item{Kind: ItemNotice, Status: Done, Text: b.Text})
 	}
