@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -67,12 +66,9 @@ func (sv *Service) MoveWorkspace(ctx context.Context, user, id, path string) (db
 	move := context.WithoutCancel(ctx)
 	ctx, cancel := context.WithTimeout(ctx, workspaceTimeout)
 	defer cancel()
-	w, err := sv.workspaceFor(user, db.Ref(id))
+	w, err := sv.cfg.DB.WorkspaceOf(user, id)
 	if err != nil {
-		return db.WorkspaceRow{}, err
-	}
-	if w.ID == "" {
-		return db.WorkspaceRow{}, fmt.Errorf("service: workspace %s: %w", id, db.ErrNotFound)
+		return db.WorkspaceRow{}, fmt.Errorf("service: workspace %s: %w", id, err)
 	}
 	box, err := sv.cfg.BoxFor(user)
 	if err != nil {
@@ -158,9 +154,9 @@ func (sv *Service) UpdateWorkspaceSettings(user, id string, settings permission.
 
 // change is checked against the settings as read, and applied again to them as they are when written.
 func (sv *Service) updateWorkspaceSettings(user, id string, change func(permission.Settings) permission.Settings) (db.WorkspaceRow, error) {
-	w, err := sv.workspaceFor(user, db.Ref(id))
+	w, err := sv.cfg.DB.WorkspaceOf(user, id)
 	if err != nil {
-		return db.WorkspaceRow{}, err
+		return db.WorkspaceRow{}, fmt.Errorf("service: workspace %s: %w", id, err)
 	}
 	if err := sv.validateLayer(user, sv.permissions.Base(db.WorkspaceRow{}), w.Settings, permission.WorkspaceLayer(w.Name, change(w.Settings))); err != nil {
 		return db.WorkspaceRow{}, err
@@ -174,11 +170,8 @@ func (sv *Service) changeWorkspace(user, id string, change func(*db.WorkspaceRow
 		change(&w)
 		return w
 	})
-	if errors.Is(err, db.ErrNotFound) {
-		return db.WorkspaceRow{}, fmt.Errorf("service: workspace %s: %w", id, db.ErrNotFound)
-	}
 	if err != nil {
-		return db.WorkspaceRow{}, err
+		return db.WorkspaceRow{}, fmt.Errorf("service: workspace %s: %w", id, err)
 	}
 	sv.ev.Emit(event.Event{Kind: event.WorkspaceChanged, Workspace: &w})
 	return w, nil
@@ -208,17 +201,6 @@ func workspaceName(name string) (string, error) {
 		return "", fmt.Errorf("service: %w: a workspace name must be 1 to 120 characters", ErrInvalidName)
 	}
 	return name, nil
-}
-
-func (sv *Service) workspaceOf(id db.Ref) (db.WorkspaceRow, error) {
-	if id == "" {
-		return db.WorkspaceRow{}, nil
-	}
-	w, err := sv.cfg.DB.Workspace(string(id))
-	if err != nil {
-		return db.WorkspaceRow{}, fmt.Errorf("service: workspace %s: %w", id, err)
-	}
-	return w, nil
 }
 
 // Another user's workspace does not exist for them.

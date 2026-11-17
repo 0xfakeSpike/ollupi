@@ -17,17 +17,20 @@ type Input struct {
 	Text        string
 	Attachments []AttachmentInput
 	Connection  string
-	CronJobID   string
 }
 
 func (sv *Service) StartTurn(ctx context.Context, user, threadID string, in Input) (db.TurnRow, db.Submission, error) {
-	atts, err := sv.attach(ctx, user, threadID, in.Attachments)
+	t, err := sv.topThread(user, threadID)
 	if err != nil {
 		return db.TurnRow{}, "", err
 	}
-	turn, how, err := sv.startTurn(threadID, in, atts)
+	atts, err := sv.attach(ctx, t, in.Attachments)
 	if err != nil {
-		sv.removeAttachments(atts)
+		return db.TurnRow{}, "", err
+	}
+	turn, how, err := sv.startTurn(threadID, in, atts, "")
+	if err != nil {
+		sv.removeAttachments(ctx, atts)
 		return db.TurnRow{}, "", err
 	}
 	return turn, how, nil
@@ -35,18 +38,22 @@ func (sv *Service) StartTurn(ctx context.Context, user, threadID string, in Inpu
 
 // No caller asks for this one: the thread's owner scheduled it.
 func (sv *Service) StartScheduledTurn(threadID, text, jobID string) error {
-	_, _, err := sv.startTurn(threadID, Input{Text: text, CronJobID: jobID}, nil)
+	_, _, err := sv.startTurn(threadID, Input{Text: text}, nil, jobID)
 	return err
 }
 
 func (sv *Service) SteerTurn(ctx context.Context, user, threadID, expectedTurnID string, in Input) (db.TurnRow, error) {
-	atts, err := sv.attach(ctx, user, threadID, in.Attachments)
+	t, err := sv.topThread(user, threadID)
+	if err != nil {
+		return db.TurnRow{}, err
+	}
+	atts, err := sv.attach(ctx, t, in.Attachments)
 	if err != nil {
 		return db.TurnRow{}, err
 	}
 	turn, err := sv.steer(threadID, expectedTurnID, in, atts)
 	if err != nil {
-		sv.removeAttachments(atts)
+		sv.removeAttachments(ctx, atts)
 		return db.TurnRow{}, err
 	}
 	return turn, nil
@@ -59,7 +66,7 @@ func (sv *Service) InterruptTurn(user, threadID, expectedTurnID string) error {
 	return sv.o.Interrupt(threadID, expectedTurnID)
 }
 
-func (sv *Service) startTurn(threadID string, in Input, atts []db.Attachment) (db.TurnRow, db.Submission, error) {
+func (sv *Service) startTurn(threadID string, in Input, atts []db.Attachment, cronJobID string) (db.TurnRow, db.Submission, error) {
 	text, err := checkMessage(in.Text, len(in.Attachments))
 	if err != nil {
 		return db.TurnRow{}, "", err
@@ -67,9 +74,6 @@ func (sv *Service) startTurn(threadID string, in Input, atts []db.Attachment) (d
 	st, err := sv.cfg.DB.ThreadState(threadID)
 	if err != nil {
 		return db.TurnRow{}, "", fmt.Errorf("service: thread %s: %w", threadID, err)
-	}
-	if st.Thread.ParentThreadID != "" {
-		return db.TurnRow{}, "", ErrSubagentThread
 	}
 	if queued, err := sv.cfg.DB.QueuedMessages(threadID); err != nil {
 		return db.TurnRow{}, "", fmt.Errorf("service: thread %s: %w", threadID, err)
@@ -90,11 +94,7 @@ func (sv *Service) startTurn(threadID string, in Input, atts []db.Attachment) (d
 	if err != nil {
 		return db.TurnRow{}, "", err
 	}
-	return sv.submit(st.Thread, db.TurnRow{CronJobID: in.CronJobID, Agent: string(main)}, model, text, atts)
-}
-
-func (sv *Service) submit(t db.ThreadRow, turn db.TurnRow, model llm.Model, text string, atts []db.Attachment) (db.TurnRow, db.Submission, error) {
-	t, turn, message, how, err := sv.record(t, turn, model, text, atts)
+	t, turn, message, how, err := sv.record(st.Thread, db.TurnRow{CronJobID: cronJobID, Agent: string(main)}, model, text, atts)
 	if err != nil {
 		return db.TurnRow{}, "", err
 	}
@@ -112,9 +112,9 @@ func (sv *Service) submit(t db.ThreadRow, turn db.TurnRow, model llm.Model, text
 // The move lock is held while the message is written, so that a move that starts sees it.
 func (sv *Service) record(t db.ThreadRow, turn db.TurnRow, model llm.Model, text string, atts []db.Attachment) (db.ThreadRow, db.TurnRow, db.ItemRow, db.Submission, error) {
 	if t.WorkspaceID != "" {
-		w, err := sv.workspaceOf(t.WorkspaceID)
+		w, err := sv.cfg.DB.WorkspaceOf(t.UserID, string(t.WorkspaceID))
 		if err != nil {
-			return db.ThreadRow{}, db.TurnRow{}, db.ItemRow{}, "", err
+			return db.ThreadRow{}, db.TurnRow{}, db.ItemRow{}, "", fmt.Errorf("service: workspace %s: %w", t.WorkspaceID, err)
 		}
 		if err := usable(w); err != nil {
 			return db.ThreadRow{}, db.TurnRow{}, db.ItemRow{}, "", err

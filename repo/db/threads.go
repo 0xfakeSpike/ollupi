@@ -34,27 +34,6 @@ type ThreadRow struct {
 
 func (ThreadRow) TableName() string { return "threads" }
 
-func (t ThreadRow) Unread() bool {
-	return t.RepliedAt != nil && (t.ReadAt == nil || t.RepliedAt.After(*t.ReadAt))
-}
-
-func (d *DB) Thread(id string) (ThreadView, error) {
-	var out ThreadView
-	err := d.Tx(func(tx *DB) error {
-		if err := notFound(tx.gorm.Where("id = ?", id).Take(&out.Thread).Error); err != nil {
-			return err
-		}
-		if err := tx.gorm.Where("thread_id = ?", id).Order("seq").Find(&out.Turns).Error; err != nil {
-			return err
-		}
-		return tx.gorm.Where("thread_id = ?", id).Order(conversationOrder).Find(&out.Items).Error
-	})
-	if err != nil {
-		return ThreadView{}, err
-	}
-	return out, nil
-}
-
 func (d *DB) ThreadPage(user, id string, before, limit int) (ThreadView, bool, error) {
 	var out ThreadView
 	more := false

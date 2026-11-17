@@ -251,7 +251,7 @@ func TestACutOffResponseRunsNoCall(t *testing.T) {
 	if turn := endOf(ctx, t, ended); turn.Status != db.TurnCompleted {
 		t.Fatalf("the turn: %s %q", turn.Status, turn.Error)
 	}
-	view, err := store.Thread(thread.ID)
+	view, _, err := store.ThreadPage(db.DefaultUser, thread.ID, 0, 1000)
 	if err != nil {
 		t.Fatal(err)
 	}

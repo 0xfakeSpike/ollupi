@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
-	"sync/atomic"
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/repo/sqlitedb"
@@ -17,12 +16,12 @@ import (
 
 type DB struct {
 	gorm *gorm.DB
-	// shared by every handle made from it; nil before Fence.
-	owner *atomic.Pointer[string]
+	// shared by every handle made from it.
+	lease *shardLease
 }
 
 func (d *DB) WithContext(ctx context.Context) *DB {
-	return &DB{gorm: d.gorm.WithContext(ctx), owner: d.owner}
+	return &DB{gorm: d.gorm.WithContext(ctx), lease: d.lease}
 }
 
 func Open(homeDir string) (*DB, error) {
@@ -31,7 +30,7 @@ func Open(homeDir string) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	db := &DB{gorm: g, owner: new(atomic.Pointer[string])}
+	db := &DB{gorm: g, lease: &shardLease{}}
 	err = db.fenceWrites()
 	if err == nil {
 		err = db.applySchema()
@@ -57,7 +56,7 @@ func (d *DB) applySchema() error {
 
 func (d *DB) Tx(fn func(*DB) error) error {
 	return d.gorm.Transaction(func(tx *gorm.DB) error {
-		return fn(&DB{gorm: tx, owner: d.owner})
+		return fn(&DB{gorm: tx, lease: d.lease})
 	})
 }
 

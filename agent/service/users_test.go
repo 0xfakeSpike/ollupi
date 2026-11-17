@@ -304,7 +304,7 @@ func TestTurnsRunOnTheUsersClient(t *testing.T) {
 	}
 }
 
-// A second process waits for the shard, takes it when the first stops, and a process whose shard is taken stops.
+// A second process waits for the shard and takes it when the first stops.
 func TestAStandbyTakesTheShard(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -319,24 +319,23 @@ func TestAStandbyTakesTheShard(t *testing.T) {
 		t.Cleanup(func() { store.Close() })
 		return store
 	}
-	process := func(store *db.DB, lost func()) *service.Service {
+	process := func(store *db.DB) *service.Service {
 		return service.New(service.Config{
 			BoxFor: here,
 			Name:   "Ollupi", Models: []llm.Model{{Name: "demo", Connection: "fake"}},
 			Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 			Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", 4, map[string]llm.Limits{"demo": {Context: 32000, Output: 4000}})},
-			DB:          store, Lease: 300 * time.Millisecond, OnLeaseLost: lost,
+			DB:          store, Lease: 300 * time.Millisecond,
 		})
 	}
-	first := process(open(), nil)
+	first := process(open())
 	firstCtx, stopFirst := context.WithCancel(ctx)
 	defer stopFirst()
 	if err := first.Start(firstCtx); err != nil {
 		t.Fatal(err)
 	}
 
-	lost := make(chan struct{})
-	second := process(open(), func() { close(lost) })
+	second := process(open())
 	secondCtx, stopSecond := context.WithCancel(ctx)
 	defer stopSecond()
 	started := make(chan error, 1)
@@ -356,16 +355,7 @@ func TestAStandbyTakesTheShard(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("the standby never took the shard")
 	}
-
-	thief := open()
-	if held, err := thief.ClaimShard("thief", time.Now().Add(time.Hour), time.Hour); err != nil || !held {
-		t.Fatal(held, err)
-	}
-	select {
-	case <-lost:
-	case <-ctx.Done():
-		t.Fatal("the process never saw it lost the shard")
-	}
+	stopSecond()
 	second.Wait()
 }
 
@@ -531,7 +521,7 @@ func TestAttachmentsLiveInTheStore(t *testing.T) {
 	if attachments.len() != 1 {
 		t.Fatalf("%d objects stored", attachments.len())
 	}
-	view, err := store.Thread(thread.ID)
+	view, _, err := store.ThreadPage(db.DefaultUser, thread.ID, 0, 1000)
 	if err != nil {
 		t.Fatal(err)
 	}
