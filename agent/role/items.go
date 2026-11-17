@@ -8,10 +8,8 @@ import (
 	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
-// conversation is the conversation's items up to the turn's latest: the history before it, and the turn's own.
 func (rt *Runtime) conversation() []db.ItemRow { return slices.Concat(rt.history, rt.items) }
 
-// keep takes an item as stored, new or changed, into the turn's.
 func (rt *Runtime) keep(stored db.ItemRow) {
 	for i := range rt.items {
 		if rt.items[i].ID == stored.ID {
@@ -23,11 +21,11 @@ func (rt *Runtime) keep(stored db.ItemRow) {
 }
 
 func (rt *Runtime) record(it db.ItemRow) (db.ItemRow, error) {
-	stored, isNew, err := rt.DB.RecordItem(rt.thread.ID, it)
+	stored, isNew, err := rt.store.RecordItem(rt.thread.ID, it)
 	if err != nil {
 		return db.ItemRow{}, fmt.Errorf("role: record %s item: %w", it.Type, err)
 	}
-	rt.Events.Item(rt.thread, rt.turn, stored, isNew)
+	rt.events.Item(rt.thread, rt.turn, stored, isNew)
 	rt.keep(stored)
 	return stored, nil
 }

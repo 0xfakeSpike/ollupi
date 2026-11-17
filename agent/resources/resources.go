@@ -16,35 +16,29 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
-// Config is what the resources are made of.
 type Config struct {
-	// Models are the models turns may run on, one per connection; the first is the default.
+	// One per connection; the first is the default.
 	Models      []llm.Model
 	Connections map[string]llm.Client
-	// ClientFor gives the client a user's turns call a connection through, so that they run on the user's own key
-	// and quota; it should return the same client each time. Without it users share Connections.
+	// Runs a user's turns on their own key and quota; it should return the same client each time.
 	ClientFor func(user, connection string) (llm.Client, error)
-	// ToolsFor adds the tools one user has, such as their MCP servers.
-	ToolsFor func(user string) (*tools.Set, error)
+	ToolsFor  func(user string) (*tools.Set, error)
 }
 
-// Resources are the models and tools of a shard.
 type Resources struct {
-	cfg Config
-	ctx context.Context
-	// providers are what every user's registry starts from, and registry what they give.
+	cfg        Config
+	ctx        context.Context
 	providers  []tools.Provider
 	registry   *tools.Registry
 	registries sync.Map
 }
 
-// userRegistry is a user's registry and the Set it was built from.
 type userRegistry struct {
 	set      *tools.Set
 	registry *tools.Registry
 }
 
-// New checks the models and makes the tools every user has from providers. A user's own tools connect within ctx.
+// A user's own tools connect within ctx.
 func New(ctx context.Context, cfg Config, providers []tools.Provider) (*Resources, error) {
 	if len(cfg.Models) == 0 {
 		return nil, fmt.Errorf("resources: at least one model is required")
@@ -67,7 +61,6 @@ func New(ctx context.Context, cfg Config, providers []tools.Provider) (*Resource
 	return &Resources{cfg: cfg, ctx: ctx, providers: providers, registry: registry}, nil
 }
 
-// Models are the models turns may run on, with the connection of the default.
 func (r *Resources) Models() ([]llm.Model, string) {
 	models := make([]llm.Model, 0, len(r.cfg.Models))
 	for _, m := range r.cfg.Models {
@@ -76,7 +69,6 @@ func (r *Resources) Models() ([]llm.Model, string) {
 	return models, r.cfg.Models[0].Connection
 }
 
-// Model is the model on the connection.
 func (r *Resources) Model(connection string) (llm.Model, error) {
 	i := slices.IndexFunc(r.cfg.Models, func(m llm.Model) bool { return m.Connection == connection })
 	if i < 0 {
@@ -85,7 +77,6 @@ func (r *Resources) Model(connection string) (llm.Model, error) {
 	return r.cfg.Models[i].Clone(), nil
 }
 
-// Window is the context window of the model.
 func (r *Resources) Window(m llm.Model) (*contextmanager.Manager, error) {
 	limits, err := r.cfg.Connections[m.Connection].Limits(m.Name)
 	if err != nil {
@@ -94,7 +85,6 @@ func (r *Resources) Window(m llm.Model) (*contextmanager.Manager, error) {
 	return contextmanager.New(m.Name, limits), nil
 }
 
-// Client is the client the user's turns call the connection through.
 func (r *Resources) Client(user, connection string) (llm.Client, error) {
 	if r.cfg.ClientFor != nil {
 		return r.cfg.ClientFor(user, connection)
@@ -102,14 +92,12 @@ func (r *Resources) Client(user, connection string) (llm.Client, error) {
 	return r.cfg.Connections[connection], nil
 }
 
-// Shared says users have tools of their own besides the ones they share, so that settings shared by all may name
-// tools one user lacks.
+// Settings shared by all may then name tools one user lacks.
 func (r *Resources) Shared() bool { return r.cfg.ToolsFor != nil }
 
-// Tools are the tools every user has.
 func (r *Resources) Tools() *tools.Registry { return r.registry }
 
-// Registry gives the tools the user has. The first call may wait for their servers to connect.
+// The first call may wait for the user's servers to connect.
 func (r *Resources) Registry(user string) (*tools.Registry, error) {
 	if r.cfg.ToolsFor == nil {
 		return r.registry, nil
@@ -129,8 +117,6 @@ func (r *Resources) Registry(user string) (*tools.Registry, error) {
 	return registry, nil
 }
 
-// ConversationModel is the model a turn of a conversation runs on: the connection asked for, or else its last turn's,
-// or else the default.
 func (r *Resources) ConversationModel(last *db.TurnRow, requested string) (llm.Model, error) {
 	connection := strings.TrimSpace(requested)
 	if connection == "" && last != nil {
@@ -142,7 +128,6 @@ func (r *Resources) ConversationModel(last *db.TurnRow, requested string) (llm.M
 	return r.Model(connection)
 }
 
-// MainRole is the main role of a turn on the model, by how much input the model takes.
 func (r *Resources) MainRole(model llm.Model) (role.Name, error) {
 	window, err := r.Window(model)
 	if err != nil {

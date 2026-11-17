@@ -12,12 +12,10 @@ import (
 	"time"
 )
 
-// Machine is a cloud sandbox, connected and ready, in the terms its provider's SDK gives: a command with its output
-// and exit code, and files by path. Creating it, finding it again by id, waking it and letting it sleep stay with the
-// code that returns it, as do its network rules, which providers set on the sandbox itself.
+// Creating, finding, waking and putting a Machine to sleep stay with the code that returns it, as do its network
+// rules, which providers set on the sandbox itself.
 type Machine interface {
-	// Run returns when the command ends, and stops it at c.Timeout or when ctx ends. A command that ran and failed
-	// is a Result with its exit code, not an error.
+	// A command that ran and failed is a Result with its exit code, not an error.
 	Run(ctx context.Context, c Command) (Result, error)
 	Start(ctx context.Context, c Command, stderr io.Writer) (Process, error)
 	Stat(ctx context.Context, path string) (fs.FileInfo, error)
@@ -37,8 +35,7 @@ type remote struct {
 	transport *http.Transport
 }
 
-// Remote makes a Box of a machine: its commands run in the first of roots, and files are written under them. summary
-// tells the model what the machine allows. A nil machine only describes the tools.
+// A nil machine only describes the tools.
 func Remote(m Machine, roots []string, summary string) Box {
 	return &remote{Machine: m, roots: roots, summary: summary, transport: PublicTransport()}
 }
@@ -62,8 +59,8 @@ func (r *remote) Start(ctx context.Context, c Command, stderr io.Writer) (Proces
 
 func (r *remote) Same(_ context.Context, a, b string) bool { return a == b }
 
-// Move goes through the machine's own mv: its files are reached only through its commands. mv puts a folder inside a
-// folder that is already there, so an empty target is removed first and to ends up holding what from held.
+// The machine's files are reached only through its commands. mv puts a folder inside one that is already there, so
+// an empty target is removed first.
 func (r *remote) Move(ctx context.Context, from, to string) error {
 	if r.Machine == nil {
 		return errors.New("sandbox: this box has no machine to move files in")
@@ -92,7 +89,6 @@ func (r *remote) Move(ctx context.Context, from, to string) error {
 	return nil
 }
 
-// run is one command of the machine, whose failure is an error of the move.
 func (r *remote) run(ctx context.Context, program string, args ...string) error {
 	res, err := r.Machine.Run(ctx, Command{Program: program, Args: args, Timeout: moveTimeout})
 	if err != nil {

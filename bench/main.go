@@ -18,7 +18,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -199,9 +198,6 @@ func pct(d []time.Duration, p float64) time.Duration {
 var experiments = map[string]func([]string){"parked": parked, "burst": burst, "steady": steady, "crash": crash, "crashchild": crashChild, "provider": providerMain, "isolated": isolated, "lone": lone, "resume": resume, "mix": mix, "fanout": fanout, "soak": soak, "users": users, "conns": conns, "connsshard": connsShard, "connsrouter": connsRouter}
 
 func main() {
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})))
-	// SetDefault routes the log package through slog at Info, below the level kept; the bench's own errors must show.
-	log.SetOutput(os.Stderr)
 	if len(os.Args) < 2 || experiments[os.Args[1]] == nil {
 		log.Fatal("usage: bench parked|burst|steady|crash|isolated|resume|mix|fanout|soak|users|conns [flags]")
 	}

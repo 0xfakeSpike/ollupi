@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"log/slog"
 	"math/rand/v2"
 	"net"
 	"net/http"
@@ -389,7 +388,6 @@ func benchUser(_ context.Context, token string) (string, error) {
 
 // quiet keeps a process the experiment starts from logging each connection that comes and goes, by the thousand.
 func quiet() {
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 }
 
 // connsShard is one shard's gateway and agent on a database, as conns starts it.

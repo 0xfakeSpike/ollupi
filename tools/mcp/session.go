@@ -30,7 +30,6 @@ type Session struct {
 	down error
 }
 
-// connect reaches a server within ctx. One with a command runs in the box, for as long as running lasts.
 func connect(ctx, running context.Context, client *mcp.Client, box sandbox.Box, s Server) (*Session, error) {
 	out := &Session{name: s.Name, timeout: s.Timeout, tools: map[string]*mcp.Tool{}}
 	if out.timeout <= 0 {
@@ -75,9 +74,7 @@ func connect(ctx, running context.Context, client *mcp.Client, box sandbox.Box, 
 			sess.Close()
 			return nil, out.withStderr(fmt.Errorf("list tools: %w", err))
 		}
-		// A tool the registry would refuse is left out here, so that it does not take the user's other tools with
-		// it: one whose name the model API refuses, that another of the server's tools has, or whose input schema
-		// is not an object the registry can check arguments against.
+		// A tool the registry would refuse is left out, so that it does not take the user's other tools with it.
 		name := s.Name + tools.ProviderSeparator + t.Name
 		_, isObject := t.InputSchema.(map[string]any)
 		_, taken := out.tools[name]
@@ -176,8 +173,7 @@ func (s *Session) Invoke(ctx context.Context, c tools.Caller, tool string, argum
 	return tools.Result{Output: joinTextContent(res.Content)}, nil
 }
 
-// joinTextContent is what the model reads of a result. Content that is not text is named, not dumped: its bytes
-// would fill the model's context with digits.
+// Content that is not text is named, not dumped: its bytes would fill the model's context with digits.
 func joinTextContent(content []mcp.Content) string {
 	var parts []string
 	for _, c := range content {

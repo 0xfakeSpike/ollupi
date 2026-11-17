@@ -17,11 +17,10 @@ import (
 
 type DB struct {
 	gorm *gorm.DB
-	// owner is the lease Fence holds this handle to, shared by every handle made from it; nil before Fence.
+	// shared by every handle made from it; nil before Fence.
 	owner *atomic.Pointer[string]
 }
 
-// WithContext is the database for one request: its queries end when ctx does.
 func (d *DB) WithContext(ctx context.Context) *DB {
 	return &DB{gorm: d.gorm.WithContext(ctx), owner: d.owner}
 }

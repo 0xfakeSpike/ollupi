@@ -2,9 +2,6 @@ package orchestrator
 
 import (
 	"errors"
-	"fmt"
-	"log/slog"
-	"runtime/debug"
 )
 
 var (
@@ -12,14 +9,7 @@ var (
 	errCrashed = errors.New("orchestrator: an internal error stopped this")
 )
 
-func (o *Orchestrator) Wait() {
-	o.done.Wait()
-	if o.owner != "" {
-		if err := o.cfg.DB.ReleaseShard(o.owner); err != nil {
-			slog.Warn("shard lease not released", "err", err)
-		}
-	}
-}
+func (o *Orchestrator) Wait() { o.done.Wait() }
 
 func (o *Orchestrator) loop() {
 	defer o.done.Done()
@@ -34,11 +24,7 @@ func (o *Orchestrator) loop() {
 }
 
 func (o *Orchestrator) step(fn func()) {
-	defer func() {
-		if p := recover(); p != nil {
-			slog.Error("orchestrator loop step crashed", "panic", fmt.Sprint(p), "stack", string(debug.Stack()))
-		}
-	}()
+	defer func() { recover() }() // a step that panics is dropped, so that the loop goes on
 	fn()
 	o.admit()
 }

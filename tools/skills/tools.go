@@ -21,7 +21,6 @@ const (
 	ToolReadResource  = "read_skill_resource"
 )
 
-// Tools provides the skill tools over the skills installed under root, which a call reads anew: the caller's role's.
 type Tools struct {
 	root string
 }
@@ -32,7 +31,6 @@ func (*Tools) Name() (string, string) {
 	return ProviderName, "Directory-based Agent Skills with explicit activation and on-demand resources."
 }
 
-// Invoke works on the skills of the caller's role alone.
 func (t *Tools) Invoke(_ context.Context, caller tools.Caller, tool string, arguments map[string]any) (tools.Result, error) {
 	switch strings.TrimSpace(tool) {
 	case ToolGetRootDir:
@@ -145,7 +143,6 @@ func (t *Tools) readResource(role string, arguments map[string]any) (tools.Resul
 	return tools.Result{Output: page}, nil
 }
 
-// find is the skill of the role that has the name.
 func (t *Tools) find(role, name string) (skills.Skill, bool, error) {
 	own, err := skills.Load(t.root, role)
 	if err != nil {

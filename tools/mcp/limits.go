@@ -17,9 +17,6 @@ const maxMessageBytes = 32 << 20
 
 var errMessageTooLarge = fmt.Errorf("mcp: the server sent a message of more than %d bytes", maxMessageBytes)
 
-// stdioMessages passes on what a server writes on stdio a message at a time: a line that holds one JSON value, as the
-// stdio transport has them, of at most maxMessageBytes. A longer line, or one that is not a whole message, ends the
-// session.
 type stdioMessages struct {
 	io.Closer
 	r    *bufio.Reader
@@ -63,7 +60,6 @@ func readLine(r *bufio.Reader) ([]byte, error) {
 	}
 }
 
-// limitBody bounds a server's HTTP answer: each event of a stream, or the whole of any other body.
 func limitBody(res *http.Response) io.ReadCloser {
 	if strings.HasPrefix(res.Header.Get("Content-Type"), "text/event-stream") {
 		return &eventLimit{ReadCloser: res.Body}
@@ -71,7 +67,6 @@ func limitBody(res *http.Response) io.ReadCloser {
 	return http.MaxBytesReader(nil, res.Body, maxMessageBytes)
 }
 
-// eventLimit fails a stream once more than maxMessageBytes come without the blank line that ends an event.
 type eventLimit struct {
 	io.ReadCloser
 	run      int

@@ -15,7 +15,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// workspaceTimeout bounds what adding or moving a workspace asks of the user's sandbox, the move itself aside.
 const workspaceTimeout = time.Minute
 
 func (sv *Service) AddWorkspace(ctx context.Context, user, path, name string) (db.WorkspaceRow, error) {
@@ -61,10 +60,8 @@ func (sv *Service) RenameWorkspace(user, id, name string) (db.WorkspaceRow, erro
 	return sv.changeWorkspace(user, id, func(w *db.WorkspaceRow) { w.Name = name })
 }
 
-// MoveWorkspace moves the workspace's folder to path, a folder that is there and empty, and points the workspace at
-// it. Every thread, memory and task keeps its workspace id, so nothing else is rewritten. A turn in progress would keep
-// calling tools against the folder it started in, so the move is refused until the workspace's conversations are
-// idle, and none starts a turn while the folder moves.
+// Threads, memories and tasks keep the workspace id, so nothing else is rewritten. A running turn would keep
+// calling tools against the old folder, so the move waits until the conversations are idle and blocks new turns.
 func (sv *Service) MoveWorkspace(ctx context.Context, user, id, path string) (db.WorkspaceRow, error) {
 	// The move itself outlives the request: a folder left half moved because a client went away helps no one.
 	move := context.WithoutCancel(ctx)
@@ -127,8 +124,7 @@ func (sv *Service) MoveWorkspace(ctx context.Context, user, id, path string) (db
 	return moved, nil
 }
 
-// startMove claims the workspace for a move once none of its conversations has a turn open. submit checks the claim
-// under the same lock, so no turn starts between the check and the claim.
+// submit checks the claim under the same lock, so no turn starts between the check and the claim.
 func (sv *Service) startMove(user string, w db.WorkspaceRow) error {
 	sv.moveMu.Lock()
 	defer sv.moveMu.Unlock()
@@ -160,8 +156,7 @@ func (sv *Service) UpdateWorkspaceSettings(user, id string, settings permission.
 	return sv.updateWorkspaceSettings(user, id, func(permission.Settings) permission.Settings { return settings })
 }
 
-// updateWorkspaceSettings checks what change makes of the workspace's settings as they were read, and writes what it
-// makes of them as they are when written.
+// change is checked against the settings as read, and applied again to them as they are when written.
 func (sv *Service) updateWorkspaceSettings(user, id string, change func(permission.Settings) permission.Settings) (db.WorkspaceRow, error) {
 	w, err := sv.workspaceFor(user, db.Ref(id))
 	if err != nil {
@@ -226,7 +221,7 @@ func (sv *Service) workspaceOf(id db.Ref) (db.WorkspaceRow, error) {
 	return w, nil
 }
 
-// workspaceFor reads a workspace the user names; one of another user's does not exist for them.
+// Another user's workspace does not exist for them.
 func (sv *Service) workspaceFor(user string, id db.Ref) (db.WorkspaceRow, error) {
 	if id == "" {
 		return db.WorkspaceRow{}, nil

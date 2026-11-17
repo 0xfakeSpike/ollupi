@@ -3,7 +3,6 @@ package gateway
 import (
 	"encoding/json"
 	"errors"
-	"log/slog"
 	"strings"
 
 	"github.com/0xfakeSpike/ollupi/agent/service"
@@ -13,14 +12,13 @@ import (
 	"github.com/coder/websocket"
 )
 
-// requests asks the client what is waiting on it. A client that cannot be told would wait without knowing, so one that
-// could not be told is dropped and asked again when it comes back.
+// A client that cannot be told what waits on it would wait without knowing, so it is dropped and asked again when it
+// comes back.
 func (c *conn) requests(pending []service.Request, err error) {
 	if errors.Is(err, db.ErrNotFound) {
 		return
 	}
 	if err != nil {
-		slog.Error("pending requests not read", "user", c.user, "err", err)
 		go c.ws.Close(websocket.StatusInternalError, "pending requests could not be read")
 		return
 	}
@@ -42,12 +40,9 @@ func (c *conn) request(threadID string, it db.ItemRow) {
 		delete(c.asked, it.ID)
 		c.mu.Unlock()
 		if rerr != nil {
-			slog.Warn("client refused a request", "item", it.ID, "code", rerr.Code, "message", rerr.Message[:min(len(rerr.Message), maxLoggedBytes)])
 			return
 		}
 		if err := c.resolve(threadID, it, result); err != nil {
-			why := err.Error()
-			slog.Warn("client response not applied", "item", it.ID, "err", why[:min(len(why), maxLoggedBytes)])
 			c.rpc.Notify(notifyError, ErrorNotification{ThreadID: threadID, TurnID: it.TurnID, ItemID: it.ID, Message: serverError(err).Message})
 			if !errors.Is(err, db.ErrNoSuchRequest) {
 				c.request(threadID, it)
@@ -57,7 +52,6 @@ func (c *conn) request(threadID string, it db.ItemRow) {
 	if !it.WaitsForApproval() {
 		req, err := userinput.Decode(it.Await.Request)
 		if err != nil {
-			slog.Error("request not sent", "item", it.ID, "err", err)
 			return
 		}
 		c.rpc.Request(requestUserInput, UserInputRequestParams{ThreadID: threadID, TurnID: it.TurnID, ItemID: it.ID, Questions: nonNil(req.Questions)}, answered)
@@ -74,7 +68,6 @@ func (c *conn) request(threadID string, it db.ItemRow) {
 	}, answered)
 }
 
-// resolve applies the client's answer to a request, decoded as strictly as the params of a call.
 func (c *conn) resolve(threadID string, it db.ItemRow, result json.RawMessage) error {
 	if !it.WaitsForApproval() {
 		var r UserInputResponse

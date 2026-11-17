@@ -8,8 +8,7 @@ import (
 
 const diffContext = 3
 
-// unifiedDiff renders the change from before to after as a unified diff of path, and counts the lines added and
-// removed. The diff need not be the shortest: its work is bounded, so a file rewritten whole costs no more than a few
+// The diff need not be the shortest: its work is bounded, so a file rewritten whole costs no more than a few
 // passes over it.
 func unifiedDiff(path, before, after string, created bool) (string, int, int, error) {
 	from := "a/" + path

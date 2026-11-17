@@ -12,14 +12,11 @@ import (
 )
 
 const (
-	// Tool loads deferred tools.
-	Tool = "load_tools"
-	// ProviderName is the provider of Tool.
+	Tool         = "load_tools"
 	ProviderName = "deferred_tools"
 )
 
-// Provider gives Tool. A call only checks the names against the tools its run defers, as the caller names them: the
-// role's Offer reads the loaded ones back from the conversation's completed calls.
+// No state: the role's Offer reads the loaded tools back from the conversation's completed calls.
 type Provider struct{}
 
 func New() *Provider { return &Provider{} }

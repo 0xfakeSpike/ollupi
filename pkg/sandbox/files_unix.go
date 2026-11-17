@@ -14,16 +14,13 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// The agent's own reads and writes go by canonical paths, which the rules were checked against. A command left running
-// can put a link in place of a folder on such a path after the check, so the files are opened folder by folder
-// without following links: what is opened is what was checked.
+// A command left running can put a link in place of a folder on a checked canonical path, so the agent's own files
+// are opened folder by folder without following links: what is opened is what was checked.
 
-// errLink says a path leads through a link.
 var errLink = errors.New("the path leads through a link")
 
 const dirFlags = unix.O_RDONLY | unix.O_DIRECTORY | unix.O_NOFOLLOW | unix.O_CLOEXEC
 
-// openDir opens the folder dir without following a link on the way, making the missing folders when create is set.
 func openDir(dir string, create bool) (int, error) {
 	fd, err := unix.Open("/", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	if err != nil {
@@ -62,7 +59,6 @@ func pathError(path string, err error) error {
 	return &fs.PathError{Op: "open", Path: path, Err: err}
 }
 
-// openRegular opens the regular file at path without following a link.
 func openRegular(path string) (*os.File, error) {
 	dir, err := openDir(filepath.Dir(path), false)
 	if err != nil {
@@ -90,7 +86,7 @@ func openRegular(path string) (*os.File, error) {
 	return os.NewFile(uintptr(fd), path), nil
 }
 
-// open opens the regular file at path, following its links, and applies the read rules to the path it opened.
+// open applies the read rules to the path it opened, after following its links.
 func (s *Sandbox) open(path string) (*os.File, error) {
 	f, err := openRegular(path)
 	if errors.Is(err, errLink) {
@@ -109,7 +105,7 @@ func (s *Sandbox) open(path string) (*os.File, error) {
 	return f, nil
 }
 
-// writeFile replaces the file at path whole, making the folders above it; a link in place of one of them is refused.
+// A link in place of a folder above path is refused.
 func writeFile(path string, data []byte, perm fs.FileMode) error {
 	dir, err := openDir(filepath.Dir(path), true)
 	if err != nil {

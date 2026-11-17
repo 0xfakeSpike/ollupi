@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"regexp"
-	"runtime/debug"
 	"strings"
 	"time"
 
@@ -22,7 +20,6 @@ const (
 
 var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 
-// ErrInvalidJob marks a task the caller described wrongly: its conversation, name, spec or prompt.
 var ErrInvalidJob = errors.New("invalid scheduled task")
 
 type Jobs struct {
@@ -91,9 +88,7 @@ func (j *Jobs) next(spec string, after time.Time) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("cron: spec %q has no next run", spec)
 }
 
-// lastRun refuses a job's last run when it is nearly a year away. A cron spec
-// has no year, so a one-time task whose date has passed would otherwise run
-// on that date next year.
+// A cron spec has no year, so a one-time task whose date has passed would otherwise run on that date next year.
 func lastRun(job db.CronJobRow, next, now time.Time) error {
 	if job.Times != nil && *job.Times-job.Runs == 1 && next.After(now.AddDate(1, -1, 0)) {
 		return fmt.Errorf("cron: %w: the time of task %q's last run has passed; a spec has no year, so it would run next year", ErrInvalidJob, job.Name)
@@ -153,8 +148,6 @@ func (j *Jobs) SetPaused(threadID, name string, paused bool) (db.CronJobRow, err
 	})
 }
 
-// ran moves job past the run due now. A run that was sent, or failed to
-// start, counts toward its times; one skipped does not.
 func (j *Jobs) ran(job db.CronJobRow, now time.Time, counted bool) error {
 	next, err := j.next(job.Spec, now)
 	if err != nil {
@@ -201,15 +194,10 @@ func (j *Jobs) Run(ctx context.Context, send func(threadID, text, jobID string) 
 }
 
 func (j *Jobs) sendDue(ctx context.Context, send func(threadID, text, jobID string) error) {
-	defer func() {
-		if p := recover(); p != nil {
-			slog.Error("cron tick crashed", "panic", fmt.Sprint(p), "stack", string(debug.Stack()))
-		}
-	}()
+	defer func() { recover() }() // a pass that panics is dropped; the next tick tries again
 	now := time.Now().UTC()
 	due, err := j.db.DueCronJobs(now)
 	if err != nil {
-		slog.Error("cron due tasks not read", "err", err)
 		return
 	}
 	for _, job := range due {
@@ -218,20 +206,13 @@ func (j *Jobs) sendDue(ctx context.Context, send func(threadID, text, jobID stri
 		}
 		waiting, err := j.db.HasTurnBehind(job.ThreadID, job.ID)
 		if err != nil {
-			slog.Error("cron task not checked", "job", job.ID, "err", err)
 			continue
 		}
-		if waiting {
-			slog.Info("cron task skipped while its last run waits behind another turn", "job", job.ID, "thread", job.ThreadID)
-		} else if err := send(job.ThreadID, job.Prompt, job.ID); err == nil {
-			slog.Info("cron task sent", "job", job.ID, "thread", job.ThreadID)
-		} else if ctx.Err() == nil {
-			slog.Warn("cron task not started", "job", job.ID, "thread", job.ThreadID, "err", err)
-		} else {
-			return
+		if !waiting {
+			if err := send(job.ThreadID, job.Prompt, job.ID); err != nil && ctx.Err() != nil {
+				return
+			}
 		}
-		if err := j.ran(job, now, !waiting); err != nil {
-			slog.Error("cron task run not recorded", "job", job.ID, "err", err)
-		}
+		j.ran(job, now, !waiting)
 	}
 }

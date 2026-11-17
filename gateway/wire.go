@@ -9,8 +9,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
-// The protocol's own records. They carry what a client reads of the rows the orchestrator keeps, by the names the schema has
-// always given them, so that a column the storage adds does not reach clients unless it is added here.
+// The protocol's own records, so that a column the storage adds does not reach clients unless it is added here.
 
 type ThreadRow struct {
 	ID             string                `json:"id"`
@@ -67,9 +66,8 @@ func turnRow(t db.TurnRow) TurnRow {
 }
 
 type ItemRow struct {
-	ID     string `json:"id"`
-	TurnID string `json:"turnId"`
-	// TurnSeq and Seq place the item in its conversation: by its turn's seq, then its own.
+	ID                string               `json:"id"`
+	TurnID            string               `json:"turnId"`
 	TurnSeq           int                  `json:"turnSeq"`
 	Seq               int                  `json:"seq"`
 	Type              db.ItemType          `json:"type"`

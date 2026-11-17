@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"errors"
-	"log/slog"
 
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/repo/db"
@@ -29,14 +28,11 @@ func (c *conn) cronList(ctx context.Context, p CronListParams) (CronListResult, 
 func (s *Server) CronChanged(id, threadID string) {
 	t, err := s.db.ThreadRow(threadID)
 	if err != nil {
-		slog.Error("thread of a changed cron task not readable", "job", id, "thread", threadID, "err", err)
 		return
 	}
 	s.cronChanged(t.UserID, id, threadID)
 }
 
-// cronChanged tells the user's connections that a scheduled task changed, or, when it can no longer be read, that it
-// is gone. It reads the task only when a connection is there to tell.
 func (s *Server) cronChanged(user, id, threadID string) {
 	var n *CronChangedNotification
 	s.each(user, func(c *conn) {
@@ -48,7 +44,6 @@ func (s *Server) cronChanged(user, id, threadID string) {
 				view := cronJobView(job)
 				read.Job = &view
 			case !errors.Is(err, db.ErrNotFound):
-				slog.Error("changed cron task not readable", "job", id, "err", err)
 				return
 			}
 			n = &read

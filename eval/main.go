@@ -11,7 +11,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"log/slog"
 	"os"
 	"os/signal"
 	"strconv"
@@ -40,7 +39,6 @@ var version = "dev"
 const noOneThere = "No one is available to answer: decide for yourself and carry on with the task."
 
 func main() {
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})))
 	log.SetOutput(os.Stderr)
 	log.SetFlags(0)
 	out := flag.String("out", "", "keep the turn and its items in this file as JSON, rewritten as each item completes")

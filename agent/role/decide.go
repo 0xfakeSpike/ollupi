@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -16,8 +15,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// handleCall decides what becomes of a pending call: it may run, as the item it returns; or else its item says what
-// became of it: failed when it was refused, declined when the user declined it, waiting when it asks for approval.
 func (rt *Runtime) handleCall(ctx context.Context, it db.ItemRow) (*db.ItemRow, error) {
 	var approved *db.Approval
 	if it.Approval != nil {
@@ -44,7 +41,7 @@ func (rt *Runtime) handleCall(ctx context.Context, it db.ItemRow) (*db.ItemRow, 
 		return nil, rt.fail(it, err.Error())
 	}
 	if it.PreparedExecution == nil {
-		prepared, err := rt.Registry.Prepare(ctx, rt.caller(it), it.Tool, args)
+		prepared, err := rt.registry.Prepare(ctx, rt.caller(it), it.Tool, args)
 		if err != nil {
 			return nil, rt.fail(it, err.Error())
 		}
@@ -57,7 +54,7 @@ func (rt *Runtime) handleCall(ctx context.Context, it db.ItemRow) (*db.ItemRow, 
 			it = stored
 		}
 	}
-	content, hasContent, err := rt.Registry.PermissionContent(ctx, rt.caller(it), it.Tool, args)
+	content, hasContent, err := rt.registry.PermissionContent(ctx, rt.caller(it), it.Tool, args)
 	if err != nil {
 		return nil, rt.fail(it, err.Error())
 	}
@@ -78,7 +75,6 @@ func (rt *Runtime) handleCall(ctx context.Context, it db.ItemRow) (*db.ItemRow, 
 		if _, err := rt.record(it); err != nil {
 			return nil, err
 		}
-		slog.Info("approval requested", "thread", rt.thread.ID, "turn", rt.turn.ID, "item", it.ID, "tool", it.Tool)
 		return nil, nil
 	}
 	return &it, nil
@@ -89,14 +85,13 @@ func (rt *Runtime) changedSinceApproval(ctx context.Context, it db.ItemRow) (boo
 		return false, nil
 	}
 	args, _ := callArguments(it) // a call asks for approval only once its arguments were read
-	content, ok, err := rt.Registry.PermissionContent(ctx, rt.caller(it), it.Tool, args)
+	content, ok, err := rt.registry.PermissionContent(ctx, rt.caller(it), it.Tool, args)
 	if err != nil {
 		return false, err
 	}
 	return ok && content.Text != it.Approval.Content, nil
 }
 
-// decided is what becomes of a call the user decided on, unchanged since.
 func (rt *Runtime) decided(it db.ItemRow) (*db.ItemRow, error) {
 	if it.Approval.Decision == db.DecisionDecline {
 		_, err := rt.complete(withError(it, "the user declined this call"), db.ItemDeclined)

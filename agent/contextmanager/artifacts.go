@@ -12,7 +12,6 @@ import (
 
 const maxArtifactRunes = 20000
 
-// CheckArtifacts accepts the context artifacts of a tool result: named skills that fit the model's artifact budget.
 func (m *Manager) CheckArtifacts(artifacts []tools.ContextArtifact) error {
 	if len(artifacts) == 0 {
 		return nil

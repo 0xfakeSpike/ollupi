@@ -11,7 +11,6 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
-	"log/slog"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -33,7 +32,7 @@ const (
 	attachmentTimeout = time.Minute
 )
 
-// AttachmentInput is a file in the user's sandbox sent with a message; the attachment is a copy taken when it is sent.
+// The attachment is a copy taken when the message is sent.
 type AttachmentInput struct {
 	Path     string
 	Name     string
@@ -42,8 +41,8 @@ type AttachmentInput struct {
 
 var imageTypes = map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}
 
-// attach stores what a message brings, before the message goes through the loop: a sandbox or blob store that is slow
-// there would hold up every thread on the shard.
+// Stored before the message goes through the loop: a slow sandbox or blob store there would hold up every
+// thread on the shard.
 func (sv *Service) attach(ctx context.Context, user, threadID string, ins []AttachmentInput) ([]db.Attachment, error) {
 	t, err := sv.topThread(user, threadID)
 	if err != nil {
@@ -99,7 +98,7 @@ func (sv *Service) storeAttachment(ctx context.Context, t db.ThreadRow, in Attac
 	return att, nil
 }
 
-// attachmentSource reads the file a user names, from their sandbox: nothing else is theirs to send.
+// Only the user's sandbox: nothing else is theirs to send.
 func (sv *Service) attachmentSource(ctx context.Context, user, path string) ([]byte, error) {
 	box, err := sv.cfg.BoxFor(user)
 	if err != nil {
@@ -118,8 +117,7 @@ func (sv *Service) attachmentSource(ctx context.Context, user, path string) ([]b
 	return sandbox.ReadFile(ctx, box, path, maxImageBytes)
 }
 
-// describe classifies a file as an image or a text file from its first bytes, whatever its sender calls it, and
-// checks it against the limits of its kind.
+// Classified by its first bytes, whatever its sender calls it.
 func describe(data []byte, name, mime string) (db.Attachment, error) {
 	if len(data) == 0 {
 		return db.Attachment{}, fmt.Errorf("attachment %q is empty", name)
@@ -166,7 +164,7 @@ func attachmentName(name string) string {
 	return clipRunes(name, 120)
 }
 
-// imageSize reads an image's dimensions from its header; head, its first bytes, is enough for WebP.
+// head, the first bytes, is enough for WebP.
 func imageSize(r io.Reader, head []byte) (int, int) {
 	if cfg, _, err := image.DecodeConfig(r); err == nil {
 		return cfg.Width, cfg.Height
@@ -190,7 +188,7 @@ func webpSize(b []byte) (int, int) {
 	return 0, 0
 }
 
-// imageTokens estimates what a provider charges for an image scaled to fit maxImageSide: about one token per 750 pixels.
+// About one token per 750 pixels of the image scaled to fit maxImageSide.
 func imageTokens(w, h int) int {
 	if long := max(w, h); long > maxImageSide {
 		w, h = w*maxImageSide/long, h*maxImageSide/long
@@ -209,9 +207,7 @@ func (sv *Service) removeAttachments(atts []db.Attachment) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(sv.ctx), attachmentTimeout)
 	defer cancel()
 	for _, att := range atts {
-		if err := sv.cfg.Attachments.Delete(ctx, att.File); err != nil {
-			slog.Warn("attachment not removed", "file", att.File, "err", err)
-		}
+		sv.cfg.Attachments.Delete(ctx, att.File)
 	}
 }
 
