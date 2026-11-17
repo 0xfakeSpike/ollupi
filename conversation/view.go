@@ -57,6 +57,7 @@ const (
 	ItemCompaction   ItemKind = "contextCompaction"
 	ItemMemory       ItemKind = "memoryContext"
 	ItemError        ItemKind = "error"
+	ItemNotice       ItemKind = "notice"
 )
 
 type ItemStatus string
@@ -213,6 +214,8 @@ func (v *View) Apply(e Entry) {
 		v.add(e, Item{Kind: ItemCompaction, Status: Done, Text: b.Summary, Through: b.Through, Response: b.Response, Stats: &stats})
 	case Recalled:
 		v.add(e, Item{Kind: ItemMemory, Status: Done, Memories: b.Memories})
+	case Notice:
+		v.add(e, Item{Kind: ItemNotice, Status: Done, Text: b.Text})
 	}
 }
 

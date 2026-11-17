@@ -44,7 +44,7 @@ func Check(v View, e Entry) error {
 			return refuse("a response is the turn's own and has an id")
 		}
 		return nil
-	case UserMessage, AgentMessage, Reasoning, ModelFailed, ToolCall, Compacted, Recalled:
+	case UserMessage, AgentMessage, Reasoning, ModelFailed, ToolCall, Compacted, Recalled, Notice:
 		return newItem(v, e)
 	case ChildReported:
 		if err := newItem(v, e); err != nil {
