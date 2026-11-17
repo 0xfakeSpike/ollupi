@@ -7,7 +7,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
@@ -137,26 +136,6 @@ func (sv *Service) SkipUserInput(user, threadID, itemID string) error {
 		it.Status, it.Error, it.CompletedAt = db.ItemDeclined, "the user skipped these questions; go on without their answers", &now
 		return it, nil
 	})
-}
-
-func (sv *Service) allowAlways(threadID string, rules []string) error {
-	t, err := sv.cfg.DB.ThreadRow(threadID)
-	if err != nil {
-		return fmt.Errorf("service: thread %s: %w", threadID, err)
-	}
-	if parent := string(t.ParentThreadID); parent != "" {
-		if t, err = sv.cfg.DB.ThreadRow(parent); err != nil {
-			return fmt.Errorf("service: parent thread %s: %w", parent, err)
-		}
-	}
-	allow := permission.Settings{Rules: permission.Rules{Allow: rules}}
-	widen := func(s permission.Settings) permission.Settings { return permission.Resolve(s, allow) }
-	if t.WorkspaceID == "" {
-		_, err := sv.updateThreadSettings(t.UserID, t.ID, widen)
-		return err
-	}
-	_, err = sv.updateWorkspaceSettings(t.UserID, string(t.WorkspaceID), widen)
-	return err
 }
 
 // The thread's state is read before the answer is made, so the database refuses it with db.ErrNoSuchRequest

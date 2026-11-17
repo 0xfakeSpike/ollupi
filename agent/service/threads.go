@@ -34,31 +34,6 @@ func (sv *Service) StartThread(user, workspaceID, environmentID, title string, s
 	return sv.createThread(db.ThreadRow{UserID: user, Title: title, Settings: settings, WorkspaceID: db.Ref(workspaceID), EnvironmentID: db.Ref(env.ID)})
 }
 
-func (sv *Service) UpdateThreadSettings(user, threadID string, settings permission.Settings) (db.ThreadRow, error) {
-	return sv.updateThreadSettings(user, threadID, func(permission.Settings) permission.Settings { return settings })
-}
-
-// change is checked against the settings as read, and applied again to them as they are when written.
-func (sv *Service) updateThreadSettings(user, threadID string, change func(permission.Settings) permission.Settings) (db.ThreadRow, error) {
-	t, err := sv.topThread(user, threadID)
-	if err != nil {
-		return db.ThreadRow{}, err
-	}
-	w, err := sv.workspaceFor(user, t.WorkspaceID)
-	if err != nil {
-		return db.ThreadRow{}, err
-	}
-	if err := sv.validateLayer(user, sv.permissions.Base(w), t.Settings, permission.ThreadLayer(change(t.Settings))); err != nil {
-		return db.ThreadRow{}, err
-	}
-	t, err = sv.cfg.DB.UpdateThreadSettings(user, threadID, change)
-	if err != nil {
-		return db.ThreadRow{}, fmt.Errorf("service: thread %s: %w", threadID, err)
-	}
-	sv.ev.Emit(event.Event{Kind: event.ThreadChanged, Thread: t})
-	return t, nil
-}
-
 func (sv *Service) createThread(t db.ThreadRow) (db.ThreadRow, error) {
 	now := time.Now().UTC()
 	t.ID = uuid.NewString()
