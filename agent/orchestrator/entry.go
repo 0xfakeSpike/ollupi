@@ -1,16 +1,10 @@
 package orchestrator
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/repo/db"
-)
-
-var (
-	ErrNoActiveTurn = errors.New("the thread has no turn in progress")
-	ErrTurnMismatch = errors.New("the expected turn is not the turn in progress")
 )
 
 func (o *Orchestrator) Wake(threadID string) { o.produce(wake{threadID}) }
@@ -57,7 +51,7 @@ func (o *Orchestrator) announce(threadID string) {
 func (o *Orchestrator) interrupt(threadID, expectedTurnID string) error {
 	if sl, ok := o.slotByThread[threadID]; ok {
 		if expectedTurnID != "" && sl.turnID != expectedTurnID {
-			return fmt.Errorf("%w (expected %s, in progress %s)", ErrTurnMismatch, expectedTurnID, sl.turnID)
+			return fmt.Errorf("%w (expected %s, in progress %s)", db.ErrTurnMismatch, expectedTurnID, sl.turnID)
 		}
 		sl.cancel()
 		return nil
@@ -68,10 +62,10 @@ func (o *Orchestrator) interrupt(threadID, expectedTurnID string) error {
 	}
 	turn, active := st.ActiveTurn()
 	if !active {
-		return ErrNoActiveTurn
+		return db.ErrNoActiveTurn
 	}
 	if expectedTurnID != "" && turn.ID != expectedTurnID {
-		return fmt.Errorf("%w (expected %s, in progress %s)", ErrTurnMismatch, expectedTurnID, turn.ID)
+		return fmt.Errorf("%w (expected %s, in progress %s)", db.ErrTurnMismatch, expectedTurnID, turn.ID)
 	}
 	reason := map[db.TurnStatus]string{
 		db.TurnReady:              "interrupted while waiting for a slot",

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/event"
-	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo/db"
@@ -142,10 +141,10 @@ func (sv *Service) steer(threadID, expectedTurnID string, in Input, atts []db.At
 	}
 	turn, active := st.ActiveTurn()
 	if !active {
-		return db.TurnRow{}, orchestrator.ErrNoActiveTurn
+		return db.TurnRow{}, db.ErrNoActiveTurn
 	}
 	if turn.ID != expectedTurnID {
-		return db.TurnRow{}, fmt.Errorf("%w (expected %s, in progress %s)", orchestrator.ErrTurnMismatch, expectedTurnID, turn.ID)
+		return db.TurnRow{}, fmt.Errorf("%w (expected %s, in progress %s)", db.ErrTurnMismatch, expectedTurnID, turn.ID)
 	}
 	limits, err := sv.res.Limits(turn.Model)
 	if err != nil {
