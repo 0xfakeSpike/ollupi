@@ -91,6 +91,12 @@ type Wait struct{}
 // RunTools runs the calls the model made that may run now.
 type RunTools struct{ Calls []conversation.Item }
 
+// SkipTools ends the calls the model made without running them: tool use stopped before they ran.
+type SkipTools struct {
+	Calls  []conversation.Item
+	Reason string
+}
+
 // CallModel asks the model for its next response. A notice is appended first, to tell the model why tool use
 // stopped; then, and until it answers, it may call no tool.
 type CallModel struct {
@@ -102,11 +108,12 @@ type Finish struct{}
 
 func (Wait) action()      {}
 func (RunTools) action()  {}
+func (SkipTools) action() {}
 func (CallModel) action() {}
 func (Finish) action()    {}
 
-// Next reads the turn in progress of v: what it waits on comes first, then calls that may run, then whether it has
-// answered, then whether its budget or a declined call stops tool use.
+// Next reads the turn in progress of v: what it waits on comes first, then the calls to run, unless its budget or a
+// declined call stopped tool use, then whether it has answered, then whether tool use stopped.
 func Next(v conversation.View, r Role) Action {
 	turn, ok := v.Active()
 	if !ok || v.Waiting() != conversation.WaitNone {
@@ -119,7 +126,10 @@ func Next(v conversation.View, r Role) Action {
 			runnable = append(runnable, it)
 		}
 	}
+	stopped := stop(v, turn.ID, items, r)
 	switch {
+	case len(runnable) > 0 && stopped != "":
+		return SkipTools{Calls: runnable, Reason: stopped}
 	case len(runnable) > 0:
 		return RunTools{Calls: runnable}
 	case v.Answered(turn.ID):
@@ -130,8 +140,8 @@ func Next(v conversation.View, r Role) Action {
 	if told {
 		return CallModel{NoTools: true}
 	}
-	if reason := stop(v, turn.ID, items, r); reason != "" {
-		return CallModel{NoTools: true, Notice: &conversation.Notice{Text: fmt.Sprintf(concludeNotice, reason)}}
+	if stopped != "" {
+		return CallModel{NoTools: true, Notice: &conversation.Notice{Text: fmt.Sprintf(concludeNotice, stopped)}}
 	}
 	return CallModel{}
 }
@@ -143,7 +153,7 @@ func stop(v conversation.View, turn string, items []conversation.Item, r Role) s
 	}
 	calls := 0
 	for _, it := range items {
-		if it.Kind == conversation.ItemToolCall {
+		if it.Kind == conversation.ItemToolCall && it.Status != conversation.Pending {
 			calls++
 		}
 	}
@@ -210,4 +220,20 @@ func responses(v conversation.View, turn string) int {
 		}
 	}
 	return n
+}
+
+// Launchable leaves out of visible the subagents that would have nothing to work with. A subagent is launched by the
+// tool named after its role, and keeps what its role's own layers keep of the tools visible where it is launched.
+func Launchable(visible []policy.Tool) []policy.Tool {
+	out := slices.Clone(visible)
+	for _, name := range []Name{GeneralSub, BrowserSub} {
+		own := roles[name].Own
+		workable := slices.ContainsFunc(visible, func(t policy.Tool) bool {
+			return t.Provider != OutputsProvider && !slices.ContainsFunc(own, func(l policy.Layer) bool { return !l.Keeps(t) })
+		})
+		if !workable {
+			out = slices.DeleteFunc(out, func(t policy.Tool) bool { return t.Name == string(name) })
+		}
+	}
+	return out
 }

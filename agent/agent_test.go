@@ -69,8 +69,14 @@ func TestADeclinedCallStopsToolUseAndTheModelIsToldOnce(t *testing.T) {
 	l := started(t)
 	l.add("t", "", conversation.ModelResponded{Response: "r1"})
 	l.add("t", "c1", conversation.ToolCall{Tool: "run_command", Response: "r1"})
+	l.add("t", "c2", conversation.ToolCall{Tool: "read_file", Response: "r1"})
 	l.add("t", "c1", conversation.ApprovalAsked{Approval: "a"})
 	l.add("t", "c1", conversation.Decided{Decision: conversation.Decline})
+	skip, ok := Next(l.v, full()).(SkipTools)
+	if !ok || len(skip.Calls) != 1 || skip.Calls[0].ID != "c2" || !strings.Contains(skip.Reason, "declined run_command") {
+		t.Fatalf("the call after a decline: %#v", Next(l.v, full()))
+	}
+	l.add("t", "c2", conversation.ToolResult{Error: "skipped: " + skip.Reason})
 	a, ok := Next(l.v, full()).(CallModel)
 	if !ok || !a.NoTools || a.Notice == nil || !strings.Contains(a.Notice.Text, "the user declined run_command") {
 		t.Fatalf("after a decline: %#v", Next(l.v, full()))
