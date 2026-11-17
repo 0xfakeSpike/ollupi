@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -14,17 +13,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/event"
-	"github.com/0xfakeSpike/ollupi/agent/permission"
-	"github.com/0xfakeSpike/ollupi/agent/service"
+	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/conversation"
+	"github.com/0xfakeSpike/ollupi/host"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo/db"
-	"github.com/0xfakeSpike/ollupi/tools"
-	"github.com/0xfakeSpike/ollupi/tools/subagent"
+	"github.com/0xfakeSpike/ollupi/store"
+	"github.com/0xfakeSpike/ollupi/tool/kit"
 )
 
 // mixTurn is one turn of the mix: its kind, its conversation, when it was submitted, its first model request
-// and its end. A subagent's turn counts as submitted when it becomes its thread's current turn.
+// and its end. A subagent's turn counts as submitted when its conversation is started with its task.
 type mixTurn struct {
 	kind, thread, turnID string
 	submitted, first     time.Time
@@ -55,7 +53,7 @@ func mix(args []string) {
 			kind, id, _ := strings.Cut(ask, "#")
 			switch {
 			case kind == "delegate" && answered == 0:
-				return subagent.General, fmt.Sprintf(`{"description":"Do the work","prompt":"sub#%s"}`, id)
+				return string(agent.GeneralSub), fmt.Sprintf(`{"description":"Do the work","prompt":"sub#%s"}`, id)
 			case kind != "delegate" && answered < *rounds:
 				return "bench__work", "{}"
 			}
@@ -76,42 +74,27 @@ func mix(args []string) {
 		log.Fatal(err)
 	}
 	defer os.RemoveAll(dir)
-	store, err := db.Open(dir)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer store.Close()
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}, done: map[string]chan struct{}{}}
-	events := event.New()
-	events.SubscribeAll(func(e event.Event) {
-		// A subagent's task is the first message of its turn.
-		if e.Kind == event.ItemStarted && e.Thread.ParentThreadID != "" && e.Item.Type == db.ItemUserMessage {
-			mu.Lock()
-			turns[e.Item.Text] = &mixTurn{kind: "sub", thread: string(e.Thread.ParentThreadID), turnID: e.Turn.ID, submitted: time.Now()}
-			mu.Unlock()
-		}
-		tr.on(e)
-	})
-	ag := service.New(service.Config{
-		BoxFor: here,
-		Name:   "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
+	e := newEngine(host.Config{
+		Home: dir, Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", *calls, map[string]llm.Limits{"fake": {Context: 200_000, Output: 32_000}})},
-		Providers:   []tools.Provider{work{latency: *toolLatency}},
-		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
-		Slots:       *slots, DB: store,
-		Events: events,
+		Tools:       []kit.Provider{work{latency: *toolLatency}},
+		Slots:       *slots,
 	})
-	ctx, cancel := context.WithCancel(context.Background())
-	if err := ag.Start(ctx); err != nil {
-		log.Fatal(err)
-	}
-	newThread := func() string {
-		th, err := ag.StartThread(db.DefaultUser, "", "", "bench")
-		if err != nil {
-			log.Fatal(err)
+	e.Store.Feed().SubscribeAll(func(ev store.Event) {
+		// A subagent's task is the first message of its conversation, written as it is launched.
+		if ev.Change != nil && ev.Change.Header != nil && ev.Change.Header.Parent != "" {
+			for _, entry := range ev.Change.Entries {
+				if m, ok := entry.Body.(conversation.UserMessage); ok {
+					mu.Lock()
+					turns[m.Text] = &mixTurn{kind: "sub", thread: ev.Change.Header.Parent, turnID: entry.Turn, submitted: time.Now()}
+					mu.Unlock()
+				}
+			}
 		}
-		return th.ID
-	}
+		tr.on(ev)
+	})
+	e.run()
 	var seq int
 	send := func(kind, thread string) {
 		mu.Lock()
@@ -120,7 +103,7 @@ func mix(args []string) {
 		t := &mixTurn{kind: kind, thread: thread, submitted: time.Now()}
 		turns[text] = t
 		mu.Unlock()
-		id := tr.start(ag, db.DefaultUser, thread, text)
+		id := tr.start(e, defaultUser, thread, text)
 		mu.Lock()
 		t.turnID = id
 		mu.Unlock()
@@ -128,13 +111,13 @@ func mix(args []string) {
 	users := make([]string, *c)
 	tr.mu.Lock()
 	for i := range users {
-		users[i] = newThread()
+		users[i] = e.newThread(defaultUser)
 		tr.done[users[i]] = make(chan struct{}, 1)
 	}
 	tr.mu.Unlock()
 	scheduled := make([]string, *peak)
 	for i := range scheduled {
-		scheduled[i] = newThread()
+		scheduled[i] = e.newThread(defaultUser)
 	}
 
 	startAt := time.Now()
@@ -236,6 +219,5 @@ func mix(args []string) {
 		slices.Sort(t)
 		fmt.Printf("took kind=%s n=%d p50_s=%.1f p99_s=%.1f max_s=%.1f\n", kind, len(t), pct(t, .5).Seconds(), pct(t, .99).Seconds(), pct(t, 1).Seconds())
 	}
-	cancel()
-	ag.Wait()
+	e.stop()
 }

@@ -4,16 +4,15 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"reflect"
 	"sync"
 	"time"
-	"unsafe"
 
-	"github.com/0xfakeSpike/ollupi/repo/db"
+	"github.com/0xfakeSpike/ollupi/store"
+	"github.com/0xfakeSpike/ollupi/store/sqlite"
 	"gorm.io/gorm"
 )
 
-// dbStats counts the statements the agent's database runs and the time they take, reads apart from writes, and keeps
+// dbStats counts the statements the host's store runs and the time they take, reads apart from writes, and keeps
 // the connection pool, whose single connection every statement waits for.
 type dbStats struct {
 	mu                  sync.Mutex
@@ -24,11 +23,9 @@ type dbStats struct {
 	startStats          sql.DBStats
 }
 
-// watchDB hooks into the database db.Open returned. The bench reaches the gorm handle repo keeps unexported, so
-// that measuring the database needs nothing in repo that only the bench would use.
-func watchDB(store *db.DB) *dbStats {
-	field := reflect.ValueOf(store).Elem().FieldByName("gorm")
-	g := *(**gorm.DB)(unsafe.Pointer(field.UnsafeAddr()))
+// watchDB hooks into the store sqlite.Open returned.
+func watchDB(st store.Store) *dbStats {
+	g := st.(*sqlite.Store).Gorm()
 	pool, err := g.DB()
 	if err != nil {
 		log.Fatal(err)

@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"cmp"
-	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -20,13 +19,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/event"
-	"github.com/0xfakeSpike/ollupi/agent/permission"
-	"github.com/0xfakeSpike/ollupi/agent/service"
+	"github.com/0xfakeSpike/ollupi/host"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo/db"
-	"github.com/0xfakeSpike/ollupi/tools"
-	"github.com/0xfakeSpike/ollupi/tools/workspace"
+	"github.com/0xfakeSpike/ollupi/tool/builtin/workspace"
+	"github.com/0xfakeSpike/ollupi/tool/kit"
 )
 
 // steady keeps c conversations busy, each sending its next turn as soon as the last one ends, as c people using
@@ -87,13 +83,7 @@ func steady(args []string) {
 		log.Fatal(err)
 	}
 	defer os.RemoveAll(dir)
-	store, err := db.Open(dir)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer store.Close()
-	dbs := watchDB(store)
-	providers := []tools.Provider{work{latency: *toolLatency}}
+	providers := []kit.Provider{work{latency: *toolLatency}}
 	if *command != "" {
 		folder := filepath.Join(dir, "work")
 		if err := os.Mkdir(folder, 0o755); err != nil {
@@ -105,32 +95,23 @@ func steady(args []string) {
 			log.Fatal(err)
 		}
 		defer runner.Close()
-		providers = []tools.Provider{runner}
+		providers = []kit.Provider{runner}
 	}
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}, done: map[string]chan struct{}{}}
-	events := event.New()
-	events.SubscribeAll(tr.on)
-	ag := service.New(service.Config{
-		BoxFor: here,
-		Name:   "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
+	e := newEngine(host.Config{
+		Home: dir, Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(url, "", *calls, map[string]llm.Limits{"fake": {Context: 200_000, Output: 32_000}})},
-		Providers:   providers,
-		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
-		Slots:       *slots, DB: store, Events: events,
+		Tools:       providers,
+		Slots:       *slots,
 	})
-	ctx, cancel := context.WithCancel(context.Background())
-	if err := ag.Start(ctx); err != nil {
-		log.Fatal(err)
-	}
+	dbs := watchDB(e.Store)
+	e.Store.Feed().SubscribeAll(tr.on)
+	e.run()
 	threads := make([]string, *c)
 	tr.mu.Lock()
 	for i := range threads {
-		th, err := ag.StartThread(db.DefaultUser, "", "", "bench")
-		if err != nil {
-			log.Fatal(err)
-		}
-		threads[i] = th.ID
-		tr.done[th.ID] = make(chan struct{}, 1)
+		threads[i] = e.newThread(defaultUser)
+		tr.done[threads[i]] = make(chan struct{}, 1)
 	}
 	tr.mu.Unlock()
 
@@ -174,7 +155,7 @@ func steady(args []string) {
 		go func() {
 			defer wg.Done()
 			for range *turns {
-				turnID := tr.start(ag, db.DefaultUser, id, "work")
+				turnID := tr.start(e, defaultUser, id, "work")
 				mu.Lock()
 				ids = append(ids, turnID)
 				mu.Unlock()
@@ -205,8 +186,7 @@ func steady(args []string) {
 		cmp.Or(*command, "fake"), *c, *slots, *calls, n, total.Seconds(), float64(n)/total.Seconds(), float64(n*(*rounds+1))/total.Seconds(), alone.Seconds(),
 		pct(took, .5).Seconds(), pct(took, .95).Seconds(), pct(took, .99).Seconds(), peak, refused, failed, tr.failed.Load(),
 		peakRSS.Load().(float64), peakHeap.Load().(float64), dbMB(dir)*1024/float64(n), busyCPU.Seconds()/total.Seconds(), float64(busyCPU)/float64(time.Millisecond)/float64(n), float64(commandCPU)/float64(time.Millisecond)/float64(n), dbs.report(n))
-	cancel()
-	ag.Wait()
+	e.stop()
 }
 
 // providerMain serves the fake provider in a process of its own, so what it holds is not counted against the agent;
