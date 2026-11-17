@@ -48,18 +48,18 @@ func TestAnAppendIsKeptFoldedAndToldOnceCommitted(t *testing.T) {
 	var heard []store.Event
 	s.Feed().Subscribe("u", func(e store.Event) { heard = append(heard, e) })
 	start(t, s, "u", "th")
-	if len(heard) != 1 || heard[0].Seq != 2 || heard[0].Change.Header == nil || len(heard[0].Change.Entries) != 2 || !heard[0].Change.Runnable {
+	if len(heard) != 2 || heard[0].Seq != 1 || heard[0].Change == nil || heard[0].Change.Header == nil || len(heard[0].Change.Entries) != 2 || !heard[0].Change.Runnable || heard[1].Owned == nil || heard[1].Owned.Environment == nil {
 		t.Fatalf("heard %+v", heard)
 	}
-	v, err := s.Reader(ctx).View("th")
-	if err != nil || v.Head != 2 || !v.Runnable() || len(v.Items) != 1 || v.Items[0].Text != "hi" {
-		t.Fatalf("view %+v, %v", v, err)
+	v := view(t, s, "th")
+	if v.Head != 2 || !v.Runnable() || len(v.Items) != 1 || v.Items[0].Text != "hi" {
+		t.Fatalf("view %+v", v)
 	}
-	if run, err := s.Reader(ctx).Runnable(10, nil); err != nil || len(run) != 1 || run[0].Thread != "th" || run[0].User != "u" {
-		t.Errorf("runnable %+v, %v", run, err)
+	if run := runnable(t, s); len(run) != 1 || run[0].Thread != "th" || run[0].User != "u" {
+		t.Errorf("runnable %+v", run)
 	}
 
-	err = s.Update(ctx, func(tx store.Tx) error {
+	err := s.Update(ctx, func(tx store.Tx) error {
 		if _, err := tx.Append("th", conversation.Entry{Turn: "t1", Body: conversation.ModelResponded{Response: "r1"}},
 			conversation.Entry{Turn: "t1", Item: "c1", Body: conversation.ToolCall{Call: "x", Tool: "run_command", Response: "r1"}},
 			conversation.Entry{Turn: "t1", Item: "c1", Body: conversation.ApprovalAsked{Approval: "a1"}}); err != nil {
@@ -71,10 +71,10 @@ func TestAnAppendIsKeptFoldedAndToldOnceCommitted(t *testing.T) {
 	if !errors.Is(err, conversation.ErrRefused) {
 		t.Fatalf("a call started while it waits for approval: %v", err)
 	}
-	if len(heard) != 1 {
+	if len(heard) != 2 {
 		t.Error("a transaction that failed was told")
 	}
-	if v, _ := s.Reader(ctx).View("th"); v.Head != 2 {
+	if v := view(t, s, "th"); v.Head != 2 {
 		t.Errorf("a transaction that failed was kept: head %d", v.Head)
 	}
 
@@ -88,14 +88,14 @@ func TestAnAppendIsKeptFoldedAndToldOnceCommitted(t *testing.T) {
 		t.Fatal(err)
 	}
 	last := heard[len(heard)-1]
-	if last.Seq != 5 || last.Change.Status != conversation.ThreadWaitingOnApproval || last.Change.Runnable || len(last.Change.Items) != 1 || last.Change.Items[0].Approval == nil {
+	if last.Seq != 2 || last.Change.Status != conversation.ThreadWaitingOnApproval || last.Change.Runnable || len(last.Change.Items) != 1 || last.Change.Items[0].Approval == nil {
 		t.Fatalf("the approval's change: %+v", last.Change)
 	}
-	if run, _ := s.Reader(ctx).Runnable(10, nil); len(run) != 0 {
+	if run := runnable(t, s); len(run) != 0 {
 		t.Errorf("a thread that waits is runnable: %+v", run)
 	}
-	if th, err := s.Reader(ctx).Thread("th"); err != nil || th.Status != conversation.ThreadWaitingOnApproval || th.Head != 5 {
-		t.Errorf("the thread %+v, %v", th, err)
+	if th := thread(t, s, "th"); th.Status != conversation.ThreadWaitingOnApproval || th.Head != 5 {
+		t.Errorf("the thread %+v", th)
 	}
 }
 
@@ -114,20 +114,31 @@ func TestATurnEndedMarksTheThreadRepliedAndThePageReadsBackwards(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := s.Reader(ctx)
-	if th, _ := r.Thread("th"); th.Replied == nil {
+	if th := thread(t, s, "th"); th.Replied == nil {
 		t.Error("a turn ended leaves the thread unreplied")
 	}
-	page, more, err := r.Page("th", 0, 2)
+	var page, older store.Page
+	var more, olderMore bool
+	var seq int64
+	err = s.Read(ctx, func(r store.Reader) error {
+		var err error
+		if page, more, err = r.Page("th", 0, 2); err != nil {
+			return err
+		}
+		if older, olderMore, err = r.Page("th", page.Items[0].Seq, 2); err != nil {
+			return err
+		}
+		seq, err = r.Seq()
+		return err
+	})
 	if err != nil || !more || len(page.Items) != 2 || page.Items[0].ID != "a1" || page.Items[1].ID != "m2" || len(page.Turns) != 2 {
 		t.Fatalf("the latest page %+v, more %v, %v", page, more, err)
 	}
-	older, more, err := r.Page("th", page.Items[0].Seq, 2)
-	if err != nil || more || len(older.Items) != 1 || older.Items[0].ID != "m1" {
-		t.Errorf("the page before %+v, more %v, %v", older, more, err)
+	if olderMore || len(older.Items) != 1 || older.Items[0].ID != "m1" {
+		t.Errorf("the page before %+v, more %v", older, olderMore)
 	}
-	if seq, err := r.Seq(); err != nil || seq != 7 {
-		t.Errorf("seq %d, %v", seq, err)
+	if seq != 2 {
+		t.Errorf("seq %d after two commits", seq)
 	}
 }
 
@@ -172,11 +183,50 @@ func TestAReopenedStoreReadsTheSameView(t *testing.T) {
 	}
 	s.Close()
 	again := open(t, home)
-	v, err := again.Reader(context.Background()).View("th")
-	if err != nil || v.Head != 6 || len(v.Responses) != 1 || v.Turns[0].Usage.InputTokens != 9 {
-		t.Fatalf("view %+v, %v", v, err)
+	v := view(t, again, "th")
+	if v.Head != 6 || len(v.Responses) != 1 || v.Turns[0].Usage.InputTokens != 9 {
+		t.Fatalf("view %+v", v)
 	}
 	if c, _ := v.ItemOf("c1"); c.Status != conversation.Done || string(c.Result.Output) != string(out) {
 		t.Errorf("the call %+v", c)
 	}
+}
+
+func view(t *testing.T, s *Store, thread string) conversation.View {
+	t.Helper()
+	var v conversation.View
+	if err := s.Read(context.Background(), func(r store.Reader) error {
+		var err error
+		v, err = r.View(thread)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return v
+}
+
+func thread(t *testing.T, s *Store, id string) store.Thread {
+	t.Helper()
+	var th store.Thread
+	if err := s.Read(context.Background(), func(r store.Reader) error {
+		var err error
+		th, err = r.Thread(id)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return th
+}
+
+func runnable(t *testing.T, s *Store) []store.Runnable {
+	t.Helper()
+	var out []store.Runnable
+	if err := s.Read(context.Background(), func(r store.Reader) error {
+		var err error
+		out, err = r.Runnable(10, nil)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return out
 }

@@ -178,3 +178,18 @@ func (s MCPServer) Check(providers []string) error {
 	}
 	return nil
 }
+
+// CronJob is a scheduled task: a message the user has sent to a conversation again and again, on a cron schedule. Times
+// caps how often, Runs counts how often it has been.
+type CronJob struct {
+	ID      string
+	Thread  string
+	Name    string
+	Spec    string
+	Prompt  string
+	Times   *int
+	Runs    int
+	Paused  bool
+	NextRun time.Time
+	Created time.Time
+}

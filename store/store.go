@@ -22,7 +22,8 @@ type Store interface {
 	// Update runs fn in one transaction; what it changed reaches the feed once it commits, and nothing does if fn
 	// fails.
 	Update(ctx context.Context, fn func(Tx) error) error
-	Reader(ctx context.Context) Reader
+	// Read runs fn on one snapshot: what it reads, and the Seq it reads, hold together.
+	Read(ctx context.Context, fn func(Reader) error) error
 	Feed() *Feed
 	// Fence writes epoch as the shard's, unless a later holder's is there, and from then on refuses this process's
 	// writes once a later one is written.
@@ -31,6 +32,28 @@ type Store interface {
 }
 
 type Reader interface {
+	Users() ([]string, error)
+	Settings(user string) (user.Settings, error)
+	Workspaces(user string) ([]user.Workspace, error)
+	Workspace(user, id string) (user.Workspace, error)
+	// LocalEnvironment, this machine, comes first.
+	Environments(user string) ([]user.Environment, error)
+	Environment(user, id string) (user.Environment, error)
+	EnvironmentInUse(user, id string) (bool, error)
+	MCPServers(user string) ([]user.MCPServer, error)
+	CronJobs(user, thread string) ([]user.CronJob, error)
+	CronJob(id string) (user.CronJob, error)
+	// Due are the scheduled tasks not paused whose next run has come.
+	Due(now time.Time) ([]user.CronJob, error)
+	// Threads are a user's own conversations, the latest active first; more says whether there are others after them.
+	Threads(user string, f ThreadFilter) (threads []Thread, more bool, err error)
+	// Children are the conversations of the subagents a conversation launched.
+	Children(thread string) ([]Thread, error)
+	Search(user string, terms []string, workspace string, limit int) (Found, error)
+	// Busy counts the conversations with a turn in progress, and Active the users who wrote since then.
+	Busy() (int64, error)
+	Active(since time.Time) (int64, error)
+
 	Thread(id string) (Thread, error)
 	View(thread string) (conversation.View, error)
 	// Page is a thread's items, the latest limit of them before the item at seq before, or the latest when before is
@@ -45,7 +68,19 @@ type Reader interface {
 
 type Tx interface {
 	Reader
+	// EnsureUser makes a user met for the first time ready: their settings, and this machine as an environment.
 	EnsureUser(id string) error
+	SetSettings(user string, s user.Settings) error
+	// PutWorkspace adds or replaces a workspace; two of a user's cannot share a folder.
+	PutWorkspace(user string, w user.Workspace) error
+	PutEnvironment(user string, e user.Environment) error
+	DeleteEnvironment(user, id string) error
+	PutMCPServer(user string, s user.MCPServer) error
+	DeleteMCPServer(user, name string) error
+	PutCronJob(j user.CronJob) error
+	DeleteCronJob(id string) error
+	// DeleteThread deletes a conversation with its log, its subagents' and its scheduled tasks.
+	DeleteThread(id string) error
 	CreateThread(t Thread) error
 	// UpdateThread writes a thread's header, not what is folded from its log.
 	UpdateThread(t Thread) error
@@ -74,14 +109,27 @@ type Runnable struct {
 	User   string
 }
 
-// Event is what reaches the feed: a commit's change to one thread, or a delta of what a model is writing now, which
-// is not kept and has no seq.
+// Event is what reaches the feed: what a commit did to one thread or to what a user owns, or a delta of what a model is
+// writing now, which is not kept and has no seq. A commit's events share its seq.
 type Event struct {
 	Seq    int64
 	User   string
 	Thread string
 	Change *Change
+	Owned  *Owned
 	Delta  *Delta
+}
+
+// Owned is a change to what a user owns or sets: one of these, the deleted ones by their id or name.
+type Owned struct {
+	Settings           *user.Settings
+	Workspace          *user.Workspace
+	Environment        *user.Environment
+	EnvironmentDeleted string
+	MCPServer          *user.MCPServer
+	MCPServerDeleted   string
+	CronJob            *user.CronJob
+	CronJobDeleted     string
 }
 
 // Change is what one commit did to one thread: the entries appended to its log and the items and turns they changed,
@@ -91,6 +139,7 @@ type Change struct {
 	Items   []conversation.Item
 	Turns   []conversation.Turn
 	Header  *Thread
+	Deleted bool
 	Status  conversation.ThreadStatus
 	// Runnable says whether the thread's turn in progress can run now.
 	Runnable bool
@@ -102,4 +151,35 @@ type Delta struct {
 	Item      string
 	Text      string
 	Reasoning string
+}
+
+type ThreadFilter struct {
+	// Workspace, when not nil, keeps the conversations in that workspace, or those in none when it is "".
+	Workspace *string
+	Archived  bool
+	After     *ThreadCursor
+	Limit     int
+}
+
+type ThreadCursor struct {
+	Updated time.Time
+	Created time.Time
+	ID      string
+}
+
+type Found struct {
+	Threads  []Thread
+	Messages []Hit
+	Tasks    []user.CronJob
+}
+
+type Hit struct {
+	Thread  string
+	Title   string
+	Item    string
+	Turn    string
+	Seq     int64
+	Kind    conversation.ItemKind
+	Snippet string
+	At      time.Time
 }

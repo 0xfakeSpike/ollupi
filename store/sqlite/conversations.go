@@ -22,8 +22,8 @@ type threadRow struct {
 	UserID        string
 	Title         string
 	Settings      string
-	WorkspaceID   string
-	EnvironmentID string
+	WorkspaceID   *string
+	EnvironmentID *string
 	ParentID      *string
 	ParentItem    string
 	CreatedAt     time.Time
@@ -42,14 +42,26 @@ func (r threadRow) thread() (store.Thread, error) {
 		return store.Thread{}, fmt.Errorf("store: the settings of thread %s: %w", r.ID, err)
 	}
 	t := store.Thread{
-		Thread: user.Thread{ID: r.ID, Title: r.Title, Settings: settings, Workspace: r.WorkspaceID, Environment: r.EnvironmentID,
-			ParentItem: r.ParentItem, Created: r.CreatedAt, Updated: r.UpdatedAt, Archived: r.ArchivedAt, Replied: r.RepliedAt, Read: r.ReadAt},
+		Thread: user.Thread{ID: r.ID, Title: r.Title, Settings: settings, Workspace: deref(r.WorkspaceID), Environment: deref(r.EnvironmentID),
+			Parent: deref(r.ParentID), ParentItem: r.ParentItem, Created: r.CreatedAt, Updated: r.UpdatedAt, Archived: r.ArchivedAt, Replied: r.RepliedAt, Read: r.ReadAt},
 		User: r.UserID, Head: r.Head, Status: conversation.ThreadStatus(r.Status), Runnable: r.RunnableSince != nil,
 	}
-	if r.ParentID != nil {
-		t.Parent = *r.ParentID
-	}
 	return t, nil
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+// orNull keeps "" as NULL, for a reference to nothing.
+func orNull(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 func (r reader) Thread(id string) (store.Thread, error) {
@@ -143,20 +155,21 @@ func (r reader) Runnable(limit int, except []string) ([]store.Runnable, error) {
 
 func (r reader) Seq() (int64, error) {
 	var seq int64
-	err := r.g.Raw("SELECT COALESCE(MAX(id), 0) FROM entries").Scan(&seq).Error
+	err := r.g.Raw("SELECT seq FROM feed WHERE id = 1").Scan(&seq).Error
 	return seq, err
 }
 
 type tx struct {
 	reader
 	views   map[string]conversation.View
-	pending map[string]*pending
+	threads map[string]*pending
+	order   []string
+	owned   []store.Event
 }
 
 // pending is what the transaction did to one thread, for the feed.
 type pending struct {
 	user    string
-	seq     int64
 	change  store.Change
 	items   []string
 	turns   []string
@@ -164,26 +177,20 @@ type pending struct {
 }
 
 func (t *tx) note(thread, owner string) *pending {
-	p := t.pending[thread]
+	p := t.threads[thread]
 	if p == nil {
 		p = &pending{user: owner}
-		t.pending[thread] = p
+		t.threads[thread] = p
+		t.order = append(t.order, thread)
 	}
 	return p
 }
 
-func (t *tx) EnsureUser(id string) error {
-	return t.g.Exec("INSERT INTO users(id, created_at) VALUES (?, ?) ON CONFLICT(id) DO NOTHING", id, time.Now().UTC()).Error
-}
-
 func (t *tx) CreateThread(th store.Thread) error {
 	settings, _ := json.Marshal(th.Settings) // plain data: it cannot fail
-	var parent *string
-	if th.Parent != "" {
-		parent = &th.Parent
-	}
 	err := t.g.Exec(`INSERT INTO threads(id, user_id, title, settings, workspace_id, environment_id, parent_id, parent_item, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, th.ID, th.User, th.Title, string(settings), th.Workspace, th.Environment, parent, th.ParentItem, th.Created, th.Updated).Error
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, th.ID, th.User, th.Title, string(settings), orNull(th.Workspace), orNull(th.Environment), orNull(th.Parent),
+		th.ParentItem, th.Created, th.Updated).Error
 	if err != nil {
 		return fmt.Errorf("store: create thread %s: %w", th.ID, err)
 	}
@@ -194,7 +201,7 @@ func (t *tx) CreateThread(th store.Thread) error {
 func (t *tx) UpdateThread(th store.Thread) error {
 	settings, _ := json.Marshal(th.Settings) // plain data: it cannot fail
 	res := t.g.Exec(`UPDATE threads SET title = ?, settings = ?, workspace_id = ?, updated_at = ?, archived_at = ?, read_at = ? WHERE id = ?`,
-		th.Title, string(settings), th.Workspace, th.Updated, th.Archived, th.Read, th.ID)
+		th.Title, string(settings), orNull(th.Workspace), th.Updated, th.Archived, th.Read, th.ID)
 	if res.Error != nil {
 		return fmt.Errorf("store: update thread %s: %w", th.ID, res.Error)
 	}
@@ -212,9 +219,6 @@ func (t *tx) View(thread string) (conversation.View, error) {
 	v, err := t.reader.View(thread)
 	if err != nil {
 		return conversation.View{}, err
-	}
-	if t.views == nil {
-		t.views = map[string]conversation.View{}
 	}
 	t.views[thread] = v
 	return v, nil
@@ -245,16 +249,10 @@ func (t *tx) Append(thread string, entries ...conversation.Entry) (conversation.
 		if err != nil {
 			return conversation.View{}, fmt.Errorf("store: encode a %s entry: %w", conversation.KindOf(e.Body), err)
 		}
-		res := t.g.Exec("INSERT INTO entries(thread_id, seq, turn_id, item_id, at, kind, body) VALUES (?, ?, ?, ?, ?, ?, ?)",
-			thread, e.Seq, e.Turn, e.Item, e.At, string(conversation.KindOf(e.Body)), string(body))
-		if res.Error != nil {
-			return conversation.View{}, fmt.Errorf("store: append to thread %s: %w", thread, res.Error)
+		if err := t.g.Exec("INSERT INTO entries(thread_id, seq, turn_id, item_id, at, kind, body) VALUES (?, ?, ?, ?, ?, ?, ?)",
+			thread, e.Seq, e.Turn, e.Item, e.At, string(conversation.KindOf(e.Body)), string(body)).Error; err != nil {
+			return conversation.View{}, fmt.Errorf("store: append to thread %s: %w", thread, err)
 		}
-		var id int64
-		if err := t.g.Raw("SELECT last_insert_rowid()").Scan(&id).Error; err != nil {
-			return conversation.View{}, err
-		}
-		p.seq = id
 		appended = append(appended, e)
 		p.change.Entries = append(p.change.Entries, e)
 		if e.Item != "" && !slices.Contains(p.items, e.Item) {
@@ -291,9 +289,13 @@ func (t *tx) persist(thread string, th store.Thread, v conversation.View, p *pen
 			continue
 		}
 		body, _ := json.Marshal(it) // plain data: it cannot fail
-		if err := t.g.Exec(`INSERT INTO items(thread_id, id, turn_id, seq, updated, kind, status, body) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		text := ""
+		if it.Kind == conversation.ItemUserMessage || it.Kind == conversation.ItemAgentMessage {
+			text = it.Text
+		}
+		if err := t.g.Exec(`INSERT INTO items(thread_id, id, turn_id, seq, updated, kind, status, at, text, body) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(thread_id, id) DO UPDATE SET updated = excluded.updated, status = excluded.status, body = excluded.body`,
-			thread, it.ID, it.Turn, it.Seq, it.Updated, string(it.Kind), string(it.Status), string(body)).Error; err != nil {
+			thread, it.ID, it.Turn, it.Seq, it.Updated, string(it.Kind), string(it.Status), it.StartedAt, text, string(body)).Error; err != nil {
 			return err
 		}
 	}
@@ -328,15 +330,16 @@ func (t *tx) persist(thread string, th store.Thread, v conversation.View, p *pen
 
 func (t *tx) events() []store.Event {
 	var out []store.Event
-	for thread, p := range t.pending {
+	for _, thread := range t.order {
+		p := t.threads[thread]
 		change := p.change
-		if p.written {
+		if p.written && !change.Deleted {
 			if th, err := t.Thread(thread); err == nil {
 				change.Header = &th
 				change.Status, change.Runnable = th.Status, th.Runnable
 			}
 		}
-		out = append(out, store.Event{Seq: p.seq, User: p.user, Thread: thread, Change: &change})
+		out = append(out, store.Event{User: p.user, Thread: thread, Change: &change})
 	}
-	return out
+	return append(out, t.owned...)
 }
