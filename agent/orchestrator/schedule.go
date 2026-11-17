@@ -48,7 +48,7 @@ func (o *Orchestrator) admit() {
 	}
 	ids, err := o.store.ReadyThreads(free, full)
 	if err != nil {
-		o.ev.Fault("", "", "threads ready for a slot could not be listed")
+		o.fault("", "", "threads ready for a slot could not be listed")
 		return
 	}
 	for _, id := range ids {

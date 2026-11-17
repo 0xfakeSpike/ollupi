@@ -69,7 +69,7 @@ func (rt *Runtime) respond(ctx context.Context, choice llm.ToolChoice) error {
 				*s.item = stored
 			}
 			it := *s.item
-			rt.events.Emit(event.Event{Kind: event.ItemDelta, Thread: rt.thread, Turn: rt.turn, Item: &it, Delta: s.text})
+			rt.events.Publish(event.Event{Kind: event.ItemDelta, User: rt.thread.UserID, Thread: rt.thread, Turn: rt.turn, Item: &it, Delta: s.text})
 		}
 	})
 	r.usage = responseUsage(resp)

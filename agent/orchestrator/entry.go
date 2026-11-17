@@ -28,7 +28,7 @@ func (o *Orchestrator) Interrupt(threadID, expectedTurnID string) error {
 func (o *Orchestrator) announce(threadID string) {
 	st, err := o.store.ThreadState(threadID)
 	if err != nil {
-		o.ev.Fault(threadID, "", "the conversation could not be read")
+		o.fault(threadID, "", "the conversation could not be read")
 		return
 	}
 	turn, active := st.ActiveTurn()
@@ -37,14 +37,14 @@ func (o *Orchestrator) announce(threadID string) {
 	}
 	items, err := o.store.TurnItems(turn.ID)
 	if err != nil {
-		o.ev.Fault(threadID, turn.ID, "the turn's message could not be read")
+		o.fault(threadID, turn.ID, "the turn's message could not be read")
 		return
 	}
-	o.ev.Emit(event.Event{Kind: event.TurnStarted, Thread: st.Thread, Turn: turn})
+	o.ev.Publish(event.Event{Kind: event.TurnStarted, User: st.Thread.UserID, Thread: st.Thread, Turn: turn})
 	for _, it := range items {
 		o.ev.Item(st.Thread, turn, it, true)
 	}
-	o.ev.Status(threadID)
+	o.status(threadID)
 	o.reconcile(threadID)
 }
 

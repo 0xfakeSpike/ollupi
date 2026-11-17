@@ -96,8 +96,8 @@ func main() {
 	// changed tells the writer below that the turn has a new item, so that -out holds the run so far even when the
 	// harness kills the run at its time limit.
 	changed := make(chan struct{}, 1)
-	events := event.New(store)
-	events.Subscribe(func(e event.Event) {
+	events := event.New()
+	events.SubscribeAll(func(e event.Event) {
 		switch e.Kind {
 		case event.ItemCompleted:
 			logItem(e.Item)

@@ -16,7 +16,7 @@ func (o *Orchestrator) stopSubagent(threadID string) {
 		return
 	}
 	if err != nil {
-		o.ev.Fault(threadID, "", "the subagent could not be stopped")
+		o.fault(threadID, "", "the subagent could not be stopped")
 		return
 	}
 	turn.Status = db.TurnInterrupted

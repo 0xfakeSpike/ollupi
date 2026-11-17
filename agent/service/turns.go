@@ -103,9 +103,9 @@ func (sv *Service) startTurn(threadID string, in Input, atts []db.Attachment, cr
 		return turn, how, nil
 	}
 	defer sv.o.Wake(t.ID)
-	sv.ev.Emit(event.Event{Kind: event.TurnQueued, Thread: t, Turn: turn})
+	sv.ev.Publish(event.Event{Kind: event.TurnQueued, User: t.UserID, Thread: t, Turn: turn})
 	sv.ev.Item(t, turn, message, true)
-	sv.ev.Status(t.ID)
+	sv.status(t.ID)
 	return turn, how, nil
 }
 
@@ -166,7 +166,7 @@ func (sv *Service) steer(threadID, expectedTurnID string, in Input, atts []db.At
 		sv.ev.Item(st.Thread, turn, it, false)
 	}
 	if len(closed) > 0 {
-		sv.ev.Status(threadID)
+		sv.status(threadID)
 	}
 	return turn, nil
 }

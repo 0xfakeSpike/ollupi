@@ -91,8 +91,8 @@ func lone(args []string) {
 		log.Fatal(err)
 	}
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}}
-	events := event.New(store)
-	events.Subscribe(tr.on)
+	events := event.New()
+	events.SubscribeAll(tr.on)
 	ag := service.New(service.Config{
 		BoxFor: here,
 		Name:   "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
