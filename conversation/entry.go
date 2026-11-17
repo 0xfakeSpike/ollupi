@@ -43,6 +43,7 @@ const (
 	KindChildReported  Kind = "childReported"
 	KindCompacted      Kind = "compacted"
 	KindRecalled       Kind = "recalled"
+	KindNotice         Kind = "notice"
 )
 
 func KindOf(b Body) Kind { return b.kind() }
@@ -165,6 +166,11 @@ type Recalled struct {
 	Memories []MemoryRef
 }
 
+// A notice is the runtime's word to the model, such as why it must answer now.
+type Notice struct {
+	Text string
+}
+
 func (TurnQueued) kind() Kind     { return KindTurnQueued }
 func (TurnEnded) kind() Kind      { return KindTurnEnded }
 func (UserMessage) kind() Kind    { return KindUserMessage }
@@ -183,6 +189,7 @@ func (ChildLaunched) kind() Kind  { return KindChildLaunched }
 func (ChildReported) kind() Kind  { return KindChildReported }
 func (Compacted) kind() Kind      { return KindCompacted }
 func (Recalled) kind() Kind       { return KindRecalled }
+func (Notice) kind() Kind         { return KindNotice }
 
 type Decision string
 
