@@ -46,7 +46,7 @@ func (sv *Service) AddWorkspace(ctx context.Context, user, path, name string) (d
 	if err != nil {
 		return db.WorkspaceRow{}, err
 	}
-	sv.ev.Emit(event.Event{Kind: event.WorkspaceChanged, Workspace: &w})
+	sv.ev.Publish(event.Event{Kind: event.WorkspaceChanged, User: w.UserID, Workspace: &w})
 	return w, nil
 }
 
@@ -115,7 +115,7 @@ func (sv *Service) MoveWorkspace(ctx context.Context, user, id, path string) (db
 		}
 		return db.WorkspaceRow{}, err
 	}
-	sv.ev.Emit(event.Event{Kind: event.WorkspaceChanged, Workspace: &moved})
+	sv.ev.Publish(event.Event{Kind: event.WorkspaceChanged, User: moved.UserID, Workspace: &moved})
 	return moved, nil
 }
 
@@ -156,7 +156,7 @@ func (sv *Service) changeWorkspace(user, id string, change func(*db.WorkspaceRow
 	if err != nil {
 		return db.WorkspaceRow{}, fmt.Errorf("service: workspace %s: %w", id, err)
 	}
-	sv.ev.Emit(event.Event{Kind: event.WorkspaceChanged, Workspace: &w})
+	sv.ev.Publish(event.Event{Kind: event.WorkspaceChanged, User: w.UserID, Workspace: &w})
 	return w, nil
 }
 

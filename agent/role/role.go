@@ -32,7 +32,7 @@ type Role struct {
 var roles = map[Name]Role{FullMain: fullMain, CompactMain: compactMain, GeneralSub: generalSub, BrowserSub: browserSub}
 
 func New(role Name, name, prompt, skillsDir string, permissions permission.Deployment, memory *memory.Manager, limits llm.Limits,
-	client llm.Client, store *db.DB, attachments blobs.Store, registry *tools.Registry, events *event.Emitter) (*Runtime, bool) {
+	client llm.Client, store *db.DB, attachments blobs.Store, registry *tools.Registry, events *event.Bus) (*Runtime, bool) {
 	r, ok := roles[role]
 	if !ok {
 		return nil, false

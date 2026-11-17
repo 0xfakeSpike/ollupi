@@ -203,7 +203,7 @@ var protocol = struct {
 		// Too many connections are starting, or the user's shard cannot be reached now.
 		http.StatusServiceUnavailable: {"unavailable", ReconnectRetryAfter},
 	},
-	limits: Limits{SearchRunes: maxSearchRunes, SearchTerms: maxSearchTerms},
+	limits: Limits{SearchRunes: service.MaxSearchRunes, SearchTerms: service.MaxSearchTerms},
 }
 
 type Limits struct {
@@ -603,6 +603,9 @@ var errorCodes = []struct {
 	{service.ErrInvalidDecision, jsonrpc.CodeInvalidParams},
 	{service.ErrInvalidName, jsonrpc.CodeInvalidParams},
 	{service.ErrInvalidPath, jsonrpc.CodeInvalidParams},
+	{service.ErrInvalidQuery, jsonrpc.CodeInvalidParams},
+	{service.ErrSearchTimedOut, errSearchTimedOut},
+	{service.ErrUnavailable, jsonrpc.CodeServerError},
 	{permission.ErrInvalidSettings, jsonrpc.CodeInvalidParams},
 	{memory.ErrInvalidChange, jsonrpc.CodeInvalidParams},
 	{tools.ErrUnknownTool, jsonrpc.CodeInvalidParams},

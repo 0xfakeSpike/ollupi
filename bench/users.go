@@ -97,8 +97,8 @@ func users(args []string) {
 	}
 	var failed sync.Map // user → *atomic.Int64
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}, done: map[string]chan struct{}{}}
-	events := event.New(store)
-	events.Subscribe(func(e event.Event) {
+	events := event.New()
+	events.SubscribeAll(func(e event.Event) {
 		if e.Kind == event.TurnCompleted && e.Turn.Status != db.TurnCompleted {
 			count, _ := failed.LoadOrStore(e.Thread.UserID, new(atomic.Int64))
 			count.(*atomic.Int64).Add(1)

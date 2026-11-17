@@ -82,8 +82,8 @@ func mix(args []string) {
 	}
 	defer store.Close()
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}, done: map[string]chan struct{}{}}
-	events := event.New(store)
-	events.Subscribe(func(e event.Event) {
+	events := event.New()
+	events.SubscribeAll(func(e event.Event) {
 		// A subagent's task is the first message of its turn.
 		if e.Kind == event.ItemStarted && e.Thread.ParentThreadID != "" && e.Item.Type == db.ItemUserMessage {
 			mu.Lock()

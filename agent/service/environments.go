@@ -3,10 +3,10 @@ package service
 import (
 	"errors"
 	"fmt"
-	"github.com/0xfakeSpike/ollupi/agent/event"
 	"strings"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/google/uuid"
 )
@@ -38,7 +38,7 @@ func (sv *Service) AddEnvironment(user, name string, kind db.EnvironmentKind) (d
 	if err != nil {
 		return db.EnvironmentRow{}, err
 	}
-	sv.ev.Emit(event.Event{Kind: event.EnvironmentChanged, Environment: &row})
+	sv.ev.Publish(event.Event{Kind: event.EnvironmentChanged, User: row.UserID, Environment: &row})
 	return row, nil
 }
 
@@ -60,7 +60,7 @@ func (sv *Service) RenameEnvironment(user, id, name string) (db.EnvironmentRow, 
 	if err != nil {
 		return db.EnvironmentRow{}, fmt.Errorf("service: environment %s: %w", id, err)
 	}
-	sv.ev.Emit(event.Event{Kind: event.EnvironmentChanged, Environment: &row})
+	sv.ev.Publish(event.Event{Kind: event.EnvironmentChanged, User: row.UserID, Environment: &row})
 	return row, nil
 }
 
@@ -84,7 +84,7 @@ func (sv *Service) DeleteEnvironment(user, id string) (db.EnvironmentRow, error)
 	if _, err := sv.cfg.DB.DeleteEnvironment(user, id); err != nil {
 		return db.EnvironmentRow{}, err
 	}
-	sv.ev.Emit(event.Event{Kind: event.EnvironmentChanged, Environment: &row})
+	sv.ev.Publish(event.Event{Kind: event.EnvironmentDeleted, User: row.UserID, Environment: &row})
 	return row, nil
 }
 

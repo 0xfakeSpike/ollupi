@@ -14,17 +14,13 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/agent/service"
-	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/pkg/wshub"
 	"github.com/0xfakeSpike/ollupi/repo/db"
-	"github.com/0xfakeSpike/ollupi/tools/cron"
-	"github.com/0xfakeSpike/ollupi/tools/mcp"
 )
 
 const lookupTimeout = 10 * time.Second
 
 type Options struct {
-	DB *db.DB
 	// Token is the default user's, for a gateway with one user; Authenticate takes its place for many.
 	Token string
 	// Logging in happens before ollupi: Authenticate only checks what that gave out.
@@ -32,9 +28,6 @@ type Options struct {
 	AllowedOrigins []string
 	// AllowedHosts are the names clients reach this gateway by, besides the local ones.
 	AllowedHosts []string
-	Memory       *memory.Manager
-	Jobs         *cron.Jobs
-	MCP          *mcp.Users
 	Connections  wshub.Options
 	// Without Shard and Placements the gateway serves every user Authenticate knows, as where there is one shard.
 	Shard      string
@@ -43,7 +36,7 @@ type Options struct {
 	Load Load
 }
 
-func NewServer(a *service.Service, events *event.Emitter, opts Options) (*Server, error) {
+func NewServer(a *service.Service, events *event.Bus, opts Options) (*Server, error) {
 	if opts.Authenticate == nil {
 		if strings.TrimSpace(opts.Token) == "" {
 			return nil, errors.New("gateway: a token is required; clients send it as Authorization: Bearer <token> or, from a browser, as the subprotocol after " + tokenProtocol)
@@ -54,9 +47,6 @@ func NewServer(a *service.Service, events *event.Emitter, opts Options) (*Server
 			}
 			return db.DefaultUser, nil
 		}
-	}
-	if opts.DB == nil {
-		return nil, errors.New("gateway: the shard's database is required")
 	}
 	if (opts.Shard == "") != (opts.Placements == nil) {
 		return nil, errors.New("gateway: Shard and Placements go together")
@@ -77,10 +67,7 @@ func NewServer(a *service.Service, events *event.Emitter, opts Options) (*Server
 	}
 	s := &Server{
 		service:      a,
-		db:           opts.DB,
-		memory:       opts.Memory,
-		jobs:         opts.Jobs,
-		mcp:          opts.MCP,
+		events:       events,
 		authenticate: opts.Authenticate,
 		shard:        opts.Shard,
 		placements:   opts.Placements,
@@ -89,7 +76,6 @@ func NewServer(a *service.Service, events *event.Emitter, opts Options) (*Server
 		origins:      append([]string{"localhost:*", "127.0.0.1:*", "[::1]:*"}, opts.AllowedOrigins...),
 		hub:          hub,
 	}
-	events.Subscribe(s.deliver)
 	return s, nil
 }
 

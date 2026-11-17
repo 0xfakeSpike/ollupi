@@ -15,10 +15,10 @@ type Manager struct {
 	deployment Deployment
 	store      *db.DB
 	registry   func(user string) (*tools.Registry, error)
-	events     *event.Emitter
+	events     *event.Bus
 }
 
-func NewManager(deployment Deployment, store *db.DB, registry func(user string) (*tools.Registry, error), events *event.Emitter) *Manager {
+func NewManager(deployment Deployment, store *db.DB, registry func(user string) (*tools.Registry, error), events *event.Bus) *Manager {
 	return &Manager{deployment: deployment, store: store, registry: registry, events: events}
 }
 
@@ -38,7 +38,7 @@ func (m *Manager) SetThread(t db.ThreadRow, change func(Settings) Settings) (db.
 	if err != nil {
 		return db.ThreadRow{}, fmt.Errorf("permission: thread %s: %w", t.ID, err)
 	}
-	m.events.Emit(event.Event{Kind: event.ThreadChanged, Thread: changed})
+	m.events.Publish(event.Event{Kind: event.ThreadChanged, User: changed.UserID, Thread: changed})
 	return changed, nil
 }
 
@@ -54,7 +54,7 @@ func (m *Manager) SetWorkspace(w db.WorkspaceRow, change func(Settings) Settings
 	if err != nil {
 		return db.WorkspaceRow{}, fmt.Errorf("permission: workspace %s: %w", w.ID, err)
 	}
-	m.events.Emit(event.Event{Kind: event.WorkspaceChanged, Workspace: &changed})
+	m.events.Publish(event.Event{Kind: event.WorkspaceChanged, User: changed.UserID, Workspace: &changed})
 	return changed, nil
 }
 

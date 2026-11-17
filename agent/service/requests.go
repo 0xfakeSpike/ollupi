@@ -160,7 +160,7 @@ func (sv *Service) respond(threadID string, match func(db.ItemRow) bool, apply f
 		return db.ItemRow{}, err
 	}
 	sv.ev.Item(st.Thread, activeTurn, stored, false)
-	sv.ev.Status(threadID)
+	sv.status(threadID)
 	return stored, nil
 }
 

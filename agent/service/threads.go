@@ -3,11 +3,12 @@ package service
 import (
 	"context"
 	"fmt"
-	"github.com/0xfakeSpike/ollupi/agent/event"
 	"strings"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/repo/db"
+	"github.com/0xfakeSpike/ollupi/tools/cron"
 	"github.com/google/uuid"
 )
 
@@ -47,7 +48,7 @@ func (sv *Service) ListThreads(user string, f db.ThreadFilter) ([]db.ThreadSumma
 	}
 	out := make([]db.ThreadSummary, 0, len(rows))
 	for _, r := range rows {
-		status, err := event.ThreadStatus(sv.cfg.DB, r.ID)
+		status, err := sv.cfg.DB.ThreadStatus(r.ID)
 		if err != nil {
 			return nil, false, fmt.Errorf("service: %w", err)
 		}
@@ -70,7 +71,7 @@ func (sv *Service) RenameThread(user, id, title string) (db.ThreadRow, error) {
 	if err != nil {
 		return db.ThreadRow{}, fmt.Errorf("service: thread %s: %w", id, err)
 	}
-	sv.ev.Emit(event.Event{Kind: event.ThreadChanged, Thread: t})
+	sv.ev.Publish(event.Event{Kind: event.ThreadChanged, User: t.UserID, Thread: t})
 	return t, nil
 }
 
@@ -82,7 +83,7 @@ func (sv *Service) MarkThreadRead(user, id string) (db.ThreadRow, error) {
 	if err != nil {
 		return db.ThreadRow{}, fmt.Errorf("service: thread %s: %w", id, err)
 	}
-	sv.ev.Emit(event.Event{Kind: event.ThreadChanged, Thread: t})
+	sv.ev.Publish(event.Event{Kind: event.ThreadChanged, User: t.UserID, Thread: t})
 	return t, nil
 }
 
@@ -106,7 +107,7 @@ func (sv *Service) ArchiveThread(user, id string, archived bool) (db.ThreadRow, 
 	if err != nil {
 		return db.ThreadRow{}, fmt.Errorf("service: thread %s: %w", id, err)
 	}
-	sv.ev.Emit(event.Event{Kind: event.ThreadChanged, Thread: t})
+	sv.ev.Publish(event.Event{Kind: event.ThreadChanged, User: t.UserID, Thread: t})
 	sv.emitCronJobs(t, jobs)
 	return t, nil
 }
@@ -126,7 +127,7 @@ func (sv *Service) DeleteThread(user, id string) error {
 	if err := sv.cfg.DB.DeleteThread(user, id); err != nil {
 		return fmt.Errorf("service: thread %s: %w", id, err)
 	}
-	sv.ev.Emit(event.Event{Kind: event.ThreadDeleted, Thread: t})
+	sv.ev.Publish(event.Event{Kind: event.ThreadDeleted, User: t.UserID, Thread: t})
 	sv.emitCronJobs(t, jobs)
 	if sv.cfg.Attachments == nil {
 		return nil
@@ -140,7 +141,7 @@ func (sv *Service) DeleteThread(user, id string) error {
 // Subagents cannot schedule tasks, so a thread's own tasks are all of them.
 func (sv *Service) emitCronJobs(t db.ThreadRow, jobs []db.CronJobView) {
 	for _, j := range jobs {
-		sv.ev.Emit(event.Event{Kind: event.CronJobChanged, Thread: t, CronJobID: j.ID})
+		cron.Announce(sv.cfg.DB, sv.ev, t, j.ID)
 	}
 }
 

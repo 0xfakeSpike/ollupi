@@ -85,11 +85,11 @@ func (s *Server) reportLoad(ctx context.Context) {
 func (s *Server) measureLoad() (int64, error) {
 	switch s.load.Measure {
 	case LoadTurns:
-		return s.db.TurnsUnderWay()
+		return s.service.TurnsUnderWay()
 	case LoadConnections:
 		return int64(s.hub.Count()), nil
 	default:
-		return s.db.ActiveUsers(time.Now().Add(-s.load.Window))
+		return s.service.ActiveUsers(time.Now().Add(-s.load.Window))
 	}
 }
 

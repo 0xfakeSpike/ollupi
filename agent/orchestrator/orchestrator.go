@@ -29,7 +29,7 @@ type Orchestrator struct {
 
 	ctx context.Context
 	res *resources.Resources
-	ev  *event.Emitter
+	ev  *event.Bus
 
 	queue        chan message
 	slotByThread map[string]*slot
@@ -37,7 +37,7 @@ type Orchestrator struct {
 	done         sync.WaitGroup
 }
 
-func New(store *db.DB, attachments blobs.Store, memory *memory.Manager, events *event.Emitter,
+func New(store *db.DB, attachments blobs.Store, memory *memory.Manager, events *event.Bus,
 	name, prompt, skillsDir string, permissions permission.Deployment,
 	slots, userSlots int, runLimit time.Duration) *Orchestrator {
 	return &Orchestrator{
