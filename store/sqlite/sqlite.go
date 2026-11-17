@@ -96,9 +96,9 @@ func (s *Store) Update(ctx context.Context, fn func(store.Tx) error) error {
 		if len(events) == 0 {
 			return nil
 		}
-		var seq int64
-		if err := g.Raw("UPDATE feed SET seq = seq + 1 WHERE id = 1 RETURNING seq").Scan(&seq).Error; err != nil {
-			return fmt.Errorf("store: number the commit: %w", err)
+		seq, err := t.number()
+		if err != nil {
+			return err
 		}
 		for i := range events {
 			events[i].Seq = seq

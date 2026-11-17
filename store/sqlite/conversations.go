@@ -135,7 +135,7 @@ func (r reader) Page(thread string, before int64, limit int) (store.Page, bool, 
 		}
 	}
 	page := store.Page{Items: items}
-	if page.Turns, err = decodeRows[conversation.Turn](r.g, "SELECT body FROM turns WHERE thread_id = ? AND (id IN ? OR ended = 0) ORDER BY ord", thread, turns); err != nil {
+	if page.Turns, err = decodeRows[conversation.Turn](r.g, "SELECT body FROM turns WHERE thread_id = ? AND (id IN ? OR ended_seq IS NULL) ORDER BY ord", thread, turns); err != nil {
 		return store.Page{}, false, err
 	}
 	return page, more, nil
@@ -165,6 +165,17 @@ type tx struct {
 	threads map[string]*pending
 	order   []string
 	owned   []store.Event
+	seq     int64
+}
+
+// number is the commit's seq, taken from the feed the first time the commit needs it.
+func (t *tx) number() (int64, error) {
+	if t.seq == 0 {
+		if err := t.g.Raw("UPDATE feed SET seq = seq + 1 WHERE id = 1 RETURNING seq").Scan(&t.seq).Error; err != nil {
+			return 0, fmt.Errorf("store: number the commit: %w", err)
+		}
+	}
+	return t.seq, nil
 }
 
 // pending is what the transaction did to one thread, for the feed.
@@ -279,8 +290,17 @@ func (t *tx) persist(thread string, th store.Thread, v conversation.View, p *pen
 			continue
 		}
 		body, _ := json.Marshal(turn) // plain data: it cannot fail
-		if err := t.g.Exec(`INSERT INTO turns(thread_id, id, ord, ended, body) VALUES (?, ?, ?, ?, ?)
-			ON CONFLICT(thread_id, id) DO UPDATE SET ended = excluded.ended, body = excluded.body`, thread, turn.ID, ord, turn.Ended != nil, string(body)).Error; err != nil {
+		var ended *int64
+		if turn.Ended != nil {
+			seq, err := t.number()
+			if err != nil {
+				return err
+			}
+			ended = &seq
+		}
+		if err := t.g.Exec(`INSERT INTO turns(thread_id, id, ord, ended_seq, body) VALUES (?, ?, ?, ?, ?)
+			ON CONFLICT(thread_id, id) DO UPDATE SET ended_seq = COALESCE(turns.ended_seq, excluded.ended_seq), body = excluded.body`,
+			thread, turn.ID, ord, ended, string(body)).Error; err != nil {
 			return err
 		}
 	}
