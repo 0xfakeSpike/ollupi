@@ -1,4 +1,3 @@
-// Package catalog keeps what all shards share: which shard each user is on, and where each shard runs now.
 package catalog
 
 import (
@@ -14,18 +13,19 @@ import (
 	"gorm.io/gorm"
 )
 
-var (
-	ErrNoShard   = errors.New("catalog: no shard takes this user")
-	ErrLeaseLost = errors.New("catalog: another process holds the shard")
-)
-
-// A deployment that keeps it elsewhere, such as in Postgres behind Redis, implements router.Directory and
-// shard.Directory over that instead.
-type Catalog struct {
+// SQL keeps the catalog in a database of its own, one file that every shard and router of a deployment opens. It
+// decides each lease by the database's clock, as one served from elsewhere would by its server's.
+type SQL struct {
 	gorm *gorm.DB
 }
 
-// The address is that of the process that holds the shard's lease, until ExpiresAt in Unix milliseconds.
+var _ Catalog = (*SQL)(nil)
+
+// now is the database's clock in Unix milliseconds.
+const now = "CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)"
+
+// The address is that of the process that holds the shard's lease, until ExpiresAt in Unix milliseconds by the
+// database's clock.
 type ShardRow struct {
 	ID      string `gorm:"primaryKey"`
 	Address string `gorm:"not null"`
@@ -50,7 +50,7 @@ func (PlacementRow) TableName() string { return "placements" }
 //go:embed migrations/*.sql
 var migrationFiles embed.FS
 
-func Open(path string) (*Catalog, error) {
+func OpenSQL(path string) (*SQL, error) {
 	g, err := sqlitedb.Open(path)
 	if err != nil {
 		return nil, err
@@ -62,7 +62,7 @@ func Open(path string) (*Catalog, error) {
 		}
 		return nil, err
 	}
-	return &Catalog{gorm: g}, nil
+	return &SQL{gorm: g}, nil
 }
 
 // The first step is the schema gorm made before there were steps, so a catalog from then takes it as it is.
@@ -79,18 +79,15 @@ func migrate(g *gorm.DB) error {
 	return sqlitedb.Migrate(g, all, version)
 }
 
-func (c *Catalog) Close() error { return sqlitedb.Close(c.gorm) }
+func (c *SQL) Close() error { return sqlitedb.Close(c.gorm) }
 
-// Acquire takes the shard for owner when no process holds it or its holder let the lease run out, and publishes
-// owner's address. Each taking of a shard has an epoch above every one before it.
-func (c *Catalog) Acquire(ctx context.Context, shard, owner, address string, accepting bool, ttl time.Duration) (int64, bool, error) {
-	now := time.Now()
+func (c *SQL) Acquire(ctx context.Context, shard, owner, address string, accepting bool, ttl time.Duration) (int64, bool, error) {
 	var epoch int64
 	err := c.gorm.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		res := tx.Exec(`INSERT INTO shards(id, address, accepting, owner, epoch, expires_at) VALUES (?, ?, ?, ?, 1, ?)
+		res := tx.Exec(`INSERT INTO shards(id, address, accepting, owner, epoch, expires_at) VALUES (?, ?, ?, ?, 1, `+now+` + ?)
 			ON CONFLICT(id) DO UPDATE SET address = excluded.address, accepting = excluded.accepting, owner = excluded.owner,
 				epoch = shards.epoch + 1, expires_at = excluded.expires_at
-			WHERE shards.owner = '' OR shards.expires_at <= ?`, shard, address, accepting, owner, now.Add(ttl).UnixMilli(), now.UnixMilli())
+			WHERE shards.owner = '' OR shards.expires_at <= `+now, shard, address, accepting, owner, ttl.Milliseconds())
 		if res.Error != nil || res.RowsAffected == 0 {
 			return res.Error
 		}
@@ -99,10 +96,9 @@ func (c *Catalog) Acquire(ctx context.Context, shard, owner, address string, acc
 	return epoch, epoch > 0, err
 }
 
-// Renew keeps the lease of the epoch, and reports the shard's load with it.
-func (c *Catalog) Renew(ctx context.Context, shard, owner string, epoch int64, ttl time.Duration, load int64) error {
+func (c *SQL) Renew(ctx context.Context, shard, owner string, epoch int64, ttl time.Duration, load int64) error {
 	res := c.gorm.WithContext(ctx).Model(&ShardRow{}).Where("id = ? AND owner = ? AND epoch = ?", shard, owner, epoch).
-		Updates(map[string]any{"expires_at": time.Now().Add(ttl).UnixMilli(), "load": load})
+		Updates(map[string]any{"expires_at": gorm.Expr(now+" + ?", ttl.Milliseconds()), "load": load})
 	if res.Error != nil {
 		return res.Error
 	}
@@ -112,35 +108,25 @@ func (c *Catalog) Renew(ctx context.Context, shard, owner string, epoch int64, t
 	return nil
 }
 
-// At once, so that the next process need not wait out what is left of the lease.
-func (c *Catalog) Release(ctx context.Context, shard, owner string, epoch int64) error {
+func (c *SQL) Release(ctx context.Context, shard, owner string, epoch int64) error {
 	return c.gorm.WithContext(ctx).Model(&ShardRow{}).Where("id = ? AND owner = ? AND epoch = ?", shard, owner, epoch).
 		Updates(map[string]any{"owner": "", "expires_at": 0}).Error
 }
 
-// Locate places a user met for the first time and returns their shard, and the address of the process that holds it:
-// none while no process does.
-func (c *Catalog) Locate(ctx context.Context, user string) (string, string, error) {
+func (c *SQL) Locate(ctx context.Context, user string) (string, string, error) {
 	var shard, address string
 	err := c.gorm.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
 		if shard, err = assign(tx, user); err != nil {
 			return err
 		}
-		var row ShardRow
-		if err := tx.Where("id = ?", shard).Take(&row).Error; err != nil {
-			return err
-		}
-		if row.Owner != "" && row.ExpiresAt > time.Now().UnixMilli() {
-			address = row.Address
-		}
-		return nil
+		return tx.Model(&ShardRow{}).Where("id = ? AND owner <> '' AND expires_at > "+now, shard).
+			Select("address").Scan(&address).Error
 	})
 	return shard, address, err
 }
 
-// It must come before the user has anything: a user with work on a shard stays there, moving their rows is not done here.
-func (c *Catalog) Place(ctx context.Context, user, shard string) error {
+func (c *SQL) Place(ctx context.Context, user, shard string) error {
 	res := c.gorm.WithContext(ctx).Exec(`INSERT INTO placements(user_id, shard_id) VALUES (?, ?) ON CONFLICT(user_id) DO NOTHING`, user, shard)
 	if res.Error != nil {
 		return res.Error
@@ -155,7 +141,7 @@ func (c *Catalog) Place(ctx context.Context, user, shard string) error {
 	return nil
 }
 
-func (c *Catalog) ShardOf(ctx context.Context, user string) (string, error) {
+func (c *SQL) ShardOf(ctx context.Context, user string) (string, error) {
 	return shardOf(c.gorm.WithContext(ctx), user)
 }
 

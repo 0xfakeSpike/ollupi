@@ -265,12 +265,12 @@ func crashChild(args []string) {
 	if *lease == 0 {
 		err = run(context.Background())
 	} else {
-		cat, cerr := catalog.Open(filepath.Join(*dir, "catalog.sqlite"))
+		cat, cerr := catalog.OpenSQL(filepath.Join(*dir, "catalog.sqlite"))
 		if cerr != nil {
 			log.Fatal(cerr)
 		}
 		defer cat.Close()
-		m := shard.Member{ID: "bench", Accepting: true, Directory: cat, TTL: *lease}
+		m := shard.Member{ID: "bench", Accepting: true, Catalog: cat, TTL: *lease}
 		err = m.Run(context.Background(), store, run)
 	}
 	if err != nil {
