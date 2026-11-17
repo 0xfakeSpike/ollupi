@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo/sqlitedb"
+	"github.com/0xfakeSpike/ollupi/pkg/sqlitedb"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
