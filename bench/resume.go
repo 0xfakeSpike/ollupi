@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/service"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
@@ -40,12 +41,14 @@ func resume(args []string) {
 	defer store.Close()
 	answer := strings.Repeat("A paragraph of an answer, about as long as a short reply in a chat. ", 6)
 	open := func(m *model, tr *tracker) (*service.Service, context.CancelFunc, time.Duration) {
+		events := event.New(store)
+		events.Subscribe(tr.on)
 		ag := service.New(service.Config{
 			BoxFor: here,
 			Name:   "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 			Connections: map[string]llm.Client{"fake": m},
 			Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
-			Slots:       *running + 32, DB: store, OnEvent: tr.on,
+			Slots:       *running + 32, DB: store, Events: events,
 		})
 		ctx, cancel := context.WithCancel(context.Background())
 		at := time.Now()

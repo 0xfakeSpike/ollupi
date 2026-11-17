@@ -97,6 +97,14 @@ func users(args []string) {
 	}
 	var failed sync.Map // user → *atomic.Int64
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}, done: map[string]chan struct{}{}}
+	events := event.New(store)
+	events.Subscribe(func(e event.Event) {
+		if e.Kind == event.TurnCompleted && e.Turn.Status != db.TurnCompleted {
+			count, _ := failed.LoadOrStore(e.Thread.UserID, new(atomic.Int64))
+			count.(*atomic.Int64).Add(1)
+		}
+		tr.on(e)
+	})
 	ag := service.New(service.Config{
 		BoxFor: here,
 		Name:   "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
@@ -110,13 +118,7 @@ func users(args []string) {
 		Providers: []tools.Provider{work{latency: *toolLatency}},
 		Settings:  permission.Settings{ApprovalPolicy: string(permission.Never)},
 		Slots:     *slots, UserSlots: *userSlots, DB: store,
-		OnEvent: func(e event.Event) {
-			if e.Kind == event.TurnCompleted && e.Turn.Status != db.TurnCompleted {
-				count, _ := failed.LoadOrStore(e.Thread.UserID, new(atomic.Int64))
-				count.(*atomic.Int64).Add(1)
-			}
-			tr.on(e)
-		},
+		Events: events,
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := ag.Start(ctx); err != nil {

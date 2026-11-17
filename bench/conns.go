@@ -403,14 +403,15 @@ func connsShard(args []string) {
 	}
 	defer store.Close()
 	var server *gateway.Server
+	events := event.New(store)
 	ag := service.New(service.Config{
 		BoxFor: here,
 		Name:   "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": &model{}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
-		DB:          store, OnEvent: func(e event.Event) { server.Deliver(e) },
+		DB:          store, Events: events,
 	})
-	server, err = gateway.NewServer(ag, gateway.Options{DB: store, Authenticate: benchUser})
+	server, err = gateway.NewServer(ag, events, gateway.Options{DB: store, Authenticate: benchUser})
 	if err != nil {
 		log.Fatal(err)
 	}

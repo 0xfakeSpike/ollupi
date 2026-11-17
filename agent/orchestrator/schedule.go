@@ -98,7 +98,7 @@ func (o *Orchestrator) launch(user, threadID, turnID string) {
 		final, err := false, errCrashed
 		defer func() {
 			recover()
-			o.post(finished{threadID: threadID, sl: sl, final: final, err: err})
+			o.produce(finished{threadID: threadID, sl: sl, final: final, err: err})
 		}()
 		final, err = o.run(threadID, sl)
 	}()

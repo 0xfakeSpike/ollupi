@@ -13,14 +13,14 @@ var (
 	ErrTurnMismatch = errors.New("the expected turn is not the turn in progress")
 )
 
-func (o *Orchestrator) Wake(threadID string) { o.post(wake{threadID}) }
+func (o *Orchestrator) Wake(threadID string) { o.produce(wake{threadID}) }
 
 // A turn written behind another is told of when the one ahead ends.
-func (o *Orchestrator) Started(threadID string) { o.post(started{threadID}) }
+func (o *Orchestrator) Started(threadID string) { o.produce(started{threadID}) }
 
 func (o *Orchestrator) Interrupt(threadID, expectedTurnID string) error {
 	reply := make(chan error, 1)
-	if !o.post(interrupt{threadID: threadID, turnID: expectedTurnID, reply: reply}) {
+	if !o.produce(interrupt{threadID: threadID, turnID: expectedTurnID, reply: reply}) {
 		return errStopped
 	}
 	select {

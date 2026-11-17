@@ -96,6 +96,27 @@ func main() {
 	// changed tells the writer below that the turn has a new item, so that -out holds the run so far even when the
 	// harness kills the run at its time limit.
 	changed := make(chan struct{}, 1)
+	events := event.New(store)
+	events.Subscribe(func(e event.Event) {
+		switch e.Kind {
+		case event.ItemCompleted:
+			logItem(e.Item)
+			if e.Thread.ParentThreadID == "" {
+				select {
+				case changed <- struct{}{}:
+				default:
+				}
+			}
+		case event.UserInputRequested:
+			// Answered outside the event, which the agent's loop is delivering.
+			go answer(ag, e.Thread.ID, e.Item)
+		case event.TurnCompleted:
+			// A subagent's turns end in conversations of their own.
+			if e.Thread.ParentThreadID == "" {
+				ended <- e.Turn
+			}
+		}
+	})
 	ag = service.New(service.Config{
 		BoxFor:      func(string) (sandbox.Box, error) { return sandbox.Here(), nil },
 		Name:        "ollupi",
@@ -104,26 +125,7 @@ func main() {
 		Providers:   []tools.Provider{runner, web.New()},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 		DB:          store,
-		OnEvent: func(e event.Event) {
-			switch e.Kind {
-			case event.ItemCompleted:
-				logItem(e.Item)
-				if e.Thread.ParentThreadID == "" {
-					select {
-					case changed <- struct{}{}:
-					default:
-					}
-				}
-			case event.UserInputRequested:
-				// Answered outside the event, which the agent's loop is delivering.
-				go answer(ag, e.Thread.ID, e.Item)
-			case event.TurnCompleted:
-				// A subagent's turns end in conversations of their own.
-				if e.Thread.ParentThreadID == "" {
-					ended <- e.Turn
-				}
-			}
-		},
+		Events:      events,
 	})
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
