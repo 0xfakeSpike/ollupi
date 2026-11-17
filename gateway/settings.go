@@ -12,9 +12,14 @@ func (c *conn) settingsRead(ctx context.Context, _ Empty) (SettingsRow, func(), 
 }
 
 func (c *conn) settingsUpdate(ctx context.Context, p SettingsUpdateParams) (SettingsRow, func(), error) {
-	if p.Redaction == nil {
-		return SettingsRow{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "redaction is required")
+	if p.Redaction == nil && p.Memory == nil {
+		return SettingsRow{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "redaction or memory is required")
 	}
-	settings, err := c.s.service.SetRedaction(ctx, c.user, *p.Redaction)
+	settings, err := c.s.service.UpdateSettings(ctx, c.user, p.Redaction, p.Memory)
+	return settingsRow(settings), nil, err
+}
+
+func (c *conn) settingsPermissions(ctx context.Context, p SettingsPermissionsParams) (SettingsRow, func(), error) {
+	settings, err := c.s.service.UpdateUserPermissions(c.user, p.PermissionSettings)
 	return settingsRow(settings), nil, err
 }

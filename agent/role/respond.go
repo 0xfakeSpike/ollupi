@@ -208,7 +208,7 @@ func (rt *Runtime) send(ctx context.Context, prompt contextmanager.Prompt, choic
 }
 
 func (rt *Runtime) mask(text string) string {
-	if !rt.masking {
+	if !rt.settings.Redaction {
 		return text
 	}
 	return rt.redactor.Mask(text)

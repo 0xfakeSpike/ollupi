@@ -23,15 +23,40 @@ func NewManager(deployment Deployment, store *db.DB, registry func(user string) 
 }
 
 // change is checked against the settings as read, and applied again to them as they are when written.
+func (m *Manager) SetUser(user string, change func(Settings) Settings) (db.SettingsRow, error) {
+	u, err := m.store.Settings(user)
+	if err != nil {
+		return db.SettingsRow{}, fmt.Errorf("permission: the settings of the user: %w", err)
+	}
+	next := u
+	next.Permissions = change(u.Permissions)
+	if err := m.validate(user, []Layer{m.deployment.layer()}, u.Permissions, UserLayer(next)); err != nil {
+		return db.SettingsRow{}, err
+	}
+	changed, err := m.store.UpdateSettings(user, func(row db.SettingsRow) db.SettingsRow {
+		row.Permissions = change(row.Permissions)
+		return row
+	})
+	if err != nil {
+		return db.SettingsRow{}, fmt.Errorf("permission: the settings of the user: %w", err)
+	}
+	m.events.Publish(event.Event{Kind: event.SettingsChanged, User: user, Settings: &changed})
+	return changed, nil
+}
+
+// change is checked against the settings as read, and applied again to them as they are when written.
 func (m *Manager) SetThread(t db.ThreadRow, change func(Settings) Settings) (db.ThreadRow, error) {
+	u, err := m.store.Settings(t.UserID)
+	if err != nil {
+		return db.ThreadRow{}, fmt.Errorf("permission: the settings of the user: %w", err)
+	}
 	var w db.WorkspaceRow
 	if t.WorkspaceID != "" {
-		var err error
 		if w, err = m.store.WorkspaceOf(t.UserID, string(t.WorkspaceID)); err != nil {
 			return db.ThreadRow{}, fmt.Errorf("permission: workspace %s: %w", t.WorkspaceID, err)
 		}
 	}
-	if err := m.validate(t.UserID, m.deployment.Base(w), t.Settings, ThreadLayer(change(t.Settings))); err != nil {
+	if err := m.validate(t.UserID, m.deployment.Base(u, w), t.Settings, ThreadLayer(change(t.Settings))); err != nil {
 		return db.ThreadRow{}, err
 	}
 	changed, err := m.store.UpdateThreadSettings(t.UserID, t.ID, change)
@@ -44,7 +69,11 @@ func (m *Manager) SetThread(t db.ThreadRow, change func(Settings) Settings) (db.
 
 // change is checked against the settings as read, and applied again to them as they are when written.
 func (m *Manager) SetWorkspace(w db.WorkspaceRow, change func(Settings) Settings) (db.WorkspaceRow, error) {
-	if err := m.validate(w.UserID, m.deployment.Base(db.WorkspaceRow{}), w.Settings, WorkspaceLayer(w.Name, change(w.Settings))); err != nil {
+	u, err := m.store.Settings(w.UserID)
+	if err != nil {
+		return db.WorkspaceRow{}, fmt.Errorf("permission: the settings of the user: %w", err)
+	}
+	if err := m.validate(w.UserID, m.deployment.Base(u, db.WorkspaceRow{}), w.Settings, WorkspaceLayer(w.Name, change(w.Settings))); err != nil {
 		return db.WorkspaceRow{}, err
 	}
 	changed, err := m.store.UpdateWorkspace(w.UserID, w.ID, func(row db.WorkspaceRow) db.WorkspaceRow {

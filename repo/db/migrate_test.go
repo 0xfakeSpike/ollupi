@@ -20,7 +20,7 @@ import (
 // rowTypes are the rows of the schema, as gorm would make it from them.
 var rowTypes = []any{
 	&UserRow{}, &EnvironmentRow{}, &WorkspaceRow{}, &ThreadRow{}, &TurnRow{}, &ItemRow{}, &CronJobRow{},
-	&MemoryRow{}, &MemoryStateRow{}, &SettingsRow{}, &ShardLeaseRow{},
+	&MemoryRow{}, &MemoryStateRow{}, &SettingsRow{}, &MCPServerRow{}, &ShardLeaseRow{},
 }
 
 // The migrations and the row types are two accounts of one schema: a fresh

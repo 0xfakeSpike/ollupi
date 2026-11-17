@@ -38,7 +38,7 @@ type Runtime struct {
 
 	checker  *permission.Checker
 	redactor *redact.Redactor
-	masking  bool
+	settings db.SettingsRow
 	usage    db.Usage
 }
 

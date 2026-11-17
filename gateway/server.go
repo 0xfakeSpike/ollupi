@@ -182,6 +182,11 @@ func (c *conn) event(e event.Event) {
 		c.rpc.Notify(notifyCronChanged, n)
 	case event.SettingsChanged:
 		c.rpc.Notify(notifySettingsChanged, settingsRow(*e.Settings))
+	case event.MCPServerChanged:
+		server := mcpServerConfig(*e.MCPServer)
+		c.rpc.Notify(notifyMCPServerChanged, MCPServerChangedNotification{Name: e.MCPServer.Name, Server: &server})
+	case event.MCPServerDeleted:
+		c.rpc.Notify(notifyMCPServerChanged, MCPServerChangedNotification{Name: e.MCPServer.Name})
 	case event.ApprovalRequested, event.UserInputRequested:
 		c.request(e.Thread.ID, *e.Item)
 	}

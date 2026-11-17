@@ -21,7 +21,7 @@ func (rt *Runtime) loadMemory() error {
 }
 
 func (rt *Runtime) recall() (*db.ItemRow, error) {
-	if !rt.role.recalls || rt.memory == nil || rt.hasSnapshot() {
+	if !rt.role.recalls || rt.memory == nil || !rt.settings.Memory || rt.hasSnapshot() {
 		return nil, nil
 	}
 	snapshot, err := rt.memory.Snapshot(rt.thread.UserID, string(rt.thread.WorkspaceID), rt.window.MemoryBudget())
