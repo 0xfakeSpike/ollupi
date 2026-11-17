@@ -36,7 +36,7 @@ func (o *Orchestrator) run(threadID string, sl *slot) (bool, error) {
 }
 
 func (o *Orchestrator) runTurn(ctx context.Context, t db.ThreadRow, turn db.TurnRow) (bool, db.Usage, error) {
-	window, err := o.res.Window(turn.Model)
+	limits, err := o.res.Limits(turn.Model)
 	if err != nil {
 		return false, db.Usage{}, err
 	}
@@ -48,7 +48,7 @@ func (o *Orchestrator) runTurn(ctx context.Context, t db.ThreadRow, turn db.Turn
 	if err != nil {
 		return false, db.Usage{}, err
 	}
-	r, ok := role.New(role.Name(turn.Agent), o.name, o.prompt, o.skillsDir, o.permissions, o.memory, window,
+	r, ok := role.New(role.Name(turn.Agent), o.name, o.prompt, o.skillsDir, o.permissions, o.memory, limits,
 		client, o.store, o.attachments, registry, o.ev)
 	if !ok {
 		return false, db.Usage{}, fmt.Errorf("orchestrator: turn %s names role %q, which is none of %q", turn.ID, turn.Agent, role.NameValues)

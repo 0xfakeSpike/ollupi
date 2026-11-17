@@ -127,8 +127,8 @@ func (m *Manager) SkillBudget() int {
 	return share(m.inputTokens, 4)
 }
 
-func (m *Manager) MessageBudget() int {
-	return share(m.inputTokens, messagePercent)
+func MessageBudget(limits llm.Limits) int {
+	return share(limits.Input(), messagePercent)
 }
 
 func (m *Manager) MemoryBudget() int {

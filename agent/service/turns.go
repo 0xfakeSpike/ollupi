@@ -8,6 +8,8 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
+	"github.com/0xfakeSpike/ollupi/agent/role"
+	"github.com/0xfakeSpike/ollupi/agent/role/contextmanager"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/google/uuid"
@@ -84,17 +86,17 @@ func (sv *Service) startTurn(threadID string, in Input, atts []db.Attachment, cr
 	if err != nil {
 		return db.TurnRow{}, "", fmt.Errorf("service: %w: %v", ErrInvalidMessage, err)
 	}
-	if err := sv.checkLength(model, text); err != nil {
+	limits, err := sv.res.Limits(model)
+	if err != nil {
+		return db.TurnRow{}, "", err
+	}
+	if err := checkLength(model, limits, text); err != nil {
 		return db.TurnRow{}, "", err
 	}
 	if err := sv.checkImages(threadID, model, atts); err != nil {
 		return db.TurnRow{}, "", err
 	}
-	main, err := sv.res.MainRole(model)
-	if err != nil {
-		return db.TurnRow{}, "", err
-	}
-	t, turn, message, how, err := sv.record(st.Thread, db.TurnRow{CronJobID: cronJobID, Agent: string(main)}, model, text, atts)
+	t, turn, message, how, err := sv.record(st.Thread, db.TurnRow{CronJobID: cronJobID, Agent: string(role.ForMain(limits.Input()))}, model, text, atts)
 	if err != nil {
 		return db.TurnRow{}, "", err
 	}
@@ -146,7 +148,11 @@ func (sv *Service) steer(threadID, expectedTurnID string, in Input, atts []db.At
 	if turn.ID != expectedTurnID {
 		return db.TurnRow{}, fmt.Errorf("%w (expected %s, in progress %s)", orchestrator.ErrTurnMismatch, expectedTurnID, turn.ID)
 	}
-	if err := sv.checkLength(turn.Model, text); err != nil {
+	limits, err := sv.res.Limits(turn.Model)
+	if err != nil {
+		return db.TurnRow{}, err
+	}
+	if err := checkLength(turn.Model, limits, text); err != nil {
 		return db.TurnRow{}, err
 	}
 	if err := sv.checkImages(threadID, turn.Model, atts); err != nil {
@@ -176,12 +182,8 @@ func checkMessage(text string, attachments int) (string, error) {
 }
 
 // A message within the budget can always be sent.
-func (sv *Service) checkLength(model llm.Model, text string) error {
-	window, err := sv.res.Window(model)
-	if err != nil {
-		return err
-	}
-	if tokens, budget := llm.EstimateTokens(text), window.MessageBudget(); tokens > budget {
+func checkLength(model llm.Model, limits llm.Limits, text string) error {
+	if tokens, budget := llm.EstimateTokens(text), contextmanager.MessageBudget(limits); tokens > budget {
 		return fmt.Errorf("service: %w: the message takes about %d tokens, and model %s takes at most %d in one message; send long text as a file attachment",
 			ErrInvalidMessage, tokens, model.Name, budget)
 	}
