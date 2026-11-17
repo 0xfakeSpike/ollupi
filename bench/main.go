@@ -241,7 +241,7 @@ func parked(args []string) {
 		log.Fatal(err)
 	}
 	newThread := func() string {
-		th, err := ag.StartThread(db.DefaultUser, "", "", "bench", permission.Settings{})
+		th, err := ag.StartThread(db.DefaultUser, "", "", "bench")
 		if err != nil {
 			log.Fatal(err)
 		}

@@ -80,7 +80,7 @@ func fanout(args []string) {
 	}
 	threads := make([]string, *parents)
 	for i := range threads {
-		th, err := ag.StartThread(db.DefaultUser, "", "", "bench", permission.Settings{})
+		th, err := ag.StartThread(db.DefaultUser, "", "", "bench")
 		if err != nil {
 			log.Fatal(err)
 		}

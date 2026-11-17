@@ -132,7 +132,7 @@ func main() {
 	if err := ag.Start(ctx); err != nil {
 		log.Fatalf("eval: %v", err)
 	}
-	th, err := ag.StartThread(db.DefaultUser, "", "", "eval", permission.Settings{})
+	th, err := ag.StartThread(db.DefaultUser, "", "", "eval")
 	if err != nil {
 		log.Fatalf("eval: %v", err)
 	}

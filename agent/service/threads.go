@@ -7,12 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/google/uuid"
 )
 
-func (sv *Service) StartThread(user, workspaceID, environmentID, title string, settings permission.Settings) (db.ThreadRow, error) {
+func (sv *Service) StartThread(user, workspaceID, environmentID, title string) (db.ThreadRow, error) {
 	title, err := threadTitle(title, false)
 	if err != nil {
 		return db.ThreadRow{}, err
@@ -28,10 +27,7 @@ func (sv *Service) StartThread(user, workspaceID, environmentID, title string, s
 	if err := usable(w); err != nil {
 		return db.ThreadRow{}, err
 	}
-	if err := sv.permissions.CheckThread(user, w, permission.Settings{}, settings); err != nil {
-		return db.ThreadRow{}, err
-	}
-	return sv.createThread(db.ThreadRow{UserID: user, Title: title, Settings: settings, WorkspaceID: db.Ref(workspaceID), EnvironmentID: db.Ref(env.ID)})
+	return sv.createThread(db.ThreadRow{UserID: user, Title: title, WorkspaceID: db.Ref(workspaceID), EnvironmentID: db.Ref(env.ID)})
 }
 
 func (sv *Service) createThread(t db.ThreadRow) (db.ThreadRow, error) {

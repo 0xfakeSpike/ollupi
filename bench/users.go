@@ -134,7 +134,7 @@ func users(args []string) {
 			count = *heavy
 		}
 		for range count {
-			th, err := ag.StartThread(u, "", "", "bench", permission.Settings{})
+			th, err := ag.StartThread(u, "", "", "bench")
 			if err != nil {
 				log.Fatal(err)
 			}
