@@ -14,7 +14,7 @@ import (
 
 func TestCatalogPlacesUsersOnShards(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "catalog", "catalog.sqlite")
-	c, err := Open(path)
+	c, err := OpenSQL(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestCatalogPlacesUsersOnShards(t *testing.T) {
 	if err := c.Close(); err != nil {
 		t.Fatal(err)
 	}
-	reopened, err := Open(path)
+	reopened, err := OpenSQL(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestACatalogFromBeforeMigrationsKeepsItsRows(t *testing.T) {
 	if err := sqlitedb.Close(g); err != nil {
 		t.Fatal(err)
 	}
-	c, err := Open(path)
+	c, err := OpenSQL(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,9 +135,9 @@ func TestACatalogFromBeforeMigrationsKeepsItsRows(t *testing.T) {
 	}
 }
 
-func openCatalog(t *testing.T, shards map[string]int64) *Catalog {
+func openCatalog(t *testing.T, shards map[string]int64) *SQL {
 	t.Helper()
-	c, err := Open(filepath.Join(t.TempDir(), "catalog.sqlite"))
+	c, err := OpenSQL(filepath.Join(t.TempDir(), "catalog.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func openCatalog(t *testing.T, shards map[string]int64) *Catalog {
 	return c
 }
 
-func acquire(t *testing.T, c *Catalog, shard, owner string, accepting bool, load int64) int64 {
+func acquire(t *testing.T, c *SQL, shard, owner string, accepting bool, load int64) int64 {
 	t.Helper()
 	epoch, held, err := c.Acquire(t.Context(), shard, owner, "http://"+shard, accepting, time.Minute)
 	if err != nil || !held {
@@ -160,7 +160,7 @@ func acquire(t *testing.T, c *Catalog, shard, owner string, accepting bool, load
 	return epoch
 }
 
-func assignMany(t *testing.T, c *Catalog, prefix string, n int) map[string]int {
+func assignMany(t *testing.T, c *SQL, prefix string, n int) map[string]int {
 	t.Helper()
 	placed := map[string]int{}
 	for i := range n {
@@ -214,11 +214,11 @@ func TestProcessesShareACatalog(t *testing.T) {
 	}
 	sqlitedb.Close(first)
 	const processes = 6
-	catalogs := make([]*Catalog, processes)
+	catalogs := make([]*SQL, processes)
 	var wg sync.WaitGroup
 	errs := make([]error, processes)
 	for i := range processes {
-		wg.Go(func() { catalogs[i], errs[i] = Open(path) })
+		wg.Go(func() { catalogs[i], errs[i] = OpenSQL(path) })
 	}
 	wg.Wait()
 	for i, err := range errs {

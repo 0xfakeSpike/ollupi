@@ -1,4 +1,4 @@
-// Package shard runs a process as one shard of a deployment: it holds the shard's lease in the deployment's directory,
+// Package shard runs a process as one shard of a deployment: it holds the shard's lease in the deployment's catalog,
 // fences the shard's database with the lease's epoch, reports the shard's load as it renews the lease, and runs the
 // engine only while it holds the shard. The engine itself knows nothing of shards; a process that is the only one
 // serves without this package.
@@ -10,19 +10,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/repo/catalog"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/google/uuid"
 )
-
-// repo/catalog is one.
-type Directory interface {
-	// Acquire takes the shard for owner when no process holds it, and publishes owner's address; each taking has an
-	// epoch above every one before it.
-	Acquire(ctx context.Context, shard, owner, address string, accepting bool, ttl time.Duration) (epoch int64, held bool, err error)
-	Renew(ctx context.Context, shard, owner string, epoch int64, ttl time.Duration, load int64) error
-	Release(ctx context.Context, shard, owner string, epoch int64) error
-	ShardOf(ctx context.Context, user string) (string, error)
-}
 
 type Member struct {
 	ID string
@@ -30,13 +21,13 @@ type Member struct {
 	Address string
 	// A shard kept for one customer takes no new users, and one its host finds full stops taking them.
 	Accepting bool
-	Directory Directory
+	Catalog   catalog.Catalog
 	TTL       time.Duration
 	// Load is by a measure all shards of the deployment share; lower is lighter. Without it the shard reports none.
 	Load func() (int64, error)
 }
 
-const directoryTimeout = 10 * time.Second
+const catalogTimeout = 10 * time.Second
 
 // Run waits until it holds the shard, then serves until ctx ends or the shard is lost. serve's context ends when the
 // lease is lost: every write fails from then on, so the process must stop.
@@ -45,14 +36,14 @@ func (m *Member) Run(ctx context.Context, store *db.DB, serve func(context.Conte
 		return errors.New("shard: a lease needs a TTL")
 	}
 	owner := uuid.NewString()
-	epoch, err := m.acquire(ctx, owner)
+	epoch, until, err := m.acquire(ctx, owner)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), directoryTimeout)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), catalogTimeout)
 		defer cancel()
-		m.Directory.Release(ctx, m.ID, owner, epoch) // a lease not released lapses
+		m.Catalog.Release(ctx, m.ID, owner, epoch) // a lease not released lapses
 	}()
 	if err := store.Fence(epoch); err != nil {
 		return fmt.Errorf("shard %s: %w", m.ID, err)
@@ -62,7 +53,7 @@ func (m *Member) Run(ctx context.Context, store *db.DB, serve func(context.Conte
 	kept := make(chan struct{})
 	go func() {
 		defer close(kept)
-		m.keep(held, owner, epoch, lose)
+		m.keep(held, owner, epoch, until, lose)
 	}()
 	err = serve(held)
 	lose(nil)
@@ -73,17 +64,22 @@ func (m *Member) Run(ctx context.Context, store *db.DB, serve func(context.Conte
 	return err
 }
 
-func (m *Member) acquire(ctx context.Context, owner string) (int64, error) {
+// The catalog counts a lease from when it kept it, so the holder counts it from before it asked, and gives up a
+// margin early besides, for its clock to run apart from the catalog's: it stops before any other process can start.
+func (m *Member) deadline(asked time.Time) time.Time { return asked.Add(m.TTL - m.TTL/10) }
+
+func (m *Member) acquire(ctx context.Context, owner string) (int64, time.Time, error) {
 	for {
-		attempt, cancel := context.WithTimeout(ctx, directoryTimeout)
-		epoch, held, _ := m.Directory.Acquire(attempt, m.ID, owner, m.Address, m.Accepting, m.TTL) // a directory that fails may be back by the next try
+		asked := time.Now()
+		attempt, cancel := context.WithTimeout(ctx, catalogTimeout)
+		epoch, held, _ := m.Catalog.Acquire(attempt, m.ID, owner, m.Address, m.Accepting, m.TTL) // a catalog that fails may be back by the next try
 		cancel()
 		if held {
-			return epoch, nil
+			return epoch, m.deadline(asked), nil
 		}
 		select {
 		case <-ctx.Done():
-			return 0, ctx.Err()
+			return 0, time.Time{}, ctx.Err()
 		case <-time.After(m.TTL / 3):
 		}
 	}
@@ -91,10 +87,9 @@ func (m *Member) acquire(ctx context.Context, owner string) (int64, error) {
 
 // A renewal that fails is tried again while the lease lasts. Another process can take the shard only once the lease
 // has run out, so a lease run out is a shard lost.
-func (m *Member) keep(ctx context.Context, owner string, epoch int64, lose context.CancelCauseFunc) {
+func (m *Member) keep(ctx context.Context, owner string, epoch int64, until time.Time, lose context.CancelCauseFunc) {
 	tick := time.NewTicker(m.TTL / 3)
 	defer tick.Stop()
-	until := time.Now().Add(m.TTL)
 	for {
 		select {
 		case <-ctx.Done():
@@ -105,18 +100,18 @@ func (m *Member) keep(ctx context.Context, owner string, epoch int64, lose conte
 		if m.Load != nil {
 			load, _ = m.Load() // a load not measured reports as idle this time
 		}
-		attempt, cancel := context.WithTimeout(ctx, directoryTimeout)
-		err := m.Directory.Renew(attempt, m.ID, owner, epoch, m.TTL, load)
+		asked := time.Now()
+		attempt, cancel := context.WithTimeout(ctx, catalogTimeout)
+		err := m.Catalog.Renew(attempt, m.ID, owner, epoch, m.TTL, load)
 		cancel()
-		now := time.Now()
 		if err == nil {
-			until = now.Add(m.TTL)
+			until = m.deadline(asked)
 			continue
 		}
 		if ctx.Err() != nil {
 			return
 		}
-		if now.Before(until) {
+		if time.Now().Before(until) {
 			continue
 		}
 		lose(db.ErrShardLost)
@@ -127,9 +122,9 @@ func (m *Member) keep(ctx context.Context, owner string, epoch int64, lose conte
 // Admit refuses a user this shard does not serve now: the router placed them by what it knew, and a client that comes
 // back reaches the right shard once that is put right.
 func (m *Member) Admit(ctx context.Context, user string) error {
-	ctx, cancel := context.WithTimeout(ctx, directoryTimeout)
+	ctx, cancel := context.WithTimeout(ctx, catalogTimeout)
 	defer cancel()
-	shard, err := m.Directory.ShardOf(ctx, user)
+	shard, err := m.Catalog.ShardOf(ctx, user)
 	if err != nil {
 		return fmt.Errorf("shard: where user %s is: %w", user, err)
 	}
