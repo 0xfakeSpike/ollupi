@@ -10,7 +10,7 @@ import (
 )
 
 func (c *conn) threadStart(ctx context.Context, p ThreadStartParams) (ThreadResult, func(), error) {
-	t, err := c.s.service.StartThread(c.user, p.WorkspaceID, p.EnvironmentID, p.Title, p.PermissionSettings)
+	t, err := c.s.service.StartThread(c.user, p.WorkspaceID, p.EnvironmentID, p.Title)
 	return ThreadResult{Thread: threadRow(t)}, nil, err
 }
 
@@ -22,9 +22,8 @@ func threadPage(resume bool) func(*conn, context.Context, ThreadPageParams) (Thr
 		if p.Limit < 1 || p.Limit > maxItems || p.BeforeSeq < 0 {
 			return ThreadPageResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "limit must be 1 to %d and beforeSeq not negative", maxItems)
 		}
-		store := c.s.db.WithContext(ctx)
 		c.rpc.HoldUntilReplied()
-		view, more, err := store.ThreadPage(c.user, p.ThreadID, p.BeforeSeq, p.Limit)
+		view, more, err := c.s.service.ThreadPage(ctx, c.user, p.ThreadID, p.BeforeSeq, p.Limit)
 		if err != nil {
 			return ThreadPageResult{}, nil, err
 		}

@@ -25,7 +25,7 @@ import (
 type shard struct {
 	db     *db.DB
 	server *gateway.Server
-	events *event.Emitter
+	events *event.Bus
 	url    string
 	stop   context.CancelFunc
 }
@@ -36,9 +36,9 @@ func startShard(t *testing.T, id, home string, authenticate gateway.Authenticate
 	if err != nil {
 		t.Fatal(err)
 	}
-	events := event.New(store)
+	events := event.New()
 	s, err := gateway.NewServer(service.New(service.Config{DB: store}), events, gateway.Options{
-		DB: store, Authenticate: authenticate, Shard: id, Placements: placements,
+		Authenticate: authenticate, Shard: id, Placements: placements,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -166,11 +166,11 @@ func TestTheRouterSendsEachUserToTheirShard(t *testing.T) {
 	if !hasUser(t, shards[shardA].db, "a") || hasUser(t, shards[shardB].db, "a") {
 		t.Error("a is not on their shard alone")
 	}
-	shards[shardB].events.Emit(event.Event{Kind: event.ThreadDeleted, Thread: db.ThreadRow{ID: "of-b", UserID: "b"}})
+	shards[shardB].events.Publish(event.Event{Kind: event.ThreadDeleted, User: "b", Thread: db.ThreadRow{ID: "of-b", UserID: "b"}})
 	if got := nextThread(ctx, t, b); got != "of-b" {
 		t.Errorf("b received %q through the router", got)
 	}
-	shards[shardA].events.Emit(event.Event{Kind: event.ThreadDeleted, Thread: db.ThreadRow{ID: "of-a", UserID: "a"}})
+	shards[shardA].events.Publish(event.Event{Kind: event.ThreadDeleted, User: "a", Thread: db.ThreadRow{ID: "of-a", UserID: "a"}})
 	if got := nextThread(ctx, t, a); got != "of-a" {
 		t.Errorf("a received %q through the router", got)
 	}
@@ -188,7 +188,7 @@ func TestTheRouterSendsEachUserToTheirShard(t *testing.T) {
 		t.Fatal(err)
 	}
 	back := connect(ctx, t, front.URL, "token-a")
-	standby.events.Emit(event.Event{Kind: event.ThreadDeleted, Thread: db.ThreadRow{ID: "after", UserID: "a"}})
+	standby.events.Publish(event.Event{Kind: event.ThreadDeleted, User: "a", Thread: db.ThreadRow{ID: "after", UserID: "a"}})
 	if got := nextThread(ctx, t, back); got != "after" {
 		t.Errorf("a received %q from the new holder", got)
 	}

@@ -235,8 +235,8 @@ func crashChild(args []string) {
 			}
 		}()
 	}
-	events := event.New(store)
-	events.Subscribe(func(e event.Event) {
+	events := event.New()
+	events.SubscribeAll(func(e event.Event) {
 		if e.Kind == event.UserInputRequested {
 			answer(e.Thread.ID, e.Item.ID)
 		}
@@ -265,7 +265,7 @@ func crashChild(args []string) {
 	}
 	kinds := []string{kindWork, kindWork, kindWork, kindAsk, kindDelegate}
 	for i := range *submit {
-		th, err := ag.StartThread(db.DefaultUser, "", "", "bench", permission.Settings{})
+		th, err := ag.StartThread(db.DefaultUser, "", "", "bench")
 		if err != nil {
 			log.Fatal(err)
 		}

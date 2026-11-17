@@ -93,7 +93,7 @@ func (o *Orchestrator) afterRun(threadID string, sl *slot, final bool, runErr er
 		case settled.Status == db.TurnCompleted:
 			o.ended(st, thread, settled, closed, report)
 		case settled.Status == db.TurnWaitingOnAgent:
-			o.ev.Status(threadID)
+			o.status(threadID)
 			o.reconcile(threadID)
 		default:
 			o.reconcile(threadID)
@@ -111,6 +111,6 @@ func (o *Orchestrator) afterRun(threadID string, sl *slot, final bool, runErr er
 	o.reconcile(threadID)
 	if n := len(st.PendingRequests()); n > 0 {
 		o.ev.Requests(st)
-		o.ev.Status(threadID)
+		o.status(threadID)
 	}
 }

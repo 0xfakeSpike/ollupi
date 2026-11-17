@@ -24,7 +24,6 @@ const (
 	minPooledTokens    = 512
 	artifactPercent    = 15
 	toolPercent        = 10
-	messagePercent     = 25
 	sentLayout         = "Mon 2006-01-02 15:04 -07:00"
 )
 
@@ -125,10 +124,6 @@ func (m *Manager) InputTokens() int { return m.inputTokens }
 
 func (m *Manager) SkillBudget() int {
 	return share(m.inputTokens, 4)
-}
-
-func MessageBudget(limits llm.Limits) int {
-	return share(limits.Input(), messagePercent)
 }
 
 func (m *Manager) MemoryBudget() int {

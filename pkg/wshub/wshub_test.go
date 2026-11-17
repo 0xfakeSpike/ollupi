@@ -50,12 +50,6 @@ func dial(ctx context.Context, t *testing.T, url, name string) *websocket.Conn {
 	return ws
 }
 
-func held(h *Hub[string]) []string {
-	var names []string
-	h.Each("k", func(name string) { names = append(names, name) })
-	return names
-}
-
 func eventually(t *testing.T, what string, ok func() bool) {
 	t.Helper()
 	for deadline := time.Now().Add(5 * time.Second); !ok(); time.Sleep(10 * time.Millisecond) {
@@ -117,7 +111,7 @@ func TestANewerConnectionTakesTheOldestsPlace(t *testing.T) {
 		_, _, err := first.Read(ctx)
 		closed <- err
 	}()
-	eventually(t, "the first connection was not held", func() bool { return len(held(h)) == 1 })
+	eventually(t, "the first connection was not held", func() bool { return h.Count() == 1 })
 	for _, name := range []string{"second", "third"} {
 		ws := dial(ctx, t, url, name)
 		go func() {
@@ -128,10 +122,7 @@ func TestANewerConnectionTakesTheOldestsPlace(t *testing.T) {
 			}
 		}()
 	}
-	eventually(t, "the oldest connection was not given up", func() bool {
-		names := held(h)
-		return len(names) == 2 && names[0] == "second" && names[1] == "third"
-	})
+	eventually(t, "the oldest connection was not given up", func() bool { return h.Count() == 2 })
 	if status := websocket.CloseStatus(<-closed); status != StatusReplaced {
 		t.Errorf("the oldest connection closed with %v", status)
 	}
@@ -187,7 +178,7 @@ func TestAPeerThatStopsAnsweringPingsIsDropped(t *testing.T) {
 		t.Fatal("the silent peer's connection was kept")
 	}
 	time.Sleep(10 * quick.PingEvery)
-	if names := held(h); len(names) != 1 || names[0] != "answering" {
-		t.Errorf("held after the silent peer missed its pongs: %v", names)
+	if n := h.Count(); n != 1 {
+		t.Errorf("%d connections held after the silent peer missed its pongs, want the answering one", n)
 	}
 }

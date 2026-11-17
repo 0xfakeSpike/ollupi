@@ -2484,17 +2484,8 @@
         },
         "title": {
           "type": "string"
-        },
-        "approvalPolicy": {
-          "$ref": "#/$defs/ApprovalPolicy"
-        },
-        "permissions": {
-          "$ref": "#/$defs/PermissionRules"
         }
       },
-      "required": [
-        "permissions"
-      ],
       "additionalProperties": false
     },
     "ThreadStatus": {

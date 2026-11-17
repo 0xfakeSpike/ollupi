@@ -80,11 +80,12 @@ func checkOne(res *gorm.DB) error {
 
 var (
 	ErrNotFound = errors.New("storage: not found")
-	// ErrThreadBusy, ErrThreadArchived and ErrNoSuchRequest refuse a write the thread no longer allows, whatever the
-	// caller read before it.
+	// These refuse what the thread no longer allows, whatever the caller read before it.
 	ErrThreadBusy     = errors.New("the conversation has a turn in progress or queued; interrupt it first")
 	ErrThreadArchived = errors.New("the conversation is archived; restore it before starting new work")
 	ErrNoSuchRequest  = errors.New("the thread does not wait on this request")
+	ErrNoActiveTurn   = errors.New("the thread has no turn in progress")
+	ErrTurnMismatch   = errors.New("the expected turn is not the turn in progress")
 )
 
 func notFound(err error) error {

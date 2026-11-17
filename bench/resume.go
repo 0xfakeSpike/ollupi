@@ -41,8 +41,8 @@ func resume(args []string) {
 	defer store.Close()
 	answer := strings.Repeat("A paragraph of an answer, about as long as a short reply in a chat. ", 6)
 	open := func(m *model, tr *tracker) (*service.Service, context.CancelFunc, time.Duration) {
-		events := event.New(store)
-		events.Subscribe(tr.on)
+		events := event.New()
+		events.SubscribeAll(tr.on)
 		ag := service.New(service.Config{
 			BoxFor: here,
 			Name:   "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
@@ -61,7 +61,7 @@ func resume(args []string) {
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}, done: map[string]chan struct{}{}}
 	ag, cancel, _ := open(m, tr)
 	newThread := func() string {
-		th, err := ag.StartThread(db.DefaultUser, "", "", "bench", permission.Settings{})
+		th, err := ag.StartThread(db.DefaultUser, "", "", "bench")
 		if err != nil {
 			log.Fatal(err)
 		}

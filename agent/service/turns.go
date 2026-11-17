@@ -7,9 +7,7 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/event"
-	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/role"
-	"github.com/0xfakeSpike/ollupi/agent/role/contextmanager"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/google/uuid"
@@ -105,9 +103,9 @@ func (sv *Service) startTurn(threadID string, in Input, atts []db.Attachment, cr
 		return turn, how, nil
 	}
 	defer sv.o.Wake(t.ID)
-	sv.ev.Emit(event.Event{Kind: event.TurnQueued, Thread: t, Turn: turn})
+	sv.ev.Publish(event.Event{Kind: event.TurnQueued, User: t.UserID, Thread: t, Turn: turn})
 	sv.ev.Item(t, turn, message, true)
-	sv.ev.Status(t.ID)
+	sv.status(t.ID)
 	return turn, how, nil
 }
 
@@ -143,10 +141,10 @@ func (sv *Service) steer(threadID, expectedTurnID string, in Input, atts []db.At
 	}
 	turn, active := st.ActiveTurn()
 	if !active {
-		return db.TurnRow{}, orchestrator.ErrNoActiveTurn
+		return db.TurnRow{}, db.ErrNoActiveTurn
 	}
 	if turn.ID != expectedTurnID {
-		return db.TurnRow{}, fmt.Errorf("%w (expected %s, in progress %s)", orchestrator.ErrTurnMismatch, expectedTurnID, turn.ID)
+		return db.TurnRow{}, fmt.Errorf("%w (expected %s, in progress %s)", db.ErrTurnMismatch, expectedTurnID, turn.ID)
 	}
 	limits, err := sv.res.Limits(turn.Model)
 	if err != nil {
@@ -168,7 +166,7 @@ func (sv *Service) steer(threadID, expectedTurnID string, in Input, atts []db.At
 		sv.ev.Item(st.Thread, turn, it, false)
 	}
 	if len(closed) > 0 {
-		sv.ev.Status(threadID)
+		sv.status(threadID)
 	}
 	return turn, nil
 }
@@ -181,9 +179,10 @@ func checkMessage(text string, attachments int) (string, error) {
 	return text, nil
 }
 
-// A message within the budget can always be sent.
+const messagePercent = 25
+
 func checkLength(model llm.Model, limits llm.Limits, text string) error {
-	if tokens, budget := llm.EstimateTokens(text), contextmanager.MessageBudget(limits); tokens > budget {
+	if tokens, budget := llm.EstimateTokens(text), max(256, limits.Input()*messagePercent/100); tokens > budget {
 		return fmt.Errorf("service: %w: the message takes about %d tokens, and model %s takes at most %d in one message; send long text as a file attachment",
 			ErrInvalidMessage, tokens, model.Name, budget)
 	}
