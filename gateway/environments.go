@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
@@ -38,23 +37,4 @@ func (c *conn) environmentDelete(ctx context.Context, p EnvironmentDeleteParams)
 
 func environmentResult(env db.EnvironmentRow, err error) (EnvironmentResult, func(), error) {
 	return EnvironmentResult{Environment: environmentRow(env)}, nil, err
-}
-
-func (s *Server) environmentChanged(user, id string) {
-	var n *EnvironmentChangedNotification
-	s.each(user, func(c *conn) {
-		if n == nil {
-			read := EnvironmentChangedNotification{EnvironmentID: id}
-			env, err := s.db.EnvironmentOf(user, id)
-			switch {
-			case err == nil:
-				row := environmentRow(env)
-				read.Environment = &row
-			case !errors.Is(err, db.ErrNotFound):
-				return
-			}
-			n = &read
-		}
-		c.rpc.Notify(notifyEnvironmentChanged, *n)
-	})
 }

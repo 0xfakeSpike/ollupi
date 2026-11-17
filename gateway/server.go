@@ -9,12 +9,9 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/agent/service"
-	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/pkg/wshub"
 	"github.com/0xfakeSpike/ollupi/repo/db"
-	"github.com/0xfakeSpike/ollupi/tools/cron"
-	"github.com/0xfakeSpike/ollupi/tools/mcp"
 	"github.com/coder/websocket"
 )
 
@@ -32,10 +29,7 @@ const (
 
 type Server struct {
 	service      *service.Service
-	db           *db.DB
-	memory       *memory.Manager
-	jobs         *cron.Jobs
-	mcp          *mcp.Users
+	events       *event.Bus
 	authenticate Authenticate
 	shard        string
 	placements   Placements
@@ -77,7 +71,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if !s.mine(w, r, user) {
 			return
 		}
-		if err := s.db.EnsureUser(user); err != nil {
+		if err := s.service.EnsureUser(user); err != nil {
 			http.Error(w, "the user could not be made ready", http.StatusInternalServerError)
 			return
 		}
@@ -90,32 +84,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ws.SetReadLimit(maxMessageBytes)
 	c := &conn{s: s, user: user, ws: ws, rpc: jsonrpc.NewConn(ws), asked: make(map[string]bool)}
 	s.hub.Serve(r.Context(), user, ws, c, func(ctx context.Context) error { return c.rpc.Serve(ctx, c) })
-}
-
-func (s *Server) deliver(e event.Event) {
-	user := e.Thread.UserID
-	if e.Workspace != nil {
-		user = e.Workspace.UserID
+	c.mu.Lock()
+	sub := c.sub
+	c.mu.Unlock()
+	if sub != nil {
+		sub.Close()
 	}
-	if e.Environment != nil {
-		user = e.Environment.UserID
-	}
-	switch e.Kind {
-	case event.EnvironmentChanged:
-		s.environmentChanged(user, e.Environment.ID)
-	case event.CronJobChanged:
-		s.cronChanged(user, e.CronJobID, e.Thread.ID)
-	default:
-		s.each(user, func(c *conn) { c.event(e) })
-	}
-}
-
-func (s *Server) each(user string, fn func(*conn)) {
-	s.hub.Each(user, func(c *conn) {
-		if c.isInitialized() {
-			fn(c)
-		}
-	})
 }
 
 type conn struct {
@@ -126,13 +100,8 @@ type conn struct {
 
 	mu          sync.Mutex
 	initialized bool
+	sub         *event.Subscription
 	asked       map[string]bool
-}
-
-func (c *conn) isInitialized() bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.initialized
 }
 
 // Notify takes a client's notification, which asks for no answer and changes nothing on the shard.
@@ -156,9 +125,12 @@ func (c *conn) Call(ctx context.Context, method string, params json.RawMessage) 
 }
 
 func (c *conn) initialize(ctx context.Context, _ InitializeParams) (InitializeResult, func(), error) {
+	// What is published from here on reaches the client; what waited on them before is asked again, which
+	// c.request does not ask twice.
 	after := func() {
+		sub := c.s.events.Subscribe(c.user, c.event)
 		c.mu.Lock()
-		c.initialized = true
+		c.initialized, c.sub = true, sub
 		c.mu.Unlock()
 		c.requests(c.s.service.AllPendingRequests(c.user))
 	}
@@ -196,6 +168,20 @@ func (c *conn) event(e event.Event) {
 		c.rpc.Notify(notifyThreadStatusChanged, ThreadStatusNotification{ThreadID: e.Thread.ID, Status: e.Status})
 	case event.WorkspaceChanged:
 		c.rpc.Notify(notifyWorkspaceChanged, WorkspaceResult{Workspace: workspaceRow(*e.Workspace)})
+	case event.EnvironmentChanged:
+		row := environmentRow(*e.Environment)
+		c.rpc.Notify(notifyEnvironmentChanged, EnvironmentChangedNotification{EnvironmentID: e.Environment.ID, Environment: &row})
+	case event.EnvironmentDeleted:
+		c.rpc.Notify(notifyEnvironmentChanged, EnvironmentChangedNotification{EnvironmentID: e.Environment.ID})
+	case event.CronJobChanged:
+		n := CronChangedNotification{ID: e.CronJobID, ThreadID: e.Thread.ID}
+		if e.CronJob != nil {
+			view := cronJobView(*e.CronJob)
+			n.Job = &view
+		}
+		c.rpc.Notify(notifyCronChanged, n)
+	case event.SettingsChanged:
+		c.rpc.Notify(notifySettingsChanged, settingsRow(*e.Settings))
 	case event.ApprovalRequested, event.UserInputRequested:
 		c.request(e.Thread.ID, *e.Item)
 	}

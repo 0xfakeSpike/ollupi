@@ -2,8 +2,6 @@ package gateway
 
 import (
 	"context"
-
-	"github.com/0xfakeSpike/ollupi/tools/mcp"
 )
 
 func (c *conn) modelList(ctx context.Context, _ Empty) (ModelListResult, func(), error) {
@@ -20,13 +18,6 @@ func (c *conn) toolList(ctx context.Context, _ Empty) (ToolListResult, func(), e
 }
 
 func (c *conn) mcpServerList(ctx context.Context, _ Empty) (MCPServerListResult, func(), error) {
-	var servers []mcp.ServerStatus
-	if c.s.mcp != nil {
-		mine, err := c.s.mcp.For(c.user)
-		if err != nil {
-			return MCPServerListResult{}, nil, err
-		}
-		servers = mine.Statuses()
-	}
-	return MCPServerListResult{Data: nonNil(servers)}, nil, nil
+	servers, err := c.s.service.MCPServers(c.user)
+	return MCPServerListResult{Data: nonNil(servers)}, nil, err
 }

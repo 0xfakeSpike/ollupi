@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"reflect"
 
-	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/service"
 	"github.com/0xfakeSpike/ollupi/memory"
@@ -204,7 +203,7 @@ var protocol = struct {
 		// Too many connections are starting, or the user's shard cannot be reached now.
 		http.StatusServiceUnavailable: {"unavailable", ReconnectRetryAfter},
 	},
-	limits: Limits{SearchRunes: maxSearchRunes, SearchTerms: maxSearchTerms},
+	limits: Limits{SearchRunes: service.MaxSearchRunes, SearchTerms: service.MaxSearchTerms},
 }
 
 type Limits struct {
@@ -273,7 +272,6 @@ type ThreadStartParams struct {
 	// Empty is the environment on this machine.
 	EnvironmentID string `json:"environmentId,omitempty"`
 	Title         string `json:"title,omitempty"`
-	db.PermissionSettings
 }
 
 type ThreadPermissionsParams struct {
@@ -590,8 +588,8 @@ var errorCodes = []struct {
 	code int
 }{
 	{db.ErrNotFound, errNotFound},
-	{orchestrator.ErrNoActiveTurn, errNoActiveTurn},
-	{orchestrator.ErrTurnMismatch, errTurnMismatch},
+	{db.ErrNoActiveTurn, errNoActiveTurn},
+	{db.ErrTurnMismatch, errTurnMismatch},
 	{db.ErrNoSuchRequest, errNoSuchRequest},
 	{service.ErrSubagentThread, errSubagentThread},
 	{service.ErrWorkspaceArchived, errWorkspaceArchived},
@@ -605,6 +603,9 @@ var errorCodes = []struct {
 	{service.ErrInvalidDecision, jsonrpc.CodeInvalidParams},
 	{service.ErrInvalidName, jsonrpc.CodeInvalidParams},
 	{service.ErrInvalidPath, jsonrpc.CodeInvalidParams},
+	{service.ErrInvalidQuery, jsonrpc.CodeInvalidParams},
+	{service.ErrSearchTimedOut, errSearchTimedOut},
+	{service.ErrUnavailable, jsonrpc.CodeServerError},
 	{permission.ErrInvalidSettings, jsonrpc.CodeInvalidParams},
 	{memory.ErrInvalidChange, jsonrpc.CodeInvalidParams},
 	{tools.ErrUnknownTool, jsonrpc.CodeInvalidParams},

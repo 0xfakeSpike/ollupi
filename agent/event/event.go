@@ -3,8 +3,7 @@
 package event
 
 import (
-	"errors"
-	"fmt"
+	"sync"
 
 	"github.com/0xfakeSpike/ollupi/repo/db"
 )
@@ -26,116 +25,119 @@ const (
 	ThreadStatusChanged Kind = "thread_status_changed"
 	WorkspaceChanged    Kind = "workspace_changed"
 	EnvironmentChanged  Kind = "environment_changed"
-	// Only for a scheduled task archived or deleted with its thread.
-	CronJobChanged Kind = "cron_job_changed"
-	Error          Kind = "error"
+	EnvironmentDeleted  Kind = "environment_deleted"
+	CronJobChanged      Kind = "cron_job_changed"
+	SettingsChanged     Kind = "settings_changed"
+	Error               Kind = "error"
 )
 
 type Event struct {
-	Kind        Kind
+	Kind Kind
+	// User is whose the event is: only their subscribers hear it.
+	User        string
 	Thread      db.ThreadRow
 	Turn        db.TurnRow
 	Item        *db.ItemRow
 	Workspace   *db.WorkspaceRow
 	Environment *db.EnvironmentRow
 	CronJobID   string
-	Delta       string
-	Status      db.ThreadStatus
-	Error       string
+	// CronJob is nil once the task is gone.
+	CronJob  *db.CronJobView
+	Settings *db.SettingsRow
+	Delta    string
+	Status   db.ThreadStatus
+	Error    string
 }
 
-// Subscribers are added before the service starts, which emits from then on; each is called in the emitter's goroutine.
-type Emitter struct {
-	db          *db.DB
-	subscribers []func(Event)
+// Bus hands each event to the subscribers of its user, and to those of every user, in the goroutine that publishes
+// it, so that a subscriber that queues what it hears keeps the order it was published in. A subscriber must not block
+// and must not publish: the orchestrator's loop and a running turn publish.
+type Bus struct {
+	mu     sync.RWMutex
+	byUser map[string]map[*Subscription]struct{}
+	all    map[*Subscription]struct{}
 }
 
-func New(store *db.DB) *Emitter { return &Emitter{db: store} }
+type Subscription struct {
+	bus  *Bus
+	user string
+	all  bool
+	fn   func(Event)
+}
 
-func (e *Emitter) Subscribe(fn func(Event)) { e.subscribers = append(e.subscribers, fn) }
+func New() *Bus {
+	return &Bus{byUser: map[string]map[*Subscription]struct{}{}, all: map[*Subscription]struct{}{}}
+}
 
-func (e *Emitter) Emit(ev Event) {
-	for _, fn := range e.subscribers {
-		fn(ev)
+func (b *Bus) Subscribe(user string, fn func(Event)) *Subscription {
+	s := &Subscription{bus: b, user: user, fn: fn}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.byUser[user] == nil {
+		b.byUser[user] = map[*Subscription]struct{}{}
+	}
+	b.byUser[user][s] = struct{}{}
+	return s
+}
+
+func (b *Bus) SubscribeAll(fn func(Event)) *Subscription {
+	s := &Subscription{bus: b, all: true, fn: fn}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.all[s] = struct{}{}
+	return s
+}
+
+func (s *Subscription) Close() {
+	b := s.bus
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if s.all {
+		delete(b.all, s)
+		return
+	}
+	delete(b.byUser[s.user], s)
+	if len(b.byUser[s.user]) == 0 {
+		delete(b.byUser, s.user)
 	}
 }
 
-func (e *Emitter) Item(t db.ThreadRow, turn db.TurnRow, it db.ItemRow, isNew bool) {
+func (b *Bus) Publish(e Event) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	for s := range b.byUser[e.User] {
+		s.fn(e)
+	}
+	for s := range b.all {
+		s.fn(e)
+	}
+}
+
+func (b *Bus) Item(t db.ThreadRow, turn db.TurnRow, it db.ItemRow, isNew bool) {
 	unfinished := it.Status == db.ItemPending || it.Status == db.ItemInProgress
 	switch {
 	case isNew:
 		started := it
-		e.Emit(Event{Kind: ItemStarted, Thread: t, Turn: turn, Item: &started})
+		b.Publish(Event{Kind: ItemStarted, User: t.UserID, Thread: t, Turn: turn, Item: &started})
 	case unfinished:
-		e.Emit(Event{Kind: ItemUpdated, Thread: t, Turn: turn, Item: &it})
+		b.Publish(Event{Kind: ItemUpdated, User: t.UserID, Thread: t, Turn: turn, Item: &it})
 	}
 	if !unfinished {
-		e.Emit(Event{Kind: ItemCompleted, Thread: t, Turn: turn, Item: &it})
+		b.Publish(Event{Kind: ItemCompleted, User: t.UserID, Thread: t, Turn: turn, Item: &it})
 	}
 }
 
-func (e *Emitter) Status(threadID string) {
-	t, err := e.db.ThreadRow(threadID)
-	if err != nil {
-		return
-	}
-	if t.ParentThreadID != "" {
-		e.Status(string(t.ParentThreadID))
-		return
-	}
-	status, err := ThreadStatus(e.db, threadID)
-	if err != nil {
-		return
-	}
-	e.Emit(Event{Kind: ThreadStatusChanged, Thread: t, Status: status})
+func (b *Bus) Status(t db.ThreadRow, status db.ThreadStatus) {
+	b.Publish(Event{Kind: ThreadStatusChanged, User: t.UserID, Thread: t, Status: status})
 }
 
-func (e *Emitter) Requests(st db.ThreadState) {
+func (b *Bus) Requests(st db.ThreadState) {
 	turn, _ := st.ActiveTurn()
 	for _, it := range st.PendingRequests() {
 		kind := ApprovalRequested
 		if !it.WaitsForApproval() {
 			kind = UserInputRequested
 		}
-		e.Emit(Event{Kind: kind, Thread: st.Thread, Turn: turn, Item: &it})
+		b.Publish(Event{Kind: kind, User: st.Thread.UserID, Thread: st.Thread, Turn: turn, Item: &it})
 	}
-}
-
-// What, not why: the cause is the storage's own words, with its paths and tables.
-func (e *Emitter) Fault(threadID, turnID, what string) {
-	t, rerr := e.db.ThreadRow(threadID)
-	if rerr != nil {
-		t = db.ThreadRow{ID: threadID}
-	}
-	e.Emit(Event{Kind: Error, Thread: t, Turn: db.TurnRow{ID: turnID, ThreadID: threadID}, Error: what})
-}
-
-func ThreadStatus(store *db.DB, id string) (db.ThreadStatus, error) {
-	turn, err := store.ActiveTurn(id)
-	if errors.Is(err, db.ErrNotFound) {
-		return db.ThreadIdle, nil
-	}
-	if err != nil {
-		return "", fmt.Errorf("the status of thread %s: %w", id, err)
-	}
-	switch turn.Status {
-	case db.TurnWaitingOnApproval:
-		return db.ThreadWaitingOnApproval, nil
-	case db.TurnWaitingOnUserInput:
-		return db.ThreadWaitingOnUserInput, nil
-	}
-	running, err := store.RunningSubagents(turn.ID)
-	if err != nil {
-		return "", fmt.Errorf("the status of thread %s: %w", id, err)
-	}
-	for _, child := range running {
-		cs, err := ThreadStatus(store, child)
-		if err != nil {
-			return "", err
-		}
-		if cs == db.ThreadWaitingOnApproval || cs == db.ThreadWaitingOnUserInput {
-			return cs, nil
-		}
-	}
-	return db.ThreadActive, nil
 }

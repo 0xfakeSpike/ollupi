@@ -228,8 +228,8 @@ func burst(args []string) {
 	}
 	defer store.Close()
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}}
-	events := event.New(store)
-	events.Subscribe(tr.on)
+	events := event.New()
+	events.SubscribeAll(tr.on)
 	ag := service.New(service.Config{
 		BoxFor: here,
 		Name:   "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
@@ -243,7 +243,7 @@ func burst(args []string) {
 		log.Fatal(err)
 	}
 	newThread := func() string {
-		th, err := ag.StartThread(db.DefaultUser, "", "", "bench", permission.Settings{})
+		th, err := ag.StartThread(db.DefaultUser, "", "", "bench")
 		if err != nil {
 			log.Fatal(err)
 		}

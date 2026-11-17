@@ -9,7 +9,7 @@ import (
 )
 
 func (c *conn) workspaceList(ctx context.Context, _ Empty) (WorkspaceListResult, func(), error) {
-	rows, err := c.s.db.WithContext(ctx).Workspaces(c.user)
+	rows, err := c.s.service.Workspaces(ctx, c.user)
 	if err != nil {
 		return WorkspaceListResult{}, nil, err
 	}

@@ -7,8 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/0xfakeSpike/ollupi/tools/loader"
-	"github.com/0xfakeSpike/ollupi/tools/outputs"
 	"slices"
 	"strings"
 	"sync"
@@ -26,6 +24,10 @@ import (
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/repo/skills"
 	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/0xfakeSpike/ollupi/tools/cron"
+	"github.com/0xfakeSpike/ollupi/tools/loader"
+	"github.com/0xfakeSpike/ollupi/tools/mcp"
+	"github.com/0xfakeSpike/ollupi/tools/outputs"
 	"github.com/0xfakeSpike/ollupi/tools/plan"
 	skilltools "github.com/0xfakeSpike/ollupi/tools/skills"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
@@ -65,13 +67,16 @@ type Config struct {
 	// Runs a user's turns on their own key and quota; it should return the same client each time.
 	ClientFor func(user, connection string) (llm.Client, error)
 	Providers []tools.Provider
-	ToolsFor  func(user string) (*tools.Set, error)
+	// Each user's own MCP servers; without it users share the tools of Providers.
+	MCP *mcp.Users
+	// Without it scheduled tasks are unavailable.
+	Jobs *cron.Jobs
 	// Layout: SkillsDir/<role>/<skill>/SKILL.md.
 	SkillsDir   string
 	Attachments blobs.Store
 	Memory      *memory.Manager
 	DB          *db.DB
-	Events      *event.Emitter
+	Events      *event.Bus
 	// A process that dies leaves its claim for this long. Without it the process trusts it is alone.
 	Lease time.Duration
 	// Required: a client names the paths it reads, so a one-user host passes sandbox.Here, and no host gives
@@ -86,7 +91,7 @@ type Service struct {
 	permissions *permission.Manager
 	o           *orchestrator.Orchestrator
 	res         *resources.Resources
-	ev          *event.Emitter
+	ev          *event.Bus
 
 	moveMu sync.Mutex
 	moving map[string]bool
@@ -109,7 +114,7 @@ func (sv *Service) Start(ctx context.Context) error {
 	if sv.cfg.Events == nil {
 		return fmt.Errorf("service: Events is required")
 	}
-	deployment := permission.Deployment{Settings: sv.cfg.Settings, Shared: sv.cfg.ToolsFor != nil, Tools: sv.cfg.Tools}
+	deployment := permission.Deployment{Settings: sv.cfg.Settings, Shared: sv.cfg.MCP != nil, Tools: sv.cfg.Tools}
 	sv.o = orchestrator.New(sv.cfg.DB, sv.cfg.Attachments, sv.cfg.Memory, sv.cfg.Events, sv.cfg.Name, sv.cfg.Prompt, sv.cfg.SkillsDir,
 		deployment, sv.cfg.Slots, sv.cfg.UserSlots, sv.cfg.RunLimit)
 	providers := append(slices.Clone(sv.cfg.Providers), plan.New(), subagent.New(sv.cfg.DB, sv.o.Started), userinput.New(),
@@ -127,8 +132,12 @@ func (sv *Service) Start(ctx context.Context) error {
 		}
 		providers = append(providers, skilltools.New(sv.cfg.SkillsDir))
 	}
+	var toolsFor func(string) (*tools.Set, error)
+	if sv.cfg.MCP != nil {
+		toolsFor = sv.cfg.MCP.Tools
+	}
 	res, err := resources.New(ctx, resources.Config{
-		Models: sv.cfg.Models, Connections: sv.cfg.Connections, ClientFor: sv.cfg.ClientFor, ToolsFor: sv.cfg.ToolsFor,
+		Models: sv.cfg.Models, Connections: sv.cfg.Connections, ClientFor: sv.cfg.ClientFor, ToolsFor: toolsFor,
 	}, providers)
 	if err != nil {
 		return fmt.Errorf("service: %w", err)
@@ -160,4 +169,10 @@ func (sv *Service) ListTools(user string) ([]tools.ToolDescriptor, error) {
 		return nil, err
 	}
 	return registry.Descriptors(), nil
+}
+
+func (sv *Service) status(threadID string) {
+	if t, status, err := sv.cfg.DB.TopThreadStatus(threadID); err == nil {
+		sv.ev.Status(t, status)
+	}
 }

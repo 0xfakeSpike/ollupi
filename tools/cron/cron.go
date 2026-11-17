@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/google/uuid"
 	robfig "github.com/robfig/cron/v3"
@@ -26,22 +27,35 @@ type Jobs struct {
 	db       *db.DB
 	location *time.Location
 	parser   robfig.Parser
-	onChange func(id, threadID string)
+	events   *event.Bus
 }
 
-func New(store *db.DB, location *time.Location, onChange func(id, threadID string)) *Jobs {
+func New(store *db.DB, location *time.Location, events *event.Bus) *Jobs {
 	return &Jobs{
 		db:       store,
 		location: location,
 		parser:   robfig.NewParser(robfig.Minute | robfig.Hour | robfig.Dom | robfig.Month | robfig.Dow | robfig.Descriptor),
-		onChange: onChange,
+		events:   events,
 	}
 }
 
 func (j *Jobs) changed(id, threadID string) {
-	if j.onChange != nil {
-		j.onChange(id, threadID)
+	if t, err := j.db.ThreadRow(threadID); err == nil {
+		Announce(j.db, j.events, t, id)
 	}
+}
+
+// Announce tells the user of thread t what became of its task id: the task as it is, or none once it is gone.
+func Announce(store *db.DB, events *event.Bus, t db.ThreadRow, id string) {
+	e := event.Event{Kind: event.CronJobChanged, User: t.UserID, Thread: t, CronJobID: id}
+	view, err := store.CronJobView(id)
+	switch {
+	case err == nil:
+		e.CronJob = &view
+	case !errors.Is(err, db.ErrNotFound):
+		return
+	}
+	events.Publish(e)
 }
 
 func (j *Jobs) schedule(spec string) (robfig.Schedule, error) {
