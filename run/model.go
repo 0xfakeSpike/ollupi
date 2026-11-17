@@ -1,11 +1,13 @@
 package run
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/conversation"
@@ -45,8 +47,20 @@ func (r *Runner) callModel(ctx context.Context, s *step, a agent.CallModel) erro
 		choice = llm.ToolChoiceNone
 	}
 	response, message, reasoning := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	// Thinking runs from its first piece to the answer's; a model that does not stream thinks from the request to the
+	// response.
+	sent := time.Now().UTC()
+	var began, answered time.Time
 	resp, err := r.send(ctx, s, req, in.Tools, choice, func(d llm.Delta) {
 		delta := store.Delta{Turn: s.turn.ID, Item: message, Text: d.Content}
+		firstThought := d.Reasoning != "" && began.IsZero()
+		firstAnswer := d.Content != "" && !began.IsZero() && answered.IsZero()
+		switch {
+		case firstThought:
+			began = time.Now().UTC()
+		case firstAnswer:
+			answered = time.Now().UTC()
+		}
 		if d.Reasoning != "" {
 			delta = store.Delta{Turn: s.turn.ID, Item: reasoning, Reasoning: d.Reasoning}
 		}
@@ -65,7 +79,8 @@ func (r *Runner) callModel(ctx context.Context, s *step, a agent.CallModel) erro
 	}
 	entries := []conversation.Entry{{Turn: s.turn.ID, Body: conversation.ModelResponded{Response: response, Usage: usage(resp), Stats: req.Stats, Native: resp.Message.Native}}}
 	if text := resp.Message.ReasoningContent; text != "" {
-		entries = append(entries, conversation.Entry{Turn: s.turn.ID, Item: reasoning, Body: conversation.Reasoning{Text: text, Response: response}})
+		thinking := conversation.Reasoning{Text: text, Response: response, Started: cmp.Or(began, sent), Ended: cmp.Or(answered, time.Now().UTC())}
+		entries = append(entries, conversation.Entry{Turn: s.turn.ID, Item: reasoning, Body: thinking})
 	}
 	if text := resp.Message.Content; text != "" {
 		entries = append(entries, conversation.Entry{Turn: s.turn.ID, Item: message, Body: conversation.AgentMessage{Text: text, Response: response}})

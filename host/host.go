@@ -65,7 +65,7 @@ type Config struct {
 	Tools []kit.Provider
 	// Allowlist, unless nil, is every tool the deployment lets be offered.
 	Allowlist []string
-	// Permissions are the deployment's, beneath every user's.
+	// Permissions are the deployment's, beneath every user's; the approval policy is on-request unless they set one.
 	Permissions policy.Settings
 	// Boxes gives a user's sandbox, where their paths are and their MCP servers run. Required: a host with one user
 	// passes sandbox.Here, and none gives every user this machine by leaving it out.
@@ -103,6 +103,10 @@ func New(ctx context.Context, cfg Config) (*Host, error) {
 	}
 	if cfg.Boxes == nil {
 		return nil, errors.New("host: Boxes is required")
+	}
+	cfg.Permissions.ApprovalPolicy = cmp.Or(cfg.Permissions.ApprovalPolicy, string(policy.OnRequest))
+	if err := cfg.Permissions.Check(); err != nil {
+		return nil, fmt.Errorf("host: the permissions: %w", err)
 	}
 	ms, err := newModels(cfg.Models, cfg.Connections, cfg.ClientFor)
 	if err != nil {
