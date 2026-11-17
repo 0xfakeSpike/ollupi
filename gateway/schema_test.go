@@ -17,9 +17,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/role"
-	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/cron"

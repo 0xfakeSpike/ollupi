@@ -10,9 +10,9 @@ import (
 	"net/http"
 	"reflect"
 
+	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/service"
-	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/wshub"

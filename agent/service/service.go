@@ -13,11 +13,11 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/event"
+	"github.com/0xfakeSpike/ollupi/agent/memory"
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/resources"
 	"github.com/0xfakeSpike/ollupi/agent/role"
-	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/repo/blobs"
