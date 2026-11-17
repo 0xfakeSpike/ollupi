@@ -200,7 +200,7 @@ func (s *step) permit(r *Runner, set tool.Set) error {
 	if s.parent != nil {
 		conversationLayer = s.parent.ParentLayer()
 	}
-	layers := slices.Concat(s.role.Own, user.Layers(policy.Layer{Of: "the default permission settings", Settings: r.deployment, Shared: true},
+	layers := slices.Concat(s.role.Own, user.Layers(user.Deployment(r.deployment),
 		s.settings, s.workspace, conversationLayer))
 	box := policy.Toolbox{Unavailable: set.Unavailable()}
 	s.specs = map[string]tool.Spec{}

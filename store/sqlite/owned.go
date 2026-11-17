@@ -122,6 +122,12 @@ func (r reader) EnvironmentInUse(owner, id string) (bool, error) {
 	return n > 0, err
 }
 
+func (r reader) WorkspaceBusy(owner, id string) (bool, error) {
+	var n int64
+	err := r.g.Raw("SELECT count(*) FROM threads WHERE user_id = ? AND workspace_id = ? AND status <> ?", owner, id, string(conversation.ThreadIdle)).Scan(&n).Error
+	return n > 0, err
+}
+
 type mcpRow struct {
 	Name    string
 	Command string

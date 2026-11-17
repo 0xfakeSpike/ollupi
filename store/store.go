@@ -41,6 +41,8 @@ type Reader interface {
 	Environments(user string) ([]user.Environment, error)
 	Environment(user, id string) (user.Environment, error)
 	EnvironmentInUse(user, id string) (bool, error)
+	// WorkspaceBusy says whether a conversation in the workspace has a turn in progress.
+	WorkspaceBusy(user, id string) (bool, error)
 	MCPServers(user string) ([]user.MCPServer, error)
 	CronJobs(user, thread string) ([]user.CronJob, error)
 	CronJob(id string) (user.CronJob, error)
@@ -72,6 +74,8 @@ type Reader interface {
 	MemoryState(user string) (memory.State, error)
 	// Ended are a user's turns ended after the one at after, in the order memory.Cursor reads them, at most limit.
 	Ended(user string, after memory.Cursor, limit int) ([]memory.Cursor, error)
+	// Unread counts a user's turns ended after the one at after.
+	Unread(user string, after memory.Cursor) (int64, error)
 }
 
 type Tx interface {
