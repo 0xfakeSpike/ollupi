@@ -26,10 +26,6 @@ type Orchestrator struct {
 	permissions             permission.Deployment
 	slots, userSlots        int
 	runLimit                time.Duration
-	// Without a lease the process trusts it is alone; onLeaseLost tells the host the orchestrator has stopped, and all
-	// else on the store must.
-	lease       time.Duration
-	onLeaseLost func()
 
 	ctx context.Context
 	res *resources.Resources
@@ -38,17 +34,16 @@ type Orchestrator struct {
 	events       chan func()
 	slotByThread map[string]*slot
 	slotsOfUser  map[string]int
-	owner        string
 	done         sync.WaitGroup
 }
 
 func New(store *db.DB, attachments blobs.Store, memory *memory.Manager, onEvent func(event.Event),
 	name, prompt, skillsDir string, permissions permission.Deployment,
-	slots, userSlots int, runLimit, lease time.Duration, onLeaseLost func()) *Orchestrator {
+	slots, userSlots int, runLimit time.Duration) *Orchestrator {
 	return &Orchestrator{
 		store: store, attachments: attachments, memory: memory,
 		name: name, prompt: prompt, skillsDir: skillsDir, permissions: permissions,
-		slots: slots, userSlots: userSlots, runLimit: runLimit, lease: lease, onLeaseLost: onLeaseLost,
+		slots: slots, userSlots: userSlots, runLimit: runLimit,
 		ev: event.Emitter{DB: store, OnEvent: onEvent},
 	}
 }
@@ -72,12 +67,6 @@ func (o *Orchestrator) Start(ctx context.Context, res *resources.Resources) erro
 		return err
 	}
 	o.ctx = ctx
-	if o.lease > 0 {
-		var err error
-		if o.ctx, err = o.claimShard(ctx); err != nil {
-			return fail(err)
-		}
-	}
 	if err := o.recover(); err != nil {
 		return fail(err)
 	}

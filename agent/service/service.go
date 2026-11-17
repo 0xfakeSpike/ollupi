@@ -16,6 +16,7 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/agent/event"
+	"github.com/0xfakeSpike/ollupi/agent/lease"
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/resources"
@@ -88,6 +89,7 @@ type Service struct {
 	ctx         context.Context
 	permissions permission.Deployment
 	o           *orchestrator.Orchestrator
+	lease       *lease.Lease
 	res         *resources.Resources
 	ev          event.Emitter
 
@@ -101,7 +103,7 @@ func New(cfg Config) *Service {
 	}
 	permissions := permission.Deployment{Settings: cfg.Settings, Shared: cfg.ToolsFor != nil, Tools: cfg.Tools}
 	o := orchestrator.New(cfg.DB, cfg.Attachments, cfg.Memory, cfg.OnEvent, cfg.Name, cfg.Prompt, cfg.SkillsDir, permissions,
-		cfg.Slots, cfg.UserSlots, cfg.RunLimit, cfg.Lease, cfg.OnLeaseLost)
+		cfg.Slots, cfg.UserSlots, cfg.RunLimit)
 	return &Service{cfg: cfg, permissions: permissions, o: o, ev: event.Emitter{DB: cfg.DB, OnEvent: cfg.OnEvent}, moving: map[string]bool{}}
 }
 
@@ -140,10 +142,28 @@ func (sv *Service) Start(ctx context.Context) error {
 	if err := sv.checkPromptFits(); err != nil {
 		return fmt.Errorf("agent %s: %w", sv.cfg.Name, err)
 	}
-	return sv.o.Start(ctx, res)
+	if sv.cfg.Lease > 0 {
+		if sv.lease, ctx, err = lease.Claim(ctx, sv.cfg.DB, sv.cfg.Lease, sv.cfg.OnLeaseLost); err != nil {
+			return fmt.Errorf("service: %w", err)
+		}
+	}
+	if err := sv.o.Start(ctx, res); err != nil {
+		sv.release()
+		return err
+	}
+	return nil
 }
 
-func (sv *Service) Wait() { sv.o.Wait() }
+func (sv *Service) Wait() {
+	sv.o.Wait()
+	sv.release()
+}
+
+func (sv *Service) release() {
+	if sv.lease != nil {
+		sv.lease.Release()
+	}
+}
 
 func (sv *Service) checkPromptFits() error {
 	models, _ := sv.res.Models()

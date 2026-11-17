@@ -9,12 +9,7 @@ var (
 	errCrashed = errors.New("orchestrator: an internal error stopped this")
 )
 
-func (o *Orchestrator) Wait() {
-	o.done.Wait()
-	if o.owner != "" {
-		o.store.ReleaseShard(o.owner) // a claim not released lapses with its lease
-	}
-}
+func (o *Orchestrator) Wait() { o.done.Wait() }
 
 func (o *Orchestrator) loop() {
 	defer o.done.Done()
