@@ -1,5 +1,5 @@
 // Package loader gives the model load_tools, which loads the tools a run defers: the ones it names to the model in
-// DEFERRED TOOLS without sending their definitions, as agent/contextmanager splits them when they do not all fit.
+// DEFERRED TOOLS without sending their definitions, as agent/role/contextmanager splits them when they do not all fit.
 package loader
 
 import (

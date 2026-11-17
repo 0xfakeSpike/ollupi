@@ -1,5 +1,5 @@
 // Package outputs gives the model read_tool_output, which reads the part of a tool output that the conversation shows
-// shortened: agent/contextmanager cuts a long output, and names the characters it left out, of the output's text as
+// shortened: agent/role/contextmanager cuts a long output, and names the characters it left out, of the output's text as
 // pkg/render renders it.
 package outputs
 

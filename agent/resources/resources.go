@@ -9,8 +9,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
-	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
@@ -77,12 +75,8 @@ func (r *Resources) Model(connection string) (llm.Model, error) {
 	return r.cfg.Models[i].Clone(), nil
 }
 
-func (r *Resources) Window(m llm.Model) (*contextmanager.Manager, error) {
-	limits, err := r.cfg.Connections[m.Connection].Limits(m.Name)
-	if err != nil {
-		return nil, err
-	}
-	return contextmanager.New(m.Name, limits), nil
+func (r *Resources) Limits(m llm.Model) (llm.Limits, error) {
+	return r.cfg.Connections[m.Connection].Limits(m.Name)
 }
 
 func (r *Resources) Client(user, connection string) (llm.Client, error) {
@@ -126,12 +120,4 @@ func (r *Resources) ConversationModel(last *db.TurnRow, requested string) (llm.M
 		_, connection = r.Models()
 	}
 	return r.Model(connection)
-}
-
-func (r *Resources) MainRole(model llm.Model) (role.Name, error) {
-	window, err := r.Window(model)
-	if err != nil {
-		return "", err
-	}
-	return role.ForMain(window.InputTokens()), nil
 }
