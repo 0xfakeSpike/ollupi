@@ -124,7 +124,7 @@ func TestSettingsAndMemoryStateAreEachUsers(t *testing.T) {
 	if a.RedactionKey == "" || a.RedactionKey == b.RedactionKey {
 		t.Errorf("redaction keys %q and %q", a.RedactionKey, b.RedactionKey)
 	}
-	if _, err := db.SetRedaction("a", false); err != nil {
+	if _, err := db.UpdateSettings("a", func(s SettingsRow) SettingsRow { s.Redaction = false; return s }); err != nil {
 		t.Fatal(err)
 	}
 	if b, err = db.Settings("b"); err != nil || !b.Redaction {

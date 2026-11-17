@@ -124,6 +124,22 @@ func (u *Users) Tools(user string) (*tools.Set, error) {
 	return s.set, nil
 }
 
+// The user's servers start again, as they are now, when next asked for.
+func (u *Users) Reset(user string) {
+	u.mu.Lock()
+	c := u.users[user]
+	u.mu.Unlock()
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.servers != nil {
+		c.servers.Close()
+		c.servers = nil
+	}
+}
+
 func (u *Users) Close() error {
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -171,6 +187,14 @@ func (u *Users) connect(box sandbox.Box, servers []Server) *Servers {
 		}
 	}
 	return out
+}
+
+// Check refuses a server that could never start, before it is kept.
+func (s Server) Check() error {
+	if err := checkName(s.Name, nil); err != nil {
+		return err
+	}
+	return checkTransport(s)
 }
 
 func checkName(name string, seen map[string]bool) error {

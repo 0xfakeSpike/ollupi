@@ -67,8 +67,6 @@ type Config struct {
 	// Runs a user's turns on their own key and quota; it should return the same client each time.
 	ClientFor func(user, connection string) (llm.Client, error)
 	Providers []tools.Provider
-	// Each user's own MCP servers; without it users share the tools of Providers.
-	MCP *mcp.Users
 	// Without it scheduled tasks are unavailable.
 	Jobs *cron.Jobs
 	// Layout: SkillsDir/<role>/<skill>/SKILL.md.
@@ -91,6 +89,7 @@ type Service struct {
 	permissions *permission.Manager
 	o           *orchestrator.Orchestrator
 	res         *resources.Resources
+	mcp         *mcp.Users
 	ev          *event.Bus
 
 	moveMu sync.Mutex
@@ -114,7 +113,7 @@ func (sv *Service) Start(ctx context.Context) error {
 	if sv.cfg.Events == nil {
 		return fmt.Errorf("service: Events is required")
 	}
-	deployment := permission.Deployment{Settings: sv.cfg.Settings, Shared: sv.cfg.MCP != nil, Tools: sv.cfg.Tools}
+	deployment := permission.Deployment{Settings: sv.cfg.Settings, Tools: sv.cfg.Tools}
 	sv.o = orchestrator.New(sv.cfg.DB, sv.cfg.Attachments, sv.cfg.Memory, sv.cfg.Events, sv.cfg.Name, sv.cfg.Prompt, sv.cfg.SkillsDir,
 		deployment, sv.cfg.Slots, sv.cfg.UserSlots, sv.cfg.RunLimit)
 	providers := append(slices.Clone(sv.cfg.Providers), plan.New(), subagent.New(sv.cfg.DB, sv.o.Started), userinput.New(),
@@ -132,12 +131,9 @@ func (sv *Service) Start(ctx context.Context) error {
 		}
 		providers = append(providers, skilltools.New(sv.cfg.SkillsDir))
 	}
-	var toolsFor func(string) (*tools.Set, error)
-	if sv.cfg.MCP != nil {
-		toolsFor = sv.cfg.MCP.Tools
-	}
+	sv.mcp = mcp.NewUsers(ctx, mcp.Client{Name: sv.cfg.Name}, sv.mcpServers, sv.cfg.BoxFor)
 	res, err := resources.New(ctx, resources.Config{
-		Models: sv.cfg.Models, Connections: sv.cfg.Connections, ClientFor: sv.cfg.ClientFor, ToolsFor: toolsFor,
+		Models: sv.cfg.Models, Connections: sv.cfg.Connections, ClientFor: sv.cfg.ClientFor, ToolsFor: sv.mcp.Tools,
 	}, providers)
 	if err != nil {
 		return fmt.Errorf("service: %w", err)
@@ -158,6 +154,7 @@ func (sv *Service) Start(ctx context.Context) error {
 
 func (sv *Service) Wait() {
 	sv.o.Wait()
+	sv.mcp.Close()
 	sv.cfg.DB.Release()
 }
 

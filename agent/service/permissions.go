@@ -7,6 +7,10 @@ import (
 	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
+func (sv *Service) UpdateUserPermissions(user string, settings permission.Settings) (db.SettingsRow, error) {
+	return sv.permissions.SetUser(user, func(permission.Settings) permission.Settings { return settings })
+}
+
 func (sv *Service) UpdateThreadSettings(user, threadID string, settings permission.Settings) (db.ThreadRow, error) {
 	t, err := sv.topThread(user, threadID)
 	if err != nil {

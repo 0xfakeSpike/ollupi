@@ -1311,13 +1311,136 @@
       ],
       "additionalProperties": false
     },
+    "MCPServer": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "command": {
+          "type": "string"
+        },
+        "args": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "url": {
+          "type": "string"
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/ServerStatus"
+            }
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "MCPServerChangedNotification": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "server": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/MCPServerConfig"
+            }
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "server"
+      ],
+      "additionalProperties": false
+    },
+    "MCPServerConfig": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "command": {
+          "type": "string"
+        },
+        "args": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "url": {
+          "type": "string"
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "MCPServerDeleteParams": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
     "MCPServerListResult": {
       "type": "object",
       "properties": {
         "data": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/ServerStatus"
+            "$ref": "#/$defs/MCPServer"
           }
         }
       },
@@ -2123,15 +2246,38 @@
       ],
       "additionalProperties": false
     },
+    "SettingsPermissionsParams": {
+      "type": "object",
+      "properties": {
+        "approvalPolicy": {
+          "$ref": "#/$defs/ApprovalPolicy"
+        },
+        "permissions": {
+          "$ref": "#/$defs/PermissionRules"
+        }
+      },
+      "required": [
+        "permissions"
+      ],
+      "additionalProperties": false
+    },
     "SettingsRow": {
       "type": "object",
       "properties": {
         "redaction": {
           "type": "boolean"
+        },
+        "memory": {
+          "type": "boolean"
+        },
+        "permissions": {
+          "$ref": "#/$defs/PermissionSettings"
         }
       },
       "required": [
-        "redaction"
+        "redaction",
+        "memory",
+        "permissions"
       ],
       "additionalProperties": false
     },
@@ -2143,11 +2289,14 @@
             "null",
             "boolean"
           ]
+        },
+        "memory": {
+          "type": [
+            "null",
+            "boolean"
+          ]
         }
       },
-      "required": [
-        "redaction"
-      ],
       "additionalProperties": false
     },
     "SubagentCall": {
@@ -3250,12 +3399,28 @@
         "$ref": "#/$defs/InitializeResult"
       }
     },
+    "mcpServer/delete": {
+      "params": {
+        "$ref": "#/$defs/MCPServerDeleteParams"
+      },
+      "result": {
+        "$ref": "#/$defs/Empty"
+      }
+    },
     "mcpServer/list": {
       "params": {
         "$ref": "#/$defs/Empty"
       },
       "result": {
         "$ref": "#/$defs/MCPServerListResult"
+      }
+    },
+    "mcpServer/set": {
+      "params": {
+        "$ref": "#/$defs/MCPServerConfig"
+      },
+      "result": {
+        "$ref": "#/$defs/MCPServerConfig"
       }
     },
     "memory/forget": {
@@ -3325,6 +3490,14 @@
     "settings/update": {
       "params": {
         "$ref": "#/$defs/SettingsUpdateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/SettingsRow"
+      }
+    },
+    "settings/updatePermissions": {
+      "params": {
+        "$ref": "#/$defs/SettingsPermissionsParams"
       },
       "result": {
         "$ref": "#/$defs/SettingsRow"
@@ -3507,6 +3680,9 @@
     },
     "item/updated": {
       "$ref": "#/$defs/ItemNotification"
+    },
+    "mcpServer/changed": {
+      "$ref": "#/$defs/MCPServerChangedNotification"
     },
     "settings/changed": {
       "$ref": "#/$defs/SettingsRow"

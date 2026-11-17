@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/0xfakeSpike/ollupi/memory"
+	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
@@ -11,6 +13,15 @@ import (
 // enforced.
 func WorkspaceLayer(name string, s Settings) Layer {
 	return Layer{Of: fmt.Sprintf("the permission settings of workspace %q", name), Settings: s}
+}
+
+// A user who does not use long-term memory is not offered its tools.
+func UserLayer(u db.SettingsRow) Layer {
+	l := Layer{Of: "your permission settings", Settings: u.Permissions}
+	if !u.Memory {
+		l.Without = []string{memory.ProviderName}
+	}
+	return l
 }
 
 func ThreadLayer(s Settings) Layer {

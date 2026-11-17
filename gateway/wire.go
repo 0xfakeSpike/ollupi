@@ -223,10 +223,18 @@ func memoryStatus(s db.MemoryStatus) MemoryStatus {
 }
 
 type SettingsRow struct {
-	Redaction bool `json:"redaction"`
+	Redaction   bool                  `json:"redaction"`
+	Memory      bool                  `json:"memory"`
+	Permissions db.PermissionSettings `json:"permissions"`
 }
 
-func settingsRow(s db.SettingsRow) SettingsRow { return SettingsRow{Redaction: s.Redaction} }
+func settingsRow(s db.SettingsRow) SettingsRow {
+	return SettingsRow{Redaction: s.Redaction, Memory: s.Memory, Permissions: s.Permissions}
+}
+
+func mcpServerConfig(r db.MCPServerRow) MCPServerConfig {
+	return MCPServerConfig{Name: r.Name, Command: r.Command, Args: r.Args, Env: r.Env, URL: r.URL, Headers: r.Headers}
+}
 
 type Found struct {
 	Threads  []ThreadRow     `json:"threads"`

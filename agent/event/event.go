@@ -28,6 +28,8 @@ const (
 	EnvironmentDeleted  Kind = "environment_deleted"
 	CronJobChanged      Kind = "cron_job_changed"
 	SettingsChanged     Kind = "settings_changed"
+	MCPServerChanged    Kind = "mcp_server_changed"
+	MCPServerDeleted    Kind = "mcp_server_deleted"
 	Error               Kind = "error"
 )
 
@@ -42,11 +44,12 @@ type Event struct {
 	Environment *db.EnvironmentRow
 	CronJobID   string
 	// CronJob is nil once the task is gone.
-	CronJob  *db.CronJobView
-	Settings *db.SettingsRow
-	Delta    string
-	Status   db.ThreadStatus
-	Error    string
+	CronJob   *db.CronJobView
+	Settings  *db.SettingsRow
+	MCPServer *db.MCPServerRow
+	Delta     string
+	Status    db.ThreadStatus
+	Error     string
 }
 
 // Bus hands each event to the subscribers of its user, and to those of every user, in the goroutine that publishes

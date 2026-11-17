@@ -59,6 +59,7 @@ const (
 	notifyEnvironmentChanged  = "environment/changed"
 	notifyCronChanged         = "cron/changed"
 	notifySettingsChanged     = "settings/changed"
+	notifyMCPServerChanged    = "mcpServer/changed"
 	notifyError               = "error"
 )
 
@@ -118,6 +119,8 @@ var protocol = struct {
 		"model/list":                  handle((*conn).modelList),
 		"tool/list":                   handle((*conn).toolList),
 		"mcpServer/list":              handle((*conn).mcpServerList),
+		"mcpServer/set":               handle((*conn).mcpServerSet),
+		"mcpServer/delete":            handle((*conn).mcpServerDelete),
 		"workspace/list":              handle((*conn).workspaceList),
 		"workspace/add":               handle((*conn).workspaceAdd),
 		"workspace/rename":            handle((*conn).workspaceRename),
@@ -140,6 +143,7 @@ var protocol = struct {
 		"search":                      handle((*conn).search),
 		"settings/read":               handle((*conn).settingsRead),
 		"settings/update":             handle((*conn).settingsUpdate),
+		"settings/updatePermissions":  handle((*conn).settingsPermissions),
 	},
 	notifications: map[string]reflect.Type{
 		notifyThreadChanged:       reflect.TypeFor[ThreadChangedNotification](),
@@ -156,6 +160,7 @@ var protocol = struct {
 		notifyEnvironmentChanged:  reflect.TypeFor[EnvironmentChangedNotification](),
 		notifyCronChanged:         reflect.TypeFor[CronChangedNotification](),
 		notifySettingsChanged:     reflect.TypeFor[SettingsRow](),
+		notifyMCPServerChanged:    reflect.TypeFor[MCPServerChangedNotification](),
 		notifyError:               reflect.TypeFor[ErrorNotification](),
 	},
 	serverRequests: map[string]serverRequest{
@@ -338,7 +343,33 @@ type ToolListResult struct {
 }
 
 type MCPServerListResult struct {
-	Data []mcp.ServerStatus `json:"data"`
+	Data []MCPServer `json:"data"`
+}
+
+// Env and header values are sent to the server as they are written.
+type MCPServerConfig struct {
+	Name    string            `json:"name"`
+	Command string            `json:"command,omitempty"`
+	Args    []string          `json:"args,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
+	URL     string            `json:"url,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+}
+
+type MCPServer struct {
+	MCPServerConfig
+	// Status is left out for a server that has not been started yet.
+	Status *mcp.ServerStatus `json:"status,omitempty"`
+}
+
+type MCPServerDeleteParams struct {
+	Name string `json:"name"`
+}
+
+// Server is left out once the server is deleted.
+type MCPServerChangedNotification struct {
+	Name   string           `json:"name"`
+	Server *MCPServerConfig `json:"server"`
 }
 
 // A "file" is copied when the message is sent; Name defaults to the file's name.
@@ -546,8 +577,14 @@ type SearchResult struct {
 	Memories []MemoryRow `json:"memories"`
 }
 
+// A setting left out stays as it is.
 type SettingsUpdateParams struct {
-	Redaction *bool `json:"redaction"`
+	Redaction *bool `json:"redaction,omitempty"`
+	Memory    *bool `json:"memory,omitempty"`
+}
+
+type SettingsPermissionsParams struct {
+	db.PermissionSettings
 }
 
 type ApprovalRequestParams struct {
@@ -604,6 +641,7 @@ var errorCodes = []struct {
 	{service.ErrInvalidName, jsonrpc.CodeInvalidParams},
 	{service.ErrInvalidPath, jsonrpc.CodeInvalidParams},
 	{service.ErrInvalidQuery, jsonrpc.CodeInvalidParams},
+	{service.ErrInvalidMCPServer, jsonrpc.CodeInvalidParams},
 	{service.ErrSearchTimedOut, errSearchTimedOut},
 	{service.ErrUnavailable, jsonrpc.CodeServerError},
 	{permission.ErrInvalidSettings, jsonrpc.CodeInvalidParams},
