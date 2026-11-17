@@ -56,6 +56,10 @@ func migrate(g *gorm.DB) error {
 
 func (s *Store) Close() error { return sqlitedb.Close(s.g) }
 
+// Gorm is the store's database handle, for measuring what the store does with it, as bench does; writing through it
+// goes around the epoch check and the feed.
+func (s *Store) Gorm() *gorm.DB { return s.g }
+
 func (s *Store) Feed() *store.Feed { return s.feed }
 
 func (s *Store) Fence(epoch int64) error {

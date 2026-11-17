@@ -18,12 +18,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/event"
-	"github.com/0xfakeSpike/ollupi/agent/permission"
-	"github.com/0xfakeSpike/ollupi/agent/service"
+	"github.com/0xfakeSpike/ollupi/host"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo/db"
-	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/0xfakeSpike/ollupi/tool"
+	"github.com/0xfakeSpike/ollupi/tool/kit"
 )
 
 // provider is a fake OpenAI-compatible endpoint. A request takes latency plus or minus jitter and is answered with
@@ -93,9 +91,11 @@ func (p *provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	answered, ask := 0, ""
 	for i := len(body.Messages) - 1; i >= 0; i-- {
-		if body.Messages[i].Role == "user" {
-			_ = json.Unmarshal(body.Messages[i].Content, &ask)
-			ask = ask[strings.LastIndex(ask, "\n")+1:] // after the "[sent …]" line the context adds
+		var content string
+		_ = json.Unmarshal(body.Messages[i].Content, &content)
+		// A subagent's report comes as a user message too, which is not what the user asked.
+		if body.Messages[i].Role == "user" && !strings.HasPrefix(content, "[report of ") {
+			ask = content[strings.LastIndex(content, "\n")+1:] // after the "[sent …]" line the context adds
 			break
 		}
 		if body.Messages[i].Role == "assistant" {
@@ -161,23 +161,23 @@ type work struct {
 
 func (work) Name() (string, string) { return "bench", "Bench tools." }
 
-func (work) ToolList(context.Context) ([]*tools.Spec, error) {
+func (work) Tools(context.Context) ([]kit.Spec, error) {
 	schema := map[string]any{"type": "object", "properties": map[string]any{"token": map[string]any{"type": "string"}}, "additionalProperties": false}
-	return []*tools.Spec{{Name: "bench__work", Description: "Does one unit of work.", InputSchema: schema,
-		Annotations: &tools.Annotations{ReadOnlyHint: true}}}, nil
+	return []kit.Spec{{Name: "bench__work", Description: "Does one unit of work.", InputSchema: schema,
+		Annotations: tool.Annotations{ReadOnlyHint: true}}}, nil
 }
 
-func (w work) Invoke(ctx context.Context, _ tools.Caller, _ string, args map[string]any) (tools.Result, error) {
+func (w work) Invoke(ctx context.Context, c tool.Call) (kit.Result, error) {
 	if w.log != nil {
-		if _, err := fmt.Fprintln(w.log, args["token"]); err != nil {
-			return tools.Result{}, err
+		if _, err := fmt.Fprintln(w.log, c.Arguments["token"]); err != nil {
+			return kit.Result{}, err
 		}
 	}
 	select {
 	case <-time.After(w.latency):
-		return tools.Result{Output: "ok"}, nil
+		return kit.Result{Output: "ok"}, nil
 	case <-ctx.Done():
-		return tools.Result{}, ctx.Err()
+		return kit.Result{}, ctx.Err()
 	}
 }
 
@@ -222,36 +222,18 @@ func burst(args []string) {
 		log.Fatal(err)
 	}
 	defer os.RemoveAll(dir)
-	store, err := db.Open(dir)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer store.Close()
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}}
-	events := event.New()
-	events.SubscribeAll(tr.on)
-	ag := service.New(service.Config{
-		BoxFor: here,
-		Name:   "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
+	e := newEngine(host.Config{
+		Home: dir, Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", *calls, map[string]llm.Limits{"fake": {Context: 200_000, Output: 32_000}})},
-		Providers:   []tools.Provider{work{latency: *toolLatency}},
-		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
-		Slots:       *slots, DB: store, Events: events,
+		Tools:       []kit.Provider{work{latency: *toolLatency}},
+		Slots:       *slots,
 	})
-	ctx, cancel := context.WithCancel(context.Background())
-	if err := ag.Start(ctx); err != nil {
-		log.Fatal(err)
-	}
-	newThread := func() string {
-		th, err := ag.StartThread(db.DefaultUser, "", "", "bench")
-		if err != nil {
-			log.Fatal(err)
-		}
-		return th.ID
-	}
+	e.Store.Feed().SubscribeAll(tr.on)
+	e.run()
 	threads := make([]string, *n)
 	for i := range threads {
-		threads[i] = newThread()
+		threads[i] = e.newThread(defaultUser)
 	}
 
 	if *profile != "" {
@@ -288,7 +270,7 @@ func burst(args []string) {
 	sampleAt.Store(startAt)
 	turns := make([]string, 0, *n)
 	for _, id := range threads {
-		turns = append(turns, tr.start(ag, db.DefaultUser, id, "work"))
+		turns = append(turns, tr.start(e, defaultUser, id, "work"))
 	}
 	submit := time.Since(startAt)
 	if *hold {
@@ -307,7 +289,7 @@ func burst(args []string) {
 			case <-done:
 				return
 			case <-time.After(*probeEvery):
-				id := tr.start(ag, db.DefaultUser, newThread(), "work")
+				id := tr.start(e, defaultUser, e.newThread(defaultUser), "work")
 				probesMu.Lock()
 				probes = append(probes, id)
 				probesMu.Unlock()
@@ -355,8 +337,7 @@ func burst(args []string) {
 		float64(*n)/total.Seconds(), pct(took, .5).Seconds(), pct(took, .95).Seconds(), pct(took, .99).Seconds(),
 		pctInt(rates, .1), pctInt(rates, .5), pctInt(rates, .9), p.peak.Load(), p.requests.Load(), p.refused.Load(), p.failed.Load(),
 		tr.failed.Load(), peakRSS.Load().(float64), float64(busyCPU)/float64(time.Millisecond)/float64(*n), strings.Join(probeTook, " "))
-	cancel()
-	ag.Wait()
+	e.stop()
 }
 
 // perSecond counts the turns ending in each whole second from the first ending to the last, so a stall shows as a low count.
