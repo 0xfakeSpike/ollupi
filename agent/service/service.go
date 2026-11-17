@@ -16,7 +16,6 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/agent/event"
-	"github.com/0xfakeSpike/ollupi/agent/lease"
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/resources"
@@ -69,12 +68,11 @@ type Config struct {
 	Providers []tools.Provider
 	ToolsFor  func(user string) (*tools.Set, error)
 	// Layout: SkillsDir/<role>/<skill>/SKILL.md.
-	SkillsDir      string
-	Attachments    blobs.Store
-	AttachmentsDir string
-	Memory         *memory.Manager
-	DB             *db.DB
-	OnEvent        func(event.Event)
+	SkillsDir   string
+	Attachments blobs.Store
+	Memory      *memory.Manager
+	DB          *db.DB
+	OnEvent     func(event.Event)
 	// A process that dies leaves its claim for this long. Without it the process trusts it is alone.
 	Lease time.Duration
 	// Required: a client names the paths it reads, so a one-user host passes sandbox.Here, and no host gives
@@ -86,10 +84,8 @@ type Config struct {
 
 type Service struct {
 	cfg         Config
-	ctx         context.Context
 	permissions permission.Deployment
 	o           *orchestrator.Orchestrator
-	lease       *lease.Lease
 	res         *resources.Resources
 	ev          event.Emitter
 
@@ -98,9 +94,6 @@ type Service struct {
 }
 
 func New(cfg Config) *Service {
-	if cfg.Attachments == nil && cfg.AttachmentsDir != "" {
-		cfg.Attachments = blobs.Dir(cfg.AttachmentsDir)
-	}
 	permissions := permission.Deployment{Settings: cfg.Settings, Shared: cfg.ToolsFor != nil, Tools: cfg.Tools}
 	o := orchestrator.New(cfg.DB, cfg.Attachments, cfg.Memory, cfg.OnEvent, cfg.Name, cfg.Prompt, cfg.SkillsDir, permissions,
 		cfg.Slots, cfg.UserSlots, cfg.RunLimit)
@@ -138,17 +131,17 @@ func (sv *Service) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("service: %w", err)
 	}
-	sv.ctx, sv.res = ctx, res
+	sv.res = res
 	if err := sv.checkPromptFits(); err != nil {
 		return fmt.Errorf("agent %s: %w", sv.cfg.Name, err)
 	}
 	if sv.cfg.Lease > 0 {
-		if sv.lease, ctx, err = lease.Claim(ctx, sv.cfg.DB, sv.cfg.Lease, sv.cfg.OnLeaseLost); err != nil {
+		if ctx, err = sv.cfg.DB.Claim(ctx, sv.cfg.Lease, sv.cfg.OnLeaseLost); err != nil {
 			return fmt.Errorf("service: %w", err)
 		}
 	}
 	if err := sv.o.Start(ctx, res); err != nil {
-		sv.release()
+		sv.cfg.DB.Release()
 		return err
 	}
 	return nil
@@ -156,13 +149,7 @@ func (sv *Service) Start(ctx context.Context) error {
 
 func (sv *Service) Wait() {
 	sv.o.Wait()
-	sv.release()
-}
-
-func (sv *Service) release() {
-	if sv.lease != nil {
-		sv.lease.Release()
-	}
+	sv.cfg.DB.Release()
 }
 
 func (sv *Service) checkPromptFits() error {

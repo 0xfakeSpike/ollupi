@@ -111,7 +111,7 @@ func TestThinkingIsReplayedAcrossTurns(t *testing.T) {
 			t.Fatal(err)
 		}
 		for {
-			v, err := store.Thread(th.ID)
+			v, _, err := store.ThreadPage(db.DefaultUser, th.ID, 0, 1000)
 			if err != nil {
 				t.Fatal(err)
 			}

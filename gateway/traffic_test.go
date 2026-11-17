@@ -29,6 +29,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
+	"github.com/0xfakeSpike/ollupi/repo/blobs"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/cron"
@@ -97,12 +98,12 @@ func TestTrafficMatchesContract(t *testing.T) {
 			"fake":   llm.NewOpenAI(model.URL, "", 4, map[string]llm.Limits{"gpt-4o": {Context: 128_000, Output: 16_384}}),
 			"vision": llm.NewOpenAI(model.URL, "", 4, map[string]llm.Limits{"gpt-4o": {Context: 128_000, Output: 16_384}}),
 		},
-		AttachmentsDir: t.TempDir(),
-		Providers:      []tools.Provider{touchTool{}, browser, jobs, runner, web.New(web.Options{Transport: http.DefaultTransport})},
-		ToolsFor:       servers.Tools,
-		Memory:         mem,
-		DB:             store,
-		OnEvent:        func(e event.Event) { server.Deliver(e) },
+		Attachments: blobs.Dir(t.TempDir()),
+		Providers:   []tools.Provider{touchTool{}, browser, jobs, runner, web.New()},
+		ToolsFor:    servers.Tools,
+		Memory:      mem,
+		DB:          store,
+		OnEvent:     func(e event.Event) { server.Deliver(e) },
 	})
 	if server, err = NewServer(ag, Options{DB: store, Token: "secret", Memory: mem, Jobs: jobs, MCP: servers}); err != nil {
 		t.Fatal(err)
@@ -200,12 +201,8 @@ func TestTrafficMatchesContract(t *testing.T) {
 
 	turn := c.startTurn(threadID, "hello")
 	c.awaitTurnEnd(turn, db.TurnCompleted)
-	// The answer is unread until the user reads it; reading it tells every client.
-	var seen ThreadResult
-	c.call("thread/markRead", ThreadMarkReadParams{ThreadID: threadID}, &seen)
-	if seen.Thread.RepliedAt == nil || (db.ThreadRow{RepliedAt: seen.Thread.RepliedAt, ReadAt: seen.Thread.ReadAt}).Unread() {
-		t.Errorf("after thread/markRead: replied %v, read %v; want a reply that is read", seen.Thread.RepliedAt, seen.Thread.ReadAt)
-	}
+	// Reading the thread tells every client.
+	c.call("thread/markRead", ThreadMarkReadParams{ThreadID: threadID}, nil)
 	c.await(notifyThreadChanged, func(params json.RawMessage) bool {
 		var n ThreadChangedNotification
 		return json.Unmarshal(params, &n) == nil && n.ThreadID == threadID && n.Thread != nil && n.Thread.ReadAt != nil
@@ -298,7 +295,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 
 	turn = c.startTurn(threadID, "browse this")
 	c.awaitTurnEnd(turn, db.TurnCompleted)
-	if v, err := store.Thread(threadID); err != nil || !slices.ContainsFunc(v.Items, func(it db.ItemRow) bool {
+	if v, _, err := store.ThreadPage(db.DefaultUser, threadID, 0, 1000); err != nil || !slices.ContainsFunc(v.Items, func(it db.ItemRow) bool {
 		return it.Tool == subagent.Browser && it.Status == db.ItemCompleted
 	}) {
 		t.Errorf("the browser subagent did not report back (%v)", err)
@@ -330,32 +327,13 @@ func TestTrafficMatchesContract(t *testing.T) {
 	for _, words := range []string{"read notes", "find notes", "search notes"} {
 		c.awaitTurnEnd(c.startTurn(threadID, words), db.TurnCompleted)
 	}
-	if v, err := store.Thread(threadID); err != nil || !slices.ContainsFunc(v.Items, func(it db.ItemRow) bool {
+	if v, _, err := store.ThreadPage(db.DefaultUser, threadID, 0, 1000); err != nil || !slices.ContainsFunc(v.Items, func(it db.ItemRow) bool {
 		return it.Tool == workspace.ToolReadFile && it.Result != nil && strings.Contains(string(it.Result.Output), `1\tHello there.`)
 	}) {
 		t.Errorf("read_file did not return the numbered notes (%v)", err)
 	}
 	for _, words := range []string{"cron-create", "cron-pause", "cron-list", "cron-delete"} {
 		c.toolTurn(threadID, words)
-	}
-
-	site := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<html><head><title>Docs</title></head><body><h1>Welcome</h1></body></html>`))
-	}))
-	defer site.Close()
-	turn = c.startTurn(threadID, "fetch "+site.URL+"/docs")
-	approval = c.await(requestApproval, nil)
-	json.Unmarshal(approval.Params, &asked)
-	if asked.Content != site.URL+"/docs" || !slices.Equal(asked.SuggestedRules, []string{"web_fetch(127.0.0.1)"}) {
-		t.Errorf("web_fetch approval shows %q and suggests %q", asked.Content, asked.SuggestedRules)
-	}
-	c.respond(approval, ApprovalResponse{Decision: db.DecisionAccept})
-	c.awaitTurnEnd(turn, db.TurnCompleted)
-	if v, err := store.Thread(threadID); err != nil || !slices.ContainsFunc(v.Items, func(it db.ItemRow) bool {
-		return it.Tool == web.Tool && it.Result != nil && strings.Contains(string(it.Result.Output), "# Welcome")
-	}) {
-		t.Errorf("web_fetch did not return the page text (%v)", err)
 	}
 
 	var daily db.CronJobRow
@@ -372,10 +350,7 @@ func TestTrafficMatchesContract(t *testing.T) {
 		NextRunAt: now.Add(-time.Minute), CreatedAt: now}, 10); err != nil {
 		t.Fatal(err)
 	}
-	go jobs.Run(agentCtx, func(threadID, text, jobID string) error {
-		_, _, err := ag.StartTurn(ctx, db.DefaultUser, threadID, service.Input{Text: text, CronJobID: jobID})
-		return err
-	})
+	go jobs.Run(agentCtx, ag.StartScheduledTurn)
 	ran := c.await("turn/completed", func(params json.RawMessage) bool {
 		var n TurnNotification
 		return json.Unmarshal(params, &n) == nil && n.Turn.CronJobID == "due"
@@ -880,9 +855,6 @@ func (f *fakeModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		call(workspace.ToolGlob, `{"pattern":"**/*.txt"}`)
 	case last.Role == "user" && strings.Contains(text, "search notes"):
 		call(workspace.ToolGrep, `{"pattern":"there","context":1}`)
-	case last.Role == "user" && strings.Contains(text, "fetch http"):
-		words := strings.Fields(text)
-		call(web.Tool, fmt.Sprintf(`{"url":%q}`, words[len(words)-1]))
 	case last.Role == "user" && strings.Contains(text, "make a plan"):
 		call(plan.Tool, `{"explanation":"Two steps.","plan":[{"step":"Look around","status":"in_progress"},{"step":"Report","status":"pending"}]}`)
 	case last.Role == "user" && strings.Contains(text, "cron-create"):

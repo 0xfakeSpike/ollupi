@@ -43,17 +43,7 @@ var imageTypes = map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "i
 
 // Stored before the message goes through the loop: a slow sandbox or blob store there would hold up every
 // thread on the shard.
-func (sv *Service) attach(ctx context.Context, user, threadID string, ins []AttachmentInput) ([]db.Attachment, error) {
-	t, err := sv.topThread(user, threadID)
-	if err != nil {
-		return nil, err
-	}
-	ctx, cancel := context.WithTimeout(ctx, attachmentTimeout)
-	defer cancel()
-	return sv.storeAttachments(ctx, t, ins)
-}
-
-func (sv *Service) storeAttachments(ctx context.Context, t db.ThreadRow, ins []AttachmentInput) ([]db.Attachment, error) {
+func (sv *Service) attach(ctx context.Context, t db.ThreadRow, ins []AttachmentInput) ([]db.Attachment, error) {
 	if len(ins) == 0 {
 		return nil, nil
 	}
@@ -63,11 +53,13 @@ func (sv *Service) storeAttachments(ctx context.Context, t db.ThreadRow, ins []A
 	if len(ins) > maxAttachments {
 		return nil, fmt.Errorf("service: %w: %d attachments; at most %d are accepted", ErrInvalidMessage, len(ins), maxAttachments)
 	}
+	ctx, cancel := context.WithTimeout(ctx, attachmentTimeout)
+	defer cancel()
 	out := make([]db.Attachment, 0, len(ins))
 	for _, in := range ins {
 		att, err := sv.storeAttachment(ctx, t, in)
 		if err != nil {
-			sv.removeAttachments(out)
+			sv.removeAttachments(ctx, out)
 			return nil, err
 		}
 		out = append(out, att)
@@ -203,8 +195,8 @@ func clipRunes(s string, n int) string {
 	return s
 }
 
-func (sv *Service) removeAttachments(atts []db.Attachment) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(sv.ctx), attachmentTimeout)
+func (sv *Service) removeAttachments(ctx context.Context, atts []db.Attachment) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), attachmentTimeout)
 	defer cancel()
 	for _, att := range atts {
 		sv.cfg.Attachments.Delete(ctx, att.File)

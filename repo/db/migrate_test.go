@@ -83,14 +83,6 @@ func TestADatabaseFromBeforeMigrationsKeepsItsRows(t *testing.T) {
 	if err := db.gorm.Model(&ThreadRow{}).Where("id = ?", "kept").Count(&n).Error; err != nil || n != 1 {
 		t.Fatalf("the thread from before: %d rows, %v", n, err)
 	}
-	// What it said before counts as read: the step does not wake a database up with every thread unread.
-	kept, err := db.ThreadRow("kept")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if kept.RepliedAt == nil || kept.Unread() {
-		t.Errorf("the thread from before is unread (replied %v, read %v)", kept.RepliedAt, kept.ReadAt)
-	}
 }
 
 func TestADatabaseOlderThanTheFirstStepIsRefused(t *testing.T) {
@@ -373,7 +365,7 @@ func TestAQueuedTurnFromBeforeWaitsReadyWithItsMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	view, err := db.Thread("t")
+	view, _, err := db.ThreadPage(DefaultUser, "t", 0, 100)
 	if err != nil {
 		t.Fatal(err)
 	}

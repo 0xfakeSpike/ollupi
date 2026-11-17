@@ -269,7 +269,7 @@ func TestOneProcessHoldsTheShard(t *testing.T) {
 	at := time.Date(2026, 11, 5, 8, 0, 0, 0, time.UTC)
 	claim := func(owner string, now time.Time, want bool) {
 		t.Helper()
-		if got, err := db.ClaimShard(owner, now, time.Minute); err != nil || got != want {
+		if got, err := db.claimShard(owner, now, time.Minute); err != nil || got != want {
 			t.Fatalf("%s claiming at %v: %v, %v", owner, now, got, err)
 		}
 	}
@@ -279,11 +279,11 @@ func TestOneProcessHoldsTheShard(t *testing.T) {
 	claim("second", at.Add(time.Minute), false)
 	claim("second", at.Add(2*time.Minute), true)
 	claim("first", at.Add(2*time.Minute), false)
-	if err := db.ReleaseShard("first"); err != nil {
+	if err := db.releaseShard("first"); err != nil {
 		t.Fatal(err)
 	}
 	claim("first", at.Add(2*time.Minute), false)
-	if err := db.ReleaseShard("second"); err != nil {
+	if err := db.releaseShard("second"); err != nil {
 		t.Fatal(err)
 	}
 	claim("first", at.Add(2*time.Minute), true)
@@ -296,10 +296,10 @@ func TestAFencedHandleStopsWritingOnceTheShardIsTaken(t *testing.T) {
 	}
 	defer db.Close()
 	at := time.Now()
-	if held, err := db.ClaimShard("first", at, time.Minute); err != nil || !held {
+	if held, err := db.claimShard("first", at, time.Minute); err != nil || !held {
 		t.Fatal(held, err)
 	}
-	db.Fence("first")
+	db.fence("first")
 	writes := map[string]func(n int) error{
 		"in a transaction": func(n int) error {
 			return db.Tx(func(tx *DB) error { return tx.EnsureUser(fmt.Sprint("tx", n)) })
@@ -312,7 +312,7 @@ func TestAFencedHandleStopsWritingOnceTheShardIsTaken(t *testing.T) {
 			t.Fatalf("%s: %v", name, err)
 		}
 	}
-	if held, err := db.ClaimShard("second", at.Add(time.Hour), time.Minute); err != nil || !held {
+	if held, err := db.claimShard("second", at.Add(time.Hour), time.Minute); err != nil || !held {
 		t.Fatal(held, err)
 	}
 	for name, write := range writes {
@@ -327,7 +327,7 @@ func TestAFencedHandleStopsWritingOnceTheShardIsTaken(t *testing.T) {
 	if slices.ContainsFunc(users, func(u string) bool { return strings.HasSuffix(u, "2") }) {
 		t.Errorf("a fenced write went through: %v", users)
 	}
-	if err := db.ReleaseShard("first"); err != nil {
+	if err := db.releaseShard("first"); err != nil {
 		t.Errorf("giving up a lease already lost: %v", err)
 	}
 }

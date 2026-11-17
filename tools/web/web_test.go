@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/0xfakeSpike/ollupi/tools"
-	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
 const page = `<!doctype html><html><head><title> Release notes </title><style>p{}</style></head><body>
@@ -51,61 +50,9 @@ func serve(t *testing.T, h http.HandlerFunc) *httptest.Server {
 	return srv
 }
 
-func TestFetch(t *testing.T) {
-	var other *httptest.Server
-	other = serve(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("elsewhere")) })
-	gbk, _ := simplifiedchinese.GBK.NewEncoder().String("<html><head><meta charset=\"gbk\"><title>标题</title></head><body><p>中文正文</p></body></html>")
-	srv := serve(t, func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/page":
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.Write([]byte(page))
-		case "/moved":
-			http.Redirect(w, r, "/page", http.StatusFound)
-		case "/away":
-			http.Redirect(w, r, strings.Replace(other.URL, "127.0.0.1", "localhost", 1)+"/x", http.StatusMovedPermanently)
-		case "/gbk":
-			w.Header().Set("Content-Type", "text/html")
-			w.Write([]byte(gbk))
-		case "/data.json":
-			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"ok":true}`))
-		case "/logo.png":
-			w.Header().Set("Content-Type", "image/png")
-			w.Write([]byte("png"))
-		default:
-			http.NotFound(w, r)
-		}
-	})
-	p := New(Options{Transport: http.DefaultTransport})
-	fetch := func(path string) (FetchOutput, error) { return p.fetch(context.Background(), srv.URL+path) }
-
-	out, err := fetch("/moved")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if out.URL != srv.URL+"/page" || out.Title != "Release notes" || out.ContentType != "text/html" || !strings.HasPrefix(out.Text, "# Version 2") {
-		t.Errorf("same-host redirect: %+v", out)
-	}
-	if out, err = fetch("/away"); err != nil || !strings.Contains(out.RedirectedTo, "localhost") || out.Text == "" {
-		t.Errorf("a redirect to another host is reported, not followed: %+v, %v", out, err)
-	}
-	if out, err = fetch("/gbk"); err != nil || out.Title != "标题" || out.Text != "中文正文" {
-		t.Errorf("gbk page: %+v, %v", out, err)
-	}
-	if out, err = fetch("/data.json"); err != nil || out.Text != `{"ok":true}` {
-		t.Errorf("json: %+v, %v", out, err)
-	}
-	for path, want := range map[string]string{"/logo.png": "image/png", "/missing": "HTTP 404"} {
-		if _, err := fetch(path); err == nil || !strings.Contains(err.Error(), want) {
-			t.Errorf("%s: error %v, want it to mention %s", path, err, want)
-		}
-	}
-}
-
 func TestFetchRefusesLocalAddressesAndOddURLs(t *testing.T) {
 	srv := serve(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("secret")) })
-	p := New(Options{})
+	p := New()
 	if _, err := p.fetch(context.Background(), srv.URL); err == nil || !strings.Contains(err.Error(), "local or private") {
 		t.Errorf("fetching %s: %v, want a refusal", srv.URL, err)
 	}

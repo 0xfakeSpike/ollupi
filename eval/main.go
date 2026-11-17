@@ -101,7 +101,7 @@ func main() {
 		Name:        "ollupi",
 		Models:      []llm.Model{{Name: model, Connection: "model"}},
 		Connections: map[string]llm.Client{"model": client},
-		Providers:   []tools.Provider{runner, web.New(web.Options{})},
+		Providers:   []tools.Provider{runner, web.New()},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 		DB:          store,
 		OnEvent: func(e event.Event) {
