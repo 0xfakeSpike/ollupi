@@ -31,14 +31,12 @@ type Server struct {
 	service      *service.Service
 	events       *event.Bus
 	authenticate Authenticate
-	shard        string
-	placements   Placements
-	load         Load
+	admit        func(ctx context.Context, user string) error
 	hosts        []string
 	origins      []string
 	hub          *wshub.Hub[*conn]
-	// ready holds the users found on this shard and made ready by EnsureUser, so that their reconnections ask and write
-	// nothing: a user stays on their shard, and none is removed.
+	// ready holds the users admitted and made ready by EnsureUser, so that their reconnections ask and write nothing: a
+	// user admitted stays admitted, and none is removed.
 	ready  sync.Map
 	served sync.WaitGroup
 }
@@ -68,7 +66,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, ok := s.ready.Load(user); !ok {
-		if !s.mine(w, r, user) {
+		if !s.admits(w, r, user) {
 			return
 		}
 		if err := s.service.EnsureUser(user); err != nil {
@@ -205,3 +203,19 @@ func version() string {
 	}
 	return "unknown"
 }
+
+func (s *Server) admits(w http.ResponseWriter, r *http.Request, user string) bool {
+	if s.admit == nil {
+		return true
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), lookupTimeout)
+	defer cancel()
+	if err := s.admit(ctx, user); err != nil {
+		s.hub.Refuse(w, "this user is not served here now; try again")
+		return false
+	}
+	return true
+}
+
+// Connections is how many clients are connected now.
+func (s *Server) Connections() int { return s.hub.Count() }

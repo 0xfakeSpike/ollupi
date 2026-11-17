@@ -21,7 +21,9 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/service"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
+	"github.com/0xfakeSpike/ollupi/repo/catalog"
 	"github.com/0xfakeSpike/ollupi/repo/db"
+	"github.com/0xfakeSpike/ollupi/shard"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
 	"github.com/0xfakeSpike/ollupi/tools/userinput"
@@ -247,15 +249,36 @@ func crashChild(args []string) {
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(*url, "", *calls, map[string]llm.Limits{"fake": {Context: 200_000, Output: 32_000}})},
 		Providers:   []tools.Provider{work{latency: *toolLatency, log: toolLog}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
-		Slots:       *slots, DB: store, Lease: *lease,
+		Slots:       *slots, DB: store,
 		Events: events,
 	})
-	ctx, cancel := context.WithCancel(context.Background())
 	startAt := time.Now()
-	if err := ag.Start(ctx); err != nil {
+	run := func(ctx context.Context) error {
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		if err := ag.Start(ctx); err != nil {
+			return err
+		}
+		return crashServe(ctx, cancel, ag, *dir, *submit, time.Since(startAt), answer)
+	}
+	// With a lease the shard is held through a catalog beside the database, as a standby waits on it.
+	if *lease == 0 {
+		err = run(context.Background())
+	} else {
+		cat, cerr := catalog.Open(filepath.Join(*dir, "catalog.sqlite"))
+		if cerr != nil {
+			log.Fatal(cerr)
+		}
+		defer cat.Close()
+		m := shard.Member{ID: "bench", Accepting: true, Directory: cat, TTL: *lease}
+		err = m.Run(context.Background(), store, run)
+	}
+	if err != nil {
 		log.Fatal(err)
 	}
-	started := time.Since(startAt)
+}
+
+func crashServe(ctx context.Context, cancel context.CancelFunc, ag *service.Service, dir string, submit int, started time.Duration, answer func(threadID, itemID string)) error {
 	pending, err := ag.AllPendingRequests(db.DefaultUser)
 	if err != nil {
 		log.Fatal(err)
@@ -264,7 +287,7 @@ func crashChild(args []string) {
 		answer(r.Thread.ID, r.Item.ID)
 	}
 	kinds := []string{kindWork, kindWork, kindWork, kindAsk, kindDelegate}
-	for i := range *submit {
+	for i := range submit {
 		th, err := ag.StartThread(db.DefaultUser, "", "", "bench")
 		if err != nil {
 			log.Fatal(err)
@@ -275,7 +298,7 @@ func crashChild(args []string) {
 	}
 	fmt.Printf("ready start_ms=%d answered=%d\n", started.Milliseconds(), len(pending))
 
-	g, err := gorm.Open(sqlite.Open(filepath.Join(*dir, "data", "ollupi.sqlite")), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	g, err := gorm.Open(sqlite.Open(filepath.Join(dir, "data", "ollupi.sqlite")), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -292,4 +315,5 @@ func crashChild(args []string) {
 	cancel()
 	ag.Wait()
 	fmt.Println("drained")
+	return nil
 }
