@@ -44,13 +44,13 @@ type Reader interface {
 	// WorkspaceBusy says whether a conversation in the workspace has a turn in progress.
 	WorkspaceBusy(user, id string) (bool, error)
 	MCPServers(user string) ([]user.MCPServer, error)
-	CronJobs(user, thread string) ([]user.CronJob, error)
+	CronJobs(user, thread string) ([]Task, error)
 	CronJob(id string) (user.CronJob, error)
 	// Due are the scheduled tasks not paused whose next run has come.
 	Due(now time.Time) ([]user.CronJob, error)
 	// Threads are a user's own conversations, the latest active first; more says whether there are others after them.
 	Threads(user string, f ThreadFilter) (threads []Thread, more bool, err error)
-	// Waiting are a user's conversations, subagents' among them, that wait on the user for an approval or an answer.
+	// Waiting are a user's conversations, subagents' among them, that wait on the user themselves for an approval or an answer.
 	Waiting(user string) ([]string, error)
 	// Children are the conversations of the subagents a conversation launched.
 	Children(thread string) ([]Thread, error)
@@ -111,7 +111,7 @@ type Thread struct {
 	user.Thread
 	User string
 	Head int64
-	// Status is this conversation's own.
+	// Status is this conversation's with its subagents' waits on the user rolled up into it.
 	Status   conversation.ThreadStatus
 	Runnable bool
 }
@@ -145,7 +145,7 @@ type Owned struct {
 	EnvironmentDeleted string
 	MCPServer          *user.MCPServer
 	MCPServerDeleted   string
-	CronJob            *user.CronJob
+	CronJob            *Task
 	CronJobDeleted     string
 	Memory             *memory.Memory
 }
@@ -190,7 +190,18 @@ type ThreadCursor struct {
 type Found struct {
 	Threads  []Thread
 	Messages []Hit
-	Tasks    []user.CronJob
+	Tasks    []Task
+}
+
+// Task is a scheduled task as a list shows it: with the conversation it runs in, and the turn it sent last.
+type Task struct {
+	user.CronJob
+	Title     string
+	Workspace string
+	Archived  bool
+	// LastTurn is "" before the task first runs.
+	LastTurn string
+	LastRun  *time.Time
 }
 
 type Hit struct {

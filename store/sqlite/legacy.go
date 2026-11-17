@@ -424,7 +424,7 @@ func (b *logBuilder) item(turn string, it legacyItem, respond func(legacyItem)) 
 			respond(it)
 			var body conversation.Body = conversation.AgentMessage{Text: it.Text, Response: it.ResponseID}
 			if it.Type == "reasoning" {
-				body = conversation.Reasoning{Text: it.Text, Response: it.ResponseID}
+				body = conversation.Reasoning{Text: it.Text, Response: it.ResponseID, Started: at, Ended: ended}
 			}
 			b.add(turn, it.ID, at, body)
 		}

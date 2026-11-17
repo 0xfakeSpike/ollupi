@@ -28,7 +28,16 @@ type Turn struct {
 	CronJob  string
 	QueuedAt time.Time
 	Ended    *Ending
+	// Usage is the sum of the responses'.
+	Usage     Usage
+	Responses []Used
+}
+
+// Used is what one model response used.
+type Used struct {
+	Response string
 	Usage    Usage
+	Stats    ContextStats
 }
 
 type Ending struct {
@@ -155,10 +164,13 @@ func (v *View) Apply(e Entry) {
 		v.add(e, Item{Kind: ItemAgentMessage, Status: Done, Text: b.Text, Response: b.Response})
 	case Reasoning:
 		v.add(e, Item{Kind: ItemReasoning, Status: Done, Text: b.Text, Response: b.Response})
+		it := &v.Items[v.item[e.Item]]
+		it.StartedAt, it.CompletedAt = b.Started, &b.Ended
 	case ModelResponded:
 		v.Responses = append(v.Responses, Response{ID: b.Response, Turn: e.Turn, Seq: e.Seq, Usage: b.Usage, Stats: b.Stats, Native: b.Native})
 		t := &v.Turns[v.turn[e.Turn]]
 		t.Usage = t.Usage.Plus(b.Usage)
+		t.Responses = append(t.Responses, Used{Response: b.Response, Usage: b.Usage, Stats: b.Stats})
 	case ModelFailed:
 		v.add(e, Item{Kind: ItemError, Status: Errored, Error: b.Error})
 	case ToolCall:
@@ -384,7 +396,7 @@ const (
 
 var ThreadStatuses = []ThreadStatus{ThreadIdle, ThreadActive, ThreadWaitingOnApproval, ThreadWaitingOnUserInput}
 
-// Status is this conversation's alone; a store rolls up its running subagents' into it.
+// Status is this conversation's alone; RollUp takes in its subagents'.
 func (v View) Status() ThreadStatus {
 	if _, ok := v.Active(); !ok {
 		return ThreadIdle
@@ -396,6 +408,20 @@ func (v View) Status() ThreadStatus {
 		return ThreadWaitingOnUserInput
 	}
 	return ThreadActive
+}
+
+// RollUp is a conversation's status with its subagents' in it: what it waits on the user for first, then what one of
+// its subagents does, an approval before an answer.
+func RollUp(own ThreadStatus, subagents []ThreadStatus) ThreadStatus {
+	if own == ThreadWaitingOnApproval || own == ThreadWaitingOnUserInput {
+		return own
+	}
+	for _, s := range []ThreadStatus{ThreadWaitingOnApproval, ThreadWaitingOnUserInput} {
+		if slices.Contains(subagents, s) {
+			return s
+		}
+	}
+	return own
 }
 
 func (it Item) open() bool {

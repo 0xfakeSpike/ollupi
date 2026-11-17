@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -229,4 +230,43 @@ func runnable(t *testing.T, s *Store) []store.Runnable {
 		t.Fatal(err)
 	}
 	return out
+}
+
+func TestASubagentWaitingOnTheUserMakesItsParentWait(t *testing.T) {
+	s := open(t, t.TempDir())
+	start(t, s, "u", "th")
+	now := time.Now().UTC()
+	update(t, s, func(tx store.Tx) error {
+		if err := tx.CreateThread(store.Thread{User: "u", Thread: user.Thread{ID: "child", Parent: "th", ParentItem: "launch", Created: now, Updated: now}}); err != nil {
+			return err
+		}
+		_, err := tx.Append("child", conversation.Entry{Turn: "c1", Body: conversation.TurnQueued{Role: "general-sub-agent"}},
+			conversation.Entry{Turn: "c1", Item: "m1", Body: conversation.UserMessage{Text: "look"}})
+		return err
+	})
+	var heard []store.Event
+	s.Feed().Subscribe("u", func(e store.Event) { heard = append(heard, e) })
+	update(t, s, func(tx store.Tx) error {
+		_, err := tx.Append("child", conversation.Entry{Turn: "c1", Body: conversation.ModelResponded{Response: "r1"}},
+			conversation.Entry{Turn: "c1", Item: "c", Body: conversation.ToolCall{Call: "x", Tool: "run_command", Response: "r1"}},
+			conversation.Entry{Turn: "c1", Item: "c", Body: conversation.ApprovalAsked{Approval: "a1"}})
+		return err
+	})
+	told := slices.ContainsFunc(heard, func(e store.Event) bool {
+		return e.Thread == "th" && e.Change != nil && e.Change.Status == conversation.ThreadWaitingOnApproval
+	})
+	if th := thread(t, s, "th"); th.Status != conversation.ThreadWaitingOnApproval || !told {
+		t.Errorf("the parent %s, told %v", th.Status, told)
+	}
+	waiting := read(t, s, func(r store.Reader) ([]string, error) { return r.Waiting("u") })
+	if len(waiting) != 1 || waiting[0] != "child" {
+		t.Errorf("waiting on the user themselves %v", waiting)
+	}
+	update(t, s, func(tx store.Tx) error {
+		_, err := tx.Append("child", conversation.Entry{Turn: "c1", Item: "c", Body: conversation.Decided{Decision: conversation.Decline, By: "u"}})
+		return err
+	})
+	if th := thread(t, s, "th"); th.Status != conversation.ThreadActive {
+		t.Errorf("the parent once answered %s", th.Status)
+	}
 }
