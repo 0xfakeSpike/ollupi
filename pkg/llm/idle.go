@@ -9,14 +9,12 @@ import (
 	"time"
 )
 
-// idleTimeout is how long a provider may send nothing, neither the answer's headers nor any of its stream, before
-// the try is given up. Calls stream their answers, so a long answer keeps sending; one that stalls is cut off here
-// rather than held in its slot for as long as the turn may run.
+// Calls stream their answers, so a long answer keeps sending; one that stalls is cut off here rather than held in
+// its slot for as long as the turn may run.
 const idleTimeout = 3 * time.Minute
 
 var errIdle = fmt.Errorf("llm: the provider sent nothing for %s", idleTimeout)
 
-// idleTransport ends a request once its provider has sent nothing for idle.
 type idleTransport struct {
 	base http.RoundTripper
 	idle time.Duration

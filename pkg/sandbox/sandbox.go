@@ -313,8 +313,6 @@ func (s *Sandbox) Run(ctx context.Context, c Command) (Result, error) {
 	return res, nil
 }
 
-// command builds the process for c under the sandbox's rules, with the proxy it reaches the network through and the
-// tag its denials are logged under, when it has them.
 func (s *Sandbox) command(ctx context.Context, c Command) (*exec.Cmd, *proxy, string, error) {
 	if !s.Enforced() || c.Unsandboxed {
 		cmd := exec.CommandContext(ctx, c.Program, c.Args...)

@@ -98,8 +98,6 @@ func (sv *Service) AnswerUserInput(user, threadID, itemID string, answers userin
 	return sv.answerUserInput(threadID, itemID, answers)
 }
 
-// SkipUserInput declines a question the agent asked: the call ends declined, telling the model the user chose not to
-// answer, and the turn goes on.
 func (sv *Service) SkipUserInput(user, threadID, itemID string) error {
 	if err := sv.owned(user, threadID); err != nil {
 		return err
@@ -169,8 +167,8 @@ func (sv *Service) answerUserInput(threadID, itemID string, answers userinput.An
 	})
 }
 
-// respond records apply's answer to the request match finds. The thread's state is read before the answer is made,
-// so the database refuses it with db.ErrNoSuchRequest if the thread no longer waits on that request.
+// The thread's state is read before the answer is made, so the database refuses it with db.ErrNoSuchRequest
+// if the thread no longer waits on that request.
 func (sv *Service) respond(threadID string, match func(db.ItemRow) bool, apply func(db.ItemRow) (db.ItemRow, error)) (db.ItemRow, error) {
 	st, err := sv.cfg.DB.ThreadState(threadID)
 	if err != nil {
@@ -195,7 +193,6 @@ func (sv *Service) respond(threadID string, match func(db.ItemRow) bool, apply f
 	return stored, nil
 }
 
-// answer responds to a request and wakes the thread to go on with it.
 func (sv *Service) answer(threadID string, match func(db.ItemRow) bool, apply func(db.ItemRow) (db.ItemRow, error)) error {
 	if _, err := sv.respond(threadID, match, apply); err != nil {
 		return err

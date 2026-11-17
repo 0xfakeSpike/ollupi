@@ -11,20 +11,16 @@ import (
 	"context"
 	"errors"
 	"io"
-	"log/slog"
 	"net/http"
 
-	"github.com/0xfakeSpike/ollupi/gateway"
 	"github.com/0xfakeSpike/ollupi/router"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	extprocv3 "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 )
 
-// ShardHeader carries the shard of a handshake's user, for the load balancer to route on. The callout sets it over
-// any a client sent, and removes such a one when it places no shard.
+// The callout sets ShardHeader over any a client sent, and removes a client's one when it places no shard.
 const ShardHeader = "x-ollupi-shard"
 
-// Callout is the external processor; register it on a gRPC server with extprocv3.RegisterExternalProcessorServer.
 type Callout struct {
 	extprocv3.UnimplementedExternalProcessorServer
 	locator *router.Locator
@@ -34,8 +30,7 @@ func New(locator *router.Locator) *Callout {
 	return &Callout{locator: locator}
 }
 
-// Process answers each step of a request the load balancer sends: the request's headers with where its user is, and
-// any other step, which a route extension does not send, unchanged.
+// A route extension sends only the request's headers; any other step is answered unchanged.
 func (c *Callout) Process(stream extprocv3.ExternalProcessor_ProcessServer) error {
 	for {
 		req, err := stream.Recv()
@@ -68,7 +63,6 @@ func (c *Callout) Process(stream extprocv3.ExternalProcessor_ProcessServer) erro
 	}
 }
 
-// place sets ShardHeader to the shard of the user whose token the headers carry, or removes it.
 func (c *Callout) place(ctx context.Context, headers *corev3.HeaderMap) *extprocv3.CommonResponse {
 	header := http.Header{}
 	for _, h := range headers.GetHeaders() {
@@ -78,11 +72,8 @@ func (c *Callout) place(ctx context.Context, headers *corev3.HeaderMap) *extproc
 		}
 		header.Add(h.GetKey(), value)
 	}
-	user, shard, err := c.locator.Locate(ctx, header)
+	_, shard, err := c.locator.Locate(ctx, header)
 	if err != nil {
-		if !errors.Is(err, gateway.ErrUnknownToken) {
-			slog.Error("user not placed on a shard; the router takes the connection", "user", user, "err", err)
-		}
 		return &extprocv3.CommonResponse{HeaderMutation: &extprocv3.HeaderMutation{RemoveHeaders: []string{ShardHeader}}}
 	}
 	return &extprocv3.CommonResponse{HeaderMutation: &extprocv3.HeaderMutation{SetHeaders: []*corev3.HeaderValueOption{{

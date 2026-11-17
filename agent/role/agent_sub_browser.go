@@ -10,19 +10,12 @@ import (
 )
 
 const (
-	// BrowserSub is the subagent that works only in the built-in browser; the tool of its name launches it.
-	BrowserSub Name = subagent.Browser
-	// BrowserProvider is the provider of the built-in browser's tools, which the desktop app connects.
-	BrowserProvider = "browser"
+	BrowserSub      Name = subagent.Browser
+	BrowserProvider      = "browser"
 )
 
-// browserSub reports to the agent that launched it, so its own rules are the whole of its prompt's beginning. It works
-// with the browser's tools alone, reads the outputs they shorten, uses the skills it has, and keeps the plan the user
-// follows its progress by; it loads no memory.
 var browserSub = Role{name: BrowserSub, rules: browserSubRules, own: []permission.Layer{browserSubLayer}, maxModelCalls: 200, maxToolCalls: 400, maxConsecutiveFailures: 10}
 
-// browserSubLayer leaves the browser subagent the browser's tools alone, with the outputs they shorten, its skills, and
-// the plan the user follows its progress by.
 var browserSubLayer = permission.Layer{Of: "the browser subagent's role", Providers: []string{BrowserProvider, outputs.ProviderName, skilltools.ProviderName, plan.ProviderName}}
 
 const browserSubRules = `You are a subagent that does one task in the built-in browser and reports back to the agent that launched you. You do the task by calling the browser's tools in a loop; every result comes back to you as an observation. When the task is done, or cannot go further, reply without calling a tool: that reply is your report.

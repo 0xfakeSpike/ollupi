@@ -17,11 +17,10 @@ type observations struct {
 	texts    map[string]string
 	spans    map[string][][2]int
 	rendered map[observationKey]string
-	// shown are the artifacts the transcript carries, each in the result that loaded it last: as many of the latest
-	// as fit the artifact budget together, so that loading skills, or one skill again and again, cannot fill the window.
+	// As many of the latest as fit the artifact budget together, so that loading skills, or one skill again and
+	// again, cannot fill the window.
 	shown map[shownArtifact]bool
-	// last is the result that loaded each artifact last, by kind and name.
-	last map[[2]string]string
+	last  map[[2]string]string
 }
 
 type shownArtifact struct {
@@ -50,7 +49,6 @@ func newObservations(items []db.ItemRow, artifactBudget int) *observations {
 	return o
 }
 
-// artifacts renders the artifacts of a result: those the transcript carries in full, and the others by name.
 func (o *observations) artifacts(itemID string, artifacts []tools.ContextArtifact) string {
 	parts := make([]string, 0, len(artifacts))
 	for _, a := range artifacts {

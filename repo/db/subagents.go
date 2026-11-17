@@ -10,9 +10,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// WriteSubagent writes the conversation of a subagent that the call item of the parent thread launches, with its
-// first turn ready: task as its message, and turn's agent as its role, on the model of the parent's current turn. The subagent's conversation is the parent's, in its workspace and environment, under title. A call
-// that launched one already gets it back.
 func (d *DB) WriteSubagent(parentThreadID, itemID, title string, turn TurnRow, task string) (ThreadRow, error) {
 	var child ThreadRow
 	err := d.Tx(func(tx *DB) error {
@@ -50,7 +47,6 @@ func (d *DB) WriteSubagent(parentThreadID, itemID, title string, turn TurnRow, t
 	return child, nil
 }
 
-// RunningSubagents are the subagents the turn launched whose turns have not ended, oldest first.
 func (d *DB) RunningSubagents(turnID string) ([]string, error) {
 	var ids []string
 	err := d.gorm.Raw(`SELECT c.id FROM threads c JOIN items i ON i.id = c.parent_item_id
@@ -60,16 +56,12 @@ func (d *DB) RunningSubagents(turnID string) ([]string, error) {
 	return ids, err
 }
 
-// A SubagentReport is the report a subagent's end wrote into the turn that launched it.
 type SubagentReport struct {
 	Thread ThreadRow
 	Turn   TurnRow
 	Item   ItemRow
 }
 
-// reportToParent writes, as a subagent's turn ends, its report into the turn that launched it, unless that turn ended
-// first: the subagent's final answer, or why it has none. That turn, when it waits on its subagents and this was the
-// last of them still running, is ready again.
 func (d *DB) reportToParent(child ThreadRow, ended TurnRow) (*SubagentReport, error) {
 	if child.ParentItemID == "" {
 		return nil, nil

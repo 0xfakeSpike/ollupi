@@ -16,22 +16,17 @@ import (
 
 type ItemRow struct {
 	ID string `gorm:"primaryKey" json:"id"`
-	// items_thread_order holds a thread's items in conversationOrder. items_compactions and items_carried serve RunItems;
-	// their conditions are compactedItem and carriedItem, word for word.
+	// The conditions of items_compactions and items_carried are compactedItem and carriedItem, word for word.
 	ThreadID string     `gorm:"not null;uniqueIndex:items_thread_seq,priority:1;index:items_thread_order,priority:1;index:items_compactions,priority:1,where:type = 'contextCompaction' AND status = 'completed';index:items_carried,priority:1,where:type = 'userMessage' OR (type = 'toolCall' AND (approval ->> '$.decision' = 'acceptForSession' OR (status = 'completed' AND (tool = 'load_tools' OR result -> '$.artifacts' IS NOT NULL))))" json:"-"`
 	Thread   *ThreadRow `gorm:"constraint:OnDelete:CASCADE" json:"-"`
-	// items_turn finds a turn's items by type and status: its open tool calls, its messages.
-	TurnID string   `gorm:"not null;index:items_turn,priority:1" json:"turnId"`
-	Turn   *TurnRow `gorm:"constraint:OnDelete:CASCADE" json:"-"`
-	// TurnSeq is the seq of the item's turn, which places it in the conversation before Seq does.
-	TurnSeq int `gorm:"not null;default:0;index:items_thread_order,priority:2;index:items_compactions,priority:2;index:items_carried,priority:2" json:"-"`
-	// Seq numbers the thread's items as they were written.
-	Seq    int        `gorm:"not null;uniqueIndex:items_thread_seq,priority:2;index:items_turn,priority:4;index:items_thread_order,priority:3;index:items_compactions,priority:3;index:items_carried,priority:3" json:"seq"`
-	Type   ItemType   `gorm:"not null;index:items_turn,priority:2" json:"type"`
-	Status ItemStatus `gorm:"not null;index:items_turn,priority:3" json:"status"`
-	CallID string     `gorm:"not null;default:''" json:"callId,omitempty"`
-	// LaunchItemID is, on an agentReport, the call that launched the subagent: its call id cannot name it, since a
-	// provider may number calls afresh in each response.
+	TurnID   string     `gorm:"not null;index:items_turn,priority:1" json:"turnId"`
+	Turn     *TurnRow   `gorm:"constraint:OnDelete:CASCADE" json:"-"`
+	TurnSeq  int        `gorm:"not null;default:0;index:items_thread_order,priority:2;index:items_compactions,priority:2;index:items_carried,priority:2" json:"-"`
+	Seq      int        `gorm:"not null;uniqueIndex:items_thread_seq,priority:2;index:items_turn,priority:4;index:items_thread_order,priority:3;index:items_compactions,priority:3;index:items_carried,priority:3" json:"seq"`
+	Type     ItemType   `gorm:"not null;index:items_turn,priority:2" json:"type"`
+	Status   ItemStatus `gorm:"not null;index:items_turn,priority:3" json:"status"`
+	CallID   string     `gorm:"not null;default:''" json:"callId,omitempty"`
+	// The launching call's call id cannot name it, since a provider may number calls afresh in each response.
 	LaunchItemID string             `gorm:"not null;default:''" json:"launchItemId,omitempty"`
 	Tool         string             `gorm:"not null;default:''" json:"tool,omitempty"`
 	Server       string             `gorm:"not null;default:''" json:"server,omitempty"`
@@ -51,8 +46,7 @@ type ItemRow struct {
 	Arguments         string          `gorm:"not null;default:''" json:"arguments,omitempty"`
 	PreparedExecution *tools.Prepared `gorm:"serializer:json" json:"preparedExecution,omitempty"`
 	Result            *ToolResult     `gorm:"serializer:json" json:"result,omitempty"`
-	// Native is the model provider's own record of the response this item belongs to, kept on the item that
-	// carries the response's usage and replayed as is to the same kind of provider.
+	// Kept on the item that carries the response's usage, and replayed as is to the same kind of provider.
 	Native []byte `json:"-"`
 }
 
@@ -68,9 +62,8 @@ const (
 	ItemContextCompaction ItemType = "contextCompaction"
 	ItemMemoryContext     ItemType = "memoryContext"
 	ItemError             ItemType = "error"
-	// ItemAgentReport is how a subagent ended, come back to the turn that launched it: its final answer as the result,
-	// or why it has none. Text is the subagent's task, as its conversation is titled; LaunchItemID is the launching
-	// call, and CallID its call id.
+	// Text is the subagent's task, as its conversation is titled; LaunchItemID is the launching call, and CallID its
+	// call id.
 	ItemAgentReport ItemType = "agentReport"
 )
 
@@ -104,8 +97,7 @@ type ContextStats struct {
 	ToolsTokens      int          `json:"toolsTokens"`
 	EstimatedTokens  int          `json:"estimatedTokens"`
 	CalibratedTokens int          `json:"calibratedTokens,omitempty"`
-	// ThroughSeq is the seq of the latest item the prompt was built from: input after it the response did not see.
-	ThroughSeq int `json:"throughSeq,omitempty"`
+	ThroughSeq       int          `json:"throughSeq,omitempty"`
 }
 
 type MemoryStats struct {
@@ -294,9 +286,7 @@ func (d *DB) RecordItem(threadID string, item ItemRow) (ItemRow, bool, error) {
 	return stored, isNew, nil
 }
 
-// AnswerRequest records the user's answer to a request, as RecordItem does, if the turn still waits on the user for
-// it; otherwise it returns ErrNoSuchRequest. What the caller read may be stale: a message may have declined the request,
-// or another answer taken it.
+// What the caller read may be stale: a message may have declined the request, or another answer taken it.
 func (d *DB) AnswerRequest(threadID string, answer ItemRow) (ItemRow, error) {
 	var stored ItemRow
 	err := d.Tx(func(tx *DB) error {
@@ -328,7 +318,6 @@ func (d *DB) AnswerRequest(threadID string, answer ItemRow) (ItemRow, error) {
 
 var errNotCurrent = errors.New("not the thread's current turn")
 
-// turnOf is the thread's current turn, which the item must belong to.
 func (d *DB) turnOf(threadID string, item ItemRow) (TurnRow, error) {
 	active, err := d.ActiveTurn(threadID)
 	if errors.Is(err, ErrNotFound) || (err == nil && active.ID != item.TurnID) {
@@ -350,10 +339,6 @@ func (d *DB) recordIn(threadID string, active TurnRow, item ItemRow) (ItemRow, b
 	return stored, isNew, err
 }
 
-// Steer writes a user message into the current turn. A turn that waits on the user takes the message in place of what
-// it waits for, and is ready again, so its next run reads the message: the calls of the turn that are still to run,
-// the one awaiting approval or an answer among them, are declined. A turn that waits on its subagents is ready again:
-// they go on, and report to it as they end. It returns the declined calls as closed.
 func (d *DB) Steer(threadID string, message ItemRow) (ItemRow, []ItemRow, error) {
 	var stored ItemRow
 	var closed []ItemRow
@@ -448,8 +433,6 @@ func (it ItemRow) ended() bool {
 	return it.Status == ItemCompleted || it.Status == ItemFailed || it.Status == ItemDeclined
 }
 
-// saveItemOf writes the item and returns it as stored, saying whether it is new; it reads only the item as it was,
-// which may not change its thread, type or turn, nor a prepared execution once it has one, nor end and start again.
 func (d *DB) saveItemOf(threadID string, it ItemRow) (ItemRow, bool, error) {
 	prev, err := d.Item(it.ID)
 	isNew := errors.Is(err, ErrNotFound)

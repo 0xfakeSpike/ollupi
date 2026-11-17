@@ -13,13 +13,11 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// The shard's schema changes by the numbered steps in migrations/, as repo/sqlitedb runs them. 0001_init.sql is the
-// schema as it was when they began.
+// 0001_init.sql is the schema as it was when the steps began.
 
 //go:embed migrations/*.sql
 var migrationFiles embed.FS
 
-// shardSteps are the SQL of the shard's migrations in order.
 func shardSteps() ([]string, error) {
 	dir, _ := fs.Sub(migrationFiles, "migrations") // a valid path: it cannot fail
 	return sqlitedb.Steps(dir)
@@ -57,7 +55,6 @@ func (d *DB) migrate() error {
 	return sqlitedb.Migrate(d.gorm, all, version)
 }
 
-// missingFromFirstStep names the tables and columns the first step makes that the database lacks.
 func missingFromFirstStep(g *gorm.DB, first string) ([]string, error) {
 	scratch, err := gorm.Open(sqlite.Open("file::memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
@@ -90,7 +87,6 @@ func missingFromFirstStep(g *gorm.DB, first string) ([]string, error) {
 	return missing, nil
 }
 
-// columns are the database's columns, as table.column.
 func columns(g *gorm.DB) ([]string, error) {
 	var out []string
 	err := g.Raw("SELECT m.name || '.' || c.name FROM sqlite_master m JOIN pragma_table_info(m.name) c " +

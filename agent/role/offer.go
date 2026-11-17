@@ -12,10 +12,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
 
-// Offer splits the tools the role's permissions let the run see into the ones sent to the model and the ones only named
-// in DEFERRED TOOLS, for load_tools to load: it sends the ones the window fits around the role's core tools, the
-// built-in tools it is sent whatever the window holds (none: every built-in tool), and the ones the conversation's
-// load_tools calls loaded, which follow the others in load order, so the tool list only grows.
+// Loaded tools follow the others in load order, so the tool list only grows.
 func (rt *Runtime) Offer() (offered, deferred []tools.ToolDescriptor) {
 	offered, deferred = rt.window.Split(launchable(rt.checker.Tools()), rt.role.core)
 	for _, name := range rt.loadedTools() {
@@ -28,8 +25,7 @@ func (rt *Runtime) Offer() (offered, deferred []tools.ToolDescriptor) {
 	return offered, deferred
 }
 
-// launchable leaves out the tool of each kind of subagent whose role's layer keeps none of the visible tools: its
-// subagent would have nothing to work with.
+// A subagent whose role's layer keeps none of the visible tools would have nothing to work with.
 func launchable(visible []tools.ToolDescriptor) []tools.ToolDescriptor {
 	layers := map[string]permission.Layer{string(GeneralSub): generalSubLayer, string(BrowserSub): browserSubLayer}
 	out := slices.Clone(visible)
@@ -46,7 +42,6 @@ func launchable(visible []tools.ToolDescriptor) []tools.ToolDescriptor {
 	return out
 }
 
-// loadedTools are the tools the conversation's load_tools calls loaded, in load order.
 func (rt *Runtime) loadedTools() []string {
 	var names []string
 	for _, it := range rt.conversation() {
@@ -63,7 +58,6 @@ func (rt *Runtime) loadedTools() []string {
 	return names
 }
 
-// tool is the tool of that name the role offers the run, as the conversation is now.
 func (rt *Runtime) tool(name string) (tools.ToolDescriptor, bool) {
 	offered, _ := rt.Offer()
 	i := slices.IndexFunc(offered, func(d tools.ToolDescriptor) bool { return d.Name == name })

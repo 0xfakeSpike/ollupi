@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -18,16 +17,13 @@ import (
 	lru "github.com/hashicorp/golang-lru/v2"
 )
 
-// Directory finds the shard of each user, placing those new to it, and where each shard runs; Catalog is one.
 type Directory interface {
 	Assign(ctx context.Context, user string) (string, error)
 	Address(ctx context.Context, shard string) (string, error)
 }
 
-// Locator says which shard the user a connection's token belongs to is on. The Router uses it, and so does a load
-// balancer's callout (router/extproc) where the load balancer holds the connections. It remembers where each user it
-// found is, since a user stays on their shard once placed: the reconnections that follow an outage reach the
-// directory only for users it has not seen.
+// Locator remembers where each user it found is, since a user stays on their shard once placed: the reconnections
+// that follow an outage reach the directory only for users it has not seen.
 type Locator struct {
 	authenticate gateway.Authenticate
 	directory    Directory
@@ -49,8 +45,7 @@ func NewLocator(authenticate gateway.Authenticate, directory Directory) (*Locato
 	return &Locator{authenticate: authenticate, directory: directory, placed: placed}, nil
 }
 
-// Locate says whose token the headers of a connection carry and which shard they are on; gateway.ErrUnknownToken
-// when it is no one's.
+// Locate returns gateway.ErrUnknownToken when the token is no one's.
 func (l *Locator) Locate(ctx context.Context, header http.Header) (user, shard string, err error) {
 	ctx, cancel := context.WithTimeout(ctx, lookupTimeout)
 	defer cancel()
@@ -77,17 +72,14 @@ func (l *Locator) shardOf(ctx context.Context, user string) (string, error) {
 	return shard, nil
 }
 
-// Router sends each connection to the shard of its user, holding it on the way. Where a load balancer can place
-// connections itself through router/extproc, the router is where it sends those its callout could not place. It
-// keeps nothing, so any number of them can run. A connection that drops when a shard changes hands comes back
-// through it to the new holder.
+// Router keeps nothing, so any number of them can run. Where a load balancer places connections through
+// router/extproc, the router gets those its callout could not place.
 type Router struct {
 	locator   *Locator
 	transport *http.Transport
 }
 
-// shardAnswerTimeout is how long a shard may take to answer a connection it took: a shard that hangs would otherwise
-// hold the client forever. The WebSocket that follows is not bound by it.
+// A shard that hangs would otherwise hold the client forever. The WebSocket that follows is not bound by it.
 const shardAnswerTimeout = 30 * time.Second
 
 func NewRouter(locator *Locator) *Router {
@@ -101,13 +93,12 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	user, shard, err := rt.locator.Locate(r.Context(), r.Header)
+	_, shard, err := rt.locator.Locate(r.Context(), r.Header)
 	if errors.Is(err, gateway.ErrUnknownToken) {
 		http.Error(w, "invalid or missing gateway token", http.StatusUnauthorized)
 		return
 	}
 	if err != nil {
-		slog.Error("user not placed on a shard", "user", user, "err", err)
 		http.Error(w, "no shard can take this user now", http.StatusServiceUnavailable)
 		return
 	}
@@ -115,13 +106,11 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	address, err := rt.locator.directory.Address(ctx, shard)
 	cancel()
 	if err != nil {
-		slog.Error("shard not found", "shard", shard, "err", err)
 		http.Error(w, "the user's shard cannot be found now", http.StatusServiceUnavailable)
 		return
 	}
 	target, err := url.Parse(address)
 	if err != nil {
-		slog.Error("shard address not usable", "shard", shard, "address", address, "err", err)
 		http.Error(w, "the user's shard cannot be reached now", http.StatusServiceUnavailable)
 		return
 	}
@@ -133,7 +122,6 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		},
 		// The shard may be changing hands: the client tries again, and by then the new holder has published itself.
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
-			slog.Warn("shard not reached", "shard", shard, "address", address, "err", err)
 			http.Error(w, "the user's shard cannot be reached now; try again", http.StatusServiceUnavailable)
 		},
 	}

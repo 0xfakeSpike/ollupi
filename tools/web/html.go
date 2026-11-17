@@ -11,7 +11,6 @@ import (
 	"golang.org/x/net/html/atom"
 )
 
-// skipped elements hold no reading text: scripts and styles, page chrome, and forms.
 var skipped = map[atom.Atom]bool{
 	atom.Script: true, atom.Style: true, atom.Noscript: true, atom.Template: true, atom.Svg: true, atom.Iframe: true,
 	atom.Head: true, atom.Nav: true, atom.Footer: true, atom.Aside: true, atom.Form: true, atom.Button: true, atom.Select: true,
@@ -27,7 +26,6 @@ var headings = map[atom.Atom]string{atom.H1: "# ", atom.H2: "## ", atom.H3: "###
 
 var blankLines = regexp.MustCompile(`\n{3,}`)
 
-// htmlText renders a page as Markdown-like text: headings, paragraphs, lists, links, code and table rows.
 func htmlText(r io.Reader, base *url.URL) (title, text string, err error) {
 	doc, err := html.Parse(r)
 	if err != nil {
@@ -49,7 +47,6 @@ type textWriter struct {
 	space bool
 }
 
-// text writes the words of a text node; whitespace between nodes becomes one space.
 func (w *textWriter) text(s string) {
 	if strings.TrimSpace(s) == "" {
 		w.space = w.space || s != ""
@@ -64,7 +61,6 @@ func (w *textWriter) text(s string) {
 	w.space = unicode.IsSpace(rune(s[len(s)-1]))
 }
 
-// flush writes the space left pending before the next word, unless a line or a space already separates them.
 func (w *textWriter) flush() {
 	if out := w.b.String(); w.space && out != "" && !strings.HasSuffix(out, "\n") && !strings.HasSuffix(out, " ") {
 		w.b.WriteByte(' ')

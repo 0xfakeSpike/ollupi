@@ -7,7 +7,7 @@ import (
 type Limits struct {
 	Context int `json:"context"`
 	Output  int `json:"output"`
-	// MaxInput is the most input the model accepts, for models that cap it below the window. Zero means no cap of its own.
+	// MaxInput is for models that cap input below the window; zero means no cap of its own.
 	MaxInput int `json:"input,omitempty"`
 }
 
@@ -15,7 +15,6 @@ type Limits struct {
 // model that allows a long one gives up no more than a quarter of its window for it.
 func (l Limits) reserve() int { return min(l.Output, l.Context/4) }
 
-// Input is the room a request has: what the window leaves beside the answer's reserve, within the model's own cap.
 func (l Limits) Input() int {
 	room := l.Context - l.reserve()
 	if l.MaxInput > 0 {
@@ -24,8 +23,7 @@ func (l Limits) Input() int {
 	return room
 }
 
-// Answer is the most an answer may take beside input tokens of input. The reserve stands however large input is, as
-// input is an estimate.
+// The reserve stands however large input is, as input is an estimate.
 func (l Limits) Answer(input int) int {
 	return min(l.Output, max(l.reserve(), l.Context-input))
 }

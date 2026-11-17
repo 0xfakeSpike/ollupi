@@ -165,7 +165,6 @@ func TestTrafficMatchesContract(t *testing.T) {
 	// A conversation can be started in it, and holds it until it is gone.
 	var elsewhere ThreadResult
 	c.call("thread/start", ThreadStartParams{WorkspaceID: workspaceID, EnvironmentID: cloud.Environment.ID, Title: "on the cloud"}, &elsewhere)
-	c.await("thread/started", nil)
 	if elsewhere.Thread.EnvironmentID != db.Ref(cloud.Environment.ID) {
 		t.Errorf("the conversation runs in %q, want %q", elsewhere.Thread.EnvironmentID, cloud.Environment.ID)
 	}
@@ -192,7 +191,6 @@ func TestTrafficMatchesContract(t *testing.T) {
 
 	var th ThreadResult
 	c.call("thread/start", ThreadStartParams{WorkspaceID: workspaceID, Title: "hello"}, &th)
-	c.await("thread/started", nil)
 	threadID := th.Thread.ID
 	c.call("thread/updatePermissions", ThreadPermissionsParams{ThreadID: threadID}, nil)
 	c.await(notifyThreadChanged, func(params json.RawMessage) bool {
@@ -253,7 +251,6 @@ func TestTrafficMatchesContract(t *testing.T) {
 	var tab ThreadResult
 	c.call("thread/start", ThreadStartParams{WorkspaceID: workspaceID,
 		PermissionSettings: db.PermissionSettings{Rules: db.PermissionRules{Allow: []string{"click(example.com)"}}}}, &tab)
-	c.await("thread/started", nil)
 	browser.open(tab.Thread.ID, "example.com")
 	c.awaitTurnEnd(c.startTurn(tab.Thread.ID, "click the link"), db.TurnCompleted)
 	browser.open(tab.Thread.ID, "other.org")
@@ -402,7 +399,6 @@ func TestTrafficMatchesContract(t *testing.T) {
 
 	var general ThreadResult
 	c.call("thread/start", ThreadStartParams{Title: "hello"}, &general)
-	c.await("thread/started", nil)
 	c.awaitTurnEnd(c.startTurn(general.Thread.ID, "hello"), db.TurnCompleted)
 	c.call("thread/read", ThreadPageParams{ThreadID: general.Thread.ID}, &page)
 	if prompts, _ := checkMemory(t, page.Items, "n1"); prompts != 1 {
@@ -459,7 +455,6 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.refused("turn/start", TurnStartParams{ThreadID: general.Thread.ID, Input: pictured}, jsonrpc.CodeInvalidParams, "does not accept images")
 	var shown ThreadResult
 	c.call("thread/start", ThreadStartParams{}, &shown)
-	c.await("thread/started", nil)
 	var started TurnResult
 	c.call("turn/start", TurnStartParams{ThreadID: shown.Thread.ID, Input: pictured, Connection: "vision"}, &started)
 	c.awaitTurnEnd(started.Turn.ID, db.TurnCompleted)
@@ -514,7 +509,6 @@ func TestTrafficMatchesContract(t *testing.T) {
 	c.call("thread/archive", ThreadArchiveParams{ThreadID: general.Thread.ID, Archived: &restore}, nil)
 	var doomed ThreadResult
 	c.call("thread/start", ThreadStartParams{}, &doomed)
-	c.await("thread/started", nil)
 	c.refused("cron/create", CronCreateParams{ThreadID: doomed.Thread.ID, Name: "Daily Check", Spec: "@daily", Prompt: "daily check"}, jsonrpc.CodeInvalidParams, "must match")
 	c.call("cron/create", CronCreateParams{ThreadID: doomed.Thread.ID, Name: "daily", Spec: "@daily", Prompt: "daily check"}, nil)
 	turn = c.startTurn(doomed.Thread.ID, "ask me first")

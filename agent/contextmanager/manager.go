@@ -25,9 +25,8 @@ const (
 	fixedPercent       = 50
 	artifactPercent    = 15
 	toolPercent        = 10
-	// messagePercent is the most of the input one user message may take: with the system prompt and tools held to
-	// fixedPercent and responsePercent kept for the answer, a message this size is always sent, and compaction makes
-	// room for it in the history.
+	// With the system prompt and tools held to fixedPercent and responsePercent kept for the answer, a message
+	// this size is always sent, and compaction makes room for it in the history.
 	messagePercent = 25
 	sentLayout     = "Mon 2006-01-02 15:04 -07:00"
 )
@@ -133,14 +132,12 @@ func (m *Manager) calibrate(s *db.ContextStats, items []db.ItemRow) {
 	}
 }
 
-// InputTokens is the most input the model takes beside the room kept for its answer.
 func (m *Manager) InputTokens() int { return m.inputTokens }
 
 func (m *Manager) SkillBudget() int {
 	return share(m.inputTokens, 4)
 }
 
-// MessageBudget is the most tokens one user message may take.
 func (m *Manager) MessageBudget() int {
 	return share(m.inputTokens, messagePercent)
 }
@@ -185,7 +182,7 @@ func prettyJSON(v any) string {
 	return string(b)
 }
 
-// partTokens counts the images and files of messages, which the JSON estimate leaves out.
+// The JSON estimate leaves out the images and files of messages.
 func partTokens(messages []llm.ChatMessage) int {
 	n := 0
 	for _, m := range messages {

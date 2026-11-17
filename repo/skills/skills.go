@@ -17,11 +17,10 @@ import (
 )
 
 const (
-	maxDescriptionRunes  = 1024
-	maxInstructionRunes  = 20000
-	maxInstructionLines  = 500
-	defaultResourceRunes = 12000
-	// MaxResourceRunes is the most runes a page of a resource holds.
+	maxDescriptionRunes   = 1024
+	maxInstructionRunes   = 20000
+	maxInstructionLines   = 500
+	defaultResourceRunes  = 12000
 	MaxResourceRunes      = 30000
 	maxReadableResourceB  = 1 << 20
 	maxListedResources    = 200
@@ -59,11 +58,7 @@ type ResourcePage struct {
 	EOF             bool   `json:"eof"`
 }
 
-// The skills of a role are the folders in the directory of the role's name under the skills root:
-// root/<role>/<skill>/SKILL.md. A skill that more roles have is installed in each of their directories. They are read
-// where they are used, so that a skill installed or changed takes effect from the next run.
-
-// Load reads the skills of the role under root, by name. A role without a directory has none.
+// Skills are read where they are used, so that a skill installed or changed takes effect from the next run.
 func Load(root, role string) ([]Skill, error) {
 	root = filepath.Clean(strings.TrimSpace(root))
 	dir := filepath.Join(root, role)
@@ -86,8 +81,8 @@ func Load(root, role string) ([]Skill, error) {
 	return out, nil
 }
 
-// Check reads every directory under root as the skills of a role among roles, so that a directory of no role, a
-// skill outside a role's directory and a skill that cannot be read show when ollupi starts.
+// So that a directory of no role, a skill outside a role's directory and a skill that cannot be read show when ollupi
+// starts.
 func Check(root string, roles []string) error {
 	root = filepath.Clean(strings.TrimSpace(root))
 	entries, err := os.ReadDir(root)
@@ -112,7 +107,6 @@ func Check(root string, roles []string) error {
 	return nil
 }
 
-// Find is the skill of that name among skills.
 func Find(skills []Skill, name string) (Skill, bool) {
 	i := slices.IndexFunc(skills, func(s Skill) bool { return s.Name == strings.TrimSpace(name) })
 	if i < 0 {
@@ -121,8 +115,6 @@ func Find(skills []Skill, name string) (Skill, bool) {
 	return skills[i], true
 }
 
-// Page reads a page of runes of a resource of the skill: limit of them from offset, or a default number when limit
-// is 0.
 func (skill Skill) Page(resourcePath string, offset, limit int) (ResourcePage, error) {
 	resourcePath = filepath.ToSlash(strings.TrimSpace(resourcePath))
 	if resourcePath == "" {
@@ -189,7 +181,6 @@ type frontmatter struct {
 	Metadata    map[string]any `yaml:"metadata"`
 }
 
-// scanRole loads the skills in the directory of a role under root.
 func scanRole(root, dir string) (map[string]Skill, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {

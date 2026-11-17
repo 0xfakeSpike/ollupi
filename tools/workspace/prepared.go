@@ -52,7 +52,6 @@ func (r *Provider) validatePrepared(ctx context.Context, d dirs, p *tools.Prepar
 	return nil
 }
 
-// sameExecutable checks that program still resolves to the executable the user approved for p.
 func (d dirs) sameExecutable(ctx context.Context, program string, p *tools.Prepared) error {
 	current, err := d.box.Executable(ctx, program, p.Cwd)
 	if err != nil {

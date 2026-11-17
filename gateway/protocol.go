@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"log/slog"
 	"net/http"
 	"reflect"
 
@@ -47,7 +46,6 @@ const (
 )
 
 const (
-	notifyThreadStarted       = "thread/started"
 	notifyThreadChanged       = "thread/changed"
 	notifyTurnQueued          = "turn/queued"
 	notifyTurnStarted         = "turn/started"
@@ -70,7 +68,6 @@ const (
 	requestUserInput = "item/tool/requestUserInput"
 )
 
-// Reconnect is what a client does after its connection ends, or its handshake is refused, in a given way.
 type Reconnect string
 
 const (
@@ -88,8 +85,7 @@ const (
 	ReconnectRetryAfter Reconnect = "retryAfter"
 )
 
-// Ending is one way a connection ends, or its handshake is refused, and what the client does then. Once a connection
-// is back, the client reads again what it shows with thread/read, since it heard nothing meanwhile.
+// Once a connection is back, the client reads again what it shows with thread/read: it heard nothing meanwhile.
 type Ending struct {
 	Name      string    `json:"name"`
 	Reconnect Reconnect `json:"reconnect"`
@@ -101,11 +97,9 @@ var protocol = struct {
 	serverRequests      map[string]serverRequest
 	clientNotifications map[string]reflect.Type
 	errors              map[int]string
-	// closes are the WebSocket close codes a connection ends with; handshakes the HTTP statuses a handshake is
-	// refused with.
-	closes     map[int]Ending
-	handshakes map[int]Ending
-	limits     Limits
+	closes              map[int]Ending
+	handshakes          map[int]Ending
+	limits              Limits
 }{
 	methods: map[string]method{
 		methodInitialize:              handle((*conn).initialize),
@@ -149,7 +143,6 @@ var protocol = struct {
 		"settings/update":             handle((*conn).settingsUpdate),
 	},
 	notifications: map[string]reflect.Type{
-		notifyThreadStarted:       reflect.TypeFor[ThreadResult](),
 		notifyThreadChanged:       reflect.TypeFor[ThreadChangedNotification](),
 		notifyTurnQueued:          reflect.TypeFor[TurnNotification](),
 		notifyTurnStarted:         reflect.TypeFor[TurnNotification](),
@@ -214,9 +207,7 @@ var protocol = struct {
 	limits: Limits{SearchRunes: maxSearchRunes, SearchTerms: maxSearchTerms},
 }
 
-// Limits are the bounds the gateway holds a request to, so that a client can keep within them before it asks.
 type Limits struct {
-	// SearchRunes and SearchTerms bound a search's query: its characters, and its words.
 	SearchRunes int `json:"searchRunes"`
 	SearchTerms int `json:"searchTerms"`
 }
@@ -279,7 +270,7 @@ type InitializeResult struct {
 
 type ThreadStartParams struct {
 	WorkspaceID string `json:"workspaceId,omitempty"`
-	// EnvironmentID is where the conversation runs: one of the user's environments. Empty is the one on this machine.
+	// Empty is the environment on this machine.
 	EnvironmentID string `json:"environmentId,omitempty"`
 	Title         string `json:"title,omitempty"`
 	db.PermissionSettings
@@ -310,7 +301,7 @@ type ThreadRenameParams struct {
 	Title    string `json:"title"`
 }
 
-// ThreadMarkReadParams names the thread the user has read: it is no longer unread until another of its turns ends.
+// The thread is unread again once another of its turns ends.
 type ThreadMarkReadParams struct {
 	ThreadID string `json:"threadId"`
 }
@@ -352,8 +343,7 @@ type MCPServerListResult struct {
 	Data []mcp.ServerStatus `json:"data"`
 }
 
-// UserInput is one part of a message: "text", or a "file" on this machine, an image or a text file, which the
-// engine copies when the message is sent. Name defaults to the file's name.
+// A "file" is copied when the message is sent; Name defaults to the file's name.
 type UserInput struct {
 	Type     string `json:"type"`
 	Text     string `json:"text,omitempty"`
@@ -393,8 +383,8 @@ type TurnInterruptParams struct {
 	TurnID   string `json:"turnId"`
 }
 
-// TurnResult is the turn a message went into, and how: it started the thread's current turn, started a turn behind it,
-// or joined the turn already waiting there, which answers it with the messages before it.
+// Submission says whether the message started the thread's current turn, started a turn behind it, or joined the
+// turn already waiting there, which answers it with the messages before it.
 type TurnResult struct {
 	Turn       TurnRow       `json:"turn"`
 	Submission db.Submission `json:"submission"`
@@ -463,8 +453,7 @@ type EnvironmentListResult struct {
 	Data []EnvironmentRow `json:"data"`
 }
 
-// EnvironmentAddParams names another place a conversation can run. Kind defaults to "machine": this machine is every
-// user's environment already.
+// Kind defaults to "machine": this machine is every user's environment already.
 type EnvironmentAddParams struct {
 	Name string             `json:"name"`
 	Kind db.EnvironmentKind `json:"kind,omitempty"`
@@ -483,7 +472,7 @@ type EnvironmentResult struct {
 	Environment EnvironmentRow `json:"environment"`
 }
 
-// EnvironmentChangedNotification reports an environment added or renamed; Environment is nil once it is gone.
+// Environment is nil once it is gone.
 type EnvironmentChangedNotification struct {
 	EnvironmentID string          `json:"environmentId"`
 	Environment   *EnvironmentRow `json:"environment"`
@@ -633,6 +622,5 @@ func serverError(err error) *jsonrpc.Error {
 			return jsonrpc.Errorf(e.code, "%v", err)
 		}
 	}
-	slog.Error("request failed", "err", err)
 	return jsonrpc.Errorf(jsonrpc.CodeServerError, "the request could not be completed")
 }

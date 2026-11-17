@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -16,8 +15,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// contextInput is what the next request is built from: the run's items, the role's system prompt and the offered
-// tools, as they are now.
 func (rt *Runtime) contextInput() (contextmanager.Input, error) {
 	system, err := rt.System()
 	if err != nil {
@@ -27,9 +24,6 @@ func (rt *Runtime) contextInput() (contextmanager.Input, error) {
 	return contextmanager.Input{Items: rt.conversation(), System: system, Tools: contextmanager.Specs(offered)}, nil
 }
 
-// respond asks the model for its next response, with the tools choice allows, and records it: what it streams as it
-// comes, its answer and its calls, pending. The role takes in the user's memory first, as it does again after the
-// conversation was compacted to fit the window.
 func (rt *Runtime) respond(ctx context.Context, choice llm.ToolChoice) error {
 	if err := rt.loadMemory(); err != nil {
 		return err
@@ -60,9 +54,7 @@ func (rt *Runtime) respond(ctx context.Context, choice llm.ToolChoice) error {
 		prompt.Stats.ThroughSeq = max(prompt.Stats.ThroughSeq, it.Seq)
 	}
 	r := newResponseRecorder(rt.turn.ID, prompt.Stats)
-	// The text streams into items recorded as it starts and told as it comes; one not recorded stops the rest.
 	var streamErr error
-	started := time.Now()
 	resp, err := rt.send(ctx, prompt, choice, func(d llm.Delta) {
 		if streamErr != nil {
 			return
@@ -77,11 +69,10 @@ func (rt *Runtime) respond(ctx context.Context, choice llm.ToolChoice) error {
 				*s.item = stored
 			}
 			it := *s.item
-			rt.Events.Emit(event.Event{Kind: event.ItemDelta, Thread: rt.thread, Turn: rt.turn, Item: &it, Delta: s.text})
+			rt.events.Emit(event.Event{Kind: event.ItemDelta, Thread: rt.thread, Turn: rt.turn, Item: &it, Delta: s.text})
 		}
 	})
 	r.usage = responseUsage(resp)
-	rt.logModelCall(ctx, "model call", started, resp, err)
 	if err == nil {
 		err = checkResponse(resp, choice)
 	}
@@ -153,10 +144,8 @@ func (rt *Runtime) compact(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	started := time.Now()
 	resp, err := rt.send(ctx, prompt, llm.ToolChoiceNone, nil)
 	it.Usage = responseUsage(resp)
-	rt.logModelCall(ctx, "context compaction", started, resp, err)
 	summary := strings.TrimSpace(resp.Message.Content)
 	switch {
 	case err != nil:
@@ -199,7 +188,7 @@ func (rt *Runtime) send(ctx context.Context, prompt contextmanager.Prompt, choic
 		}
 	}
 	offered, _ := rt.Offer()
-	resp, err := rt.LLM.Chat(ctx, llm.ChatRequest{
+	resp, err := rt.client.Chat(ctx, llm.ChatRequest{
 		Model:    rt.turn.Model,
 		Messages: messages, Tools: contextmanager.Specs(offered), ToolChoice: choice,
 		InputTokens: prompt.Stats.CalibratedTokens,
@@ -218,8 +207,6 @@ func (rt *Runtime) send(ctx context.Context, prompt contextmanager.Prompt, choic
 	return resp, err
 }
 
-// mask hides the user's secrets from the model, with their key, in what it is sent, when their settings say to; the
-// redactor puts them back in what it answers.
 func (rt *Runtime) mask(text string) string {
 	if !rt.masking {
 		return text
@@ -233,10 +220,10 @@ func (rt *Runtime) loadParts(ctx context.Context, parts []llm.ContentPart) ([]ll
 	}
 	out := slices.Clone(parts)
 	for i, p := range out {
-		if rt.Attachments == nil {
+		if rt.attachments == nil {
 			return nil, fmt.Errorf("role: the conversation has attachments, but this agent keeps none")
 		}
-		data, err := rt.Attachments.Get(ctx, p.Path)
+		data, err := rt.attachments.Get(ctx, p.Path)
 		if err != nil {
 			return nil, fmt.Errorf("role: attachment %s: %w", p.Name, err)
 		}
@@ -247,17 +234,6 @@ func (rt *Runtime) loadParts(ctx context.Context, parts []llm.ContentPart) ([]ll
 		}
 	}
 	return out, nil
-}
-
-// logModelCall records one model request: its model, duration, tokens and how it ended, never its text.
-func (rt *Runtime) logModelCall(ctx context.Context, msg string, started time.Time, resp llm.ChatResponse, err error) {
-	attrs := []any{"thread", rt.thread.ID, "turn", rt.turn.ID, "model", rt.turn.Model.Name, "ms", time.Since(started).Milliseconds()}
-	if err != nil {
-		slog.WarnContext(ctx, msg+" failed", append(attrs, "err", err)...)
-		return
-	}
-	slog.InfoContext(ctx, msg, append(attrs, "input", resp.Usage.PromptTokens, "cached", resp.Usage.CachedPromptTokens,
-		"output", resp.Usage.CompletionTokens, "finish", resp.FinishReason, "toolCalls", len(resp.Message.ToolCalls))...)
 }
 
 func responseUsage(resp llm.ChatResponse) *db.Usage {

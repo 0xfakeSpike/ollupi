@@ -12,17 +12,15 @@ import (
 
 var sharedAddressSpace = netip.MustParsePrefix("100.64.0.0/10")
 
-// SensitiveAddr reports whether a is a loopback, private, link-local, shared or multicast address.
 func SensitiveAddr(a netip.Addr) bool {
 	a = a.Unmap()
 	return a.IsLoopback() || a.IsUnspecified() || a.IsPrivate() || sharedAddressSpace.Contains(a) ||
 		a.IsLinkLocalUnicast() || a.IsLinkLocalMulticast() || a.IsInterfaceLocalMulticast() || a.IsMulticast()
 }
 
-// ErrLocalAddress is why PublicTransport refuses a host.
 var ErrLocalAddress = errors.New("resolves to a local or private address")
 
-// PublicTransport carries HTTP requests to public addresses only, and so keeps them off the network this process is on.
+// PublicTransport keeps requests off the network this process is on.
 func PublicTransport() *http.Transport {
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
 	return &http.Transport{

@@ -38,7 +38,7 @@ func (m *Manager) transcript(obs *observations, items []db.ItemRow, limit int, c
 			out = append(out, llm.ChatMessage{Role: llm.RoleUser, Content: content, Parts: attachmentParts(it.Attachments)})
 			i++
 		case it.Type == db.ItemAgentReport:
-			// The report of a subagent this turn launched, which came back as it ended: data too, the subagent's words.
+			// A subagent's report is data too: the subagent's words.
 			content, err := obs.callResult(&items[i], m.observationBudget(1, maxObservationTokens))
 			if err != nil {
 				return nil, 0, err

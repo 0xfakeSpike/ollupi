@@ -5,15 +5,12 @@ import (
 )
 
 const (
-	// CompactMain is the name of the compact main agent.
 	CompactMain Name = "compact-main-agent"
-	// compactBelow is the input below which a model gets the compact main agent: about 8k tokens are what the full main
-	// agent's prompt and tool list need, which the context window holds to half of it.
+	// About 8k tokens are what the full main agent's prompt and tool list need, which the context window holds to half
+	// of it.
 	compactBelow = 16_384
 )
 
-// compactMain is the main agent for a model with a small input: shorter rules, and, when its tools do not fit, only
-// reading files and running commands sent; the others, the tools of its skills among them, wait for load_tools.
 var compactMain = Role{name: CompactMain, rules: compactMainRules, answersUser: true, core: []string{workspace.ToolReadFile, workspace.ToolRunCommand}, recalls: true, maxModelCalls: 200, maxToolCalls: 400, maxConsecutiveFailures: 10}
 
 const compactMainRules = `You complete the user's request by calling tools in a loop, then reply without calling a tool; that reply is the final answer.

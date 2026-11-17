@@ -53,14 +53,13 @@ func (ReadFile) Constrain(s *jsonschema.Schema) {
 	s.Properties["limit"].Maximum = jsonschema.Ptr(float64(maxReadLines))
 }
 
-// ReadFileOutput is a window of a text file, its lines numbered, or what a file that is not text is.
 type ReadFileOutput struct {
 	Path       string `json:"path"`
 	Text       string `json:"text,omitempty"`
 	StartLine  int    `json:"startLine,omitempty"`
 	EndLine    int    `json:"endLine,omitempty"`
 	TotalLines int    `json:"totalLines"`
-	// TotalLinesAtLeast says counting stopped after maxReadScan bytes, past the lines shown: there are more.
+	// Counting stopped after maxReadScan bytes, past the lines shown: there are more.
 	TotalLinesAtLeast bool   `json:"totalLinesAtLeast,omitempty"`
 	Binary            bool   `json:"binary,omitempty"`
 	MimeType          string `json:"mimeType,omitempty"`
@@ -76,7 +75,6 @@ func (Glob) Constrain(s *jsonschema.Schema) {
 	s.Properties["pattern"].MinLength = jsonschema.Ptr(1)
 }
 
-// GlobOutput lists the matching files, newest first, as read_file takes them.
 type GlobOutput struct {
 	Path      string   `json:"path"`
 	Files     []string `json:"files"`
@@ -99,7 +97,6 @@ func (Grep) Constrain(s *jsonschema.Schema) {
 	s.Properties["context"].Maximum = jsonschema.Ptr(float64(maxGrepContext))
 }
 
-// GrepOutput lists the files with matching lines, in path order.
 type GrepOutput struct {
 	Path      string     `json:"path"`
 	Files     []GrepFile `json:"files"`
@@ -114,7 +111,6 @@ type GrepFile struct {
 	Lines   []GrepLine `json:"lines,omitempty"`
 }
 
-// GrepLine is a matching line, or a line of context around one.
 type GrepLine struct {
 	Line  int    `json:"line"`
 	Text  string `json:"text"`
@@ -151,7 +147,6 @@ func (r *Provider) readTools() []*tools.Spec {
 	}}
 }
 
-// readContent is what permission rules match: the file or folder read, relative to the project root inside it.
 func (r *Provider) readContent(ctx context.Context, caller tools.Caller, args map[string]any) (tools.Content, error) {
 	d, err := r.dirs(ctx, caller)
 	if err != nil {
@@ -170,8 +165,7 @@ func (r *Provider) readContent(ctx context.Context, caller tools.Caller, args ma
 	return tools.Content{Text: text, Match: strings.ToLower(shown), Folded: true}, nil
 }
 
-// readLine reads one line of br and keeps at most limit bytes of it, so a file without line breaks takes no more
-// memory than that. It returns how many bytes it read, the dropped ones included.
+// Keeps at most limit bytes of a line, so a file without line breaks takes no more memory than that.
 func readLine(br *bufio.Reader, limit int) (string, int, error) {
 	var kept []byte
 	read := 0
@@ -187,7 +181,7 @@ func readLine(br *bufio.Reader, limit int) (string, int, error) {
 	}
 }
 
-// readable resolves a path the read tools take, following links, and checks that the sandbox lets it be read.
+// Links are resolved before the read check, so a link cannot reach a closed path.
 func readable(ctx context.Context, d dirs, raw string) (string, error) {
 	path := strings.TrimSpace(raw)
 	if path == "" {
@@ -205,7 +199,6 @@ func readable(ctx context.Context, d dirs, raw string) (string, error) {
 	return abs, nil
 }
 
-// display shows a path as the tools take it: relative to the root it is in, or absolute outside every root.
 func (d dirs) display(abs string) string {
 	for _, root := range d.roots {
 		if sandbox.Within(root, abs) {
@@ -425,9 +418,6 @@ func grep(ctx context.Context, d dirs, args map[string]any) (GrepOutput, error) 
 	return out, nil
 }
 
-// grepFile searches one text file. It reports the file with how many of its lines match and, unless
-// filesOnly, up to room of those lines with their context, and how many matching lines it kept. A file that
-// is not text matches nothing.
 func grepFile(ctx context.Context, box sandbox.Box, path string, re *regexp.Regexp, around int, filesOnly bool, room int) (GrepFile, int, error) {
 	f, err := box.Open(ctx, path)
 	if err != nil {
@@ -486,8 +476,7 @@ func grepFile(ctx context.Context, box sandbox.Box, path string, re *regexp.Rege
 	return out, kept, nil
 }
 
-// isText reports whether the start of a file reads as text: no NUL bytes and valid UTF-8, allowing a
-// character cut off at the end.
+// head is the start of a file, so its last character may be cut off.
 func isText(head []byte) bool {
 	if bytes.IndexByte(head, 0) >= 0 {
 		return false

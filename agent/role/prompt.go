@@ -12,11 +12,8 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools/workspace"
 )
 
-// projectSection names the project a run works in, by its root.
 const projectSection = "# PROJECT\nThis conversation works in the project at %s; commands run there unless you set work_dir."
 
-// defaultAgentPrompt is the agent's own prompt, which a role that answers the user starts with, when the operator
-// gave none: it names the agent.
 const defaultAgentPrompt = `You are %s, a personal assistant working on the user's own computer. You help one person get real things done: finding and organizing information, working with files, documents, and data, running tasks, and following up on them later.
 
 # How you work
@@ -26,10 +23,6 @@ const defaultAgentPrompt = `You are %s, a personal assistant working on the user
 # Talking with the user
 - Write plainly and warmly, as a capable colleague would. Lead with the outcome, then the details that matter to the user.`
 
-// System writes the role's system prompt for the run, as its permissions and workspace are now: the agent's own prompt
-// first when the role answers the user, the role's rules, the skills installed for it within the window's budget for
-// them, the deferred tools for load_tools to load, and the workspace's project, for a run that has the tools working
-// in it.
 func (rt *Runtime) System() (string, error) {
 	offered, deferred := rt.Offer()
 	inProject := slices.ContainsFunc(slices.Concat(offered, deferred), func(d tools.ToolDescriptor) bool { return d.Provider == workspace.ProviderName })
@@ -58,9 +51,6 @@ func (rt *Runtime) System() (string, error) {
 	return strings.Join(parts, "\n\n"), nil
 }
 
-// listSkills lists the skills installed for the role in the deployment's skills directory, where each role has its
-// own, within the window's budget for them, saying how many more there are when they do not all fit: "" when there are
-// none.
 func (rt *Runtime) listSkills() (string, error) {
 	if rt.skillsDir == "" {
 		return "", nil

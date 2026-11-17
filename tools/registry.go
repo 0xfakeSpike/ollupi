@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
-	"runtime/debug"
 	"slices"
 	"sort"
 	"strings"
@@ -20,15 +18,13 @@ type Registry struct {
 	providers   map[string]Provider
 	owner       map[string]Provider
 	specs       map[string]*Spec
-	// schemas are the specs' input schemas, resolved once.
 	schemas     map[string]*jsonschema.Resolved
 	descriptors []ToolDescriptor
 }
 
 const ProviderSeparator = "__"
 
-// Set is what one user adds to the tools everyone has, with the providers of theirs that could not be reached. The
-// same Set means the same tools.
+// The same Set means the same tools.
 type Set struct {
 	Providers   []Provider
 	Unavailable []string
@@ -140,7 +136,6 @@ const (
 func guard(tool string, run func() (Result, error)) (result Result) {
 	defer func() {
 		if p := recover(); p != nil {
-			slog.Error("tool crashed", "tool", tool, "panic", fmt.Sprint(p), "stack", string(debug.Stack()))
 			result = Result{Err: fmt.Errorf("the tool crashed: %v", p)}.For(tool)
 		}
 	}()
@@ -165,8 +160,7 @@ func guard(tool string, run func() (Result, error)) (result Result) {
 	return result.For(tool)
 }
 
-// clip keeps the first limit bytes of text and says how much that is. The cut goes back to the start of a character,
-// so the text kept stays valid UTF-8.
+// The cut goes back to the start of a character, so the text kept stays valid UTF-8.
 func clip(text string, limit int, what string) string {
 	cut := limit
 	for cut > 0 && !utf8.RuneStart(text[cut]) {
@@ -175,7 +169,6 @@ func clip(text string, limit int, what string) string {
 	return text[:cut] + fmt.Sprintf("\n[%s truncated: %d of %d bytes shown]", what, cut, len(text))
 }
 
-// check says the registry has the tool and the arguments fit its schema.
 func (r *Registry) check(tool string, arguments map[string]any) error {
 	schema, ok := r.schemas[tool]
 	if !ok {
@@ -222,7 +215,6 @@ func (r *Registry) Prepare(ctx context.Context, caller Caller, tool string, argu
 	}
 	defer func() {
 		if p := recover(); p != nil {
-			slog.Error("tool crashed while preparing", "tool", tool, "panic", fmt.Sprint(p), "stack", string(debug.Stack()))
 			prepared, err = nil, fmt.Errorf("the tool crashed while preparing: %v", p)
 		}
 	}()

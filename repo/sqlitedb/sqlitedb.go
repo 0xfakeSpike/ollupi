@@ -24,8 +24,7 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Open opens the database file at path on its one connection, making its folder if need be. Other processes may open
-// the same file.
+// Other processes may open the same file.
 func Open(path string) (*gorm.DB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("storage: create directory of %s: %w", path, err)
@@ -60,7 +59,6 @@ func Close(g *gorm.DB) error {
 	return conn.Close()
 }
 
-// Steps are the SQL of the migrations at the root of fsys in order; their numbers run from 1 without a gap.
 func Steps(fsys fs.FS) ([]string, error) {
 	entries, err := fs.ReadDir(fsys, ".")
 	if err != nil {
@@ -86,7 +84,6 @@ func Steps(fsys fs.FS) ([]string, error) {
 	return out, nil
 }
 
-// Version is how many steps the database has taken, of the known ones.
 func Version(g *gorm.DB, known int) (int, error) {
 	var version int
 	if err := g.Raw("PRAGMA user_version").Scan(&version).Error; err != nil {
@@ -98,7 +95,6 @@ func Version(g *gorm.DB, known int) (int, error) {
 	return version, nil
 }
 
-// Migrate takes the steps after version.
 func Migrate(g *gorm.DB, steps []string, version int) error {
 	if version == len(steps) {
 		return nil
