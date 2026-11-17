@@ -21,10 +21,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/catalog"
 	"github.com/0xfakeSpike/ollupi/gateway"
 	"github.com/0xfakeSpike/ollupi/host"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo/catalog"
 	"github.com/0xfakeSpike/ollupi/router"
 	"github.com/coder/websocket"
 )

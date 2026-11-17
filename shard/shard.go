@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/repo/catalog"
+	"github.com/0xfakeSpike/ollupi/catalog"
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/google/uuid"
 )
