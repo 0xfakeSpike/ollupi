@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/agent/event"
+	"github.com/0xfakeSpike/ollupi/agent/role/contextmanager"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/google/uuid"
