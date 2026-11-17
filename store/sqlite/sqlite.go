@@ -28,6 +28,8 @@ type Store struct {
 
 var _ store.Store = (*Store)(nil)
 
+// Open opens home/data/store.sqlite; the first time it opens beside the database of an engine before v0.16.0, it
+// brings that in.
 func Open(home string) (*Store, error) {
 	path := filepath.Join(home, "data", "store.sqlite")
 	g, err := sqlitedb.Open(path)
@@ -38,7 +40,12 @@ func Open(home string) (*Store, error) {
 		sqlitedb.Close(g)
 		return nil, fmt.Errorf("store: %s: %w", path, err)
 	}
-	return &Store{g: g, feed: store.NewFeed()}, nil
+	s := &Store{g: g, feed: store.NewFeed()}
+	if err := s.importLegacy(home); err != nil {
+		sqlitedb.Close(g)
+		return nil, err
+	}
+	return s, nil
 }
 
 func migrate(g *gorm.DB) error {
