@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/agent/service"
 	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/pkg/wshub"
@@ -42,7 +43,7 @@ type Options struct {
 	Load Load
 }
 
-func NewServer(a *service.Service, opts Options) (*Server, error) {
+func NewServer(a *service.Service, events *event.Emitter, opts Options) (*Server, error) {
 	if opts.Authenticate == nil {
 		if strings.TrimSpace(opts.Token) == "" {
 			return nil, errors.New("gateway: a token is required; clients send it as Authorization: Bearer <token> or, from a browser, as the subprotocol after " + tokenProtocol)
@@ -88,6 +89,7 @@ func NewServer(a *service.Service, opts Options) (*Server, error) {
 		origins:      append([]string{"localhost:*", "127.0.0.1:*", "[::1]:*"}, opts.AllowedOrigins...),
 		hub:          hub,
 	}
+	events.Subscribe(s.deliver)
 	return s, nil
 }
 

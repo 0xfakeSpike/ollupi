@@ -29,22 +29,22 @@ type Orchestrator struct {
 
 	ctx context.Context
 	res *resources.Resources
-	ev  event.Emitter
+	ev  *event.Emitter
 
-	events       chan func()
+	queue        chan message
 	slotByThread map[string]*slot
 	slotsOfUser  map[string]int
 	done         sync.WaitGroup
 }
 
-func New(store *db.DB, attachments blobs.Store, memory *memory.Manager, onEvent func(event.Event),
+func New(store *db.DB, attachments blobs.Store, memory *memory.Manager, events *event.Emitter,
 	name, prompt, skillsDir string, permissions permission.Deployment,
 	slots, userSlots int, runLimit time.Duration) *Orchestrator {
 	return &Orchestrator{
 		store: store, attachments: attachments, memory: memory,
 		name: name, prompt: prompt, skillsDir: skillsDir, permissions: permissions,
 		slots: slots, userSlots: userSlots, runLimit: runLimit,
-		ev: event.Emitter{DB: store, OnEvent: onEvent},
+		ev: events,
 	}
 }
 
@@ -59,7 +59,7 @@ func (o *Orchestrator) Start(ctx context.Context, res *resources.Resources) erro
 	if o.runLimit <= 0 {
 		o.runLimit = defaultRunLimit
 	}
-	o.events, o.slotByThread, o.slotsOfUser = make(chan func()), map[string]*slot{}, map[string]int{}
+	o.queue, o.slotByThread, o.slotsOfUser = make(chan message), map[string]*slot{}, map[string]int{}
 	ctx, stop := context.WithCancel(ctx)
 	fail := func(err error) error {
 		stop()
@@ -71,6 +71,6 @@ func (o *Orchestrator) Start(ctx context.Context, res *resources.Resources) erro
 		return fail(err)
 	}
 	o.done.Add(1)
-	go o.loop()
+	go o.consume()
 	return nil
 }

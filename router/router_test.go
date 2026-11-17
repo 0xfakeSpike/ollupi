@@ -25,6 +25,7 @@ import (
 type shard struct {
 	db     *db.DB
 	server *gateway.Server
+	events *event.Emitter
 	url    string
 	stop   context.CancelFunc
 }
@@ -35,7 +36,8 @@ func startShard(t *testing.T, id, home string, authenticate gateway.Authenticate
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := gateway.NewServer(service.New(service.Config{DB: store}), gateway.Options{
+	events := event.New(store)
+	s, err := gateway.NewServer(service.New(service.Config{DB: store}), events, gateway.Options{
 		DB: store, Authenticate: authenticate, Shard: id, Placements: placements,
 	})
 	if err != nil {
@@ -56,7 +58,7 @@ func startShard(t *testing.T, id, home string, authenticate gateway.Authenticate
 		<-served
 		store.Close()
 	})
-	return &shard{db: store, server: s, url: "http://" + ln.Addr().String(), stop: stop}
+	return &shard{db: store, server: s, events: events, url: "http://" + ln.Addr().String(), stop: stop}
 }
 
 func hasUser(t *testing.T, store *db.DB, user string) bool {
@@ -164,11 +166,11 @@ func TestTheRouterSendsEachUserToTheirShard(t *testing.T) {
 	if !hasUser(t, shards[shardA].db, "a") || hasUser(t, shards[shardB].db, "a") {
 		t.Error("a is not on their shard alone")
 	}
-	shards[shardB].server.Deliver(event.Event{Kind: event.ThreadDeleted, Thread: db.ThreadRow{ID: "of-b", UserID: "b"}})
+	shards[shardB].events.Emit(event.Event{Kind: event.ThreadDeleted, Thread: db.ThreadRow{ID: "of-b", UserID: "b"}})
 	if got := nextThread(ctx, t, b); got != "of-b" {
 		t.Errorf("b received %q through the router", got)
 	}
-	shards[shardA].server.Deliver(event.Event{Kind: event.ThreadDeleted, Thread: db.ThreadRow{ID: "of-a", UserID: "a"}})
+	shards[shardA].events.Emit(event.Event{Kind: event.ThreadDeleted, Thread: db.ThreadRow{ID: "of-a", UserID: "a"}})
 	if got := nextThread(ctx, t, a); got != "of-a" {
 		t.Errorf("a received %q through the router", got)
 	}
@@ -186,7 +188,7 @@ func TestTheRouterSendsEachUserToTheirShard(t *testing.T) {
 		t.Fatal(err)
 	}
 	back := connect(ctx, t, front.URL, "token-a")
-	standby.server.Deliver(event.Event{Kind: event.ThreadDeleted, Thread: db.ThreadRow{ID: "after", UserID: "a"}})
+	standby.events.Emit(event.Event{Kind: event.ThreadDeleted, Thread: db.ThreadRow{ID: "after", UserID: "a"}})
 	if got := nextThread(ctx, t, back); got != "after" {
 		t.Errorf("a received %q from the new holder", got)
 	}

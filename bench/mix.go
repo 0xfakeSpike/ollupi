@@ -82,6 +82,16 @@ func mix(args []string) {
 	}
 	defer store.Close()
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}, done: map[string]chan struct{}{}}
+	events := event.New(store)
+	events.Subscribe(func(e event.Event) {
+		// A subagent's task is the first message of its turn.
+		if e.Kind == event.ItemStarted && e.Thread.ParentThreadID != "" && e.Item.Type == db.ItemUserMessage {
+			mu.Lock()
+			turns[e.Item.Text] = &mixTurn{kind: "sub", thread: string(e.Thread.ParentThreadID), turnID: e.Turn.ID, submitted: time.Now()}
+			mu.Unlock()
+		}
+		tr.on(e)
+	})
 	ag := service.New(service.Config{
 		BoxFor: here,
 		Name:   "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
@@ -89,15 +99,7 @@ func mix(args []string) {
 		Providers:   []tools.Provider{work{latency: *toolLatency}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 		Slots:       *slots, DB: store,
-		OnEvent: func(e event.Event) {
-			// A subagent's task is the first message of its turn.
-			if e.Kind == event.ItemStarted && e.Thread.ParentThreadID != "" && e.Item.Type == db.ItemUserMessage {
-				mu.Lock()
-				turns[e.Item.Text] = &mixTurn{kind: "sub", thread: string(e.Thread.ParentThreadID), turnID: e.Turn.ID, submitted: time.Now()}
-				mu.Unlock()
-			}
-			tr.on(e)
-		},
+		Events: events,
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := ag.Start(ctx); err != nil {

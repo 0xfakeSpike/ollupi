@@ -46,21 +46,12 @@ type FetchOutput struct {
 	Truncated    bool   `json:"truncated,omitempty"`
 }
 
-type Options struct {
-	// Transport replaces the transport that refuses local and private addresses; tests use it to reach a local server.
-	Transport http.RoundTripper
-}
-
 type Provider struct {
 	client *http.Client
 }
 
-func New(opts Options) *Provider {
-	transport := opts.Transport
-	if transport == nil {
-		transport = sandbox.PublicTransport()
-	}
-	return &Provider{client: &http.Client{Transport: transport, Timeout: fetchTimeout, CheckRedirect: sameHost}}
+func New() *Provider {
+	return &Provider{client: &http.Client{Transport: sandbox.PublicTransport(), Timeout: fetchTimeout, CheckRedirect: sameHost}}
 }
 
 // A redirect to another host comes back to the model, so the new host goes through the permission check.

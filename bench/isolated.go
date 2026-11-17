@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/service"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
@@ -90,12 +91,14 @@ func lone(args []string) {
 		log.Fatal(err)
 	}
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}}
+	events := event.New(store)
+	events.Subscribe(tr.on)
 	ag := service.New(service.Config{
 		BoxFor: here,
 		Name:   "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": &model{}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
-		DB:          store, OnEvent: tr.on,
+		DB:          store, Events: events,
 	})
 	if err := ag.Start(context.Background()); err != nil {
 		log.Fatal(err)
