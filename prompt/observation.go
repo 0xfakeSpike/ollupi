@@ -92,7 +92,7 @@ const (
 func (o *observations) render(it conversation.Item, budget int) string {
 	text, ok := o.texts[it.ID]
 	if !ok {
-		text = render.Output(decoded(it.Result.Output), nil)
+		text = OutputText(it.Result.Output)
 		o.texts[it.ID] = text
 	}
 	spans := func(string) [][2]int {
@@ -114,6 +114,9 @@ func (o *observations) render(it conversation.Item, budget int) string {
 	}
 	return text
 }
+
+// OutputText is a tool's output as the model reads it, and as read_tool_output counts its characters.
+func OutputText(raw json.RawMessage) string { return render.Output(decoded(raw), nil) }
 
 // The output as it was given, numbers as written.
 func decoded(raw json.RawMessage) any {

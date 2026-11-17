@@ -185,7 +185,8 @@ func launch(tx store.Tx, s *step, it conversation.Item, l tool.Launch) error {
 	if err != nil {
 		return err
 	}
-	output, _ := json.Marshal(map[string]string{"thread": child.ID}) // a string: it cannot fail
+	output, _ := json.Marshal(map[string]string{"subagent": child.ID, "description": l.Title, // strings: it cannot fail
+		"note": "It works on its own; its report comes back to this conversation when it ends."})
 	_, err = tx.Append(s.th.ID,
 		conversation.Entry{Turn: s.turn.ID, Item: it.ID, Body: conversation.ChildLaunched{Child: child.ID}},
 		conversation.Entry{Turn: s.turn.ID, Item: it.ID, Body: conversation.ToolResult{Output: output}})

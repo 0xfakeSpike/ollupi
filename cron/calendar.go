@@ -17,10 +17,11 @@ import (
 const (
 	// MaxJobs is how many tasks a conversation has at most.
 	MaxJobs        = 64
-	maxPromptRunes = 4000
+	MaxPromptRunes = 4000
 )
 
-var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
+// NamePattern is what a task's name must match.
+var NamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 
 var ErrInvalidJob = errors.New("invalid scheduled task")
 
@@ -36,11 +37,11 @@ func NewCalendar(location *time.Location) Calendar {
 // Job is a new task of thread, checked, with its first run.
 func (c Calendar) Job(id, thread, name, spec, prompt string, times *int, now time.Time) (user.CronJob, error) {
 	name, spec, prompt = strings.TrimSpace(name), strings.TrimSpace(spec), strings.TrimSpace(prompt)
-	if !namePattern.MatchString(name) {
-		return user.CronJob{}, fmt.Errorf("cron: %w: name %q must match %s", ErrInvalidJob, name, namePattern)
+	if !NamePattern.MatchString(name) {
+		return user.CronJob{}, fmt.Errorf("cron: %w: name %q must match %s", ErrInvalidJob, name, NamePattern)
 	}
-	if prompt == "" || utf8.RuneCountInString(prompt) > maxPromptRunes {
-		return user.CronJob{}, fmt.Errorf("cron: %w: prompt must be 1 to %d characters", ErrInvalidJob, maxPromptRunes)
+	if prompt == "" || utf8.RuneCountInString(prompt) > MaxPromptRunes {
+		return user.CronJob{}, fmt.Errorf("cron: %w: prompt must be 1 to %d characters", ErrInvalidJob, MaxPromptRunes)
 	}
 	if times != nil && *times < 1 {
 		return user.CronJob{}, fmt.Errorf("cron: %w: times must be at least 1", ErrInvalidJob)
