@@ -56,7 +56,13 @@ func New(st store.Store, models Models, tools tool.Tools, attachments Attachment
 
 // Run runs the turn in progress of thread until it waits, ends, or ctx ends. An error is the turn's failure, which the
 // caller ends it with.
+//
+// Whoever calls Run runs the thread alone, so a call it finds started and not ended was cut off with the run before,
+// and ends as interrupted.
 func (r *Runner) Run(ctx context.Context, thread string) error {
+	if err := r.settle(ctx, thread); err != nil {
+		return err
+	}
 	var set tool.Set
 	for {
 		s, err := r.load(ctx, thread)
@@ -90,6 +96,34 @@ func (r *Runner) Run(ctx context.Context, thread string) error {
 			return err
 		}
 	}
+}
+
+// stranded is how a call ends that a run before left started: it may have done some of its work, or all of it.
+const stranded = "the call was cut off when the run that made it stopped; it may have taken effect in part or in full, so check before trying it again"
+
+func (r *Runner) settle(ctx context.Context, thread string) error {
+	return r.st.Update(ctx, func(tx store.Tx) error {
+		v, err := tx.View(thread)
+		if err != nil {
+			return err
+		}
+		turn, ok := v.Active()
+		if !ok {
+			return nil
+		}
+		var entries []conversation.Entry
+		for _, it := range v.ItemsOf(turn.ID) {
+			waitsForAnswer := it.Input != nil && !it.Input.Answered
+			if it.Kind == conversation.ItemToolCall && it.Status == conversation.InProgress && !waitsForAnswer {
+				entries = append(entries, conversation.Entry{Turn: turn.ID, Item: it.ID, Body: conversation.ToolResult{Error: stranded}})
+			}
+		}
+		if len(entries) == 0 {
+			return nil
+		}
+		_, err = tx.Append(thread, entries...)
+		return err
+	})
 }
 
 // step is what one step of a turn reads.
