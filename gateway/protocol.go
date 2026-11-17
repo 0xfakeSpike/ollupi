@@ -38,6 +38,7 @@ const (
 	errNoSuchRequest     = -32012
 	errSubagentThread    = -32013
 	errWorkspaceArchived = -32014
+	errThreadArchived    = -32015
 	errThreadBusy        = -32016
 	errSearchTimedOut    = -32017
 	errRefused           = -32018
@@ -182,6 +183,7 @@ var protocol = struct {
 		errNoSuchRequest:           "noSuchRequest",
 		errSubagentThread:          "subagentThread",
 		errWorkspaceArchived:       "workspaceArchived",
+		errThreadArchived:          "threadArchived",
 		errThreadBusy:              "threadBusy",
 		errSearchTimedOut:          "searchTimedOut",
 		errRefused:                 "refused",
@@ -643,6 +645,7 @@ var errorCodes = []struct {
 	{user.ErrSubagentThread, errSubagentThread},
 	{user.ErrWorkspaceArchived, errWorkspaceArchived},
 	{app.ErrThreadBusy, errThreadBusy},
+	{app.ErrThreadArchived, errThreadArchived},
 	{app.ErrWorkspaceBusy, errThreadBusy},
 	{app.ErrQueueFull, errThreadBusy},
 	{conversation.ErrRefused, errRefused},

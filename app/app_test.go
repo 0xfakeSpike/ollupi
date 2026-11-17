@@ -183,6 +183,13 @@ func TestMessagesQueueTurnsAndSteeringAnswersWhatTheTurnAsked(t *testing.T) {
 	if _, _, err := f.a.Send(f.ctx, "v", th.ID, Input{Text: "hi"}); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("another user's conversation: %v", err)
 	}
+	if err := f.a.Interrupt(f.ctx, "u", th.ID, second.ID); err != nil {
+		t.Fatal(err)
+	}
+	must[store.Thread](t)(f.a.ArchiveThread(f.ctx, "u", th.ID, true))
+	if _, _, err := f.a.Send(f.ctx, "u", th.ID, Input{Text: "more"}); !errors.Is(err, ErrThreadArchived) {
+		t.Errorf("a message to an archived conversation: %v", err)
+	}
 }
 
 func TestAcceptingAlwaysKeepsTheRuleWithTheConversation(t *testing.T) {
