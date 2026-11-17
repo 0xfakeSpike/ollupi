@@ -317,7 +317,7 @@ func (v View) Waiting() Wait {
 		return WaitApproval
 	case slices.ContainsFunc(items, Item.waitsForInput):
 		return WaitInput
-	case v.Answered(active.ID) && slices.ContainsFunc(items, Item.awaitsReport):
+	case v.Answered(active.ID) && slices.ContainsFunc(items, Item.AwaitsReport):
 		return WaitChildren
 	}
 	return WaitNone
@@ -404,6 +404,7 @@ func (it Item) waitsForInput() bool {
 	return it.Kind == ItemToolCall && it.Status == InProgress && it.Input != nil && !it.Input.Answered
 }
 
-func (it Item) awaitsReport() bool {
-	return it.Child != "" && !it.Reported
+// AwaitsReport says the call launched a subagent that has not reported yet.
+func (it Item) AwaitsReport() bool {
+	return it.Kind == ItemToolCall && it.Child != "" && !it.Reported
 }

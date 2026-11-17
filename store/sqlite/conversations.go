@@ -266,8 +266,10 @@ func (t *tx) Append(thread string, entries ...conversation.Entry) (conversation.
 		}
 		appended = append(appended, e)
 		p.change.Entries = append(p.change.Entries, e)
-		if e.Item != "" && !slices.Contains(p.items, e.Item) {
-			p.items = append(p.items, e.Item)
+		for _, id := range touched(e) {
+			if !slices.Contains(p.items, id) {
+				p.items = append(p.items, id)
+			}
 		}
 		if !slices.Contains(p.turns, e.Turn) {
 			p.turns = append(p.turns, e.Turn)
@@ -281,6 +283,18 @@ func (t *tx) Append(thread string, entries ...conversation.Entry) (conversation.
 		return conversation.View{}, err
 	}
 	return v, nil
+}
+
+// touched are the items an entry changes: its own, and the call a report answers.
+func touched(e conversation.Entry) []string {
+	var ids []string
+	if e.Item != "" {
+		ids = append(ids, e.Item)
+	}
+	if r, ok := e.Body.(conversation.ChildReported); ok {
+		ids = append(ids, r.Launch)
+	}
+	return ids
 }
 
 // persist writes what the entries changed of the view, and the thread's folded columns.
@@ -304,8 +318,12 @@ func (t *tx) persist(thread string, th store.Thread, v conversation.View, p *pen
 			return err
 		}
 	}
+	var changed []string
+	for _, e := range entries {
+		changed = append(changed, touched(e)...)
+	}
 	for _, it := range v.Items {
-		if !slices.ContainsFunc(entries, func(e conversation.Entry) bool { return e.Item == it.ID }) {
+		if !slices.Contains(changed, it.ID) {
 			continue
 		}
 		body, _ := json.Marshal(it) // plain data: it cannot fail
