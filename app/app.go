@@ -22,6 +22,7 @@ import (
 var (
 	ErrWorkspaceBusy    = errors.New("a conversation in the workspace has a turn in progress or queued; interrupt it first")
 	ErrThreadBusy       = errors.New("the conversation has a turn in progress or queued; interrupt it first")
+	ErrThreadArchived   = errors.New("the conversation is archived; restore it before sending to it")
 	ErrQueueFull        = fmt.Errorf("the conversation has %d messages waiting already; send this one once they start", maxQueued)
 	ErrNoActiveTurn     = errors.New("the conversation has no turn in progress")
 	ErrTurnMismatch     = errors.New("the turn in progress is not the one named")

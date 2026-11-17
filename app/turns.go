@@ -68,6 +68,9 @@ func (a *App) queue(tx store.Tx, th store.Thread, text string, atts []conversati
 	if err != nil {
 		return conversation.Turn{}, false, err
 	}
+	if th.Archived != nil {
+		return conversation.Turn{}, false, ErrThreadArchived
+	}
 	if err := a.usableWorkspace(tx, th); err != nil {
 		return conversation.Turn{}, false, err
 	}
