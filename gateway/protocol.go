@@ -272,7 +272,6 @@ type ThreadStartParams struct {
 	// Empty is the environment on this machine.
 	EnvironmentID string `json:"environmentId,omitempty"`
 	Title         string `json:"title,omitempty"`
-	db.PermissionSettings
 }
 
 type ThreadPermissionsParams struct {

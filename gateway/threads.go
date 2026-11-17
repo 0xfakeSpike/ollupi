@@ -10,7 +10,7 @@ import (
 )
 
 func (c *conn) threadStart(ctx context.Context, p ThreadStartParams) (ThreadResult, func(), error) {
-	t, err := c.s.service.StartThread(c.user, p.WorkspaceID, p.EnvironmentID, p.Title, p.PermissionSettings)
+	t, err := c.s.service.StartThread(c.user, p.WorkspaceID, p.EnvironmentID, p.Title)
 	return ThreadResult{Thread: threadRow(t)}, nil, err
 }
 

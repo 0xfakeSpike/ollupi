@@ -125,7 +125,7 @@ func steady(args []string) {
 	threads := make([]string, *c)
 	tr.mu.Lock()
 	for i := range threads {
-		th, err := ag.StartThread(db.DefaultUser, "", "", "bench", permission.Settings{})
+		th, err := ag.StartThread(db.DefaultUser, "", "", "bench")
 		if err != nil {
 			log.Fatal(err)
 		}

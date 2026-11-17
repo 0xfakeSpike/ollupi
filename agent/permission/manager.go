@@ -22,10 +22,6 @@ func NewManager(deployment Deployment, store *db.DB, registry func(user string) 
 	return &Manager{deployment: deployment, store: store, registry: registry, events: events}
 }
 
-func (m *Manager) CheckThread(user string, w db.WorkspaceRow, previous, next Settings) error {
-	return m.validate(user, m.deployment.Base(w), previous, ThreadLayer(next))
-}
-
 // change is checked against the settings as read, and applied again to them as they are when written.
 func (m *Manager) SetThread(t db.ThreadRow, change func(Settings) Settings) (db.ThreadRow, error) {
 	var w db.WorkspaceRow
@@ -35,7 +31,7 @@ func (m *Manager) SetThread(t db.ThreadRow, change func(Settings) Settings) (db.
 			return db.ThreadRow{}, fmt.Errorf("permission: workspace %s: %w", t.WorkspaceID, err)
 		}
 	}
-	if err := m.CheckThread(t.UserID, w, t.Settings, change(t.Settings)); err != nil {
+	if err := m.validate(t.UserID, m.deployment.Base(w), t.Settings, ThreadLayer(change(t.Settings))); err != nil {
 		return db.ThreadRow{}, err
 	}
 	changed, err := m.store.UpdateThreadSettings(t.UserID, t.ID, change)
