@@ -1,6 +1,6 @@
 // Package router finds the shard each client connection belongs on, ahead of the shards: through a load balancer's
 // callout (router/extproc), or as a proxy (Router) where the load balancer cannot route on its own. The shards
-// themselves only check that a connection is theirs, through gateway.Options.Placements.
+// themselves only check that a connection is theirs, through shard.Member.Admit.
 package router
 
 import (
@@ -14,24 +14,19 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/gateway"
 	"github.com/0xfakeSpike/ollupi/repo/catalog"
-	lru "github.com/hashicorp/golang-lru/v2"
+	"github.com/0xfakeSpike/ollupi/shard"
 )
 
+// repo/catalog is one.
 type Directory interface {
-	Assign(ctx context.Context, user string) (string, error)
-	Address(ctx context.Context, shard string) (string, error)
+	// Locate places a user met for the first time; the address is "" while no process holds the shard.
+	Locate(ctx context.Context, user string) (shard, address string, err error)
 }
 
-// Locator remembers where each user it found is, since a user stays on their shard once placed: the reconnections
-// that follow an outage reach the directory only for users it has not seen.
 type Locator struct {
 	authenticate gateway.Authenticate
 	directory    Directory
-	placed       *lru.Cache[string, string]
 }
-
-// rememberedUsers bounds what a Locator remembers, to some tens of MB.
-const rememberedUsers = 1 << 18
 
 // lookupTimeout bounds how long placing one connection may wait on the token's check and on the directory, which
 // would otherwise hold the client for as long as either hangs.
@@ -41,35 +36,21 @@ func NewLocator(authenticate gateway.Authenticate, directory Directory) (*Locato
 	if authenticate == nil || directory == nil {
 		return nil, errors.New("router: a locator needs to authenticate users and find their shards")
 	}
-	placed, _ := lru.New[string, string](rememberedUsers) // a size above zero: it cannot fail
-	return &Locator{authenticate: authenticate, directory: directory, placed: placed}, nil
+	return &Locator{authenticate: authenticate, directory: directory}, nil
 }
 
 // Locate returns gateway.ErrUnknownToken when the token is no one's.
-func (l *Locator) Locate(ctx context.Context, header http.Header) (user, shard string, err error) {
+func (l *Locator) Locate(ctx context.Context, header http.Header) (shard, address string, err error) {
 	ctx, cancel := context.WithTimeout(ctx, lookupTimeout)
 	defer cancel()
-	user, err = l.authenticate(ctx, gateway.TokenOf(header))
+	user, err := l.authenticate(ctx, gateway.TokenOf(header))
 	if errors.Is(err, gateway.ErrUnknownToken) {
 		return "", "", err
 	}
 	if err != nil {
 		return "", "", fmt.Errorf("router: the token could not be checked: %w", err)
 	}
-	shard, err = l.shardOf(ctx, user)
-	return user, shard, err
-}
-
-func (l *Locator) shardOf(ctx context.Context, user string) (string, error) {
-	if shard, ok := l.placed.Get(user); ok {
-		return shard, nil
-	}
-	shard, err := l.directory.Assign(ctx, user)
-	if err != nil {
-		return "", err
-	}
-	l.placed.Add(user, shard)
-	return shard, nil
+	return l.directory.Locate(ctx, user)
 }
 
 // Router keeps nothing, so any number of them can run. Where a load balancer places connections through
@@ -93,7 +74,7 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	_, shard, err := rt.locator.Locate(r.Context(), r.Header)
+	_, address, err := rt.locator.Locate(r.Context(), r.Header)
 	if errors.Is(err, gateway.ErrUnknownToken) {
 		http.Error(w, "invalid or missing gateway token", http.StatusUnauthorized)
 		return
@@ -102,11 +83,8 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no shard can take this user now", http.StatusServiceUnavailable)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), lookupTimeout)
-	address, err := rt.locator.directory.Address(ctx, shard)
-	cancel()
-	if err != nil {
-		http.Error(w, "the user's shard cannot be found now", http.StatusServiceUnavailable)
+	if address == "" {
+		http.Error(w, "no process holds the user's shard now; try again", http.StatusServiceUnavailable)
 		return
 	}
 	target, err := url.Parse(address)
@@ -129,7 +107,6 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 var (
-	_ Directory            = (*catalog.Catalog)(nil)
-	_ gateway.Placements   = (*catalog.Catalog)(nil)
-	_ gateway.LoadReporter = (*catalog.Catalog)(nil)
+	_ Directory       = (*catalog.Catalog)(nil)
+	_ shard.Directory = (*catalog.Catalog)(nil)
 )

@@ -260,46 +260,16 @@ func TestRowsFromBeforeUsersBelongToTheDefaultUser(t *testing.T) {
 	}
 }
 
-func TestOneProcessHoldsTheShard(t *testing.T) {
-	db, err := Open(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	at := time.Date(2026, 11, 5, 8, 0, 0, 0, time.UTC)
-	claim := func(owner string, now time.Time, want bool) {
-		t.Helper()
-		if got, err := db.claimShard(owner, now, time.Minute); err != nil || got != want {
-			t.Fatalf("%s claiming at %v: %v, %v", owner, now, got, err)
-		}
-	}
-	claim("first", at, true)
-	claim("second", at.Add(59*time.Second), false)
-	claim("first", at.Add(59*time.Second), true)
-	claim("second", at.Add(time.Minute), false)
-	claim("second", at.Add(2*time.Minute), true)
-	claim("first", at.Add(2*time.Minute), false)
-	if err := db.releaseShard("first"); err != nil {
-		t.Fatal(err)
-	}
-	claim("first", at.Add(2*time.Minute), false)
-	if err := db.releaseShard("second"); err != nil {
-		t.Fatal(err)
-	}
-	claim("first", at.Add(2*time.Minute), true)
-}
-
 func TestAFencedHandleStopsWritingOnceTheShardIsTaken(t *testing.T) {
-	db, err := Open(t.TempDir())
+	home := t.TempDir()
+	db, err := Open(home)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	at := time.Now()
-	if held, err := db.claimShard("first", at, time.Minute); err != nil || !held {
-		t.Fatal(held, err)
+	if err := db.Fence(1); err != nil {
+		t.Fatal(err)
 	}
-	db.fence("first")
 	writes := map[string]func(n int) error{
 		"in a transaction": func(n int) error {
 			return db.Tx(func(tx *DB) error { return tx.EnsureUser(fmt.Sprint("tx", n)) })
@@ -312,8 +282,13 @@ func TestAFencedHandleStopsWritingOnceTheShardIsTaken(t *testing.T) {
 			t.Fatalf("%s: %v", name, err)
 		}
 	}
-	if held, err := db.claimShard("second", at.Add(time.Hour), time.Minute); err != nil || !held {
-		t.Fatal(held, err)
+	taker, err := Open(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer taker.Close()
+	if err := taker.Fence(2); err != nil {
+		t.Fatal(err)
 	}
 	for name, write := range writes {
 		if err := write(2); !errors.Is(err, ErrShardLost) {
@@ -327,7 +302,10 @@ func TestAFencedHandleStopsWritingOnceTheShardIsTaken(t *testing.T) {
 	if slices.ContainsFunc(users, func(u string) bool { return strings.HasSuffix(u, "2") }) {
 		t.Errorf("a fenced write went through: %v", users)
 	}
-	if err := db.releaseShard("first"); err != nil {
-		t.Errorf("giving up a lease already lost: %v", err)
+	if err := db.Fence(1); !errors.Is(err, ErrShardLost) {
+		t.Errorf("fencing again under the earlier epoch: %v", err)
+	}
+	if err := taker.EnsureUser("taker"); err != nil {
+		t.Errorf("the later holder's write: %v", err)
 	}
 }

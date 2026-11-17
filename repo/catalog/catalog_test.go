@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/0xfakeSpike/ollupi/repo/sqlitedb"
 )
@@ -17,25 +18,23 @@ func TestCatalogPlacesUsersOnShards(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.Assign(t.Context(), "a"); !errors.Is(err, ErrNoShard) {
+	if _, _, err := c.Locate(t.Context(), "a"); !errors.Is(err, ErrNoShard) {
 		t.Errorf("no shards yet: %v", err)
 	}
 	if shard, err := c.ShardOf(t.Context(), "a"); shard != "" || err != nil {
 		t.Errorf("a, placed nowhere, is on %q: %v", shard, err)
 	}
 	for shard, accepting := range map[string]bool{"s1": true, "s2": true, "kept": false} {
-		if err := c.Publish(t.Context(), shard, "http://"+shard, accepting); err != nil {
-			t.Fatal(err)
-		}
+		acquire(t, c, shard, "p-"+shard, accepting, 0)
 	}
 	placed := map[string]int{}
 	for _, user := range []string{"a", "b", "c", "d"} {
-		shard, err := c.Assign(t.Context(), user)
-		if err != nil {
-			t.Fatal(err)
+		shard, address, err := c.Locate(t.Context(), user)
+		if err != nil || address != "http://"+shard {
+			t.Fatalf("%s on %s at %q: %v", user, shard, address, err)
 		}
 		placed[shard]++
-		if again, err := c.Assign(t.Context(), user); err != nil || again != shard {
+		if again, _, err := c.Locate(t.Context(), user); err != nil || again != shard {
 			t.Errorf("%s moved from %s to %s: %v", user, shard, again, err)
 		}
 		if again, err := c.ShardOf(t.Context(), user); err != nil || again != shard {
@@ -54,16 +53,6 @@ func TestCatalogPlacesUsersOnShards(t *testing.T) {
 	if err := c.Place(t.Context(), "a", "kept"); err == nil {
 		t.Error("a user with a shard was moved")
 	}
-
-	if err := c.Publish(t.Context(), "s1", "http://standby", true); err != nil {
-		t.Fatal(err)
-	}
-	if addr, err := c.Address(t.Context(), "s1"); err != nil || addr != "http://standby" {
-		t.Errorf("the address after a takeover: %q, %v", addr, err)
-	}
-	if _, err := c.Address(t.Context(), "gone"); !errors.Is(err, ErrUnknownShard) {
-		t.Errorf("an unknown shard: %v", err)
-	}
 	if err := c.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -74,6 +63,40 @@ func TestCatalogPlacesUsersOnShards(t *testing.T) {
 	defer reopened.Close()
 	if shard, err := reopened.ShardOf(t.Context(), "customer"); err != nil || shard != "kept" {
 		t.Errorf("after reopening: %s, %v", shard, err)
+	}
+}
+
+// One process holds a shard at a time; the address is its holder's, and each holder writes under a later epoch.
+func TestOneProcessHoldsAShard(t *testing.T) {
+	c := openCatalog(t, nil)
+	first := acquire(t, c, "s1", "first", true, 0)
+	if _, held, err := c.Acquire(t.Context(), "s1", "second", "http://second", true, time.Minute); err != nil || held {
+		t.Fatalf("a second process took a held shard: %v, %v", held, err)
+	}
+	if err := c.Renew(t.Context(), "s1", "first", first, time.Minute, 7); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Release(t.Context(), "s1", "first", first); err != nil {
+		t.Fatal(err)
+	}
+	if _, address, err := c.Locate(t.Context(), "a"); err != nil || address != "" {
+		t.Errorf("the address of a shard no process holds: %q, %v", address, err)
+	}
+	second, held, err := c.Acquire(t.Context(), "s1", "second", "http://second", true, time.Minute)
+	if err != nil || !held || second <= first {
+		t.Fatalf("taking a released shard: epoch %d after %d, %v, %v", second, first, held, err)
+	}
+	if _, address, err := c.Locate(t.Context(), "a"); err != nil || address != "http://second" {
+		t.Errorf("the address after a takeover: %q, %v", address, err)
+	}
+	if err := c.Renew(t.Context(), "s1", "first", first, time.Minute, 0); !errors.Is(err, ErrLeaseLost) {
+		t.Errorf("renewing a lease taken over: %v", err)
+	}
+	if _, held, err := c.Acquire(t.Context(), "s2", "third", "http://third", true, -time.Second); err != nil || !held {
+		t.Fatal(held, err)
+	}
+	if _, held, err := c.Acquire(t.Context(), "s2", "fourth", "http://fourth", true, time.Minute); err != nil || !held {
+		t.Errorf("a lease that ran out was not taken: %v, %v", held, err)
 	}
 }
 
@@ -107,7 +130,7 @@ func TestACatalogFromBeforeMigrationsKeepsItsRows(t *testing.T) {
 		t.Errorf("a is on %q: %v", shard, err)
 	}
 	var version int
-	if err := c.gorm.Raw("PRAGMA user_version").Scan(&version).Error; err != nil || version != 2 {
+	if err := c.gorm.Raw("PRAGMA user_version").Scan(&version).Error; err != nil || version != 3 {
 		t.Errorf("schema version %d: %v", version, err)
 	}
 }
@@ -120,21 +143,28 @@ func openCatalog(t *testing.T, shards map[string]int64) *Catalog {
 	}
 	t.Cleanup(func() { c.Close() })
 	for shard, load := range shards {
-		if err := c.Publish(t.Context(), shard, "http://"+shard, true); err != nil {
-			t.Fatal(err)
-		}
-		if err := c.ReportLoad(t.Context(), shard, load); err != nil {
-			t.Fatal(err)
-		}
+		acquire(t, c, shard, "p-"+shard, true, load)
 	}
 	return c
+}
+
+func acquire(t *testing.T, c *Catalog, shard, owner string, accepting bool, load int64) int64 {
+	t.Helper()
+	epoch, held, err := c.Acquire(t.Context(), shard, owner, "http://"+shard, accepting, time.Minute)
+	if err != nil || !held {
+		t.Fatalf("taking %s: %v, %v", shard, held, err)
+	}
+	if err := c.Renew(t.Context(), shard, owner, epoch, time.Minute, load); err != nil {
+		t.Fatal(err)
+	}
+	return epoch
 }
 
 func assignMany(t *testing.T, c *Catalog, prefix string, n int) map[string]int {
 	t.Helper()
 	placed := map[string]int{}
 	for i := range n {
-		shard, err := c.Assign(t.Context(), fmt.Sprint(prefix, i))
+		shard, _, err := c.Locate(t.Context(), fmt.Sprint(prefix, i))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -149,9 +179,6 @@ func TestNewUsersAvoidABusyShard(t *testing.T) {
 	placed := assignMany(t, c, "u", 200)
 	if placed["busy"] != 0 || placed["s1"]+placed["s2"] != 200 {
 		t.Errorf("placed %v", placed)
-	}
-	if err := c.ReportLoad(t.Context(), "gone", 1); !errors.Is(err, ErrUnknownShard) {
-		t.Errorf("the load of an unknown shard: %v", err)
 	}
 }
 
@@ -169,9 +196,7 @@ func TestAShardJustAddedTakesASharePerhapsLargerButNotAll(t *testing.T) {
 			}
 		}
 	}
-	if err := c.Publish(t.Context(), "new", "http://new", true); err != nil {
-		t.Fatal(err)
-	}
+	acquire(t, c, "new", "p-new", true, 0)
 	// It is drawn with one shard in five, so takes about 20 of 100; all of them would mean it took every new user.
 	placed := assignMany(t, c, "u", 100)
 	if placed["new"] == 0 || placed["new"] >= 50 {
@@ -203,15 +228,13 @@ func TestProcessesShareACatalog(t *testing.T) {
 		t.Cleanup(func() { catalogs[i].Close() })
 	}
 	for _, shard := range []string{"s1", "s2", "s3"} {
-		if err := catalogs[0].Publish(t.Context(), shard, "http://"+shard, true); err != nil {
-			t.Fatal(err)
-		}
+		acquire(t, catalogs[0], shard, "p-"+shard, true, 0)
 	}
 	shards := make([][]string, processes)
 	for i, c := range catalogs {
 		wg.Go(func() {
 			for u := range 20 {
-				shard, err := c.Assign(t.Context(), fmt.Sprint("user", u))
+				shard, _, err := c.Locate(t.Context(), fmt.Sprint("user", u))
 				if err != nil {
 					errs[i] = err
 					return

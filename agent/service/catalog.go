@@ -28,10 +28,6 @@ const (
 
 func (sv *Service) EnsureUser(user string) error { return sv.cfg.DB.EnsureUser(user) }
 
-func (sv *Service) TurnsUnderWay() (int64, error) { return sv.cfg.DB.TurnsUnderWay() }
-
-func (sv *Service) ActiveUsers(since time.Time) (int64, error) { return sv.cfg.DB.ActiveUsers(since) }
-
 func (sv *Service) ThreadPage(ctx context.Context, user, threadID string, before, limit int) (db.ThreadView, bool, error) {
 	return sv.cfg.DB.WithContext(ctx).ThreadPage(user, threadID, before, limit)
 }
