@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"reflect"
 
-	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/service"
 	"github.com/0xfakeSpike/ollupi/memory"
@@ -590,8 +589,8 @@ var errorCodes = []struct {
 	code int
 }{
 	{db.ErrNotFound, errNotFound},
-	{orchestrator.ErrNoActiveTurn, errNoActiveTurn},
-	{orchestrator.ErrTurnMismatch, errTurnMismatch},
+	{db.ErrNoActiveTurn, errNoActiveTurn},
+	{db.ErrTurnMismatch, errTurnMismatch},
 	{db.ErrNoSuchRequest, errNoSuchRequest},
 	{service.ErrSubagentThread, errSubagentThread},
 	{service.ErrWorkspaceArchived, errWorkspaceArchived},
