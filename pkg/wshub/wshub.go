@@ -115,16 +115,6 @@ func (h *Hub[T]) Count() int {
 	return n
 }
 
-// Each visits key's connections oldest first.
-func (h *Hub[T]) Each(key string, fn func(T)) {
-	h.mu.Lock()
-	held := h.held[key]
-	h.mu.Unlock()
-	for _, e := range held {
-		fn(e.value)
-	}
-}
-
 func (h *Hub[T]) add(key string, e *entry[T]) {
 	h.mu.Lock()
 	held := append(slices.Clone(h.held[key]), e)
