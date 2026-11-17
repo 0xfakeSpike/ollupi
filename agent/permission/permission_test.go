@@ -83,16 +83,16 @@ func TestSaveRefusesNewRulesForUnavailableProviders(t *testing.T) {
 	stored := Settings{Rules: Rules{Allow: []string{"github__create_issue"}}}
 
 	kept := Layer{Of: "the workspace", Settings: Settings{ApprovalPolicy: string(Never), Rules: Rules{Deny: []string{" github__create_issue"}, Allow: []string{"touch"}}}}
-	if err := ValidateLayer(base, stored, kept, registry); err != nil {
+	if err := validateLayer(base, stored, kept, registry); err != nil {
 		t.Errorf("saving other changes beside a stored rule: %v", err)
 	}
 	for _, added := range []string{"github__creat_issue", "github__create_issue(x)"} {
-		err := ValidateLayer(base, stored, layer("github__create_issue", added), registry)
+		err := validateLayer(base, stored, layer("github__create_issue", added), registry)
 		if err == nil || !strings.Contains(err.Error(), `the MCP server "github" is not connected`) || !strings.Contains(err.Error(), "the workspace: ") {
 			t.Errorf("adding %q: %v", added, err)
 		}
 	}
-	if err := ValidateLayer(base, Settings{}, layer("github__create_issue"), registry); err == nil {
+	if err := validateLayer(base, Settings{}, layer("github__create_issue"), registry); err == nil {
 		t.Error("a new layer was saved with a rule for an unavailable provider")
 	}
 }

@@ -28,7 +28,7 @@ func (sv *Service) StartThread(user, workspaceID, environmentID, title string, s
 	if err := usable(w); err != nil {
 		return db.ThreadRow{}, err
 	}
-	if err := sv.validateLayer(user, sv.permissions.Base(w), permission.Settings{}, permission.ThreadLayer(settings)); err != nil {
+	if err := sv.permissions.CheckThread(user, w, permission.Settings{}, settings); err != nil {
 		return db.ThreadRow{}, err
 	}
 	return sv.createThread(db.ThreadRow{UserID: user, Title: title, Settings: settings, WorkspaceID: db.Ref(workspaceID), EnvironmentID: db.Ref(env.ID)})

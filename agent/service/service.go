@@ -83,7 +83,7 @@ type Config struct {
 
 type Service struct {
 	cfg         Config
-	permissions permission.Deployment
+	permissions *permission.Manager
 	o           *orchestrator.Orchestrator
 	res         *resources.Resources
 	ev          *event.Emitter
@@ -93,10 +93,7 @@ type Service struct {
 }
 
 func New(cfg Config) *Service {
-	permissions := permission.Deployment{Settings: cfg.Settings, Shared: cfg.ToolsFor != nil, Tools: cfg.Tools}
-	o := orchestrator.New(cfg.DB, cfg.Attachments, cfg.Memory, cfg.Events, cfg.Name, cfg.Prompt, cfg.SkillsDir, permissions,
-		cfg.Slots, cfg.UserSlots, cfg.RunLimit)
-	return &Service{cfg: cfg, permissions: permissions, o: o, ev: cfg.Events, moving: map[string]bool{}}
+	return &Service{cfg: cfg, ev: cfg.Events, moving: map[string]bool{}}
 }
 
 func (sv *Service) Start(ctx context.Context) error {
@@ -112,6 +109,9 @@ func (sv *Service) Start(ctx context.Context) error {
 	if sv.cfg.Events == nil {
 		return fmt.Errorf("service: Events is required")
 	}
+	deployment := permission.Deployment{Settings: sv.cfg.Settings, Shared: sv.cfg.ToolsFor != nil, Tools: sv.cfg.Tools}
+	sv.o = orchestrator.New(sv.cfg.DB, sv.cfg.Attachments, sv.cfg.Memory, sv.cfg.Events, sv.cfg.Name, sv.cfg.Prompt, sv.cfg.SkillsDir,
+		deployment, sv.cfg.Slots, sv.cfg.UserSlots, sv.cfg.RunLimit)
 	providers := append(slices.Clone(sv.cfg.Providers), plan.New(), subagent.New(sv.cfg.DB, sv.o.Started), userinput.New(),
 		outputs.New(sv.cfg.DB), loader.New())
 	if sv.cfg.Memory != nil {
@@ -134,6 +134,7 @@ func (sv *Service) Start(ctx context.Context) error {
 		return fmt.Errorf("service: %w", err)
 	}
 	sv.res = res
+	sv.permissions = permission.NewManager(deployment, sv.cfg.DB, res.Registry, sv.cfg.Events)
 	if sv.cfg.Lease > 0 {
 		if ctx, err = sv.cfg.DB.Claim(ctx, sv.cfg.Lease, sv.cfg.OnLeaseLost); err != nil {
 			return fmt.Errorf("service: %w", err)
