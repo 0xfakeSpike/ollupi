@@ -1,0 +1,73 @@
+// Package subagent gives the model the tools that launch subagents: each is named after the role its subagent runs as,
+// and its call starts the subagent's conversation with the task; the subagent's report comes back to the turn.
+package subagent
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/tool"
+	"github.com/0xfakeSpike/ollupi/tool/kit"
+	"github.com/google/jsonschema-go/jsonschema"
+)
+
+type kind struct {
+	title, description string
+}
+
+var kinds = map[agent.Name]kind{
+	agent.GeneralSub: {
+		title: "Subagent",
+		description: "Launch a general-purpose subagent: another run of you, with your tools, that does one task on its own and reports back. " +
+			"For a task in the built-in browser, launch " + string(agent.BrowserSub) + " instead. " +
+			"To work on independent tasks at the same time, call " + string(agent.GeneralSub) + " several times in the same response; the subagents run in parallel.",
+	},
+	agent.BrowserSub: {
+		title: "Browser subagent",
+		description: "Launch a browser subagent: an agent that does one task in the built-in browser (opening pages, reading them, clicking and typing) and reports back. " +
+			"It has only the browser's tools. Use it for browser work of many steps, so the pages it reads stay out of this conversation. " +
+			"Browser subagents share the one browser, so launch one at a time.",
+	},
+}
+
+type call struct {
+	Description string `json:"description" jsonschema:"A short (3-5 word) description of the task, shown to the user."`
+	Prompt      string `json:"prompt" jsonschema:"The complete task for the subagent, self-contained."`
+}
+
+func (call) Constrain(s *jsonschema.Schema) {
+	s.Properties["description"].MinLength, s.Properties["description"].MaxLength = jsonschema.Ptr(1), jsonschema.Ptr(80)
+	s.Properties["prompt"].MinLength, s.Properties["prompt"].MaxLength = jsonschema.Ptr(1), jsonschema.Ptr(20000)
+}
+
+type Provider struct{}
+
+func (Provider) Name() (string, string) { return agent.SubagentsProvider, "Launches subagents." }
+
+const launching = "It knows nothing of this conversation: put everything it needs in prompt, including what its report must contain. " +
+	"The call returns at once and the subagent works on its own; its report comes back to you as a message when it ends. " +
+	"Meanwhile go on with what does not need the report, or end your reply: the turn waits for the reports of all its subagents, and answers the user if they write. " +
+	"Subagents cannot launch subagents."
+
+func (Provider) Tools(context.Context) ([]kit.Spec, error) {
+	specs := make([]kit.Spec, 0, len(kinds))
+	for name, k := range kinds {
+		specs = append(specs, kit.Spec{
+			Name:        string(name),
+			Description: k.description + " " + launching,
+			InputSchema: kit.InputSchema[call](),
+			Annotations: tool.Annotations{Title: k.title, ReadOnlyHint: true, OpenWorldHint: kit.Hint(false)},
+		})
+	}
+	return specs, nil
+}
+
+func (Provider) Invoke(_ context.Context, c tool.Call) (kit.Result, error) {
+	args, _ := kit.DecodeArguments[call](c.Arguments) // the schema checked its fields: it cannot fail
+	if strings.TrimSpace(args.Prompt) == "" || strings.TrimSpace(args.Description) == "" {
+		return kit.Result{}, fmt.Errorf("description and prompt must not be blank")
+	}
+	return kit.Result{Launch: &tool.Launch{Role: c.Tool, Title: strings.TrimSpace(args.Description), Task: args.Prompt}}, nil
+}
