@@ -9,7 +9,7 @@ import (
 	"math/rand/v2"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/repo/sqlitedb"
+	"github.com/0xfakeSpike/ollupi/pkg/sqlitedb"
 	"gorm.io/gorm"
 )
 

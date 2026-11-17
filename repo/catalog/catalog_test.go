@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/repo/sqlitedb"
+	"github.com/0xfakeSpike/ollupi/pkg/sqlitedb"
 )
 
 func TestCatalogPlacesUsersOnShards(t *testing.T) {
