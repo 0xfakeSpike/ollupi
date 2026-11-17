@@ -8,6 +8,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -19,16 +20,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/event"
-	"github.com/0xfakeSpike/ollupi/agent/permission"
-	"github.com/0xfakeSpike/ollupi/agent/service"
+	"github.com/0xfakeSpike/ollupi/app"
+	"github.com/0xfakeSpike/ollupi/ask"
+	"github.com/0xfakeSpike/ollupi/conversation"
+	"github.com/0xfakeSpike/ollupi/host"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
-	"github.com/0xfakeSpike/ollupi/repo/db"
-	"github.com/0xfakeSpike/ollupi/tools"
-	"github.com/0xfakeSpike/ollupi/tools/userinput"
-	"github.com/0xfakeSpike/ollupi/tools/web"
-	"github.com/0xfakeSpike/ollupi/tools/workspace"
+	"github.com/0xfakeSpike/ollupi/policy"
+	"github.com/0xfakeSpike/ollupi/store"
+	"github.com/0xfakeSpike/ollupi/tool/builtin/web"
+	"github.com/0xfakeSpike/ollupi/tool/builtin/workspace"
+	"github.com/0xfakeSpike/ollupi/tool/kit"
 	// Some task images ship no CA certificates; with none on the system, TLS falls back to the roots built in here.
 	_ "golang.org/x/crypto/x509roots/fallback"
 )
@@ -38,17 +40,19 @@ var version = "dev"
 
 const noOneThere = "No one is available to answer: decide for yourself and carry on with the task."
 
+// user is the one user of a run.
+const user = "eval"
+
 func main() {
 	log.SetOutput(os.Stderr)
 	log.SetFlags(0)
-	out := flag.String("out", "", "keep the turn and its items in this file as JSON, rewritten as each item completes")
+	out := flag.String("out", "", "keep the turn and its items in this file as JSON, rewritten as each commit changes them")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println(version)
 		return
 	}
-
 	instruction := required("OLLUPI_INSTRUCTION")
 	model := required("OLLUPI_MODEL")
 	key := required("OLLUPI_API_KEY")
@@ -68,7 +72,6 @@ func main() {
 	default:
 		log.Fatalf("eval: unknown OLLUPI_API %q", api)
 	}
-
 	dir, err := os.Getwd()
 	if err != nil {
 		log.Fatalf("eval: %v", err)
@@ -77,114 +80,115 @@ func main() {
 	if err != nil {
 		log.Fatalf("eval: %v", err)
 	}
-	store, err := db.Open(home)
-	if err != nil {
-		log.Fatalf("eval: %v", err)
-	}
-	defer store.Close()
-	runner, err := workspace.New(workspace.Options{
+	files, err := workspace.New(workspace.Options{
 		Config: workspace.Config{WorkspaceDirs: []string{dir}, SandboxMode: string(sandbox.ModeFullAccess)},
 		Agent:  workspace.AgentFiles{Home: home},
 	})
 	if err != nil {
 		log.Fatalf("eval: %v", err)
 	}
-	defer runner.Close()
-
-	var ag *service.Service
-	ended := make(chan db.TurnRow, 1)
-	// changed tells the writer below that the turn has a new item, so that -out holds the run so far even when the
-	// harness kills the run at its time limit.
-	changed := make(chan struct{}, 1)
-	events := event.New()
-	events.SubscribeAll(func(e event.Event) {
-		switch e.Kind {
-		case event.ItemCompleted:
-			logItem(e.Item)
-			if e.Thread.ParentThreadID == "" {
-				select {
-				case changed <- struct{}{}:
-				default:
-				}
-			}
-		case event.UserInputRequested:
-			// Answered outside the event, which the agent's loop is delivering.
-			go answer(ag, e.Thread.ID, e.Item)
-		case event.TurnCompleted:
-			// A subagent's turns end in conversations of their own.
-			if e.Thread.ParentThreadID == "" {
-				ended <- e.Turn
-			}
-		}
-	})
-	ag = service.New(service.Config{
-		BoxFor:      func(string) (sandbox.Box, error) { return sandbox.Here(), nil },
-		Name:        "ollupi",
-		Models:      []llm.Model{{Name: model, Connection: "model"}},
-		Connections: map[string]llm.Client{"model": client},
-		Providers:   []tools.Provider{runner, web.New()},
-		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
-		DB:          store,
-		Events:      events,
-	})
+	defer files.Close()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := ag.Start(ctx); err != nil {
-		log.Fatalf("eval: %v", err)
-	}
-	th, err := ag.StartThread(db.DefaultUser, "", "", "eval")
+	h, err := host.New(ctx, host.Config{
+		Home: home, Name: "ollupi",
+		Models:      []llm.Model{{Name: model, Connection: "model"}},
+		Connections: map[string]llm.Client{"model": client},
+		Tools:       []kit.Provider{files, web.New()},
+		Permissions: policy.Settings{ApprovalPolicy: string(policy.Never)},
+		Boxes:       func(string) (sandbox.Box, error) { return sandbox.Here(), nil },
+	})
 	if err != nil {
 		log.Fatalf("eval: %v", err)
 	}
+	defer h.Close()
+	if err := h.App.EnsureUser(ctx, user); err != nil {
+		log.Fatalf("eval: %v", err)
+	}
+	th, err := h.App.StartThread(ctx, user, "", "", "eval")
+	if err != nil {
+		log.Fatalf("eval: %v", err)
+	}
+
+	// The feed says what each commit did: the run is logged and kept as it goes, a question is answered that no one
+	// is there, and the turn of the conversation ending ends the run.
+	ended := make(chan conversation.Ending, 1)
+	changed := make(chan struct{}, 1)
+	sub := h.Store.Feed().Subscribe(user, func(e store.Event) {
+		if e.Change == nil {
+			return
+		}
+		for _, it := range e.Change.Items {
+			if it.Status != conversation.Pending && it.Status != conversation.InProgress {
+				logItem(it)
+			}
+			if it.Input != nil && !it.Input.Answered {
+				go answer(h.App, e.Thread, it)
+			}
+		}
+		if e.Thread != th.ID {
+			return
+		}
+		select {
+		case changed <- struct{}{}:
+		default:
+		}
+		for _, t := range e.Change.Turns {
+			if t.Ended != nil {
+				ended <- *t.Ended
+			}
+		}
+	})
+	defer sub.Close()
+	running := make(chan error, 1)
+	go func() { running <- h.Run(ctx) }()
+
 	startedAt := time.Now()
-	started, _, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, service.Input{Text: instruction})
+	turn, _, err := h.App.Send(ctx, user, th.ID, app.Input{Text: instruction})
 	if err != nil {
 		log.Fatalf("eval: %v", err)
 	}
 	var saving sync.Mutex
-	save := func() (db.TurnRow, []db.ItemRow) {
+	save := func() conversation.View {
 		saving.Lock()
 		defer saving.Unlock()
-		turn, err := store.Turn(started.ID)
-		if err != nil {
-			log.Fatalf("eval: %v", err)
-		}
-		items, err := store.TurnItems(started.ID)
-		if err != nil {
+		var v conversation.View
+		if err := h.Store.Read(context.Background(), func(r store.Reader) (err error) { v, err = r.View(th.ID); return err }); err != nil {
 			log.Fatalf("eval: %v", err)
 		}
 		if *out != "" {
-			if err := writeItems(*out, turn, items); err != nil {
+			if err := writeRun(*out, v, turn.ID); err != nil {
 				log.Printf("eval: %v", err)
 			}
 		}
-		return turn, items
+		return v
 	}
 	go func() {
 		for range changed {
 			save()
 		}
 	}()
+	var end conversation.Ending
 	select {
-	case <-ended:
-	case <-ctx.Done():
+	case end = <-ended:
+	case err := <-running:
 		save()
-		log.Print("eval: stopped before the turn ended")
-		ag.Wait()
+		log.Printf("eval: stopped before the turn ended: %v", cmp.Or(err, errors.New("interrupted")))
 		os.Exit(1)
 	}
-	turn, items := save()
+	v := save()
+	items := v.ItemsOf(turn.ID)
 	for i := len(items) - 1; i >= 0; i-- {
-		if items[i].Type == db.ItemAgentMessage {
+		if items[i].Kind == conversation.ItemAgentMessage {
 			fmt.Println(items[i].Text)
 			break
 		}
 	}
-	log.Printf("eval: turn %s after %s, %d items", turn.Status, time.Since(startedAt).Round(time.Second), len(items))
+	log.Printf("eval: turn %s after %s, %d items", end.Status, time.Since(startedAt).Round(time.Second), len(items))
 	stop()
-	ag.Wait()
-	if turn.Status != db.TurnCompleted {
-		log.Printf("eval: %s", cmp.Or(turn.Error, "the turn did not complete"))
+	<-running
+	if end.Status != conversation.Completed {
+		log.Printf("eval: %s", cmp.Or(end.Reason, "the turn did not complete"))
 		os.Exit(1)
 	}
 }
@@ -209,12 +213,60 @@ func number(name string, fallback int) int {
 	return n
 }
 
-// writeItems replaces the file whole, so a reader never sees half of it.
-func writeItems(path string, turn db.TurnRow, items []db.ItemRow) error {
+// The run as eval/trace.py and eval/trials.py read it.
+type runTurn struct {
+	Status      string             `json:"status"`
+	Error       string             `json:"error,omitempty"`
+	Model       llm.Model          `json:"model"`
+	Usage       conversation.Usage `json:"usage"`
+	StartedAt   time.Time          `json:"startedAt"`
+	CompletedAt *time.Time         `json:"completedAt,omitempty"`
+}
+
+type runItem struct {
+	ID           string                     `json:"id"`
+	Type         conversation.ItemKind      `json:"type"`
+	Status       conversation.ItemStatus    `json:"status"`
+	Tool         string                     `json:"tool,omitempty"`
+	Arguments    string                     `json:"arguments,omitempty"`
+	ResponseID   string                     `json:"responseId,omitempty"`
+	Text         string                     `json:"text,omitempty"`
+	Error        string                     `json:"error,omitempty"`
+	Result       *conversation.Result       `json:"result,omitempty"`
+	ContextStats *conversation.ContextStats `json:"contextStats,omitempty"`
+	StartedAt    time.Time                  `json:"startedAt"`
+	CompletedAt  *time.Time                 `json:"completedAt,omitempty"`
+}
+
+// writeRun replaces the file whole, so a reader never sees half of it. A response's stats go with its first item.
+func writeRun(path string, v conversation.View, turnID string) error {
+	t, _ := v.TurnOf(turnID)
+	run := runTurn{Status: "inProgress", Model: t.Model, Usage: t.Usage, StartedAt: t.QueuedAt}
+	if t.Ended != nil {
+		at := t.Ended.At
+		run.Status, run.Error, run.CompletedAt = string(t.Ended.Status), t.Ended.Reason, &at
+	}
+	stats := map[string]conversation.ContextStats{}
+	for _, r := range v.Responses {
+		stats[r.ID] = r.Stats
+	}
+	items := []runItem{}
+	for _, it := range v.ItemsOf(turnID) {
+		ri := runItem{ID: it.ID, Type: it.Kind, Status: it.Status, ResponseID: it.Response, Text: it.Text, Error: it.Error,
+			Result: it.Result, ContextStats: it.Stats, StartedAt: it.StartedAt, CompletedAt: it.CompletedAt}
+		if it.Call != nil {
+			ri.Tool, ri.Arguments = it.Call.Tool, it.Call.Arguments
+		}
+		if s, ok := stats[it.Response]; ok && ri.ContextStats == nil {
+			ri.ContextStats = &s
+			delete(stats, it.Response)
+		}
+		items = append(items, ri)
+	}
 	raw, err := json.MarshalIndent(struct {
-		Turn  db.TurnRow   `json:"turn"`
-		Items []db.ItemRow `json:"items"`
-	}{turn, items}, "", "  ")
+		Turn  runTurn   `json:"turn"`
+		Items []runItem `json:"items"`
+	}{run, items}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -225,35 +277,30 @@ func writeItems(path string, turn db.TurnRow, items []db.ItemRow) error {
 	return os.Rename(tmp, path)
 }
 
-// logItem writes a line for each tool call and message as it completes, so the harness's log shows the run.
-func logItem(it *db.ItemRow) {
-	if it == nil {
-		return
-	}
-	switch it.Type {
-	case db.ItemToolCall:
-		log.Printf("tool %s %s: %s", it.Tool, it.Status, clip(it.Arguments, 200))
-	case db.ItemAgentMessage:
+// logItem writes a line for each tool call and message as it ends, so the harness's log shows the run.
+func logItem(it conversation.Item) {
+	switch it.Kind {
+	case conversation.ItemToolCall:
+		log.Printf("tool %s %s: %s", it.Call.Tool, it.Status, clip(it.Call.Arguments, 200))
+	case conversation.ItemAgentMessage:
 		log.Printf("message: %s", clip(it.Text, 200))
-	case db.ItemError:
+	case conversation.ItemError:
 		log.Printf("error: %s", clip(cmp.Or(it.Error, it.Text), 400))
 	}
 }
 
-func answer(ag *service.Service, threadID string, it *db.ItemRow) {
-	if it == nil {
-		return
-	}
-	req, err := userinput.Decode(json.RawMessage(it.Arguments))
+// answer answers that no one is there.
+func answer(a *app.App, thread string, it conversation.Item) {
+	req, err := ask.Decode(it.Input.Request)
 	if err != nil {
 		log.Printf("eval: the question could not be read: %v", err)
 		return
 	}
-	answers := userinput.Answers{}
+	answers := ask.Answers{}
 	for _, q := range req.Questions {
-		answers[q.ID] = userinput.Answer{Answers: []string{noOneThere}}
+		answers[q.ID] = ask.Answer{Answers: []string{noOneThere}}
 	}
-	if err := ag.AnswerUserInput(db.DefaultUser, threadID, it.ID, answers); err != nil {
+	if err := a.Answer(context.Background(), user, thread, it.ID, answers); err != nil {
 		log.Printf("eval: the question could not be answered: %v", err)
 	}
 }
