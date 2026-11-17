@@ -63,8 +63,7 @@ func New(opts Options) *Provider {
 	return &Provider{client: &http.Client{Transport: transport, Timeout: fetchTimeout, CheckRedirect: sameHost}}
 }
 
-// sameHost follows redirects within the host the call was approved for. A redirect elsewhere comes back
-// to the model, so the new host goes through the permission check as its own call.
+// A redirect to another host comes back to the model, so the new host goes through the permission check.
 func sameHost(req *http.Request, via []*http.Request) error {
 	switch {
 	case len(via) >= maxRedirects:

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/0xfakeSpike/ollupi/agent/event"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -13,8 +12,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// StartThread starts a conversation in the environment it names, which must be one of the user's: the environment
-// on this machine when it names none. Its workspace is a folder in whichever environment it runs in.
 func (sv *Service) StartThread(user, workspaceID, environmentID, title string, settings permission.Settings) (db.ThreadRow, error) {
 	title, err := threadTitle(title, false)
 	if err != nil {
@@ -41,8 +38,7 @@ func (sv *Service) UpdateThreadSettings(user, threadID string, settings permissi
 	return sv.updateThreadSettings(user, threadID, func(permission.Settings) permission.Settings { return settings })
 }
 
-// updateThreadSettings checks what change makes of the thread's settings as they were read, and writes what it makes
-// of them as they are when written.
+// change is checked against the settings as read, and applied again to them as they are when written.
 func (sv *Service) updateThreadSettings(user, threadID string, change func(permission.Settings) permission.Settings) (db.ThreadRow, error) {
 	t, err := sv.topThread(user, threadID)
 	if err != nil {
@@ -70,7 +66,6 @@ func (sv *Service) createThread(t db.ThreadRow) (db.ThreadRow, error) {
 	if err := sv.cfg.DB.CreateThread(t); err != nil {
 		return db.ThreadRow{}, fmt.Errorf("service: create: %w", err)
 	}
-	sv.ev.Emit(event.Event{Kind: event.ThreadStarted, Thread: t})
 	return t, nil
 }
 
@@ -108,8 +103,6 @@ func (sv *Service) RenameThread(user, id, title string) (db.ThreadRow, error) {
 	return t, nil
 }
 
-// MarkThreadRead records that the user has read a thread as it is now, so it is no longer unread until another turn
-// ends. Other clients hear of it as a thread change.
 func (sv *Service) MarkThreadRead(user, id string) (db.ThreadRow, error) {
 	if _, err := sv.topThread(user, id); err != nil {
 		return db.ThreadRow{}, err
@@ -169,14 +162,11 @@ func (sv *Service) DeleteThread(user, id string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(sv.ctx), attachmentTimeout)
 	defer cancel()
-	if err := sv.cfg.Attachments.DeletePrefix(ctx, id); err != nil {
-		slog.Warn("thread attachments not removed", "thread", id, "err", err)
-	}
+	sv.cfg.Attachments.DeletePrefix(ctx, id)
 	return nil
 }
 
-// emitCronJobs reports the scheduled tasks of a thread that was archived or deleted. Subagents cannot schedule
-// tasks, so a thread's own tasks are all of them.
+// Subagents cannot schedule tasks, so a thread's own tasks are all of them.
 func (sv *Service) emitCronJobs(t db.ThreadRow, jobs []db.CronJobView) {
 	for _, j := range jobs {
 		sv.ev.Emit(event.Event{Kind: event.CronJobChanged, Thread: t, CronJobID: j.ID})
@@ -191,7 +181,7 @@ func threadTitle(title string, required bool) (string, error) {
 	return title, nil
 }
 
-// owned refuses a thread that is not the user's as though it did not exist.
+// Another user's thread is refused as though it did not exist.
 func (sv *Service) owned(user, id string) error {
 	if _, err := sv.cfg.DB.ThreadOf(user, id); err != nil {
 		return fmt.Errorf("service: thread %s: %w", id, err)

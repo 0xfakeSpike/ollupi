@@ -17,7 +17,6 @@ func ThreadLayer(s Settings) Layer {
 	return Layer{Of: "this conversation's permission settings", Settings: s}
 }
 
-// ParentLayer is the settings a subagent's conversation goes by: those of the conversation that launched it.
 func ParentLayer(s Settings) Layer {
 	return Layer{Of: "the parent conversation's permission settings", Settings: s}
 }
@@ -26,14 +25,11 @@ type Layer struct {
 	Of       string
 	Settings Settings
 	// Shared settings serve users with different tools, so they may name tools this user lacks.
-	Shared bool
-	// Providers, when set, are the only providers whose tools the layer leaves visible.
+	Shared    bool
 	Providers []string
-	// Without are the providers whose tools the layer takes away.
-	Without []string
+	Without   []string
 }
 
-// Keeps says whether the layer leaves d visible.
 func (l Layer) Keeps(d tools.ToolDescriptor) bool {
 	return (l.Providers == nil || slices.Contains(l.Providers, d.Provider)) && !slices.Contains(l.Without, d.Provider)
 }

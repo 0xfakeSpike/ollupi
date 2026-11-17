@@ -4,25 +4,45 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 )
-
-// What the service asks of the orchestrator: to look at a conversation again, whether it holds a slot, and to interrupt
-// its turn.
 
 var (
 	ErrNoActiveTurn = errors.New("the thread has no turn in progress")
 	ErrTurnMismatch = errors.New("the expected turn is not the turn in progress")
 )
 
-// Wake looks at the conversation again: it starts a turn that became ready, takes the results that came back to it,
-// and runs it when a slot is free.
 func (o *Orchestrator) Wake(threadID string) {
 	o.post(func() { o.reconcile(threadID) })
 }
 
-// Interrupt stops the conversation's turn in progress, which must be expectedTurnID when that is set: a run in its
-// slot is stopped, and a turn that waits ends as interrupted.
+// A turn written behind another is told of when the one ahead ends.
+func (o *Orchestrator) Started(threadID string) {
+	o.post(func() {
+		st, err := o.store.ThreadState(threadID)
+		if err != nil {
+			o.ev.Fault(threadID, "", "the conversation could not be read")
+			return
+		}
+		turn, active := st.ActiveTurn()
+		if !active {
+			return
+		}
+		items, err := o.store.TurnItems(turn.ID)
+		if err != nil {
+			o.ev.Fault(threadID, turn.ID, "the turn's message could not be read")
+			return
+		}
+		o.ev.Emit(event.Event{Kind: event.TurnStarted, Thread: st.Thread, Turn: turn})
+		for _, it := range items {
+			o.ev.Item(st.Thread, turn, it, true)
+		}
+		o.ev.Status(threadID)
+		o.reconcile(threadID)
+	})
+}
+
 func (o *Orchestrator) Interrupt(threadID, expectedTurnID string) error {
 	return o.call(func() error { return o.interrupt(threadID, expectedTurnID) })
 }
@@ -35,7 +55,7 @@ func (o *Orchestrator) interrupt(threadID, expectedTurnID string) error {
 		sl.cancel()
 		return nil
 	}
-	st, err := o.cfg.DB.ThreadState(threadID)
+	st, err := o.store.ThreadState(threadID)
 	if err != nil {
 		return fmt.Errorf("orchestrator: thread %s: %w", threadID, err)
 	}

@@ -3,18 +3,16 @@ package orchestrator
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
 )
 
-// claimShard waits until this process holds the shard, and returns the context that ends when it no longer does.
 func (o *Orchestrator) claimShard(ctx context.Context) (context.Context, error) {
 	o.owner = uuid.NewString()
-	every := o.cfg.Lease / 3
+	every := o.lease / 3
 	for {
-		held, err := o.cfg.DB.ClaimShard(o.owner, time.Now(), o.cfg.Lease)
+		held, err := o.store.ClaimShard(o.owner, time.Now(), o.lease)
 		if err != nil {
 			return nil, fmt.Errorf("orchestrator: claim the shard: %w", err)
 		}
@@ -27,8 +25,7 @@ func (o *Orchestrator) claimShard(ctx context.Context) (context.Context, error) 
 		case <-time.After(every):
 		}
 	}
-	o.cfg.DB.Fence(o.owner)
-	slog.Info("shard claimed", "owner", o.owner)
+	o.store.Fence(o.owner)
 	held, lost := context.WithCancel(ctx)
 	o.done.Add(1)
 	go func() {
@@ -39,12 +36,12 @@ func (o *Orchestrator) claimShard(ctx context.Context) (context.Context, error) 
 	return held, nil
 }
 
-// keepShard renews the claim until the orchestrator stops. Storage that fails is retried while the claim runs; once it has
-// run out, or another process holds the shard, this process must not go on.
+// Storage that fails is retried while the claim runs; once it has run out, or another process holds the shard, this
+// process must not go on.
 func (o *Orchestrator) keepShard(ctx context.Context, every time.Duration) {
 	tick := time.NewTicker(every)
 	defer tick.Stop()
-	until := time.Now().Add(o.cfg.Lease)
+	until := time.Now().Add(o.lease)
 	for {
 		select {
 		case <-ctx.Done():
@@ -52,18 +49,16 @@ func (o *Orchestrator) keepShard(ctx context.Context, every time.Duration) {
 		case <-tick.C:
 		}
 		now := time.Now()
-		held, err := o.cfg.DB.ClaimShard(o.owner, now, o.cfg.Lease)
+		held, err := o.store.ClaimShard(o.owner, now, o.lease)
 		if held {
-			until = now.Add(o.cfg.Lease)
+			until = now.Add(o.lease)
 			continue
 		}
 		if err != nil && now.Before(until) {
-			slog.Warn("shard lease not renewed", "err", err)
 			continue
 		}
-		slog.Error("shard lost", "owner", o.owner, "err", err)
-		if o.cfg.OnLeaseLost != nil {
-			o.cfg.OnLeaseLost()
+		if o.onLeaseLost != nil {
+			o.onLeaseLost()
 		}
 		return
 	}

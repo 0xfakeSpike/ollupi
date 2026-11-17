@@ -17,8 +17,6 @@ func ValidateArguments(args map[string]any, schema any) error {
 	return validate(resolved, args)
 }
 
-// ResolveSchema makes a tool's input schema ready to check arguments against, or says why the registry cannot take a
-// tool with it: a provider whose tools come from outside leaves such a tool out.
 func ResolveSchema(schema any) (*jsonschema.Resolved, error) {
 	if schema == nil {
 		return nil, fmt.Errorf("missing input schema")

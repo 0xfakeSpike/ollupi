@@ -10,7 +10,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
-// dirs is what a call works on: the caller's box, and the roots a command may write in it; it runs in the first.
 type dirs struct {
 	box   sandbox.Box
 	roots []string
@@ -68,7 +67,6 @@ func (d dirs) resolve(ctx context.Context, requested string) (string, error) {
 	return "", fmt.Errorf("workspace: directory %q is outside the command directories", requested)
 }
 
-// workDir is where a command runs: the work_dir it asks for, or the first root.
 func (d dirs) workDir(ctx context.Context, args map[string]any) (string, error) {
 	requested := ""
 	if raw, ok := args["work_dir"]; ok {

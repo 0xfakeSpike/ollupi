@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 	"net/http"
 	"runtime/debug"
 	"sync"
@@ -25,12 +24,10 @@ const (
 	// The largest message a client has reason to send is one user message, held to a quarter of a model's input
 	// (service.checkLength): files go by path. A megabyte is about that for a million tokens of input.
 	maxMessageBytes = 4 << 20
-	// What a client sent is logged up to this many bytes, so that it cannot fill the log.
-	maxLoggedBytes = 200
-	defaultLimit   = 20
-	maxLimit       = 100
-	defaultItems   = 100
-	maxItems       = 500
+	defaultLimit    = 20
+	maxLimit        = 100
+	defaultItems    = 100
+	maxItems        = 500
 )
 
 type Server struct {
@@ -45,8 +42,7 @@ type Server struct {
 	load         Load
 	hosts        []string
 	origins      []string
-	// hub holds the users' connections, keyed by user.
-	hub *wshub.Hub[*conn]
+	hub          *wshub.Hub[*conn]
 	// ready holds the users found on this shard and made ready by EnsureUser, so that their reconnections ask and write
 	// nothing: a user stays on their shard, and none is removed.
 	ready  sync.Map
@@ -82,7 +78,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.db.EnsureUser(user); err != nil {
-			slog.Error("user not ready", "user", user, "err", err)
 			http.Error(w, "the user could not be made ready", http.StatusInternalServerError)
 			return
 		}
@@ -90,17 +85,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: s.origins, Subprotocols: []string{tokenProtocol}})
 	if err != nil {
-		slog.Warn("client not accepted", "err", err)
 		return
 	}
 	ws.SetReadLimit(maxMessageBytes)
 	c := &conn{s: s, user: user, ws: ws, rpc: jsonrpc.NewConn(ws), asked: make(map[string]bool)}
-	slog.Info("client connected", "origin", r.Header.Get("Origin"))
 	s.hub.Serve(r.Context(), user, ws, c, func(ctx context.Context) error { return c.rpc.Serve(ctx, c) })
 }
 
-// Deliver sends an event to the connections of the user it belongs to; one that names no user goes to nobody, the
-// log has it.
 func (s *Server) Deliver(e event.Event) {
 	user := e.Thread.UserID
 	if e.Workspace != nil {
@@ -119,7 +110,6 @@ func (s *Server) Deliver(e event.Event) {
 	}
 }
 
-// each calls fn with each of the user's connections that has been initialized.
 func (s *Server) each(user string, fn func(*conn)) {
 	s.hub.Each(user, func(c *conn) {
 		if c.isInitialized() {
@@ -145,11 +135,8 @@ func (c *conn) isInitialized() bool {
 	return c.initialized
 }
 
-func (c *conn) Notify(method string, _ json.RawMessage) {
-	if _, ok := protocol.clientNotifications[method]; !ok {
-		slog.Warn("client notification ignored", "method", method[:min(len(method), maxLoggedBytes)])
-	}
-}
+// Notify takes a client's notification, which asks for no answer and changes nothing on the shard.
+func (c *conn) Notify(string, json.RawMessage) {}
 
 func (c *conn) Call(ctx context.Context, method string, params json.RawMessage) (any, func(), *jsonrpc.Error) {
 	c.mu.Lock()
@@ -180,8 +167,6 @@ func (c *conn) initialize(ctx context.Context, _ InitializeParams) (InitializeRe
 
 func (c *conn) event(e event.Event) {
 	switch e.Kind {
-	case event.ThreadStarted:
-		c.rpc.Notify(notifyThreadStarted, ThreadResult{Thread: threadRow(e.Thread)})
 	case event.ThreadChanged:
 		changed := threadRow(e.Thread)
 		c.rpc.Notify(notifyThreadChanged, ThreadChangedNotification{ThreadID: e.Thread.ID, Thread: &changed})

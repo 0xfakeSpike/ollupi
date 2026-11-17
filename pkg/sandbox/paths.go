@@ -67,7 +67,6 @@ func CanonicalDirectory(path string) (string, error) {
 // rule on ~/.ssh must then hold for ~/.SSH too, as the seatbelt profile's rules do.
 var caselessNames = runtime.GOOS == "darwin" || runtime.GOOS == "windows"
 
-// within is Within for this machine's paths.
 func within(root, path string) bool {
 	if caselessNames {
 		root, path = strings.ToLower(root), strings.ToLower(path)

@@ -24,7 +24,6 @@ func (c *conn) workspaceRename(ctx context.Context, p WorkspaceRenameParams) (Wo
 	return workspaceResult(c.s.service.RenameWorkspace(c.user, p.WorkspaceID, p.Name))
 }
 
-// workspaceMove moves the workspace's folder to path, a folder that is there and empty.
 func (c *conn) workspaceMove(ctx context.Context, p WorkspaceMoveParams) (WorkspaceResult, func(), error) {
 	if strings.TrimSpace(p.WorkspaceID) == "" {
 		return WorkspaceResult{}, nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "workspaceId is required")

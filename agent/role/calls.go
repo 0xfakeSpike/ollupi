@@ -3,20 +3,14 @@ package role
 import (
 	"context"
 	"fmt"
-	"log/slog"
-	"time"
 
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/tools"
 	"golang.org/x/sync/errgroup"
 )
 
-// maxParallelCalls bounds the read-only calls of one answer that run at once.
 const maxParallelCalls = 8
 
-// callTools decides and runs the turn's pending tool calls in order, each once the calls before it ran: read-only
-// calls in a row run together, any other alone. A call that asks for approval leaves the calls after it pending, for
-// the turn to wait; once tool use stopped, as the role's stop says, the calls left are skipped.
 func (rt *Runtime) callTools(ctx context.Context) error {
 	var batch []db.ItemRow
 	for i, it := range rt.items {
@@ -27,7 +21,7 @@ func (rt *Runtime) callTools(ctx context.Context) error {
 			return err
 		}
 		readOnly := rt.readOnly(it.Tool)
-		if !readOnly { // a call that is not read-only runs once the reads before it ran
+		if !readOnly {
 			if err := rt.runCalls(ctx, batch); err != nil {
 				return err
 			}
@@ -49,7 +43,7 @@ func (rt *Runtime) callTools(ctx context.Context) error {
 			if err := rt.runCalls(ctx, []db.ItemRow{*call}); err != nil {
 				return err
 			}
-		case rt.items[i].WaitsForApproval(): // it holds the calls after it: the pass ends with it
+		case rt.items[i].WaitsForApproval():
 			return rt.runCalls(ctx, batch)
 		}
 	}
@@ -61,7 +55,6 @@ func (rt *Runtime) readOnly(tool string) bool {
 	return ok && d.Annotations.ReadOnlyHint && !d.Serial
 }
 
-// runCalls runs the calls together, up to maxParallelCalls at once, and records what each returned.
 func (rt *Runtime) runCalls(ctx context.Context, calls []db.ItemRow) error {
 	if len(calls) == 0 {
 		return nil
@@ -94,20 +87,15 @@ func (rt *Runtime) runCalls(ctx context.Context, calls []db.ItemRow) error {
 
 func (rt *Runtime) execute(ctx context.Context, it db.ItemRow) tools.Result {
 	args, _ := callArguments(it) // a call runs only once handleCall read its arguments
-	started := time.Now()
-	result := rt.Registry.InvokePrepared(ctx, rt.caller(it), it.Tool, args, it.PreparedExecution)
+	result := rt.registry.InvokePrepared(ctx, rt.caller(it), it.Tool, args, it.PreparedExecution)
 	if result.Err == nil {
 		if err := rt.window.CheckArtifacts(result.Artifacts); err != nil {
 			result = tools.Result{Err: fmt.Errorf("apply tool context: %w", err)}.For(it.Tool)
 		}
 	}
-	// The error stays out of the log with the output: either can quote the files and commands it touched.
-	slog.InfoContext(ctx, "tool call", "thread", rt.thread.ID, "turn", rt.turn.ID, "item", it.ID, "tool", it.Tool,
-		"ms", time.Since(started).Milliseconds(), "failed", result.Err != nil, "awaits", result.Await != nil)
 	return result
 }
 
-// finishTool records what a call's run returned: the await it waits on, or its result, completed or failed.
 func (rt *Runtime) finishTool(it db.ItemRow, result tools.Result) error {
 	if result.Err == nil && result.Await != nil {
 		it.Await = result.Await
@@ -133,7 +121,6 @@ func (rt *Runtime) fail(it db.ItemRow, reason string) error {
 	return err
 }
 
-// caller is who makes the call that the item records: the run's role, in its conversation.
 func (rt *Runtime) caller(it db.ItemRow) tools.Caller {
 	t := rt.thread
 	_, deferred := rt.Offer()

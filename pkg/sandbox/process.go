@@ -56,16 +56,15 @@ func runProcess(ctx context.Context, cmd *exec.Cmd, program string, limit time.D
 		return Result{}, fmt.Errorf("sandbox: start %s: %w", program, err)
 	}
 	var copies sync.WaitGroup
-	for _, c := range []struct {
-		dst *cappedBuffer
-		src *os.File
-	}{{stdout, outR}, {stderr, errR}} {
-		copies.Add(1)
-		go func() {
-			defer copies.Done()
-			_, _ = io.Copy(c.dst, c.src)
-		}()
-	}
+	copies.Add(2)
+	go func() {
+		defer copies.Done()
+		_, _ = io.Copy(stdout, outR)
+	}()
+	go func() {
+		defer copies.Done()
+		_, _ = io.Copy(stderr, errR)
+	}()
 	err = cmd.Wait()
 	killRun(cmd, tag)
 	drained := make(chan struct{})
@@ -102,25 +101,26 @@ func runProcess(ctx context.Context, cmd *exec.Cmd, program string, limit time.D
 }
 
 func outputTail(stdout, stderr *cappedBuffer) string {
-	const n = 2000
 	var parts []string
-	for _, b := range []struct {
-		name string
-		buf  *cappedBuffer
-	}{{"stdout", stdout}, {"stderr", stderr}} {
-		s := strings.TrimSpace(b.buf.String())
-		if s == "" {
-			continue
-		}
-		if len(s) > n {
-			s = "…" + s[len(s)-n:]
-		}
-		parts = append(parts, b.name+": "+s)
+	if s := tailOf(stdout); s != "" {
+		parts = append(parts, "stdout: "+s)
+	}
+	if s := tailOf(stderr); s != "" {
+		parts = append(parts, "stderr: "+s)
 	}
 	if len(parts) == 0 {
 		return ""
 	}
 	return "; " + strings.Join(parts, "; ")
+}
+
+func tailOf(b *cappedBuffer) string {
+	const n = 2000
+	s := strings.TrimSpace(b.String())
+	if len(s) > n {
+		s = "…" + s[len(s)-n:]
+	}
+	return s
 }
 
 type cappedBuffer struct {
@@ -205,8 +205,8 @@ func (s *Sandbox) Start(ctx context.Context, c Command, stderr io.Writer) (Proce
 	return &process{ReadCloser: stdout, WriteCloser: stdin, cmd: cmd, tag: tag, stop: stop}, nil
 }
 
-// process is a command of this machine. Closing its input lets it end by itself; one that does not is killed, and
-// so is what it started, whether it ended or not.
+// Closing a process's input lets it end by itself; one that does not is killed, and so is what it started, whether
+// it ended or not.
 type process struct {
 	io.ReadCloser
 	io.WriteCloser

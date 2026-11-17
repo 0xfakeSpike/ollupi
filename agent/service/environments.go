@@ -11,17 +11,13 @@ import (
 	"github.com/google/uuid"
 )
 
-// ErrEnvironmentInUse is an environment a conversation runs in, which cannot be removed under it.
 var ErrEnvironmentInUse = errors.New("a conversation runs in the environment")
 
-// Environments lists where the user's conversations can run, their environment on this machine first: the one a
-// conversation that names none runs in.
+// This machine's environment comes first: the one a conversation that names none runs in.
 func (sv *Service) Environments(user string) ([]db.EnvironmentRow, error) {
 	return sv.cfg.DB.Environments(user)
 }
 
-// AddEnvironment names another place a conversation can run: a cloud sandbox of the user's, which the host reaches
-// through a sandbox.Machine. This machine is one environment already, and stays.
 func (sv *Service) AddEnvironment(user, name string, kind db.EnvironmentKind) (db.EnvironmentRow, error) {
 	name, err := environmentName(name)
 	if err != nil {
@@ -71,9 +67,8 @@ func (sv *Service) RenameEnvironment(user, id, name string) (db.EnvironmentRow, 
 	return row, nil
 }
 
-// DeleteEnvironment removes a cloud sandbox from the list. This machine stays, since the workspaces are folders in it,
-// and so does any environment a conversation runs in: a conversation does not move while it exists. It returns the
-// environment it removed.
+// This machine stays, since the workspaces are folders in it, and so does any environment a conversation runs
+// in: a conversation does not move while it exists.
 func (sv *Service) DeleteEnvironment(user, id string) (db.EnvironmentRow, error) {
 	row, err := sv.cfg.DB.EnvironmentOf(user, id)
 	if errors.Is(err, db.ErrNotFound) {
@@ -99,7 +94,6 @@ func (sv *Service) DeleteEnvironment(user, id string) (db.EnvironmentRow, error)
 	return row, nil
 }
 
-// environmentFor is the environment a conversation runs in: the one it names, or the user's on this machine.
 func (sv *Service) environmentFor(user, id string) (db.EnvironmentRow, error) {
 	if id == "" {
 		env, err := sv.cfg.DB.LocalEnvironment(user)

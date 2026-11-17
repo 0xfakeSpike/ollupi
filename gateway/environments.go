@@ -3,14 +3,13 @@ package gateway
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"strings"
 
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
-// environmentList lists where the user's conversations can run; the first is where one that names none runs.
+// The first is where a conversation that names none runs.
 func (c *conn) environmentList(ctx context.Context, _ Empty) (EnvironmentListResult, func(), error) {
 	rows, err := c.s.service.Environments(c.user)
 	if err != nil {
@@ -41,8 +40,6 @@ func environmentResult(env db.EnvironmentRow, err error) (EnvironmentResult, fun
 	return EnvironmentResult{Environment: environmentRow(env)}, nil, err
 }
 
-// environmentChanged tells the user's connections that an environment changed, or, when it can no longer be read,
-// that it is gone. It reads the environment only when a connection is there to tell.
 func (s *Server) environmentChanged(user, id string) {
 	var n *EnvironmentChangedNotification
 	s.each(user, func(c *conn) {
@@ -54,7 +51,6 @@ func (s *Server) environmentChanged(user, id string) {
 				row := environmentRow(env)
 				read.Environment = &row
 			case !errors.Is(err, db.ErrNotFound):
-				slog.Error("changed environment not readable", "environment", id, "err", err)
 				return
 			}
 			n = &read

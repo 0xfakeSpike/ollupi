@@ -7,11 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
-	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -142,11 +140,7 @@ func (p *proxy) serve() {
 		go func() {
 			defer p.wg.Done()
 			defer p.untrack(c)
-			defer func() {
-				if r := recover(); r != nil {
-					slog.Error("sandbox proxy connection crashed", "panic", fmt.Sprint(r), "stack", string(debug.Stack()))
-				}
-			}()
+			defer func() { recover() }() // a connection that panics is dropped, the proxy goes on
 			br := bufio.NewReader(c)
 			first, err := br.Peek(1)
 			if err != nil {

@@ -83,15 +83,13 @@ func (d *DB) Workspace(id string) (WorkspaceRow, error) {
 	return row, notFound(d.gorm.Where("id = ?", id).Take(&row).Error)
 }
 
-// WorkspaceOf reads a workspace for the user who owns it; to anyone else it does not exist.
 func (d *DB) WorkspaceOf(user, id string) (WorkspaceRow, error) {
 	var row WorkspaceRow
 	return row, notFound(d.gorm.Where("id = ? AND user_id = ?", id, user).Take(&row).Error)
 }
 
-// SetWorkspaceRoot moves a workspace to root, the one column saveWorkspace never updates: every other row keeps
-// pointing at the workspace's id, so only the folder its threads run in changes. A root another workspace of the user
-// already has fails on workspaces_user_root rather than being merged into it.
+// root is the one column saveWorkspace never updates. A root another workspace of the user already has fails on
+// workspaces_user_root rather than being merged into it.
 func (d *DB) SetWorkspaceRoot(user, id, root string, at time.Time) (WorkspaceRow, error) {
 	var out WorkspaceRow
 	err := d.Tx(func(tx *DB) error {
@@ -111,8 +109,7 @@ func (d *DB) SetWorkspaceRoot(user, id, root string, at time.Time) (WorkspaceRow
 	return out, err
 }
 
-// WorkspaceBusy says whether a conversation in the workspace has a turn that has not ended: it names paths in the
-// folder, so the folder cannot move out from under it.
+// A turn not ended names paths in the folder, so the folder cannot move out from under it.
 func (d *DB) WorkspaceBusy(user, workspace string) (bool, error) {
 	var n int64
 	err := d.gorm.Table("turns AS u").Joins("JOIN threads AS t ON t.id = u.thread_id").

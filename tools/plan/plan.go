@@ -33,7 +33,7 @@ type Plan struct {
 	Steps       []Step `json:"plan"`
 }
 
-// validate checks what the schema cannot say: its constraints (how many steps, which statuses) hold already.
+// The schema already holds how many steps and which statuses.
 func (p Plan) validate() error {
 	inProgress := 0
 	for i, step := range p.Steps {
@@ -69,7 +69,6 @@ type Provider struct{}
 
 func New() *Provider { return &Provider{} }
 
-// ProviderName is the provider of the plan tool.
 const ProviderName = "plan"
 
 func (*Provider) Name() (string, string) { return ProviderName, "Keeps the task plan the user sees." }

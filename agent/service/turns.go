@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -21,8 +20,6 @@ type Input struct {
 	CronJobID   string
 }
 
-// StartTurn takes the message to the thread and says how: it started the thread's current turn, started a turn behind
-// it, or joined the turn already waiting there, which it returns.
 func (sv *Service) StartTurn(ctx context.Context, user, threadID string, in Input) (db.TurnRow, db.Submission, error) {
 	atts, err := sv.attach(ctx, user, threadID, in.Attachments)
 	if err != nil {
@@ -36,7 +33,7 @@ func (sv *Service) StartTurn(ctx context.Context, user, threadID string, in Inpu
 	return turn, how, nil
 }
 
-// StartScheduledTurn runs a scheduled task in its thread, whose owner set it; no caller asks for this one.
+// No caller asks for this one: the thread's owner scheduled it.
 func (sv *Service) StartScheduledTurn(threadID, text, jobID string) error {
 	_, _, err := sv.startTurn(threadID, Input{Text: text, CronJobID: jobID}, nil)
 	return err
@@ -96,28 +93,23 @@ func (sv *Service) startTurn(threadID string, in Input, atts []db.Attachment) (d
 	return sv.submit(st.Thread, db.TurnRow{CronJobID: in.CronJobID, Agent: string(main)}, model, text, atts)
 }
 
-// submit takes the message to the thread. A message that joins the turn waiting behind the current one tells of that
-// turn again, as it is now, with the model and role of its latest message.
 func (sv *Service) submit(t db.ThreadRow, turn db.TurnRow, model llm.Model, text string, atts []db.Attachment) (db.TurnRow, db.Submission, error) {
 	t, turn, message, how, err := sv.record(t, turn, model, text, atts)
 	if err != nil {
 		return db.TurnRow{}, "", err
 	}
-	defer sv.o.Wake(t.ID)
-	switch how {
-	case db.Started:
-		sv.ev.TurnStarted(t, turn)
-	case db.Queued, db.Joined:
-		slog.Info("turn queued", "thread", t.ID, "turn", turn.ID, "joined", how == db.Joined)
-		sv.ev.Emit(event.Event{Kind: event.TurnQueued, Thread: t, Turn: turn})
+	if how == db.Started {
+		sv.o.Started(t.ID)
+		return turn, how, nil
 	}
+	defer sv.o.Wake(t.ID)
+	sv.ev.Emit(event.Event{Kind: event.TurnQueued, Thread: t, Turn: turn})
 	sv.ev.Item(t, turn, message, true)
 	sv.ev.Status(t.ID)
 	return turn, how, nil
 }
 
-// record takes the message to the thread (db.SubmitTurn), unless the conversation's workspace cannot take it or is
-// moving: the move lock is held while it is written, so that a move that starts sees it, and no longer.
+// The move lock is held while the message is written, so that a move that starts sees it.
 func (sv *Service) record(t db.ThreadRow, turn db.TurnRow, model llm.Model, text string, atts []db.Attachment) (db.ThreadRow, db.TurnRow, db.ItemRow, db.Submission, error) {
 	if t.WorkspaceID != "" {
 		w, err := sv.workspaceOf(t.WorkspaceID)
@@ -170,7 +162,6 @@ func (sv *Service) steer(threadID, expectedTurnID string, in Input, atts []db.At
 		sv.ev.Item(st.Thread, turn, it, false)
 	}
 	if len(closed) > 0 {
-		slog.Info("turn steered out of its wait", "thread", threadID, "turn", turn.ID, "declined", len(closed))
 		sv.ev.Status(threadID)
 	}
 	return turn, nil
@@ -184,7 +175,7 @@ func checkMessage(text string, attachments int) (string, error) {
 	return text, nil
 }
 
-// checkLength holds a message to the share of the model's input one message may take, so that it can always be sent.
+// A message within the budget can always be sent.
 func (sv *Service) checkLength(model llm.Model, text string) error {
 	window, err := sv.res.Window(model)
 	if err != nil {

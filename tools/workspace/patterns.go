@@ -10,12 +10,8 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 )
 
-// maxIgnoreBytes bounds an ignore file; a larger one is not read, as if it were missing.
 const maxIgnoreBytes = 1 << 20
 
-// compilePattern turns a path pattern into a regexp over slash-separated relative paths: * matches within
-// one name, ** any number of folders, ? one character, [...] a character class ([!...] negates), \ quotes
-// the next character, and with braces {a,b} either alternative.
 func compilePattern(p string, braces bool) (*regexp.Regexp, error) {
 	var b strings.Builder
 	b.WriteString("^")
@@ -76,21 +72,17 @@ func compilePattern(p string, braces bool) (*regexp.Regexp, error) {
 	return re, nil
 }
 
-// ignoreRule is one line of a .gitignore file.
 type ignoreRule struct {
 	re      *regexp.Regexp
 	negate  bool
 	dirOnly bool
 }
 
-// ignoreFile holds the rules of one .gitignore file; base is its folder relative to the work tree, "" at the top.
 type ignoreFile struct {
 	base  string
 	rules []ignoreRule
 }
 
-// parseIgnore reads gitignore lines: comments, ! to re-include, a trailing / for folders only, and a pattern
-// with a slash before its end anchored to base; one without matches a name at any depth.
 func parseIgnore(base, text string) ignoreFile {
 	f := ignoreFile{base: base}
 	for line := range strings.SplitSeq(text, "\n") {
@@ -123,15 +115,12 @@ func parseIgnore(base, text string) ignoreFile {
 	return f
 }
 
-// ignores is what a walk skips under the .gitignore files of the work tree it is in.
 type ignores struct {
 	box   sandbox.Box
 	top   string
 	files []ignoreFile
 }
 
-// gitIgnores finds the work tree dir is in and reads .git/info/exclude and the .gitignore files from the top
-// down to dir's parent; dir's own is read when the walk enters it. Outside a work tree nothing is ignored.
 func gitIgnores(ctx context.Context, box sandbox.Box, dir string) *ignores {
 	top := dir
 	for {
@@ -156,7 +145,6 @@ func gitIgnores(ctx context.Context, box sandbox.Box, dir string) *ignores {
 	return g
 }
 
-// enter reads dir's .gitignore, if it has one, and reports whether it did; leave undoes it.
 func (g *ignores) enter(ctx context.Context, dir string) bool {
 	body, err := sandbox.ReadFile(ctx, g.box, filepath.Join(dir, ".gitignore"), maxIgnoreBytes)
 	if err != nil {
@@ -176,7 +164,7 @@ func (g *ignores) rel(path string) string {
 	return filepath.ToSlash(rel)
 }
 
-// ignored applies the deepest file first and, within a file, its last matching line, as git does.
+// Deepest file first and, within a file, its last matching line, as git does.
 func (g *ignores) ignored(path string, dir bool) bool {
 	if g == nil {
 		return false

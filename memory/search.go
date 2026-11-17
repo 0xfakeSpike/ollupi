@@ -69,7 +69,6 @@ func (m *Manager) Invoke(ctx context.Context, caller tools.Caller, _ string, arg
 	return tools.Result{Output: out}, nil
 }
 
-// Search finds active memories by words for the user: those of a workspace and the global ones, or with no workspace all of them.
 func (m *Manager) Search(user, query, workspaceID string, limit int) ([]db.MemoryRow, error) {
 	terms := searchTerms(query)
 	if len(terms) == 0 {

@@ -14,16 +14,12 @@ type Options struct {
 	Agent     AgentFiles
 	DenyRead  []string
 	EnvMarker string
-	// Box describes the tools and serves any user BoxFor does not; by default it is a sandbox on this machine,
-	// made from Config.
+	// Box serves any user BoxFor does not; by default a sandbox on this machine made from Config.
 	Box sandbox.Box
-	// BoxFor gives the box a user's calls run in, connected for them. It keeps a box's lifetime: this package
-	// only closes Box.
+	// BoxFor keeps a box's lifetime: this package only closes Box.
 	BoxFor func(user string) (sandbox.Box, error)
-	// BoxIn gives the box a call runs in, for the environment its conversation was started in. It sees the whole
-	// caller, and has the last word over BoxFor: a nil box with no error leaves the call in the box this provider was
-	// made with, for a host that serves an environment with it. It keeps a box's lifetime as BoxFor does; this
-	// package only closes Box.
+	// BoxIn has the last word over BoxFor: a nil box with no error leaves the call in Box. It keeps a box's
+	// lifetime as BoxFor does.
 	BoxIn func(caller tools.Caller) (sandbox.Box, error)
 }
 
@@ -67,7 +63,6 @@ func New(o Options) (*Provider, error) {
 
 func (r *Provider) Close() error { return r.box.Close() }
 
-// ProviderName is the provider of the tools that run commands and edit files.
 const ProviderName = "workspace"
 
 func (r *Provider) Name() (string, string) {

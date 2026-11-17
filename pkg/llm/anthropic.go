@@ -16,8 +16,7 @@ import (
 
 const providerAnthropic = "anthropic"
 
-// Anthropic talks to the Anthropic Messages API. Responses are kept as Native records so thinking blocks go
-// back with their signatures; see replayable for how they stay valid when the transcript changes.
+// Responses are kept as Native records so thinking blocks go back with their signatures.
 type Anthropic struct {
 	connection
 	client anthropic.Client
@@ -137,7 +136,6 @@ func anthropicResponse(msg anthropic.BetaMessage, prefix string) (ChatResponse, 
 	return resp, nil
 }
 
-// anthropicParams converts the request and returns the hash of its whole prefix, which the response keeps.
 func anthropicParams(req ChatRequest, maxTokens int) (anthropic.BetaMessageNewParams, string, error) {
 	p := anthropic.BetaMessageNewParams{
 		Model: anthropic.Model(req.Model.Name), MaxTokens: int64(maxTokens),
@@ -245,11 +243,8 @@ func anthropicParams(req ChatRequest, maxTokens int) (anthropic.BetaMessageNewPa
 	return p, prefix, err
 }
 
-// replayable keeps the thinking blocks the API will still accept. A thinking block is bound to everything sent
-// before it; once that changed (a tool list that grew, a clipped tool result, another system prompt), the block is
-// stale. Each response stores the hash of its prefix with thinking left out, so a stale record is one whose hash no
-// longer matches. The API accepts removing thinking blocks from the front, so every thinking block up to the last
-// stale record is removed and the ones after it are replayed. It returns the hash of the whole request.
+// A thinking block is bound to everything sent before it, so a record whose stored prefix hash no longer matches is
+// stale. The API accepts removing thinking from the front, so all of it up to the last stale record is removed.
 func replayable(p *anthropic.BetaMessageNewParams, natives []*native) (string, error) {
 	head, err := json.Marshal(struct {
 		System []anthropic.BetaTextBlockParam `json:"system"`
@@ -296,7 +291,6 @@ func chainHash(prev string, data []byte) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// withoutThinking drops the thinking and redacted_thinking blocks from an encoded message.
 func withoutThinking(raw []byte) ([]byte, error) {
 	var m struct {
 		Role    string            `json:"role"`

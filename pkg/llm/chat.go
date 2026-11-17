@@ -39,8 +39,6 @@ const (
 	PartText  PartType = "text"
 )
 
-// ContentPart is an image or a text file sent with a user message after its Content.
-// Path names the file to load before sending; Data holds the loaded bytes.
 type ContentPart struct {
 	Type     PartType `json:"type"`
 	Name     string   `json:"name,omitempty"`
@@ -51,7 +49,6 @@ type ContentPart struct {
 	Data     []byte   `json:"-"`
 }
 
-// emit passes a delta on when it carries text.
 func emit(onDelta func(Delta), d Delta) {
 	if onDelta != nil && (d.Content != "" || d.Reasoning != "") {
 		onDelta(d)
@@ -84,7 +81,6 @@ type Model struct {
 	Images     bool   `json:"images,omitempty"`
 }
 
-// thinkingOn says whether a provider that can switch thinking off should keep it on: unless the model turns it off.
 func (m Model) thinkingOn() bool { return m.Thinking == nil || *m.Thinking }
 
 func (m Model) Clone() Model {
@@ -107,7 +103,7 @@ type ChatRequest struct {
 type Usage struct {
 	PromptTokens       int64
 	CachedPromptTokens int64
-	// CacheWritePromptTokens counts prompt tokens written to the provider's cache; they are part of PromptTokens.
+	// CacheWritePromptTokens are part of PromptTokens.
 	CacheWritePromptTokens int64
 	CompletionTokens       int64
 }
@@ -124,8 +120,6 @@ type Delta struct {
 	Reasoning string
 }
 
-// native is the envelope of ChatMessage.Native: the provider that wrote it, its message in the provider's own
-// format, and for providers that bind replayed reasoning to the conversation, the hash of what preceded it.
 type native struct {
 	Provider string          `json:"provider"`
 	Message  json.RawMessage `json:"message"`
@@ -140,7 +134,6 @@ func (n native) encode() []byte {
 	return b
 }
 
-// nativeOf returns the message's native record if provider wrote it.
 func nativeOf(m ChatMessage, provider string) (native, bool) {
 	var n native
 	if len(m.Native) == 0 || json.Unmarshal(m.Native, &n) != nil || n.Provider != provider {

@@ -14,16 +14,13 @@ import (
 )
 
 const (
-	// Tool reads a shortened tool output.
-	Tool = "read_tool_output"
-	// ProviderName is the provider of Tool.
+	Tool         = "read_tool_output"
 	ProviderName = "context"
 
 	defaultReadRunes = 8000
 	maxReadRunes     = 20000
 )
 
-// Provider gives Tool, reading the outputs from the conversations' items.
 type Provider struct {
 	db *db.DB
 }

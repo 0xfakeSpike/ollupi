@@ -12,9 +12,7 @@ import (
 
 var errStopWalk = errors.New("stop walk")
 
-// walker visits the files under a folder in name order. It skips .git, what .gitignore ignores, links to
-// folders, and anything the sandbox does not let be read, counting those; a link to a file is read where it
-// leads, so a link cannot reach a closed path.
+// A link to a file is read where it leads, so a link cannot reach a closed path.
 type walker struct {
 	box       sandbox.Box
 	root      string

@@ -34,9 +34,7 @@ import (
 )
 
 const (
-	// maxAnswerRunes is the most an answer to one of the model's questions may say.
-	maxAnswerRunes = 4000
-	// maxQueuedMessages is how many messages one conversation may have waiting behind its current turn.
+	maxAnswerRunes    = 4000
 	maxQueuedMessages = 20
 )
 
@@ -52,7 +50,6 @@ var (
 	ErrInvalidPath       = errors.New("invalid path")
 )
 
-// Config is what a shard of ollupi runs with.
 type Config struct {
 	Name     string
 	Prompt   string
@@ -60,51 +57,40 @@ type Config struct {
 	Tools    []string
 	Settings permission.Settings
 	Slots    int
-	// UserSlots is the most slots one user may hold, so that one user's turns cannot fill a shard; by default, all.
+	// Caps one user so their turns cannot fill a shard; by default, all.
 	UserSlots int
-	// RunLimit is how long a turn may run in its slot before it fails; by default, four hours.
+	// By default, four hours.
 	RunLimit time.Duration
 
 	Connections map[string]llm.Client
-	// ClientFor gives the client a user's turns call a connection through, so that they run on the user's own key
-	// and quota; it should return the same client each time. Without it users share Connections.
+	// Runs a user's turns on their own key and quota; it should return the same client each time.
 	ClientFor func(user, connection string) (llm.Client, error)
-	// Providers are the tools every user has.
 	Providers []tools.Provider
-	// ToolsFor adds the tools one user has, such as their MCP servers.
-	ToolsFor func(user string) (*tools.Set, error)
-	// SkillsDir holds the skills of each role, in the directory of the role's name: SkillsDir/<role>/<skill>/SKILL.md.
-	SkillsDir string
-	// Attachments keeps the images and files sent with messages; without it messages take none.
-	Attachments blobs.Store
-	// AttachmentsDir is a folder on this machine to keep them in, when Attachments is not set.
+	ToolsFor  func(user string) (*tools.Set, error)
+	// Layout: SkillsDir/<role>/<skill>/SKILL.md.
+	SkillsDir      string
+	Attachments    blobs.Store
 	AttachmentsDir string
 	Memory         *memory.Manager
 	DB             *db.DB
 	OnEvent        func(event.Event)
-	// Lease makes this process claim the shard before it runs it, waiting for as long as another holds it, and keep
-	// the claim alive; a process that dies leaves its claim for this long. Without it the process trusts it is alone.
+	// A process that dies leaves its claim for this long. Without it the process trusts it is alone.
 	Lease time.Duration
-	// BoxFor gives the sandbox a user's files live in on this machine, which the service reaches workspaces and
-	// attachments through. A conversation started in another environment reaches its own box: the workspace tools
-	// take that from the call's tools.Caller. It is required: a client names the paths it reads, so a host with one
-	// user says so by giving sandbox.Here, and no host gives every user this machine by leaving it out.
+	// Required: a client names the paths it reads, so a one-user host passes sandbox.Here, and no host gives
+	// every user this machine by leaving it out.
 	BoxFor func(user string) (sandbox.Box, error)
-	// OnLeaseLost tells the host that another process took the shard: the shard has stopped, and all else on DB must.
+	// The shard has stopped by then, and all else on DB must.
 	OnLeaseLost func()
 }
 
-// A Service is a shard of ollupi as its clients see it.
 type Service struct {
-	cfg Config
-	ctx context.Context
-	// permissions are what the deployment permits, on which every conversation's permissions are made.
+	cfg         Config
+	ctx         context.Context
 	permissions permission.Deployment
 	o           *orchestrator.Orchestrator
 	res         *resources.Resources
 	ev          event.Emitter
 
-	// moving holds the workspaces whose folder is being moved, which take no new turn meanwhile.
 	moveMu sync.Mutex
 	moving map[string]bool
 }
@@ -113,17 +99,12 @@ func New(cfg Config) *Service {
 	if cfg.Attachments == nil && cfg.AttachmentsDir != "" {
 		cfg.Attachments = blobs.Dir(cfg.AttachmentsDir)
 	}
-	o := orchestrator.New(orchestrator.Config{
-		DB: cfg.DB, Attachments: cfg.Attachments, Memory: cfg.Memory, OnEvent: cfg.OnEvent,
-		Name: cfg.Name, Prompt: cfg.Prompt, SkillsDir: cfg.SkillsDir, Settings: cfg.Settings, Shared: cfg.ToolsFor != nil, Tools: cfg.Tools,
-		Slots: cfg.Slots, UserSlots: cfg.UserSlots, RunLimit: cfg.RunLimit,
-		Lease: cfg.Lease, OnLeaseLost: cfg.OnLeaseLost,
-	})
 	permissions := permission.Deployment{Settings: cfg.Settings, Shared: cfg.ToolsFor != nil, Tools: cfg.Tools}
+	o := orchestrator.New(cfg.DB, cfg.Attachments, cfg.Memory, cfg.OnEvent, cfg.Name, cfg.Prompt, cfg.SkillsDir, permissions,
+		cfg.Slots, cfg.UserSlots, cfg.RunLimit, cfg.Lease, cfg.OnLeaseLost)
 	return &Service{cfg: cfg, permissions: permissions, o: o, ev: event.Emitter{DB: cfg.DB, OnEvent: cfg.OnEvent}, moving: map[string]bool{}}
 }
 
-// Start makes what turns run on, checks that each model takes the main agent's prompt, and starts the orchestrator.
 func (sv *Service) Start(ctx context.Context) error {
 	if strings.TrimSpace(sv.cfg.Name) == "" {
 		return fmt.Errorf("service: name is required")
@@ -134,7 +115,7 @@ func (sv *Service) Start(ctx context.Context) error {
 	if sv.cfg.BoxFor == nil {
 		return fmt.Errorf("service: BoxFor is required")
 	}
-	providers := append(slices.Clone(sv.cfg.Providers), plan.New(), subagent.New(sv.cfg.DB, sv.o.SubagentStarted), userinput.New(),
+	providers := append(slices.Clone(sv.cfg.Providers), plan.New(), subagent.New(sv.cfg.DB, sv.o.Started), userinput.New(),
 		outputs.New(sv.cfg.DB), loader.New())
 	if sv.cfg.Memory != nil {
 		providers = append(providers, sv.cfg.Memory)
@@ -162,10 +143,8 @@ func (sv *Service) Start(ctx context.Context) error {
 	return sv.o.Start(ctx, res)
 }
 
-// Wait waits for the shard to stop, once the context Start was given ends.
 func (sv *Service) Wait() { sv.o.Wait() }
 
-// checkPromptFits checks that each model's input takes its main agent's system prompt and tools.
 func (sv *Service) checkPromptFits() error {
 	models, _ := sv.res.Models()
 	for _, m := range models {
@@ -173,8 +152,7 @@ func (sv *Service) checkPromptFits() error {
 		if err != nil {
 			return err
 		}
-		main, _ := role.New(role.ForMain(window.InputTokens()), sv.cfg.Name, sv.cfg.Prompt, sv.cfg.SkillsDir, sv.permissions, sv.cfg.Memory, window)
-		main.Registry = sv.res.Tools()
+		main, _ := role.New(role.ForMain(window.InputTokens()), sv.cfg.Name, sv.cfg.Prompt, sv.cfg.SkillsDir, sv.permissions, sv.cfg.Memory, window, nil, nil, nil, sv.res.Tools(), event.Emitter{})
 		if err := main.Permit(db.WorkspaceRow{}); err != nil {
 			return err
 		}

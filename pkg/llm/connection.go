@@ -14,17 +14,13 @@ import (
 
 const (
 	DefaultCalls = 4
-	// retries is how many times a request refused with 408, 429 or a 5xx, or cut off before its answer, is sent
-	// again, waiting from half a second, doubling to at most eight (or, with OpenAI and Anthropic, as long as the
-	// provider's Retry-After asks): about 40 s in all. A provider short of quota for a few seconds then slows a turn
-	// instead of failing it. The call keeps its slot while it waits, so the calls in flight stay within the limit.
+	// retries back off from half a second to eight, or as Retry-After asks: about 40 s in all, so a provider short of
+	// quota for a few seconds slows a turn instead of failing it. The call keeps its slot while it waits.
 	retries = 8
 )
 
-// httpClient sends every provider request, and gives a try up once the provider has sent nothing for idleTimeout.
 var httpClient = &http.Client{Transport: idleTransport{base: http.DefaultTransport, idle: idleTimeout}}
 
-// connection holds what every provider client shares: the declared model limits and the concurrent call slots.
 type connection struct {
 	limits map[string]Limits
 	calls  chan struct{}
@@ -48,7 +44,6 @@ func (c connection) Limits(model string) (Limits, error) {
 	return l, nil
 }
 
-// acquire takes a call slot; the returned function frees it.
 func (c connection) acquire(ctx context.Context) (func(), error) {
 	select {
 	case c.calls <- struct{}{}:
