@@ -159,7 +159,7 @@ func TestThreadsListTheirTasksAndGoWithThem(t *testing.T) {
 	if _, err := s.readThread("child"); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("a subagent's conversation outlived its parent: %v", err)
 	}
-	if jobs := read(t, s, func(r store.Reader) ([]user.CronJob, error) { return r.CronJobs("u", "") }); len(jobs) != 1 || jobs[0].ID != "j2" {
+	if jobs := read(t, s, func(r store.Reader) ([]store.Task, error) { return r.CronJobs("u", "") }); len(jobs) != 1 || jobs[0].ID != "j2" {
 		t.Errorf("tasks after the delete %+v", jobs)
 	}
 	deleted := slices.ContainsFunc(heard, func(e store.Event) bool { return e.Change != nil && e.Change.Deleted && e.Thread == "first" })

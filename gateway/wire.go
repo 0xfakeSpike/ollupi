@@ -53,22 +53,33 @@ const (
 var TurnStatuses = []TurnStatus{TurnQueued, TurnInProgress, TurnCompleted, TurnFailed, TurnInterrupted}
 
 type TurnRow struct {
-	ID          string             `json:"id"`
-	ThreadID    string             `json:"threadId"`
-	Status      TurnStatus         `json:"status"`
-	Model       llm.Model          `json:"model"`
-	Agent       agent.Name         `json:"agent"`
-	Usage       conversation.Usage `json:"usage"`
-	Error       string             `json:"error,omitempty"`
-	CronJobID   string             `json:"cronJobId,omitempty"`
-	QueuedAt    time.Time          `json:"queuedAt"`
-	CompletedAt *time.Time         `json:"completedAt,omitempty"`
+	ID       string             `json:"id"`
+	ThreadID string             `json:"threadId"`
+	Status   TurnStatus         `json:"status"`
+	Model    llm.Model          `json:"model"`
+	Agent    agent.Name         `json:"agent"`
+	Usage    conversation.Usage `json:"usage"`
+	// Responses are the model's in the turn, each with what it used; an item names its response.
+	Responses   []ResponseRow `json:"responses"`
+	Error       string        `json:"error,omitempty"`
+	CronJobID   string        `json:"cronJobId,omitempty"`
+	QueuedAt    time.Time     `json:"queuedAt"`
+	CompletedAt *time.Time    `json:"completedAt,omitempty"`
+}
+
+type ResponseRow struct {
+	ID           string                    `json:"id"`
+	Usage        conversation.Usage        `json:"usage"`
+	ContextStats conversation.ContextStats `json:"contextStats"`
 }
 
 // turnRow is turn of the conversation whose turn in progress is active.
 func turnRow(thread string, t conversation.Turn, active string) TurnRow {
 	row := TurnRow{ID: t.ID, ThreadID: thread, Status: TurnQueued, Model: t.Model, Agent: agent.Name(t.Role), Usage: t.Usage,
-		CronJobID: t.CronJob, QueuedAt: t.QueuedAt}
+		CronJobID: t.CronJob, QueuedAt: t.QueuedAt, Responses: make([]ResponseRow, len(t.Responses))}
+	for i, r := range t.Responses {
+		row.Responses[i] = ResponseRow{ID: r.Response, Usage: r.Usage, ContextStats: r.Stats}
+	}
 	switch {
 	case t.Ended != nil:
 		at := t.Ended.At
@@ -209,11 +220,19 @@ type CronJobRow struct {
 	Paused    bool      `json:"paused"`
 	NextRunAt time.Time `json:"nextRunAt"`
 	CreatedAt time.Time `json:"createdAt"`
+	// The conversation's the task runs in.
+	ThreadTitle    string `json:"threadTitle"`
+	WorkspaceID    string `json:"workspaceId,omitempty"`
+	ThreadArchived bool   `json:"threadArchived,omitempty"`
+	// The turn the task sent last, absent before its first run.
+	LastTurnID string     `json:"lastTurnId,omitempty"`
+	LastRunAt  *time.Time `json:"lastRunAt,omitempty"`
 }
 
-func cronJobRow(j user.CronJob) CronJobRow {
+func cronJobRow(j store.Task) CronJobRow {
 	return CronJobRow{ID: j.ID, ThreadID: j.Thread, Name: j.Name, Spec: j.Spec, Prompt: j.Prompt, Times: j.Times, Runs: j.Runs,
-		Paused: j.Paused, NextRunAt: j.NextRun, CreatedAt: j.Created}
+		Paused: j.Paused, NextRunAt: j.NextRun, CreatedAt: j.Created, ThreadTitle: j.Title, WorkspaceID: j.Workspace,
+		ThreadArchived: j.Archived, LastTurnID: j.LastTurn, LastRunAt: j.LastRun}
 }
 
 type MemoryRow struct {

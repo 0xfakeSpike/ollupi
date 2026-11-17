@@ -6,17 +6,23 @@ import (
 	"strings"
 )
 
-func checkLayer(l Layer, previous *Settings, box Toolbox) error {
-	s := l.Settings
+// Check reads the settings alone: the approval policy, when they set one, and how each rule is written. Whether the
+// rules name tools there are is a user's toolbox to say.
+func (s Settings) Check() error {
 	if s.ApprovalPolicy != "" {
 		if err := Policy(s.ApprovalPolicy).Validate(); err != nil {
 			return err
 		}
 	}
-	set, err := parseRules(s.Rules)
-	if err != nil {
+	_, err := parseRules(s.Rules)
+	return err
+}
+
+func checkLayer(l Layer, previous *Settings, box Toolbox) error {
+	if err := l.Settings.Check(); err != nil {
 		return err
 	}
+	set, _ := parseRules(l.Settings.Rules) // Check parsed them
 	var kept []string
 	if previous != nil {
 		for _, text := range slices.Concat(previous.Rules.Allow, previous.Rules.Ask, previous.Rules.Deny) {

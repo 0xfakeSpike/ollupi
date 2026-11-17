@@ -492,6 +492,25 @@
         "createdAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "threadTitle": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "threadArchived": {
+          "type": "boolean"
+        },
+        "lastTurnId": {
+          "type": "string"
+        },
+        "lastRunAt": {
+          "type": [
+            "null",
+            "string"
+          ],
+          "format": "date-time"
         }
       },
       "required": [
@@ -503,7 +522,8 @@
         "runs",
         "paused",
         "nextRunAt",
-        "createdAt"
+        "createdAt",
+        "threadTitle"
       ],
       "additionalProperties": false
     },
@@ -1953,6 +1973,26 @@
       ],
       "additionalProperties": false
     },
+    "ResponseRow": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "usage": {
+          "$ref": "#/$defs/Usage"
+        },
+        "contextStats": {
+          "$ref": "#/$defs/ContextStats"
+        }
+      },
+      "required": [
+        "id",
+        "usage",
+        "contextStats"
+      ],
+      "additionalProperties": false
+    },
     "Result": {
       "type": "object",
       "properties": {
@@ -2630,6 +2670,15 @@
         "usage": {
           "$ref": "#/$defs/Usage"
         },
+        "responses": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "$ref": "#/$defs/ResponseRow"
+          }
+        },
         "error": {
           "type": "string"
         },
@@ -2655,6 +2704,7 @@
         "model",
         "agent",
         "usage",
+        "responses",
         "queuedAt"
       ],
       "additionalProperties": false

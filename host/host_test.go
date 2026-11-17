@@ -76,7 +76,7 @@ func TestAHostRunsATurnThroughASubagentAndLearnsFromIt(t *testing.T) {
 	h, err := New(ctx, Config{
 		Home: t.TempDir(), Name: "Ollupi",
 		Models: []llm.Model{learner}, Connections: map[string]llm.Client{"main": m}, Memory: &learner,
-		Tools: []kit.Provider{weather{}}, Permissions: policy.Settings{ApprovalPolicy: string(policy.OnRequest)},
+		Tools:   []kit.Provider{weather{}},
 		Boxes:   func(string) (sandbox.Box, error) { return sandbox.Here(), nil },
 		Gateway: &gateway.Options{Token: "secret"},
 	})
@@ -137,5 +137,14 @@ func TestAHostRunsATurnThroughASubagentAndLearnsFromIt(t *testing.T) {
 	cancel()
 	if err := <-done; err != nil {
 		t.Errorf("the host stopped with %v", err)
+	}
+}
+
+func TestAHostRefusesPermissionsItCannotRead(t *testing.T) {
+	_, err := New(context.Background(), Config{Home: t.TempDir(), Name: "Ollupi",
+		Permissions: policy.Settings{ApprovalPolicy: "sometimes"},
+		Boxes:       func(string) (sandbox.Box, error) { return sandbox.Here(), nil }})
+	if err == nil || !strings.Contains(err.Error(), "approval policy") {
+		t.Errorf("made with %v", err)
 	}
 }

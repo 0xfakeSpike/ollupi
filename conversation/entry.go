@@ -81,9 +81,12 @@ type AgentMessage struct {
 	Response string
 }
 
+// Reasoning is the model's thinking, from when it began to when the answer began.
 type Reasoning struct {
 	Text     string
 	Response string
+	Started  time.Time
+	Ended    time.Time
 }
 
 // Native is the provider's own record of the response, replayed as is to the same kind of provider.
