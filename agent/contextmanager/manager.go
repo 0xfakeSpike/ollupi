@@ -22,24 +22,13 @@ const (
 	compactMinPercent  = 10
 	responsePercent    = 25
 	minPooledTokens    = 512
-	fixedPercent       = 50
 	artifactPercent    = 15
 	toolPercent        = 10
-	// With the system prompt and tools held to fixedPercent and responsePercent kept for the answer, a message
-	// this size is always sent, and compaction makes room for it in the history.
-	messagePercent = 25
-	sentLayout     = "Mon 2006-01-02 15:04 -07:00"
+	messagePercent     = 25
+	sentLayout         = "Mon 2006-01-02 15:04 -07:00"
 )
 
 func share(inputTokens, pct int) int { return max(256, inputTokens*pct/100) }
-
-func (m *Manager) Fits(system string, tools any) error {
-	s := m.stats(system, nil, tools)
-	if limit := m.inputTokens * fixedPercent / 100; s.EstimatedTokens > limit {
-		return fmt.Errorf("context: the system prompt and tool definitions take %d tokens, over half of the %d input tokens model %s allows", s.EstimatedTokens, m.inputTokens, m.model)
-	}
-	return nil
-}
 
 type Input struct {
 	Items  []db.ItemRow

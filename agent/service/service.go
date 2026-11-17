@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
@@ -135,9 +134,6 @@ func (sv *Service) Start(ctx context.Context) error {
 		return fmt.Errorf("service: %w", err)
 	}
 	sv.res = res
-	if err := sv.checkPromptFits(); err != nil {
-		return fmt.Errorf("agent %s: %w", sv.cfg.Name, err)
-	}
 	if sv.cfg.Lease > 0 {
 		if ctx, err = sv.cfg.DB.Claim(ctx, sv.cfg.Lease, sv.cfg.OnLeaseLost); err != nil {
 			return fmt.Errorf("service: %w", err)
@@ -153,29 +149,6 @@ func (sv *Service) Start(ctx context.Context) error {
 func (sv *Service) Wait() {
 	sv.o.Wait()
 	sv.cfg.DB.Release()
-}
-
-func (sv *Service) checkPromptFits() error {
-	models, _ := sv.res.Models()
-	for _, m := range models {
-		window, err := sv.res.Window(m)
-		if err != nil {
-			return err
-		}
-		main, _ := role.New(role.ForMain(window.InputTokens()), sv.cfg.Name, sv.cfg.Prompt, sv.cfg.SkillsDir, sv.permissions, sv.cfg.Memory, window, nil, nil, nil, sv.res.Tools(), sv.ev)
-		if err := main.Permit(db.WorkspaceRow{}); err != nil {
-			return err
-		}
-		system, err := main.System()
-		if err != nil {
-			return err
-		}
-		offered, _ := main.Offer()
-		if err := window.Fits(system, contextmanager.Specs(offered)); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (sv *Service) ListModels() ([]llm.Model, string) { return sv.res.Models() }
