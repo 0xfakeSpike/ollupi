@@ -225,7 +225,7 @@ func (r *Provider) inputSchema() map[string]any {
 	return schema
 }
 
-// parseExecArgsSlice is a command's args, which the tool's schema makes an array of strings.
+// The tool's schema makes args an array of strings.
 func parseExecArgsSlice(v any) []string {
 	if v == nil {
 		return nil
@@ -238,7 +238,7 @@ func parseExecArgsSlice(v any) []string {
 	return out
 }
 
-// parseTimeoutSec is a call's timeout_sec, which the tool's schema makes an integer, up to limit.
+// The tool's schema makes timeout_sec an integer.
 func parseTimeoutSec(v any, limit int) (int, error) {
 	sec, _ := v.(float64)
 	if sec <= 0 {

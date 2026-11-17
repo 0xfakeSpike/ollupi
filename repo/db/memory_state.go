@@ -75,7 +75,7 @@ type MemoryStatus struct {
 	MemoryStateRow
 }
 
-// endedTurn is the condition of the turns_ended index, so the queries using it can use the index.
+// The condition of the turns_ended index, so the queries using it can use the index.
 const endedTurn = "(status = 'completed' OR status = 'failed' OR status = 'interrupted') AND completed_at IS NOT NULL"
 
 func (d *DB) MemoryState(user string) (MemoryStateRow, error) {

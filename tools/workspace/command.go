@@ -19,7 +19,6 @@ var (
 	errProgram = errors.New(`workspace: argument "program" must be non-empty string`)
 )
 
-// programOf is the program a command names.
 func programOf(arguments map[string]any) (string, error) {
 	program, _ := arguments["program"].(string)
 	if program = strings.TrimSpace(program); program == "" {

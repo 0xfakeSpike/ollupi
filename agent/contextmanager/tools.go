@@ -9,7 +9,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools"
 )
 
-// Specs are the tools as the model is sent them.
 func Specs(descriptors []tools.ToolDescriptor) []llm.ToolSpec {
 	specs := make([]llm.ToolSpec, 0, len(descriptors))
 	for _, d := range descriptors {
@@ -18,10 +17,6 @@ func Specs(descriptors []tools.ToolDescriptor) []llm.ToolSpec {
 	return specs
 }
 
-// Split splits the visible tools into the ones sent to the model and the ones only named, for load_tools to load, so
-// that the ones sent fit the tool budget. All are sent when they fit, or when load_tools is not among them to load the
-// others. Otherwise the external providers' tools wait first, then the built-in tools other than core, which an empty
-// core leaves sent; load_tools is sent when some tools wait, and only then.
 func (m *Manager) Split(visible []tools.ToolDescriptor, core []string) (sent, deferred []tools.ToolDescriptor) {
 	loader := func(d tools.ToolDescriptor) bool { return d.Name == loader.Tool }
 	external := func(d tools.ToolDescriptor) bool { return strings.Contains(d.Name, tools.ProviderSeparator) }

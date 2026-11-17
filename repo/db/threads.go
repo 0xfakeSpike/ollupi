@@ -8,16 +8,14 @@ import (
 	"time"
 )
 
-// ofUser keeps the rows, of a table with a thread_id, of one user's threads; threads_user finds those threads.
 const ofUser = "thread_id IN (SELECT id FROM threads WHERE user_id = ?)"
 
 type ThreadRow struct {
-	ID          string        `gorm:"primaryKey;index:threads_list,priority:4;index:threads_workspace_list,priority:4" json:"id"`
-	UserID      string        `gorm:"not null;default:'';index:threads_list,priority:1;index:threads_user" json:"-"`
-	User        *UserRow      `gorm:"foreignKey:UserID;constraint:OnDelete:RESTRICT" json:"-"`
-	WorkspaceID Ref           `gorm:"index:threads_workspace;index:threads_workspace_list,priority:1" json:"workspaceId,omitempty"`
-	Workspace   *WorkspaceRow `gorm:"foreignKey:WorkspaceID;constraint:OnDelete:RESTRICT" json:"-"`
-	// EnvironmentID is where the conversation runs.
+	ID            string             `gorm:"primaryKey;index:threads_list,priority:4;index:threads_workspace_list,priority:4" json:"id"`
+	UserID        string             `gorm:"not null;default:'';index:threads_list,priority:1;index:threads_user" json:"-"`
+	User          *UserRow           `gorm:"foreignKey:UserID;constraint:OnDelete:RESTRICT" json:"-"`
+	WorkspaceID   Ref                `gorm:"index:threads_workspace;index:threads_workspace_list,priority:1" json:"workspaceId,omitempty"`
+	Workspace     *WorkspaceRow      `gorm:"foreignKey:WorkspaceID;constraint:OnDelete:RESTRICT" json:"-"`
 	EnvironmentID Ref                `gorm:"index:threads_environment" json:"environmentId,omitempty"`
 	Environment   *EnvironmentRow    `gorm:"foreignKey:EnvironmentID;constraint:OnDelete:RESTRICT" json:"-"`
 	Title         string             `gorm:"not null" json:"title"`
@@ -30,16 +28,12 @@ type ThreadRow struct {
 	// threads_list and threads_workspace_list hold the top-level threads in list order, read backwards for newest first.
 	UpdatedAt  time.Time  `gorm:"not null;autoUpdateTime:false;index:threads_list,priority:2,where:parent_thread_id IS NULL;index:threads_workspace_list,priority:2,where:parent_thread_id IS NULL" json:"updatedAt"`
 	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
-	// RepliedAt is when a turn of the thread last ended, with something new to read: an answer, a failure, a stop.
-	// It is unset before the first turn ends.
-	RepliedAt *time.Time `json:"repliedAt,omitempty"`
-	// ReadAt is when the user last read the thread (thread/markRead). The thread is unread while RepliedAt is later.
-	ReadAt *time.Time `json:"readAt,omitempty"`
+	RepliedAt  *time.Time `json:"repliedAt,omitempty"`
+	ReadAt     *time.Time `json:"readAt,omitempty"`
 }
 
 func (ThreadRow) TableName() string { return "threads" }
 
-// Unread reports whether a turn ended after the user last read the thread.
 func (t ThreadRow) Unread() bool {
 	return t.RepliedAt != nil && (t.ReadAt == nil || t.RepliedAt.After(*t.ReadAt))
 }
@@ -69,7 +63,6 @@ func (d *DB) ThreadPage(user, id string, before, limit int) (ThreadView, bool, e
 			return err
 		}
 		// The page is for a client, which never sees native records; only the runtime reads them.
-		// before is the seq of an item; the page ends where that item stands in conversationOrder.
 		q := tx.gorm.Table("items INDEXED BY items_thread_order").Omit("native").Where("thread_id = ?", id)
 		if before > 0 {
 			q = q.Where("(turn_seq, seq) < (SELECT turn_seq, seq FROM items WHERE thread_id = ? AND seq = ?)", id, before)
@@ -81,7 +74,7 @@ func (d *DB) ThreadPage(user, id string, before, limit int) (ThreadView, bool, e
 			more, out.Items = true, out.Items[:limit]
 		}
 		slices.Reverse(out.Items)
-		// The turns are the page's, and those not ended yet; a thread of many turns does not send all of them.
+		// Only the page's turns and those not ended: a thread of many turns does not send all of them.
 		turns := map[string]bool{}
 		for _, it := range out.Items {
 			turns[it.TurnID] = true
@@ -99,7 +92,6 @@ func (d *DB) ThreadRow(id string) (ThreadRow, error) {
 	return row, notFound(d.gorm.Where("id = ?", id).Take(&row).Error)
 }
 
-// ThreadOf reads a thread for the user who owns it; to anyone else it does not exist.
 func (d *DB) ThreadOf(user, id string) (ThreadRow, error) {
 	var row ThreadRow
 	return row, notFound(d.gorm.Where("id = ? AND user_id = ?", id, user).Take(&row).Error)
@@ -112,14 +104,12 @@ type ThreadFilter struct {
 	Limit       int           `json:"limit,omitempty"`
 }
 
-// ThreadCursor is a thread's place in list order: the last thread of a page, after which the next page starts.
 type ThreadCursor struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 	CreatedAt time.Time `json:"createdAt"`
 	ID        string    `json:"id"`
 }
 
-// ThreadRows lists one page of the user's top-level threads, newest first, and whether more follow it.
 func (d *DB) ThreadRows(user string, f ThreadFilter) ([]ThreadRow, bool, error) {
 	q := d.gorm.Where("user_id = ?", user).Order("updated_at DESC, created_at DESC, id DESC")
 	if c := f.After; c != nil {
@@ -154,7 +144,6 @@ func (d *DB) CreateThread(row ThreadRow) error {
 	return d.gorm.Create(&row).Error
 }
 
-// touchThread moves a thread's updated_at; nothing else about the thread changes with a turn.
 func (d *DB) touchThread(id string, at time.Time) error {
 	if err := checkOne(d.gorm.Model(&ThreadRow{}).Where("id = ?", id).Update("updated_at", at.UTC())); err != nil {
 		return fmt.Errorf("thread %s: %w", id, err)
@@ -178,7 +167,6 @@ func (d *DB) SetThreadTitle(user, id, title string) (ThreadRow, error) {
 	return row, err
 }
 
-// MarkThreadRead records that the user has read the thread up to at.
 func (d *DB) MarkThreadRead(user, id string, at time.Time) (ThreadRow, error) {
 	var row ThreadRow
 	err := d.Tx(func(tx *DB) error {
@@ -216,7 +204,6 @@ func (d *DB) SetThreadArchived(user, id string, at *time.Time) (ThreadRow, error
 	return row, err
 }
 
-// DeleteThread deletes a thread that has no turn that has not ended.
 func (d *DB) DeleteThread(user, id string) error {
 	return d.Tx(func(tx *DB) error {
 		if _, err := tx.ThreadOf(user, id); err != nil {
@@ -229,7 +216,6 @@ func (d *DB) DeleteThread(user, id string) error {
 	})
 }
 
-// CheckIdle refuses with ErrThreadBusy a thread that has a turn that has not ended.
 func (d *DB) CheckIdle(id string) error {
 	var open int64
 	if err := d.gorm.Model(&TurnRow{}).Where("thread_id = ? AND "+openTurn, id).Count(&open).Error; err != nil {
@@ -241,8 +227,8 @@ func (d *DB) CheckIdle(id string) error {
 	return nil
 }
 
-// UpdateThreadSettings replaces the thread's settings with what change makes of them, as they are in the transaction:
-// a change that adds to them does not undo one made since its caller read them.
+// change sees the settings as they are in the transaction: a change that adds to them does not undo one made since
+// its caller read them.
 func (d *DB) UpdateThreadSettings(user, id string, change func(PermissionSettings) PermissionSettings) (ThreadRow, error) {
 	var row ThreadRow
 	err := d.Tx(func(tx *DB) error {
@@ -286,9 +272,6 @@ func (v ThreadView) ActiveTurn() (TurnRow, bool) {
 	return activeTurn(v.Turns)
 }
 
-// ThreadState is what scheduling needs of a thread: its open turns in order, the first of them its current turn and
-// the others waiting behind it, its last turn, and the unfinished tool calls of its current turn. Ended turns other
-// than the last are not read.
 type ThreadState struct {
 	Thread    ThreadRow
 	Open      []TurnRow
@@ -330,7 +313,6 @@ func (s ThreadState) ActiveTurn() (TurnRow, bool) {
 	return activeTurn(s.Open)
 }
 
-// Behind are the open turns that wait for the current one to end.
 func (s ThreadState) Behind() []TurnRow {
 	if len(s.Open) < 2 {
 		return nil
@@ -348,7 +330,6 @@ func (s ThreadState) PendingRequests() []ItemRow {
 	return out
 }
 
-// activeTurn is the current turn of turns in order: the first that has not ended.
 func activeTurn(turns []TurnRow) (TurnRow, bool) {
 	for _, t := range turns {
 		if !t.Status.Ended() {

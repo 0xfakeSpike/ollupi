@@ -10,7 +10,6 @@ import (
 	"unicode"
 )
 
-// Output is the text of a call's output, or of err, which the call failed with when it is set.
 func Output(output any, err error) string {
 	if err != nil {
 		return strings.TrimSpace(err.Error())

@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
-	"runtime/debug"
 	"strings"
 	"time"
 
@@ -17,8 +15,7 @@ type Options struct {
 	Model    llm.Model
 	Generate bool
 	Use      bool
-	// ClientFor gives the client that extracts a user's memories, so that it runs on the user's own key; the model
-	// passed to New checks the limits. Without it users share that model.
+	// The model passed to New checks the limits; without ClientFor users share that model.
 	ClientFor func(user string) (llm.Client, error)
 }
 
@@ -69,14 +66,12 @@ func (m *Manager) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
-			if err := m.RunOnce(ctx); err != nil && ctx.Err() == nil {
-				slog.Warn("memory extraction not run", "err", err)
-			}
+			m.RunOnce(ctx) // a run that fails is tried again at the next tick
 		}
 	}
 }
 
-// RunOnce takes one batch for each user on the shard; a user whose extraction fails does not hold up the others.
+// A user whose extraction fails does not hold up the others.
 func (m *Manager) RunOnce(ctx context.Context) error {
 	if !m.opts.Generate {
 		return nil
@@ -93,10 +88,7 @@ func (m *Manager) RunOnce(ctx context.Context) error {
 		if err == nil {
 			continue
 		}
-		slog.Warn("memory extraction failed", "user", user, "err", err)
-		if rerr := m.db.SetMemoryFailure(user, failureOf(err)); rerr != nil {
-			slog.Error("memory failure not recorded", "user", user, "err", rerr)
-		}
+		m.db.SetMemoryFailure(user, failureOf(err))
 	}
 	return nil
 }
@@ -105,7 +97,6 @@ func (m *Manager) runFor(ctx context.Context, user string) (err error) {
 	var batch *Batch
 	defer func() {
 		if p := recover(); p != nil {
-			slog.Error("memory extraction crashed", "user", user, "panic", fmt.Sprint(p), "stack", string(debug.Stack()))
 			err = failure{db.MemoryEvidence, errors.New("memory extraction crashed")}
 			// A batch that crashes is put off, and in the end skipped, as one that fails: it would crash every time.
 			if batch != nil {
@@ -120,7 +111,6 @@ func (m *Manager) runFor(ctx context.Context, user string) (err error) {
 	if state.NextAttempt != nil && time.Now().Before(*state.NextAttempt) {
 		return nil
 	}
-	started := time.Now()
 	var payload string
 	var estimated int
 	batch, payload, estimated, err = m.gatherEvidence(user)
@@ -143,8 +133,6 @@ func (m *Manager) runFor(ctx context.Context, user string) (err error) {
 	if err := commit(m.db, batch, ops, report); err != nil {
 		return m.deferBatch(batch, failure{db.MemoryStorage, fmt.Errorf("could not commit the memory batch of turn %s: %w", batch.TurnID, err)})
 	}
-	slog.Info("memory extracted", "turn", batch.TurnID, "facts", len(batch.Facts), "changes", len(ops),
-		"input", report.InputTokens, "output", report.OutputTokens, "ms", time.Since(started).Milliseconds())
 	return nil
 }
 
@@ -183,14 +171,8 @@ func (m *Manager) gatherEvidence(user string) (*Batch, string, int, error) {
 
 func (m *Manager) deferBatch(b *Batch, cause error) error {
 	skip := db.MemorySkip{Entries: b.Entries, ThreadID: b.ThreadID, TurnID: b.TurnID, MemoryFailure: failureOf(cause)}
-	skipped, err := m.db.DeferMemory(b.UserID, b.Cursor, skip, time.Now())
-	if err != nil {
+	if _, err := m.db.DeferMemory(b.UserID, b.Cursor, skip, time.Now()); err != nil {
 		return fmt.Errorf("could not defer the memory batch of turn %s (%v): %w", b.TurnID, cause, err)
-	}
-	if skipped {
-		slog.Warn("memory skipped items after repeated failures", "turn", b.TurnID, "seq", b.Cursor.Seq, "err", cause)
-	} else {
-		slog.Info("memory extraction deferred", "turn", b.TurnID, "err", cause)
 	}
 	return nil
 }

@@ -13,8 +13,6 @@ import (
 
 const ToolClaude = "claude"
 
-// claudeFlags are what every claude call runs with: one prompt answered as JSON, edits accepted, only go test run,
-// nobody asked, and at most two dollars spent.
 var claudeFlags = []string{
 	"--output-format", "json",
 	"--permission-mode", "acceptEdits",
@@ -103,8 +101,6 @@ func (r *Provider) prepareClaude(ctx context.Context, caller tools.Caller, args 
 	if err != nil {
 		return nil, fmt.Errorf("workspace: Claude Code is not installed where this conversation runs: %w", err)
 	}
-	// Where the sandbox can be left, Claude Code runs outside it, once the user agrees; elsewhere it runs as the box
-	// allows.
 	escalated := d.box.Enforced() && d.box.CanEscalate()
 	p := &tools.Prepared{
 		Cwd: cwd, SettingsDigest: r.settingsDigest(d), ArgumentsDigest: digest(args),
@@ -117,7 +113,7 @@ func (r *Provider) prepareClaude(ctx context.Context, caller tools.Caller, args 
 	return p, nil
 }
 
-// ClaudeOutput is Claude Code's final answer; what it spent is left out, as the provider accounts for it.
+// What it spent is left out: the provider accounts for it.
 type ClaudeOutput struct {
 	Result    string `json:"result"`
 	IsError   bool   `json:"is_error,omitempty"`

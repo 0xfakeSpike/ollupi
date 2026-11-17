@@ -5,7 +5,6 @@ import (
 	"crypto/subtle"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net"
 	"net/http"
 	"slices"
@@ -21,15 +20,13 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools/mcp"
 )
 
-// lookupTimeout bounds how long Authenticate, and Placements after it, may each take for one connection.
 const lookupTimeout = 10 * time.Second
 
 type Options struct {
-	// DB is the shard's database; the gateway reads it for views that need no orchestration.
 	DB *db.DB
 	// Token is the default user's, for a gateway with one user; Authenticate takes its place for many.
 	Token string
-	// Authenticate says whose token this is. Logging in happens before ollupi: it only checks what that gave out.
+	// Logging in happens before ollupi: Authenticate only checks what that gave out.
 	Authenticate   Authenticate
 	AllowedOrigins []string
 	// AllowedHosts are the names clients reach this gateway by, besides the local ones.
@@ -37,13 +34,11 @@ type Options struct {
 	Memory       *memory.Manager
 	Jobs         *cron.Jobs
 	MCP          *mcp.Users
-	// Connections bounds the clients' connections; the zero value takes DefaultConnections.
-	Connections wshub.Options
-	// Shard is the shard this gateway serves, and Placements where it finds which users are on it. Without them the
-	// gateway serves every user Authenticate knows, as where there is one shard.
+	Connections  wshub.Options
+	// Without Shard and Placements the gateway serves every user Authenticate knows, as where there is one shard.
 	Shard      string
 	Placements Placements
-	// Load reports how busy this shard is to the router, for placing new users; it needs Shard.
+	// Load needs Shard.
 	Load Load
 }
 
@@ -121,12 +116,8 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 	}
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		slog.Warn("gateway shutdown", "err", err)
-	}
-	if err := <-served; !errors.Is(err, http.ErrServerClosed) {
-		slog.Error("gateway stopped", "err", err)
-	}
+	srv.Shutdown(shutdownCtx)
+	<-served
 	s.served.Wait()
 	return nil
 }
@@ -136,10 +127,8 @@ const (
 	idleTimeout       = 2 * time.Minute
 )
 
-// DefaultConnections bounds the WebSocket connections a gateway holds unless Options says otherwise. The admission
-// rate is a guess, not yet measured: each new connection sets off database work, so a restarted shard takes its users
-// back a few hundred a second. MaxAge stays under the 24 hours that Google Cloud's global external Application Load
-// Balancer keeps a WebSocket open at most; a deployment behind a balancer that cuts them sooner sets it lower.
+// The admission rate is a guess, not yet measured: each new connection sets off database work. MaxAge stays under the
+// 24 hours that Google Cloud's global external Application Load Balancer keeps a WebSocket open at most.
 var DefaultConnections = wshub.Options{
 	PerKey:      4,
 	Rate:        200,

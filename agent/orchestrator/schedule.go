@@ -3,8 +3,6 @@ package orchestrator
 import (
 	"context"
 	"fmt"
-	"log/slog"
-	"runtime/debug"
 
 	"github.com/0xfakeSpike/ollupi/repo/db"
 )
@@ -13,9 +11,9 @@ func (o *Orchestrator) reconcile(threadID string) {
 	if _, busy := o.slotByThread[threadID]; busy || o.ctx.Err() != nil {
 		return
 	}
-	st, err := o.cfg.DB.ThreadState(threadID)
+	st, err := o.store.ThreadState(threadID)
 	if err != nil {
-		o.halt(threadID, err)
+		o.halt(threadID)
 		return
 	}
 	turn, active := st.ActiveTurn()
@@ -27,31 +25,30 @@ func (o *Orchestrator) reconcile(threadID string) {
 		o.endTurn(turn)
 		return
 	}
-	if turn.Status != db.TurnReady || len(o.slotByThread) >= o.cfg.Slots || o.slotsOfUser[st.Thread.UserID] >= o.cfg.UserSlots {
+	if turn.Status != db.TurnReady || len(o.slotByThread) >= o.slots || o.slotsOfUser[st.Thread.UserID] >= o.userSlots {
 		return
 	}
-	if err := o.cfg.DB.Launch(turn.ID); err != nil {
-		o.halt(threadID, err)
+	if err := o.store.Launch(turn.ID); err != nil {
+		o.halt(threadID)
 		return
 	}
 	o.launch(st.Thread.UserID, threadID, turn.ID)
 }
 
-// admit fills the free slots with the threads whose turns are ready, reading no more of them than there are slots.
 func (o *Orchestrator) admit() {
-	free := o.cfg.Slots - len(o.slotByThread)
+	free := o.slots - len(o.slotByThread)
 	if free <= 0 || o.ctx.Err() != nil {
 		return
 	}
 	var full []string
 	for user, held := range o.slotsOfUser {
-		if held >= o.cfg.UserSlots {
+		if held >= o.userSlots {
 			full = append(full, user)
 		}
 	}
-	ids, err := o.cfg.DB.ReadyThreads(free, full)
+	ids, err := o.store.ReadyThreads(free, full)
 	if err != nil {
-		o.ev.Fault("", "", "threads ready for a slot could not be listed", err)
+		o.ev.Fault("", "", "threads ready for a slot could not be listed")
 		return
 	}
 	for _, id := range ids {
@@ -59,27 +56,21 @@ func (o *Orchestrator) admit() {
 	}
 }
 
-// recover puts right what a stopped process left: the turns it was running leave their slots,
-// and each thread it may have stranded is reconciled once.
 func (o *Orchestrator) recover() error {
-	stranded, err := o.cfg.DB.StrandedThreads()
+	stranded, err := o.store.StrandedThreads()
 	if err != nil {
 		return fmt.Errorf("orchestrator: stranded threads: %w", err)
 	}
 	for _, id := range stranded {
-		closed, err := o.cfg.DB.RecoverItems(id)
-		if err != nil {
+		if _, err := o.store.RecoverItems(id); err != nil {
 			return fmt.Errorf("orchestrator: recover thread %s: %w", id, err)
 		}
-		if len(closed) > 0 {
-			slog.Warn("items cut off by the restart closed", "thread", id, "items", len(closed))
-		}
-		turn, err := o.cfg.DB.ActiveTurn(id)
+		turn, err := o.store.ActiveTurn(id)
 		if err != nil {
 			return fmt.Errorf("orchestrator: recover thread %s: %w", id, err)
 		}
 		if turn.Status == db.TurnInProgress {
-			if _, err := o.cfg.DB.Park(turn.ID); err != nil {
+			if _, err := o.store.Park(turn.ID); err != nil {
 				return fmt.Errorf("orchestrator: recover thread %s: %w", id, err)
 			}
 		}
@@ -106,7 +97,6 @@ func (o *Orchestrator) launch(user, threadID, turnID string) {
 		defer o.done.Done()
 		defer func() {
 			if p := recover(); p != nil {
-				slog.Error("turn crashed", "thread", threadID, "turn", turnID, "panic", fmt.Sprint(p), "stack", string(debug.Stack()))
 				o.post(func() { o.afterRun(threadID, sl, false, errCrashed) })
 			}
 		}()

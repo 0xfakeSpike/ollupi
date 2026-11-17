@@ -141,7 +141,7 @@ stateDiagram-v2
 
 子 agent 是引擎里唯一的异步工作：要做得久的事，比如下载或长构建，主 agent 派一个子 agent 去做。启动它的调用当场完成，结果里是子会话的 id；子 agent 的报告在它结束时作为一条 `agentReport` 条目回到启动它的轮次。具体是：
 
-1. `subagent.Invoke` 调 `WriteSubagent` 写出子会话和一个 `ready` 的首个轮次，再通知编排器（`SubagentStarted`），后者发 `thread/started`、`turn/started`，子轮次像其他轮次一样拿槽位运行，和父轮次并行。
+1. `subagent.Invoke` 调 `WriteSubagent` 写出子会话和一个 `ready` 的首个轮次，再通知编排器（`Started`），后者像对用户直接开始的一轮那样发 `turn/started`（带着子会话）和任务消息，子轮次像其他轮次一样拿槽位运行，和父轮次并行。
 2. 父轮次继续运行，可以做别的事，也可以先回答；回答时子 agent 还在运行，就进入 `waitingOnAgent`。
 3. 用户这时发消息（插话），父轮次回到 `ready`，主 agent 回复后再回到 `waitingOnAgent`。
 4. 每个子 agent 结束时，`db.EndTurn` 在同一事务里把报告写进父轮次：完成的写它的最终回答，失败或被停止的写原因。最后一个结束的子 agent 把等待中的父轮次改回 `ready`，主 agent 读到全部报告后再回答。

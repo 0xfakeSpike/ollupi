@@ -85,20 +85,27 @@ type compiledRules struct {
 }
 
 func compileRules(r DomainRules) (compiledRules, error) {
-	var c compiledRules
-	for _, list := range []struct {
-		in  []string
-		out *[]domainEntry
-	}{{r.Allowed, &c.allow}, {r.Denied, &c.deny}} {
-		for _, raw := range list.in {
-			e, err := parseDomainEntry(raw)
-			if err != nil {
-				return compiledRules{}, err
-			}
-			*list.out = append(*list.out, e)
-		}
+	allow, err := parseDomainEntries(r.Allowed)
+	if err != nil {
+		return compiledRules{}, err
 	}
-	return c, nil
+	deny, err := parseDomainEntries(r.Denied)
+	if err != nil {
+		return compiledRules{}, err
+	}
+	return compiledRules{allow: allow, deny: deny}, nil
+}
+
+func parseDomainEntries(raws []string) ([]domainEntry, error) {
+	var out []domainEntry
+	for _, raw := range raws {
+		e, err := parseDomainEntry(raw)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, nil
 }
 
 func (e domainEntry) matches(host string, port int) bool {

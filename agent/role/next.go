@@ -7,23 +7,16 @@ import (
 	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
-// A step is what a run of the turn does next, as its items say.
 type step int
 
 const (
-	// stepRespond asks the model for its next response.
 	stepRespond step = iota
-	// stepCalls decides and runs the pending calls.
 	stepCalls
-	// stepConclude asks the model for its final answer, tool use having stopped.
 	stepConclude
-	// stepWait leaves the turn waiting: on the user, or on what a call awaits.
 	stepWait
-	// stepDone ends the run: the model answered all the turn's input.
 	stepDone
 )
 
-// next is what the run does next, as the turn's items are now, with the reason a stepConclude gives the model.
 func (rt *Runtime) next() (step, string) {
 	waiting := slices.ContainsFunc(rt.items, func(it db.ItemRow) bool { return it.WaitsForApproval() || it.Awaits() })
 	pending := slices.ContainsFunc(rt.items, func(it db.ItemRow) bool { return it.IsCall() && it.Status == db.ItemPending })
@@ -44,9 +37,6 @@ func (rt *Runtime) next() (step, string) {
 	return stepRespond, ""
 }
 
-// stop is why tool use has stopped in the turn, or "" while calls may run, the batched calls about to run counting
-// toward its limit. It holds, since the model last answered or the user last wrote, once the user declined a call or
-// too many calls in a row failed; and in the whole turn once its calls reached their limit.
 func (rt *Runtime) stop(batched int) string {
 	from := rt.fresh()
 	declined := slices.IndexFunc(rt.items[from:], func(it db.ItemRow) bool { return it.IsCall() && it.Status == db.ItemDeclined })
@@ -82,8 +72,6 @@ func (rt *Runtime) stop(batched int) string {
 	return ""
 }
 
-// answered says whether the model's latest response is an answer, a message that called no tool, to all the input of
-// the turn: none came after what its prompt was built from. A response that failed answered nothing.
 func (rt *Runtime) answered() bool {
 	latest := rt.latestResponse()
 	answer, through := false, 0
@@ -104,8 +92,6 @@ func (rt *Runtime) answered() bool {
 	})
 }
 
-// fresh is where the turn's items begin that a stop counts: after the model's latest answer, a completed message of a
-// response that called no tool, or the user's latest message.
 func (rt *Runtime) fresh() int {
 	called := map[string]bool{}
 	for _, it := range rt.items {
@@ -121,7 +107,6 @@ func (rt *Runtime) fresh() int {
 	return 0
 }
 
-// latestResponse is the ID of the model's latest response in the turn, if any; a compaction is none.
 func (rt *Runtime) latestResponse() string {
 	for i := len(rt.items) - 1; i >= 0; i-- {
 		if it := rt.items[i]; it.ResponseID != "" && it.Type != db.ItemContextCompaction {

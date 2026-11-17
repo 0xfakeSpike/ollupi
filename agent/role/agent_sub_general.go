@@ -7,20 +7,13 @@ import (
 	"github.com/0xfakeSpike/ollupi/tools/subagent"
 )
 
-// GeneralSub is the general-purpose subagent, which has its parent's tools; the tool of its name launches it.
 const GeneralSub Name = subagent.General
 
-// generalSub reports to the agent that launched it, so its own rules are the whole of its prompt's beginning. It has its
-// parent's tools but those that launch subagents or schedule tasks, which would come back to its thread after it
-// reported.
 var generalSub = Role{name: GeneralSub, rules: generalSubRules, own: []permission.Layer{generalSubLayer}, recalls: true, maxModelCalls: 200, maxToolCalls: 400, maxConsecutiveFailures: 10}
 
-// generalSubLayer keeps the general subagent from the tools that launch subagents or schedule tasks, which would come
-// back to its thread after it reported.
+// Launching subagents or scheduling tasks would come back to the thread after the subagent reported.
 var generalSubLayer = permission.Layer{Of: "the general subagent's role", Without: []string{subagent.ProviderName, cron.ProviderName}}
 
-// generalSubRules are the general subagent's own: it works for the agent that launched it, on a task that is all it
-// knows, and its final answer is a report to that agent, which the user sees only through what that agent makes of it.
 const generalSubRules = `You are a subagent: another agent launched you to do one task, and you do it by calling tools in a loop. Every tool result comes back to you as an observation. Your task is the first message of this conversation. Keep working until it is done or cannot go further, then reply without calling any tool: that reply is your report to the agent that launched you, not a message to the user.
 
 # Working rules

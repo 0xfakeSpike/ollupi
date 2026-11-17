@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"regexp"
 	"strings"
 	"sync"
@@ -25,7 +24,6 @@ type Server struct {
 	URL     string
 	Headers map[string]string
 
-	// Timeout is how long a tool call may take; by default, five minutes.
 	Timeout time.Duration
 }
 
@@ -61,8 +59,7 @@ const (
 	closeTimeout       = 5 * time.Second
 )
 
-// Users keeps each user's servers. They start the first time the user needs them, in the user's own sandbox, and start
-// again once one has gone, as it does when the sandbox sleeps.
+// A user's servers start again once one has gone, as it does when the sandbox sleeps.
 type Users struct {
 	ctx    context.Context
 	client *mcp.Client
@@ -73,14 +70,11 @@ type Users struct {
 	users map[string]*connected
 }
 
-// connected holds a user's servers, and makes their other callers wait while they connect.
 type connected struct {
 	mu      sync.Mutex
 	servers *Servers
 }
 
-// NewUsers takes what each user has configured, credentials included, and where their commands run. Their processes
-// last until ctx ends.
 func NewUsers(ctx context.Context, client Client, config func(user string) ([]Server, error), boxFor func(user string) (sandbox.Box, error)) *Users {
 	if client.Name == "" {
 		client.Name = "ollupi"
@@ -92,7 +86,6 @@ func NewUsers(ctx context.Context, client Client, config func(user string) ([]Se
 		config: config, boxFor: boxFor, users: map[string]*connected{}}
 }
 
-// For gives the user's servers, connecting them if they are not.
 func (u *Users) For(user string) (*Servers, error) {
 	u.mu.Lock()
 	c := u.users[user]
@@ -107,9 +100,7 @@ func (u *Users) For(user string) (*Servers, error) {
 		return c.servers, nil
 	}
 	if c.servers != nil {
-		if err := c.servers.Close(); err != nil {
-			slog.Warn("mcp servers not closed", "user", user, "err", err)
-		}
+		c.servers.Close()
 		c.servers = nil
 	}
 	servers, err := u.config(user)
@@ -124,7 +115,7 @@ func (u *Users) For(user string) (*Servers, error) {
 	return c.servers, nil
 }
 
-// Tools gives the user's tools, the same Set for as long as the same servers run.
+// The same Set for as long as the same servers run.
 func (u *Users) Tools(user string) (*tools.Set, error) {
 	s, err := u.For(user)
 	if err != nil {
@@ -133,7 +124,6 @@ func (u *Users) Tools(user string) (*tools.Set, error) {
 	return s.set, nil
 }
 
-// Close stops every user's servers.
 func (u *Users) Close() error {
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -205,7 +195,6 @@ func checkTransport(s Server) error {
 	return nil
 }
 
-// gone says a server that was connected has since dropped.
 func (s *Servers) gone() bool {
 	for _, sess := range s.sessions {
 		if sess != nil {

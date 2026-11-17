@@ -28,7 +28,6 @@ type Found struct {
 	Tasks    []CronJobView `json:"tasks"`
 }
 
-// Search finds the user's conversations, messages and scheduled tasks whose text holds every term, newest first.
 func (d *DB) Search(user string, terms []string, workspaceID string, limit int) (Found, error) {
 	f := Found{Threads: []ThreadRow{}, Messages: []MessageHit{}, Tasks: []CronJobView{}}
 	inWorkspace := func(q *gorm.DB, column string) *gorm.DB {
@@ -54,10 +53,8 @@ func (d *DB) Search(user string, terms []string, workspaceID string, limit int) 
 		Where("t.user_id = ? AND t.parent_thread_id IS NULL AND i.type IN ? AND i.status = ?", user, []ItemType{ItemUserMessage, ItemAgentMessage}, ItemCompleted)
 	for _, t := range terms {
 		q = q.Where(`i.text LIKE ? ESCAPE '\'`, likePattern(t))
-		// The index takes LIKE only without ESCAPE, so it narrows to a superset, reading % and _ in the term as
-		// wildcards, and the escaped LIKE on items keeps the exact matches. It holds every user's messages and
-		// indexes three characters at a time: a shorter term would read all of it, so that one is left to the
-		// user's own messages.
+		// The index takes LIKE only without ESCAPE, so it narrows to a superset the escaped LIKE filters. It indexes
+		// three characters at a time: a shorter term would read every user's messages, so it is left to the user's own.
 		if utf8.RuneCountInString(t) >= 3 {
 			q = q.Where("i.rowid IN (SELECT rowid FROM items_search WHERE text LIKE ?)", "%"+t+"%")
 		}

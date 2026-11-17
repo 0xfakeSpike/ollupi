@@ -95,6 +95,11 @@ func forgottenSources(entries []db.MemoryRow) map[string]bool {
 
 const factRunes = 4000
 
+type evidenceField struct {
+	key, value string
+	bound      int
+}
+
 func itemFact(it db.ItemRow) Fact {
 	textBound := 3000
 	if it.Type == db.ItemUserMessage {
@@ -104,10 +109,7 @@ func itemFact(it db.ItemRow) Fact {
 	if it.Result != nil {
 		result = string(it.Result.Output)
 	}
-	fields := []struct {
-		key, value string
-		bound      int
-	}{
+	fields := []evidenceField{
 		{"text", it.Text, textBound}, {"tool", it.Tool, 1500}, {"arguments", it.Arguments, 1500},
 		{"result", result, 3000}, {"error", it.Error, 1500},
 	}

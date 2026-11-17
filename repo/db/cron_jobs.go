@@ -125,8 +125,6 @@ func (d *DB) SetCronJobNextRun(id string, due, next time.Time) error {
 	return d.gorm.Model(&CronJobRow{}).Where("id = ? AND next_run_at = ?", id, due.UTC()).Update("next_run_at", next.UTC()).Error
 }
 
-// CountCronJobRun records the run due at due: the job runs next at next, or
-// is deleted when that was its last run. It reports whether it was deleted.
 func (d *DB) CountCronJobRun(id string, due, next time.Time) (bool, error) {
 	ended := false
 	err := d.Tx(func(tx *DB) error {

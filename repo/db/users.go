@@ -13,7 +13,7 @@ import (
 // DefaultUser owns what a database held before it had users, and everything the gateway's one token reaches.
 const DefaultUser = "default"
 
-// UserRow is a user on this shard. Who a caller is gets settled before ollupi: a row only says the user exists here.
+// Who a caller is gets settled before ollupi: a row only says the user exists here.
 type UserRow struct {
 	ID        string    `gorm:"primaryKey" json:"id"`
 	CreatedAt time.Time `gorm:"not null;autoCreateTime:false" json:"createdAt"`
@@ -21,8 +21,6 @@ type UserRow struct {
 
 func (UserRow) TableName() string { return "users" }
 
-// EnsureUser makes the user with their settings, memory state and environment on this machine; a user who exists
-// stays as they are.
 func (d *DB) EnsureUser(id string) error {
 	if id == "" {
 		return errors.New("storage: a user needs an id")
@@ -45,7 +43,6 @@ func (d *DB) EnsureUser(id string) error {
 	})
 }
 
-// Users lists the users on this shard.
 func (d *DB) Users() ([]string, error) {
 	var ids []string
 	return ids, d.gorm.Model(&UserRow{}).Order("id").Pluck("id", &ids).Error

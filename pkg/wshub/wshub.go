@@ -6,7 +6,6 @@ package wshub
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"math/rand/v2"
 	"net/http"
 	"slices"
@@ -19,7 +18,6 @@ import (
 )
 
 type Options struct {
-	// PerKey is how many connections one key may hold; a newer one closes the oldest.
 	PerKey int
 	// Rate and Burst bound how fast connections are admitted, so that clients reconnecting together after a restart
 	// reach the work each new connection sets off a few at a time.
@@ -29,17 +27,15 @@ type Options struct {
 	// those refused together do not come back together.
 	RetryWithin time.Duration
 	// PingEvery should be shorter than the shortest idle timeout on the way to the client, such as a load balancer's.
-	PingEvery time.Duration
-	// PongWithin is how long a peer may take to answer a ping before its connection is closed.
+	PingEvery  time.Duration
 	PongWithin time.Duration
-	// MaxAge should be shorter than the longest a load balancer on the way keeps a WebSocket open. Each connection is
-	// closed with StatusGoingAway at a random point in the last quarter of it, so that connections opened together, as
-	// after a restart, are not all cut together by that load balancer later.
+	// MaxAge should be shorter than the longest a load balancer on the way keeps a WebSocket open. Each connection closes
+	// at a random point in its last quarter, so that connections opened together are not all cut together later.
 	MaxAge time.Duration
 }
 
-// StatusReplaced is the close code of a connection given up for a newer one of its key. It is in the range RFC 6455
-// leaves to applications, so that a client can tell it from the codes that ask it to reconnect.
+// StatusReplaced is in the range RFC 6455 leaves to applications, so that a client can tell it from the codes that
+// ask it to reconnect.
 const StatusReplaced websocket.StatusCode = 4000
 
 type Hub[T any] struct {
@@ -63,7 +59,7 @@ func New[T any](opts Options) (*Hub[T], error) {
 	return &Hub[T]{opts: opts, admit: rate.NewLimiter(opts.Rate, opts.Burst), held: map[string][]*entry[T]{}}, nil
 }
 
-// Admit says whether a new connection may start now. When it may not, w has been answered 503 with a Retry-After.
+// When Admit returns false, w has already been answered 503 with a Retry-After.
 func (h *Hub[T]) Admit(w http.ResponseWriter) bool {
 	if h.admit.Allow() {
 		return true
@@ -72,16 +68,14 @@ func (h *Hub[T]) Admit(w http.ResponseWriter) bool {
 	return false
 }
 
-// Refuse answers w 503 with a Retry-After, for a connection that may start later but not now.
 func (h *Hub[T]) Refuse(w http.ResponseWriter, why string) {
 	seconds := 1 + rand.IntN(int(h.opts.RetryWithin/time.Second))
 	w.Header().Set("Retry-After", strconv.Itoa(seconds))
 	http.Error(w, why, http.StatusServiceUnavailable)
 }
 
-// Serve holds ws as one of key's connections, carrying value, while serve runs on it, and closes it when serve
-// returns. serve's context ends when ctx does; serve should return once reading ws fails, as it does when the hub
-// closes ws: given up for a newer connection, its peer stopped answering pings, or it reached its age.
+// serve should return once reading ws fails, as it does when the hub closes ws: given up for a newer connection, its
+// peer stopped answering pings, or it reached its age.
 func (h *Hub[T]) Serve(ctx context.Context, key string, ws *websocket.Conn, value T, serve func(context.Context) error) {
 	e := &entry[T]{value: value, ws: ws}
 	h.add(key, e)
@@ -105,15 +99,12 @@ func (h *Hub[T]) Serve(ctx context.Context, key string, ws *websocket.Conn, valu
 	alive.Wait()
 	switch status := websocket.CloseStatus(err); {
 	case status == websocket.StatusNormalClosure || status == websocket.StatusGoingAway || status == StatusReplaced || stopping:
-		slog.Info("client disconnected", "key", key)
 		ws.Close(websocket.StatusNormalClosure, "")
 	default:
-		slog.Warn("client connection failed", "key", key, "err", err)
 		ws.Close(websocket.StatusInternalError, "connection error")
 	}
 }
 
-// Count is how many connections the hub holds.
 func (h *Hub[T]) Count() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -124,7 +115,7 @@ func (h *Hub[T]) Count() int {
 	return n
 }
 
-// Each calls fn with each connection key holds, oldest first.
+// Each visits key's connections oldest first.
 func (h *Hub[T]) Each(key string, fn func(T)) {
 	h.mu.Lock()
 	held := h.held[key]
@@ -144,7 +135,6 @@ func (h *Hub[T]) add(key string, e *entry[T]) {
 	h.held[key] = held
 	h.mu.Unlock()
 	if oldest != nil {
-		slog.Info("client replaced by a newer connection", "key", key)
 		go oldest.ws.Close(StatusReplaced, "replaced by a newer connection")
 	}
 }
@@ -160,8 +150,8 @@ func (h *Hub[T]) remove(key string, e *entry[T]) {
 	h.held[key] = held
 }
 
-// keepAlive pings the peer until ctx ends, and drops the connection without a closing handshake, which a peer that
-// does not answer would not finish, once it misses a pong.
+// keepAlive drops a connection that misses a pong without a closing handshake, which a peer that does not answer
+// would not finish.
 func (h *Hub[T]) keepAlive(ctx context.Context, key string, ws *websocket.Conn) {
 	tick := time.NewTicker(h.opts.PingEvery)
 	defer tick.Stop()
@@ -176,7 +166,6 @@ func (h *Hub[T]) keepAlive(ctx context.Context, key string, ws *websocket.Conn) 
 		cancel()
 		if err != nil {
 			if ctx.Err() == nil {
-				slog.Info("client stopped answering pings; connection dropped", "key", key, "err", err)
 				ws.CloseNow()
 			}
 			return

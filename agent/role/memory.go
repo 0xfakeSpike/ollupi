@@ -8,7 +8,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// loadMemory records the memory snapshot the role recalls now, if any.
 func (rt *Runtime) loadMemory() error {
 	it, err := rt.recall()
 	if err != nil {
@@ -21,8 +20,6 @@ func (rt *Runtime) loadMemory() error {
 	return err
 }
 
-// recall is the memory snapshot the run takes in now, as an item to record: none when the role takes in no memory,
-// the user has none, or the conversation took one in since its latest compaction.
 func (rt *Runtime) recall() (*db.ItemRow, error) {
 	if !rt.role.recalls || rt.memory == nil || rt.hasSnapshot() {
 		return nil, nil
@@ -38,7 +35,6 @@ func (rt *Runtime) recall() (*db.ItemRow, error) {
 	}, nil
 }
 
-// hasSnapshot says whether the conversation took in a memory snapshot since its latest compaction.
 func (rt *Runtime) hasSnapshot() bool {
 	items := rt.conversation()
 	for i := len(items) - 1; i >= 0; i-- {

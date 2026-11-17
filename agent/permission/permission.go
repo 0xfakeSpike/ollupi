@@ -33,7 +33,7 @@ func New(layers []Layer, allowlist []string, registry *tools.Registry) (*Checker
 	if err := policy.Validate(); err != nil {
 		return nil, err
 	}
-	set, _ := parseRules(settings.Rules) // the rules of the layers, each of which checkLayer parsed
+	set, _ := parseRules(settings.Rules) // checkLayer parsed each layer's rules
 	for i, name := range allowlist {
 		if slices.Contains(allowlist[:i], name) {
 			return nil, fmt.Errorf("the tools allowlist names %q twice", name)
@@ -128,9 +128,8 @@ func (c *Checker) decide(call Call, history []db.ItemRow) Decision {
 	return Decision{Verdict: Run}
 }
 
-// leavesTheSandbox says the call was prepared to run outside the sandbox, which someone has to agree to before it runs.
-// The policy that never asks has no one to agree, so there the command runs as prepared. Its approval gives no reason:
-// the prepared execution says the command escalates and why, and each client words that for its user.
+// The policy that never asks has no one to agree, so there the command runs as prepared. The approval gives
+// no reason: the prepared execution says why it escalates, and each client words that for its user.
 func (c *Checker) leavesTheSandbox(call Call) bool {
 	return c.policy != Never && call.Prepared != nil && call.Prepared.Escalated
 }

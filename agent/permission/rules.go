@@ -96,21 +96,31 @@ type ruleSet struct {
 }
 
 func parseRules(p Rules) (ruleSet, error) {
-	var set ruleSet
-	for _, list := range []struct {
-		name  string
-		texts []string
-		into  *[]rule
-	}{{"deny", p.Deny, &set.deny}, {"ask", p.Ask, &set.ask}, {"allow", p.Allow, &set.allow}} {
-		for _, text := range list.texts {
-			r, err := parseRule(text)
-			if err != nil {
-				return ruleSet{}, fmt.Errorf("permissions.%s: %w", list.name, err)
-			}
-			*list.into = append(*list.into, r)
-		}
+	deny, err := parseList("deny", p.Deny)
+	if err != nil {
+		return ruleSet{}, err
 	}
-	return set, nil
+	ask, err := parseList("ask", p.Ask)
+	if err != nil {
+		return ruleSet{}, err
+	}
+	allow, err := parseList("allow", p.Allow)
+	if err != nil {
+		return ruleSet{}, err
+	}
+	return ruleSet{deny: deny, ask: ask, allow: allow}, nil
+}
+
+func parseList(name string, texts []string) ([]rule, error) {
+	var out []rule
+	for _, text := range texts {
+		r, err := parseRule(text)
+		if err != nil {
+			return nil, fmt.Errorf("permissions.%s: %w", name, err)
+		}
+		out = append(out, r)
+	}
+	return out, nil
 }
 
 func (s ruleSet) all() []rule {
@@ -128,17 +138,11 @@ func (s ruleSet) removes(tool string) bool {
 
 func (s ruleSet) decide(tool string, content tools.Content, hasContent bool) (ruleVerdict, string) {
 	entries := append([]string{content.Match}, content.Parts...)
-	for _, group := range []struct {
-		rules []rule
-		kind  ruleVerdict
-	}{{s.deny, ruleDeny}, {s.ask, ruleAsk}} {
-		for _, r := range group.rules {
-			for _, entry := range entries {
-				if r.matches(tool, entry, hasContent, content.Folded) {
-					return group.kind, r.text
-				}
-			}
-		}
+	if r, ok := firstMatch(s.deny, tool, entries, hasContent, content.Folded); ok {
+		return ruleDeny, r.text
+	}
+	if r, ok := firstMatch(s.ask, tool, entries, hasContent, content.Folded); ok {
+		return ruleAsk, r.text
 	}
 	// A deny or ask rule with a specifier cannot be shown not to apply to content it cannot read. The rule named is a
 	// deny rule that might apply, so that a policy nobody is asked under can refuse the call; with only ask rules, none.
@@ -210,4 +214,15 @@ func suggest(call Call) []string {
 		}
 	}
 	return out
+}
+
+func firstMatch(rules []rule, tool string, entries []string, hasContent, folded bool) (rule, bool) {
+	for _, r := range rules {
+		for _, entry := range entries {
+			if r.matches(tool, entry, hasContent, folded) {
+				return r, true
+			}
+		}
+	}
+	return rule{}, false
 }

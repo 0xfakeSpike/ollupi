@@ -62,7 +62,7 @@ type Redactor struct {
 	masked map[string]string
 }
 
-// New returns a redactor whose placeholders are keyed by key: the same key masks a value to the same placeholder.
+// The same key masks a value to the same placeholder.
 func New(key string) *Redactor {
 	return &Redactor{key: []byte(key), reverse: map[string]string{}, masked: map[string]string{}}
 }
@@ -156,9 +156,8 @@ func (s *Stream) Flush() string {
 	return out
 }
 
-// Cuts moves the rune offsets head and tail of s, where a text is cut short, out of the sensitive spans of s, which
-// Spans gives: head back to a span's start, tail on to its end. What is kept of a span is then all of it, which Mask
-// still finds, never a part that it would not.
+// Cuts moves head and tail, rune offsets, out of the spans Spans gives, so that what is kept of a span is all of it,
+// which Mask still finds, never a part that it would not.
 func Cuts(s string, spans [][2]int, head, tail int) (int, int) {
 	for _, sp := range spans {
 		start, end := utf8.RuneCountInString(s[:sp[0]]), utf8.RuneCountInString(s[:sp[1]])
@@ -273,9 +272,8 @@ func validIDCard(s string) bool {
 	return check[sum%11] == last
 }
 
-// validBankCard passes a number that could be a payment card: its first digit names a card network, and it passes
-// the Luhn check. No card starts with 0, which is where zero-padded addresses and offsets start (readelf's
-// 0000000000401000), or with 1, where millisecond and nanosecond Unix times start; a tenth of those pass Luhn alone.
+// No card starts with 0, where zero-padded addresses and offsets start (readelf's 0000000000401000), or with 1,
+// where millisecond and nanosecond Unix times start; a tenth of those pass Luhn alone.
 func validBankCard(s string) bool {
 	if s[0] == '0' || s[0] == '1' {
 		return false

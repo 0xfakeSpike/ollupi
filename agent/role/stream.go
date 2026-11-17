@@ -9,91 +9,85 @@ import (
 	"github.com/google/uuid"
 )
 
-// A responseRecorder keeps what one model response of a turn has made so far: the items its streamed text goes into,
-// the text, and its context stats and usage. It records nothing itself: its methods say what the runtime records.
 type responseRecorder struct {
 	turnID string
 	id     string
 	stats  db.ContextStats
 	usage  *db.Usage
 
-	reasoning     *db.ItemRow
-	agent         *db.ItemRow
-	reasoningText strings.Builder
-	agentText     strings.Builder
-	carried       bool
+	reasoning part
+	message   part
+	carried   bool
+}
+
+type part struct {
+	kind db.ItemType
+	item *db.ItemRow
+	text strings.Builder
 }
 
 func newResponseRecorder(turnID string, stats db.ContextStats) *responseRecorder {
-	return &responseRecorder{turnID: turnID, id: uuid.NewString(), stats: stats}
+	return &responseRecorder{turnID: turnID, id: uuid.NewString(), stats: stats,
+		reasoning: part{kind: db.ItemReasoning}, message: part{kind: db.ItemAgentMessage}}
 }
 
-// streamed is text the model streamed into item, which is new, to record before the text is told, when the text is
-// its first. The runtime puts the item as recorded back where it points.
+// The runtime puts the item as recorded back where it points.
 type streamed struct {
 	item  *db.ItemRow
 	isNew bool
 	text  string
 }
 
-// delta takes a part of the response as it streams: the text each of its items takes.
 func (r *responseRecorder) delta(d llm.Delta) []streamed {
 	var out []streamed
-	for _, part := range []struct {
-		item    **db.ItemRow
-		text    *strings.Builder
-		kind    db.ItemType
-		content string
-	}{
-		{&r.reasoning, &r.reasoningText, db.ItemReasoning, d.Reasoning},
-		{&r.agent, &r.agentText, db.ItemAgentMessage, d.Content},
-	} {
-		if part.content == "" {
-			continue
-		}
-		isNew := *part.item == nil
-		if isNew {
-			*part.item = &db.ItemRow{
-				ID: uuid.NewString(), TurnID: r.turnID, Type: part.kind, Status: db.ItemInProgress,
-				ResponseID: r.id, StartedAt: time.Now().UTC(),
-			}
-		}
-		part.text.WriteString(part.content)
-		out = append(out, streamed{item: *part.item, isNew: isNew, text: part.content})
+	if d.Reasoning != "" {
+		out = append(out, r.stream(&r.reasoning, d.Reasoning))
+	}
+	if d.Content != "" {
+		out = append(out, r.stream(&r.message, d.Content))
 	}
 	return out
 }
 
-type responsePart struct {
-	kind db.ItemType
-	item *db.ItemRow
-	text string
+func (r *responseRecorder) stream(p *part, text string) streamed {
+	isNew := p.item == nil
+	if isNew {
+		p.item = &db.ItemRow{
+			ID: uuid.NewString(), TurnID: r.turnID, Type: p.kind, Status: db.ItemInProgress,
+			ResponseID: r.id, StartedAt: time.Now().UTC(),
+		}
+	}
+	p.text.WriteString(text)
+	return streamed{item: p.item, isNew: isNew, text: text}
 }
 
-// finish is the response's agent message and reasoning as it completed, to record.
+// The message first, so that it carries the response's stats.
 func (r *responseRecorder) finish(resp llm.ChatResponse) []db.ItemRow {
 	var out []db.ItemRow
-	for _, part := range []responsePart{
-		{db.ItemAgentMessage, r.agent, resp.Message.Content},
-		{db.ItemReasoning, r.reasoning, resp.Message.ReasoningContent},
-	} {
-		if part.text == "" && part.item == nil {
-			continue
-		}
-		now := time.Now().UTC()
-		it := db.ItemRow{ID: uuid.NewString(), TurnID: r.turnID, Type: part.kind, ResponseID: r.id, StartedAt: now}
-		if part.item != nil {
-			it = *part.item
-		}
-		it.Text, it.Status, it.CompletedAt = part.text, db.ItemCompleted, &now
-		r.carry(&it, resp.Message.Native)
+	if it, ok := r.completed(&r.message, resp.Message.Content, resp.Message.Native); ok {
+		out = append(out, it)
+	}
+	if it, ok := r.completed(&r.reasoning, resp.Message.ReasoningContent, resp.Message.Native); ok {
 		out = append(out, it)
 	}
 	return out
 }
 
-// carry puts the response's context stats, usage and native message on the first of its items recorded:
-// the agent message, else the reasoning, else the first tool call, so each response is counted once.
+func (r *responseRecorder) completed(p *part, text string, native []byte) (db.ItemRow, bool) {
+	if text == "" && p.item == nil {
+		return db.ItemRow{}, false
+	}
+	now := time.Now().UTC()
+	it := db.ItemRow{ID: uuid.NewString(), TurnID: r.turnID, Type: p.kind, ResponseID: r.id, StartedAt: now}
+	if p.item != nil {
+		it = *p.item
+	}
+	it.Text, it.Status, it.CompletedAt = text, db.ItemCompleted, &now
+	r.carry(&it, native)
+	return it, true
+}
+
+// Only the first item recorded carries them, so each response is counted once.
 func (r *responseRecorder) carry(it *db.ItemRow, native []byte) {
 	if r.carried {
 		return
@@ -102,10 +96,8 @@ func (r *responseRecorder) carry(it *db.ItemRow, native []byte) {
 	it.ContextStats, it.Usage, it.Native = &r.stats, r.usage, native
 }
 
-// fail is the response as it failed for cause, to record: what it streamed, failed, or an error item when it streamed
-// nothing.
 func (r *responseRecorder) fail(cause error) []db.ItemRow {
-	if r.reasoning == nil && r.agent == nil {
+	if r.reasoning.item == nil && r.message.item == nil {
 		now := time.Now().UTC()
 		it := db.ItemRow{
 			ID: uuid.NewString(), TurnID: r.turnID, Type: db.ItemError, Status: db.ItemFailed,
@@ -115,18 +107,22 @@ func (r *responseRecorder) fail(cause error) []db.ItemRow {
 		return []db.ItemRow{it}
 	}
 	var out []db.ItemRow
-	for _, part := range []responsePart{
-		{db.ItemAgentMessage, r.agent, r.agentText.String()},
-		{db.ItemReasoning, r.reasoning, r.reasoningText.String()},
-	} {
-		if part.item == nil {
-			continue
-		}
-		now := time.Now().UTC()
-		it := *part.item
-		it.Text, it.Status, it.Error, it.CompletedAt = part.text, db.ItemFailed, cause.Error(), &now
-		r.carry(&it, nil)
+	if it, ok := r.failed(&r.message, cause); ok {
+		out = append(out, it)
+	}
+	if it, ok := r.failed(&r.reasoning, cause); ok {
 		out = append(out, it)
 	}
 	return out
+}
+
+func (r *responseRecorder) failed(p *part, cause error) (db.ItemRow, bool) {
+	if p.item == nil {
+		return db.ItemRow{}, false
+	}
+	now := time.Now().UTC()
+	it := *p.item
+	it.Text, it.Status, it.Error, it.CompletedAt = p.text.String(), db.ItemFailed, cause.Error(), &now
+	r.carry(&it, nil)
+	return it, true
 }

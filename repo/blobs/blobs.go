@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 )
 
-// Store holds whole objects under keys with slash-separated names, the way a bucket does.
 type Store interface {
 	// Put stores a new object; a key is written once.
 	Put(ctx context.Context, key string, data []byte) error
@@ -19,15 +18,13 @@ type Store interface {
 	Get(ctx context.Context, key string) ([]byte, error)
 	// Delete removes an object; one already gone is no error.
 	Delete(ctx context.Context, key string) error
-	// DeletePrefix removes every object under the folder prefix names.
 	DeletePrefix(ctx context.Context, prefix string) error
 }
 
-// Dir is a Store in a folder on this machine. Its errors name an object by its key, not by where the folder is: they
-// may reach those who sent the object, who are not to learn the server's paths.
+// Its errors name an object by its key, not by where the folder is: they may reach those who sent the object, who are
+// not to learn the server's paths.
 type Dir string
 
-// keyed names the object in err by its key.
 func keyed(key string, err error) error {
 	var pe *fs.PathError
 	if errors.As(err, &pe) {

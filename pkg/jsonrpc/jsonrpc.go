@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -54,14 +53,12 @@ type Handler interface {
 type ResponseFunc func(result json.RawMessage, err *Error)
 
 const (
-	writeTimeout   = 10 * time.Second
-	maxOutboxBytes = 16 << 20
-	// A client may send this many messages, and this many bytes of them, ahead of the one being handled before
-	// reading waits for room.
+	writeTimeout     = 10 * time.Second
+	maxOutboxBytes   = 16 << 20
 	maxInboxMessages = 64
 	maxInboxBytes    = 8 << 20
 	// A client is read at most this many messages a second, after a first burst, so that one that floods its
-	// connection, with calls or with messages that are not, slows down rather than takes the server's time and log.
+	// connection, with calls or with messages that are not, slows down rather than takes the server's time.
 	messagesPerSecond = 50
 	messageBurst      = 200
 )
@@ -73,7 +70,6 @@ type Conn struct {
 	nextID  int
 	pending map[string]ResponseFunc
 	outbox  [][]byte
-	// held keeps what is sent while a call holds it, until the call's reply has gone into outbox.
 	held    [][]byte
 	holding bool
 	queued  int
@@ -85,9 +81,8 @@ func NewConn(ws *websocket.Conn) *Conn {
 	return &Conn{ws: ws, pending: make(map[string]ResponseFunc), ready: make(chan struct{}, 1)}
 }
 
-// Serve handles the client's messages one at a time, in the order they came, and returns what ended reading them.
-// Reading goes on while one is handled: the pong to a ping is read only while a read is in progress, so a slow call
-// would otherwise look like a dead peer.
+// Reading goes on while a message is handled: the pong to a ping is read only while a read is in progress, so a slow
+// call would otherwise look like a dead peer.
 func (c *Conn) Serve(ctx context.Context, h Handler) (err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	written := make(chan struct{})
@@ -124,7 +119,6 @@ func (c *Conn) Serve(ctx context.Context, h Handler) (err error) {
 	return nil
 }
 
-// read passes the client's text messages to inbox until reading fails.
 func (c *Conn) read(ctx context.Context, room *semaphore.Weighted, inbox chan<- []byte) error {
 	pace := rate.NewLimiter(messagesPerSecond, messageBurst)
 	for {
@@ -150,7 +144,6 @@ func (c *Conn) read(ctx context.Context, room *semaphore.Weighted, inbox chan<- 
 	}
 }
 
-// inboxWeight is what a message takes of the inbox's room; one larger than all of it takes all of it.
 func inboxWeight(data []byte) int64 {
 	return int64(min(len(data), maxInboxBytes))
 }
@@ -180,8 +173,8 @@ func (c *Conn) handle(ctx context.Context, h Handler, data []byte) {
 	}
 }
 
-// HoldUntilReplied keeps what is sent from now on behind the reply to the call being answered, so that a client reads
-// a view before the changes made after it was read. Only Call may use it; the reply releases what it held.
+// HoldUntilReplied holds what is sent behind the reply to the call being answered, so that a client reads a view
+// before the changes made after it was read. Only Call may use it.
 func (c *Conn) HoldUntilReplied() {
 	c.mu.Lock()
 	c.holding = true
@@ -214,7 +207,6 @@ func (c *Conn) response(m Message) {
 	delete(c.pending, string(m.ID))
 	c.mu.Unlock()
 	if !ok {
-		slog.Warn("response to unknown request", "id", string(m.ID[:min(len(m.ID), 200)]))
 		return
 	}
 	onResponse(m.Result, m.Error)
@@ -228,7 +220,6 @@ func (c *Conn) reply(id json.RawMessage, result any, rerr *Error) {
 	if rerr == nil {
 		raw, err := json.Marshal(result)
 		if err != nil {
-			slog.Error("result not encodable", "err", err)
 			raw, m.Error = nil, Errorf(CodeInternalError, "the result cannot be encoded: %v", err)
 		}
 		m.Result = raw
@@ -251,7 +242,6 @@ func (c *Conn) enqueue(data []byte, reply bool) {
 	if c.queued > 0 && c.queued+len(data) > maxOutboxBytes {
 		c.closed, c.outbox, c.held, c.queued = true, nil, nil, 0
 		c.mu.Unlock()
-		slog.Warn("client fell behind; connection closed", "bytes", maxOutboxBytes)
 		go c.ws.Close(websocket.StatusPolicyViolation, "client is not reading fast enough")
 		c.wake()
 		return
@@ -287,7 +277,6 @@ func (c *Conn) write() {
 			c.queued = max(0, c.queued-len(data))
 			c.mu.Unlock()
 			if err != nil {
-				slog.Warn("write to client failed", "err", err)
 				c.ws.Close(websocket.StatusInternalError, "write failed")
 				c.mu.Lock()
 				c.closed, c.outbox, c.held, c.queued = true, nil, nil, 0
@@ -317,7 +306,6 @@ func DecodeParams(params json.RawMessage, out any) *Error {
 func encode(v any) json.RawMessage {
 	b, err := json.Marshal(v)
 	if err != nil {
-		slog.Error("message not encodable", "type", fmt.Sprintf("%T", v), "err", err)
 		return json.RawMessage("null")
 	}
 	return b

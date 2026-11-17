@@ -18,8 +18,7 @@ const (
 	geminiBaseURL    = "https://generativelanguage.googleapis.com/"
 )
 
-// Gemini talks to the Gemini API. Responses are kept as Native records so the thought signatures Gemini
-// attaches to its parts go back with them.
+// Responses are kept as Native records so the thought signatures Gemini attaches to its parts go back with them.
 type Gemini struct {
 	connection
 	client *genai.Client
