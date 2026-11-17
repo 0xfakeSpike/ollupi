@@ -1,5 +1,3 @@
-// Package tasks gives the main agent the tools of its conversation's scheduled tasks: creating, pausing, deleting and
-// listing them, as the user would.
 package tasks
 
 import (
@@ -22,7 +20,6 @@ const (
 	ListTool   = "list_scheduled_jobs"
 )
 
-// Jobs are the commands on a user's conversation's tasks, which the app has.
 type Jobs interface {
 	CronJobs(ctx context.Context, u, thread string) ([]store.Task, error)
 	CreateCronJob(ctx context.Context, u, thread, name, spec, prompt string, times *int) (store.Task, error)
@@ -35,7 +32,6 @@ type Provider struct {
 	location *time.Location
 }
 
-// New takes the zone the deployment's calendar reads specs in, which the model is told.
 func New(jobs Jobs, location *time.Location) Provider {
 	return Provider{jobs: jobs, location: location}
 }
@@ -99,7 +95,6 @@ func (p Provider) Tools(context.Context) ([]kit.Spec, error) {
 	}, nil
 }
 
-// job is a task as the model reads it.
 type job struct {
 	Name    string     `json:"name"`
 	Spec    string     `json:"spec"`
@@ -118,15 +113,15 @@ func shown(j store.Task) job {
 func (p Provider) Invoke(ctx context.Context, c tool.Call) (kit.Result, error) {
 	switch c.Tool {
 	case CreateTool:
-		args, _ := kit.DecodeArguments[createArgs](c.Arguments) // the schema checked its fields: it cannot fail
+		args, _ := kit.DecodeArguments[createArgs](c.Arguments)
 		j, err := p.jobs.CreateCronJob(ctx, c.User, c.Thread, args.Name, args.Spec, args.Prompt, args.Times)
 		return kit.Result{Output: shown(j)}, err
 	case PauseTool:
-		args, _ := kit.DecodeArguments[pauseArgs](c.Arguments) // the schema checked its fields: it cannot fail
+		args, _ := kit.DecodeArguments[pauseArgs](c.Arguments)
 		j, err := p.jobs.PauseCronJob(ctx, c.User, c.Thread, args.Name, args.Paused)
 		return kit.Result{Output: shown(j)}, err
 	case DeleteTool:
-		args, _ := kit.DecodeArguments[nameArgs](c.Arguments) // the schema checked its fields: it cannot fail
+		args, _ := kit.DecodeArguments[nameArgs](c.Arguments)
 		err := p.jobs.DeleteCronJob(ctx, c.User, c.Thread, args.Name)
 		return kit.Result{Output: map[string]string{"deleted": args.Name}}, err
 	case ListTool:

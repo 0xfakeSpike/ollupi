@@ -75,7 +75,6 @@ func (r reader) Workspaces(owner string) ([]user.Workspace, error) {
 	return out, nil
 }
 
-// Another user's workspace does not exist for them.
 func (r reader) Workspace(owner, id string) (user.Workspace, error) {
 	var row workspaceRow
 	if err := notFound(r.g.Raw("SELECT * FROM workspaces WHERE id = ? AND user_id = ?", id, owner).Take(&row).Error); err != nil {
@@ -209,7 +208,6 @@ type taskRow struct {
 	LastTurn    *string
 }
 
-// tasksFrom is the start of a query for tasks, which goes on with a WHERE.
 const tasksFrom = `SELECT j.*, t.title, t.workspace_id, t.archived_at,
 		(SELECT u.body FROM turns u WHERE u.cron_job = j.id ORDER BY u.ord DESC LIMIT 1) AS last_turn
 	FROM cron_jobs j JOIN threads t ON t.id = j.thread_id`
@@ -236,7 +234,6 @@ func tasks(g *gorm.DB, query string, args ...any) ([]store.Task, error) {
 	return out, nil
 }
 
-// A user's tasks, or a thread's when thread is not "".
 func (r reader) CronJobs(owner, thread string) ([]store.Task, error) {
 	query := "WHERE t.user_id = ?"
 	args := []any{owner}
@@ -258,7 +255,6 @@ func (r reader) CronJob(id string) (user.CronJob, error) {
 	return jobs[0], nil
 }
 
-// A task of an archived conversation does not run.
 func (r reader) Due(now time.Time) ([]user.CronJob, error) {
 	return cronJobs(r.g, `SELECT j.* FROM cron_jobs j JOIN threads t ON t.id = j.thread_id
 		WHERE j.paused = 0 AND j.next_run_at <= ? AND t.archived_at IS NULL ORDER BY j.next_run_at, j.id`, now.UTC())
@@ -319,8 +315,6 @@ func threads(g *gorm.DB, query string, args ...any) ([]store.Thread, error) {
 
 const snippetRunes = 40
 
-// Each term is matched as a substring, in titles, messages and tasks. The trigram index narrows the messages to those
-// that may hold a term of three characters or more; the LIKE keeps those that do.
 func (r reader) Search(owner string, terms []string, workspace string, limit int) (store.Found, error) {
 	found := store.Found{Threads: []store.Thread{}, Messages: []store.Hit{}, Tasks: []store.Task{}}
 	inWorkspace := func(query string, args []any, column string) (string, []any) {
@@ -387,7 +381,6 @@ func likePattern(term string) string {
 	return "%" + escaped + "%"
 }
 
-// A snippet is the text around the term's first match, folding case, its spaces collapsed.
 func snippet(text, term string) string {
 	runes := []rune(text)
 	lower := make([]rune, len(runes))
@@ -441,7 +434,7 @@ func (t *tx) EnsureUser(id string) error {
 }
 
 func (t *tx) SetSettings(owner string, s user.Settings) error {
-	permissions, _ := json.Marshal(s.Permissions) // plain data: it cannot fail
+	permissions, _ := json.Marshal(s.Permissions)
 	res := t.g.Exec("UPDATE settings SET redaction = ?, memory = ?, permissions = ? WHERE user_id = ?", s.Redaction, s.Memory, string(permissions), owner)
 	if err := one(res, "the settings of user "+owner); err != nil {
 		return err
@@ -455,7 +448,7 @@ func (t *tx) SetSettings(owner string, s user.Settings) error {
 }
 
 func (t *tx) PutWorkspace(owner string, w user.Workspace) error {
-	settings, _ := json.Marshal(w.Settings) // plain data: it cannot fail
+	settings, _ := json.Marshal(w.Settings)
 	err := t.g.Exec(`INSERT INTO workspaces(id, user_id, name, root, settings, created_at, updated_at, archived_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET name = excluded.name, root = excluded.root, settings = excluded.settings,
 			updated_at = excluded.updated_at, archived_at = excluded.archived_at`,
@@ -487,9 +480,9 @@ func (t *tx) DeleteEnvironment(owner, id string) error {
 }
 
 func (t *tx) PutMCPServer(owner string, s user.MCPServer) error {
-	args, _ := json.Marshal(nonNil(s.Args))          // plain data: it cannot fail
-	env, _ := json.Marshal(nonNilMap(s.Env))         // plain data: it cannot fail
-	headers, _ := json.Marshal(nonNilMap(s.Headers)) // plain data: it cannot fail
+	args, _ := json.Marshal(nonNil(s.Args))
+	env, _ := json.Marshal(nonNilMap(s.Env))
+	headers, _ := json.Marshal(nonNilMap(s.Headers))
 	err := t.g.Exec(`INSERT INTO mcp_servers(user_id, name, command, args, env, url, headers) VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(user_id, name) DO UPDATE SET command = excluded.command, args = excluded.args, env = excluded.env,
 			url = excluded.url, headers = excluded.headers`,

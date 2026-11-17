@@ -21,16 +21,11 @@ import (
 	"github.com/0xfakeSpike/ollupi/tool/kit"
 )
 
-// mixTurn is one turn of the mix: its kind, its conversation, when it was submitted, its first model request
-// and its end. A subagent's turn counts as submitted when its conversation is started with its task.
 type mixTurn struct {
 	kind, thread, turnID string
 	submitted, first     time.Time
 }
 
-// mix keeps conversations busy with users who send a turn as soon as the last one ends, some of which hand the work
-// to a subagent, and drops a peak of scheduled-task turns among them. It reports, for each kind of turn, how long it
-// waited for its first model request and how long it took, and how evenly the users' conversations were served.
 func mix(args []string) {
 	fs := flag.NewFlagSet("mix", flag.ExitOnError)
 	c := fs.Int("c", 256, "conversations whose user sends a turn as soon as the last one ends")
@@ -47,7 +42,7 @@ func mix(args []string) {
 	fs.Parse(args)
 
 	var mu sync.Mutex
-	turns := map[string]*mixTurn{} // by the text the turn was sent with
+	turns := map[string]*mixTurn{}
 	p := &provider{latency: *latency, jitter: *jitter, limit: *calls,
 		next: func(ask string, answered int) (string, string) {
 			kind, id, _ := strings.Cut(ask, "#")
@@ -82,7 +77,6 @@ func mix(args []string) {
 		Slots:       *slots,
 	})
 	e.Store.Feed().SubscribeAll(func(ev store.Event) {
-		// A subagent's task is the first message of its conversation, written as it is launched.
 		if ev.Change != nil && ev.Change.Header != nil && ev.Change.Header.Parent != "" {
 			for _, entry := range ev.Change.Entries {
 				if m, ok := entry.Body.(conversation.UserMessage); ok {
@@ -159,7 +153,6 @@ func mix(args []string) {
 		return len(tr.took(ids)) == len(ids)
 	})
 
-	// The peak drains when the last scheduled-task turn sends its first model request.
 	mu.Lock()
 	tr.mu.Lock()
 	var drained time.Time
@@ -193,7 +186,6 @@ func mix(args []string) {
 	tr.mu.Unlock()
 	mu.Unlock()
 
-	// Jain's index over each user's mean work turn: 1 when every conversation is served alike, 1/n when one gets all.
 	var sum, squares float64
 	for _, ds := range perUser {
 		var total time.Duration

@@ -16,8 +16,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// serverMachine is a user's cloud sandbox: a command started in it is an MCP server that says whose machine it is,
-// reached over a pipe, with no process on this machine.
 type serverMachine struct {
 	sandbox.Machine
 	user    string
@@ -87,7 +85,6 @@ func TestEachUsersServersRunInTheirMachine(t *testing.T) {
 		t.Errorf("c has the built-in tools alone: %v", err)
 	}
 
-	// The sandbox slept: its process is gone, and the next call starts it again.
 	m := machines["a"]
 	m.mu.Lock()
 	m.last.Close()
@@ -110,7 +107,6 @@ func TestEachUsersServersRunInTheirMachine(t *testing.T) {
 		t.Errorf("after coming back: %q, started %d", got, m.started.Load())
 	}
 
-	// The user changed their server: it starts again as it is now.
 	changed := own("a")[0]
 	changed.Env["TOKEN"] = "rotated"
 	if err := st.Update(ctx, func(tx store.Tx) error { return tx.PutMCPServer("a", changed) }); err != nil {

@@ -41,7 +41,6 @@ func permissionContent(_ context.Context, call tool.Call) (policy.Content, error
 	}
 	c := contentOf(program, args)
 	c.Opaque = c.Opaque || len(env) > 0
-	// The approval shows the environment first, as the command line would.
 	words := make([]string, 0, len(env)+1+len(args))
 	for _, k := range slices.Sorted(maps.Keys(env)) {
 		words = append(words, k+"="+env[k])
@@ -125,8 +124,6 @@ func expand(words []string, depth int) ([]string, bool) {
 	return whole, false
 }
 
-// shellFlags are the one-letter options that take no argument in any of the shells: after any other option the next
-// word may be the option's own and not the script, so the command is not read.
 const shellFlags = "aehiklmnuvx"
 
 func shellScript(args []string) (string, bool, bool) {

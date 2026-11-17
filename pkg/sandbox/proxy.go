@@ -140,7 +140,7 @@ func (p *proxy) serve() {
 		go func() {
 			defer p.wg.Done()
 			defer p.untrack(c)
-			defer func() { recover() }() // a connection that panics is dropped, the proxy goes on
+			defer func() { recover() }()
 			br := bufio.NewReader(c)
 			first, err := br.Peek(1)
 			if err != nil {

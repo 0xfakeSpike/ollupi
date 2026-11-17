@@ -12,7 +12,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/store"
 )
 
-// Memories are a user's notes at one place.
 func (a *App) Memories(ctx context.Context, u string, place memory.Place) ([]memory.Memory, error) {
 	if err := place.Check(); err != nil {
 		return nil, err
@@ -22,7 +21,6 @@ func (a *App) Memories(ctx context.Context, u string, place memory.Place) ([]mem
 	return ms, err
 }
 
-// MemoryStatus is how far extraction has read the user's turns, with how many are left and how many notes are kept.
 type MemoryStatus struct {
 	memory.State
 	Unread int64
@@ -86,16 +84,12 @@ func (a *App) changeMemory(ctx context.Context, u, id string, change func(store.
 	return m, err
 }
 
-// A search reads on the shard's one database connection, which every user's turns wait for, so what one query may
-// cost is bounded: its length, its words, and how long it runs.
 const (
 	MaxSearchRunes = 200
 	MaxSearchTerms = 8
 	searchTimeout  = 5 * time.Second
 )
 
-// Search finds a user's conversations, messages and tasks by words, in a workspace when one is named, and the notes
-// they match: the workspace's, or all of the user's.
 func (a *App) Search(ctx context.Context, u, query, workspace string, limit int) (store.Found, []memory.Memory, error) {
 	terms := strings.Fields(query)
 	if len(terms) == 0 {

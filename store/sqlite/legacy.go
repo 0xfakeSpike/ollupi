@@ -27,20 +27,13 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// The engine before v0.16.0 kept its rows in data/ollupi.sqlite, brought to its latest schema by these steps.
-//
 //go:embed legacy/*.sql
 var legacyMigrations embed.FS
 
 const legacyFile = "ollupi.sqlite"
 
-// upgraded is why a turn the old engine had not ended ends on import: the new engine does not run it again.
 const upgraded = "ended by the upgrade to ollupi v0.16.0"
 
-// importLegacy brings in what the engine before v0.16.0 kept beside this store, the first time this store opens
-// there: its users, their settings, workspaces, environments, MCP servers, tasks and memories, and every
-// conversation's turns and items, as a log. A turn the old engine had not ended ends as interrupted. The old file is
-// read through a copy and left as it was.
 func (s *Store) importLegacy(home string) error {
 	old := filepath.Join(home, "data", legacyFile)
 	if _, err := os.Stat(old); errors.Is(err, fs.ErrNotExist) {
@@ -73,7 +66,6 @@ func removeDB(path string) {
 	}
 }
 
-// snapshot copies a database as one consistent file, what its WAL holds included, opening it only to read.
 func snapshot(from, to string) error {
 	dsn := (&url.URL{Scheme: "file", Path: filepath.ToSlash(from), RawQuery: "mode=ro"}).String()
 	g, err := gorm.Open(gormsqlite.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
@@ -85,7 +77,7 @@ func snapshot(from, to string) error {
 }
 
 func migrateLegacy(g *gorm.DB) error {
-	dir, _ := fs.Sub(legacyMigrations, "legacy") // a valid path: it cannot fail
+	dir, _ := fs.Sub(legacyMigrations, "legacy")
 	steps, err := sqlitedb.Steps(dir)
 	if err != nil {
 		return err
@@ -161,14 +153,13 @@ func (l legacy) cronJobs() error {
 		"INSERT INTO cron_jobs(id, thread_id, name, spec, prompt, times, runs, paused, next_run_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
 }
 
-// copy copies rows whose columns are the same in both schemas, read in the order they are written.
 func (l legacy) copy(what, read, write string) error {
 	rows, err := l.g.Raw(read).Rows()
 	if err != nil {
 		return fmt.Errorf("store: the old %s: %w", what, err)
 	}
 	defer rows.Close()
-	columns, _ := rows.Columns() // the query names them: it cannot fail
+	columns, _ := rows.Columns()
 	for rows.Next() {
 		values := make([]any, len(columns))
 		pointers := make([]any, len(columns))
@@ -201,7 +192,6 @@ type legacyThread struct {
 	ReadAt         *time.Time
 }
 
-// threads brings each conversation with its log, the users' own before their subagents', whose headers name them.
 func (l legacy) threads() error {
 	var threads []legacyThread
 	err := l.g.Raw(`SELECT id, user_id, workspace_id, environment_id, title, settings, parent_thread_id, parent_item_id,
@@ -217,7 +207,7 @@ func (l legacy) threads() error {
 	}
 	for _, th := range threads {
 		var settings policy.Settings
-		json.Unmarshal([]byte(th.Settings), &settings) // the old schema checked it is JSON; unknown fields are dropped
+		json.Unmarshal([]byte(th.Settings), &settings)
 		header := store.Thread{User: th.UserID, Thread: user.Thread{ID: th.ID, Title: th.Title, Settings: settings,
 			Workspace: deref(th.WorkspaceID), Environment: deref(th.EnvironmentID), Parent: deref(th.ParentThreadID),
 			ParentItem: deref(th.ParentItemID), Created: th.CreatedAt.UTC(), Updated: th.UpdatedAt.UTC()}}
@@ -233,7 +223,6 @@ func (l legacy) threads() error {
 				return fmt.Errorf("store: the log of old conversation %s: %w", th.ID, err)
 			}
 		}
-		// Appending wrote the header's times as of now; the conversation keeps its own.
 		err = l.t.g.Exec("UPDATE threads SET updated_at = ?, archived_at = ?, replied_at = ?, read_at = ? WHERE id = ?",
 			th.UpdatedAt.UTC(), utc(th.ArchivedAt), utc(th.RepliedAt), utc(th.ReadAt), th.ID).Error
 		if err != nil {
@@ -301,8 +290,6 @@ type legacyApproval struct {
 	DecidedAt   *time.Time            `json:"decidedAt"`
 }
 
-// legacyAwait is what an old call waited on: the user's answer, or, before subagents reported as items, the report
-// of the subagent it launched.
 type legacyAwait struct {
 	By      string          `json:"by"`
 	Request json.RawMessage `json:"request"`
@@ -313,8 +300,6 @@ type legacyResult struct {
 	Artifacts []conversation.Artifact `json:"artifacts"`
 }
 
-// log is an old conversation's turns and items as the entries that fold into them, each checked as it is made: an
-// entry the new rules refuse is left out, so that one odd row does not keep the rest of the conversation out.
 func (l legacy) log(thread string, children map[string]string) ([]conversation.Entry, error) {
 	var turns []legacyTurn
 	if err := l.g.Raw("SELECT id, status, model, agent, error, cron_job_id, created_at, completed_at FROM turns WHERE thread_id = ? ORDER BY seq", thread).Scan(&turns).Error; err != nil {
@@ -363,7 +348,7 @@ func rawOf(raw *string) json.RawMessage {
 
 func (b *logBuilder) turn(t legacyTurn, all []legacyItem) {
 	var model llm.Model
-	json.Unmarshal([]byte(t.Model), &model) // the old schema checked it is JSON
+	json.Unmarshal([]byte(t.Model), &model)
 	b.add(t.ID, "", t.CreatedAt, conversation.TurnQueued{Model: model, Role: t.Agent, CronJob: t.CronJobID})
 	var items []legacyItem
 	for _, it := range all {
@@ -371,7 +356,6 @@ func (b *logBuilder) turn(t legacyTurn, all []legacyItem) {
 			items = append(items, it)
 		}
 	}
-	// A response's usage, stats and native record were kept on one of its items, whichever was recorded first.
 	responses := map[string]conversation.ModelResponded{}
 	for _, it := range items {
 		if it.ResponseID == "" {
@@ -479,7 +463,6 @@ func (b *logBuilder) call(turn string, it legacyItem, result legacyResult, at, e
 	child := b.children[it.ID]
 	switch {
 	case it.Status == "pending" || it.Status == "inProgress":
-		// Still open: the turn's end closes it.
 	case child != "" && it.Status == "completed":
 		b.add(turn, it.ID, at, conversation.ToolStarted{})
 		b.add(turn, it.ID, at, conversation.ChildLaunched{Child: child})
@@ -502,7 +485,6 @@ func (b *logBuilder) call(turn string, it legacyItem, result legacyResult, at, e
 	}
 }
 
-// end ends a turn as the old engine did, or as interrupted when it had not: its calls still open are closed first.
 func (b *logBuilder) end(t legacyTurn, last time.Time) {
 	status, reason := conversation.End(t.Status), t.Error
 	at := last
@@ -527,8 +509,6 @@ func (b *logBuilder) end(t legacyTurn, last time.Time) {
 	b.add(t.ID, "", at, conversation.TurnEnded{Status: status, Reason: reason})
 }
 
-// memories brings the notes, each source an item named by its conversation now, and starts extraction after the
-// turns already ended: they were learned from before.
 func (l legacy) memories() error {
 	var rows []struct {
 		ID, UserID, Scope, WorkspaceID, OriginWorkspaceID, Topic, Kind, Text, Status, Sources string
@@ -550,7 +530,7 @@ func (l legacy) memories() error {
 		var old []struct {
 			ID string `json:"id"`
 		}
-		json.Unmarshal([]byte(r.Sources), &old) // the old schema checked it is JSON
+		json.Unmarshal([]byte(r.Sources), &old)
 		sources := []memory.Source{}
 		for _, s := range old {
 			if thread, ok := threadOf[s.ID]; ok {

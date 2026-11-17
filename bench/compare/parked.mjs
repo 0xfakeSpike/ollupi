@@ -1,8 +1,3 @@
-// Experiment 1, parked memory: n sessions that each ran one short turn and now sit idle. Reports the resident memory
-// and JS heap they add per session, the disk they take per session, what dropping them from memory frees, and how long
-// bringing one back from disk takes (reopen, then a turn against a 20 ms model).
-//
-//   node --expose-gc parked.mjs --harness pi-sdk|pi-durable|dsh --n 1000
 import { args, freshDir, pct, report, startProvider } from "./common.mjs";
 import { openHarness, pool } from "./harnesses.mjs";
 
@@ -12,7 +7,6 @@ const dir = freshDir(`parked-${a.harness}`);
 const settings = a.retention === "default" ? {} : { contextRetentionMs: Number(a.retention), documentRetentionMs: Number(a.retention) };
 let h = await openHarness(a.harness, { dir, url: provider.url, toolMs: 10, settings });
 
-// A warm-up session loads every lazily imported module before the baseline is taken.
 const warm = await h.newSession();
 await h.turn(warm, "work");
 const base = await h.memory();
@@ -29,8 +23,6 @@ const ids = sessions.map(h.idOf);
 const parked = await h.memory();
 const disk = h.diskBytes();
 
-// Drop every session from memory. pi-sdk: dispose each AgentSession. pi-durable: handles hold nothing, so close and
-// reopen the Harness. dsh: the SDK has no session close, so restart the runtime process.
 for (const s of sessions) h.drop(s);
 sessions.length = 0;
 let openMs = 0;
@@ -41,10 +33,8 @@ if (a.harness !== "pi-sdk") {
 	openMs = performance.now() - at;
 }
 const dropped = await h.memory();
-// After a close (pi-durable checkpoints its write-ahead log then), the disk the sessions take at rest.
 const diskAtRest = h.diskBytes();
 
-// Bring sessions back from disk: reopen, then one turn.
 const pick = Array.from({ length: Math.min(a.reload, ids.length) }, (_, i) => ids[Math.floor((i * ids.length) / a.reload)]);
 const reopenMs = [];
 const turnMs = [];
@@ -57,7 +47,6 @@ for (const id of pick) {
 	turnMs.push(r.ms);
 	h.drop(s);
 }
-// The same turn on a session that stayed in memory, for comparison.
 const warmMs = [];
 for (let i = 0; i < 10; i++) warmMs.push((await h.turn(await h.newSession(), "work")).ms);
 reopenMs.sort((x, y) => x - y);

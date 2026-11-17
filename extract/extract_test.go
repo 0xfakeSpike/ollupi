@@ -53,7 +53,6 @@ func update(t *testing.T, st store.Store, fn func(store.Tx) error) {
 	}
 }
 
-// converse has u say "I use vim" in a new turn of thread th, and the agent answer it.
 func converse(t *testing.T, st store.Store, u, th string) {
 	t.Helper()
 	now := time.Now().UTC()

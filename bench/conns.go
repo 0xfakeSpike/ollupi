@@ -31,11 +31,6 @@ import (
 
 const initialize = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"bench","version":"1"}}}`
 
-// conns holds idle client connections on a shard's gateway, one user each, straight or through a router, and at each
-// step reports what they cost the shard and the router: resident memory, goroutines, file descriptors, and the CPU the
-// pings take while nothing else happens. The shard and the router run as processes of their own, so the clients'
-// side of the connections is not counted. With -storm it then kills the shard, starts it again on the same database,
-// and times the clients' return, each reconnecting as the README tells clients to.
 func conns(args []string) {
 	fs := flag.NewFlagSet("conns", flag.ExitOnError)
 	steps := fs.String("n", "1000,2000,4000", "connections held at each step, one user each")
@@ -142,7 +137,6 @@ func conns(args []string) {
 		f.refused.Load()-refused, f.failed.Load()-failed)
 }
 
-// costs reads what n connections add to a process over its numbers before any, and the CPU it took per second idle.
 func costs(name string, base, now map[string]float64, cpuBefore float64, n int, idle time.Duration) string {
 	perConn := func(k string) float64 { return (now[k] - base[k]) / float64(n) }
 	var b strings.Builder
@@ -166,7 +160,6 @@ func costs(name string, base, now map[string]float64, cpuBefore float64, n int, 
 	return b.String()
 }
 
-// until says whether done came true within d.
 func until(d time.Duration, done func() bool) bool {
 	for deadline := time.Now().Add(d); !done(); time.Sleep(50 * time.Millisecond) {
 		if time.Now().After(deadline) {
@@ -176,18 +169,14 @@ func until(d time.Duration, done func() bool) bool {
 	return true
 }
 
-// fleet is the clients: each holds one connection, reading it so that it answers the gateway's pings, and connects
-// again whenever it drops.
 type fleet struct {
-	url     string
-	clients []*http.Client
-	ready   atomic.Int64
-	// refused counts the 503s that said when to come back; failed counts every other try that did not connect.
+	url             string
+	clients         []*http.Client
+	ready           atomic.Int64
 	refused, failed atomic.Int64
 	lastErr         atomic.Pointer[string]
 
-	mu sync.Mutex
-	// back is how long each connection that dropped took to be back.
+	mu   sync.Mutex
 	back []time.Duration
 }
 
@@ -215,8 +204,6 @@ func (f *fleet) hold(ctx context.Context, user string, client *http.Client) {
 	}
 }
 
-// connect tries until a connection is up and initialized, or ctx ends. It waits as long as a refusal's Retry-After
-// says, and otherwise backs off exponentially, from 100 ms up to 5 s, at a random point under each bound.
 func (f *fleet) connect(ctx context.Context, user string, client *http.Client) *websocket.Conn {
 	backoff := 100 * time.Millisecond
 	for ctx.Err() == nil {
@@ -242,7 +229,6 @@ func (f *fleet) connect(ctx context.Context, user string, client *http.Client) *
 	return nil
 }
 
-// dial connects as user and says hello. A refusal that says when to come back gives how long to wait.
 func (f *fleet) dial(ctx context.Context, user string, client *http.Client) (*websocket.Conn, time.Duration, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -279,8 +265,6 @@ func (f *fleet) dial(ctx context.Context, user string, client *http.Client) (*we
 	}
 }
 
-// freeAddress finds a loopback address with a port nothing listens on, for a process to listen on, again after a
-// restart.
 func freeAddress() string {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -290,14 +274,12 @@ func freeAddress() string {
 	return ln.Addr().String()
 }
 
-// child is a process the experiment starts and asks for its numbers.
 type child struct {
 	cmd   *exec.Cmd
 	in    io.WriteCloser
 	lines <-chan string
 }
 
-// startChild runs this executable as the experiment named and waits until it is ready.
 func startChild(args ...string) *child {
 	exe, err := os.Executable()
 	if err != nil {
@@ -338,7 +320,6 @@ func (c *child) await(prefix string) string {
 	return ""
 }
 
-// stats asks the process for its numbers, as answerStats gives them.
 func (c *child) stats() map[string]float64 {
 	if _, err := fmt.Fprintln(c.in, "stats"); err != nil {
 		log.Fatalf("%s: %v", c.cmd.Args[1], err)
@@ -357,8 +338,6 @@ func (c *child) stop() {
 	_ = c.cmd.Wait()
 }
 
-// answerStats says the process is ready, then answers each "stats" on stdin with its numbers after a collection, until
-// stdin closes.
 func answerStats() {
 	fmt.Println("ready")
 	for s := bufio.NewScanner(os.Stdin); s.Scan(); {
@@ -366,7 +345,6 @@ func answerStats() {
 			continue
 		}
 		rss, heap := memory()
-		// Each entry is one of the process's open descriptors, the one reading them among them.
 		fds, err := os.ReadDir("/dev/fd")
 		if err != nil {
 			log.Fatal(err)
@@ -376,7 +354,6 @@ func answerStats() {
 	}
 }
 
-// benchUser takes each client's token to be its user.
 func benchUser(_ context.Context, token string) (string, error) {
 	if !strings.HasPrefix(token, "user") {
 		return "", gateway.ErrUnknownToken
@@ -384,11 +361,9 @@ func benchUser(_ context.Context, token string) (string, error) {
 	return token, nil
 }
 
-// quiet keeps a process the experiment starts from logging each connection that comes and goes, by the thousand.
 func quiet() {
 }
 
-// connsShard is one shard's gateway and host on a store, as conns starts it.
 func connsShard(args []string) {
 	fs := flag.NewFlagSet("connsshard", flag.ExitOnError)
 	dir := fs.String("dir", "", "the shard's home")
@@ -414,7 +389,6 @@ func connsShard(args []string) {
 	answerStats()
 }
 
-// oneShard places every user on the one shard at its address; a router asks it nothing else.
 type oneShard struct {
 	catalog.Catalog
 	address string
@@ -422,7 +396,6 @@ type oneShard struct {
 
 func (s oneShard) Locate(context.Context, string) (string, string, error) { return "s", s.address, nil }
 
-// connsRouter is a router in front of one shard, as conns starts it.
 func connsRouter(args []string) {
 	fs := flag.NewFlagSet("connsrouter", flag.ExitOnError)
 	addr := fs.String("addr", "", "address to listen on")

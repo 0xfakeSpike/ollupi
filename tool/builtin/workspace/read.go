@@ -56,12 +56,11 @@ func (ReadFile) Constrain(s *jsonschema.Schema) {
 }
 
 type ReadFileOutput struct {
-	Path       string `json:"path"`
-	Text       string `json:"text,omitempty"`
-	StartLine  int    `json:"startLine,omitempty"`
-	EndLine    int    `json:"endLine,omitempty"`
-	TotalLines int    `json:"totalLines"`
-	// Counting stopped after maxReadScan bytes, past the lines shown: there are more.
+	Path              string `json:"path"`
+	Text              string `json:"text,omitempty"`
+	StartLine         int    `json:"startLine,omitempty"`
+	EndLine           int    `json:"endLine,omitempty"`
+	TotalLines        int    `json:"totalLines"`
 	TotalLinesAtLeast bool   `json:"totalLinesAtLeast,omitempty"`
 	Binary            bool   `json:"binary,omitempty"`
 	MimeType          string `json:"mimeType,omitempty"`
@@ -168,7 +167,6 @@ func (r *Provider) readContent(ctx context.Context, c tool.Call) (policy.Content
 	return policy.Content{Text: text, Match: strings.ToLower(shown), Folded: true}, nil
 }
 
-// Keeps at most limit bytes of a line, so a file without line breaks takes no more memory than that.
 func readLine(br *bufio.Reader, limit int) (string, int, error) {
 	var kept []byte
 	read := 0
@@ -184,7 +182,6 @@ func readLine(br *bufio.Reader, limit int) (string, int, error) {
 	}
 }
 
-// Links are resolved before the read check, so a link cannot reach a closed path.
 func readable(ctx context.Context, d dirs, raw string) (string, error) {
 	path := strings.TrimSpace(raw)
 	if path == "" {
@@ -307,7 +304,7 @@ func readFile(ctx context.Context, d dirs, args map[string]any) (ReadFileOutput,
 }
 
 func glob(ctx context.Context, d dirs, args map[string]any) (GlobOutput, error) {
-	in, _ := kit.DecodeArguments[Glob](args) // the schema checked its fields: it cannot fail
+	in, _ := kit.DecodeArguments[Glob](args)
 	re, err := compilePattern(strings.TrimPrefix(in.Pattern, "./"), true)
 	if err != nil {
 		return GlobOutput{}, fmt.Errorf("workspace: %w", err)
@@ -341,7 +338,7 @@ func glob(ctx context.Context, d dirs, args map[string]any) (GlobOutput, error) 
 }
 
 func grep(ctx context.Context, d dirs, args map[string]any) (GrepOutput, error) {
-	in, _ := kit.DecodeArguments[Grep](args) // the schema checked its fields: it cannot fail
+	in, _ := kit.DecodeArguments[Grep](args)
 	expr := in.Pattern
 	if in.IgnoreCase {
 		expr = "(?i)" + expr
@@ -479,7 +476,6 @@ func grepFile(ctx context.Context, box sandbox.Box, path string, re *regexp.Rege
 	return out, kept, nil
 }
 
-// head is the start of a file, so its last character may be cut off.
 func isText(head []byte) bool {
 	if bytes.IndexByte(head, 0) >= 0 {
 		return false

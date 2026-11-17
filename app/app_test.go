@@ -113,7 +113,6 @@ func must[T any](t *testing.T) func(T, error) T {
 	}
 }
 
-// sent is the turn a message queued.
 func sent(t *testing.T) func(conversation.Turn, bool, error) conversation.Turn {
 	return func(turn conversation.Turn, _ bool, err error) conversation.Turn {
 		t.Helper()
@@ -133,7 +132,6 @@ func (f *fixture) view(id string) conversation.View {
 	return v
 }
 
-// waitOnApproval has the turn in progress ask about a call, as a run would.
 func (f *fixture) waitOnApproval(id string, turn conversation.Turn) conversation.Item {
 	f.t.Helper()
 	item := uuid.NewString()

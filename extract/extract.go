@@ -1,5 +1,3 @@
-// Package extract learns a user's long-term memory from their turns as they end: it hears of them on the store's feed,
-// reads each in the order they ended, and keeps what a model takes from it.
 package extract
 
 import (
@@ -22,8 +20,7 @@ const (
 	extractionTokens    = 12000
 	minExtractionTokens = 8192
 	callTimeout         = 2 * time.Minute
-	// skipTurns is how many turns of a user with memory off are passed over at a time.
-	skipTurns = 256
+	skipTurns           = 256
 )
 
 type Extractor struct {
@@ -37,8 +34,6 @@ type Extractor struct {
 	dirty map[string]bool
 }
 
-// New takes the model each extraction asks, with its limits, and client, which gives the client a user's extractions
-// call it through, so that they run on the user's own key.
 func New(st store.Store, model llm.Model, limits llm.Limits, client func(user string) (llm.Client, error)) (*Extractor, error) {
 	budget := min(extractionTokens, limits.Input())
 	if budget < minExtractionTokens {
@@ -47,8 +42,6 @@ func New(st store.Store, model llm.Model, limits llm.Limits, client func(user st
 	return &Extractor{st: st, model: model, client: client, budget: budget, wake: make(chan struct{}, 1), dirty: map[string]bool{}}, nil
 }
 
-// Run reads every user's turns not read yet, then each turn as it ends, until ctx ends. A user whose turn failed is
-// tried again when the turn is due, without holding up the others.
 func (x *Extractor) Run(ctx context.Context) error {
 	sub := x.st.Feed().SubscribeAll(x.hear)
 	defer sub.Close()
@@ -136,8 +129,6 @@ func earliest(retry map[string]time.Time) (time.Time, bool) {
 	return next, !next.IsZero()
 }
 
-// readAll reads a user's turns until none is left, or until one failed; then it gives when that one is due again.
-// Only a store that cannot be read or written stops it with an error.
 func (x *Extractor) readAll(ctx context.Context, u string) (time.Time, error) {
 	for {
 		var state memory.State
@@ -197,15 +188,12 @@ type failure struct {
 func (f failure) Error() string { return f.err.Error() }
 func (f failure) Unwrap() error { return f.err }
 
-// learned is what a turn taught, with when each note it changed had last changed when it was read.
 type learned struct {
 	places  []memory.Place
 	changes []memory.Memory
 	read    map[string]time.Time
 }
 
-// learn asks the model about a turn's evidence, a slice at a time, each slice reconciled with the notes as the
-// slices before left them.
 func (x *Extractor) learn(ctx context.Context, u string, settings user.Settings, turn memory.Cursor) (learned, error) {
 	var b memory.Batch
 	var l learned
@@ -227,7 +215,7 @@ func (x *Extractor) learn(ctx context.Context, u string, settings user.Settings,
 		return nil
 	})
 	if errors.Is(err, store.ErrNotFound) {
-		return learned{}, nil // the conversation was deleted after its turn ended: nothing is left to learn from
+		return learned{}, nil
 	}
 	if err != nil {
 		return learned{}, err
@@ -299,8 +287,6 @@ func (x *Extractor) ask(ctx context.Context, client llm.Client, payload string) 
 	return resp.Message.Content, nil
 }
 
-// commit keeps what a turn taught with how far the user's turns are read. A note the user changed since it was read,
-// or a new one whose topic was taken meanwhile, is left as it is now: the user's word comes first.
 func (x *Extractor) commit(ctx context.Context, u string, l learned, state memory.State) error {
 	return x.st.Update(ctx, func(tx store.Tx) error {
 		if len(l.changes) > 0 {

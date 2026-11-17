@@ -14,9 +14,7 @@ import (
 
 const (
 	DefaultCalls = 4
-	// retries back off from half a second to eight, or as Retry-After asks: about 40 s in all, so a provider short of
-	// quota for a few seconds slows a turn instead of failing it. The call keeps its slot while it waits.
-	retries = 8
+	retries      = 8
 )
 
 var httpClient = &http.Client{Transport: idleTransport{base: http.DefaultTransport, idle: idleTimeout}}
@@ -53,7 +51,6 @@ func (c connection) acquire(ctx context.Context) (func(), error) {
 	return func() { <-c.calls }, nil
 }
 
-// safeRequestError reports a failed model request without the provider's response body, which can echo the prompt.
 func safeRequestError(err error) error {
 	if errors.Is(err, context.Canceled) {
 		return context.Canceled

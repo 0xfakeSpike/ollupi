@@ -1,5 +1,3 @@
-// Package blob keeps files that outlive a process and are not part of a database. A store is a folder on this
-// machine for now; one on an object store implements the same four calls.
 package blob
 
 import (
@@ -12,17 +10,12 @@ import (
 )
 
 type Store interface {
-	// Put stores a new object; a key is written once.
 	Put(ctx context.Context, key string, data []byte) error
-	// Get reports a missing object with an error that is fs.ErrNotExist.
 	Get(ctx context.Context, key string) ([]byte, error)
-	// Delete removes an object; one already gone is no error.
 	Delete(ctx context.Context, key string) error
 	DeletePrefix(ctx context.Context, prefix string) error
 }
 
-// Its errors name an object by its key, not by where the folder is: they may reach those who sent the object, who are
-// not to learn the server's paths.
 type Dir string
 
 func keyed(key string, err error) error {

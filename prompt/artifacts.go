@@ -9,12 +9,10 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 )
 
-// SkillArtifact is the one kind of artifact: a skill a tool loaded, shown to the model for the rest of the conversation.
 const SkillArtifact = "agent_skill"
 
 const maxArtifactRunes = 20000
 
-// CheckArtifacts refuses artifacts that could not be shown in this window.
 func (w Window) CheckArtifacts(artifacts []conversation.Artifact) error {
 	if len(artifacts) == 0 {
 		return nil

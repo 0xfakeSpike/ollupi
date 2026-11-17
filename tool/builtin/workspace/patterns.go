@@ -164,7 +164,6 @@ func (g *ignores) rel(path string) string {
 	return filepath.ToSlash(rel)
 }
 
-// Deepest file first and, within a file, its last matching line, as git does.
 func (g *ignores) ignored(path string, dir bool) bool {
 	if g == nil {
 		return false

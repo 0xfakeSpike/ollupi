@@ -13,11 +13,6 @@ import (
 	"time"
 )
 
-// The smoke tests run each experiment at a size that ends in seconds, as a process of its own the way bench/run.sh
-// runs it, and check what the experiment exists to show: turns end, none fail, no tool call runs twice. They measure
-// nothing; their numbers mean nothing at this size.
-
-// TestMain lets the test binary be the bench, for the processes the experiments start.
 func TestMain(m *testing.M) {
 	if len(os.Args) > 1 && experiments[os.Args[1]] != nil {
 		main()
@@ -26,10 +21,8 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// fast is the model and tool latency every smoke test runs with.
 var fast = []string{"-latency", "20ms", "-jitter", "10ms", "-tool", "10ms"}
 
-// bench runs an experiment and returns each line it printed as its key=value pairs, with the line itself under "".
 func bench(t *testing.T, args ...string) []map[string]string {
 	t.Helper()
 	if testing.Short() {
@@ -59,7 +52,6 @@ func bench(t *testing.T, args ...string) []map[string]string {
 	return lines
 }
 
-// want checks that a line says key=value for each pair.
 func want(t *testing.T, line map[string]string, pairs ...string) {
 	t.Helper()
 	for i := 0; i < len(pairs); i += 2 {
@@ -69,7 +61,6 @@ func want(t *testing.T, line map[string]string, pairs ...string) {
 	}
 }
 
-// line finds the line that has key=value.
 func line(t *testing.T, lines []map[string]string, key, value string) map[string]string {
 	t.Helper()
 	for _, l := range lines {
@@ -106,7 +97,6 @@ func TestSteady(t *testing.T) {
 	}
 }
 
-// Each tool call runs as a real command in a sandbox of each mode this machine has.
 func TestSteadyCommands(t *testing.T) {
 	modes := []string{"full-access"}
 	if runtime.GOOS == "darwin" {
@@ -136,7 +126,6 @@ func TestResume(t *testing.T) {
 	want(t, line(t, out, "waiting", "50"), "running", "5")
 }
 
-// Killed at random, every turn still ends and no tool call runs twice; with a lease a standby takes over each time.
 func TestCrash(t *testing.T) {
 	for name, extra := range map[string][]string{"restart": nil, "standby": {"-lease", "600ms"}} {
 		t.Run(name, func(t *testing.T) {
@@ -157,7 +146,6 @@ func TestMix(t *testing.T) {
 	}
 }
 
-// More subagents than slots: every turn ends, so the parents waiting on them gave up their slots.
 func TestFanout(t *testing.T) {
 	out := bench(t, append([]string{"fanout", "-parents", "4", "-n", "4", "-slots", "4", "-calls", "8"}, fast...)...)
 	want(t, out[0], "subagents", "16", "turns_ended", "20", "failed_turns", "0")
@@ -175,8 +163,6 @@ func TestSoak(t *testing.T) {
 	}
 }
 
-// One user keeps more conversations busy than their key serves; the others' turns all end, and none of the refusals
-// the heavy user's key draws reaches them.
 func TestUsers(t *testing.T) {
 	for name, extra := range map[string][]string{
 		"shared":  nil,
@@ -191,8 +177,6 @@ func TestUsers(t *testing.T) {
 	}
 }
 
-// A few connections, straight to the shard and through a router, all connect, and all come back after the shard
-// restarts.
 func TestConns(t *testing.T) {
 	for name, extra := range map[string][]string{"shard": nil, "router": {"-router"}} {
 		t.Run(name, func(t *testing.T) {

@@ -2,9 +2,6 @@ package store
 
 import "sync"
 
-// Feed hands each event to the subscribers of its user, and to those of every user, in the goroutine that publishes
-// it, so that a subscriber that queues what it hears keeps the order it was published in: a commit's events in the
-// order of its commits. A subscriber must not block and must not write to the store.
 type Feed struct {
 	mu     sync.RWMutex
 	byUser map[string]map[*Subscription]struct{}
@@ -55,7 +52,6 @@ func (s *Subscription) Close() {
 	}
 }
 
-// Publish is the store's, after a commit, and a runner's, for a delta.
 func (f *Feed) Publish(e Event) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()

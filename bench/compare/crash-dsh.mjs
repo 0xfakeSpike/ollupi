@@ -1,12 +1,3 @@
-// Experiment 4c, crash (dsh): one dsh SDK runtime runs n sessions of `turns` turns each; the parent kill -9s the
-// runtime at random moments, starts it again on the same DSH_HOME and session/resume's every session. In --mode closed
-// each session sends its next prompt when the last turn ended (and after a crash goes on with the new runtime); in
-// --mode queued every prompt is enqueued up front and the runtime is expected to work through them. At the end it reads every session log and reports how many
-// turns ended and how, which bench__work calls ran twice (each call writes agent/call id to tools.log first), how many
-// calls got no result, and how long a restart took. Model 200 ms, tool 300 ms, as ollupi's `bench crash`.
-//
-//   node crash-dsh.mjs --mode closed --n 50 --turns 20 --kills 30
-//   node crash-dsh.mjs --mode queued --n 50 --turns 20 --kills 30
 import fs from "node:fs";
 import path from "node:path";
 import { args, freshDir, pct, report, sleep, startProvider } from "./common.mjs";
@@ -29,7 +20,6 @@ let waitErrors = 0;
 let sentPrompts = 0;
 
 if (a.mode === "queued") {
-	// Every session's prompts are enqueued at once; the runtime runs them one after another.
 	for (const id of ids) for (let j = 0; j < a.turns; j++) await d.call("session/prompt", { sessionId: id, contentBlocks: [{ type: "text", text: "work" }] });
 	sentPrompts = a.n * a.turns;
 	const waitAll = (rt) => Promise.allSettled(ids.map((id) => rt.call("session/wait", { sessionId: id })));
@@ -51,8 +41,6 @@ if (a.mode === "queued") {
 	}
 	waitErrors = (await waits).filter((s) => s.status === "rejected").length;
 } else {
-	// Closed loop: each session sends its next prompt once the last turn ended, as a user would; after a crash it
-	// carries on with the runtime that replaced the killed one.
 	let swap;
 	let next = new Promise((r) => (swap = r));
 	let finished = 0;
@@ -102,7 +90,6 @@ async function restart() {
 	return rt;
 }
 
-// Read what every session log recorded.
 const ends = {};
 let userPrompts = 0;
 let toolCalls = 0;
@@ -150,9 +137,7 @@ report("crash harness=dsh", {
 	tool_results: toolResults,
 	tool_error_results: toolErrors,
 	tool_runs: [...ran.values()].reduce((x, y) => x + y, 0),
-	// Executions the tool logged whose call the session log never recorded (the log's tail was lost with the process).
 	runs_unknown_to_session_log: [...ran.values()].reduce((x, y) => x + y, 0) - toolCalls,
-	// Prompts the runtime acknowledged that the session log neither placed nor canceled.
 	prompts_acked_but_lost: sentPrompts - userPrompts - (ends.prompts_canceled ?? 0),
 	calls_run_twice: [...ran.values()].filter((v) => v > 1).length,
 	wait_errors_at_end: waitErrors,

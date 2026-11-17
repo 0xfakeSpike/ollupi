@@ -24,14 +24,11 @@ type Skill struct {
 	Description string
 }
 
-// System is what the model is told before the transcript: for a main agent the deployment's prompt, then the role's
-// rules, the skills that fit their budget, the tools only named, and the project when the conversation works in one.
 type System struct {
-	Role   agent.Role
-	Agent  string
-	Prompt string
-	Skills []Skill
-	// Project is the workspace's folder, when the workspace's tools are offered.
+	Role    agent.Role
+	Agent   string
+	Prompt  string
+	Skills  []Skill
 	Project string
 }
 

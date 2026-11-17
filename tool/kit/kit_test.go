@@ -25,7 +25,6 @@ func (crashing) Invoke(_ context.Context, c tool.Call) (Result, error) {
 		var m map[string]int
 		m["boom"]++
 	}
-	// Three-byte characters after two bytes put the limit inside a character.
 	flood := "ab" + strings.Repeat("中", maxOutputBytes)
 	if c.Tool == "fail" {
 		return Result{Output: flood, Err: errors.New(flood)}, nil
@@ -41,7 +40,6 @@ func text(raw json.RawMessage) string {
 	return s
 }
 
-// A tool that panics, answers too much, or is called wrongly comes back as a result, and the process goes on.
 func TestTheRegistryTurnsEveryFailureIntoAResult(t *testing.T) {
 	r, err := New(context.Background(), nil, crashing{})
 	if err != nil {

@@ -13,11 +13,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macOS runs the Seatbelt sandbox for real; Linux covers everything else.
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     env:
-      # repo/fts5.go refuses to build without it.
       GOFLAGS: -tags=sqlite_fts5
     steps:
       - uses: actions/checkout@v7
@@ -36,10 +34,6 @@ jobs:
 
       - run: go vet ./...
 
-      # Fails on vulnerabilities the code actually reaches, in dependencies or
-      # in the Go toolchain that setup-go installed from go.mod.
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
 
-      # Includes TestProtocolSchema, which fails when protocol.schema.json is
-      # out of date with the dispatch table.
       - run: go test -race -timeout 10m ./...

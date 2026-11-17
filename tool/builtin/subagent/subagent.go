@@ -1,5 +1,3 @@
-// Package subagent gives the model the tools that launch subagents: each is named after the role its subagent runs as,
-// and its call starts the subagent's conversation with the task; the subagent's report comes back to the turn.
 package subagent
 
 import (
@@ -32,7 +30,6 @@ var kinds = map[agent.Name]kind{
 	},
 }
 
-// Call is what a launcher is called with.
 type Call struct {
 	Description string `json:"description" jsonschema:"A short (3-5 word) description of the task, shown to the user."`
 	Prompt      string `json:"prompt" jsonschema:"The complete task for the subagent, self-contained."`
@@ -66,7 +63,7 @@ func (Provider) Tools(context.Context) ([]kit.Spec, error) {
 }
 
 func (Provider) Invoke(_ context.Context, c tool.Call) (kit.Result, error) {
-	args, _ := kit.DecodeArguments[Call](c.Arguments) // the schema checked its fields: it cannot fail
+	args, _ := kit.DecodeArguments[Call](c.Arguments)
 	if strings.TrimSpace(args.Prompt) == "" || strings.TrimSpace(args.Description) == "" {
 		return kit.Result{}, fmt.Errorf("description and prompt must not be blank")
 	}

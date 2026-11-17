@@ -23,10 +23,10 @@ BURST_CSV = f"{ROOT}/bench/results/burst.csv"
 SOAK_CSV = f"{ROOT}/bench/results/soak.csv"
 W, PAD = 1600, 72
 
-INDIGO, INDIGO_2, INDIGO_DEEP = "#2f5d47", "#94b59f", "#22252a"  # moss, light moss, ink
+INDIGO, INDIGO_2, INDIGO_DEEP = "#2f5d47", "#94b59f", "#22252a"
 TINT, TINT_2, LINE = "#eef3ec", "#dfe9db", "#c3d3bd"
 ROSE, ROSE_TINT, ROSE_LINE = "#f43f5e", "#fff1f2", "#fecdd3"
-PINK = "#c08a55"  # the wolf's tan
+PINK = "#c08a55"
 INK2, MUTED, FAINT = "#3d4148", "#5b5f66", "#8e928f"
 GRID, RULE, BASE, PAPER = "#f1f0ec", "#e6e4de", "#cfccc3", "#f8f7f4"
 FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
@@ -131,12 +131,10 @@ class Figure:
             f.write("\n".join(self.p + ["</svg>"]) + "\n")
 
 
-# ---------- diagrams ----------
 
 def architecture():
     f = Figure(960, "OLLUPI · ARCHITECTURE", "One process hosts every session",
                 "Sessions, subagents and scheduled tasks share one agent's scheduler, and all state lives in SQLite", "Every step is written to the database before it runs", SOURCE)
-    # clients and gateway
     f.card(560, 196, 480, 60, TINT, LINE)
     f.text(800, 233, "ollupi-desktop · other clients", "hs", "middle")
     f.arrow("M800,258 V300")
@@ -146,7 +144,6 @@ def architecture():
     f.text(392, 342, "gateway", "h code")
     f.text(510, 341, "Request dispatch · event push · contract and method table from one source", "b")
     f.arrow("M800,368 V404")
-    # agent
     f.card(330, 406, 940, 236, TINT, INDIGO, r=18)
     f.text(360, 444, "agent", "h code")
     mods = [("Scheduler", ["Shared pool, 32 slots by default", "Slots released while waiting", "Sessions before subagents"]),
@@ -158,7 +155,6 @@ def architecture():
         f.text(x + 22, 504, h, "hs code" if h == "runtime" else "hs")
         for j, line in enumerate(lines):
             f.text(x + 22, 540 + j * 26, line, "b")
-    # side services
     for i, (h, lines) in enumerate([("Memory", ["Distilled from ended turns", "Global · general · workspace"]),
                                      ("Scheduled tasks", ["Sends a message when due", "Queues with other turns"])]):
         y = 420 + i * 116
@@ -176,7 +172,6 @@ def architecture():
     f.text(1322, 590, "Model providers", "hs")
     f.text(1322, 618, "Receive placeholders only", "s")
     f.arrow("M1414,522 V548")
-    # tools
     f.arrow("M800,644 V680")
     f.text(816, 668, "Called after permission checks", "s")
     tools = [("Built-in tools", "Subagent · plan · ask"), ("run_command", "Runs in the sandbox"), ("MCP servers", "stdio · HTTP"), ("App tools", "tools.Provider")]
@@ -185,7 +180,6 @@ def architecture():
         f.card(x, 682, 206, 82)
         f.text(x + 103, 716, h, "hs code" if h == "run_command" else "hs", "middle")
         f.text(x + 103, 744, s, "s", "middle")
-    # SQLite
     f.card(72, 796, 1456, 92, PAPER, BASE, r=16)
     f.add(f'<g transform="translate(100,816)" fill="none" stroke="{INDIGO}" stroke-width="3"><ellipse cx="22" cy="10" rx="22" ry="8"/>'
           f'<path d="M0,10 V44 A22,8 0 0 0 44,44 V10"/><path d="M0,27 A22,8 0 0 0 44,27"/></g>')
@@ -255,7 +249,6 @@ def pool():
         f.text(96, y + 38, h, "hs")
         f.text(96, y + 66, s, "s")
         f.arrow(f"M300,{y + 45} C340,{y + 45} 340,{392} 372,{392}")
-    # queue
     f.card(376, 212, 300, 380, TINT, LINE, r=18)
     f.text(400, 252, "Queue", "h")
     f.text(400, 280, "Runnable turns in the database", "s")
@@ -266,7 +259,6 @@ def pool():
     f.text(376, 642, "before subagents; within each kind,", "s")
     f.text(376, 666, "turns run in ready order", "s")
     f.arrow("M678,402 H716")
-    # slots
     f.card(720, 212, 420, 380, "#ffffff", INDIGO, r=18)
     f.text(744, 252, "Slots", "h")
     f.text(744, 280, "32 by default; one per turn, released when waiting", "s")
@@ -290,7 +282,6 @@ def pool():
         f.text(x + 24, 528, t, "s")
     f.text(744, 566, "Tool calls hold a slot but no model concurrency", "s")
     f.arrow("M1142,402 H1180")
-    # model concurrency
     f.card(1184, 212, 344, 380, "#ffffff", LINE, r=18)
     f.text(1208, 252, "Model concurrency", "h")
     f.text(1208, 280, "Per connection, 4 by default", "s")
@@ -300,7 +291,6 @@ def pool():
         for k in range(4):
             f.add(f'<rect x="{1208 + k * 76}" y="{y + 16}" width="66" height="40" rx="8" fill="{INDIGO}"/>')
     f.text(1208, 566, "When full, calls queue within quota", "s")
-    # waiting
     f.arrow("M930,594 V676")
     f.text(946, 640, "Needs an approval, an answer or a subagent", "s")
     f.add(f'<rect x="720" y="680" width="420" height="156" rx="18" fill="url(#hatch)" stroke="{BASE}" stroke-width="2"/>')
@@ -316,7 +306,6 @@ def pool():
     f.save("execution-pool.svg")
 
 
-# ---------- charts ----------
 
 class Plot:
     def __init__(self, fig, x, y, w, h, xdom, ydom, xlog=False, ylog=False):

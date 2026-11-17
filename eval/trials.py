@@ -24,9 +24,9 @@ class Trial:
     agent: str
     version: str
     model: str
-    minutes: float | None  # the agent's, from its start to its end
+    minutes: float | None
     exception: str | None
-    tested: bool  # the verifier ran the tests; without that a trial scored 0 whatever the agent did
+    tested: bool
     passed: bool
 
     @property

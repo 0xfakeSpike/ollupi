@@ -1,7 +1,3 @@
-// Experiment 2, active memory and capacity: c sessions each run `turns` turns back to back against a model of
-// 5 s ± 2 s (provider limit = c) and a 1 s tool, as ollupi's `bench steady` does. A turn alone takes about 17 s.
-//
-//   node --expose-gc steady.mjs --harness pi-sdk|pi-durable|dsh --c 256
 import { args, cpuSeconds, freshDir, pct, peakSampler, report, secs, settledMemory, startProvider } from "./common.mjs";
 import { openHarness, pool } from "./harnesses.mjs";
 

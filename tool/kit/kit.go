@@ -1,6 +1,3 @@
-// Package kit is how tools are built: a provider names its tools and runs them, and a registry gathers providers into
-// the tool.Set a runner calls. The registry checks each call's arguments against its tool's schema, and turns a tool
-// that crashes or answers too much into a result, so that no tool takes the process down.
 package kit
 
 import (
@@ -29,15 +26,11 @@ type Spec struct {
 	Description string
 	InputSchema any
 	Annotations tool.Annotations
-	// Content, when set, is what a call touches for permission rules to match.
-	Content func(ctx context.Context, c tool.Call) (policy.Content, error)
-	// Prepare, when set, plans each call before it is decided on; the call runs by its plan.
-	Prepare func(ctx context.Context, c tool.Call) (tool.Plan, error)
-	Serial  bool
+	Content     func(ctx context.Context, c tool.Call) (policy.Content, error)
+	Prepare     func(ctx context.Context, c tool.Call) (tool.Plan, error)
+	Serial      bool
 }
 
-// Result is what a tool comes to: Output, or Err; Ask is a question it waits on the user to answer, Launch a subagent
-// it starts.
 type Result struct {
 	Output    any
 	Err       error
@@ -64,7 +57,6 @@ type Registry struct {
 
 var _ tool.Set = (*Registry)(nil)
 
-// New gathers providers, and the introspection of them; unavailable are providers whose tools could not be listed.
 func New(ctx context.Context, unavailable []string, providers ...Provider) (*Registry, error) {
 	r := &Registry{unavailable: slices.Clone(unavailable), providers: map[string]Provider{}, owner: map[string]string{},
 		specs: map[string]Spec{}, schemas: map[string]*jsonschema.Resolved{}}
@@ -159,8 +151,6 @@ func recovered(err *error, while string) {
 	}
 }
 
-// A tool's output, and what it says of its failure, are kept up to these sizes: both are stored with the call and sent
-// to those who watch it, and a server may fail with as much text as it answers with.
 const (
 	maxOutputBytes = 1 << 20
 	maxErrorBytes  = 16 << 10
@@ -182,7 +172,6 @@ func (r *Registry) Invoke(ctx context.Context, c tool.Call) (out tool.Result) {
 	return settle(res)
 }
 
-// settle makes a tool's result what is kept: its output and question as JSON, both within their size.
 func settle(res Result) tool.Result {
 	out := tool.Result{Artifacts: res.Artifacts, Launch: res.Launch}
 	if res.Ask != nil {
@@ -198,7 +187,7 @@ func settle(res Result) tool.Result {
 		case err != nil:
 			return tool.Result{Error: fmt.Sprintf("the tool returned output that cannot be encoded as JSON: %v", err)}
 		case len(raw) > maxOutputBytes:
-			raw, _ = json.Marshal(clip(string(raw), maxOutputBytes, "output")) // a string: it cannot fail
+			raw, _ = json.Marshal(clip(string(raw), maxOutputBytes, "output"))
 		}
 		out.Output = raw
 	}
@@ -211,7 +200,6 @@ func settle(res Result) tool.Result {
 	return out
 }
 
-// The cut goes back to the start of a character, so the text kept stays valid UTF-8.
 func clip(text string, limit int, what string) string {
 	cut := limit
 	for cut > 0 && !utf8.RuneStart(text[cut]) {
@@ -226,7 +214,6 @@ const (
 	ListProviderToolsTool = "list_tools_for_provider"
 )
 
-// introspection lists the registry's providers and their tools to the model.
 type introspection struct{ r *Registry }
 
 func (introspection) Name() (string, string) {

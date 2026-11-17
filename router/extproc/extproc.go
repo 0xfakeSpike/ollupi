@@ -1,10 +1,3 @@
-// Package extproc places each client connection on its user's shard from inside a load balancer that calls out over
-// Envoy's external processing protocol, as a Google Cloud Application Load Balancer route extension and Envoy's
-// ext_proc filter do. The load balancer then holds the connections: it sends the handshake's headers to the callout,
-// which sets ShardHeader to the user's shard, and routes on that header to the shard's backend. A handshake the
-// callout cannot place, a token that is no one's among them, goes without the header to the load balancer's default
-// backend, where a router.Router answers it. Either way the shard checks the user again, through
-// shard.Member.Admit.
 package extproc
 
 import (
@@ -18,7 +11,6 @@ import (
 	extprocv3 "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 )
 
-// The callout sets ShardHeader over any a client sent, and removes a client's one when it places no shard.
 const ShardHeader = "x-ollupi-shard"
 
 type Callout struct {
@@ -30,7 +22,6 @@ func New(locator *router.Locator) *Callout {
 	return &Callout{locator: locator}
 }
 
-// A route extension sends only the request's headers; any other step is answered unchanged.
 func (c *Callout) Process(stream extprocv3.ExternalProcessor_ProcessServer) error {
 	for {
 		req, err := stream.Recv()

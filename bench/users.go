@@ -22,9 +22,6 @@ import (
 
 const heavyUser = "heavy"
 
-// users runs many users on one shard, each on their own API key and quota, beside one heavy user who keeps far more
-// conversations busy than their key can serve. Their turns hold slots while they wait on that key; the experiment
-// reports how long the other users' turns wait for their first model request and take, with and without UserSlots.
 func users(args []string) {
 	fs := flag.NewFlagSet("users", flag.ExitOnError)
 	n := fs.Int("users", 32, "users beside the heavy one")
@@ -53,7 +50,6 @@ func users(args []string) {
 	for _, u := range ids[1:] {
 		keys[u] = &quota{limit: int64(*calls)}
 	}
-	// The turn's text names it, so the provider can tell when each turn's first model request goes out.
 	var mu sync.Mutex
 	first := map[string]time.Time{}
 	p := &provider{latency: *latency, jitter: *jitter, limit: *heavyLimit + *n**calls, keys: keys,
@@ -84,7 +80,7 @@ func users(args []string) {
 	for _, u := range ids[1:] {
 		clients[u] = llm.NewOpenAI(srv.URL, u, *calls, limits)
 	}
-	var failed sync.Map // user → *atomic.Int64
+	var failed sync.Map
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}, done: map[string]chan struct{}{}}
 	e := newEngine(host.Config{
 		Home: dir, Models: []llm.Model{{Name: "fake", Connection: "fake"}},
@@ -132,7 +128,6 @@ func users(args []string) {
 	}
 	tr.mu.Unlock()
 
-	// sent remembers each turn's user and the text it was sent with, by turn id.
 	type sentTurn struct{ user, text string }
 	sent := map[string]sentTurn{}
 	var seq atomic.Int64
@@ -183,7 +178,6 @@ func users(args []string) {
 	tr.mu.Unlock()
 	mu.Unlock()
 
-	// Jain's index over each other user's mean turn time: 1 when every user is served alike.
 	var sum, squares float64
 	for _, ds := range perUser {
 		var total time.Duration

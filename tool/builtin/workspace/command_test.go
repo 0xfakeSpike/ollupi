@@ -5,9 +5,6 @@ import (
 	"testing"
 )
 
-// A shell's script is read for the commands it runs when every option before it takes no argument. After any other
-// option the next word may be that option's, so the command is opaque: a deny or ask rule that might name what it
-// runs is not passed by.
 func TestAShellsScriptIsReadOrOpaque(t *testing.T) {
 	for _, tc := range []struct {
 		args   []string

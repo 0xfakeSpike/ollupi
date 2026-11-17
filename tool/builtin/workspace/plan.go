@@ -9,7 +9,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/tool/kit"
 )
 
-// Prepared is how a call that changes the workspace will run, as it was decided on; it runs only as it was.
 type Prepared struct {
 	Cwd             string            `json:"cwd"`
 	SettingsDigest  string            `json:"settingsDigest"`
@@ -33,7 +32,6 @@ type FileChange struct {
 	Removed int    `json:"removed"`
 }
 
-// local is a tool that plans each call before it is decided on, and runs by the plan.
 type local struct {
 	prepare func(ctx context.Context, caller tool.Caller, args map[string]any) (*Prepared, error)
 	run     func(ctx context.Context, caller tool.Caller, args map[string]any, p *Prepared) (kit.Result, error)

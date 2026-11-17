@@ -11,8 +11,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/tool/kit"
 )
 
-// Commands are traced through the global TracerProvider, as the agent's runs are.
-
 func (r *Provider) prepareCommand(ctx context.Context, caller tool.Caller, args map[string]any) (*Prepared, error) {
 	d, err := r.dirs(ctx, caller)
 	if err != nil {
@@ -60,7 +58,6 @@ func (r *Provider) prepareCommand(ctx context.Context, caller tool.Caller, args 
 }
 
 func escalation(box sandbox.Box, args map[string]any) (bool, string, error) {
-	// The schema offers sandbox_permissions, as one of its two values, only where commands can escalate.
 	if args["sandbox_permissions"] != sandboxRequireEscalated {
 		return false, "", nil
 	}
@@ -226,7 +223,6 @@ func (r *Provider) inputSchema() map[string]any {
 	return schema
 }
 
-// The tool's schema makes args an array of strings.
 func parseExecArgsSlice(v any) []string {
 	if v == nil {
 		return nil
@@ -239,7 +235,6 @@ func parseExecArgsSlice(v any) []string {
 	return out
 }
 
-// The tool's schema makes timeout_sec an integer.
 func parseTimeoutSec(v any, limit int) (int, error) {
 	sec, _ := v.(float64)
 	if sec <= 0 {

@@ -1,5 +1,3 @@
-// Package memory gives the model memory_search, which finds the notes of long-term memory a conversation was not
-// shown when it started.
 package memory
 
 import (
@@ -44,7 +42,7 @@ func (Provider) Tools(context.Context) ([]kit.Spec, error) {
 }
 
 func (p Provider) Invoke(ctx context.Context, c tool.Call) (kit.Result, error) {
-	args, _ := kit.DecodeArguments[searchArgs](c.Arguments) // the schema checked its fields: it cannot fail
+	args, _ := kit.DecodeArguments[searchArgs](c.Arguments)
 	var notes []memory.Memory
 	err := p.st.Read(ctx, func(r store.Reader) (err error) {
 		notes, err = r.Memories(c.User, memory.GlobalPlace, memory.Local(c.Workspace))

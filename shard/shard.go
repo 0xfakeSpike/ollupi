@@ -1,7 +1,3 @@
-// Package shard runs a process as one shard of a deployment: it holds the shard's lease in the deployment's catalog,
-// fences the shard's database with the lease's epoch, reports the shard's load as it renews the lease, and runs the
-// engine only while it holds the shard. The engine itself knows nothing of shards; a process that is the only one
-// serves without this package.
 package shard
 
 import (
@@ -16,21 +12,16 @@ import (
 )
 
 type Member struct {
-	ID string
-	// Address is where clients reach this process, as the router proxies to it.
-	Address string
-	// A shard kept for one customer takes no new users, and one its host finds full stops taking them.
+	ID        string
+	Address   string
 	Accepting bool
 	Catalog   catalog.Catalog
 	TTL       time.Duration
-	// Load is by a measure all shards of the deployment share; lower is lighter. Without it the shard reports none.
-	Load func() (int64, error)
+	Load      func() (int64, error)
 }
 
 const catalogTimeout = 10 * time.Second
 
-// Run waits until it holds the shard, then serves until ctx ends or the shard is lost. serve's context ends when the
-// lease is lost: every write fails from then on, so the process must stop.
 func (m *Member) Run(ctx context.Context, st store.Store, serve func(context.Context) error) error {
 	if m.TTL <= 0 {
 		return errors.New("shard: a lease needs a TTL")
@@ -43,7 +34,7 @@ func (m *Member) Run(ctx context.Context, st store.Store, serve func(context.Con
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), catalogTimeout)
 		defer cancel()
-		m.Catalog.Release(ctx, m.ID, owner, epoch) // a lease not released lapses
+		m.Catalog.Release(ctx, m.ID, owner, epoch)
 	}()
 	if err := st.Fence(epoch); err != nil {
 		return fmt.Errorf("shard %s: %w", m.ID, err)
@@ -64,15 +55,13 @@ func (m *Member) Run(ctx context.Context, st store.Store, serve func(context.Con
 	return err
 }
 
-// The catalog counts a lease from when it kept it, so the holder counts it from before it asked, and gives up a
-// margin early besides, for its clock to run apart from the catalog's: it stops before any other process can start.
 func (m *Member) deadline(asked time.Time) time.Time { return asked.Add(m.TTL - m.TTL/10) }
 
 func (m *Member) acquire(ctx context.Context, owner string) (int64, time.Time, error) {
 	for {
 		asked := time.Now()
 		attempt, cancel := context.WithTimeout(ctx, catalogTimeout)
-		epoch, held, _ := m.Catalog.Acquire(attempt, m.ID, owner, m.Address, m.Accepting, m.TTL) // a catalog that fails may be back by the next try
+		epoch, held, _ := m.Catalog.Acquire(attempt, m.ID, owner, m.Address, m.Accepting, m.TTL)
 		cancel()
 		if held {
 			return epoch, m.deadline(asked), nil
@@ -85,8 +74,6 @@ func (m *Member) acquire(ctx context.Context, owner string) (int64, time.Time, e
 	}
 }
 
-// A renewal that fails is tried again while the lease lasts. Another process can take the shard only once the lease
-// has run out, so a lease run out is a shard lost.
 func (m *Member) keep(ctx context.Context, owner string, epoch int64, until time.Time, lose context.CancelCauseFunc) {
 	tick := time.NewTicker(m.TTL / 3)
 	defer tick.Stop()
@@ -98,7 +85,7 @@ func (m *Member) keep(ctx context.Context, owner string, epoch int64, until time
 		}
 		var load int64
 		if m.Load != nil {
-			load, _ = m.Load() // a load not measured reports as idle this time
+			load, _ = m.Load()
 		}
 		asked := time.Now()
 		attempt, cancel := context.WithTimeout(ctx, catalogTimeout)
@@ -119,8 +106,6 @@ func (m *Member) keep(ctx context.Context, owner string, epoch int64, until time
 	}
 }
 
-// Admit refuses a user this shard does not serve now: the router placed them by what it knew, and a client that comes
-// back reaches the right shard once that is put right.
 func (m *Member) Admit(ctx context.Context, user string) error {
 	ctx, cancel := context.WithTimeout(ctx, catalogTimeout)
 	defer cancel()

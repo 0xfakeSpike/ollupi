@@ -66,7 +66,6 @@ func TestCatalogPlacesUsersOnShards(t *testing.T) {
 	}
 }
 
-// One process holds a shard at a time; the address is its holder's, and each holder writes under a later epoch.
 func TestOneProcessHoldsAShard(t *testing.T) {
 	c := openCatalog(t, nil)
 	first := acquire(t, c, "s1", "first", true, 0)
@@ -100,7 +99,6 @@ func TestOneProcessHoldsAShard(t *testing.T) {
 	}
 }
 
-// A catalog from before migrations, which gorm made, takes the first step as it is and keeps its rows.
 func TestACatalogFromBeforeMigrationsKeepsItsRows(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "catalog.sqlite")
 	g, err := sqlitedb.Open(path)
@@ -173,7 +171,6 @@ func assignMany(t *testing.T, c *SQL, prefix string, n int) map[string]int {
 	return placed
 }
 
-// New users go to the lighter shards by the load they report, not by how many users they have.
 func TestNewUsersAvoidABusyShard(t *testing.T) {
 	c := openCatalog(t, map[string]int64{"s1": 10, "s2": 10, "busy": 1000})
 	placed := assignMany(t, c, "u", 200)
@@ -182,7 +179,6 @@ func TestNewUsersAvoidABusyShard(t *testing.T) {
 	}
 }
 
-// A shard just added, with no users and as idle as the rest, takes its share of new users rather than all of them.
 func TestAShardJustAddedTakesASharePerhapsLargerButNotAll(t *testing.T) {
 	old := map[string]int64{}
 	for i := range 9 {
@@ -197,17 +193,14 @@ func TestAShardJustAddedTakesASharePerhapsLargerButNotAll(t *testing.T) {
 		}
 	}
 	acquire(t, c, "new", "p-new", true, 0)
-	// It is drawn with one shard in five, so takes about 20 of 100; all of them would mean it took every new user.
 	placed := assignMany(t, c, "u", 100)
 	if placed["new"] == 0 || placed["new"] >= 50 {
 		t.Errorf("the new shard took %d of 100 new users: %v", placed["new"], placed)
 	}
 }
 
-// Shards and routers open one catalog file each from a process of their own, and may do so at once.
 func TestProcessesShareACatalog(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "catalog", "catalog.sqlite")
-	// The file is there before they start: SQLite may refuse a second process that turns a new file to WAL at once.
 	first, err := sqlitedb.Open(path)
 	if err != nil {
 		t.Fatal(err)

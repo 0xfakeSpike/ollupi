@@ -20,8 +20,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/tool/kit"
 )
 
-// model plays the agent: the main agent launches a subagent, which reads the weather with a tool, and answers with
-// what it reported; extraction keeps that the user likes rain.
 type model struct{ mu sync.Mutex }
 
 func (*model) Limits(string) (llm.Limits, error) {

@@ -1,6 +1,3 @@
-// Package policy decides what a tool call may do: whether it runs, asks the user first, or is refused. It stacks the
-// layers of settings a call is made under, the deployment's, the user's, the workspace's, the conversation's, a role's,
-// and reads the user's rules and approval policy against the call. It does no I/O.
 package policy
 
 import (
@@ -26,7 +23,6 @@ type Rules struct {
 
 type Policy string
 
-// Rules come first at every level: a deny rule still denies and an ask rule still asks, whatever the policy.
 const (
 	Untrusted Policy = "untrusted"
 	OnRequest Policy = "on-request"
@@ -42,19 +38,14 @@ func (p Policy) Validate() error {
 	return nil
 }
 
-// A tool's name is its provider's, then ProviderSeparator, then its own; the providers ollupi has itself leave theirs
-// out.
 const ProviderSeparator = "__"
 
-// Tool is a tool as the rules see it.
 type Tool struct {
 	Name     string
 	Provider string
-	// Content says a rule can name the tool's calls by what they touch, as run_command(git status) does.
-	Content bool
+	Content  bool
 }
 
-// Toolbox is the tools a user has now; Unavailable are the providers of theirs that cannot be reached now.
 type Toolbox struct {
 	Tools       []Tool
 	Unavailable []string
@@ -78,9 +69,8 @@ func (b Toolbox) hasContent(name string) bool {
 }
 
 type Layer struct {
-	Of       string
-	Settings Settings
-	// Shared settings serve users with different tools, so they may name tools this user lacks.
+	Of        string
+	Settings  Settings
 	Shared    bool
 	Providers []string
 	Without   []string
@@ -112,14 +102,11 @@ func appendNew(dst, src []string) []string {
 	return dst
 }
 
-// Content is what a call touches, as its tool reads it from the arguments.
 type Content struct {
-	Text  string
-	Match string
-	Parts []string
-	// Opaque content cannot be read through, as a command that runs a variable.
+	Text   string
+	Match  string
+	Parts  []string
 	Opaque bool
-	// Match is lower case, as a path or a site is compared, so a rule's specifier is folded too.
 	Folded bool
 }
 
@@ -129,11 +116,9 @@ type Call struct {
 	OpenWorld  bool
 	Content    Content
 	HasContent bool
-	// Sandboxed and Escalated are the tool's plan for the call: it runs confined, or leaves the sandbox.
-	Sandboxed bool
-	Escalated bool
-	// Prepared is the plan as the tool gave it, which an approval for the conversation must match to apply again.
-	Prepared json.RawMessage
+	Sandboxed  bool
+	Escalated  bool
+	Prepared   json.RawMessage
 }
 
 type Verdict int
@@ -151,7 +136,6 @@ type Decision struct {
 	Suggested []string
 }
 
-// Asked is the approval the call waits for.
 func (d Decision) Asked(id string, call Call) conversation.ApprovalAsked {
 	a := conversation.ApprovalAsked{Approval: id, Reason: d.Reason, Rule: d.Rule, Suggested: d.Suggested}
 	if call.HasContent {

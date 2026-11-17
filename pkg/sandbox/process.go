@@ -24,7 +24,6 @@ func runTag(marker string) string {
 
 func randomHex(n int) string {
 	b := make([]byte, n)
-	// crypto/rand.Read does not return an error: since Go 1.24 it crashes the program instead.
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }
@@ -193,7 +192,6 @@ func (s *Sandbox) Start(ctx context.Context, c Command, stderr io.Writer) (Proce
 		return nil, err
 	}
 	cmd.Stderr = stderr
-	// A program the command started may keep its stderr open after it ends; Wait stops copying it then.
 	cmd.WaitDelay = stopDelay
 	tag := runTag(s.runMarker())
 	cmd.Env = append(cmd.Env, tag)
@@ -205,8 +203,6 @@ func (s *Sandbox) Start(ctx context.Context, c Command, stderr io.Writer) (Proce
 	return &process{ReadCloser: stdout, WriteCloser: stdin, cmd: cmd, tag: tag, stop: stop}, nil
 }
 
-// Closing a process's input lets it end by itself; one that does not is killed, and so is what it started, whether
-// it ended or not.
 type process struct {
 	io.ReadCloser
 	io.WriteCloser

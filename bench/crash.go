@@ -33,16 +33,12 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// The kinds of conversation the crash workload mixes: a turn that calls the work tool twice, one that asks the user,
-// and one that hands work to a subagent.
 const (
 	kindWork     = "work"
 	kindAsk      = "ask"
 	kindDelegate = "delegate"
 )
 
-// crash kills a process running turns at random moments and starts it again on the same database, then checks
-// that every turn ended, that no tool call ran twice, and that the calls cut off mid-run were reported as such.
 func crash(args []string) {
 	fs := flag.NewFlagSet("crash", flag.ExitOnError)
 	n := fs.Int("n", 300, "conversations submitted at the start")
@@ -203,18 +199,13 @@ func crash(args []string) {
 		count(openTurns),
 		count("SELECT count(*) FROM items WHERE status = 'pending' OR status = 'inProgress'"),
 		count("SELECT count(*) FROM items WHERE json_extract(body, '$.Error') LIKE 'the call was cut off%'"),
-		// A model's answer cut off is not kept, and its request is made again: the requests answered that no response
-		// was kept for.
 		p.requests.Load()-p.refused.Load()-count("SELECT count(*) FROM entries WHERE kind = ?", string(conversation.KindModelResponded)),
 		len(ran), twice, unrun, pct(restarts, .5).Milliseconds(), pct(restarts, 1).Milliseconds(), p.requests.Load())
 	fmt.Printf("recoveries: %s\n", strings.Join(recoveries, " | "))
 }
 
-// openTurns counts the turns of every conversation, subagents' among them, that have not ended.
 const openTurns = "SELECT count(*) FROM turns WHERE ended_seq IS NULL"
 
-// crashChild is the process crash kills: it runs a host on the store in dir, answers every question it is asked,
-// submits the workload when told to, and says when no turn is left open.
 func crashChild(args []string) {
 	fs := flag.NewFlagSet("crashchild", flag.ExitOnError)
 	dir := fs.String("dir", "", "home of the store")
@@ -230,7 +221,6 @@ func crashChild(args []string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	// A standby puts its host together before it holds the shard, and writes nothing until it does.
 	startAt := time.Now()
 	h, err := host.New(context.Background(), host.Config{
 		Home: *dir, Name: "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
@@ -268,7 +258,6 @@ func crashChild(args []string) {
 		go func() { ran <- h.Run(ctx) }()
 		return crashServe(ctx, cancel, ran, h, *dir, *submit, time.Since(startAt), answer)
 	}
-	// With a lease the shard is held through a catalog beside the store, as a standby waits on it.
 	if *lease == 0 {
 		err = run(context.Background())
 	} else {

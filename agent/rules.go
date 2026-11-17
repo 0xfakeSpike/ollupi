@@ -1,7 +1,5 @@
 package agent
 
-// The rules each role's model is given, before the deployment's own prompt, the skills and the project.
-
 const fullMainRules = `You complete the user's request by calling tools in a loop. Every tool result comes back to you as an observation. Keep working until the request is done, then reply to the user without calling any tool; that reply is shown to the user as the final answer.
 
 # Working rules

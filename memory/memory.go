@@ -1,6 +1,3 @@
-// Package memory is what a user's long-term memory is and the rules it keeps: which notes a conversation recalls,
-// what a finished turn offers as evidence, how a model's operations on the notes are checked and applied, and how
-// the user corrects them. It reads and writes nothing; the store keeps the notes, and the extract flow feeds them.
 package memory
 
 import (
@@ -19,8 +16,7 @@ var ErrInvalidChange = errors.New("invalid memory change")
 type Scope string
 
 const (
-	Global Scope = conversation.GlobalScope
-	// General is the scope of the conversations outside any workspace.
+	Global    Scope = conversation.GlobalScope
 	General   Scope = "general"
 	Workspace Scope = "workspace"
 )
@@ -41,21 +37,18 @@ var Kinds = []Kind{Preference, Decision, Fact, Procedure}
 type Status string
 
 const (
-	Active  Status = "active"
-	Retired Status = "retired"
-	// Forgotten keeps a note's topic and sources, without its text, so that nothing learns it again.
+	Active    Status = "active"
+	Retired   Status = "retired"
 	Forgotten Status = "forgotten"
 )
 
 var Statuses = []Status{Active, Retired, Forgotten}
 
-// Place is where notes are kept: the global scope, the general one, or one workspace's.
 type Place struct {
 	Scope     Scope
 	Workspace string
 }
 
-// Local is the place of a conversation in workspace, or outside any when it is "".
 func Local(workspace string) Place {
 	if workspace == "" {
 		return Place{Scope: General}
@@ -75,13 +68,11 @@ func (p Place) Check() error {
 	return nil
 }
 
-// Source is a piece of evidence a note was learned from: an item of a conversation.
 type Source struct {
 	Thread string `json:"thread"`
 	Item   string `json:"item"`
 }
 
-// Memory is one note. Origin is the workspace a global note was learned or moved from, where moving it back puts it.
 type Memory struct {
 	ID         string    `json:"id"`
 	User       string    `json:"-"`
@@ -106,7 +97,6 @@ func (m Memory) Ref() conversation.MemoryRef {
 
 const maxTextRunes = 4000
 
-// Edit is the user's correction: from then on extraction leaves the note as the user wrote it.
 func Edit(m Memory, text string, now time.Time) (Memory, error) {
 	text = strings.TrimSpace(text)
 	if text == "" || utf8.RuneCountInString(text) > maxTextRunes {
@@ -119,8 +109,6 @@ func Edit(m Memory, text string, now time.Time) (Memory, error) {
 	return m, nil
 }
 
-// Move takes a local note to the global scope, or a global one back to where it came from; there are the notes kept
-// where it goes.
 func Move(m Memory, there []Memory, now time.Time) (Memory, error) {
 	if m.Status == Forgotten {
 		return Memory{}, fmt.Errorf("%w: a forgotten memory cannot be moved", ErrInvalidChange)
@@ -137,7 +125,6 @@ func Move(m Memory, there []Memory, now time.Time) (Memory, error) {
 	return m, nil
 }
 
-// Destination is where Move takes m.
 func Destination(m Memory) Place {
 	if m.Scope == Global {
 		return Local(m.Origin)

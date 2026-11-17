@@ -6,8 +6,6 @@ import (
 	"strings"
 )
 
-// Check reads the settings alone: the approval policy, when they set one, and how each rule is written. Whether the
-// rules name tools there are is a user's toolbox to say.
 func (s Settings) Check() error {
 	if s.ApprovalPolicy != "" {
 		if err := Policy(s.ApprovalPolicy).Validate(); err != nil {
@@ -22,7 +20,7 @@ func checkLayer(l Layer, previous *Settings, box Toolbox) error {
 	if err := l.Settings.Check(); err != nil {
 		return err
 	}
-	set, _ := parseRules(l.Settings.Rules) // Check parsed them
+	set, _ := parseRules(l.Settings.Rules)
 	var kept []string
 	if previous != nil {
 		for _, text := range slices.Concat(previous.Rules.Allow, previous.Rules.Ask, previous.Rules.Deny) {
@@ -46,8 +44,6 @@ func checkLayer(l Layer, previous *Settings, box Toolbox) error {
 	return nil
 }
 
-// Validate checks layer, which replaces previous, over base: a rule kept from before may name a provider that cannot be
-// reached now, a rule added may not.
 func Validate(base []Layer, previous Settings, layer Layer, box Toolbox) error {
 	if err := checkLayer(layer, &previous, box); err != nil {
 		return fmt.Errorf("%w: %s: %v", ErrInvalidSettings, layer.Of, err)
@@ -65,7 +61,6 @@ func unknownTool(what, tool string, box Toolbox) error {
 	return fmt.Errorf("%s: tool %q is not in the tool registry", what, tool)
 }
 
-// someonesTool says a tool belongs to a provider this user lacks, which another user may have.
 func someonesTool(tool string, box Toolbox) bool {
 	provider, _, ok := strings.Cut(tool, ProviderSeparator)
 	return ok && !box.hasProvider(provider)

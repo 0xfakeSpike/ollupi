@@ -17,8 +17,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 )
 
-// isolated is the baseline the pool is measured against: one process for each conversation, each waiting on its
-// user. It reports the resident memory of each such process; containers would add their own on top.
 func isolated(args []string) {
 	fs := flag.NewFlagSet("isolated", flag.ExitOnError)
 	k := fs.Int("k", 20, "processes, one conversation each")
@@ -77,7 +75,6 @@ func isolated(args []string) {
 		*k, sum/float64(len(rss)), rss[0], rss[len(rss)/2], rss[len(rss)-1])
 }
 
-// lone is one conversation's process for isolated: it opens its own store, asks its user a question, and waits.
 func lone(args []string) {
 	fs := flag.NewFlagSet("lone", flag.ExitOnError)
 	dir := fs.String("dir", "", "home of the store")

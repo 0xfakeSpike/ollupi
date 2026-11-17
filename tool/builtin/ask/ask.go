@@ -1,4 +1,3 @@
-// Package ask gives the model request_user_input: the call asks the user questions, and ends with their answers.
 package ask
 
 import (
@@ -27,7 +26,7 @@ func (Provider) Tools(context.Context) ([]kit.Spec, error) {
 }
 
 func (Provider) Invoke(_ context.Context, c tool.Call) (kit.Result, error) {
-	r, _ := kit.DecodeArguments[ask.Request](c.Arguments) // the schema checked its fields: it cannot fail
+	r, _ := kit.DecodeArguments[ask.Request](c.Arguments)
 	if err := r.Validate(); err != nil {
 		return kit.Result{}, fmt.Errorf("invalid questions: %w", err)
 	}

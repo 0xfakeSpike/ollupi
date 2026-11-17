@@ -1,7 +1,3 @@
-// Package run runs a turn: it reads the conversation, asks agent.Next what to do, does it, and appends what came of it
-// to the log, a step at a time, until the turn waits or ends. Every step reads the log afresh, so a message the user
-// sends meanwhile, or a decision, is part of the next one; and a turn picked up after a crash goes on as if it had
-// never stopped.
 package run
 
 import (
@@ -20,18 +16,15 @@ import (
 	"github.com/0xfakeSpike/ollupi/user"
 )
 
-// Models are the models turns name: their limits, and the client a user's turns call one through.
 type Models interface {
 	Limits(m llm.Model) (llm.Limits, error)
 	Client(user string, m llm.Model) (llm.Client, error)
 }
 
-// Attachments keeps the files users attach to their messages.
 type Attachments interface {
 	Get(ctx context.Context, key string) ([]byte, error)
 }
 
-// Skills are the skills a role is told of.
 type Skills func(role agent.Name) ([]prompt.Skill, error)
 
 type Runner struct {
@@ -46,19 +39,12 @@ type Runner struct {
 	allowlist   []string
 }
 
-// New takes the deployment's name for the agent and its prompt for main agents, "" for the default, its permission
-// settings, beneath every user's, and allowlist, unless nil every tool it lets be offered.
 func New(st store.Store, models Models, tools tool.Tools, attachments Attachments, skills Skills,
 	name, prompt string, deployment policy.Settings, allowlist []string) *Runner {
 	return &Runner{st: st, models: models, tools: tools, attachments: attachments, skills: skills,
 		name: name, prompt: prompt, deployment: deployment, allowlist: allowlist}
 }
 
-// Run runs the turn in progress of thread until it waits, ends, or ctx ends. An error is the turn's failure, which the
-// caller ends it with.
-//
-// Whoever calls Run runs the thread alone, so a call it finds started and not ended was cut off with the run before,
-// and ends as interrupted.
 func (r *Runner) Run(ctx context.Context, thread string) error {
 	if err := r.settle(ctx, thread); err != nil {
 		return err
@@ -98,7 +84,6 @@ func (r *Runner) Run(ctx context.Context, thread string) error {
 	}
 }
 
-// stranded is how a call ends that a run before left started: it may have done some of its work, or all of it.
 const stranded = "the call was cut off when the run that made it stopped; it may have taken effect in part or in full, so check before trying it again"
 
 func (r *Runner) settle(ctx context.Context, thread string) error {
@@ -126,7 +111,6 @@ func (r *Runner) settle(ctx context.Context, thread string) error {
 	})
 }
 
-// step is what one step of a turn reads.
 type step struct {
 	th        store.Thread
 	parent    *store.Thread
@@ -145,7 +129,6 @@ type step struct {
 	deferred []prompt.Tool
 }
 
-// load reads thread on one snapshot; nil when it has no turn in progress.
 func (r *Runner) load(ctx context.Context, thread string) (*step, error) {
 	s := &step{}
 	var active bool
@@ -193,8 +176,6 @@ func (r *Runner) load(ctx context.Context, thread string) (*step, error) {
 	return s, nil
 }
 
-// permit decides which of set's tools the turn may see, by the layers as they are now: the settings may have changed
-// since the step before.
 func (s *step) permit(r *Runner, set tool.Set) error {
 	conversationLayer := s.th.Layer()
 	if s.parent != nil {

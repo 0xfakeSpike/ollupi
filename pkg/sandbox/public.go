@@ -20,11 +20,9 @@ func SensitiveAddr(a netip.Addr) bool {
 
 var ErrLocalAddress = errors.New("resolves to a local or private address")
 
-// PublicTransport keeps requests off the network this process is on.
 func PublicTransport() *http.Transport {
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
 	return &http.Transport{
-		// No proxy from the environment: a proxy would make the dial below check the proxy instead of the site.
 		Proxy: nil,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			return dialPublic(ctx, dialer, network, addr)
@@ -34,8 +32,6 @@ func PublicTransport() *http.Transport {
 	}
 }
 
-// dialPublic connects only to public addresses. It checks the addresses the name resolves to at dial time,
-// so a name cannot point at the local network after it was approved.
 func dialPublic(ctx context.Context, dialer *net.Dialer, network, addr string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {

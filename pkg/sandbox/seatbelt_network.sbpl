@@ -1,5 +1,3 @@
-; Derived from OpenAI Codex codex-rs/sandboxing/src/seatbelt_network_policy.sbpl
-; (https://github.com/openai/codex), Copyright OpenAI, licensed under Apache-2.0.
 
 (allow system-socket
   (require-all

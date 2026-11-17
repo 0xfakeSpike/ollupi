@@ -58,7 +58,6 @@ type ResourcePage struct {
 	EOF             bool   `json:"eof"`
 }
 
-// Skills are read where they are used, so that a skill installed or changed takes effect from the next run.
 func Load(root, role string) ([]Skill, error) {
 	root = filepath.Clean(strings.TrimSpace(root))
 	dir := filepath.Join(root, role)
@@ -81,8 +80,6 @@ func Load(root, role string) ([]Skill, error) {
 	return out, nil
 }
 
-// So that a directory of no role, a skill outside a role's directory and a skill that cannot be read show when ollupi
-// starts.
 func Check(root string, roles []string) error {
 	root = filepath.Clean(strings.TrimSpace(root))
 	entries, err := os.ReadDir(root)
@@ -252,7 +249,7 @@ func parseSkill(root, skillDir, sourcePath string, byteSize int64) (Skill, error
 	if err != nil {
 		return Skill{}, err
 	}
-	sourceFile, _ := filepath.Rel(root, sourcePath) // sourcePath is joined under root
+	sourceFile, _ := filepath.Rel(root, sourcePath)
 	digestBytes := sha256.Sum256(raw)
 	return Skill{
 		Name:         name,
@@ -319,7 +316,7 @@ func scanResources(skillDir string) ([]Resource, error) {
 		if err != nil {
 			return err
 		}
-		rel, _ := filepath.Rel(skillDir, path) // the walk gives paths under skillDir
+		rel, _ := filepath.Rel(skillDir, path)
 		resources = append(resources, Resource{Path: filepath.ToSlash(rel), ByteSize: info.Size()})
 		if len(resources) > maxListedResources {
 			return fmt.Errorf("skill %q exposes more than %d readable resources", skillDir, maxListedResources)

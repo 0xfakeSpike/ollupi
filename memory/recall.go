@@ -12,7 +12,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 )
 
-// SearchTool is the tool a conversation finds the notes it was not shown with.
 const SearchTool = "memory_search"
 
 const (
@@ -24,8 +23,6 @@ const (
 	omittedNote    = "\n\n%d more memories did not fit here; find them with " + SearchTool + " when they may matter."
 )
 
-// Recall is what a conversation at place starts with of memories, the global notes and its place's, within budget
-// tokens; its Text is "" when none fit.
 func Recall(memories []Memory, place Place, budget int) conversation.Recalled {
 	var global, local []Memory
 	for _, r := range rank(memories, recallScore) {
@@ -97,11 +94,10 @@ func render(memories []Memory) string {
 	for i, m := range memories {
 		notes[i] = note{ID: m.ID, Topic: m.Topic, Text: m.Text}
 	}
-	b, _ := json.MarshalIndent(notes, "", "  ") // strings alone: it cannot fail
+	b, _ := json.MarshalIndent(notes, "", "  ")
 	return string(b)
 }
 
-// Search is the active notes that best match the words of query, at most limit of them.
 func Search(memories []Memory, query string, limit int) []Memory {
 	terms := searchTerms(query)
 	out := []Memory{}
@@ -165,7 +161,6 @@ func kindPriority(m Memory) int {
 	return 0
 }
 
-// searchTerms are the words of text of two letters or more, and each two Han characters side by side.
 func searchTerms(text string) []string {
 	seen := map[string]bool{}
 	terms := []string{}

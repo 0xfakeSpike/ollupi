@@ -11,12 +11,8 @@ import (
 	"github.com/0xfakeSpike/ollupi/user"
 )
 
-// Submit sends a task's prompt to its conversation as the user would, in the transaction that counts the run; an
-// error skips the run.
 type Submit func(tx store.Tx, thread, prompt, job string) error
 
-// Run sends the tasks due each minute until ctx ends, or the store fails. A task whose run before still waits behind
-// another turn is not sent again: its run is skipped.
 func Run(ctx context.Context, st store.Store, cal Calendar, submit Submit) error {
 	tick := time.NewTicker(time.Minute)
 	defer tick.Stop()
@@ -55,13 +51,13 @@ type errSubmit struct{ error }
 func send(tx store.Tx, cal Calendar, submit Submit, due user.CronJob, now time.Time, sending bool) error {
 	job, err := tx.CronJob(due.ID)
 	if errors.Is(err, store.ErrNotFound) {
-		return nil // deleted since it was found due
+		return nil
 	}
 	if err != nil {
 		return err
 	}
 	if job.Paused || !job.NextRun.Equal(due.NextRun) {
-		return nil // paused or run since it was found due
+		return nil
 	}
 	v, err := tx.View(job.Thread)
 	if err != nil {

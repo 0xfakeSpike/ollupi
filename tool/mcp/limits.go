@@ -11,8 +11,6 @@ import (
 	"strings"
 )
 
-// maxMessageBytes bounds one message from a server. The SDK decodes what a server sends as it comes, so without a bound
-// one server could fill the memory of the process that serves every user before its result is cut to size.
 const maxMessageBytes = 32 << 20
 
 var errMessageTooLarge = fmt.Errorf("mcp: the server sent a message of more than %d bytes", maxMessageBytes)

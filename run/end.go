@@ -9,10 +9,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// stoppedWithParent is why a subagent's turn ends when the turn that launched it does.
 const stoppedWithParent = "stopped with the turn that launched it"
 
-// finish ends a turn that answered; a subagent's answer is its report.
 func (r *Runner) finish(ctx context.Context, s *step) error {
 	var answer string
 	for _, it := range s.v.ItemsOf(s.turn.ID) {
@@ -23,9 +21,6 @@ func (r *Runner) finish(ctx context.Context, s *step) error {
 	return r.st.Update(ctx, func(tx store.Tx) error { return end(tx, s.th.ID, conversation.Completed, "", answer) })
 }
 
-// End ends the turn in progress of thread, if it has one, with status and why. Its calls still open end first, and
-// the turns of the subagents it launched that have not reported end with it; a subagent's turn reports to the turn
-// that launched it.
 func End(tx store.Tx, thread string, status conversation.End, reason string) error {
 	return end(tx, thread, status, reason, "")
 }
@@ -76,7 +71,6 @@ func end(tx store.Tx, thread string, status conversation.End, reason, answer str
 	return report(tx, th, v, turn, status, reason, answer)
 }
 
-// report tells the turn that launched a subagent how the subagent's turn ended: its answer, or why it did not answer.
 func report(tx store.Tx, th store.Thread, v conversation.View, turn conversation.Turn, status conversation.End, reason, answer string) error {
 	parent, err := tx.View(th.Parent)
 	if err != nil {
@@ -91,7 +85,7 @@ func report(tx store.Tx, th store.Thread, v conversation.View, turn conversation
 		}
 	}
 	if status == conversation.Completed {
-		body.Output, _ = json.Marshal(answer) // a string: it cannot fail
+		body.Output, _ = json.Marshal(answer)
 	} else {
 		body.Error = reason
 	}

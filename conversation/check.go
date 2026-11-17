@@ -8,8 +8,6 @@ import (
 
 var ErrRefused = errors.New("conversation: the entry does not follow from the conversation")
 
-// Check says whether e may be appended to the conversation the view folds: whatever its writer read before, an entry
-// that does not follow from the conversation as it is now is refused.
 func Check(v View, e Entry) error {
 	if e.Body == nil {
 		return refuse("an entry without a body")

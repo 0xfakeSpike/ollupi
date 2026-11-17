@@ -49,7 +49,6 @@ def main():
     p.add_argument("--all", action="store_true", help="a column for every version, instead of the latest against before")
     a = p.parse_args()
 
-    # A version is a commit run with a model; versions are ordered by their first job.
     trials = defaultdict(list)
     for t in read_all():
         trials[t.version, t.model].append(t)
@@ -77,7 +76,6 @@ def main():
     if a.all or len(versions) == 1:
         columns = [column(v) for v in versions]
     else:
-        # Before is each task's latest tested result in any earlier version, tagged with that version.
         before = {task: next((results[v, task] for v in reversed(versions[:-1]) if (v, task) in results), None)
                   for task in tasks}
         cells = {task: r.cell(tagged=True) if r else "-" for task, r in before.items()}

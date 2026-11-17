@@ -20,10 +20,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// fanout has turns each hand work to several subagents at once, more of them in all than there are slots, and
-// checks that every turn ends: a parent waiting on its subagents must leave its slot to them. It reports how long the
-// whole took against the least the slots and the provider allow, and the most parents ever holding a slot or waiting
-// on their subagents without one.
 func fanout(args []string) {
 	fs := flag.NewFlagSet("fanout", flag.ExitOnError)
 	parents := fs.Int("parents", 64, "turns submitted at once, each handing work to -n subagents")
@@ -67,8 +63,6 @@ func fanout(args []string) {
 	for i := range threads {
 		threads[i] = e.newThread(defaultUser)
 	}
-	// A second connection reads, beside the host's, how many parents can run, holding a slot or waiting for one, and
-	// how many wait on their subagents: the store keeps no record of slots.
 	g, err := gorm.Open(sqlite.Open(filepath.Join(dir, "data", "store.sqlite")), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
 		log.Fatal(err)
@@ -101,9 +95,6 @@ func fanout(args []string) {
 	total := time.Since(startAt)
 	close(stop)
 
-	// Each parent makes at least three model calls of its own: one launches the subagents, one answers while they run,
-	// and one answers their reports, of which those that come apart wake it more than once; each subagent makes
-	// rounds+1 calls and rounds tool calls. The answer while they run is not on the parent's way to its end.
 	child := time.Duration(*rounds+1)*(*latency) + time.Duration(*rounds)*(*toolLatency)
 	children := *parents * *n
 	bound := max(2*(*latency)+child,

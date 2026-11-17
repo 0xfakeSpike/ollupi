@@ -1,5 +1,3 @@
-// Package skills gives an agent the tools of the skills its role has: listing them, activating one, and reading its
-// resources.
 package skills
 
 import (
@@ -103,7 +101,7 @@ func (*Tools) Tools(context.Context) ([]kit.Spec, error) {
 }
 
 func (t *Tools) activate(role string, arguments map[string]any) (kit.Result, error) {
-	args, _ := kit.DecodeArguments[activateArgs](arguments) // the schema checked its fields: it cannot fail
+	args, _ := kit.DecodeArguments[activateArgs](arguments)
 	name := strings.TrimSpace(args.Name)
 	skill, ok, err := t.find(role, name)
 	if err != nil {

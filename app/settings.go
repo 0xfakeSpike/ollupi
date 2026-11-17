@@ -15,7 +15,6 @@ func (a *App) Settings(ctx context.Context, u string) (user.Settings, error) {
 	return s, err
 }
 
-// UpdateSettings sets redaction and memory; one left nil stays as it is.
 func (a *App) UpdateSettings(ctx context.Context, u string, redaction, memory *bool) (user.Settings, error) {
 	var s user.Settings
 	err := a.st.Update(ctx, func(tx store.Tx) (err error) {
@@ -32,8 +31,6 @@ func (a *App) UpdateSettings(ctx context.Context, u string, redaction, memory *b
 	})
 	return s, err
 }
-
-// Each layer of permissions is checked on the layers beneath it, as they are when it is written.
 
 func (a *App) UpdateUserPermissions(ctx context.Context, u string, p policy.Settings) (user.Settings, error) {
 	box, err := a.toolbox(ctx, u)
@@ -125,8 +122,6 @@ func (a *App) setThreadPermissions(tx store.Tx, box policy.Toolbox, th *store.Th
 	return tx.UpdateThread(next)
 }
 
-// allowAlways keeps rules where the conversation's permissions come from: its workspace, or else the conversation
-// itself; a subagent's, its parent's.
 func (a *App) allowAlways(tx store.Tx, box policy.Toolbox, id string, rules []string) error {
 	th, err := tx.Thread(id)
 	if err != nil {

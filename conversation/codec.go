@@ -5,7 +5,6 @@ import (
 	"fmt"
 )
 
-// Decode reads a body a store kept as JSON beside its kind.
 func Decode(kind Kind, raw []byte) (Body, error) {
 	var b Body
 	var err error

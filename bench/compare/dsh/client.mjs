@@ -1,5 +1,3 @@
-// A minimal client of dsh's SDK runtime (`dsh --profile sdk-minimal`), which speaks newline-delimited JSON-RPC 2.0 on
-// stdio: initialize once, then session/prompt (an unknown sessionId creates the session) and session/wait per turn.
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import fs from "node:fs";
@@ -32,7 +30,6 @@ export async function startDsh({ home, cwd, url, toolMs = 1000, log, extraPatche
 	});
 	let next = 1;
 	const pending = new Map();
-	// session/wait answers {} however the turn ended; the turn/end event, which precedes that answer, says how.
 	const lastEnd = new Map();
 	createInterface({ input: proc.stdout }).on("line", (line) => {
 		let msg;

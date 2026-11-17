@@ -9,7 +9,6 @@ import (
 	"testing"
 )
 
-// headersOf answers every request 400, which no client retries, and keeps the headers of the last.
 func headersOf(t *testing.T) (*httptest.Server, func() http.Header) {
 	t.Helper()
 	var mu sync.Mutex

@@ -1,6 +1,3 @@
-// Package prompt compiles a conversation into what a model is sent: the system prompt, the transcript fitted into the
-// model's context window, with long tool outputs clipped and a compacted history standing for what came before, and
-// the tools that fit. The same log always compiles to the same request. The package does no I/O.
 package prompt
 
 import (
@@ -40,7 +37,6 @@ func (w Window) MemoryBudget() int { return max(0, min(4000, w.inputTokens*8/100
 
 func (w Window) artifactBudget() int { return share(w.inputTokens, artifactPercent) }
 
-// Input is the transcript, in the order the model reads it, with the responses the items came in.
 type Input struct {
 	Items     []conversation.Item
 	Responses []conversation.Response
@@ -48,8 +44,6 @@ type Input struct {
 	Tools     []llm.ToolSpec
 }
 
-// Transcript is what the turn in progress shows the model: the ended turns and it, each turn's items in the order they
-// came, the turns behind it left out.
 func Transcript(v conversation.View) ([]conversation.Item, []conversation.Response) {
 	active, _ := v.Active()
 	var items []conversation.Item
@@ -130,8 +124,6 @@ func (w Window) stats(system string, messages []llm.ChatMessage, tools []llm.Too
 	return s
 }
 
-// The latest response of this model says how far its tokens run from the estimate; one since the latest compaction
-// read the same history, so the difference carries over as it is, and one from before it, as a ratio.
 func (w Window) calibrate(s *conversation.ContextStats, items []conversation.Item, responses []conversation.Response) {
 	compaction := latestCompaction(items)
 	from, compactions := int64(0), map[string]bool{}
@@ -204,7 +196,6 @@ func prettyJSON(v any) string {
 	return string(b)
 }
 
-// The JSON estimate leaves out the images and files of messages.
 func partTokens(messages []llm.ChatMessage) int {
 	n := 0
 	for _, m := range messages {

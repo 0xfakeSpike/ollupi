@@ -12,8 +12,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// dbStats counts the statements the host's store runs and the time they take, reads apart from writes, and keeps
-// the connection pool, whose single connection every statement waits for.
 type dbStats struct {
 	mu                  sync.Mutex
 	reads, writes, rows int64
@@ -23,7 +21,6 @@ type dbStats struct {
 	startStats          sql.DBStats
 }
 
-// watchDB hooks into the store sqlite.Open returned.
 func watchDB(st store.Store) *dbStats {
 	g := st.(*sqlite.Store).Gorm()
 	pool, err := g.DB()
@@ -76,7 +73,6 @@ func watchDB(st store.Store) *dbStats {
 	return s
 }
 
-// start marks where the measured run begins.
 func (s *dbStats) start() {
 	s.mu.Lock()
 	s.reads, s.writes, s.rows, s.readTime, s.writeTime = 0, 0, 0, 0, 0
@@ -84,8 +80,6 @@ func (s *dbStats) start() {
 	s.startStats = s.pool.Stats()
 }
 
-// report is what the run cost the database for each of its turns: statements, rows written, time in statements, time
-// waiting for the connection, and the items each turn left.
 func (s *dbStats) report(turns int) string {
 	st := s.pool.Stats()
 	var items, turnRows int64

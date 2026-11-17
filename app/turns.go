@@ -21,19 +21,15 @@ import (
 const (
 	maxQueued      = 20
 	maxAnswerRunes = 4000
-	// messagePercent is how much of a model's input one message may take; longer text goes as a file.
 	messagePercent = 25
 )
 
 type Input struct {
 	Text        string
 	Attachments []AttachmentInput
-	// Connection is the model's, "" for the one the conversation ran on last.
-	Connection string
+	Connection  string
 }
 
-// Send queues a message as a new turn: it is in progress at once when the conversation is idle, and waits behind the
-// turns before it otherwise.
 func (a *App) Send(ctx context.Context, u, id string, in Input) (turn conversation.Turn, inProgress bool, err error) {
 	atts, err := a.attach(ctx, u, id, in.Attachments)
 	if err != nil {
@@ -53,7 +49,6 @@ func (a *App) Send(ctx context.Context, u, id string, in Input) (turn conversati
 	return turn, inProgress, err
 }
 
-// Scheduled sends a task's prompt to its conversation, as the user would; cron runs it.
 func (a *App) Scheduled(tx store.Tx, id, prompt, job string) error {
 	th, err := tx.Thread(id)
 	if err != nil {
@@ -105,8 +100,6 @@ func (a *App) queue(tx store.Tx, th store.Thread, text string, atts []conversati
 	return turn, active.ID == id, nil
 }
 
-// Steer adds a message to the turn in progress, which the agent reads at its next step. What the turn waits on the
-// user for, it no longer waits on: the message answers it, declining the calls asked about and skipping the questions.
 func (a *App) Steer(ctx context.Context, u, id, expected string, in Input) (conversation.Turn, error) {
 	atts, err := a.attach(ctx, u, id, in.Attachments)
 	if err != nil {
@@ -150,7 +143,6 @@ func (a *App) Steer(ctx context.Context, u, id, expected string, in Input) (conv
 	return turn, err
 }
 
-// Interrupt ends the turn in progress, with the subagents it launched; its run stops once the scheduler hears of it.
 func (a *App) Interrupt(ctx context.Context, u, id, expected string) error {
 	return a.st.Update(ctx, func(tx store.Tx) error {
 		if _, err := thread(tx, u, id); err != nil {
@@ -186,7 +178,6 @@ func message(text string, attachments int) (string, error) {
 	return text, nil
 }
 
-// fits checks a message against the model it is sent to: its length, and its images or the conversation's.
 func (a *App) fits(model llm.Model, v conversation.View, text string, atts []conversation.Attachment) (llm.Limits, error) {
 	limits, err := a.models.Limits(model)
 	if err != nil {
@@ -231,14 +222,11 @@ func (a *App) usableWorkspace(tx store.Tx, th store.Thread) error {
 	return nil
 }
 
-// Request is what a conversation waits on its user for: a call to approve, or questions to answer.
 type Request struct {
 	Thread store.Thread
 	Item   conversation.Item
 }
 
-// Requests are what a user's conversations wait on them for, the oldest first: a conversation's and its subagents' when
-// id is not "", or all of the user's.
 func (a *App) Requests(ctx context.Context, u, id string) ([]Request, error) {
 	var out []Request
 	err := a.st.Read(ctx, func(r store.Reader) error {
@@ -288,8 +276,6 @@ func askedAt(it conversation.Item) time.Time {
 	return it.Input.AskedAt
 }
 
-// Decide decides on a call that waits for approval. Accepting it always also keeps the rule it suggested, where the
-// conversation's permissions come from.
 func (a *App) Decide(ctx context.Context, u, id, approval string, decision conversation.Decision) error {
 	box, err := a.toolbox(ctx, u)
 	if err != nil {
@@ -321,7 +307,6 @@ func (a *App) Decide(ctx context.Context, u, id, approval string, decision conve
 	})
 }
 
-// Answer answers the questions a call waits on; nil answers skip them.
 func (a *App) Answer(ctx context.Context, u, id, item string, answers ask.Answers) error {
 	return a.st.Update(ctx, func(tx store.Tx) error {
 		if _, err := thread(tx, u, id); err != nil {
@@ -353,6 +338,6 @@ func (a *App) Answer(ctx context.Context, u, id, item string, answers ask.Answer
 }
 
 func mustJSON(v any) json.RawMessage {
-	raw, _ := json.Marshal(v) // plain data: it cannot fail
+	raw, _ := json.Marshal(v)
 	return raw
 }

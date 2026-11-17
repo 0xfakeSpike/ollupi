@@ -49,12 +49,10 @@ func (noFiles) Get(context.Context, string) ([]byte, error) { return nil, nil }
 func (noFiles) Delete(context.Context, string) error        { return nil }
 func (noFiles) DeletePrefix(context.Context, string) error  { return nil }
 
-// client speaks JSON-RPC to the gateway as a client would, keeping what the server sends it.
 type client struct {
 	t    *testing.T
 	ws   *websocket.Conn
 	next int
-	// kept are what came before the results of calls, not yet looked at.
 	kept []message
 }
 
@@ -87,7 +85,6 @@ func (c *client) read() message {
 	return m
 }
 
-// call calls method and gives its result, keeping what the server sent before it.
 func (c *client) call(method string, params any, result any) {
 	c.t.Helper()
 	c.next++
@@ -106,7 +103,6 @@ func (c *client) call(method string, params any, result any) {
 	}
 }
 
-// until reads until the server sends method, and gives that message.
 func (c *client) until(method string) message {
 	c.t.Helper()
 	for len(c.kept) > 0 {
@@ -173,7 +169,6 @@ func TestAClientHearsWhatChangesAndAnswersWhatWaitsOnIt(t *testing.T) {
 		t.Errorf("the page at %d: %+v", page.Seq, page)
 	}
 
-	// A runner asks about a call; the client is asked, and its answer is the user's decision.
 	err = st.Update(ctx, func(tx store.Tx) error {
 		_, err := tx.Append(started.Thread.ID,
 			conversation.Entry{Turn: turn.Turn.ID, Body: conversation.ModelResponded{Response: "r"}},
@@ -191,7 +186,6 @@ func TestAClientHearsWhatChangesAndAnswersWhatWaitsOnIt(t *testing.T) {
 		t.Fatalf("the request %+v", params)
 	}
 	c.send(map[string]any{"jsonrpc": "2.0", "id": asked.ID, "result": ApprovalResponse{Decision: conversation.Accept}})
-	// A commit's change comes as its thread, then its turns, then its items.
 	var status ThreadChangedNotification
 	for {
 		m := c.read()

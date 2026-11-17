@@ -1,10 +1,3 @@
-// Experiment 4, crash (pi-durable): a child process runs n turns over one SQLite file; the parent kill -9s it at random
-// moments, starts it again on the same file (Harness.open + resume()), and at the end checks that every submission
-// settled, which bench__work calls ran twice (each call writes its call id to tools.log before working), how many calls
-// a crash cut off, and how long a restart took. Model 200 ms, tool 300 ms, as ollupi's `bench crash`.
-//
-//   node crash.mjs --n 50 --turns 20 --kills 30   (n conversations, each with `turns` queued turns)
-//   (the child is this same file with --child)
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import fs from "node:fs";
@@ -72,7 +65,6 @@ async function parent() {
 	const final = await c.next(["drained", "stuck"]);
 	await new Promise((r) => (c.proc.exitCode !== null ? r() : c.proc.once("exit", r)));
 
-	// Check the stored outcome in a process that resumes nothing.
 	const check = spawn(process.execPath, ["--no-warnings", import.meta.filename, "--child", "check", "--dir", dir, "--url", provider.url], { stdio: ["ignore", "pipe", "inherit"] });
 	let summary = "";
 	for await (const l of createInterface({ input: check.stdout })) summary += l;
@@ -148,7 +140,6 @@ async function child() {
 		const convs = [];
 		for (let i = 0; i < a.submit; i++) {
 			const conv = await d.newConversation();
-			// Turns after the first queue as follow-ups and run one after another.
 			for (let j = 0; j < a.turns; j++) {
 				const sub = await conv.submit({ type: "input", content: "work", requestId: `turn-${i}-${j}` }, ctx);
 				convs.push({ conv: conv.id, sub: sub.id });
@@ -165,7 +156,6 @@ async function child() {
 			break;
 		}
 		if (ins.tasks.length > 0 && ins.tasks.every((t) => t.state.kind === "blocked" || t.state.kind === "waiting")) {
-			// Nothing can run: every live task is parked or waits on one that is.
 			console.log(`stuck blocked=${ins.tasks.filter((t) => t.state.kind === "blocked").length} open_submissions=${ins.submissions.length}`);
 			break;
 		}

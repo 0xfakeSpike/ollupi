@@ -1,5 +1,3 @@
-// Shared helpers for the comparison benches: the fake provider (ollupi's own `bench provider`), memory and
-// latency statistics, and the token log that shows a tool call running twice.
 import { spawn, execFileSync } from "node:child_process";
 import { createInterface } from "node:readline";
 import fs from "node:fs";
@@ -10,8 +8,6 @@ export const here = path.dirname(fileURLToPath(import.meta.url));
 export const runDir = path.join(here, "run");
 export const benchBin = process.env.OLLUPI_BENCH ?? path.join(runDir, "bench");
 
-// startProvider runs ollupi's fake OpenAI-compatible provider in its own process, so what it holds is not counted
-// against the harness: each turn's first `rounds` requests are answered with a bench__work call, then "done".
 export async function startProvider({ latency = "5s", jitter = "2s", rounds = 2, limit = 1024 } = {}) {
 	const proc = spawn(benchBin, ["provider", "-latency", latency, "-jitter", jitter, "-rounds", String(rounds), "-limit", String(limit)], {
 		stdio: ["ignore", "pipe", "inherit"],
@@ -45,8 +41,6 @@ export function rssMB(pid = process.pid) {
 	}
 }
 
-// footprintMB reads macOS's phys_footprint (what Activity Monitor calls Memory): unlike ps's RSS it keeps counting
-// dirty pages the kernel compressed or swapped out, which RSS drops when the machine is short of memory.
 export function footprintMB(pid = process.pid) {
 	try {
 		const out = execFileSync("footprint", [String(pid)], { stdio: ["ignore", "pipe", "ignore"] }).toString();
@@ -57,7 +51,6 @@ export function footprintMB(pid = process.pid) {
 	}
 }
 
-// settledMemory forces collections first, when node runs with --expose-gc, so retained memory is what remains.
 export async function settledMemory() {
 	for (let i = 0; i < 3; i++) {
 		globalThis.gc?.();
@@ -87,7 +80,6 @@ export function cpuSeconds() {
 	return (u.user + u.system) / 1e6;
 }
 
-// peakSampler records the process's peak resident memory and footprint every interval until stopped.
 export function peakSampler(intervalMs = 2000, pid = process.pid) {
 	const peak = { rss_mb: rssMB(pid), footprint_mb: footprintMB(pid) };
 	const sample = () => {
@@ -132,13 +124,11 @@ export function report(name, fields) {
 	return line;
 }
 
-// secs parses a Go duration such as "5s" or "200ms" into seconds.
 export function secs(d) {
 	const m = String(d).match(/^([\d.]+)(ms|s)$/);
 	return m[2] === "ms" ? Number(m[1]) / 1000 : Number(m[1]);
 }
 
-// cpuSecondsOf reads another process's accumulated CPU time from ps (formats M:SS.ss or H:MM:SS).
 export function cpuSecondsOf(pid) {
 	try {
 		const t = execFileSync("ps", ["-o", "time=", "-p", String(pid)]).toString().trim();

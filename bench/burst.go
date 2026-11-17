@@ -24,30 +24,16 @@ import (
 	"github.com/0xfakeSpike/ollupi/tool/kit"
 )
 
-// provider is a fake OpenAI-compatible endpoint. A request takes latency plus or minus jitter and is answered with
-// the call next names, or with the turn's answer when it names none; a request beyond limit in flight is refused
-// with 429, as an account's concurrency limit would refuse it.
 type provider struct {
-	latency, jitter time.Duration
-	// sigma, when above zero, draws the latency from a log-normal distribution with latency as its median, the long
-	// tail real providers show, in place of the even spread of jitter.
-	sigma float64
-	limit int
-	// others, when above zero, is the most requests other clients of the same account keep in flight; how many they
-	// hold changes every second, and they count against limit as this agent's requests do.
-	others int
-	// fail is the share of requests answered at once with a 500.
-	fail float64
-	// keys, when set, gives an API key its own limit, as each user's key has its own quota at the provider; it is
-	// checked before limit, which then stands for the provider as a whole.
-	keys map[string]*quota
-	// fanout is how many calls a response carries when it calls a tool, all of them the same call; one when zero.
-	fanout int
-	// next names the call that answers a request made after the model answered the user's message ask so many times.
-	next func(ask string, answered int) (name, arguments string)
-	// arrived, when set, hears the ask of each request as it arrives.
-	arrived func(ask string)
-	// hold, while open, keeps every request waiting, so a backlog builds before any turn can finish.
+	latency, jitter                           time.Duration
+	sigma                                     float64
+	limit                                     int
+	others                                    int
+	fail                                      float64
+	keys                                      map[string]*quota
+	fanout                                    int
+	next                                      func(ask string, answered int) (name, arguments string)
+	arrived                                   func(ask string)
 	hold                                      chan struct{}
 	inFlight, peak, requests, refused, failed atomic.Int64
 }
@@ -74,7 +60,6 @@ func (p *provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	others := 0
 	if p.others > 0 {
-		// Seeded by the second, so every request in that second sees the same load.
 		others = rand.New(rand.NewPCG(uint64(time.Now().Unix()), 0)).IntN(p.others + 1)
 	}
 	if n+int64(others) > int64(p.limit) {
@@ -93,9 +78,8 @@ func (p *provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for i := len(body.Messages) - 1; i >= 0; i-- {
 		var content string
 		_ = json.Unmarshal(body.Messages[i].Content, &content)
-		// A subagent's report comes as a user message too, which is not what the user asked.
 		if body.Messages[i].Role == "user" && !strings.HasPrefix(content, "[report of ") {
-			ask = content[strings.LastIndex(content, "\n")+1:] // after the "[sent …]" line the context adds
+			ask = content[strings.LastIndex(content, "\n")+1:]
 			break
 		}
 		if body.Messages[i].Role == "assistant" {
@@ -141,7 +125,6 @@ func (p *provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "data: [DONE]\n\n")
 }
 
-// quota is one API key's limit on requests in flight, and what it saw.
 type quota struct {
 	limit                   int64
 	inFlight, peak, refused atomic.Int64
@@ -152,8 +135,6 @@ func raise(peak *atomic.Int64, n int64) {
 	}
 }
 
-// work is a tool that takes latency, as a command or a fetch would; it holds the turn's slot but no model call.
-// With a log it first writes down the token it was called with, so a call that runs twice shows.
 type work struct {
 	latency time.Duration
 	log     *os.File
@@ -214,8 +195,6 @@ func burst(args []string) {
 	}
 	srv := httptest.NewServer(p)
 	defer srv.Close()
-	// The client keeps two idle connections a host by default; over plain HTTP/1.1 to the fake provider, thousands of
-	// calls in flight would then open and close a connection each, as a real provider's HTTP/2 connection does not.
 	http.DefaultTransport.(*http.Transport).MaxIdleConnsPerHost = *calls
 	dir, err := os.MkdirTemp("", "ollupi-bench-")
 	if err != nil {
@@ -323,7 +302,6 @@ func burst(args []string) {
 	}
 	tr.mu.Unlock()
 	rates := perSecond(ends)
-	// Each probe as when it started into the burst, then how long its turn took.
 	var probeTook []string
 	tr.mu.Lock()
 	for _, id := range probes {
@@ -340,7 +318,6 @@ func burst(args []string) {
 	e.stop()
 }
 
-// perSecond counts the turns ending in each whole second from the first ending to the last, so a stall shows as a low count.
 func perSecond(ends []time.Time) []int {
 	if len(ends) == 0 {
 		return nil

@@ -1,9 +1,4 @@
 #!/bin/sh
-# Builds eval, static, for the Linux containers tasks run in, into eval/build; see eval/README.md.
-#
-#   eval/build.sh [--if-stale]
-#
-# ARCHES picks the architectures (default amd64). ollupi's SQLite driver needs cgo, so the build runs in Docker.
 set -eu
 root=$(cd "$(dirname "$0")/.." && pwd)
 version=$(git -C "$root" describe --tags --always --dirty)

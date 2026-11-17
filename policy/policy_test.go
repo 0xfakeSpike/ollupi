@@ -82,7 +82,6 @@ func command(parts ...string) Call {
 	return Call{Tool: "exec", Content: c, HasContent: true}
 }
 
-// The three policies say what runs without asking, and "never" runs even a command that leaves the sandbox.
 func TestEachPolicyDecidesWhatRunsWithoutAsking(t *testing.T) {
 	read := Call{Tool: "touch", ReadOnly: true}
 	confined := Call{Tool: "exec", Sandboxed: true}
@@ -118,8 +117,6 @@ func TestEachPolicyDecidesWhatRunsWithoutAsking(t *testing.T) {
 	}
 }
 
-// A command the rules cannot read is not let through a deny or ask rule by a policy that never asks: one a deny rule
-// might name is refused, even outside the sandbox, and one an ask rule might name still asks.
 func TestNeverDoesNotRunWhatARuleCannotRead(t *testing.T) {
 	opaque := command("sh -c $X")
 	opaque.Content.Opaque = true
@@ -154,7 +151,6 @@ func TestNeverDoesNotRunWhatARuleCannotRead(t *testing.T) {
 	}
 }
 
-// A deny rule still denies and an ask rule still asks, even where the policy itself never asks.
 func TestRulesSpeakAtEveryLevel(t *testing.T) {
 	for _, policy := range PolicyValues {
 		checker, err := New([]Layer{
@@ -256,8 +252,6 @@ func TestALayerKeepsOnlyTheProvidersItNames(t *testing.T) {
 	}
 }
 
-// A rule names a path or a site in any case, wherever in it the capitals are, while a command's arguments are matched
-// as written.
 func TestRulesFoldTheCaseOfFoldedContent(t *testing.T) {
 	note := Call{Tool: "click", Content: Content{Text: "Private Notes/a.txt", Match: "private notes/a.txt", Folded: true}, HasContent: true}
 	for _, tc := range []struct {

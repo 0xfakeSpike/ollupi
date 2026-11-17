@@ -20,8 +20,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/tool/kit"
 )
 
-// memoryMachine is a cloud sandbox that holds its files in memory, at paths this machine does not have, so a tool
-// that went around the box would find nothing.
 type memoryMachine struct {
 	mu    sync.Mutex
 	files fstest.MapFS
@@ -82,7 +80,6 @@ func machineWith(files map[string]string) *memoryMachine {
 	return m
 }
 
-// Every workspace tool works on the user's own machine, with nothing of it on this one.
 func TestToolsRunOnTheUsersMachine(t *testing.T) {
 	machines := map[string]*memoryMachine{
 		"a": machineWith(map[string]string{"src/a.go": "package a\n// needle\n", ".git/HEAD": "ref\n", ".gitignore": "gen/\n", "gen/x.go": "needle\n"}),
@@ -192,8 +189,6 @@ func TestToolsRunOnTheUsersMachine(t *testing.T) {
 	}
 }
 
-// A call runs in the environment its conversation names: BoxIn has the last word over BoxFor, which serves a
-// conversation that names none.
 func TestACallRunsInTheEnvironmentItNames(t *testing.T) {
 	roots := []string{machineRoot}
 	here := machineWith(map[string]string{"here.txt": "this machine\n"})
@@ -230,7 +225,6 @@ func TestACallRunsInTheEnvironmentItNames(t *testing.T) {
 	}
 }
 
-// A host that serves this machine with the box the provider was made with answers BoxIn with no box.
 func TestBoxInMayLeaveTheCallInTheProvidersBox(t *testing.T) {
 	here := machineWith(map[string]string{"here.txt": "this machine\n"})
 	r, err := New(Options{
@@ -267,7 +261,6 @@ func TestACommandPreparedOnAMachineIsConfined(t *testing.T) {
 	}
 }
 
-// brokenMachine cannot open one of its files, as a sandbox can fail to answer for one.
 type brokenMachine struct {
 	*memoryMachine
 	broken string
@@ -280,7 +273,6 @@ func (m brokenMachine) Open(ctx context.Context, p string) (io.ReadCloser, error
 	return m.memoryMachine.Open(ctx, p)
 }
 
-// A file grep cannot read is not a file without matches: a folder search counts it, and a search of it fails.
 func TestGrepReportsWhatItCouldNotRead(t *testing.T) {
 	m := brokenMachine{machineWith(map[string]string{"a.txt": "needle\n", "b.txt": "needle\n"}), machineRoot + "/b.txt"}
 	r, err := New(Options{Box: sandbox.Remote(m, []string{machineRoot}, "cloud")})

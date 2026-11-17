@@ -30,7 +30,6 @@ func (c *Config) normalize(base string) error {
 		if base == "" {
 			return fmt.Errorf("workspace_dirs: at least one command directory is required")
 		}
-		// Without workspace dirs commands run in a scratch folder, never in the agent home, which holds the database.
 		scratch := filepath.Join(base, scratchDir)
 		if err := os.MkdirAll(scratch, 0o755); err != nil {
 			return fmt.Errorf("workspace_dirs: %w", err)
@@ -61,7 +60,6 @@ func (c *Config) normalize(base string) error {
 	if c.MaxCommandTimeoutSec < c.CommandTimeoutSec {
 		return fmt.Errorf("max_command_timeout_sec must be >= command_timeout_sec")
 	}
-	// The sandbox checks the rest: mode, domains, output limit and environment names.
 	return nil
 }
 

@@ -1,7 +1,3 @@
-// Command eval runs one benchmark task through ollupi's agent inside the task's container and exits: one user, one
-// conversation, one turn. The container is the sandbox, so commands run with full access and nothing asks for
-// approval; a question the model asks is answered that no one is there. It is configured by the environment (see
-// eval/README.md), prints the agent's last message, and exits 1 when the turn does not complete.
 package main
 
 import (
@@ -31,16 +27,13 @@ import (
 	"github.com/0xfakeSpike/ollupi/tool/builtin/web"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/workspace"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
-	// Some task images ship no CA certificates; with none on the system, TLS falls back to the roots built in here.
 	_ "golang.org/x/crypto/x509roots/fallback"
 )
 
-// version is set at build time, by build.sh, to the commit it was built from.
 var version = "dev"
 
 const noOneThere = "No one is available to answer: decide for yourself and carry on with the task."
 
-// user is the one user of a run.
 const user = "eval"
 
 func main() {
@@ -110,8 +103,6 @@ func main() {
 		log.Fatalf("eval: %v", err)
 	}
 
-	// The feed says what each commit did: the run is logged and kept as it goes, a question is answered that no one
-	// is there, and the turn of the conversation ending ends the run.
 	ended := make(chan conversation.Ending, 1)
 	changed := make(chan struct{}, 1)
 	sub := h.Store.Feed().Subscribe(user, func(e store.Event) {
@@ -213,7 +204,6 @@ func number(name string, fallback int) int {
 	return n
 }
 
-// The run as eval/trace.py and eval/trials.py read it.
 type runTurn struct {
 	Status      string             `json:"status"`
 	Error       string             `json:"error,omitempty"`
@@ -238,7 +228,6 @@ type runItem struct {
 	CompletedAt  *time.Time                 `json:"completedAt,omitempty"`
 }
 
-// writeRun replaces the file whole, so a reader never sees half of it. A response's stats go with its first item.
 func writeRun(path string, v conversation.View, turnID string) error {
 	t, _ := v.TurnOf(turnID)
 	run := runTurn{Status: "inProgress", Model: t.Model, Usage: t.Usage, StartedAt: t.QueuedAt}
@@ -277,7 +266,6 @@ func writeRun(path string, v conversation.View, turnID string) error {
 	return os.Rename(tmp, path)
 }
 
-// logItem writes a line for each tool call and message as it ends, so the harness's log shows the run.
 func logItem(it conversation.Item) {
 	switch it.Kind {
 	case conversation.ItemToolCall:
@@ -289,7 +277,6 @@ func logItem(it conversation.Item) {
 	}
 }
 
-// answer answers that no one is there.
 func answer(a *app.App, thread string, it conversation.Item) {
 	req, err := ask.Decode(it.Input.Request)
 	if err != nil {

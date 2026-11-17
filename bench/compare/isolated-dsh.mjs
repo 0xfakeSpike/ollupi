@@ -1,7 +1,3 @@
-// The one-process-per-session baseline for dsh, as ollupi's `bench isolated`: k dsh SDK runtimes, each of which ran one
-// short turn in its own session and now sits idle; reports each process's resident memory.
-//
-//   node isolated-dsh.mjs --k 10
 import path from "node:path";
 import { args, footprintMB, freshDir, report, rssMB, sleep, startProvider } from "./common.mjs";
 import { startDsh } from "./dsh/client.mjs";

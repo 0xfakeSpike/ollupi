@@ -14,9 +14,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/store"
 )
 
-// oldDatabase writes, in the last schema of the engine before v0.16.0, a user with a workspace, a task and a note,
-// and a conversation of two turns: one that ended after a call approved, a question answered and a subagent
-// launched, and one the old engine left waiting on an approval.
 func oldDatabase(t *testing.T, home string) {
 	t.Helper()
 	g, err := sqlitedb.Open(filepath.Join(home, "data", legacyFile))
@@ -40,7 +37,6 @@ func oldDatabase(t *testing.T, home string) {
 	}{
 		{"INSERT OR IGNORE INTO users(id, created_at) VALUES ('default', ?)", []any{at(0)}},
 		{"INSERT OR REPLACE INTO settings(user_id, redaction, redaction_key, permissions, memory) VALUES ('default', 1, 'the-key', '{\"approvalPolicy\":\"on-request\"}', 1)", nil},
-		// The old migrations made the default user this machine as its environment; it is named here.
 		{"UPDATE environments SET id = 'env' WHERE user_id = 'default' AND kind = 'local'", nil},
 		{"INSERT INTO workspaces(id, user_id, name, root_path, settings, created_at, updated_at) VALUES ('ws', 'default', 'notes', '/notes', '{}', ?, ?)", []any{at(0), at(0)}},
 		{`INSERT INTO threads(id, user_id, workspace_id, environment_id, title, settings, created_at, updated_at, replied_at, read_at)
