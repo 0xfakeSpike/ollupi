@@ -169,6 +169,13 @@ func (r *Runner) keep(tx store.Tx, s *step, it conversation.Item, res tool.Resul
 	return err
 }
 
+// Launched is the output of a call that launched a subagent.
+type Launched struct {
+	Subagent    string `json:"subagent"`
+	Description string `json:"description"`
+	Note        string `json:"note"`
+}
+
 // launch starts a subagent's conversation with its task, on the model of the turn that launched it; the scheduler
 // finds it runnable, and its ending reports back.
 func launch(tx store.Tx, s *step, it conversation.Item, l tool.Launch) error {
@@ -185,8 +192,8 @@ func launch(tx store.Tx, s *step, it conversation.Item, l tool.Launch) error {
 	if err != nil {
 		return err
 	}
-	output, _ := json.Marshal(map[string]string{"subagent": child.ID, "description": l.Title, // strings: it cannot fail
-		"note": "It works on its own; its report comes back to this conversation when it ends."})
+	output, _ := json.Marshal(Launched{Subagent: child.ID, Description: l.Title, // strings: it cannot fail
+		Note: "It works on its own; its report comes back to this conversation when it ends."})
 	_, err = tx.Append(s.th.ID,
 		conversation.Entry{Turn: s.turn.ID, Item: it.ID, Body: conversation.ChildLaunched{Child: child.ID}},
 		conversation.Entry{Turn: s.turn.ID, Item: it.ID, Body: conversation.ToolResult{Output: output}})

@@ -247,6 +247,13 @@ func (r reader) Threads(owner string, f store.ThreadFilter) ([]store.Thread, boo
 	return out[:f.Limit], true, nil
 }
 
+func (r reader) Waiting(owner string) ([]string, error) {
+	var ids []string
+	err := r.g.Raw("SELECT id FROM threads WHERE user_id = ? AND status IN ?", owner,
+		[]string{string(conversation.ThreadWaitingOnApproval), string(conversation.ThreadWaitingOnUserInput)}).Scan(&ids).Error
+	return ids, err
+}
+
 func (r reader) Children(thread string) ([]store.Thread, error) {
 	return threads(r.g, "SELECT * FROM threads WHERE parent_id = ? ORDER BY created_at, id", thread)
 }
@@ -518,7 +525,6 @@ func (t *tx) DeleteThread(id string) error {
 		return fmt.Errorf("store: delete thread %s: %w", id, err)
 	}
 	t.note(id, th.User).change.Deleted = true
-	t.note(id, th.User).written = true
 	for _, j := range jobs {
 		t.owned = append(t.owned, store.Event{User: th.User, Thread: id, Owned: &store.Owned{CronJobDeleted: j.ID}})
 	}

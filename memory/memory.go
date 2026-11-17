@@ -36,6 +36,8 @@ const (
 	Procedure  Kind = "procedure"
 )
 
+var Kinds = []Kind{Preference, Decision, Fact, Procedure}
+
 type Status string
 
 const (
@@ -44,6 +46,8 @@ const (
 	// Forgotten keeps a note's topic and sources, without its text, so that nothing learns it again.
 	Forgotten Status = "forgotten"
 )
+
+var Statuses = []Status{Active, Retired, Forgotten}
 
 // Place is where notes are kept: the global scope, the general one, or one workspace's.
 type Place struct {

@@ -180,11 +180,10 @@ func (t *tx) number() (int64, error) {
 
 // pending is what the transaction did to one thread, for the feed.
 type pending struct {
-	user    string
-	change  store.Change
-	items   []string
-	turns   []string
-	written bool
+	user   string
+	change store.Change
+	items  []string
+	turns  []string
 }
 
 func (t *tx) note(thread, owner string) *pending {
@@ -205,7 +204,7 @@ func (t *tx) CreateThread(th store.Thread) error {
 	if err != nil {
 		return fmt.Errorf("store: create thread %s: %w", th.ID, err)
 	}
-	t.note(th.ID, th.User).written = true
+	t.note(th.ID, th.User)
 	return nil
 }
 
@@ -219,7 +218,7 @@ func (t *tx) UpdateThread(th store.Thread) error {
 	if res.RowsAffected == 0 {
 		return fmt.Errorf("store: thread %s: %w", th.ID, store.ErrNotFound)
 	}
-	t.note(th.ID, th.User).written = true
+	t.note(th.ID, th.User)
 	return nil
 }
 
@@ -245,6 +244,7 @@ func (t *tx) Append(thread string, entries ...conversation.Entry) (conversation.
 		return conversation.View{}, err
 	}
 	p := t.note(thread, th.User)
+	before, _ := v.Active()
 	now := time.Now().UTC()
 	appended := make([]conversation.Entry, 0, len(entries))
 	for _, e := range entries {
@@ -277,6 +277,9 @@ func (t *tx) Append(thread string, entries ...conversation.Entry) (conversation.
 		if _, ended := e.Body.(conversation.TurnEnded); ended && th.Parent == "" {
 			th.Replied = &e.At
 		}
+	}
+	if after, _ := v.Active(); after.ID != before.ID && after.ID != "" && !slices.Contains(p.turns, after.ID) {
+		p.turns = append(p.turns, after.ID)
 	}
 	t.views[thread] = v
 	if err := t.persist(thread, th, v, p, appended, now); err != nil {
@@ -353,7 +356,8 @@ func (t *tx) persist(thread string, th store.Thread, v conversation.View, p *pen
 	if err != nil {
 		return err
 	}
-	p.change.Status, p.change.Runnable, p.change.At = v.Status(), runnable, now
+	active, _ := v.Active()
+	p.change.Status, p.change.Active, p.change.Runnable, p.change.At = v.Status(), active.ID, runnable, now
 	p.change.Items, p.change.Turns = nil, nil
 	for _, id := range p.items {
 		it, _ := v.ItemOf(id)
@@ -371,7 +375,7 @@ func (t *tx) events() []store.Event {
 	for _, thread := range t.order {
 		p := t.threads[thread]
 		change := p.change
-		if p.written && !change.Deleted {
+		if !change.Deleted {
 			if th, err := t.Thread(thread); err == nil {
 				change.Header = &th
 				change.Status, change.Runnable = th.Status, th.Runnable

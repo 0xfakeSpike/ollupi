@@ -12,15 +12,17 @@ import (
 	"github.com/google/uuid"
 )
 
-// CronJobs are a user's conversation's tasks; a subagent has none.
+// CronJobs are a user's conversation's tasks, or all of the user's when thread is ""; a subagent has none.
 func (a *App) CronJobs(ctx context.Context, u, thread string) ([]user.CronJob, error) {
 	var jobs []user.CronJob
 	err := a.st.Read(ctx, func(r store.Reader) error {
-		th, err := topThread(r, u, thread)
-		if err != nil {
-			return err
+		if thread != "" {
+			if _, err := topThread(r, u, thread); err != nil {
+				return err
+			}
 		}
-		jobs, err = r.CronJobs(u, th.ID)
+		var err error
+		jobs, err = r.CronJobs(u, thread)
 		return err
 	})
 	return jobs, err

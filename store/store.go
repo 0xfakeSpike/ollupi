@@ -50,6 +50,8 @@ type Reader interface {
 	Due(now time.Time) ([]user.CronJob, error)
 	// Threads are a user's own conversations, the latest active first; more says whether there are others after them.
 	Threads(user string, f ThreadFilter) (threads []Thread, more bool, err error)
+	// Waiting are a user's conversations, subagents' among them, that wait on the user for an approval or an answer.
+	Waiting(user string) ([]string, error)
 	// Children are the conversations of the subagents a conversation launched.
 	Children(thread string) ([]Thread, error)
 	Search(user string, terms []string, workspace string, limit int) (Found, error)
@@ -149,7 +151,7 @@ type Owned struct {
 }
 
 // Change is what one commit did to one thread: the entries appended to its log and the items and turns they changed,
-// as they are now, its header when the commit wrote it, and its status.
+// as they are now, and its header and status as the commit left them.
 type Change struct {
 	Entries []conversation.Entry
 	Items   []conversation.Item
@@ -157,6 +159,8 @@ type Change struct {
 	Header  *Thread
 	Deleted bool
 	Status  conversation.ThreadStatus
+	// Active is the turn in progress, "" when none is; a turn that comes to be in progress is among Turns.
+	Active string
 	// Runnable says whether the thread's turn in progress can run now.
 	Runnable bool
 	At       time.Time

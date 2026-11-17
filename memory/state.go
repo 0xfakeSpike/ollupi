@@ -21,6 +21,8 @@ const (
 	Storage         FailureCode = "storage"
 )
 
+var FailureCodes = []FailureCode{ModelRequest, InvalidResponse, BadEvidence, Storage}
+
 type Failure struct {
 	Code  FailureCode `json:"code"`
 	Error string      `json:"error"`
