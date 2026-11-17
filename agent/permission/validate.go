@@ -43,7 +43,7 @@ func checkLayer(l Layer, previous *Settings, registry *tools.Registry) error {
 	return nil
 }
 
-func ValidateLayer(base []Layer, previous Settings, layer Layer, registry *tools.Registry) error {
+func validateLayer(base []Layer, previous Settings, layer Layer, registry *tools.Registry) error {
 	if err := checkLayer(layer, &previous, registry); err != nil {
 		return fmt.Errorf("%w: %s: %v", ErrInvalidSettings, layer.Of, err)
 	}
