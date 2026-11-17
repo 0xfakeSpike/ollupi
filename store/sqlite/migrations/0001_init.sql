@@ -101,11 +101,13 @@ CREATE TABLE turns (
   thread_id text NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
   id text NOT NULL,
   ord integer NOT NULL,
-  ended integer NOT NULL DEFAULT 0,
+  -- ended_seq is the commit that ended the turn, as the feed numbers them; NULL while it has not ended.
+  ended_seq integer,
   body text NOT NULL CHECK (json_valid(body)),
   PRIMARY KEY (thread_id, id)
 );
-CREATE INDEX turns_open ON turns(thread_id, ord) WHERE ended = 0;
+CREATE INDEX turns_open ON turns(thread_id, ord) WHERE ended_seq IS NULL;
+CREATE INDEX turns_ended ON turns(ended_seq, thread_id, id) WHERE ended_seq IS NOT NULL;
 
 -- text is a message's, for search; the rest of an item is its body.
 CREATE TABLE items (
@@ -142,6 +144,35 @@ CREATE TABLE responses (
   PRIMARY KEY (thread_id, id)
 );
 CREATE INDEX responses_thread_seq ON responses(thread_id, seq);
+
+-- workspace_id is '' outside the workspace scope, so that a topic is unique at each place.
+CREATE TABLE memories (
+  id text PRIMARY KEY,
+  user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  scope text NOT NULL CHECK (scope IN ('global', 'general', 'workspace')),
+  workspace_id text NOT NULL DEFAULT '',
+  origin_workspace_id text NOT NULL DEFAULT '',
+  topic text NOT NULL,
+  kind text NOT NULL,
+  text text NOT NULL,
+  status text NOT NULL CHECK (status IN ('active', 'retired', 'forgotten')),
+  user_edited integer NOT NULL DEFAULT 0,
+  sources text NOT NULL CHECK (json_valid(sources)),
+  created_at datetime NOT NULL,
+  updated_at datetime NOT NULL,
+  CHECK ((scope = 'workspace') = (workspace_id <> '')),
+  CHECK (scope = 'global' OR origin_workspace_id = '')
+);
+CREATE UNIQUE INDEX memories_topic ON memories(user_id, scope, workspace_id, topic);
+
+-- How far extraction has read a user's ended turns, and how it went.
+CREATE TABLE memory_state (
+  user_id text PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  cursor_seq integer NOT NULL,
+  cursor_thread text NOT NULL,
+  cursor_turn text NOT NULL,
+  state text NOT NULL CHECK (json_valid(state))
+);
 
 -- One row: the latest commit, as the feed numbers them.
 CREATE TABLE feed (

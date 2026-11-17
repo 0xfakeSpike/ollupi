@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/conversation"
+	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/user"
 )
 
@@ -64,6 +65,13 @@ type Reader interface {
 	Runnable(limit int, except []string) ([]Runnable, error)
 	// Seq is the latest commit, as the feed numbers them: a view read now holds every change up to it.
 	Seq() (int64, error)
+
+	// Memories are a user's notes at places, or at every place when none is given, the latest changed first.
+	Memories(user string, places ...memory.Place) ([]memory.Memory, error)
+	Memory(user, id string) (memory.Memory, error)
+	MemoryState(user string) (memory.State, error)
+	// Ended are a user's turns ended after the one at after, in the order memory.Cursor reads them, at most limit.
+	Ended(user string, after memory.Cursor, limit int) ([]memory.Cursor, error)
 }
 
 type Tx interface {
@@ -79,6 +87,9 @@ type Tx interface {
 	DeleteMCPServer(user, name string) error
 	PutCronJob(j user.CronJob) error
 	DeleteCronJob(id string) error
+	// PutMemory adds or replaces a note; two at one place cannot share a topic.
+	PutMemory(m memory.Memory) error
+	SetMemoryState(user string, s memory.State) error
 	// DeleteThread deletes a conversation with its log, its subagents' and its scheduled tasks.
 	DeleteThread(id string) error
 	CreateThread(t Thread) error
@@ -130,6 +141,7 @@ type Owned struct {
 	MCPServerDeleted   string
 	CronJob            *user.CronJob
 	CronJobDeleted     string
+	Memory             *memory.Memory
 }
 
 // Change is what one commit did to one thread: the entries appended to its log and the items and turns they changed,
