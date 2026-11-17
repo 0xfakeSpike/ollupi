@@ -9,9 +9,9 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/cron"
+	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/0xfakeSpike/ollupi/tool"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
-	"github.com/0xfakeSpike/ollupi/user"
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
@@ -24,9 +24,9 @@ const (
 
 // Jobs are the commands on a user's conversation's tasks, which the app has.
 type Jobs interface {
-	CronJobs(ctx context.Context, u, thread string) ([]user.CronJob, error)
-	CreateCronJob(ctx context.Context, u, thread, name, spec, prompt string, times *int) (user.CronJob, error)
-	PauseCronJob(ctx context.Context, u, thread, name string, paused bool) (user.CronJob, error)
+	CronJobs(ctx context.Context, u, thread string) ([]store.Task, error)
+	CreateCronJob(ctx context.Context, u, thread, name, spec, prompt string, times *int) (store.Task, error)
+	PauseCronJob(ctx context.Context, u, thread, name string, paused bool) (store.Task, error)
 	DeleteCronJob(ctx context.Context, u, thread, name string) error
 }
 
@@ -36,7 +36,9 @@ type Provider struct {
 }
 
 // New takes the zone the deployment's calendar reads specs in, which the model is told.
-func New(jobs Jobs, location *time.Location) Provider { return Provider{jobs: jobs, location: location} }
+func New(jobs Jobs, location *time.Location) Provider {
+	return Provider{jobs: jobs, location: location}
+}
 
 func (Provider) Name() (string, string) {
 	return agent.CronProvider, "Scheduled tasks: messages sent to this conversation later, on a cron schedule, repeatedly or a set number of times."
@@ -99,17 +101,18 @@ func (p Provider) Tools(context.Context) ([]kit.Spec, error) {
 
 // job is a task as the model reads it.
 type job struct {
-	Name    string    `json:"name"`
-	Spec    string    `json:"spec"`
-	Prompt  string    `json:"prompt"`
-	Times   *int      `json:"times,omitempty"`
-	Runs    int       `json:"runs"`
-	Paused  bool      `json:"paused"`
-	NextRun time.Time `json:"nextRun"`
+	Name    string     `json:"name"`
+	Spec    string     `json:"spec"`
+	Prompt  string     `json:"prompt"`
+	Times   *int       `json:"times,omitempty"`
+	Runs    int        `json:"runs"`
+	Paused  bool       `json:"paused"`
+	NextRun time.Time  `json:"nextRun"`
+	LastRun *time.Time `json:"lastRun,omitempty"`
 }
 
-func shown(j user.CronJob) job {
-	return job{Name: j.Name, Spec: j.Spec, Prompt: j.Prompt, Times: j.Times, Runs: j.Runs, Paused: j.Paused, NextRun: j.NextRun}
+func shown(j store.Task) job {
+	return job{Name: j.Name, Spec: j.Spec, Prompt: j.Prompt, Times: j.Times, Runs: j.Runs, Paused: j.Paused, NextRun: j.NextRun, LastRun: j.LastRun}
 }
 
 func (p Provider) Invoke(ctx context.Context, c tool.Call) (kit.Result, error) {

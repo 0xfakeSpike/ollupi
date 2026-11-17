@@ -129,6 +129,11 @@ func TestADueTaskIsSentAndARunStillWaitingIsSkipped(t *testing.T) {
 	if len(v.Turns) != 2 {
 		t.Fatalf("the first run is in progress, so the second waits behind it: %d turns", len(v.Turns))
 	}
+	var listed []store.Task
+	f.st.Read(ctx, func(r store.Reader) (err error) { listed, err = r.CronJobs("u", ""); return err })
+	if len(listed) != 1 || listed[0].LastTurn != v.Turns[1].ID || listed[0].LastRun == nil || !listed[0].LastRun.Equal(v.Turns[1].QueuedAt) {
+		t.Errorf("the task's last run %+v", listed)
+	}
 	if err := sendDue(ctx, f.st, f.cal, queue, at.Add(2*time.Hour)); err != nil {
 		t.Fatal(err)
 	}

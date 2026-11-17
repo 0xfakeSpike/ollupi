@@ -315,9 +315,9 @@ func (t *tx) persist(thread string, th store.Thread, v conversation.View, p *pen
 			}
 			ended = &seq
 		}
-		if err := t.g.Exec(`INSERT INTO turns(thread_id, id, ord, ended_seq, body) VALUES (?, ?, ?, ?, ?)
+		if err := t.g.Exec(`INSERT INTO turns(thread_id, id, ord, ended_seq, cron_job, body) VALUES (?, ?, ?, ?, ?, ?)
 			ON CONFLICT(thread_id, id) DO UPDATE SET ended_seq = COALESCE(turns.ended_seq, excluded.ended_seq), body = excluded.body`,
-			thread, turn.ID, ord, ended, string(body)).Error; err != nil {
+			thread, turn.ID, ord, ended, turn.CronJob, string(body)).Error; err != nil {
 			return err
 		}
 	}
@@ -350,14 +350,17 @@ func (t *tx) persist(thread string, th store.Thread, v conversation.View, p *pen
 		}
 	}
 	runnable := v.Runnable()
-	err := t.g.Exec(`UPDATE threads SET head = ?, status = ?, updated_at = ?, replied_at = ?,
+	err := t.g.Exec(`UPDATE threads SET head = ?, own_status = ?, updated_at = ?, replied_at = ?,
 		runnable_since = CASE WHEN ? THEN COALESCE(runnable_since, ?) ELSE NULL END WHERE id = ?`,
 		v.Head, string(v.Status()), now, th.Replied, runnable, now, thread).Error
 	if err != nil {
 		return err
 	}
+	if err := t.rollUp(thread); err != nil {
+		return err
+	}
 	active, _ := v.Active()
-	p.change.Status, p.change.Active, p.change.Runnable, p.change.At = v.Status(), active.ID, runnable, now
+	p.change.Active, p.change.Runnable, p.change.At = active.ID, runnable, now
 	p.change.Items, p.change.Turns = nil, nil
 	for _, id := range p.items {
 		it, _ := v.ItemOf(id)
@@ -366,6 +369,38 @@ func (t *tx) persist(thread string, th store.Thread, v conversation.View, p *pen
 	for _, id := range p.turns {
 		turn, _ := v.TurnOf(id)
 		p.change.Turns = append(p.change.Turns, turn)
+	}
+	return nil
+}
+
+var waitsOnUser = []string{string(conversation.ThreadWaitingOnApproval), string(conversation.ThreadWaitingOnUserInput)}
+
+// rollUp brings a thread's status, then each of its parents', up to date with the subagents', each of whose status a
+// parent's takes in; a parent whose status stays as it was is noted as changed by none.
+func (t *tx) rollUp(id string) error {
+	for id != "" {
+		var row struct {
+			UserID    string
+			ParentID  *string
+			Status    string
+			OwnStatus string
+		}
+		if err := t.g.Raw("SELECT user_id, parent_id, status, own_status FROM threads WHERE id = ?", id).Take(&row).Error; err != nil {
+			return err
+		}
+		var subagents []conversation.ThreadStatus
+		if err := t.g.Raw("SELECT status FROM threads WHERE parent_id = ? AND status IN ?", id, waitsOnUser).Scan(&subagents).Error; err != nil {
+			return err
+		}
+		status := conversation.RollUp(conversation.ThreadStatus(row.OwnStatus), subagents)
+		if string(status) == row.Status {
+			return nil
+		}
+		if err := t.g.Exec("UPDATE threads SET status = ? WHERE id = ?", string(status), id).Error; err != nil {
+			return err
+		}
+		t.note(id, row.UserID)
+		id = deref(row.ParentID)
 	}
 	return nil
 }

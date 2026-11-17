@@ -30,6 +30,10 @@ func (m *model) Chat(_ context.Context, req llm.ChatRequest, onDelta func(llm.De
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	resp := m.answer(req)
+	if resp.Message.ReasoningContent != "" {
+		onDelta(llm.Delta{Reasoning: resp.Message.ReasoningContent})
+		time.Sleep(20 * time.Millisecond)
+	}
 	if resp.Message.Content != "" {
 		onDelta(llm.Delta{Content: resp.Message.Content})
 	}
@@ -169,6 +173,32 @@ func TestATurnReadsAFileAndAnswers(t *testing.T) {
 	}
 	if strings.Join(deltas, "") != "it says hello" {
 		t.Errorf("deltas %q", deltas)
+	}
+}
+
+func TestAResponseKeepsWhatItUsedAndHowLongItThought(t *testing.T) {
+	f := setup(t, nil)
+	f.m.answer = func(llm.ChatRequest) llm.ChatResponse {
+		resp := answer("Monday")
+		resp.Message.ReasoningContent = "weighing the days"
+		resp.Usage, resp.UsageReported = llm.Usage{PromptTokens: 100, CompletionTokens: 7}, true
+		return resp
+	}
+	f.ask("th", "which day?")
+	f.run("th")
+	v := f.view("th")
+	var thought conversation.Item
+	for _, it := range v.Items {
+		if it.Kind == conversation.ItemReasoning {
+			thought = it
+		}
+	}
+	if thought.CompletedAt == nil || thought.CompletedAt.Sub(thought.StartedAt) < 20*time.Millisecond {
+		t.Errorf("the thinking %+v", thought)
+	}
+	used := v.Turns[0].Responses
+	if len(used) != 1 || used[0].Response != thought.Response || used[0].Usage.InputTokens != 100 || used[0].Stats.BudgetTokens == 0 {
+		t.Errorf("the responses %+v", used)
 	}
 }
 

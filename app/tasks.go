@@ -8,13 +8,12 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/cron"
 	"github.com/0xfakeSpike/ollupi/store"
-	"github.com/0xfakeSpike/ollupi/user"
 	"github.com/google/uuid"
 )
 
 // CronJobs are a user's conversation's tasks, or all of the user's when thread is ""; a subagent has none.
-func (a *App) CronJobs(ctx context.Context, u, thread string) ([]user.CronJob, error) {
-	var jobs []user.CronJob
+func (a *App) CronJobs(ctx context.Context, u, thread string) ([]store.Task, error) {
+	var jobs []store.Task
 	err := a.st.Read(ctx, func(r store.Reader) error {
 		if thread != "" {
 			if _, err := topThread(r, u, thread); err != nil {
@@ -28,11 +27,12 @@ func (a *App) CronJobs(ctx context.Context, u, thread string) ([]user.CronJob, e
 	return jobs, err
 }
 
-func (a *App) CreateCronJob(ctx context.Context, u, thread, name, spec, prompt string, times *int) (user.CronJob, error) {
+func (a *App) CreateCronJob(ctx context.Context, u, thread, name, spec, prompt string, times *int) (store.Task, error) {
 	job, err := a.cal.Job(uuid.NewString(), thread, name, spec, prompt, times, time.Now().UTC())
 	if err != nil {
-		return user.CronJob{}, err
+		return store.Task{}, err
 	}
+	var task store.Task
 	err = a.st.Update(ctx, func(tx store.Tx) error {
 		if _, err := topThread(tx, u, thread); err != nil {
 			return err
@@ -49,23 +49,27 @@ func (a *App) CreateCronJob(ctx context.Context, u, thread, name, spec, prompt s
 				return fmt.Errorf("%w: this conversation already has a task named %q", cron.ErrInvalidJob, job.Name)
 			}
 		}
-		return tx.PutCronJob(job)
+		if err := tx.PutCronJob(job); err != nil {
+			return err
+		}
+		task, err = cronJob(tx, u, thread, job.Name)
+		return err
 	})
-	return job, err
+	return task, err
 }
 
-func (a *App) PauseCronJob(ctx context.Context, u, thread, name string, paused bool) (user.CronJob, error) {
-	var job user.CronJob
+func (a *App) PauseCronJob(ctx context.Context, u, thread, name string, paused bool) (store.Task, error) {
+	var task store.Task
 	err := a.st.Update(ctx, func(tx store.Tx) (err error) {
-		if job, err = cronJob(tx, u, thread, name); err != nil {
+		if task, err = cronJob(tx, u, thread, name); err != nil {
 			return err
 		}
-		if job, err = a.cal.Pause(job, paused, time.Now().UTC()); err != nil {
+		if task.CronJob, err = a.cal.Pause(task.CronJob, paused, time.Now().UTC()); err != nil {
 			return err
 		}
-		return tx.PutCronJob(job)
+		return tx.PutCronJob(task.CronJob)
 	})
-	return job, err
+	return task, err
 }
 
 func (a *App) DeleteCronJob(ctx context.Context, u, thread, name string) error {
@@ -79,13 +83,13 @@ func (a *App) DeleteCronJob(ctx context.Context, u, thread, name string) error {
 }
 
 // cronJob is a task of a user's conversation, which names it.
-func cronJob(r store.Reader, u, thread, name string) (user.CronJob, error) {
+func cronJob(r store.Reader, u, thread, name string) (store.Task, error) {
 	if _, err := topThread(r, u, thread); err != nil {
-		return user.CronJob{}, err
+		return store.Task{}, err
 	}
 	jobs, err := r.CronJobs(u, thread)
 	if err != nil {
-		return user.CronJob{}, err
+		return store.Task{}, err
 	}
 	name = strings.TrimSpace(name)
 	for _, j := range jobs {
@@ -93,5 +97,5 @@ func cronJob(r store.Reader, u, thread, name string) (user.CronJob, error) {
 			return j, nil
 		}
 	}
-	return user.CronJob{}, fmt.Errorf("this conversation has no task named %q: %w", name, store.ErrNotFound)
+	return store.Task{}, fmt.Errorf("this conversation has no task named %q: %w", name, store.ErrNotFound)
 }
