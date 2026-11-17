@@ -435,8 +435,7 @@ func connsShard(args []string) {
 // oneShard places every user on the one shard at its address.
 type oneShard string
 
-func (oneShard) Assign(context.Context, string) (string, error)    { return "s", nil }
-func (s oneShard) Address(context.Context, string) (string, error) { return string(s), nil }
+func (s oneShard) Locate(context.Context, string) (string, string, error) { return "s", string(s), nil }
 
 // connsRouter is a router in front of one shard, as conns starts it.
 func connsRouter(args []string) {
