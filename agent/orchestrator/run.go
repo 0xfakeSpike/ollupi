@@ -2,33 +2,27 @@ package orchestrator
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/0xfakeSpike/ollupi/agent/role"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
-func (o *Orchestrator) run(threadID string, sl *slot) {
+// A turn that ended before its run began is not in progress, and afterRun leaves it as it is.
+func (o *Orchestrator) run(threadID string, sl *slot) (bool, error) {
 	if err := sl.ctx.Err(); err != nil {
-		o.post(func() { o.afterRun(threadID, sl, false, err) })
-		return
+		return false, err
 	}
 	turn, err := o.store.Turn(sl.turnID)
-	if errors.Is(err, db.ErrNotFound) || err == nil && turn.Status != db.TurnInProgress {
-		o.post(func() { o.release(threadID) })
-		return
-	}
-	var t db.ThreadRow
-	if err == nil {
-		t, err = o.store.ThreadRow(threadID)
-	}
 	if err != nil {
-		o.post(func() {
-			o.release(threadID)
-			o.failTurn(sl.turnID, db.TurnFailed, "the thread could not be read from storage")
-		})
-		return
+		return false, fmt.Errorf("orchestrator: the turn could not be read from storage: %w", err)
+	}
+	if turn.Status != db.TurnInProgress {
+		return false, nil
+	}
+	t, err := o.store.ThreadRow(threadID)
+	if err != nil {
+		return false, fmt.Errorf("orchestrator: the thread could not be read from storage: %w", err)
 	}
 	limit := fmt.Errorf("orchestrator: the turn reached its time limit of %s", o.runLimit)
 	ctx, cancel := context.WithTimeoutCause(sl.ctx, o.runLimit, limit)
@@ -38,7 +32,7 @@ func (o *Orchestrator) run(threadID string, sl *slot) {
 		err = limit
 	}
 	o.store.AddUsage(threadID, turn.ID, usage)
-	o.post(func() { o.afterRun(threadID, sl, final, err) })
+	return final, err
 }
 
 func (o *Orchestrator) runTurn(ctx context.Context, t db.ThreadRow, turn db.TurnRow) (bool, db.Usage, error) {

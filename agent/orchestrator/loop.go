@@ -9,6 +9,22 @@ var (
 	errCrashed = errors.New("orchestrator: an internal error stopped this")
 )
 
+type wake struct{ threadID string }
+
+type started struct{ threadID string }
+
+type interrupt struct {
+	threadID, turnID string
+	reply            chan error
+}
+
+type finished struct {
+	threadID string
+	sl       *slot
+	final    bool
+	err      error
+}
+
 func (o *Orchestrator) Wait() { o.done.Wait() }
 
 func (o *Orchestrator) loop() {
@@ -17,41 +33,34 @@ func (o *Orchestrator) loop() {
 		select {
 		case <-o.ctx.Done():
 			return
-		case fn := <-o.events:
-			o.step(fn)
+		case m := <-o.inbox:
+			o.handle(m)
 		}
 	}
 }
 
-func (o *Orchestrator) step(fn func()) {
-	defer func() { recover() }() // a step that panics is dropped, so that the loop goes on
-	fn()
+func (o *Orchestrator) handle(m any) {
+	defer func() { recover() }() // a message whose handling panics is dropped, so that the loop goes on
+	switch m := m.(type) {
+	case wake:
+		o.reconcile(m.threadID)
+	case started:
+		o.announce(m.threadID)
+	case interrupt:
+		err := errCrashed
+		defer func() { m.reply <- err }()
+		err = o.interrupt(m.threadID, m.turnID)
+	case finished:
+		o.afterRun(m.threadID, m.sl, m.final, m.err)
+	}
 	o.admit()
 }
 
-func (o *Orchestrator) post(fn func()) bool {
+func (o *Orchestrator) post(m any) bool {
 	select {
-	case o.events <- fn:
+	case o.inbox <- m:
 		return true
 	case <-o.ctx.Done():
 		return false
-	}
-}
-
-func (o *Orchestrator) call(fn func() error) error {
-	done := make(chan error, 1)
-	posted := o.post(func() {
-		err := errCrashed
-		defer func() { done <- err }()
-		err = fn()
-	})
-	if !posted {
-		return errStopped
-	}
-	select {
-	case err := <-done:
-		return err
-	case <-o.ctx.Done():
-		return errStopped
 	}
 }
