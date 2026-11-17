@@ -31,7 +31,7 @@ type Orchestrator struct {
 	res *resources.Resources
 	ev  event.Emitter
 
-	events       chan func()
+	inbox        chan any
 	slotByThread map[string]*slot
 	slotsOfUser  map[string]int
 	done         sync.WaitGroup
@@ -59,7 +59,7 @@ func (o *Orchestrator) Start(ctx context.Context, res *resources.Resources) erro
 	if o.runLimit <= 0 {
 		o.runLimit = defaultRunLimit
 	}
-	o.events, o.slotByThread, o.slotsOfUser = make(chan func()), map[string]*slot{}, map[string]int{}
+	o.inbox, o.slotByThread, o.slotsOfUser = make(chan any), map[string]*slot{}, map[string]int{}
 	ctx, stop := context.WithCancel(ctx)
 	fail := func(err error) error {
 		stop()

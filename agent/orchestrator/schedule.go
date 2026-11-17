@@ -95,12 +95,12 @@ func (o *Orchestrator) launch(user, threadID, turnID string) {
 	o.done.Add(1)
 	go func() {
 		defer o.done.Done()
+		final, err := false, errCrashed
 		defer func() {
-			if p := recover(); p != nil {
-				o.post(func() { o.afterRun(threadID, sl, false, errCrashed) })
-			}
+			recover()
+			o.post(finished{threadID: threadID, sl: sl, final: final, err: err})
 		}()
-		o.run(threadID, sl)
+		final, err = o.run(threadID, sl)
 	}()
 }
 
