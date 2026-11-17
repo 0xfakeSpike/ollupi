@@ -22,9 +22,9 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/event"
+	"github.com/0xfakeSpike/ollupi/agent/gateway"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/service"
-	"github.com/0xfakeSpike/ollupi/gateway"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/repo/catalog"
 	"github.com/0xfakeSpike/ollupi/repo/db"
