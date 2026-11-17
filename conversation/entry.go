@@ -68,6 +68,8 @@ const (
 	Interrupted End = "interrupted"
 )
 
+var Ends = []End{Completed, Failed, Interrupted}
+
 type UserMessage struct {
 	Text        string
 	Attachments []Attachment
@@ -201,6 +203,8 @@ const (
 	AcceptAlways     Decision = "acceptAlways"
 	Decline          Decision = "decline"
 )
+
+var Decisions = []Decision{Accept, AcceptForSession, AcceptAlways, Decline}
 
 type Attachment struct {
 	ID       string `json:"id"`

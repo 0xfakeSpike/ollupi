@@ -71,6 +71,8 @@ const (
 	Machine EnvironmentKind = "machine"
 )
 
+var EnvironmentKinds = []EnvironmentKind{Local, Machine}
+
 const LocalName = "This computer"
 
 type Environment struct {

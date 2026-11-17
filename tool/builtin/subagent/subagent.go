@@ -32,12 +32,13 @@ var kinds = map[agent.Name]kind{
 	},
 }
 
-type call struct {
+// Call is what a launcher is called with.
+type Call struct {
 	Description string `json:"description" jsonschema:"A short (3-5 word) description of the task, shown to the user."`
 	Prompt      string `json:"prompt" jsonschema:"The complete task for the subagent, self-contained."`
 }
 
-func (call) Constrain(s *jsonschema.Schema) {
+func (Call) Constrain(s *jsonschema.Schema) {
 	s.Properties["description"].MinLength, s.Properties["description"].MaxLength = jsonschema.Ptr(1), jsonschema.Ptr(80)
 	s.Properties["prompt"].MinLength, s.Properties["prompt"].MaxLength = jsonschema.Ptr(1), jsonschema.Ptr(20000)
 }
@@ -57,7 +58,7 @@ func (Provider) Tools(context.Context) ([]kit.Spec, error) {
 		specs = append(specs, kit.Spec{
 			Name:        string(name),
 			Description: k.description + " " + launching,
-			InputSchema: kit.InputSchema[call](),
+			InputSchema: kit.InputSchema[Call](),
 			Annotations: tool.Annotations{Title: k.title, ReadOnlyHint: true, OpenWorldHint: kit.Hint(false)},
 		})
 	}
@@ -65,7 +66,7 @@ func (Provider) Tools(context.Context) ([]kit.Spec, error) {
 }
 
 func (Provider) Invoke(_ context.Context, c tool.Call) (kit.Result, error) {
-	args, _ := kit.DecodeArguments[call](c.Arguments) // the schema checked its fields: it cannot fail
+	args, _ := kit.DecodeArguments[Call](c.Arguments) // the schema checked its fields: it cannot fail
 	if strings.TrimSpace(args.Prompt) == "" || strings.TrimSpace(args.Description) == "" {
 		return kit.Result{}, fmt.Errorf("description and prompt must not be blank")
 	}

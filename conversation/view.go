@@ -60,6 +60,8 @@ const (
 	ItemNotice       ItemKind = "notice"
 )
 
+var ItemKinds = []ItemKind{ItemUserMessage, ItemAgentMessage, ItemReasoning, ItemToolCall, ItemReport, ItemCompaction, ItemMemory, ItemError, ItemNotice}
+
 type ItemStatus string
 
 const (
@@ -69,6 +71,8 @@ const (
 	Errored    ItemStatus = "failed"
 	Declined   ItemStatus = "declined"
 )
+
+var ItemStatuses = []ItemStatus{Pending, InProgress, Done, Errored, Declined}
 
 // Seq is the item's first entry and Updated its latest.
 type Item struct {
@@ -377,6 +381,8 @@ const (
 	ThreadWaitingOnApproval  ThreadStatus = "waitingOnApproval"
 	ThreadWaitingOnUserInput ThreadStatus = "waitingOnUserInput"
 )
+
+var ThreadStatuses = []ThreadStatus{ThreadIdle, ThreadActive, ThreadWaitingOnApproval, ThreadWaitingOnUserInput}
 
 // Status is this conversation's alone; a store rolls up its running subagents' into it.
 func (v View) Status() ThreadStatus {

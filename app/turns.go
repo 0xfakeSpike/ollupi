@@ -32,26 +32,25 @@ type Input struct {
 	Connection string
 }
 
-// Send queues a message as a new turn: it runs at once when the conversation is idle, and after the turns before it
-// otherwise.
-func (a *App) Send(ctx context.Context, u, id string, in Input) (conversation.Turn, error) {
+// Send queues a message as a new turn: it is in progress at once when the conversation is idle, and waits behind the
+// turns before it otherwise.
+func (a *App) Send(ctx context.Context, u, id string, in Input) (turn conversation.Turn, inProgress bool, err error) {
 	atts, err := a.attach(ctx, u, id, in.Attachments)
 	if err != nil {
-		return conversation.Turn{}, err
+		return conversation.Turn{}, false, err
 	}
-	var turn conversation.Turn
 	err = a.st.Update(ctx, func(tx store.Tx) error {
 		th, err := topThread(tx, u, id)
 		if err != nil {
 			return err
 		}
-		turn, err = a.queue(tx, th, in.Text, atts, in.Connection, "")
+		turn, inProgress, err = a.queue(tx, th, in.Text, atts, in.Connection, "")
 		return err
 	})
 	if err != nil {
 		a.detach(ctx, atts)
 	}
-	return turn, err
+	return turn, inProgress, err
 }
 
 // Scheduled sends a task's prompt to its conversation, as the user would; cron runs it.
@@ -60,24 +59,24 @@ func (a *App) Scheduled(tx store.Tx, id, prompt, job string) error {
 	if err != nil {
 		return err
 	}
-	_, err = a.queue(tx, th, prompt, nil, "", job)
+	_, _, err = a.queue(tx, th, prompt, nil, "", job)
 	return err
 }
 
-func (a *App) queue(tx store.Tx, th store.Thread, text string, atts []conversation.Attachment, connection, job string) (conversation.Turn, error) {
+func (a *App) queue(tx store.Tx, th store.Thread, text string, atts []conversation.Attachment, connection, job string) (conversation.Turn, bool, error) {
 	text, err := message(text, len(atts))
 	if err != nil {
-		return conversation.Turn{}, err
+		return conversation.Turn{}, false, err
 	}
 	if err := a.usableWorkspace(tx, th); err != nil {
-		return conversation.Turn{}, err
+		return conversation.Turn{}, false, err
 	}
 	v, err := tx.View(th.ID)
 	if err != nil {
-		return conversation.Turn{}, err
+		return conversation.Turn{}, false, err
 	}
 	if len(v.Behind()) >= maxQueued {
-		return conversation.Turn{}, ErrQueueFull
+		return conversation.Turn{}, false, ErrQueueFull
 	}
 	var last *llm.Model
 	if n := len(v.Turns); n > 0 {
@@ -85,21 +84,22 @@ func (a *App) queue(tx store.Tx, th store.Thread, text string, atts []conversati
 	}
 	model, err := a.model(connection, last)
 	if err != nil {
-		return conversation.Turn{}, err
+		return conversation.Turn{}, false, err
 	}
 	limits, err := a.fits(model, v, text, atts)
 	if err != nil {
-		return conversation.Turn{}, err
+		return conversation.Turn{}, false, err
 	}
 	id := uuid.NewString()
 	v, err = tx.Append(th.ID,
 		conversation.Entry{Turn: id, Body: conversation.TurnQueued{Model: model, Role: string(agent.Main(limits.Input())), CronJob: job}},
 		conversation.Entry{Turn: id, Item: uuid.NewString(), Body: conversation.UserMessage{Text: text, Attachments: atts}})
 	if err != nil {
-		return conversation.Turn{}, err
+		return conversation.Turn{}, false, err
 	}
 	turn, _ := v.TurnOf(id)
-	return turn, nil
+	active, _ := v.Active()
+	return turn, active.ID == id, nil
 }
 
 // Steer adds a message to the turn in progress, which the agent reads at its next step. What the turn waits on the
@@ -234,19 +234,36 @@ type Request struct {
 	Item   conversation.Item
 }
 
-// Requests are what a user's conversation, and the subagents its turn launched, wait on them for, the oldest first.
+// Requests are what a user's conversations wait on them for, the oldest first: a conversation's and its subagents' when
+// id is not "", or all of the user's.
 func (a *App) Requests(ctx context.Context, u, id string) ([]Request, error) {
 	var out []Request
 	err := a.st.Read(ctx, func(r store.Reader) error {
-		th, err := thread(r, u, id)
-		if err != nil {
-			return err
+		var threads []store.Thread
+		if id == "" {
+			ids, err := r.Waiting(u)
+			if err != nil {
+				return err
+			}
+			for _, w := range ids {
+				th, err := r.Thread(w)
+				if err != nil {
+					return err
+				}
+				threads = append(threads, th)
+			}
+		} else {
+			th, err := thread(r, u, id)
+			if err != nil {
+				return err
+			}
+			children, err := r.Children(id)
+			if err != nil {
+				return err
+			}
+			threads = append([]store.Thread{th}, children...)
 		}
-		children, err := r.Children(id)
-		if err != nil {
-			return err
-		}
-		for _, t := range append([]store.Thread{th}, children...) {
+		for _, t := range threads {
 			v, err := r.View(t.ID)
 			if err != nil {
 				return err

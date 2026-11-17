@@ -113,6 +113,17 @@ func must[T any](t *testing.T) func(T, error) T {
 	}
 }
 
+// sent is the turn a message queued.
+func sent(t *testing.T) func(conversation.Turn, bool, error) conversation.Turn {
+	return func(turn conversation.Turn, _ bool, err error) conversation.Turn {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return turn
+	}
+}
+
 func (f *fixture) view(id string) conversation.View {
 	f.t.Helper()
 	var v conversation.View
@@ -146,11 +157,11 @@ func TestMessagesQueueTurnsAndSteeringAnswersWhatTheTurnAsked(t *testing.T) {
 	if th.Environment == "" {
 		t.Fatal("the conversation is in no environment")
 	}
-	first := must[conversation.Turn](t)(f.a.Send(f.ctx, "u", th.ID, Input{Text: "build it"}))
+	first := sent(t)(f.a.Send(f.ctx, "u", th.ID, Input{Text: "build it"}))
 	if first.Model.Connection != "main" || first.Role != string(agent.FullMain) {
 		t.Errorf("the turn %+v", first)
 	}
-	second := must[conversation.Turn](t)(f.a.Send(f.ctx, "u", th.ID, Input{Text: "then test it", Connection: "text"}))
+	second := sent(t)(f.a.Send(f.ctx, "u", th.ID, Input{Text: "then test it", Connection: "text"}))
 	if v := f.view(th.ID); len(v.Behind()) != 1 || v.Behind()[0].ID != second.ID || second.Model.Name != "small" {
 		t.Fatalf("the second turn waits behind: %+v", v.Behind())
 	}
@@ -169,7 +180,7 @@ func TestMessagesQueueTurnsAndSteeringAnswersWhatTheTurnAsked(t *testing.T) {
 	if active, _ := f.view(th.ID).Active(); active.ID != second.ID {
 		t.Errorf("after the interrupt, the turn in progress is %s", active.ID)
 	}
-	if _, err := f.a.Send(f.ctx, "v", th.ID, Input{Text: "hi"}); !errors.Is(err, store.ErrNotFound) {
+	if _, _, err := f.a.Send(f.ctx, "v", th.ID, Input{Text: "hi"}); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("another user's conversation: %v", err)
 	}
 }
@@ -177,7 +188,7 @@ func TestMessagesQueueTurnsAndSteeringAnswersWhatTheTurnAsked(t *testing.T) {
 func TestAcceptingAlwaysKeepsTheRuleWithTheConversation(t *testing.T) {
 	f := setup(t)
 	th := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", "", "", ""))
-	turn := must[conversation.Turn](t)(f.a.Send(f.ctx, "u", th.ID, Input{Text: "build"}))
+	turn := sent(t)(f.a.Send(f.ctx, "u", th.ID, Input{Text: "build"}))
 	f.waitOnApproval(th.ID, turn)
 	if err := f.a.Decide(f.ctx, "u", th.ID, "a2", conversation.Accept); !errors.Is(err, ErrNoSuchRequest) {
 		t.Errorf("an approval not asked for: %v", err)
@@ -198,7 +209,7 @@ func TestAcceptingAlwaysKeepsTheRuleWithTheConversation(t *testing.T) {
 func TestAnswersMustAnswerEveryQuestionAsked(t *testing.T) {
 	f := setup(t)
 	th := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", "", "", ""))
-	turn := must[conversation.Turn](t)(f.a.Send(f.ctx, "u", th.ID, Input{Text: "plan a trip"}))
+	turn := sent(t)(f.a.Send(f.ctx, "u", th.ID, Input{Text: "plan a trip"}))
 	request := mustJSON(ask.Request{Questions: []ask.Question{{ID: "where", Header: "Where", Question: "Where to?"}}})
 	f.st.Update(f.ctx, func(tx store.Tx) error {
 		_, err := tx.Append(th.ID,
@@ -224,10 +235,10 @@ func TestAttachmentsAreCopiedAndGoWithTheirConversation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "notes.txt")
 	os.WriteFile(path, []byte("remember the milk"), 0o600)
 	th := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", "", "", ""))
-	if _, err := f.a.Send(f.ctx, "u", th.ID, Input{Attachments: []AttachmentInput{{Path: "relative.txt"}}}); !errors.Is(err, ErrInvalidMessage) {
+	if _, _, err := f.a.Send(f.ctx, "u", th.ID, Input{Attachments: []AttachmentInput{{Path: "relative.txt"}}}); !errors.Is(err, ErrInvalidMessage) {
 		t.Errorf("a relative path: %v", err)
 	}
-	turn := must[conversation.Turn](t)(f.a.Send(f.ctx, "u", th.ID, Input{Text: "read this", Attachments: []AttachmentInput{{Path: path}}}))
+	turn := sent(t)(f.a.Send(f.ctx, "u", th.ID, Input{Text: "read this", Attachments: []AttachmentInput{{Path: path}}}))
 	att := f.view(th.ID).ItemsOf(turn.ID)[0].Attachments[0]
 	got, data, err := f.a.ReadAttachment(f.ctx, "u", th.ID, att.ID)
 	if err != nil || got.Name != "notes.txt" || string(data) != "remember the milk" {
@@ -253,7 +264,7 @@ func TestAWorkspaceMovesOnlyWhenItsConversationsAreIdle(t *testing.T) {
 		t.Errorf("the same folder twice: %+v %+v", w, again)
 	}
 	th := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", w.ID, "", ""))
-	turn := must[conversation.Turn](t)(f.a.Send(f.ctx, "u", th.ID, Input{Text: "work"}))
+	turn := sent(t)(f.a.Send(f.ctx, "u", th.ID, Input{Text: "work"}))
 	if _, err := f.a.MoveWorkspace(f.ctx, "u", w.ID, to); !errors.Is(err, ErrWorkspaceBusy) {
 		t.Errorf("moving a busy workspace: %v", err)
 	}
@@ -263,7 +274,7 @@ func TestAWorkspaceMovesOnlyWhenItsConversationsAreIdle(t *testing.T) {
 		t.Errorf("after the move: %+v, %v", moved, err)
 	}
 	must[user.Workspace](t)(f.a.ArchiveWorkspace(f.ctx, "u", w.ID, true))
-	if _, err := f.a.Send(f.ctx, "u", th.ID, Input{Text: "more"}); !errors.Is(err, user.ErrWorkspaceArchived) {
+	if _, _, err := f.a.Send(f.ctx, "u", th.ID, Input{Text: "more"}); !errors.Is(err, user.ErrWorkspaceArchived) {
 		t.Errorf("a message in an archived workspace: %v", err)
 	}
 }
