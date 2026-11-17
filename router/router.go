@@ -12,8 +12,8 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/catalog"
 	"github.com/0xfakeSpike/ollupi/gateway"
-	"github.com/0xfakeSpike/ollupi/repo/catalog"
 )
 
 type Locator struct {

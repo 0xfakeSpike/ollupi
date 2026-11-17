@@ -1,25 +1,31 @@
+// Package gateway is the protocol clients speak to a shard: JSON-RPC over a WebSocket. Its methods are the app's
+// commands and queries; what they change, and what runs change, reaches each client from the store's feed, numbered
+// by the commit that changed it.
 package gateway
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"runtime/debug"
+	"strings"
 	"sync"
 
-	"github.com/0xfakeSpike/ollupi/agent/event"
-	"github.com/0xfakeSpike/ollupi/agent/service"
+	"github.com/0xfakeSpike/ollupi/app"
+	"github.com/0xfakeSpike/ollupi/ask"
+	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/pkg/wshub"
-	"github.com/0xfakeSpike/ollupi/repo/db"
+	"github.com/0xfakeSpike/ollupi/store"
+	"github.com/0xfakeSpike/ollupi/tool/mcp"
 	"github.com/coder/websocket"
 )
 
 // Requests are traced through the global TracerProvider, which the host sets up.
-
 const (
-	// The largest message a client has reason to send is one user message, held to a quarter of a model's input
-	// (service.checkLength): files go by path. A megabyte is about that for a million tokens of input.
+	// The largest message a client has reason to send is one user message, held to a quarter of a model's input:
+	// files go by path. A megabyte is about that for a million tokens of input.
 	maxMessageBytes = 4 << 20
 	defaultLimit    = 20
 	maxLimit        = 100
@@ -28,15 +34,16 @@ const (
 )
 
 type Server struct {
-	service      *service.Service
-	events       *event.Bus
+	app          *app.App
+	feed         *store.Feed
+	mcp          *mcp.Users
 	authenticate Authenticate
 	admit        func(ctx context.Context, user string) error
 	hosts        []string
 	origins      []string
 	hub          *wshub.Hub[*conn]
-	// ready holds the users admitted and made ready by EnsureUser, so that their reconnections ask and write nothing: a
-	// user admitted stays admitted, and none is removed.
+	// ready holds the users admitted and made ready, so that their reconnections ask and write nothing: a user
+	// admitted stays admitted, and none is removed.
 	ready  sync.Map
 	served sync.WaitGroup
 }
@@ -69,7 +76,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if !s.admits(w, r, user) {
 			return
 		}
-		if err := s.service.EnsureUser(user); err != nil {
+		if err := s.app.EnsureUser(r.Context(), user); err != nil {
 			http.Error(w, "the user could not be made ready", http.StatusInternalServerError)
 			return
 		}
@@ -98,8 +105,9 @@ type conn struct {
 
 	mu          sync.Mutex
 	initialized bool
-	sub         *event.Subscription
-	asked       map[string]bool
+	sub         *store.Subscription
+	// asked are the items this client was asked about and has not answered.
+	asked map[string]bool
 }
 
 // Notify takes a client's notification, which asks for no answer and changes nothing on the shard.
@@ -126,75 +134,153 @@ func (c *conn) initialize(ctx context.Context, _ InitializeParams) (InitializeRe
 	// What is published from here on reaches the client; what waited on them before is asked again, which
 	// c.request does not ask twice.
 	after := func() {
-		sub := c.s.events.Subscribe(c.user, c.event)
+		sub := c.s.feed.Subscribe(c.user, c.event)
 		c.mu.Lock()
 		c.initialized, c.sub = true, sub
 		c.mu.Unlock()
-		c.requests(c.s.service.AllPendingRequests(c.user))
+		c.requests(c.s.app.Requests(context.Background(), c.user, ""))
 	}
 	return InitializeResult{ServerInfo: ServerInfo{Name: "ollupi", Version: version()}, ProtocolSHA256: protocolSHA256}, after, nil
 }
 
-func (c *conn) event(e event.Event) {
-	switch e.Kind {
-	case event.ThreadChanged:
-		changed := threadRow(e.Thread)
-		c.rpc.Notify(notifyThreadChanged, ThreadChangedNotification{ThreadID: e.Thread.ID, Thread: &changed})
-	case event.ThreadDeleted:
-		c.rpc.Notify(notifyThreadChanged, ThreadChangedNotification{ThreadID: e.Thread.ID})
-	case event.TurnQueued:
-		c.rpc.Notify(notifyTurnQueued, TurnNotification{ThreadID: e.Thread.ID, Thread: threadRow(e.Thread), Turn: turnRow(e.Turn)})
-	case event.TurnStarted:
-		c.rpc.Notify(notifyTurnStarted, TurnNotification{ThreadID: e.Thread.ID, Thread: threadRow(e.Thread), Turn: turnRow(e.Turn)})
-	case event.ItemStarted:
-		c.rpc.Notify(notifyItemStarted, ItemNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Item: itemRow(*e.Item)})
-	case event.ItemUpdated:
-		c.rpc.Notify(notifyItemUpdated, ItemNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Item: itemRow(*e.Item)})
-	case event.ItemCompleted:
-		c.rpc.Notify(notifyItemCompleted, ItemNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Item: itemRow(*e.Item)})
-	case event.ItemDelta:
-		method := notifyAgentMessageDelta
-		if e.Item.Type == db.ItemReasoning {
-			method = notifyReasoningDelta
+func (c *conn) event(e store.Event) {
+	switch {
+	case e.Delta != nil:
+		d := e.Delta
+		method, text := notifyAgentMessageDelta, d.Text
+		if d.Reasoning != "" {
+			method, text = notifyReasoningDelta, d.Reasoning
 		}
-		c.rpc.Notify(method, DeltaNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, ItemID: e.Item.ID, Delta: e.Delta})
-	case event.TurnCompleted:
-		c.rpc.Notify(notifyTurnCompleted, TurnNotification{ThreadID: e.Thread.ID, Thread: threadRow(e.Thread), Turn: turnRow(e.Turn)})
-	case event.Error:
-		c.rpc.Notify(notifyError, ErrorNotification{ThreadID: e.Thread.ID, TurnID: e.Turn.ID, Message: e.Error})
-	case event.ThreadStatusChanged:
-		c.rpc.Notify(notifyThreadStatusChanged, ThreadStatusNotification{ThreadID: e.Thread.ID, Status: e.Status})
-	case event.WorkspaceChanged:
-		c.rpc.Notify(notifyWorkspaceChanged, WorkspaceResult{Workspace: workspaceRow(*e.Workspace)})
-	case event.EnvironmentChanged:
-		row := environmentRow(*e.Environment)
-		c.rpc.Notify(notifyEnvironmentChanged, EnvironmentChangedNotification{EnvironmentID: e.Environment.ID, Environment: &row})
-	case event.EnvironmentDeleted:
-		c.rpc.Notify(notifyEnvironmentChanged, EnvironmentChangedNotification{EnvironmentID: e.Environment.ID})
-	case event.CronJobChanged:
-		n := CronChangedNotification{ID: e.CronJobID, ThreadID: e.Thread.ID}
-		if e.CronJob != nil {
-			view := cronJobView(*e.CronJob)
-			n.Job = &view
-		}
-		c.rpc.Notify(notifyCronChanged, n)
-	case event.SettingsChanged:
-		c.rpc.Notify(notifySettingsChanged, settingsRow(*e.Settings))
-	case event.MCPServerChanged:
-		server := mcpServerConfig(*e.MCPServer)
-		c.rpc.Notify(notifyMCPServerChanged, MCPServerChangedNotification{Name: e.MCPServer.Name, Server: &server})
-	case event.MCPServerDeleted:
-		c.rpc.Notify(notifyMCPServerChanged, MCPServerChangedNotification{Name: e.MCPServer.Name})
-	case event.ApprovalRequested, event.UserInputRequested:
-		c.request(e.Thread.ID, *e.Item)
+		c.rpc.Notify(method, DeltaNotification{ThreadID: e.Thread, TurnID: d.Turn, ItemID: d.Item, Delta: text})
+	case e.Change != nil:
+		c.change(e.Seq, e.Thread, *e.Change)
+	case e.Owned != nil:
+		c.owned(e.Thread, *e.Owned)
 	}
 }
 
-func nonNil[T any](s []T) []T {
-	if s == nil {
-		return []T{}
+func (c *conn) change(seq int64, thread string, ch store.Change) {
+	if ch.Deleted {
+		c.rpc.Notify(notifyThreadChanged, ThreadChangedNotification{ThreadID: thread, Seq: seq})
+		return
 	}
-	return s
+	header := threadRow(*ch.Header)
+	c.rpc.Notify(notifyThreadChanged, ThreadChangedNotification{ThreadID: thread, Thread: &header, Seq: seq})
+	for _, t := range ch.Turns {
+		c.rpc.Notify(notifyTurnChanged, TurnChangedNotification{ThreadID: thread, Turn: turnRow(thread, t, ch.Active), Seq: seq})
+	}
+	for _, it := range ch.Items {
+		c.rpc.Notify(notifyItemChanged, ItemChangedNotification{ThreadID: thread, Item: itemRow(it), Seq: seq})
+		if waitsOnUser(it) {
+			c.request(thread, it)
+		}
+	}
+}
+
+func waitsOnUser(it conversation.Item) bool {
+	asksApproval := it.Status == conversation.Pending && it.Approval != nil && it.Approval.Decision == ""
+	asksInput := it.Status == conversation.InProgress && it.Input != nil && !it.Input.Answered
+	return asksApproval || asksInput
+}
+
+func (c *conn) owned(thread string, o store.Owned) {
+	switch {
+	case o.Settings != nil:
+		c.rpc.Notify(notifySettingsChanged, settingsRow(*o.Settings))
+	case o.Workspace != nil:
+		c.rpc.Notify(notifyWorkspaceChanged, WorkspaceResult{Workspace: workspaceRow(*o.Workspace)})
+	case o.Environment != nil:
+		row := environmentRow(*o.Environment)
+		c.rpc.Notify(notifyEnvironmentChanged, EnvironmentChangedNotification{EnvironmentID: row.ID, Environment: &row})
+	case o.EnvironmentDeleted != "":
+		c.rpc.Notify(notifyEnvironmentChanged, EnvironmentChangedNotification{EnvironmentID: o.EnvironmentDeleted})
+	case o.MCPServer != nil:
+		server := mcpServerConfig(*o.MCPServer)
+		c.rpc.Notify(notifyMCPServerChanged, MCPServerChangedNotification{Name: server.Name, Server: &server})
+	case o.MCPServerDeleted != "":
+		c.rpc.Notify(notifyMCPServerChanged, MCPServerChangedNotification{Name: o.MCPServerDeleted})
+	case o.CronJob != nil:
+		row := cronJobRow(*o.CronJob)
+		c.rpc.Notify(notifyCronChanged, CronChangedNotification{ID: row.ID, ThreadID: thread, Job: &row})
+	case o.CronJobDeleted != "":
+		c.rpc.Notify(notifyCronChanged, CronChangedNotification{ID: o.CronJobDeleted, ThreadID: thread})
+	case o.Memory != nil:
+		c.rpc.Notify(notifyMemoryChanged, MemoryResult{Memory: memoryRow(*o.Memory)})
+	}
+}
+
+// A client that cannot be told what waits on it would wait without knowing, so it is dropped and asked again when it
+// comes back.
+func (c *conn) requests(pending []app.Request, err error) {
+	if err != nil {
+		go c.ws.Close(websocket.StatusInternalError, "pending requests could not be read")
+		return
+	}
+	for _, r := range pending {
+		c.request(r.Thread.ID, r.Item)
+	}
+}
+
+// request asks the client about an item that waits on its user, once until it answers.
+func (c *conn) request(thread string, it conversation.Item) {
+	c.mu.Lock()
+	if c.asked[it.ID] {
+		c.mu.Unlock()
+		return
+	}
+	c.asked[it.ID] = true
+	c.mu.Unlock()
+	answered := func(result json.RawMessage, rerr *jsonrpc.Error) {
+		c.mu.Lock()
+		delete(c.asked, it.ID)
+		c.mu.Unlock()
+		if rerr != nil {
+			return
+		}
+		if err := c.resolve(thread, it, result); err != nil {
+			c.rpc.Notify(notifyError, ErrorNotification{ThreadID: thread, TurnID: it.Turn, ItemID: it.ID, Message: serverError(err).Message})
+			if !errors.Is(err, app.ErrNoSuchRequest) {
+				c.request(thread, it)
+			}
+		}
+	}
+	if it.Approval == nil {
+		req, err := ask.Decode(it.Input.Request)
+		if err != nil {
+			return
+		}
+		c.rpc.Request(requestUserInput, UserInputRequestParams{ThreadID: thread, TurnID: it.Turn, ItemID: it.ID, Questions: nonNil(req.Questions)}, answered)
+		return
+	}
+	args := json.RawMessage(it.Call.Arguments)
+	if strings.TrimSpace(it.Call.Arguments) == "" {
+		args = json.RawMessage("{}")
+	}
+	a := it.Approval
+	c.rpc.Request(requestApproval, ApprovalRequestParams{
+		ThreadID: thread, TurnID: it.Turn, ItemID: it.ID, ApprovalID: a.Approval, Server: it.Call.Server, Tool: it.Call.Tool,
+		Arguments: args, PreparedExecution: it.Call.Prepared, Reason: a.Reason, Content: a.Content, SuggestedRules: a.Suggested,
+		AvailableDecisions: a.Decisions(),
+	}, answered)
+}
+
+func (c *conn) resolve(thread string, it conversation.Item, result json.RawMessage) error {
+	ctx := context.Background()
+	if it.Approval == nil {
+		var r UserInputResponse
+		if err := jsonrpc.DecodeParams(result, &r); err != nil {
+			return err
+		}
+		if r.Skipped {
+			r.Answers = nil
+		}
+		return c.s.app.Answer(ctx, c.user, thread, it.ID, r.Answers)
+	}
+	var r ApprovalResponse
+	if err := jsonrpc.DecodeParams(result, &r); err != nil {
+		return err
+	}
+	return c.s.app.Decide(ctx, c.user, thread, it.Approval.Approval, r.Decision)
 }
 
 func version() string {

@@ -9,18 +9,22 @@ import (
 	"errors"
 	"net/http"
 	"reflect"
+	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/permission"
-	"github.com/0xfakeSpike/ollupi/agent/service"
+	"github.com/0xfakeSpike/ollupi/app"
+	"github.com/0xfakeSpike/ollupi/ask"
+	"github.com/0xfakeSpike/ollupi/conversation"
+	"github.com/0xfakeSpike/ollupi/cron"
 	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/wshub"
-	"github.com/0xfakeSpike/ollupi/repo/db"
-	"github.com/0xfakeSpike/ollupi/tools"
-	"github.com/0xfakeSpike/ollupi/tools/cron"
-	"github.com/0xfakeSpike/ollupi/tools/mcp"
-	"github.com/0xfakeSpike/ollupi/tools/userinput"
+	"github.com/0xfakeSpike/ollupi/policy"
+	"github.com/0xfakeSpike/ollupi/store"
+	"github.com/0xfakeSpike/ollupi/tool"
+	"github.com/0xfakeSpike/ollupi/tool/kit"
+	"github.com/0xfakeSpike/ollupi/tool/mcp"
+	"github.com/0xfakeSpike/ollupi/user"
 	"github.com/coder/websocket"
 )
 
@@ -37,6 +41,7 @@ const (
 	errThreadArchived    = -32015
 	errThreadBusy        = -32016
 	errSearchTimedOut    = -32017
+	errRefused           = -32018
 )
 
 const (
@@ -44,23 +49,21 @@ const (
 	methodInitialized = "initialized"
 )
 
+// A change reaches a client as it was committed: its seq orders it after the page a client read, which names the seq it
+// was read at, so a client drops the notifications of a conversation up to that seq.
 const (
-	notifyThreadChanged       = "thread/changed"
-	notifyTurnQueued          = "turn/queued"
-	notifyTurnStarted         = "turn/started"
-	notifyItemStarted         = "item/started"
-	notifyItemUpdated         = "item/updated"
-	notifyItemCompleted       = "item/completed"
-	notifyAgentMessageDelta   = "item/agentMessage/delta"
-	notifyReasoningDelta      = "item/reasoning/textDelta"
-	notifyTurnCompleted       = "turn/completed"
-	notifyThreadStatusChanged = "thread/status/changed"
-	notifyWorkspaceChanged    = "workspace/changed"
-	notifyEnvironmentChanged  = "environment/changed"
-	notifyCronChanged         = "cron/changed"
-	notifySettingsChanged     = "settings/changed"
-	notifyMCPServerChanged    = "mcpServer/changed"
-	notifyError               = "error"
+	notifyThreadChanged      = "thread/changed"
+	notifyTurnChanged        = "turn/changed"
+	notifyItemChanged        = "item/changed"
+	notifyAgentMessageDelta  = "item/agentMessage/delta"
+	notifyReasoningDelta     = "item/reasoning/textDelta"
+	notifyWorkspaceChanged   = "workspace/changed"
+	notifyEnvironmentChanged = "environment/changed"
+	notifyCronChanged        = "cron/changed"
+	notifySettingsChanged    = "settings/changed"
+	notifyMCPServerChanged   = "mcpServer/changed"
+	notifyMemoryChanged      = "memory/changed"
+	notifyError              = "error"
 )
 
 const (
@@ -146,22 +149,18 @@ var protocol = struct {
 		"settings/updatePermissions":  handle((*conn).settingsPermissions),
 	},
 	notifications: map[string]reflect.Type{
-		notifyThreadChanged:       reflect.TypeFor[ThreadChangedNotification](),
-		notifyTurnQueued:          reflect.TypeFor[TurnNotification](),
-		notifyTurnStarted:         reflect.TypeFor[TurnNotification](),
-		notifyItemStarted:         reflect.TypeFor[ItemNotification](),
-		notifyItemUpdated:         reflect.TypeFor[ItemNotification](),
-		notifyItemCompleted:       reflect.TypeFor[ItemNotification](),
-		notifyAgentMessageDelta:   reflect.TypeFor[DeltaNotification](),
-		notifyReasoningDelta:      reflect.TypeFor[DeltaNotification](),
-		notifyTurnCompleted:       reflect.TypeFor[TurnNotification](),
-		notifyThreadStatusChanged: reflect.TypeFor[ThreadStatusNotification](),
-		notifyWorkspaceChanged:    reflect.TypeFor[WorkspaceResult](),
-		notifyEnvironmentChanged:  reflect.TypeFor[EnvironmentChangedNotification](),
-		notifyCronChanged:         reflect.TypeFor[CronChangedNotification](),
-		notifySettingsChanged:     reflect.TypeFor[SettingsRow](),
-		notifyMCPServerChanged:    reflect.TypeFor[MCPServerChangedNotification](),
-		notifyError:               reflect.TypeFor[ErrorNotification](),
+		notifyThreadChanged:      reflect.TypeFor[ThreadChangedNotification](),
+		notifyTurnChanged:        reflect.TypeFor[TurnChangedNotification](),
+		notifyItemChanged:        reflect.TypeFor[ItemChangedNotification](),
+		notifyAgentMessageDelta:  reflect.TypeFor[DeltaNotification](),
+		notifyReasoningDelta:     reflect.TypeFor[DeltaNotification](),
+		notifyWorkspaceChanged:   reflect.TypeFor[WorkspaceResult](),
+		notifyEnvironmentChanged: reflect.TypeFor[EnvironmentChangedNotification](),
+		notifyCronChanged:        reflect.TypeFor[CronChangedNotification](),
+		notifySettingsChanged:    reflect.TypeFor[SettingsRow](),
+		notifyMCPServerChanged:   reflect.TypeFor[MCPServerChangedNotification](),
+		notifyMemoryChanged:      reflect.TypeFor[MemoryResult](),
+		notifyError:              reflect.TypeFor[ErrorNotification](),
 	},
 	serverRequests: map[string]serverRequest{
 		requestApproval:  {reflect.TypeFor[ApprovalRequestParams](), reflect.TypeFor[ApprovalResponse]()},
@@ -187,6 +186,7 @@ var protocol = struct {
 		errThreadArchived:          "threadArchived",
 		errThreadBusy:              "threadBusy",
 		errSearchTimedOut:          "searchTimedOut",
+		errRefused:                 "refused",
 	},
 	closes: map[int]Ending{
 		// The server is stopping, or the connection reached its age.
@@ -208,7 +208,7 @@ var protocol = struct {
 		// Too many connections are starting, or the user's shard cannot be reached now.
 		http.StatusServiceUnavailable: {"unavailable", ReconnectRetryAfter},
 	},
-	limits: Limits{SearchRunes: service.MaxSearchRunes, SearchTerms: service.MaxSearchTerms},
+	limits: Limits{SearchRunes: app.MaxSearchRunes, SearchTerms: app.MaxSearchTerms},
 }
 
 type Limits struct {
@@ -281,12 +281,12 @@ type ThreadStartParams struct {
 
 type ThreadPermissionsParams struct {
 	ThreadID string `json:"threadId"`
-	db.PermissionSettings
+	policy.Settings
 }
 
 type ThreadPageParams struct {
 	ThreadID  string `json:"threadId"`
-	BeforeSeq int    `json:"beforeSeq,omitempty"`
+	BeforeSeq int64  `json:"beforeSeq,omitempty"`
 	Limit     int    `json:"limit,omitempty"`
 }
 
@@ -297,6 +297,21 @@ type ThreadPageResult struct {
 
 type ThreadResult struct {
 	Thread ThreadRow `json:"thread"`
+}
+
+type ThreadListParams struct {
+	// WorkspaceID, when given, keeps the conversations in that workspace, or those in none when it is "".
+	WorkspaceID *string `json:"workspaceId,omitempty"`
+	Archived    bool    `json:"archived,omitempty"`
+	// After continues a list from the last conversation of the page before.
+	After *ThreadCursor `json:"after,omitempty"`
+	Limit int           `json:"limit,omitempty"`
+}
+
+type ThreadCursor struct {
+	UpdatedAt time.Time `json:"updatedAt"`
+	CreatedAt time.Time `json:"createdAt"`
+	ID        string    `json:"id"`
 }
 
 type ThreadRenameParams struct {
@@ -318,19 +333,43 @@ type ThreadDeleteParams struct {
 	ThreadID string `json:"threadId"`
 }
 
+// Thread is null once the conversation is deleted.
 type ThreadChangedNotification struct {
 	ThreadID string     `json:"threadId"`
 	Thread   *ThreadRow `json:"thread"`
+	Seq      int64      `json:"seq"`
+}
+
+type TurnChangedNotification struct {
+	ThreadID string  `json:"threadId"`
+	Turn     TurnRow `json:"turn"`
+	Seq      int64   `json:"seq"`
+}
+
+type ItemChangedNotification struct {
+	ThreadID string  `json:"threadId"`
+	Item     ItemRow `json:"item"`
+	Seq      int64   `json:"seq"`
+}
+
+// A delta is text a model writes now, which the item it belongs to holds whole once the response is kept.
+type DeltaNotification struct {
+	ThreadID string `json:"threadId"`
+	TurnID   string `json:"turnId"`
+	ItemID   string `json:"itemId"`
+	Delta    string `json:"delta"`
+}
+
+type ErrorNotification struct {
+	ThreadID string `json:"threadId,omitempty"`
+	TurnID   string `json:"turnId,omitempty"`
+	ItemID   string `json:"itemId,omitempty"`
+	Message  string `json:"message"`
 }
 
 type ThreadListResult struct {
-	Data    []ThreadSummary `json:"data"`
-	HasMore bool            `json:"hasMore"`
-}
-
-type ThreadStatusNotification struct {
-	ThreadID string          `json:"threadId"`
-	Status   db.ThreadStatus `json:"status"`
+	Data    []ThreadRow `json:"data"`
+	HasMore bool        `json:"hasMore"`
 }
 
 type ModelListResult struct {
@@ -338,22 +377,20 @@ type ModelListResult struct {
 	Default string      `json:"default"`
 }
 
+type ToolDescriptor struct {
+	Provider    string           `json:"provider"`
+	Name        string           `json:"name"`
+	Description string           `json:"description"`
+	Annotations tool.Annotations `json:"annotations"`
+	InputSchema map[string]any   `json:"input_schema"`
+}
+
 type ToolListResult struct {
-	Data []tools.ToolDescriptor `json:"data"`
+	Data []ToolDescriptor `json:"data"`
 }
 
 type MCPServerListResult struct {
 	Data []MCPServer `json:"data"`
-}
-
-// Env and header values are sent to the server as they are written.
-type MCPServerConfig struct {
-	Name    string            `json:"name"`
-	Command string            `json:"command,omitempty"`
-	Args    []string          `json:"args,omitempty"`
-	Env     map[string]string `json:"env,omitempty"`
-	URL     string            `json:"url,omitempty"`
-	Headers map[string]string `json:"headers,omitempty"`
 }
 
 type MCPServer struct {
@@ -387,8 +424,8 @@ type AttachmentReadParams struct {
 }
 
 type AttachmentReadResult struct {
-	Attachment db.Attachment `json:"attachment"`
-	Data       string        `json:"data"`
+	Attachment conversation.Attachment `json:"attachment"`
+	Data       string                  `json:"data"`
 }
 
 type TurnStartParams struct {
@@ -412,37 +449,9 @@ type TurnInterruptParams struct {
 	TurnID   string `json:"turnId"`
 }
 
-// Submission says whether the message started the thread's current turn, started a turn behind it, or joined the
-// turn already waiting there, which answers it with the messages before it.
+// Turn's status says whether it runs now or waits behind the turn in progress.
 type TurnResult struct {
-	Turn       TurnRow       `json:"turn"`
-	Submission db.Submission `json:"submission"`
-}
-
-type TurnNotification struct {
-	ThreadID string    `json:"threadId"`
-	Thread   ThreadRow `json:"thread"`
-	Turn     TurnRow   `json:"turn"`
-}
-
-type DeltaNotification struct {
-	ThreadID string `json:"threadId"`
-	TurnID   string `json:"turnId"`
-	ItemID   string `json:"itemId"`
-	Delta    string `json:"delta"`
-}
-
-type ItemNotification struct {
-	ThreadID string  `json:"threadId"`
-	TurnID   string  `json:"turnId"`
-	Item     ItemRow `json:"item"`
-}
-
-type ErrorNotification struct {
-	ThreadID string `json:"threadId,omitempty"`
-	TurnID   string `json:"turnId,omitempty"`
-	ItemID   string `json:"itemId,omitempty"`
-	Message  string `json:"message"`
+	Turn TurnRow `json:"turn"`
 }
 
 type WorkspaceListResult struct {
@@ -471,7 +480,7 @@ type WorkspaceArchiveParams struct {
 
 type WorkspacePermissionsParams struct {
 	WorkspaceID string `json:"workspaceId"`
-	db.PermissionSettings
+	policy.Settings
 }
 
 type WorkspaceResult struct {
@@ -484,8 +493,8 @@ type EnvironmentListResult struct {
 
 // Kind defaults to "machine": this machine is every user's environment already.
 type EnvironmentAddParams struct {
-	Name string             `json:"name"`
-	Kind db.EnvironmentKind `json:"kind,omitempty"`
+	Name string               `json:"name"`
+	Kind user.EnvironmentKind `json:"kind,omitempty"`
 }
 
 type EnvironmentRenameParams struct {
@@ -512,13 +521,14 @@ type CronListParams struct {
 }
 
 type CronListResult struct {
-	Data []CronJobView `json:"data"`
+	Data []CronJobRow `json:"data"`
 }
 
+// Job is nil once the task is gone.
 type CronChangedNotification struct {
-	ID       string       `json:"id"`
-	ThreadID string       `json:"threadId"`
-	Job      *CronJobView `json:"job"`
+	ID       string      `json:"id"`
+	ThreadID string      `json:"threadId"`
+	Job      *CronJobRow `json:"job"`
 }
 
 type CronCreateParams struct {
@@ -540,9 +550,13 @@ type CronDeleteParams struct {
 	Name     string `json:"name"`
 }
 
+type CronResult struct {
+	Job CronJobRow `json:"job"`
+}
+
 type MemoryListParams struct {
-	Scope       db.MemoryScope `json:"scope"`
-	WorkspaceID string         `json:"workspaceId,omitempty"`
+	Scope       memory.Scope `json:"scope"`
+	WorkspaceID string       `json:"workspaceId,omitempty"`
 }
 
 type MemoryListResult struct {
@@ -584,37 +598,37 @@ type SettingsUpdateParams struct {
 }
 
 type SettingsPermissionsParams struct {
-	db.PermissionSettings
+	policy.Settings
 }
 
 type ApprovalRequestParams struct {
-	PreparedExecution  *tools.Prepared `json:"preparedExecution,omitempty"`
-	ThreadID           string          `json:"threadId"`
-	TurnID             string          `json:"turnId"`
-	ItemID             string          `json:"itemId"`
-	ApprovalID         string          `json:"approvalId"`
-	Server             string          `json:"server"`
-	Tool               string          `json:"tool"`
-	Arguments          json.RawMessage `json:"arguments"`
-	Reason             string          `json:"reason,omitempty"`
-	Content            string          `json:"content,omitempty"`
-	SuggestedRules     []string        `json:"suggestedRules,omitempty"`
-	AvailableDecisions []db.Decision   `json:"availableDecisions"`
+	ThreadID           string                  `json:"threadId"`
+	TurnID             string                  `json:"turnId"`
+	ItemID             string                  `json:"itemId"`
+	ApprovalID         string                  `json:"approvalId"`
+	Server             string                  `json:"server"`
+	Tool               string                  `json:"tool"`
+	Arguments          json.RawMessage         `json:"arguments"`
+	PreparedExecution  json.RawMessage         `json:"preparedExecution,omitempty"`
+	Reason             string                  `json:"reason,omitempty"`
+	Content            string                  `json:"content,omitempty"`
+	SuggestedRules     []string                `json:"suggestedRules,omitempty"`
+	AvailableDecisions []conversation.Decision `json:"availableDecisions"`
 }
 
 type ApprovalResponse struct {
-	Decision db.Decision `json:"decision"`
+	Decision conversation.Decision `json:"decision"`
 }
 
 type UserInputRequestParams struct {
-	ThreadID  string               `json:"threadId"`
-	TurnID    string               `json:"turnId"`
-	ItemID    string               `json:"itemId"`
-	Questions []userinput.Question `json:"questions"`
+	ThreadID  string         `json:"threadId"`
+	TurnID    string         `json:"turnId"`
+	ItemID    string         `json:"itemId"`
+	Questions []ask.Question `json:"questions"`
 }
 
 type UserInputResponse struct {
-	Answers userinput.Answers `json:"answers"`
+	Answers ask.Answers `json:"answers"`
 	// Skipped declines the questions without answers (send answers as {}): the call ends declined and the agent goes
 	// on without them.
 	Skipped bool `json:"skipped,omitempty"`
@@ -624,30 +638,30 @@ var errorCodes = []struct {
 	err  error
 	code int
 }{
-	{db.ErrNotFound, errNotFound},
-	{db.ErrNoActiveTurn, errNoActiveTurn},
-	{db.ErrTurnMismatch, errTurnMismatch},
-	{db.ErrNoSuchRequest, errNoSuchRequest},
-	{service.ErrSubagentThread, errSubagentThread},
-	{service.ErrWorkspaceArchived, errWorkspaceArchived},
-	{db.ErrThreadArchived, errThreadArchived},
-	{db.ErrThreadBusy, errThreadBusy},
-	{service.ErrWorkspaceBusy, errThreadBusy},
-	{service.ErrQueueFull, errThreadBusy},
-	{service.ErrEnvironmentInUse, jsonrpc.CodeInvalidParams},
-	{service.ErrInvalidMessage, jsonrpc.CodeInvalidParams},
-	{service.ErrInvalidAnswer, jsonrpc.CodeInvalidParams},
-	{service.ErrInvalidDecision, jsonrpc.CodeInvalidParams},
-	{service.ErrInvalidName, jsonrpc.CodeInvalidParams},
-	{service.ErrInvalidPath, jsonrpc.CodeInvalidParams},
-	{service.ErrInvalidQuery, jsonrpc.CodeInvalidParams},
-	{service.ErrInvalidMCPServer, jsonrpc.CodeInvalidParams},
-	{service.ErrSearchTimedOut, errSearchTimedOut},
-	{service.ErrUnavailable, jsonrpc.CodeServerError},
-	{permission.ErrInvalidSettings, jsonrpc.CodeInvalidParams},
+	{store.ErrNotFound, errNotFound},
+	{app.ErrNoActiveTurn, errNoActiveTurn},
+	{app.ErrTurnMismatch, errTurnMismatch},
+	{app.ErrNoSuchRequest, errNoSuchRequest},
+	{user.ErrSubagentThread, errSubagentThread},
+	{user.ErrWorkspaceArchived, errWorkspaceArchived},
+	{app.ErrThreadBusy, errThreadBusy},
+	{app.ErrThreadArchived, errThreadArchived},
+	{app.ErrWorkspaceBusy, errThreadBusy},
+	{app.ErrQueueFull, errThreadBusy},
+	{conversation.ErrRefused, errRefused},
+	{app.ErrEnvironmentInUse, jsonrpc.CodeInvalidParams},
+	{app.ErrInvalidMessage, jsonrpc.CodeInvalidParams},
+	{app.ErrInvalidAnswer, jsonrpc.CodeInvalidParams},
+	{app.ErrInvalidDecision, jsonrpc.CodeInvalidParams},
+	{app.ErrInvalidPath, jsonrpc.CodeInvalidParams},
+	{app.ErrInvalidQuery, jsonrpc.CodeInvalidParams},
+	{app.ErrSearchTimedOut, errSearchTimedOut},
+	{user.ErrInvalidName, jsonrpc.CodeInvalidParams},
+	{user.ErrInvalidMCPServer, jsonrpc.CodeInvalidParams},
+	{policy.ErrInvalidSettings, jsonrpc.CodeInvalidParams},
 	{memory.ErrInvalidChange, jsonrpc.CodeInvalidParams},
-	{tools.ErrUnknownTool, jsonrpc.CodeInvalidParams},
-	{tools.ErrInvalidArguments, jsonrpc.CodeInvalidParams},
+	{kit.ErrUnknownTool, jsonrpc.CodeInvalidParams},
+	{kit.ErrInvalidArguments, jsonrpc.CodeInvalidParams},
 	{cron.ErrInvalidJob, jsonrpc.CodeInvalidParams},
 }
 

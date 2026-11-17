@@ -13,12 +13,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/event"
-	"github.com/0xfakeSpike/ollupi/agent/permission"
-	"github.com/0xfakeSpike/ollupi/agent/service"
+	"github.com/0xfakeSpike/ollupi/conversation"
+	"github.com/0xfakeSpike/ollupi/host"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo/db"
-	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/0xfakeSpike/ollupi/store"
+	"github.com/0xfakeSpike/ollupi/tool/kit"
 )
 
 const heavyUser = "heavy"
@@ -80,34 +79,15 @@ func users(args []string) {
 		log.Fatal(err)
 	}
 	defer os.RemoveAll(dir)
-	store, err := db.Open(dir)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer store.Close()
 	limits := map[string]llm.Limits{"fake": {Context: 200_000, Output: 32_000}}
 	clients := map[string]llm.Client{heavyUser: llm.NewOpenAI(srv.URL, heavyUser, *heavyCalls, limits)}
-	for _, u := range ids {
-		if err := store.EnsureUser(u); err != nil {
-			log.Fatal(err)
-		}
-		if u != heavyUser {
-			clients[u] = llm.NewOpenAI(srv.URL, u, *calls, limits)
-		}
+	for _, u := range ids[1:] {
+		clients[u] = llm.NewOpenAI(srv.URL, u, *calls, limits)
 	}
 	var failed sync.Map // user → *atomic.Int64
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}, done: map[string]chan struct{}{}}
-	events := event.New()
-	events.SubscribeAll(func(e event.Event) {
-		if e.Kind == event.TurnCompleted && e.Turn.Status != db.TurnCompleted {
-			count, _ := failed.LoadOrStore(e.Thread.UserID, new(atomic.Int64))
-			count.(*atomic.Int64).Add(1)
-		}
-		tr.on(e)
-	})
-	ag := service.New(service.Config{
-		BoxFor: here,
-		Name:   "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
+	e := newEngine(host.Config{
+		Home: dir, Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": clients[heavyUser]},
 		ClientFor: func(user, _ string) (llm.Client, error) {
 			if cl := clients[user]; cl != nil {
@@ -115,18 +95,29 @@ func users(args []string) {
 			}
 			return nil, fmt.Errorf("no key for user %s", user)
 		},
-		Providers: []tools.Provider{work{latency: *toolLatency}},
-		Settings:  permission.Settings{ApprovalPolicy: string(permission.Never)},
-		Slots:     *slots, UserSlots: *userSlots, DB: store,
-		Events: events,
+		Tools: []kit.Provider{work{latency: *toolLatency}},
+		Slots: *slots, UserSlots: *userSlots,
 	})
-	ctx, cancel := context.WithCancel(context.Background())
-	if err := ag.Start(ctx); err != nil {
-		log.Fatal(err)
+	for _, u := range ids {
+		if err := e.App.EnsureUser(context.Background(), u); err != nil {
+			log.Fatal(err)
+		}
 	}
+	e.Store.Feed().SubscribeAll(func(ev store.Event) {
+		if ev.Change != nil {
+			for _, entry := range ev.Change.Entries {
+				if end, ok := entry.Body.(conversation.TurnEnded); ok && end.Status != conversation.Completed {
+					count, _ := failed.LoadOrStore(ev.User, new(atomic.Int64))
+					count.(*atomic.Int64).Add(1)
+				}
+			}
+		}
+		tr.on(ev)
+	})
+	e.run()
 
-	type conversation struct{ user, thread string }
-	var conversations []conversation
+	type busy struct{ user, thread string }
+	var conversations []busy
 	tr.mu.Lock()
 	for _, u := range ids {
 		count := *c
@@ -134,12 +125,9 @@ func users(args []string) {
 			count = *heavy
 		}
 		for range count {
-			th, err := ag.StartThread(u, "", "", "bench")
-			if err != nil {
-				log.Fatal(err)
-			}
-			conversations = append(conversations, conversation{u, th.ID})
-			tr.done[th.ID] = make(chan struct{}, 1)
+			id := e.newThread(u)
+			conversations = append(conversations, busy{u, id})
+			tr.done[id] = make(chan struct{}, 1)
 		}
 	}
 	tr.mu.Unlock()
@@ -157,7 +145,7 @@ func users(args []string) {
 			defer wg.Done()
 			for time.Now().Before(deadline) {
 				text := fmt.Sprintf("%s#%d", cv.user, seq.Add(1))
-				id := tr.start(ag, cv.user, cv.thread, text)
+				id := tr.start(e, cv.user, cv.thread, text)
 				mu.Lock()
 				sent[id] = sentTurn{cv.user, text}
 				mu.Unlock()
@@ -232,6 +220,5 @@ func users(args []string) {
 		fmt.Printf("class=%s turns=%d wait_p50_ms=%s wait_p99_ms=%s took_p50_s=%.1f took_p99_s=%.1f took_max_s=%.1f\n",
 			class, len(t), ms(pct(w, .5)), ms(pct(w, .99)), pct(t, .5).Seconds(), pct(t, .99).Seconds(), pct(t, 1).Seconds())
 	}
-	cancel()
-	ag.Wait()
+	e.stop()
 }

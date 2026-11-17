@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -11,14 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/event"
-	"github.com/0xfakeSpike/ollupi/agent/permission"
-	"github.com/0xfakeSpike/ollupi/agent/service"
+	"github.com/0xfakeSpike/ollupi/host"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
-// resume times what bringing work back costs: a message to a conversation idle in the database, by the length of its
+// resume times what bringing work back costs: a message to a conversation idle in the store, by the length of its
 // history, until its model request goes out; and a restart of the process with conversations waiting and turns
 // running, until the running turns have sent their requests again.
 func resume(args []string) {
@@ -34,44 +30,30 @@ func resume(args []string) {
 		log.Fatal(err)
 	}
 	defer os.RemoveAll(dir)
-	store, err := db.Open(dir)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer store.Close()
 	answer := strings.Repeat("A paragraph of an answer, about as long as a short reply in a chat. ", 6)
-	open := func(m *model, tr *tracker) (*service.Service, context.CancelFunc, time.Duration) {
-		events := event.New()
-		events.SubscribeAll(tr.on)
-		ag := service.New(service.Config{
-			BoxFor: here,
-			Name:   "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
-			Connections: map[string]llm.Client{"fake": m},
-			Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
-			Slots:       *running + 32, DB: store, Events: events,
-		})
-		ctx, cancel := context.WithCancel(context.Background())
+	// open puts a host together on the store in dir and starts it, and says how long that took.
+	open := func(m *model, tr *tracker) (*engine, time.Duration) {
 		at := time.Now()
-		if err := ag.Start(ctx); err != nil {
-			log.Fatal(err)
-		}
-		return ag, cancel, time.Since(at)
+		e := newEngine(host.Config{
+			Home: dir, Models: []llm.Model{{Name: "fake", Connection: "fake"}},
+			Connections: map[string]llm.Client{"fake": m}, Slots: *running + 32,
+		})
+		e.Store.Feed().SubscribeAll(tr.on)
+		e.run()
+		return e, time.Since(at)
 	}
 	m := &model{answer: answer}
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}, done: map[string]chan struct{}{}}
-	ag, cancel, _ := open(m, tr)
+	e, _ := open(m, tr)
 	newThread := func() string {
-		th, err := ag.StartThread(db.DefaultUser, "", "", "bench")
-		if err != nil {
-			log.Fatal(err)
-		}
+		id := e.newThread(defaultUser)
 		tr.mu.Lock()
-		tr.done[th.ID] = make(chan struct{}, 1)
+		tr.done[id] = make(chan struct{}, 1)
 		tr.mu.Unlock()
-		return th.ID
+		return id
 	}
 	turn := func(id, text string) {
-		tr.start(ag, db.DefaultUser, id, text)
+		tr.start(e, defaultUser, id, text)
 		select {
 		case <-tr.done[id]:
 		case <-time.After(time.Minute):
@@ -110,25 +92,23 @@ func resume(args []string) {
 	}
 
 	for range *waiting {
-		tr.start(ag, db.DefaultUser, newThread(), "ASK")
+		tr.start(e, defaultUser, newThread(), "ASK")
 	}
 	waitFor("the waiting conversations", func() bool { return tr.asked.Load() >= int64(*waiting) })
 	m.latency.Store(int64(time.Hour))
 	before := m.calls.Load()
 	for range *running {
-		tr.start(ag, db.DefaultUser, newThread(), "work")
+		tr.start(e, defaultUser, newThread(), "work")
 	}
 	waitFor("the running turns", func() bool { return m.calls.Load()-before >= int64(*running) })
-	cancel()
-	ag.Wait()
+	e.stop()
 
 	m2 := &model{answer: answer}
 	m2.latency.Store(int64(time.Hour))
 	tr2 := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}}
 	at := time.Now()
-	ag2, cancel2, started := open(m2, tr2)
+	e2, started := open(m2, tr2)
 	waitFor("the running turns to send again", func() bool { return m2.calls.Load() >= int64(*running) })
 	fmt.Printf("restart waiting=%d running=%d start_ms=%d resent_ms=%d\n", *waiting, *running, started.Milliseconds(), time.Since(at).Milliseconds())
-	cancel2()
-	ag2.Wait()
+	e2.stop()
 }

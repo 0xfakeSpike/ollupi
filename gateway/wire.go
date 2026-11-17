@@ -1,144 +1,201 @@
 package gateway
 
 import (
+	"encoding/json"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/role"
+	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/conversation"
+	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo/db"
-	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/0xfakeSpike/ollupi/policy"
+	"github.com/0xfakeSpike/ollupi/store"
+	"github.com/0xfakeSpike/ollupi/user"
 )
 
-// The protocol's own records, so that a column the storage adds does not reach clients unless it is added here.
+// The protocol's own records, so that what the core adds does not reach clients unless it is added here.
 
 type ThreadRow struct {
-	ID             string                `json:"id"`
-	WorkspaceID    db.Ref                `json:"workspaceId,omitempty"`
-	EnvironmentID  db.Ref                `json:"environmentId,omitempty"`
-	Title          string                `json:"title"`
-	Settings       db.PermissionSettings `json:"settings"`
-	ParentThreadID db.Ref                `json:"parentThreadId,omitempty"`
-	ParentItemID   db.Ref                `json:"parentItemId,omitempty"`
-	CreatedAt      time.Time             `json:"createdAt"`
-	UpdatedAt      time.Time             `json:"updatedAt"`
-	ArchivedAt     *time.Time            `json:"archivedAt,omitempty"`
-	RepliedAt      *time.Time            `json:"repliedAt,omitempty"`
-	ReadAt         *time.Time            `json:"readAt,omitempty"`
+	ID             string                    `json:"id"`
+	WorkspaceID    string                    `json:"workspaceId,omitempty"`
+	EnvironmentID  string                    `json:"environmentId,omitempty"`
+	Title          string                    `json:"title"`
+	Settings       policy.Settings           `json:"settings"`
+	ParentThreadID string                    `json:"parentThreadId,omitempty"`
+	ParentItemID   string                    `json:"parentItemId,omitempty"`
+	Status         conversation.ThreadStatus `json:"status"`
+	CreatedAt      time.Time                 `json:"createdAt"`
+	UpdatedAt      time.Time                 `json:"updatedAt"`
+	ArchivedAt     *time.Time                `json:"archivedAt,omitempty"`
+	RepliedAt      *time.Time                `json:"repliedAt,omitempty"`
+	ReadAt         *time.Time                `json:"readAt,omitempty"`
 }
 
-func threadRow(t db.ThreadRow) ThreadRow {
+func threadRow(t store.Thread) ThreadRow {
 	return ThreadRow{
-		ID: t.ID, WorkspaceID: t.WorkspaceID, EnvironmentID: t.EnvironmentID, Title: t.Title, Settings: t.Settings,
-		ParentThreadID: t.ParentThreadID, ParentItemID: t.ParentItemID, CreatedAt: t.CreatedAt, UpdatedAt: t.UpdatedAt,
-		ArchivedAt: t.ArchivedAt, RepliedAt: t.RepliedAt, ReadAt: t.ReadAt,
+		ID: t.ID, WorkspaceID: t.Workspace, EnvironmentID: t.Environment, Title: t.Title, Settings: t.Settings,
+		ParentThreadID: t.Parent, ParentItemID: t.ParentItem, Status: t.Status, CreatedAt: t.Created, UpdatedAt: t.Updated,
+		ArchivedAt: t.Archived, RepliedAt: t.Replied, ReadAt: t.Read,
 	}
 }
 
-type ThreadSummary struct {
-	ThreadRow
-	Status db.ThreadStatus `json:"status"`
-}
+type TurnStatus string
 
-func threadSummary(t db.ThreadSummary) ThreadSummary {
-	return ThreadSummary{ThreadRow: threadRow(t.ThreadRow), Status: t.Status}
-}
+const (
+	// TurnQueued waits behind the turn in progress.
+	TurnQueued      TurnStatus = "queued"
+	TurnInProgress  TurnStatus = "inProgress"
+	TurnCompleted   TurnStatus = "completed"
+	TurnFailed      TurnStatus = "failed"
+	TurnInterrupted TurnStatus = "interrupted"
+)
+
+var TurnStatuses = []TurnStatus{TurnQueued, TurnInProgress, TurnCompleted, TurnFailed, TurnInterrupted}
 
 type TurnRow struct {
-	ID          string        `json:"id"`
-	ThreadID    string        `json:"threadId"`
-	Seq         int           `json:"seq"`
-	Status      db.TurnStatus `json:"status"`
-	Model       llm.Model     `json:"model"`
-	Agent       role.Name     `json:"agent"`
-	Usage       db.Usage      `json:"usage"`
-	Error       string        `json:"error,omitempty"`
-	CronJobID   string        `json:"cronJobId,omitempty"`
-	CreatedAt   time.Time     `json:"createdAt"`
-	StartedAt   time.Time     `json:"startedAt"`
-	CompletedAt *time.Time    `json:"completedAt,omitempty"`
+	ID          string             `json:"id"`
+	ThreadID    string             `json:"threadId"`
+	Status      TurnStatus         `json:"status"`
+	Model       llm.Model          `json:"model"`
+	Agent       agent.Name         `json:"agent"`
+	Usage       conversation.Usage `json:"usage"`
+	Error       string             `json:"error,omitempty"`
+	CronJobID   string             `json:"cronJobId,omitempty"`
+	QueuedAt    time.Time          `json:"queuedAt"`
+	CompletedAt *time.Time         `json:"completedAt,omitempty"`
 }
 
-func turnRow(t db.TurnRow) TurnRow {
-	return TurnRow{
-		ID: t.ID, ThreadID: t.ThreadID, Seq: t.Seq, Status: t.Status, Model: t.Model, Agent: role.Name(t.Agent), Usage: t.Usage, Error: t.Error,
-		CronJobID: t.CronJobID, CreatedAt: t.CreatedAt, StartedAt: t.StartedAt, CompletedAt: t.CompletedAt,
+// turnRow is turn of the conversation whose turn in progress is active.
+func turnRow(thread string, t conversation.Turn, active string) TurnRow {
+	row := TurnRow{ID: t.ID, ThreadID: thread, Status: TurnQueued, Model: t.Model, Agent: agent.Name(t.Role), Usage: t.Usage,
+		CronJobID: t.CronJob, QueuedAt: t.QueuedAt}
+	switch {
+	case t.Ended != nil:
+		at := t.Ended.At
+		row.Status, row.Error, row.CompletedAt = TurnStatus(t.Ended.Status), t.Ended.Reason, &at
+	case t.ID == active:
+		row.Status = TurnInProgress
 	}
+	return row
+}
+
+func turnRows(thread string, turns []conversation.Turn, active string) []TurnRow {
+	out := make([]TurnRow, len(turns))
+	for i, t := range turns {
+		out[i] = turnRow(thread, t, active)
+	}
+	return out
+}
+
+type Approval struct {
+	ApprovalID         string                  `json:"approvalId"`
+	Reason             string                  `json:"reason,omitempty"`
+	Rule               string                  `json:"rule,omitempty"`
+	Content            string                  `json:"content,omitempty"`
+	SuggestedRules     []string                `json:"suggestedRules,omitempty"`
+	AvailableDecisions []conversation.Decision `json:"availableDecisions"`
+	AskedAt            time.Time               `json:"askedAt"`
+	Decision           conversation.Decision   `json:"decision,omitempty"`
+	DecidedBy          string                  `json:"decidedBy,omitempty"`
+	DecidedAt          *time.Time              `json:"decidedAt,omitempty"`
+}
+
+type Input struct {
+	Request  json.RawMessage `json:"request"`
+	AskedAt  time.Time       `json:"askedAt"`
+	Answered bool            `json:"answered"`
+}
+
+type Result struct {
+	Output    json.RawMessage         `json:"output"`
+	Artifacts []conversation.Artifact `json:"artifacts,omitempty"`
 }
 
 type ItemRow struct {
-	ID                string               `json:"id"`
-	TurnID            string               `json:"turnId"`
-	TurnSeq           int                  `json:"turnSeq"`
-	Seq               int                  `json:"seq"`
-	Type              db.ItemType          `json:"type"`
-	Status            db.ItemStatus        `json:"status"`
-	CallID            string               `json:"callId,omitempty"`
-	LaunchItemID      string               `json:"launchItemId,omitempty"`
-	Tool              string               `json:"tool,omitempty"`
-	Server            string               `json:"server,omitempty"`
-	ResponseID        string               `json:"responseId,omitempty"`
-	Error             string               `json:"error,omitempty"`
-	StartedAt         time.Time            `json:"startedAt"`
-	CompletedAt       *time.Time           `json:"completedAt,omitempty"`
-	Approval          *db.Approval         `json:"approval,omitempty"`
-	Await             *tools.Await         `json:"await,omitempty"`
-	Annotations       *tools.Annotations   `json:"annotations,omitempty"`
-	Usage             *db.Usage            `json:"usage,omitempty"`
-	ContextStats      *db.ContextStats     `json:"contextStats,omitempty"`
-	Memory            []db.MemoryReference `json:"memory,omitempty"`
-	Attachments       []db.Attachment      `json:"attachments,omitempty"`
-	Text              string               `json:"text,omitempty"`
-	Arguments         string               `json:"arguments,omitempty"`
-	PreparedExecution *tools.Prepared      `json:"preparedExecution,omitempty"`
-	Result            *db.ToolResult       `json:"result,omitempty"`
+	ID       string                  `json:"id"`
+	TurnID   string                  `json:"turnId"`
+	Seq      int64                   `json:"seq"`
+	Updated  int64                   `json:"updated"`
+	Type     conversation.ItemKind   `json:"type"`
+	Status   conversation.ItemStatus `json:"status"`
+	Text     string                  `json:"text,omitempty"`
+	Error    string                  `json:"error,omitempty"`
+	Response string                  `json:"responseId,omitempty"`
+	// A call's.
+	CallID            string          `json:"callId,omitempty"`
+	Tool              string          `json:"tool,omitempty"`
+	Server            string          `json:"server,omitempty"`
+	Arguments         string          `json:"arguments,omitempty"`
+	Annotations       json.RawMessage `json:"annotations,omitempty"`
+	PreparedExecution json.RawMessage `json:"preparedExecution,omitempty"`
+	Approval          *Approval       `json:"approval,omitempty"`
+	Input             *Input          `json:"input,omitempty"`
+	Result            *Result         `json:"result,omitempty"`
+	// A subagent's: the conversation a call launched, or the one a report is of, with the call it answers.
+	ChildThreadID string                     `json:"childThreadId,omitempty"`
+	LaunchItemID  string                     `json:"launchItemId,omitempty"`
+	Attachments   []conversation.Attachment  `json:"attachments,omitempty"`
+	ContextStats  *conversation.ContextStats `json:"contextStats,omitempty"`
+	Memory        []conversation.MemoryRef   `json:"memory,omitempty"`
+	StartedAt     time.Time                  `json:"startedAt"`
+	CompletedAt   *time.Time                 `json:"completedAt,omitempty"`
 }
 
-func itemRow(it db.ItemRow) ItemRow {
-	return ItemRow{
-		ID: it.ID, TurnID: it.TurnID, TurnSeq: it.TurnSeq, Seq: it.Seq, Type: it.Type, Status: it.Status, CallID: it.CallID,
-		LaunchItemID: it.LaunchItemID, Tool: it.Tool,
-		Server: it.Server, ResponseID: it.ResponseID, Error: it.Error, StartedAt: it.StartedAt, CompletedAt: it.CompletedAt,
-		Approval: it.Approval, Await: it.Await, Annotations: it.Annotations, Usage: it.Usage, ContextStats: it.ContextStats,
-		Memory: it.Memory, Attachments: it.Attachments, Text: it.Text, Arguments: it.Arguments,
-		PreparedExecution: it.PreparedExecution, Result: it.Result,
+func itemRow(it conversation.Item) ItemRow {
+	row := ItemRow{
+		ID: it.ID, TurnID: it.Turn, Seq: it.Seq, Updated: it.Updated, Type: it.Kind, Status: it.Status, Text: it.Text, Error: it.Error,
+		Response: it.Response, ChildThreadID: it.Child, LaunchItemID: it.Launch, Attachments: it.Attachments, ContextStats: it.Stats,
+		Memory: it.Memories, StartedAt: it.StartedAt, CompletedAt: it.CompletedAt,
 	}
+	if c := it.Call; c != nil {
+		row.CallID, row.Tool, row.Server, row.Arguments, row.Annotations, row.PreparedExecution = c.Call, c.Tool, c.Server, c.Arguments, c.Annotations, c.Prepared
+	}
+	if a := it.Approval; a != nil {
+		row.Approval = &Approval{ApprovalID: a.Approval, Reason: a.Reason, Rule: a.Rule, Content: a.Content, SuggestedRules: a.Suggested,
+			AvailableDecisions: a.Decisions(), AskedAt: a.AskedAt, Decision: a.Decision, DecidedBy: a.By, DecidedAt: a.DecidedAt}
+	}
+	if in := it.Input; in != nil {
+		row.Input = &Input{Request: in.Request, AskedAt: in.AskedAt, Answered: in.Answered}
+	}
+	if r := it.Result; r != nil {
+		row.Result = &Result{Output: r.Output, Artifacts: r.Artifacts}
+	}
+	return row
 }
 
+// ThreadView is a page of a conversation as it was at the commit Seq: a notification of a change to it carries a later
+// seq.
 type ThreadView struct {
 	Thread ThreadRow `json:"thread"`
 	Turns  []TurnRow `json:"turns"`
 	Items  []ItemRow `json:"items"`
-}
-
-func threadView(v db.ThreadView) ThreadView {
-	return ThreadView{Thread: threadRow(v.Thread), Turns: each(v.Turns, turnRow), Items: each(v.Items, itemRow)}
+	Seq    int64     `json:"seq"`
 }
 
 type WorkspaceRow struct {
-	ID         string                `json:"id"`
-	Name       string                `json:"name"`
-	RootPath   string                `json:"rootPath"`
-	Settings   db.PermissionSettings `json:"settings"`
-	CreatedAt  time.Time             `json:"createdAt"`
-	UpdatedAt  time.Time             `json:"updatedAt"`
-	ArchivedAt *time.Time            `json:"archivedAt,omitempty"`
+	ID         string          `json:"id"`
+	Name       string          `json:"name"`
+	RootPath   string          `json:"rootPath"`
+	Settings   policy.Settings `json:"settings"`
+	CreatedAt  time.Time       `json:"createdAt"`
+	UpdatedAt  time.Time       `json:"updatedAt"`
+	ArchivedAt *time.Time      `json:"archivedAt,omitempty"`
 }
 
-func workspaceRow(w db.WorkspaceRow) WorkspaceRow {
-	return WorkspaceRow{ID: w.ID, Name: w.Name, RootPath: w.RootPath, Settings: w.Settings, CreatedAt: w.CreatedAt,
-		UpdatedAt: w.UpdatedAt, ArchivedAt: w.ArchivedAt}
+func workspaceRow(w user.Workspace) WorkspaceRow {
+	return WorkspaceRow{ID: w.ID, Name: w.Name, RootPath: w.Root, Settings: w.Settings, CreatedAt: w.Created, UpdatedAt: w.Updated, ArchivedAt: w.Archived}
 }
 
 type EnvironmentRow struct {
-	ID        string             `json:"id"`
-	Name      string             `json:"name"`
-	Kind      db.EnvironmentKind `json:"kind"`
-	CreatedAt time.Time          `json:"createdAt"`
-	UpdatedAt time.Time          `json:"updatedAt"`
+	ID        string               `json:"id"`
+	Name      string               `json:"name"`
+	Kind      user.EnvironmentKind `json:"kind"`
+	CreatedAt time.Time            `json:"createdAt"`
+	UpdatedAt time.Time            `json:"updatedAt"`
 }
 
-func environmentRow(e db.EnvironmentRow) EnvironmentRow {
-	return EnvironmentRow{ID: e.ID, Name: e.Name, Kind: e.Kind, CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt}
+func environmentRow(e user.Environment) EnvironmentRow {
+	return EnvironmentRow{ID: e.ID, Name: e.Name, Kind: e.Kind, CreatedAt: e.Created, UpdatedAt: e.Updated}
 }
 
 type CronJobRow struct {
@@ -154,103 +211,105 @@ type CronJobRow struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
-func cronJobRow(j db.CronJobRow) CronJobRow {
-	return CronJobRow{ID: j.ID, ThreadID: j.ThreadID, Name: j.Name, Spec: j.Spec, Prompt: j.Prompt, Times: j.Times,
-		Runs: j.Runs, Paused: j.Paused, NextRunAt: j.NextRunAt, CreatedAt: j.CreatedAt}
-}
-
-type CronJobView struct {
-	CronJobRow
-	ThreadTitle    string     `json:"threadTitle"`
-	WorkspaceID    string     `json:"workspaceId,omitempty"`
-	ParentThreadID string     `json:"parentThreadId,omitempty"`
-	ThreadArchived bool       `json:"threadArchived,omitempty"`
-	LastRunAt      *time.Time `json:"lastRunAt,omitempty"`
-	LastTurnID     string     `json:"lastTurnId,omitempty"`
-}
-
-func cronJobView(j db.CronJobView) CronJobView {
-	return CronJobView{CronJobRow: cronJobRow(j.CronJobRow), ThreadTitle: j.ThreadTitle, WorkspaceID: j.WorkspaceID,
-		ParentThreadID: j.ParentThreadID, ThreadArchived: j.ThreadArchived, LastRunAt: j.LastRunAt, LastTurnID: j.LastTurnID}
+func cronJobRow(j user.CronJob) CronJobRow {
+	return CronJobRow{ID: j.ID, ThreadID: j.Thread, Name: j.Name, Spec: j.Spec, Prompt: j.Prompt, Times: j.Times, Runs: j.Runs,
+		Paused: j.Paused, NextRunAt: j.NextRun, CreatedAt: j.Created}
 }
 
 type MemoryRow struct {
-	ID                string             `json:"id"`
-	Scope             db.MemoryScope     `json:"scope"`
-	WorkspaceID       string             `json:"workspaceId,omitempty"`
-	OriginWorkspaceID string             `json:"originWorkspaceId,omitempty"`
-	Topic             string             `json:"topic"`
-	Kind              string             `json:"kind"`
-	Text              string             `json:"text"`
-	Status            db.MemoryRowStatus `json:"status"`
-	UserEdited        bool               `json:"userEdited,omitempty"`
-	Sources           []db.MemorySource  `json:"sources"`
-	CreatedAt         time.Time          `json:"createdAt"`
-	UpdatedAt         time.Time          `json:"updatedAt"`
+	ID                string          `json:"id"`
+	Scope             memory.Scope    `json:"scope"`
+	WorkspaceID       string          `json:"workspaceId,omitempty"`
+	OriginWorkspaceID string          `json:"originWorkspaceId,omitempty"`
+	Topic             string          `json:"topic"`
+	Kind              memory.Kind     `json:"kind"`
+	Text              string          `json:"text"`
+	Status            memory.Status   `json:"status"`
+	UserEdited        bool            `json:"userEdited,omitempty"`
+	Sources           []memory.Source `json:"sources"`
+	CreatedAt         time.Time       `json:"createdAt"`
+	UpdatedAt         time.Time       `json:"updatedAt"`
 }
 
-func memoryRow(m db.MemoryRow) MemoryRow {
-	return MemoryRow{ID: m.ID, Scope: m.Scope, WorkspaceID: m.WorkspaceID, OriginWorkspaceID: m.OriginWorkspaceID,
-		Topic: m.Topic, Kind: m.Kind, Text: m.Text, Status: m.Status, UserEdited: m.UserEdited, Sources: m.Sources,
-		CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt}
-}
-
-type MemoryStateRow struct {
-	Attempts    int               `json:"attempts,omitempty"`
-	NextAttempt *time.Time        `json:"nextAttempt,omitempty"`
-	Skipped     int64             `json:"skipped"`
-	LastSuccess *time.Time        `json:"lastSuccess,omitempty"`
-	LastFailure *db.MemoryFailure `json:"lastFailure,omitempty"`
-	LastSkip    *db.MemorySkip    `json:"lastSkip,omitempty"`
-	LastReport  *db.MemoryReport  `json:"lastReport,omitempty"`
+func memoryRow(m memory.Memory) MemoryRow {
+	return MemoryRow{ID: m.ID, Scope: m.Scope, WorkspaceID: m.Workspace, OriginWorkspaceID: m.Origin, Topic: m.Topic, Kind: m.Kind,
+		Text: m.Text, Status: m.Status, UserEdited: m.UserEdited, Sources: nonNil(m.Sources), CreatedAt: m.Created, UpdatedAt: m.Updated}
 }
 
 type MemoryStatus struct {
-	GenerationEnabled bool  `json:"generationEnabled"`
-	UseEnabled        bool  `json:"useEnabled"`
-	Pending           int64 `json:"pending"`
-	Active            int64 `json:"active"`
-	MemoryStateRow
-}
-
-func memoryStatus(s db.MemoryStatus) MemoryStatus {
-	st := s.MemoryStateRow
-	return MemoryStatus{
-		GenerationEnabled: s.GenerationEnabled, UseEnabled: s.UseEnabled, Pending: s.Pending, Active: s.Active,
-		MemoryStateRow: MemoryStateRow{Attempts: st.Attempts, NextAttempt: st.NextAttempt, Skipped: st.Skipped,
-			LastSuccess: st.LastSuccess, LastFailure: st.LastFailure, LastSkip: st.LastSkip, LastReport: st.LastReport},
-	}
+	// Enabled says whether the user has memory on.
+	Enabled     bool            `json:"enabled"`
+	Unread      int64           `json:"unread"`
+	Active      int             `json:"active"`
+	Attempts    int             `json:"attempts,omitempty"`
+	NextAttempt *time.Time      `json:"nextAttempt,omitempty"`
+	Skipped     int64           `json:"skipped"`
+	LastSuccess *time.Time      `json:"lastSuccess,omitempty"`
+	LastFailure *memory.Failure `json:"lastFailure,omitempty"`
+	LastSkip    *memory.Skip    `json:"lastSkip,omitempty"`
 }
 
 type SettingsRow struct {
-	Redaction   bool                  `json:"redaction"`
-	Memory      bool                  `json:"memory"`
-	Permissions db.PermissionSettings `json:"permissions"`
+	Redaction   bool            `json:"redaction"`
+	Memory      bool            `json:"memory"`
+	Permissions policy.Settings `json:"permissions"`
 }
 
-func settingsRow(s db.SettingsRow) SettingsRow {
+func settingsRow(s user.Settings) SettingsRow {
 	return SettingsRow{Redaction: s.Redaction, Memory: s.Memory, Permissions: s.Permissions}
 }
 
-func mcpServerConfig(r db.MCPServerRow) MCPServerConfig {
-	return MCPServerConfig{Name: r.Name, Command: r.Command, Args: r.Args, Env: r.Env, URL: r.URL, Headers: r.Headers}
+// Env and header values are sent to the server as they are written.
+type MCPServerConfig struct {
+	Name    string            `json:"name"`
+	Command string            `json:"command,omitempty"`
+	Args    []string          `json:"args,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
+	URL     string            `json:"url,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+}
+
+func mcpServerConfig(s user.MCPServer) MCPServerConfig {
+	return MCPServerConfig{Name: s.Name, Command: s.Command, Args: s.Args, Env: s.Env, URL: s.URL, Headers: s.Headers}
+}
+
+type MessageHit struct {
+	ThreadID string                `json:"threadId"`
+	Title    string                `json:"title"`
+	ItemID   string                `json:"itemId"`
+	TurnID   string                `json:"turnId"`
+	Seq      int64                 `json:"seq"`
+	Type     conversation.ItemKind `json:"type"`
+	Snippet  string                `json:"snippet"`
+	At       time.Time             `json:"at"`
 }
 
 type Found struct {
-	Threads  []ThreadRow     `json:"threads"`
-	Messages []db.MessageHit `json:"messages"`
-	Tasks    []CronJobView   `json:"tasks"`
+	Threads  []ThreadRow  `json:"threads"`
+	Messages []MessageHit `json:"messages"`
+	Tasks    []CronJobRow `json:"tasks"`
 }
 
-func found(f db.Found) Found {
-	return Found{Threads: each(f.Threads, threadRow), Messages: f.Messages, Tasks: each(f.Tasks, cronJobView)}
+func found(f store.Found) Found {
+	messages := make([]MessageHit, len(f.Messages))
+	for i, h := range f.Messages {
+		messages[i] = MessageHit{ThreadID: h.Thread, Title: h.Title, ItemID: h.Item, TurnID: h.Turn, Seq: h.Seq, Type: h.Kind, Snippet: h.Snippet, At: h.At}
+	}
+	return Found{Threads: each(f.Threads, threadRow), Messages: messages, Tasks: each(f.Tasks, cronJobRow)}
 }
 
-// each converts rows for the wire, and gives a list that is never null.
+// each converts records for the wire, and gives a list that is never null.
 func each[T, U any](rows []T, convert func(T) U) []U {
 	out := make([]U, len(rows))
 	for i, r := range rows {
 		out[i] = convert(r)
 	}
 	return out
+}
+
+func nonNil[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+	return s
 }

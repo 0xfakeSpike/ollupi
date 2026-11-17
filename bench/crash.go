@@ -17,16 +17,17 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/event"
-	"github.com/0xfakeSpike/ollupi/agent/permission"
-	"github.com/0xfakeSpike/ollupi/agent/service"
+	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/app"
+	"github.com/0xfakeSpike/ollupi/ask"
+	"github.com/0xfakeSpike/ollupi/catalog"
+	"github.com/0xfakeSpike/ollupi/conversation"
+	"github.com/0xfakeSpike/ollupi/host"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo/catalog"
-	"github.com/0xfakeSpike/ollupi/repo/db"
+	"github.com/0xfakeSpike/ollupi/policy"
 	"github.com/0xfakeSpike/ollupi/shard"
-	"github.com/0xfakeSpike/ollupi/tools"
-	"github.com/0xfakeSpike/ollupi/tools/subagent"
-	"github.com/0xfakeSpike/ollupi/tools/userinput"
+	"github.com/0xfakeSpike/ollupi/store"
+	"github.com/0xfakeSpike/ollupi/tool/kit"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -56,13 +57,13 @@ func crash(args []string) {
 	fs.Parse(args)
 
 	var token atomic.Int64
-	p := &provider{latency: *latency, jitter: *latency / 4, limit: *calls, next: func(ask string, answered int) (string, string) {
+	p := &provider{latency: *latency, jitter: *latency / 4, limit: *calls, next: func(asked string, answered int) (string, string) {
 		switch {
-		case ask == kindAsk && answered == 0:
-			return userinput.Tool, askArgs
-		case ask == kindDelegate && answered == 0:
-			return subagent.General, `{"description":"Do the work","prompt":"work"}`
-		case ask == kindWork && answered < 2:
+		case asked == kindAsk && answered == 0:
+			return ask.Tool, askArgs
+		case asked == kindDelegate && answered == 0:
+			return string(agent.GeneralSub), `{"description":"Do the work","prompt":"work"}`
+		case asked == kindWork && answered < 2:
 			return "bench__work", fmt.Sprintf(`{"token":"t%d"}`, token.Add(1))
 		}
 		return "", ""
@@ -150,7 +151,7 @@ func crash(args []string) {
 		_ = standby.Wait()
 	}
 
-	g, err := gorm.Open(sqlite.Open(filepath.Join(dir, "data", "ollupi.sqlite")), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	g, err := gorm.Open(sqlite.Open(filepath.Join(dir, "data", "store.sqlite")), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -165,7 +166,7 @@ func crash(args []string) {
 		Status string
 		N      int64
 	}
-	if err := g.Raw("SELECT status, count(*) AS n FROM turns GROUP BY status ORDER BY status").Scan(&statuses).Error; err != nil {
+	if err := g.Raw("SELECT coalesce(json_extract(body, '$.Ended.Status'), 'open') AS status, count(*) AS n FROM turns GROUP BY status ORDER BY status").Scan(&statuses).Error; err != nil {
 		log.Fatal(err)
 	}
 	var byStatus []string
@@ -173,7 +174,7 @@ func crash(args []string) {
 		byStatus = append(byStatus, fmt.Sprintf("%s:%d", s.Status, s.N))
 	}
 	var completedTokens []string
-	if err := g.Raw("SELECT json_extract(arguments, '$.token') FROM items WHERE tool = 'bench__work' AND status = 'completed'").Scan(&completedTokens).Error; err != nil {
+	if err := g.Raw("SELECT json_extract(json_extract(body, '$.Call.Arguments'), '$.token') FROM items WHERE json_extract(body, '$.Call.Tool') = 'bench__work' AND status = 'completed'").Scan(&completedTokens).Error; err != nil {
 		log.Fatal(err)
 	}
 	raw, err := os.ReadFile(filepath.Join(dir, "tools.log"))
@@ -199,19 +200,24 @@ func crash(args []string) {
 	fmt.Printf("n=%d kills=%d turns=[%s] open_turns=%d open_items=%d cut_off_calls=%d cut_off_messages=%d tool_runs=%d "+
 		"calls_run_twice=%d completed_calls_never_run=%d restart_p50_ms=%d restart_max_ms=%d requests=%d\n",
 		*n, killed, strings.Join(byStatus, " "),
-		count("SELECT count(*) FROM turns WHERE NOT (status = 'completed' OR status = 'failed' OR status = 'interrupted')"),
+		count(openTurns),
 		count("SELECT count(*) FROM items WHERE status = 'pending' OR status = 'inProgress'"),
-		count("SELECT count(*) FROM items WHERE error LIKE 'the app stopped while this call was running%'"),
-		count("SELECT count(*) FROM items WHERE error = 'the app stopped before this finished'"),
+		count("SELECT count(*) FROM items WHERE json_extract(body, '$.Error') LIKE 'the call was cut off%'"),
+		// A model's answer cut off is not kept, and its request is made again: the requests answered that no response
+		// was kept for.
+		p.requests.Load()-p.refused.Load()-count("SELECT count(*) FROM entries WHERE kind = ?", string(conversation.KindModelResponded)),
 		len(ran), twice, unrun, pct(restarts, .5).Milliseconds(), pct(restarts, 1).Milliseconds(), p.requests.Load())
 	fmt.Printf("recoveries: %s\n", strings.Join(recoveries, " | "))
 }
 
-// crashChild is the process crash kills: it runs the agent on the database in dir, answers every question it is
-// asked, submits the workload when told to, and says when no turn is left open.
+// openTurns counts the turns of every conversation, subagents' among them, that have not ended.
+const openTurns = "SELECT count(*) FROM turns WHERE ended_seq IS NULL"
+
+// crashChild is the process crash kills: it runs a host on the store in dir, answers every question it is asked,
+// submits the workload when told to, and says when no turn is left open.
 func crashChild(args []string) {
 	fs := flag.NewFlagSet("crashchild", flag.ExitOnError)
-	dir := fs.String("dir", "", "home of the database")
+	dir := fs.String("dir", "", "home of the store")
 	url := fs.String("url", "", "the fake provider")
 	slots := fs.Int("slots", 32, "agent slots")
 	calls := fs.Int("calls", 8, "model calls the connection allows in flight")
@@ -224,44 +230,45 @@ func crashChild(args []string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	store, err := db.Open(*dir)
+	// A standby puts its host together before it holds the shard, and writes nothing until it does.
+	startAt := time.Now()
+	h, err := host.New(context.Background(), host.Config{
+		Home: *dir, Name: "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
+		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(*url, "", *calls, map[string]llm.Limits{"fake": {Context: 200_000, Output: 32_000}})},
+		Tools:       []kit.Provider{work{latency: *toolLatency, log: toolLog}},
+		Permissions: policy.Settings{ApprovalPolicy: string(policy.Never)},
+		Boxes:       here, Slots: *slots,
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
-	var ag *service.Service
+	defer h.Close()
 	answer := func(threadID, itemID string) {
 		go func() {
 			time.Sleep(200 * time.Millisecond)
-			if err := ag.AnswerUserInput(db.DefaultUser, threadID, itemID, userinput.Answers{"pick": {Answers: []string{"A"}}}); err != nil {
+			if err := h.App.Answer(context.Background(), defaultUser, threadID, itemID, ask.Answers{"pick": {Answers: []string{"A"}}}); err != nil {
 				log.Printf("answer %s: %v", itemID, err)
 			}
 		}()
 	}
-	events := event.New()
-	events.SubscribeAll(func(e event.Event) {
-		if e.Kind == event.UserInputRequested {
-			answer(e.Thread.ID, e.Item.ID)
+	h.Store.Feed().SubscribeAll(func(e store.Event) {
+		if e.Change == nil {
+			return
+		}
+		for _, entry := range e.Change.Entries {
+			if _, asked := entry.Body.(conversation.InputAsked); asked {
+				answer(e.Thread, entry.Item)
+			}
 		}
 	})
-	ag = service.New(service.Config{
-		BoxFor: here,
-		Name:   "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
-		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(*url, "", *calls, map[string]llm.Limits{"fake": {Context: 200_000, Output: 32_000}})},
-		Providers:   []tools.Provider{work{latency: *toolLatency, log: toolLog}},
-		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
-		Slots:       *slots, DB: store,
-		Events: events,
-	})
-	startAt := time.Now()
 	run := func(ctx context.Context) error {
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
-		if err := ag.Start(ctx); err != nil {
-			return err
-		}
-		return crashServe(ctx, cancel, ag, *dir, *submit, time.Since(startAt), answer)
+		ran := make(chan error, 1)
+		go func() { ran <- h.Run(ctx) }()
+		return crashServe(ctx, cancel, ran, h, *dir, *submit, time.Since(startAt), answer)
 	}
-	// With a lease the shard is held through a catalog beside the database, as a standby waits on it.
+	// With a lease the shard is held through a catalog beside the store, as a standby waits on it.
 	if *lease == 0 {
 		err = run(context.Background())
 	} else {
@@ -271,15 +278,18 @@ func crashChild(args []string) {
 		}
 		defer cat.Close()
 		m := shard.Member{ID: "bench", Accepting: true, Catalog: cat, TTL: *lease}
-		err = m.Run(context.Background(), store, run)
+		err = m.Run(context.Background(), h.Store, run)
 	}
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
-func crashServe(ctx context.Context, cancel context.CancelFunc, ag *service.Service, dir string, submit int, started time.Duration, answer func(threadID, itemID string)) error {
-	pending, err := ag.AllPendingRequests(db.DefaultUser)
+func crashServe(ctx context.Context, cancel context.CancelFunc, ran <-chan error, h *host.Host, dir string, submit int, started time.Duration, answer func(threadID, itemID string)) error {
+	if err := h.App.EnsureUser(ctx, defaultUser); err != nil {
+		log.Fatal(err)
+	}
+	pending, err := h.App.Requests(ctx, defaultUser, "")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -288,23 +298,23 @@ func crashServe(ctx context.Context, cancel context.CancelFunc, ag *service.Serv
 	}
 	kinds := []string{kindWork, kindWork, kindWork, kindAsk, kindDelegate}
 	for i := range submit {
-		th, err := ag.StartThread(db.DefaultUser, "", "", "bench")
+		th, err := h.App.StartThread(ctx, defaultUser, "", "", "bench")
 		if err != nil {
 			log.Fatal(err)
 		}
-		if _, _, err := ag.StartTurn(ctx, db.DefaultUser, th.ID, service.Input{Text: kinds[i%len(kinds)]}); err != nil {
+		if _, _, err := h.App.Send(ctx, defaultUser, th.ID, app.Input{Text: kinds[i%len(kinds)]}); err != nil {
 			log.Fatal(err)
 		}
 	}
 	fmt.Printf("ready start_ms=%d answered=%d\n", started.Milliseconds(), len(pending))
 
-	g, err := gorm.Open(sqlite.Open(filepath.Join(dir, "data", "ollupi.sqlite")), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	g, err := gorm.Open(sqlite.Open(filepath.Join(dir, "data", "store.sqlite")), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
 		log.Fatal(err)
 	}
 	for {
 		var open int64
-		if err := g.Raw("SELECT count(*) FROM turns WHERE NOT (status = 'completed' OR status = 'failed' OR status = 'interrupted')").Scan(&open).Error; err != nil {
+		if err := g.Raw(openTurns).Scan(&open).Error; err != nil {
 			log.Fatal(err)
 		}
 		if open == 0 {
@@ -313,7 +323,9 @@ func crashServe(ctx context.Context, cancel context.CancelFunc, ag *service.Serv
 		time.Sleep(200 * time.Millisecond)
 	}
 	cancel()
-	ag.Wait()
+	if err := <-ran; err != nil {
+		return err
+	}
 	fmt.Println("drained")
 	return nil
 }

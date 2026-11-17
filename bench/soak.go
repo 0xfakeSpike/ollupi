@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -19,12 +18,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/event"
-	"github.com/0xfakeSpike/ollupi/agent/permission"
-	"github.com/0xfakeSpike/ollupi/agent/service"
+	"github.com/0xfakeSpike/ollupi/host"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo/db"
-	"github.com/0xfakeSpike/ollupi/tools"
+	"github.com/0xfakeSpike/ollupi/tool/kit"
 )
 
 // soak keeps conversations busy for a long time, each turn adding to its conversation's history, and samples what
@@ -80,36 +76,21 @@ func soak(args []string) {
 		log.Fatal(err)
 	}
 	defer os.RemoveAll(dir)
-	store, err := db.Open(dir)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer store.Close()
-	dbs := watchDB(store)
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}, done: map[string]chan struct{}{}}
-	events := event.New()
-	events.SubscribeAll(tr.on)
-	ag := service.New(service.Config{
-		BoxFor: here,
-		Name:   "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
+	e := newEngine(host.Config{
+		Home: dir, Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(url, "", *calls, map[string]llm.Limits{"fake": {Context: 200_000, Output: 32_000}})},
-		Providers:   []tools.Provider{work{latency: *toolLatency}},
-		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
-		Slots:       *slots, DB: store, Events: events,
+		Tools:       []kit.Provider{work{latency: *toolLatency}},
+		Slots:       *slots,
 	})
-	ctx, cancel := context.WithCancel(context.Background())
-	if err := ag.Start(ctx); err != nil {
-		log.Fatal(err)
-	}
+	dbs := watchDB(e.Store)
+	e.Store.Feed().SubscribeAll(tr.on)
+	e.run()
 	threads := make([]string, *c)
 	tr.mu.Lock()
 	for i := range threads {
-		th, err := ag.StartThread(db.DefaultUser, "", "", "bench")
-		if err != nil {
-			log.Fatal(err)
-		}
-		threads[i] = th.ID
-		tr.done[th.ID] = make(chan struct{}, 1)
+		threads[i] = e.newThread(defaultUser)
+		tr.done[threads[i]] = make(chan struct{}, 1)
 	}
 	tr.mu.Unlock()
 
@@ -123,7 +104,7 @@ func soak(args []string) {
 		go func() {
 			defer wg.Done()
 			for time.Now().Before(deadline) {
-				turnID := tr.start(ag, db.DefaultUser, id, "work")
+				turnID := tr.start(e, defaultUser, id, "work")
 				mu.Lock()
 				ids = append(ids, turnID)
 				mu.Unlock()
@@ -182,7 +163,7 @@ func soak(args []string) {
 		rows = append(rows, fmt.Sprintf("%.1f,%d,%d,%.2f,%.2f,%.0f,%.0f,%d,%.2f,%.2f,%.1f,%.1f,%.1f,%.2f,%.2f,%.2f",
 			time.Since(startAt).Minutes(), n-seen, n / *c, pct(ended, .5).Seconds(), pct(ended, .99).Seconds(),
 			rssMB(), float64(m.HeapInuse)/(1<<20), runtime.NumGoroutine(), p99*1000, worst*1000,
-			size("ollupi.sqlite"), size("ollupi.sqlite-wal"),
+			size("store.sqlite"), size("store.sqlite-wal"),
 			per(used-lastCPU), per(read-lastRead), per(write-lastWrite), per(pool.WaitDuration-lastPool.WaitDuration)))
 		seen, lastCPU, lastPool, lastRead, lastWrite = n, used, pool, read, write
 		fmt.Println(rows[len(rows)-1])
@@ -198,8 +179,7 @@ func soak(args []string) {
 			log.Fatal(err)
 		}
 	}
-	cancel()
-	ag.Wait()
+	e.stop()
 }
 
 // pauseQuantiles reads the 99th percentile and the longest of the collector pauses since the histogram before, in
