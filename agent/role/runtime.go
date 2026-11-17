@@ -22,7 +22,7 @@ type Runtime struct {
 	store       *db.DB
 	attachments blobs.Store
 	registry    *tools.Registry
-	events      event.Emitter
+	events      *event.Emitter
 
 	role                     Role
 	agent, prompt, skillsDir string

@@ -227,12 +227,14 @@ func parked(args []string) {
 	defer store.Close()
 	m := &model{}
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}}
+	events := event.New(store)
+	events.Subscribe(tr.on)
 	ag := service.New(service.Config{
 		BoxFor: here,
 		Name:   "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": m},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
-		Slots:       *slots, DB: store, OnEvent: tr.on,
+		Slots:       *slots, DB: store, Events: events,
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := ag.Start(ctx); err != nil {

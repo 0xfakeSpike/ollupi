@@ -92,7 +92,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.hub.Serve(r.Context(), user, ws, c, func(ctx context.Context) error { return c.rpc.Serve(ctx, c) })
 }
 
-func (s *Server) Deliver(e event.Event) {
+func (s *Server) deliver(e event.Event) {
 	user := e.Thread.UserID
 	if e.Workspace != nil {
 		user = e.Workspace.UserID

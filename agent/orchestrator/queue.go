@@ -9,6 +9,10 @@ var (
 	errCrashed = errors.New("orchestrator: an internal error stopped this")
 )
 
+// The service produces wake, started and interrupt, and each run produces one finished; consume alone touches the
+// slots, so they need no lock.
+type message any
+
 type wake struct{ threadID string }
 
 type started struct{ threadID string }
@@ -27,20 +31,29 @@ type finished struct {
 
 func (o *Orchestrator) Wait() { o.done.Wait() }
 
-func (o *Orchestrator) loop() {
+func (o *Orchestrator) produce(m message) bool {
+	select {
+	case o.queue <- m:
+		return true
+	case <-o.ctx.Done():
+		return false
+	}
+}
+
+func (o *Orchestrator) consume() {
 	defer o.done.Done()
 	for {
 		select {
 		case <-o.ctx.Done():
 			return
-		case m := <-o.inbox:
+		case m := <-o.queue:
 			o.handle(m)
 		}
 	}
 }
 
-func (o *Orchestrator) handle(m any) {
-	defer func() { recover() }() // a message whose handling panics is dropped, so that the loop goes on
+func (o *Orchestrator) handle(m message) {
+	defer func() { recover() }() // a message whose handling panics is dropped, so that consume goes on
 	switch m := m.(type) {
 	case wake:
 		o.reconcile(m.threadID)
@@ -54,13 +67,4 @@ func (o *Orchestrator) handle(m any) {
 		o.afterRun(m.threadID, m.sl, m.final, m.err)
 	}
 	o.admit()
-}
-
-func (o *Orchestrator) post(m any) bool {
-	select {
-	case o.inbox <- m:
-		return true
-	case <-o.ctx.Done():
-		return false
-	}
 }
