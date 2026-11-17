@@ -107,6 +107,17 @@ func (r reader) Ended(owner string, after memory.Cursor, limit int) ([]memory.Cu
 	return out, nil
 }
 
+func (r reader) Unread(owner string, after memory.Cursor) (int64, error) {
+	var n int64
+	err := r.g.Raw(`SELECT count(*) FROM turns t JOIN threads th ON th.id = t.thread_id
+		WHERE t.ended_seq IS NOT NULL AND (t.ended_seq, t.thread_id, t.id) > (?, ?, ?) AND th.user_id = ?`,
+		after.Seq, after.Thread, after.Turn, owner).Scan(&n).Error
+	if err != nil {
+		return 0, fmt.Errorf("store: the unread turns of user %s: %w", owner, err)
+	}
+	return n, nil
+}
+
 func (t *tx) PutMemory(m memory.Memory) error {
 	sources, _ := json.Marshal(nonNil(m.Sources)) // plain data: it cannot fail
 	err := t.g.Exec(`INSERT INTO memories(id, user_id, scope, workspace_id, origin_workspace_id, topic, kind, text, status, user_edited, sources, created_at, updated_at)

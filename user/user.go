@@ -118,6 +118,12 @@ func (t Thread) ParentLayer() policy.Layer {
 	return policy.Layer{Of: "the parent conversation's permission settings", Settings: t.Settings}
 }
 
+// Deployment is the layer of a deployment's settings, beneath every user's. Users have tools of their own, so it may
+// name tools one user lacks.
+func Deployment(s policy.Settings) policy.Layer {
+	return policy.Layer{Of: "the default permission settings", Settings: s, Shared: true}
+}
+
 // Layers stack a call's settings, the later deciding over the earlier: the deployment's, the user's, the workspace's
 // when the conversation is in one, the conversation's.
 func Layers(deployment policy.Layer, s Settings, w *Workspace, conversation policy.Layer) []policy.Layer {
