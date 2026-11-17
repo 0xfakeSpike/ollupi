@@ -9,14 +9,6 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
-func ValidateArguments(args map[string]any, schema any) error {
-	resolved, err := ResolveSchema(schema)
-	if err != nil {
-		return err
-	}
-	return validate(resolved, args)
-}
-
 func ResolveSchema(schema any) (*jsonschema.Resolved, error) {
 	if schema == nil {
 		return nil, fmt.Errorf("missing input schema")

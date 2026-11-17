@@ -88,28 +88,6 @@ func (sv *Service) ResolveApproval(user, threadID, approvalID string, decision d
 	if err := sv.owned(user, threadID); err != nil {
 		return err
 	}
-	return sv.resolveApproval(threadID, approvalID, decision, decidedBy)
-}
-
-func (sv *Service) AnswerUserInput(user, threadID, itemID string, answers userinput.Answers) error {
-	if err := sv.owned(user, threadID); err != nil {
-		return err
-	}
-	return sv.answerUserInput(threadID, itemID, answers)
-}
-
-func (sv *Service) SkipUserInput(user, threadID, itemID string) error {
-	if err := sv.owned(user, threadID); err != nil {
-		return err
-	}
-	return sv.answer(threadID, func(it db.ItemRow) bool { return it.ID == itemID && !it.WaitsForApproval() }, func(it db.ItemRow) (db.ItemRow, error) {
-		now := time.Now().UTC()
-		it.Status, it.Error, it.CompletedAt = db.ItemDeclined, "the user skipped these questions; go on without their answers", &now
-		return it, nil
-	})
-}
-
-func (sv *Service) resolveApproval(threadID, approvalID string, decision db.Decision, decidedBy string) error {
 	stored, err := sv.respond(threadID, func(it db.ItemRow) bool { return it.WaitsForApproval() && it.Approval.ID == approvalID }, func(it db.ItemRow) (db.ItemRow, error) {
 		if available := it.Approval.AvailableDecisions(); !slices.Contains(available, decision) {
 			return db.ItemRow{}, fmt.Errorf("service: %w: %q is not one of %q", ErrInvalidDecision, decision, available)
@@ -131,6 +109,36 @@ func (sv *Service) resolveApproval(threadID, approvalID string, decision db.Deci
 	return nil
 }
 
+func (sv *Service) AnswerUserInput(user, threadID, itemID string, answers userinput.Answers) error {
+	if err := sv.owned(user, threadID); err != nil {
+		return err
+	}
+	return sv.answer(threadID, itemID, func(it db.ItemRow) (db.ItemRow, error) {
+		req, err := userinput.Decode(it.Await.Request)
+		if err != nil {
+			return db.ItemRow{}, err
+		}
+		if err := req.Check(answers, maxAnswerRunes); err != nil {
+			return db.ItemRow{}, fmt.Errorf("service: %w: %v", ErrInvalidAnswer, err)
+		}
+		result, _, _ := db.ResultOf(tools.Result{Output: answers}) // strings alone: it cannot fail
+		now := time.Now().UTC()
+		it.Result, it.Status, it.CompletedAt = result, db.ItemCompleted, &now
+		return it, nil
+	})
+}
+
+func (sv *Service) SkipUserInput(user, threadID, itemID string) error {
+	if err := sv.owned(user, threadID); err != nil {
+		return err
+	}
+	return sv.answer(threadID, itemID, func(it db.ItemRow) (db.ItemRow, error) {
+		now := time.Now().UTC()
+		it.Status, it.Error, it.CompletedAt = db.ItemDeclined, "the user skipped these questions; go on without their answers", &now
+		return it, nil
+	})
+}
+
 func (sv *Service) allowAlways(threadID string, rules []string) error {
 	t, err := sv.cfg.DB.ThreadRow(threadID)
 	if err != nil {
@@ -149,22 +157,6 @@ func (sv *Service) allowAlways(threadID string, rules []string) error {
 	}
 	_, err = sv.updateWorkspaceSettings(t.UserID, string(t.WorkspaceID), widen)
 	return err
-}
-
-func (sv *Service) answerUserInput(threadID, itemID string, answers userinput.Answers) error {
-	return sv.answer(threadID, func(it db.ItemRow) bool { return it.ID == itemID && !it.WaitsForApproval() }, func(it db.ItemRow) (db.ItemRow, error) {
-		req, err := userinput.Decode(it.Await.Request)
-		if err != nil {
-			return db.ItemRow{}, err
-		}
-		if err := req.Check(answers, maxAnswerRunes); err != nil {
-			return db.ItemRow{}, fmt.Errorf("service: %w: %v", ErrInvalidAnswer, err)
-		}
-		result, _, _ := db.ResultOf(tools.Result{Output: answers}) // strings alone: it cannot fail
-		now := time.Now().UTC()
-		it.Result, it.Status, it.CompletedAt = result, db.ItemCompleted, &now
-		return it, nil
-	})
 }
 
 // The thread's state is read before the answer is made, so the database refuses it with db.ErrNoSuchRequest
@@ -193,8 +185,8 @@ func (sv *Service) respond(threadID string, match func(db.ItemRow) bool, apply f
 	return stored, nil
 }
 
-func (sv *Service) answer(threadID string, match func(db.ItemRow) bool, apply func(db.ItemRow) (db.ItemRow, error)) error {
-	if _, err := sv.respond(threadID, match, apply); err != nil {
+func (sv *Service) answer(threadID, itemID string, apply func(db.ItemRow) (db.ItemRow, error)) error {
+	if _, err := sv.respond(threadID, func(it db.ItemRow) bool { return it.ID == itemID && !it.WaitsForApproval() }, apply); err != nil {
 		return err
 	}
 	sv.o.Wake(threadID)

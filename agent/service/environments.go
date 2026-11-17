@@ -57,11 +57,8 @@ func (sv *Service) RenameEnvironment(user, id, name string) (db.EnvironmentRow, 
 		}
 	}
 	row, err := sv.cfg.DB.RenameEnvironment(user, id, name, time.Now().UTC())
-	if errors.Is(err, db.ErrNotFound) {
-		return db.EnvironmentRow{}, fmt.Errorf("service: environment %s: %w", id, db.ErrNotFound)
-	}
 	if err != nil {
-		return db.EnvironmentRow{}, err
+		return db.EnvironmentRow{}, fmt.Errorf("service: environment %s: %w", id, err)
 	}
 	sv.ev.Emit(event.Event{Kind: event.EnvironmentChanged, Environment: &row})
 	return row, nil
@@ -71,11 +68,8 @@ func (sv *Service) RenameEnvironment(user, id, name string) (db.EnvironmentRow, 
 // in: a conversation does not move while it exists.
 func (sv *Service) DeleteEnvironment(user, id string) (db.EnvironmentRow, error) {
 	row, err := sv.cfg.DB.EnvironmentOf(user, id)
-	if errors.Is(err, db.ErrNotFound) {
-		return db.EnvironmentRow{}, fmt.Errorf("service: environment %s: %w", id, db.ErrNotFound)
-	}
 	if err != nil {
-		return db.EnvironmentRow{}, err
+		return db.EnvironmentRow{}, fmt.Errorf("service: environment %s: %w", id, err)
 	}
 	if row.Kind == db.EnvironmentLocal {
 		return db.EnvironmentRow{}, fmt.Errorf("service: %w: %s is this machine, whose folders the workspaces are", ErrInvalidName, row.Name)
@@ -103,10 +97,10 @@ func (sv *Service) environmentFor(user, id string) (db.EnvironmentRow, error) {
 		return env, err
 	}
 	env, err := sv.cfg.DB.EnvironmentOf(user, id)
-	if errors.Is(err, db.ErrNotFound) {
-		return db.EnvironmentRow{}, fmt.Errorf("service: environment %s: %w", id, db.ErrNotFound)
+	if err != nil {
+		return db.EnvironmentRow{}, fmt.Errorf("service: environment %s: %w", id, err)
 	}
-	return env, err
+	return env, nil
 }
 
 func environmentName(name string) (string, error) {

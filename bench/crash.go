@@ -235,6 +235,12 @@ func crashChild(args []string) {
 			}
 		}()
 	}
+	events := event.New(store)
+	events.Subscribe(func(e event.Event) {
+		if e.Kind == event.UserInputRequested {
+			answer(e.Thread.ID, e.Item.ID)
+		}
+	})
 	ag = service.New(service.Config{
 		BoxFor: here,
 		Name:   "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
@@ -242,11 +248,7 @@ func crashChild(args []string) {
 		Providers:   []tools.Provider{work{latency: *toolLatency, log: toolLog}},
 		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
 		Slots:       *slots, DB: store, Lease: *lease,
-		OnEvent: func(e event.Event) {
-			if e.Kind == event.UserInputRequested {
-				answer(e.Thread.ID, e.Item.ID)
-			}
-		},
+		Events: events,
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	startAt := time.Now()

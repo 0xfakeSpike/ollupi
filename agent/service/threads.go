@@ -44,7 +44,7 @@ func (sv *Service) updateThreadSettings(user, threadID string, change func(permi
 	if err != nil {
 		return db.ThreadRow{}, err
 	}
-	w, err := sv.workspaceOf(t.WorkspaceID)
+	w, err := sv.workspaceFor(user, t.WorkspaceID)
 	if err != nil {
 		return db.ThreadRow{}, err
 	}
@@ -160,7 +160,7 @@ func (sv *Service) DeleteThread(user, id string) error {
 	if sv.cfg.Attachments == nil {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(sv.ctx), attachmentTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), attachmentTimeout)
 	defer cancel()
 	sv.cfg.Attachments.DeletePrefix(ctx, id)
 	return nil

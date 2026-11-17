@@ -16,7 +16,6 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/agent/event"
-	"github.com/0xfakeSpike/ollupi/agent/lease"
 	"github.com/0xfakeSpike/ollupi/agent/orchestrator"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/agent/resources"
@@ -69,12 +68,11 @@ type Config struct {
 	Providers []tools.Provider
 	ToolsFor  func(user string) (*tools.Set, error)
 	// Layout: SkillsDir/<role>/<skill>/SKILL.md.
-	SkillsDir      string
-	Attachments    blobs.Store
-	AttachmentsDir string
-	Memory         *memory.Manager
-	DB             *db.DB
-	OnEvent        func(event.Event)
+	SkillsDir   string
+	Attachments blobs.Store
+	Memory      *memory.Manager
+	DB          *db.DB
+	Events      *event.Emitter
 	// A process that dies leaves its claim for this long. Without it the process trusts it is alone.
 	Lease time.Duration
 	// Required: a client names the paths it reads, so a one-user host passes sandbox.Here, and no host gives
@@ -86,25 +84,20 @@ type Config struct {
 
 type Service struct {
 	cfg         Config
-	ctx         context.Context
 	permissions permission.Deployment
 	o           *orchestrator.Orchestrator
-	lease       *lease.Lease
 	res         *resources.Resources
-	ev          event.Emitter
+	ev          *event.Emitter
 
 	moveMu sync.Mutex
 	moving map[string]bool
 }
 
 func New(cfg Config) *Service {
-	if cfg.Attachments == nil && cfg.AttachmentsDir != "" {
-		cfg.Attachments = blobs.Dir(cfg.AttachmentsDir)
-	}
 	permissions := permission.Deployment{Settings: cfg.Settings, Shared: cfg.ToolsFor != nil, Tools: cfg.Tools}
-	o := orchestrator.New(cfg.DB, cfg.Attachments, cfg.Memory, cfg.OnEvent, cfg.Name, cfg.Prompt, cfg.SkillsDir, permissions,
+	o := orchestrator.New(cfg.DB, cfg.Attachments, cfg.Memory, cfg.Events, cfg.Name, cfg.Prompt, cfg.SkillsDir, permissions,
 		cfg.Slots, cfg.UserSlots, cfg.RunLimit)
-	return &Service{cfg: cfg, permissions: permissions, o: o, ev: event.Emitter{DB: cfg.DB, OnEvent: cfg.OnEvent}, moving: map[string]bool{}}
+	return &Service{cfg: cfg, permissions: permissions, o: o, ev: cfg.Events, moving: map[string]bool{}}
 }
 
 func (sv *Service) Start(ctx context.Context) error {
@@ -116,6 +109,9 @@ func (sv *Service) Start(ctx context.Context) error {
 	}
 	if sv.cfg.BoxFor == nil {
 		return fmt.Errorf("service: BoxFor is required")
+	}
+	if sv.cfg.Events == nil {
+		return fmt.Errorf("service: Events is required")
 	}
 	providers := append(slices.Clone(sv.cfg.Providers), plan.New(), subagent.New(sv.cfg.DB, sv.o.Started), userinput.New(),
 		outputs.New(sv.cfg.DB), loader.New())
@@ -138,17 +134,17 @@ func (sv *Service) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("service: %w", err)
 	}
-	sv.ctx, sv.res = ctx, res
+	sv.res = res
 	if err := sv.checkPromptFits(); err != nil {
 		return fmt.Errorf("agent %s: %w", sv.cfg.Name, err)
 	}
 	if sv.cfg.Lease > 0 {
-		if sv.lease, ctx, err = lease.Claim(ctx, sv.cfg.DB, sv.cfg.Lease, sv.cfg.OnLeaseLost); err != nil {
+		if ctx, err = sv.cfg.DB.Claim(ctx, sv.cfg.Lease, sv.cfg.OnLeaseLost); err != nil {
 			return fmt.Errorf("service: %w", err)
 		}
 	}
 	if err := sv.o.Start(ctx, res); err != nil {
-		sv.release()
+		sv.cfg.DB.Release()
 		return err
 	}
 	return nil
@@ -156,13 +152,7 @@ func (sv *Service) Start(ctx context.Context) error {
 
 func (sv *Service) Wait() {
 	sv.o.Wait()
-	sv.release()
-}
-
-func (sv *Service) release() {
-	if sv.lease != nil {
-		sv.lease.Release()
-	}
+	sv.cfg.DB.Release()
 }
 
 func (sv *Service) checkPromptFits() error {
@@ -172,7 +162,7 @@ func (sv *Service) checkPromptFits() error {
 		if err != nil {
 			return err
 		}
-		main, _ := role.New(role.ForMain(window.InputTokens()), sv.cfg.Name, sv.cfg.Prompt, sv.cfg.SkillsDir, sv.permissions, sv.cfg.Memory, window, nil, nil, nil, sv.res.Tools(), event.Emitter{})
+		main, _ := role.New(role.ForMain(window.InputTokens()), sv.cfg.Name, sv.cfg.Prompt, sv.cfg.SkillsDir, sv.permissions, sv.cfg.Memory, window, nil, nil, nil, sv.res.Tools(), sv.ev)
 		if err := main.Permit(db.WorkspaceRow{}); err != nil {
 			return err
 		}

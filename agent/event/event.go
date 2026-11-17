@@ -44,18 +44,23 @@ type Event struct {
 	Error       string
 }
 
+// Subscribers are added before the service starts, which emits from then on; each is called in the emitter's goroutine.
 type Emitter struct {
-	DB      *db.DB
-	OnEvent func(Event)
+	db          *db.DB
+	subscribers []func(Event)
 }
 
-func (e Emitter) Emit(ev Event) {
-	if e.OnEvent != nil {
-		e.OnEvent(ev)
+func New(store *db.DB) *Emitter { return &Emitter{db: store} }
+
+func (e *Emitter) Subscribe(fn func(Event)) { e.subscribers = append(e.subscribers, fn) }
+
+func (e *Emitter) Emit(ev Event) {
+	for _, fn := range e.subscribers {
+		fn(ev)
 	}
 }
 
-func (e Emitter) Item(t db.ThreadRow, turn db.TurnRow, it db.ItemRow, isNew bool) {
+func (e *Emitter) Item(t db.ThreadRow, turn db.TurnRow, it db.ItemRow, isNew bool) {
 	unfinished := it.Status == db.ItemPending || it.Status == db.ItemInProgress
 	switch {
 	case isNew:
@@ -69,8 +74,8 @@ func (e Emitter) Item(t db.ThreadRow, turn db.TurnRow, it db.ItemRow, isNew bool
 	}
 }
 
-func (e Emitter) Status(threadID string) {
-	t, err := e.DB.ThreadRow(threadID)
+func (e *Emitter) Status(threadID string) {
+	t, err := e.db.ThreadRow(threadID)
 	if err != nil {
 		return
 	}
@@ -78,14 +83,14 @@ func (e Emitter) Status(threadID string) {
 		e.Status(string(t.ParentThreadID))
 		return
 	}
-	status, err := ThreadStatus(e.DB, threadID)
+	status, err := ThreadStatus(e.db, threadID)
 	if err != nil {
 		return
 	}
 	e.Emit(Event{Kind: ThreadStatusChanged, Thread: t, Status: status})
 }
 
-func (e Emitter) Requests(st db.ThreadState) {
+func (e *Emitter) Requests(st db.ThreadState) {
 	turn, _ := st.ActiveTurn()
 	for _, it := range st.PendingRequests() {
 		kind := ApprovalRequested
@@ -97,8 +102,8 @@ func (e Emitter) Requests(st db.ThreadState) {
 }
 
 // What, not why: the cause is the storage's own words, with its paths and tables.
-func (e Emitter) Fault(threadID, turnID, what string) {
-	t, rerr := e.DB.ThreadRow(threadID)
+func (e *Emitter) Fault(threadID, turnID, what string) {
+	t, rerr := e.db.ThreadRow(threadID)
 	if rerr != nil {
 		t = db.ThreadRow{ID: threadID}
 	}
