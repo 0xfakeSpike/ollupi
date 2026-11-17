@@ -4,7 +4,7 @@
 // which sets ShardHeader to the user's shard, and routes on that header to the shard's backend. A handshake the
 // callout cannot place, a token that is no one's among them, goes without the header to the load balancer's default
 // backend, where a router.Router answers it. Either way the shard checks the user again, through
-// gateway.Options.Placements.
+// shard.Member.Admit.
 package extproc
 
 import (
@@ -72,7 +72,7 @@ func (c *Callout) place(ctx context.Context, headers *corev3.HeaderMap) *extproc
 		}
 		header.Add(h.GetKey(), value)
 	}
-	_, shard, err := c.locator.Locate(ctx, header)
+	shard, _, err := c.locator.Locate(ctx, header)
 	if err != nil {
 		return &extprocv3.CommonResponse{HeaderMutation: &extprocv3.HeaderMutation{RemoveHeaders: []string{ShardHeader}}}
 	}

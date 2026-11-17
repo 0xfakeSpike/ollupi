@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/event"
@@ -29,11 +28,9 @@ type Options struct {
 	// AllowedHosts are the names clients reach this gateway by, besides the local ones.
 	AllowedHosts []string
 	Connections  wshub.Options
-	// Without Shard and Placements the gateway serves every user Authenticate knows, as where there is one shard.
-	Shard      string
-	Placements Placements
-	// Load needs Shard.
-	Load Load
+	// Admit refuses a user this process does not serve now, such as one on another shard; without it every user
+	// Authenticate knows is served.
+	Admit func(ctx context.Context, user string) error
 }
 
 func NewServer(a *service.Service, events *event.Bus, opts Options) (*Server, error) {
@@ -48,16 +45,6 @@ func NewServer(a *service.Service, events *event.Bus, opts Options) (*Server, er
 			return db.DefaultUser, nil
 		}
 	}
-	if (opts.Shard == "") != (opts.Placements == nil) {
-		return nil, errors.New("gateway: Shard and Placements go together")
-	}
-	load, err := opts.Load.withDefaults()
-	if err != nil {
-		return nil, err
-	}
-	if load.Reporter != nil && opts.Shard == "" {
-		return nil, errors.New("gateway: a gateway reports its load as a shard, so Load needs Shard")
-	}
 	if opts.Connections == (wshub.Options{}) {
 		opts.Connections = DefaultConnections
 	}
@@ -69,9 +56,7 @@ func NewServer(a *service.Service, events *event.Bus, opts Options) (*Server, er
 		service:      a,
 		events:       events,
 		authenticate: opts.Authenticate,
-		shard:        opts.Shard,
-		placements:   opts.Placements,
-		load:         load,
+		admit:        opts.Admit,
 		hosts:        append(slices.Clone(localHosts), opts.AllowedHosts...),
 		origins:      append([]string{"localhost:*", "127.0.0.1:*", "[::1]:*"}, opts.AllowedOrigins...),
 		hub:          hub,
@@ -80,13 +65,6 @@ func NewServer(a *service.Service, events *event.Bus, opts Options) (*Server, er
 }
 
 func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
-	var reporting sync.WaitGroup
-	defer reporting.Wait()
-	ctx, stop := context.WithCancel(ctx)
-	defer stop()
-	if s.load.Reporter != nil {
-		reporting.Go(func() { s.reportLoad(ctx) })
-	}
 	mux := http.NewServeMux()
 	mux.Handle("GET /", s)
 	srv := &http.Server{

@@ -75,13 +75,9 @@ type Config struct {
 	Memory      *memory.Manager
 	DB          *db.DB
 	Events      *event.Bus
-	// A process that dies leaves its claim for this long. Without it the process trusts it is alone.
-	Lease time.Duration
 	// Required: a client names the paths it reads, so a one-user host passes sandbox.Here, and no host gives
 	// every user this machine by leaving it out.
 	BoxFor func(user string) (sandbox.Box, error)
-	// The shard has stopped by then, and all else on DB must.
-	OnLeaseLost func()
 }
 
 type Service struct {
@@ -140,22 +136,12 @@ func (sv *Service) Start(ctx context.Context) error {
 	}
 	sv.res = res
 	sv.permissions = permission.NewManager(deployment, sv.cfg.DB, res.Registry, sv.cfg.Events)
-	if sv.cfg.Lease > 0 {
-		if ctx, err = sv.cfg.DB.Claim(ctx, sv.cfg.Lease, sv.cfg.OnLeaseLost); err != nil {
-			return fmt.Errorf("service: %w", err)
-		}
-	}
-	if err := sv.o.Start(ctx, res); err != nil {
-		sv.cfg.DB.Release()
-		return err
-	}
-	return nil
+	return sv.o.Start(ctx, res)
 }
 
 func (sv *Service) Wait() {
 	sv.o.Wait()
 	sv.mcp.Close()
-	sv.cfg.DB.Release()
 }
 
 func (sv *Service) ListModels() ([]llm.Model, string) { return sv.res.Models() }
