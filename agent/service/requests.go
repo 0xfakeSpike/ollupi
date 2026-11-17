@@ -101,7 +101,7 @@ func (sv *Service) ResolveApproval(user, threadID, approvalID string, decision d
 	defer sv.o.Wake(threadID)
 	// The rule is kept once the approval is: an approval refused, because the thread no longer waited on it, widens nothing.
 	if decision == db.DecisionAcceptAlways {
-		if err := sv.allowAlways(threadID, stored.Approval.Suggested); err != nil {
+		if err := sv.permissions.AllowAlways(threadID, stored.Approval.Suggested); err != nil {
 			return fmt.Errorf("service: the call was approved, but its rule was not kept: %w", err)
 		}
 	}
