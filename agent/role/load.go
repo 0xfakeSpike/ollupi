@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/0xfakeSpike/ollupi/agent/permission"
+	"github.com/0xfakeSpike/ollupi/agent/role/contextmanager"
 	"github.com/0xfakeSpike/ollupi/pkg/redact"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 )
@@ -21,7 +22,7 @@ func (rt *Runtime) Load(turnID string) error {
 	if err != nil {
 		return fmt.Errorf("role: the items of thread %s: %w", thread.ID, err)
 	}
-	rt.turn, rt.history, rt.items = turn, nil, nil
+	rt.turn, rt.window, rt.history, rt.items = turn, contextmanager.New(turn.Model.Name, rt.limits), nil, nil
 	for _, it := range items {
 		if it.TurnID == turn.ID {
 			rt.items = append(rt.items, it)

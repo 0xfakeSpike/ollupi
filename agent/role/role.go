@@ -5,7 +5,6 @@
 package role
 
 import (
-	"github.com/0xfakeSpike/ollupi/agent/contextmanager"
 	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/memory"
@@ -32,14 +31,14 @@ type Role struct {
 
 var roles = map[Name]Role{FullMain: fullMain, CompactMain: compactMain, GeneralSub: generalSub, BrowserSub: browserSub}
 
-func New(role Name, name, prompt, skillsDir string, permissions permission.Deployment, memory *memory.Manager, window *contextmanager.Manager,
+func New(role Name, name, prompt, skillsDir string, permissions permission.Deployment, memory *memory.Manager, limits llm.Limits,
 	client llm.Client, store *db.DB, attachments blobs.Store, registry *tools.Registry, events *event.Emitter) (*Runtime, bool) {
 	r, ok := roles[role]
 	if !ok {
 		return nil, false
 	}
 	return &Runtime{
-		role: r, agent: name, prompt: prompt, skillsDir: skillsDir, permissions: permissions, memory: memory, window: window,
+		role: r, agent: name, prompt: prompt, skillsDir: skillsDir, permissions: permissions, memory: memory, limits: limits,
 		client: client, store: store, attachments: attachments, registry: registry, events: events,
 	}, true
 }

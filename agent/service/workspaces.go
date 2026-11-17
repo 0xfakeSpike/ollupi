@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/agent/event"
-	"github.com/0xfakeSpike/ollupi/agent/permission"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/google/uuid"
@@ -148,22 +147,6 @@ func (sv *Service) ArchiveWorkspace(user, id string, archived bool) (db.Workspac
 	})
 }
 
-func (sv *Service) UpdateWorkspaceSettings(user, id string, settings permission.Settings) (db.WorkspaceRow, error) {
-	return sv.updateWorkspaceSettings(user, id, func(permission.Settings) permission.Settings { return settings })
-}
-
-// change is checked against the settings as read, and applied again to them as they are when written.
-func (sv *Service) updateWorkspaceSettings(user, id string, change func(permission.Settings) permission.Settings) (db.WorkspaceRow, error) {
-	w, err := sv.cfg.DB.WorkspaceOf(user, id)
-	if err != nil {
-		return db.WorkspaceRow{}, fmt.Errorf("service: workspace %s: %w", id, err)
-	}
-	if err := sv.validateLayer(user, sv.permissions.Base(db.WorkspaceRow{}), w.Settings, permission.WorkspaceLayer(w.Name, change(w.Settings))); err != nil {
-		return db.WorkspaceRow{}, err
-	}
-	return sv.changeWorkspace(user, id, func(w *db.WorkspaceRow) { w.Settings = change(w.Settings) })
-}
-
 func (sv *Service) changeWorkspace(user, id string, change func(*db.WorkspaceRow)) (db.WorkspaceRow, error) {
 	w, err := sv.cfg.DB.UpdateWorkspace(user, id, func(w db.WorkspaceRow) db.WorkspaceRow {
 		w.UpdatedAt = time.Now().UTC()
@@ -175,17 +158,6 @@ func (sv *Service) changeWorkspace(user, id string, change func(*db.WorkspaceRow
 	}
 	sv.ev.Emit(event.Event{Kind: event.WorkspaceChanged, Workspace: &w})
 	return w, nil
-}
-
-func (sv *Service) validateLayer(user string, base []permission.Layer, previous permission.Settings, layer permission.Layer) error {
-	registry, err := sv.res.Registry(user)
-	if err != nil {
-		return err
-	}
-	if err := permission.ValidateLayer(base, previous, layer, registry); err != nil {
-		return fmt.Errorf("service: %w", err)
-	}
-	return nil
 }
 
 func usable(w db.WorkspaceRow) error {
