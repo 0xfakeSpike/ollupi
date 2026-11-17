@@ -14,29 +14,22 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/gateway"
 	"github.com/0xfakeSpike/ollupi/repo/catalog"
-	"github.com/0xfakeSpike/ollupi/shard"
 )
-
-// repo/catalog is one.
-type Directory interface {
-	// Locate places a user met for the first time; the address is "" while no process holds the shard.
-	Locate(ctx context.Context, user string) (shard, address string, err error)
-}
 
 type Locator struct {
 	authenticate gateway.Authenticate
-	directory    Directory
+	catalog      catalog.Catalog
 }
 
-// lookupTimeout bounds how long placing one connection may wait on the token's check and on the directory, which
+// lookupTimeout bounds how long placing one connection may wait on the token's check and on the catalog, which
 // would otherwise hold the client for as long as either hangs.
 const lookupTimeout = 10 * time.Second
 
-func NewLocator(authenticate gateway.Authenticate, directory Directory) (*Locator, error) {
-	if authenticate == nil || directory == nil {
+func NewLocator(authenticate gateway.Authenticate, c catalog.Catalog) (*Locator, error) {
+	if authenticate == nil || c == nil {
 		return nil, errors.New("router: a locator needs to authenticate users and find their shards")
 	}
-	return &Locator{authenticate: authenticate, directory: directory}, nil
+	return &Locator{authenticate: authenticate, catalog: c}, nil
 }
 
 // Locate returns gateway.ErrUnknownToken when the token is no one's.
@@ -50,7 +43,7 @@ func (l *Locator) Locate(ctx context.Context, header http.Header) (shard, addres
 	if err != nil {
 		return "", "", fmt.Errorf("router: the token could not be checked: %w", err)
 	}
-	return l.directory.Locate(ctx, user)
+	return l.catalog.Locate(ctx, user)
 }
 
 // Router keeps nothing, so any number of them can run. Where a load balancer places connections through
@@ -105,8 +98,3 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	proxy.ServeHTTP(w, r)
 }
-
-var (
-	_ Directory       = (*catalog.Catalog)(nil)
-	_ shard.Directory = (*catalog.Catalog)(nil)
-)

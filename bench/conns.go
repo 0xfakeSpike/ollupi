@@ -26,6 +26,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent/service"
 	"github.com/0xfakeSpike/ollupi/gateway"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
+	"github.com/0xfakeSpike/ollupi/repo/catalog"
 	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/router"
 	"github.com/coder/websocket"
@@ -432,10 +433,13 @@ func connsShard(args []string) {
 	answerStats()
 }
 
-// oneShard places every user on the one shard at its address.
-type oneShard string
+// oneShard places every user on the one shard at its address; a router asks it nothing else.
+type oneShard struct {
+	catalog.Catalog
+	address string
+}
 
-func (s oneShard) Locate(context.Context, string) (string, string, error) { return "s", string(s), nil }
+func (s oneShard) Locate(context.Context, string) (string, string, error) { return "s", s.address, nil }
 
 // connsRouter is a router in front of one shard, as conns starts it.
 func connsRouter(args []string) {
@@ -444,7 +448,7 @@ func connsRouter(args []string) {
 	shard := fs.String("shard", "", "the shard's URL")
 	fs.Parse(args)
 	quiet()
-	locator, err := router.NewLocator(benchUser, oneShard(*shard))
+	locator, err := router.NewLocator(benchUser, oneShard{address: *shard})
 	if err != nil {
 		log.Fatal(err)
 	}
