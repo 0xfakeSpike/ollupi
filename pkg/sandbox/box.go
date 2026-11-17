@@ -13,35 +13,23 @@ import (
 	"strings"
 )
 
-// The tools reach a user's commands and files only through a Box. Paths are the box's, and need not exist on this
-// machine.
 type Box interface {
 	Run(ctx context.Context, c Command) (Result, error)
-	// Start leaves a command running until ctx ends or the Process closes. Its Timeout does not apply.
 	Start(ctx context.Context, c Command, stderr io.Writer) (Process, error)
-	// Stat follows links and, like the rest, reports a missing path with an error that is fs.ErrNotExist.
 	Stat(ctx context.Context, path string) (fs.FileInfo, error)
 	ReadDir(ctx context.Context, path string) ([]fs.DirEntry, error)
 	Open(ctx context.Context, path string) (io.ReadCloser, error)
-	// WriteFile makes the folders above path and replaces the file whole, so a reader never sees half of it.
 	WriteFile(ctx context.Context, path string, data []byte, perm fs.FileMode) error
-	// Move renames a folder inside the box; to must not exist or be empty, and afterwards holds what from held. It
-	// fails rather than merge, and across filesystems it fails with the system's error.
 	Move(ctx context.Context, from, to string) error
-	// Canonical resolves path, which need not exist yet, to the one name the rules below are checked against.
 	Canonical(ctx context.Context, path string) (string, error)
-	// Directory is Canonical for a folder that must exist.
 	Directory(ctx context.Context, path string) (string, error)
 	Executable(ctx context.Context, program, cwd string) (string, error)
 	Same(ctx context.Context, a, b string) bool
 
-	// Enforced says commands are confined, so they need not ask the user first.
 	Enforced() bool
-	// CanEscalate says a command can leave the confinement, once the user agrees.
 	CanEscalate() bool
 	Summary() string
 	Roots() []string
-	// Fingerprint changes when the rules do, so a call prepared under other rules is not run.
 	Fingerprint() any
 	Check(dir string) error
 	CheckRead(path string) error
@@ -50,7 +38,6 @@ type Box interface {
 	Close() error
 }
 
-// Close may be called more than once. Read ends when the command does.
 type Process interface {
 	io.ReadWriteCloser
 }
@@ -79,19 +66,14 @@ func (s *Sandbox) ReadDir(_ context.Context, path string) ([]fs.DirEntry, error)
 	return os.ReadDir(path)
 }
 
-// The read rules are checked on the path Open opened, so a link put on the way after the caller's check cannot lead
-// around them.
 func (s *Sandbox) Open(_ context.Context, path string) (io.ReadCloser, error) { return s.open(path) }
 
-// WriteFile writes the canonical path the caller checked: a link put in place of a folder on it since is refused.
 func (s *Sandbox) WriteFile(_ context.Context, path string, data []byte, perm fs.FileMode) error {
 	return writeFile(path, data, perm)
 }
 
 func (s *Sandbox) Move(_ context.Context, from, to string) error {
 	if err := os.Rename(from, to); err != nil {
-		// Go refuses to rename onto a folder that is already there, even an empty one, and the user picks the folder the
-		// workspace moves into: an empty one is replaced. Any other failure leaves the folder the user picked as it was.
 		if !errors.Is(err, fs.ErrExist) {
 			return fmt.Errorf("sandbox: move %s to %s: %w", from, to, err)
 		}
@@ -168,8 +150,6 @@ func (s *Sandbox) Same(_ context.Context, a, b string) bool {
 	return err == nil && os.SameFile(left, right)
 }
 
-// Here is a Box with no rules of its own, what a user has when nothing else was given them. It runs no commands.
 func Here() Box { return &Sandbox{} }
 
-// CanEscalate is true where there is a sandbox to leave: the command then runs on this machine.
 func (s *Sandbox) CanEscalate() bool { return s.Enforced() }

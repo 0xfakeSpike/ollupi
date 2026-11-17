@@ -9,7 +9,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 )
 
-// models are the deployment's models, each on its connection, and the client each user calls one through.
 type models struct {
 	list        []llm.Model
 	connections map[string]llm.Client

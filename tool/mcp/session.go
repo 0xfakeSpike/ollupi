@@ -76,7 +76,6 @@ func connect(ctx, running context.Context, client *mcp.Client, box sandbox.Box, 
 			sess.Close()
 			return nil, out.withStderr(fmt.Errorf("list tools: %w", err))
 		}
-		// A tool the registry would refuse is left out, so that it does not take the user's other tools with it.
 		name := s.Name + policy.ProviderSeparator + t.Name
 		_, isObject := t.InputSchema.(map[string]any)
 		_, taken := out.tools[name]
@@ -121,8 +120,6 @@ func (s *Session) Tools(context.Context) ([]kit.Spec, error) {
 	return s.specs, nil
 }
 
-// toSpec leaves out what the server says of a tool that would let it run unasked: that it only reads, and that it
-// reaches nothing outside. That is the server's word about itself, and a rule the user writes for the tool is theirs.
 func toSpec(name string, t *mcp.Tool) kit.Spec {
 	spec := kit.Spec{Name: name, Description: t.Description, InputSchema: t.InputSchema}
 	if t.Annotations != nil {
@@ -174,7 +171,6 @@ func (s *Session) Invoke(ctx context.Context, c tool.Call) (kit.Result, error) {
 	return kit.Result{Output: joinTextContent(res.Content)}, nil
 }
 
-// Content that is not text is named, not dumped: its bytes would fill the model's context with digits.
 func joinTextContent(content []mcp.Content) string {
 	var parts []string
 	for _, c := range content {
@@ -200,8 +196,6 @@ func joinTextContent(content []mcp.Content) string {
 	return strings.Join(parts, "\n")
 }
 
-// serverTransport sends a server's configured headers, its credentials among them, only to the server's own host,
-// so a redirect elsewhere does not carry them.
 type serverTransport struct {
 	base    http.RoundTripper
 	host    string
@@ -211,8 +205,6 @@ type serverTransport struct {
 func (t serverTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	ctx, cancel := r.Context(), context.CancelFunc(func() {})
 	if r.Method == http.MethodDelete {
-		// The SDK ends a session with a DELETE that has no deadline: a server that does not answer would hold Close
-		// forever.
 		ctx, cancel = context.WithTimeout(ctx, closeTimeout)
 	}
 	r = r.Clone(ctx)

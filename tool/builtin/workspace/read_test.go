@@ -15,7 +15,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/tool/kit"
 )
 
-// readFixture is a project with a .gitignore, a closed folder beside it, and a link from the project into it.
 func readFixture(t *testing.T) (root string, call func(name string, args map[string]any) (any, error), content func(name string, args map[string]any) (policy.Content, error)) {
 	t.Helper()
 	base, err := filepath.EvalSymlinks(t.TempDir())
@@ -96,10 +95,10 @@ func TestReadFile(t *testing.T) {
 		t.Fatalf("binary: %v %+v", err, out)
 	}
 	for _, bad := range []map[string]any{
-		{"path": "src/key.txt"},            // a link into a closed folder
-		{"path": "../secrets/key.txt"},     // the closed folder itself
-		{"path": "lines.txt", "offset": 9}, // past the end
-		{"path": "src"},                    // a folder
+		{"path": "src/key.txt"},
+		{"path": "../secrets/key.txt"},
+		{"path": "lines.txt", "offset": 9},
+		{"path": "src"},
 		{"path": "missing.txt"},
 	} {
 		if out, err := call(ToolReadFile, bad); err == nil {

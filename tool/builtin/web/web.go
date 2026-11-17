@@ -1,4 +1,3 @@
-// Package web gives the model web_fetch: read a public web page as text.
 package web
 
 import (
@@ -56,7 +55,6 @@ func New() *Provider {
 	return &Provider{client: &http.Client{Transport: sandbox.PublicTransport(), Timeout: fetchTimeout, CheckRedirect: sameHost}}
 }
 
-// A redirect to another host comes back to the model, so the new host goes through the permission check.
 func sameHost(req *http.Request, via []*http.Request) error {
 	switch {
 	case len(via) >= maxRedirects:
@@ -78,7 +76,6 @@ func (p *Provider) Tools(context.Context) ([]kit.Spec, error) {
 			"Only http and https on public addresses. A redirect to another host is reported, not followed: fetch the new URL to follow it. " +
 			"For downloads, APIs that need headers or methods other than GET, or local servers, use run_command.",
 		InputSchema: kit.InputSchema[Fetch](),
-		// Not read-only: a URL can carry data to the site, so each new site is approved unless a rule allows it.
 		Annotations: tool.Annotations{Title: "Fetch web page", DestructiveHint: kit.Hint(false), OpenWorldHint: kit.Hint(true)},
 		Content:     permissionContent,
 	}}, nil
@@ -86,12 +83,11 @@ func (p *Provider) Tools(context.Context) ([]kit.Spec, error) {
 
 func permissionContent(_ context.Context, c tool.Call) (policy.Content, error) {
 	arguments := c.Arguments
-	f, _ := kit.DecodeArguments[Fetch](arguments) // the schema checked its fields: it cannot fail
+	f, _ := kit.DecodeArguments[Fetch](arguments)
 	u, err := parseURL(f.URL)
 	if err != nil {
 		return policy.Content{}, err
 	}
-	// A name with the root's dot after it is the same site.
 	return policy.Content{Text: u.String(), Match: strings.TrimSuffix(strings.ToLower(u.Hostname()), "."), Folded: true}, nil
 }
 
@@ -112,7 +108,7 @@ func parseURL(raw string) (*url.URL, error) {
 
 func (p *Provider) Invoke(ctx context.Context, c tool.Call) (kit.Result, error) {
 	arguments := c.Arguments
-	f, _ := kit.DecodeArguments[Fetch](arguments) // the schema checked its fields: it cannot fail
+	f, _ := kit.DecodeArguments[Fetch](arguments)
 	out, err := p.fetch(ctx, f.URL)
 	if err != nil {
 		return kit.Result{}, err

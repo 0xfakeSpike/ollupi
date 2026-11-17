@@ -1,14 +1,4 @@
 #!/bin/sh
-# Runs the bench's experiments one at a time and keeps each one's output in bench/results, where bench/README.md
-# reads its numbers from.
-#
-#   bench/run.sh [experiment...]    all of them, or those named
-#   bench/run.sh -l                 lists them
-#
-# Before each experiment it waits until nothing else could skew it: Docker Desktop is not running, the lid is open,
-# the CPU is at least 60% idle, and no comparison holds the machine (bench/compare/locked.sh). While it measures it
-# holds bench/compare/.locks/gobench.lock, so no comparison starts, and keeps the Mac awake. A run the Mac slept
-# through is thrown away and run again. Takes some two hours for all of them.
 set -eu
 root=$(cd "$(dirname "$0")/.." && pwd)
 results=$root/bench/results
@@ -18,7 +8,6 @@ all="parked isolated steady-512 steady-1024 steady-1536 steady-2048 steady-3072 
 steady-lognormal steady-workspace-write steady-full-access burst resume crash crash-lease mix fanout soak users
 users-slots users-limit conns conns-router"
 
-# args prints what an experiment runs as; experiments that keep a timeline write it beside their output.
 args() {
 	case $1 in
 	parked) echo "parked -n 50000 -state waiting -latency 5s -rounds 3" ;;
@@ -59,7 +48,6 @@ done
 mac=false
 [ "$(uname)" = Darwin ] && mac=true
 
-# busy says what would skew a measurement now, or nothing.
 busy() {
 	if [ -e "$locks/compare.lock" ]; then
 		echo "a comparison is running: $(cat "$locks/compare.lock")"
@@ -80,7 +68,6 @@ busy() {
 	fi
 }
 
-# slept says whether the Mac went to sleep since $1, a time as date '+%Y-%m-%d %H:%M:%S' prints it.
 slept() {
 	$mac || return 1
 	pmset -g log | awk -v since="$1" '/^[0-9][0-9][0-9][0-9]-/ && $1 " " $2 >= since && $4 == "Sleep" { found = 1 } END { exit !found }'

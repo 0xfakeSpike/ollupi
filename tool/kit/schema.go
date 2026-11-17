@@ -131,7 +131,7 @@ func nonNullLists(s *jsonschema.Schema) {
 
 func DecodeArguments[T any](arguments map[string]any) (T, error) {
 	var out T
-	raw, _ := json.Marshal(arguments) // decoded from JSON: it cannot fail
+	raw, _ := json.Marshal(arguments)
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return out, fmt.Errorf("decode arguments: %w", err)
 	}

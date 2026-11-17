@@ -1,4 +1,3 @@
-// Package sqlite keeps a shard's store in one SQLite database.
 package sqlite
 
 import (
@@ -20,16 +19,13 @@ import (
 var migrations embed.FS
 
 type Store struct {
-	g    *gorm.DB
-	feed *store.Feed
-	// epoch is the holder's, 0 while the process does not hold the shard through a lease.
+	g     *gorm.DB
+	feed  *store.Feed
 	epoch atomic.Int64
 }
 
 var _ store.Store = (*Store)(nil)
 
-// Open opens home/data/store.sqlite; the first time it opens beside the database of an engine before v0.16.0, it
-// brings that in.
 func Open(home string) (*Store, error) {
 	path := filepath.Join(home, "data", "store.sqlite")
 	g, err := sqlitedb.Open(path)
@@ -49,7 +45,7 @@ func Open(home string) (*Store, error) {
 }
 
 func migrate(g *gorm.DB) error {
-	dir, _ := fs.Sub(migrations, "migrations") // a valid path: it cannot fail
+	dir, _ := fs.Sub(migrations, "migrations")
 	steps, err := sqlitedb.Steps(dir)
 	if err != nil {
 		return err
@@ -63,8 +59,6 @@ func migrate(g *gorm.DB) error {
 
 func (s *Store) Close() error { return sqlitedb.Close(s.g) }
 
-// Gorm is the store's database handle, for measuring what the store does with it, as bench does; writing through it
-// goes around the epoch check and the feed.
 func (s *Store) Gorm() *gorm.DB { return s.g }
 
 func (s *Store) Feed() *store.Feed { return s.feed }
@@ -86,7 +80,6 @@ func (s *Store) Read(ctx context.Context, fn func(store.Reader) error) error {
 	return s.g.WithContext(ctx).Transaction(func(g *gorm.DB) error { return fn(reader{g: g}) })
 }
 
-// SQLite's one writer keeps the epoch from changing between the check and the writes after it.
 func (s *Store) Update(ctx context.Context, fn func(store.Tx) error) error {
 	var events []store.Event
 	err := s.g.WithContext(ctx).Transaction(func(g *gorm.DB) error {

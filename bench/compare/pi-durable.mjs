@@ -1,6 +1,3 @@
-// pi-durable: one @earendil-works/pi-durable Harness over one SQLite file (openNodeSqliteStorage), hosting many
-// ownerless conversations, the shape closest to ollupi's one process over one database. The model is an
-// openai-completions provider built with pi-ai's createProvider, pointed at the fake provider.
 import fs from "node:fs";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { Type } from "@earendil-works/pi-ai";
@@ -42,7 +39,6 @@ export function fakeModels(url) {
 	return models;
 }
 
-// The bench__work tool; replay "unsafe" is pi-durable's default: a call cut off by a crash is not run again.
 export function benchExtension({ toolMs = 1000, log, replay = "unsafe" } = {}) {
 	const work = defineTool({
 		name: "bench__work",
@@ -85,7 +81,6 @@ export async function openDurable({ file, url, toolMs = 1000, log, settings = {}
 	};
 }
 
-// runTurn submits one input and waits for it to settle.
 export async function runTurn(conv, text = "work", requestId) {
 	const at = performance.now();
 	const sub = await conv.submit({ type: "input", content: text, ...(requestId ? { requestId } : {}) }, ctx);

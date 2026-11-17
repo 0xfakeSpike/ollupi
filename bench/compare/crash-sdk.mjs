@@ -1,9 +1,3 @@
-// Experiment 4b, what plain pi-coding-agent sessions do after kill -9: a child runs n sessions, each with `turns` turns
-// back to back (model 200 ms, tool 300 ms); the parent kills it once mid-run, then a second process reopens every
-// session file and reports where each one stopped, whether anything continues on its own, and what a new prompt
-// to a cut-off session does.
-//
-//   node crash-sdk.mjs --n 200 --turns 5 --at 1500
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import fs from "node:fs";
@@ -42,7 +36,6 @@ if (a.child === "run") {
 	const before = Number((await (await fetch(`${a.url}/stats`)).text()).split(" ")[2]);
 	await sleep(3000);
 	const after = Number((await (await fetch(`${a.url}/stats`)).text()).split(" ")[2]);
-	// A new prompt to every session that stopped mid-turn.
 	let ok = 0;
 	let failed = 0;
 	const errors = {};
@@ -71,7 +64,6 @@ if (a.child === "run") {
 	run.kill("SIGKILL");
 	await new Promise((r) => run.once("exit", r));
 	const startedCalls = fs.readFileSync(path.join(dir, "tools.log"), "utf8").split("\n").filter(Boolean).length;
-	// Tool results stored: calls that finished and were written before the kill.
 	let results = 0;
 	for (const f of fs.readdirSync(path.join(dir, "sessions"))) {
 		results += fs.readFileSync(path.join(dir, "sessions", f), "utf8").split("\n").filter((l) => l.includes('"role":"toolResult"')).length;

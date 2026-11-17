@@ -23,8 +23,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/tool/kit"
 )
 
-// soak keeps conversations busy for a long time, each turn adding to its conversation's history, and samples what
-// should stay flat: turn time, memory, goroutines, collector pauses, and how the database and its log grow.
 func soak(args []string) {
 	fs := flag.NewFlagSet("soak", flag.ExitOnError)
 	c := fs.Int("c", 512, "conversations whose user sends a turn as soon as the last one ends")
@@ -49,7 +47,6 @@ func soak(args []string) {
 		*calls = *c
 	}
 
-	// As in steady, the provider runs in a process of its own, so what it holds is not counted against the agent.
 	exe, err := os.Executable()
 	if err != nil {
 		log.Fatal(err)
@@ -153,7 +150,6 @@ func soak(args []string) {
 		metrics.Read(pauses)
 		h := pauses[0].Value.Float64Histogram()
 		p99, worst := pauseQuantiles(h, lastPauses)
-		// Read fills the same histogram each time, so the counts to compare the next sample with are copied.
 		lastPauses = &metrics.Float64Histogram{Counts: slices.Clone(h.Counts), Buckets: h.Buckets}
 		used, pool := cpu(), dbs.pool.Stats()
 		dbs.mu.Lock()
@@ -182,8 +178,6 @@ func soak(args []string) {
 	e.stop()
 }
 
-// pauseQuantiles reads the 99th percentile and the longest of the collector pauses since the histogram before, in
-// seconds, from the upper bounds of their buckets.
 func pauseQuantiles(h, before *metrics.Float64Histogram) (float64, float64) {
 	counts := slices.Clone(h.Counts)
 	if before != nil {

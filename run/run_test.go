@@ -20,7 +20,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/user"
 )
 
-// model answers each request with what answer makes of it.
 type model struct {
 	mu     sync.Mutex
 	answer func(req llm.ChatRequest) llm.ChatResponse
@@ -98,7 +97,6 @@ func setup(t *testing.T, invoke func(tool.Call) tool.Result) *fixture {
 	return &fixture{t: t, st: st, r: r, m: m}
 }
 
-// ask has the user ask text in a new thread, as a turn of the main agent.
 func (f *fixture) ask(thread, text string) {
 	f.t.Helper()
 	now := time.Now().UTC()

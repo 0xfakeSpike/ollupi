@@ -13,8 +13,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/render"
 )
 
-// observations renders each call's result once per budget. The latest skills loaded, as many as fit the artifact
-// budget together, are shown, so that loading skills, or one skill again and again, cannot fill the window.
 type observations struct {
 	texts    map[string]string
 	spans    map[string][][2]int
@@ -115,10 +113,8 @@ func (o *observations) render(it conversation.Item, budget int) string {
 	return text
 }
 
-// OutputText is a tool's output as the model reads it, and as read_tool_output counts its characters.
 func OutputText(raw json.RawMessage) string { return render.Output(decoded(raw), nil) }
 
-// The output as it was given, numbers as written.
 func decoded(raw json.RawMessage) any {
 	if len(raw) == 0 {
 		return ""

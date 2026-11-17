@@ -22,8 +22,6 @@ func (a *App) Workspaces(ctx context.Context, u string) ([]user.Workspace, error
 	return ws, err
 }
 
-// AddWorkspace adds a folder of the user's sandbox as a workspace; a folder that is one already, archived or not, is
-// that workspace.
 func (a *App) AddWorkspace(ctx context.Context, u, path, name string) (user.Workspace, error) {
 	ctx, cancel := context.WithTimeout(ctx, workspaceTimeout)
 	defer cancel()
@@ -45,7 +43,6 @@ func (a *App) AddWorkspace(ctx context.Context, u, path, name string) (user.Work
 	if err != nil {
 		return user.Workspace{}, err
 	}
-	// Same may ask the sandbox, which is no work for inside a transaction.
 	i := slices.IndexFunc(existing, func(w user.Workspace) bool { return box.Same(ctx, w.Root, root) })
 	now := time.Now().UTC()
 	w := user.Workspace{ID: uuid.NewString(), Name: name, Root: root, Created: now, Updated: now}
@@ -90,11 +87,7 @@ func (a *App) changeWorkspace(ctx context.Context, u, id string, change func(*us
 	return w, err
 }
 
-// MoveWorkspace moves a workspace's folder to an empty one. Conversations, memories and tasks keep the workspace's id,
-// so nothing else changes; a turn running would go on in the old folder, so the move waits for the workspace's
-// conversations to be idle, and takes no new turn until it is done.
 func (a *App) MoveWorkspace(ctx context.Context, u, id, path string) (user.Workspace, error) {
-	// The move outlives the request: a folder left half moved because a client went away helps no one.
 	move := context.WithoutCancel(ctx)
 	ctx, cancel := context.WithTimeout(ctx, workspaceTimeout)
 	defer cancel()
@@ -135,7 +128,6 @@ func (a *App) MoveWorkspace(ctx context.Context, u, id, path string) (user.Works
 	return w, nil
 }
 
-// claim marks a workspace whose conversations are all idle as moving: from then on none takes a new turn.
 func (a *App) claim(ctx context.Context, u, id string) (user.Workspace, []user.Workspace, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -183,7 +175,6 @@ func checkTarget(ctx context.Context, box sandbox.Box, w user.Workspace, all []u
 	return nil
 }
 
-// Environments are a user's, this machine first: the one a conversation that names none runs in.
 func (a *App) Environments(ctx context.Context, u string) ([]user.Environment, error) {
 	var envs []user.Environment
 	err := a.st.Read(ctx, func(r store.Reader) (err error) { envs, err = r.Environments(u); return err })
@@ -220,7 +211,6 @@ func (a *App) RenameEnvironment(ctx context.Context, u, id, name string) (user.E
 	return e, err
 }
 
-// putEnvironment keeps an environment whose name is no other's of the user's, whatever its case.
 func (a *App) putEnvironment(tx store.Tx, u string, e user.Environment) error {
 	envs, err := tx.Environments(u)
 	if err != nil {
@@ -234,8 +224,6 @@ func (a *App) putEnvironment(tx store.Tx, u string, e user.Environment) error {
 	return tx.PutEnvironment(u, e)
 }
 
-// DeleteEnvironment deletes an environment no conversation runs in; this machine stays, since the workspaces are
-// folders in it.
 func (a *App) DeleteEnvironment(ctx context.Context, u, id string) error {
 	return a.st.Update(ctx, func(tx store.Tx) error {
 		e, err := tx.Environment(u, id)
@@ -262,8 +250,6 @@ func (a *App) MCPServers(ctx context.Context, u string) ([]user.MCPServer, error
 	return servers, err
 }
 
-// SetMCPServer adds or replaces one of the user's MCP servers, which cannot take the name of a provider of tools the
-// user has otherwise.
 func (a *App) SetMCPServer(ctx context.Context, u string, s user.MCPServer) error {
 	box, err := a.toolbox(ctx, u)
 	if err != nil {

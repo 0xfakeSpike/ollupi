@@ -12,7 +12,6 @@ import (
 	"testing"
 )
 
-// fakeAnthropic answers every request with the next scripted stream and keeps the request bodies.
 type fakeAnthropic struct {
 	mu      sync.Mutex
 	streams [][]string
@@ -68,7 +67,6 @@ func anthropicTurn(signature string, calls ...string) []string {
 
 var lookup = ToolSpec{Name: "lookup", Description: "Look something up.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"q": map[string]any{"type": "string"}}}}
 
-// blocks returns the content block types of each message of a recorded request, with each thinking block's signature.
 func blocks(body map[string]any) [][]string {
 	var out [][]string
 	for _, m := range body["messages"].([]any) {
@@ -134,7 +132,6 @@ func TestAnthropicReplaysThinkingUntilThePrefixChanges(t *testing.T) {
 		t.Errorf("request %v", first)
 	}
 
-	// The parallel results go back in one user turn, after the response replayed with its signed thinking.
 	history = append(history, ChatMessage{Role: RoleAssistant, Native: a.Message.Native},
 		ChatMessage{Role: RoleTool, ToolCallID: "call1", Content: "x is 1"}, ChatMessage{Role: RoleTool, ToolCallID: "call2", Content: "x is 2"})
 	grown := []ToolSpec{lookup, {Name: "fetch", Parameters: map[string]any{"type": "object"}}}
@@ -145,7 +142,6 @@ func TestAnthropicReplaysThinkingUntilThePrefixChanges(t *testing.T) {
 		t.Errorf("second request %s, want %s", got, want)
 	}
 
-	// A grown tool list makes sigA stale, so it is left out.
 	if _, err := c.Chat(context.Background(), ChatRequest{Model: model, Messages: history, Tools: grown, ToolChoice: ToolChoiceAuto}, nil); err != nil {
 		t.Fatal(err)
 	}

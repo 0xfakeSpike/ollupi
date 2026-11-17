@@ -15,13 +15,9 @@ type Options struct {
 	Agent     AgentFiles
 	DenyRead  []string
 	EnvMarker string
-	// Box serves any user BoxFor does not; by default a sandbox on this machine made from Config.
-	Box sandbox.Box
-	// BoxFor keeps a box's lifetime: this package only closes Box.
-	BoxFor func(user string) (sandbox.Box, error)
-	// BoxIn has the last word over BoxFor: a nil box with no error leaves the call in Box. It keeps a box's
-	// lifetime as BoxFor does.
-	BoxIn func(caller tool.Caller) (sandbox.Box, error)
+	Box       sandbox.Box
+	BoxFor    func(user string) (sandbox.Box, error)
+	BoxIn     func(caller tool.Caller) (sandbox.Box, error)
 }
 
 type Provider struct {

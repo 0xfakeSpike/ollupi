@@ -71,7 +71,6 @@ var builtinTools = map[string]struct{ arguments, output reflect.Type }{
 	workspace.ToolGrep:       {arguments: reflect.TypeFor[workspace.Grep](), output: reflect.TypeFor[workspace.GrepOutput]()},
 }
 
-// preparedExecution is what a workspace call's preparedExecution holds.
 var preparedExecution = reflect.TypeFor[workspace.Prepared]()
 
 var providers = []string{agent.CronProvider, agent.SkillsProvider, user.MemoryProvider}
@@ -219,8 +218,6 @@ func constants(dir, typ string) ([]string, error) {
 	return values, nil
 }
 
-// constantValue is the string a constant is declared as: a string literal, or a constant of another package of this
-// module that is one, as a role is named after the tool that launches it.
 func constantValue(fset *token.FileSet, f *ast.File, v ast.Expr) (string, error) {
 	switch v := v.(type) {
 	case *ast.BasicLit:
@@ -242,7 +239,6 @@ func constantValue(fset *token.FileSet, f *ast.File, v ast.Expr) (string, error)
 	return "", fmt.Errorf("it is neither a string literal nor a constant of this module that is one")
 }
 
-// declaredIn is the string literal the constant of that name is declared as in the package at dir.
 func declaredIn(fset *token.FileSet, dir, name string) (string, error) {
 	files, err := filepath.Glob(filepath.Join(dir, "*.go"))
 	if err != nil {

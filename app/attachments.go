@@ -39,7 +39,6 @@ const (
 	attachmentTimeout = time.Minute
 )
 
-// The attachment is a copy taken when the message is sent.
 type AttachmentInput struct {
 	Path     string
 	Name     string
@@ -48,8 +47,6 @@ type AttachmentInput struct {
 
 var imageTypes = map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}
 
-// attach copies the files of a message from the user's sandbox, before the transaction that keeps the message: a slow
-// sandbox or blob store there would hold up every write of the shard.
 func (a *App) attach(ctx context.Context, u, thread string, ins []AttachmentInput) ([]conversation.Attachment, error) {
 	if len(ins) == 0 {
 		return nil, nil
@@ -94,7 +91,6 @@ func (a *App) keepAttachment(ctx context.Context, u, thread string, in Attachmen
 	return att, nil
 }
 
-// Only the user's sandbox: nothing else is theirs to send.
 func (a *App) attachmentSource(ctx context.Context, u, path string) ([]byte, error) {
 	box, err := a.boxes(u)
 	if err != nil {
@@ -113,7 +109,6 @@ func (a *App) attachmentSource(ctx context.Context, u, path string) ([]byte, err
 	return sandbox.ReadFile(ctx, box, path, maxImageBytes)
 }
 
-// Classified by its first bytes, whatever its sender calls it.
 func describe(data []byte, name, mime string) (conversation.Attachment, error) {
 	if len(data) == 0 {
 		return conversation.Attachment{}, fmt.Errorf("attachment %q is empty", name)
@@ -140,7 +135,6 @@ func describe(data []byte, name, mime string) (conversation.Attachment, error) {
 	if !utf8.Valid(data) || bytes.IndexByte(data, 0) >= 0 {
 		return conversation.Attachment{}, notText
 	}
-	// Text is of the kind its sender calls it, which its bytes do not tell.
 	if mime = strings.ToLower(strings.TrimSpace(mime)); mime != "" {
 		att.MimeType = mime
 	}
@@ -160,7 +154,6 @@ func attachmentName(name string) string {
 	return clipRunes(name, 120)
 }
 
-// head, the first bytes, is enough for WebP.
 func imageSize(r io.Reader, head []byte) (int, int) {
 	if cfg, _, err := image.DecodeConfig(r); err == nil {
 		return cfg.Width, cfg.Height
@@ -184,7 +177,6 @@ func webpSize(b []byte) (int, int) {
 	return 0, 0
 }
 
-// About one token per 750 pixels of the image scaled to fit maxImageSide.
 func imageTokens(w, h int) int {
 	if long := max(w, h); long > maxImageSide {
 		w, h = w*maxImageSide/long, h*maxImageSide/long
@@ -199,16 +191,14 @@ func clipRunes(s string, n int) string {
 	return s
 }
 
-// detach deletes the files of a message that was not kept.
 func (a *App) detach(ctx context.Context, atts []conversation.Attachment) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), attachmentTimeout)
 	defer cancel()
 	for _, att := range atts {
-		a.attachments.Delete(ctx, att.File) // what is left over only takes room
+		a.attachments.Delete(ctx, att.File)
 	}
 }
 
-// ReadAttachment is a file attached to a message of a user's conversation.
 func (a *App) ReadAttachment(ctx context.Context, u, threadID, id string) (conversation.Attachment, []byte, error) {
 	var att *conversation.Attachment
 	err := a.st.Read(ctx, func(r store.Reader) error {

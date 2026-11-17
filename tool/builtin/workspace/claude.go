@@ -23,7 +23,6 @@ var claudeFlags = []string{
 	"--max-budget-usd", "2",
 }
 
-// Claude Code reaches its API and keeps its login and sessions in the user's home, which the sandbox does not allow.
 const claudeJustification = "Claude Code needs the network and its own settings in your home folder"
 
 func (r *Provider) claudeTool() kit.Spec {
@@ -116,7 +115,6 @@ func (r *Provider) prepareClaude(ctx context.Context, caller tool.Caller, args m
 	return p, nil
 }
 
-// What it spent is left out: the provider accounts for it.
 type ClaudeOutput struct {
 	Result    string `json:"result"`
 	IsError   bool   `json:"is_error,omitempty"`
@@ -149,7 +147,6 @@ func (r *Provider) runClaude(ctx context.Context, caller tool.Caller, args map[s
 	}
 	var out ClaudeOutput
 	if err := json.Unmarshal([]byte(res.Stdout), &out); err != nil || (out.Result == "" && out.Subtype == "") {
-		// Claude Code failed before it could answer: the model gets what it printed.
 		return kit.Result{Output: CommandOutput{Stdout: res.Stdout, Stderr: res.Stderr, ExitCode: res.ExitCode, WorkDir: p.Cwd,
 			Signal: res.Signal, Truncated: res.Truncated, SandboxDenials: res.Denials}}, nil
 	}

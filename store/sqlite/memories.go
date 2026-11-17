@@ -119,7 +119,7 @@ func (r reader) Unread(owner string, after memory.Cursor) (int64, error) {
 }
 
 func (t *tx) PutMemory(m memory.Memory) error {
-	sources, _ := json.Marshal(nonNil(m.Sources)) // plain data: it cannot fail
+	sources, _ := json.Marshal(nonNil(m.Sources))
 	err := t.g.Exec(`INSERT INTO memories(id, user_id, scope, workspace_id, origin_workspace_id, topic, kind, text, status, user_edited, sources, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET scope = excluded.scope, workspace_id = excluded.workspace_id, origin_workspace_id = excluded.origin_workspace_id,
@@ -135,7 +135,7 @@ func (t *tx) PutMemory(m memory.Memory) error {
 }
 
 func (t *tx) SetMemoryState(owner string, s memory.State) error {
-	state, _ := json.Marshal(s) // plain data: it cannot fail
+	state, _ := json.Marshal(s)
 	err := t.g.Exec(`INSERT INTO memory_state(user_id, cursor_seq, cursor_thread, cursor_turn, state) VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(user_id) DO UPDATE SET cursor_seq = excluded.cursor_seq, cursor_thread = excluded.cursor_thread,
 			cursor_turn = excluded.cursor_turn, state = excluded.state`,

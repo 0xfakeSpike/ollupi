@@ -9,8 +9,6 @@ import (
 	"time"
 )
 
-// Calls stream their answers, so a long answer keeps sending; one that stalls is cut off here rather than held in
-// its slot for as long as the turn may run.
 const idleTimeout = 3 * time.Minute
 
 var errIdle = fmt.Errorf("llm: the provider sent nothing for %s", idleTimeout)

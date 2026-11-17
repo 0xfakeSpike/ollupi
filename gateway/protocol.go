@@ -49,8 +49,6 @@ const (
 	methodInitialized = "initialized"
 )
 
-// A change reaches a client as it was committed: its seq orders it after the page a client read, which names the seq it
-// was read at, so a client drops the notifications of a conversation up to that seq.
 const (
 	notifyThreadChanged      = "thread/changed"
 	notifyTurnChanged        = "turn/changed"
@@ -74,21 +72,12 @@ const (
 type Reconnect string
 
 const (
-	// ReconnectNever: not on its own, but when the user acts, such as signing in again or bringing the client back
-	// to the front.
-	ReconnectNever Reconnect = "never"
-	// ReconnectSoon: after a random wait of up to 10 seconds, so that the clients of a whole shard do not come back at
-	// once.
-	ReconnectSoon Reconnect = "soon"
-	// ReconnectBackoff: after a wait that starts at 1 second and doubles with each failed try up to 60 seconds, a
-	// random point under each bound.
-	ReconnectBackoff Reconnect = "backoff"
-	// ReconnectRetryAfter: after the seconds the response's Retry-After header gives, or as ReconnectBackoff when it
-	// gives none, as when a load balancer refuses for a shard that is changing hands.
+	ReconnectNever      Reconnect = "never"
+	ReconnectSoon       Reconnect = "soon"
+	ReconnectBackoff    Reconnect = "backoff"
 	ReconnectRetryAfter Reconnect = "retryAfter"
 )
 
-// Once a connection is back, the client reads again what it shows with thread/read: it heard nothing meanwhile.
 type Ending struct {
 	Name      string    `json:"name"`
 	Reconnect Reconnect `json:"reconnect"`
@@ -189,24 +178,18 @@ var protocol = struct {
 		errRefused:                 "refused",
 	},
 	closes: map[int]Ending{
-		// The server is stopping, or the connection reached its age.
-		int(websocket.StatusGoingAway): {"goingAway", ReconnectSoon},
-		// No close frame came: the network dropped, or the server gave up on a peer that stopped answering pings.
+		int(websocket.StatusGoingAway):       {"goingAway", ReconnectSoon},
 		int(websocket.StatusAbnormalClosure): {"abnormal", ReconnectBackoff},
-		// The client read too slowly and the server's queue for it filled.
 		int(websocket.StatusPolicyViolation): {"policyViolation", ReconnectBackoff},
 		int(websocket.StatusMessageTooBig):   {"messageTooBig", ReconnectBackoff},
 		int(websocket.StatusInternalError):   {"internalError", ReconnectBackoff},
-		// The user opened more connections than they may hold, and this was the oldest. Reconnecting on its own
-		// would take the place of another of theirs, which would do the same.
-		int(wshub.StatusReplaced): {"replaced", ReconnectNever},
+		int(wshub.StatusReplaced):            {"replaced", ReconnectNever},
 	},
 	handshakes: map[int]Ending{
 		http.StatusUnauthorized:        {"unauthorized", ReconnectNever},
 		http.StatusForbidden:           {"forbidden", ReconnectNever},
 		http.StatusInternalServerError: {"internalError", ReconnectBackoff},
-		// Too many connections are starting, or the user's shard cannot be reached now.
-		http.StatusServiceUnavailable: {"unavailable", ReconnectRetryAfter},
+		http.StatusServiceUnavailable:  {"unavailable", ReconnectRetryAfter},
 	},
 	limits: Limits{SearchRunes: app.MaxSearchRunes, SearchTerms: app.MaxSearchTerms},
 }
@@ -273,8 +256,7 @@ type InitializeResult struct {
 }
 
 type ThreadStartParams struct {
-	WorkspaceID string `json:"workspaceId,omitempty"`
-	// Empty is the environment on this machine.
+	WorkspaceID   string `json:"workspaceId,omitempty"`
 	EnvironmentID string `json:"environmentId,omitempty"`
 	Title         string `json:"title,omitempty"`
 }
@@ -300,12 +282,10 @@ type ThreadResult struct {
 }
 
 type ThreadListParams struct {
-	// WorkspaceID, when given, keeps the conversations in that workspace, or those in none when it is "".
-	WorkspaceID *string `json:"workspaceId,omitempty"`
-	Archived    bool    `json:"archived,omitempty"`
-	// After continues a list from the last conversation of the page before.
-	After *ThreadCursor `json:"after,omitempty"`
-	Limit int           `json:"limit,omitempty"`
+	WorkspaceID *string       `json:"workspaceId,omitempty"`
+	Archived    bool          `json:"archived,omitempty"`
+	After       *ThreadCursor `json:"after,omitempty"`
+	Limit       int           `json:"limit,omitempty"`
 }
 
 type ThreadCursor struct {
@@ -319,7 +299,6 @@ type ThreadRenameParams struct {
 	Title    string `json:"title"`
 }
 
-// The thread is unread again once another of its turns ends.
 type ThreadMarkReadParams struct {
 	ThreadID string `json:"threadId"`
 }
@@ -333,7 +312,6 @@ type ThreadDeleteParams struct {
 	ThreadID string `json:"threadId"`
 }
 
-// Thread is null once the conversation is deleted.
 type ThreadChangedNotification struct {
 	ThreadID string     `json:"threadId"`
 	Thread   *ThreadRow `json:"thread"`
@@ -352,7 +330,6 @@ type ItemChangedNotification struct {
 	Seq      int64   `json:"seq"`
 }
 
-// A delta is text a model writes now, which the item it belongs to holds whole once the response is kept.
 type DeltaNotification struct {
 	ThreadID string `json:"threadId"`
 	TurnID   string `json:"turnId"`
@@ -395,7 +372,6 @@ type MCPServerListResult struct {
 
 type MCPServer struct {
 	MCPServerConfig
-	// Status is left out for a server that has not been started yet.
 	Status *mcp.ServerStatus `json:"status,omitempty"`
 }
 
@@ -403,13 +379,11 @@ type MCPServerDeleteParams struct {
 	Name string `json:"name"`
 }
 
-// Server is left out once the server is deleted.
 type MCPServerChangedNotification struct {
 	Name   string           `json:"name"`
 	Server *MCPServerConfig `json:"server"`
 }
 
-// A "file" is copied when the message is sent; Name defaults to the file's name.
 type UserInput struct {
 	Type     string `json:"type"`
 	Text     string `json:"text,omitempty"`
@@ -449,7 +423,6 @@ type TurnInterruptParams struct {
 	TurnID   string `json:"turnId"`
 }
 
-// Turn's status says whether it runs now or waits behind the turn in progress.
 type TurnResult struct {
 	Turn TurnRow `json:"turn"`
 }
@@ -491,7 +464,6 @@ type EnvironmentListResult struct {
 	Data []EnvironmentRow `json:"data"`
 }
 
-// Kind defaults to "machine": this machine is every user's environment already.
 type EnvironmentAddParams struct {
 	Name string               `json:"name"`
 	Kind user.EnvironmentKind `json:"kind,omitempty"`
@@ -510,7 +482,6 @@ type EnvironmentResult struct {
 	Environment EnvironmentRow `json:"environment"`
 }
 
-// Environment is nil once it is gone.
 type EnvironmentChangedNotification struct {
 	EnvironmentID string          `json:"environmentId"`
 	Environment   *EnvironmentRow `json:"environment"`
@@ -524,7 +495,6 @@ type CronListResult struct {
 	Data []CronJobRow `json:"data"`
 }
 
-// Job is nil once the task is gone.
 type CronChangedNotification struct {
 	ID       string      `json:"id"`
 	ThreadID string      `json:"threadId"`
@@ -591,7 +561,6 @@ type SearchResult struct {
 	Memories []MemoryRow `json:"memories"`
 }
 
-// A setting left out stays as it is.
 type SettingsUpdateParams struct {
 	Redaction *bool `json:"redaction,omitempty"`
 	Memory    *bool `json:"memory,omitempty"`
@@ -629,9 +598,7 @@ type UserInputRequestParams struct {
 
 type UserInputResponse struct {
 	Answers ask.Answers `json:"answers"`
-	// Skipped declines the questions without answers (send answers as {}): the call ends declined and the agent goes
-	// on without them.
-	Skipped bool `json:"skipped,omitempty"`
+	Skipped bool        `json:"skipped,omitempty"`
 }
 
 var errorCodes = []struct {

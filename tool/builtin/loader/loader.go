@@ -1,5 +1,3 @@
-// Package loader gives the model load_tools, which loads the tools a turn defers: the ones named to the model in
-// DEFERRED TOOLS without their definitions, when not all fit.
 package loader
 
 import (
@@ -15,7 +13,6 @@ import (
 
 const ProviderName = "deferred_tools"
 
-// Provider keeps no state: the prompt reads the loaded tools back from the conversation's calls.
 type Provider struct{}
 
 type loadArgs struct {
@@ -42,7 +39,7 @@ func (Provider) Tools(context.Context) ([]kit.Spec, error) {
 }
 
 func (Provider) Invoke(_ context.Context, c tool.Call) (kit.Result, error) {
-	args, _ := kit.DecodeArguments[loadArgs](c.Arguments) // the schema checked its fields: it cannot fail
+	args, _ := kit.DecodeArguments[loadArgs](c.Arguments)
 	loaded := make([]string, 0, len(args.Names))
 	for _, name := range args.Names {
 		if !slices.Contains(c.Deferred, name) {

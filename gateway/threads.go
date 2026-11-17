@@ -16,8 +16,6 @@ func (c *conn) threadStart(ctx context.Context, p ThreadStartParams) (ThreadResu
 	return ThreadResult{Thread: threadRow(t)}, nil, err
 }
 
-// threadPage reads a page of a conversation; resuming it also asks again what it, and its subagents, wait on the user
-// for.
 func threadPage(resume bool) func(*conn, context.Context, ThreadPageParams) (ThreadPageResult, func(), error) {
 	return func(c *conn, ctx context.Context, p ThreadPageParams) (ThreadPageResult, func(), error) {
 		if p.Limit == 0 {

@@ -56,7 +56,6 @@ func testServer() *mcp.Server {
 	return s
 }
 
-// newUsers runs the servers each user of configs has, kept in a store as the app keeps them; the caller closes them.
 func newUsers(t *testing.T, ctx context.Context, configs map[string][]user.MCPServer, boxes func(string) (sandbox.Box, error)) (*Users, store.Store) {
 	t.Helper()
 	st, err := sqlite.Open(t.TempDir())
@@ -83,7 +82,6 @@ func newUsers(t *testing.T, ctx context.Context, configs map[string][]user.MCPSe
 	return NewUsers(ctx, Client{Name: "ollupi", Version: "test"}, st, boxes), st
 }
 
-// invoke calls a tool of set as caller, and gives its output's text and its error.
 func invoke(set tool.Set, name string, caller tool.Caller) (string, string) {
 	r := set.Invoke(context.Background(), tool.Call{Caller: caller, Tool: name, Arguments: map[string]any{}})
 	var text string
@@ -220,7 +218,6 @@ func TestACallThatGetsNoAnswerEnds(t *testing.T) {
 	}
 }
 
-// A server's headers go to its own host: a redirect elsewhere does not carry its credentials.
 func TestHeadersStayWithTheirServer(t *testing.T) {
 	var mu sync.Mutex
 	reached, leaked := false, ""
@@ -273,8 +270,6 @@ func TestContentThatIsNotTextIsNamedNotDumped(t *testing.T) {
 	}
 }
 
-// What a server says of its own tool does not let the tool run unasked: it comes in as one that may change things
-// and reach anywhere, whatever the server calls it.
 func TestAServersWordDoesNotMakeAToolReadOnly(t *testing.T) {
 	closed := false
 	spec := toSpec("srv__send", &mcp.Tool{Name: "send", Annotations: &mcp.ToolAnnotations{Title: "Send", ReadOnlyHint: true, OpenWorldHint: &closed}})

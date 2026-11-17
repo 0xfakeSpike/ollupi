@@ -5,8 +5,6 @@ import (
 	"testing"
 )
 
-// A workspace's repository is written like any other folder: the profile no longer names paths under .git, so git init
-// and git clone are not stopped by the sandbox.
 func TestTheProfileLeavesGitAlone(t *testing.T) {
 	profile, _, err := seatbeltProfile(policy{Mode: ModeWorkspaceWrite, WritableRoots: []string{"/p"}}, nil)
 	if err != nil {
@@ -20,7 +18,6 @@ func TestTheProfileLeavesGitAlone(t *testing.T) {
 	}
 }
 
-// The settings files other programs later run are still closed, even inside a writable root.
 func TestTheProfileKeepsSettingsFilesClosed(t *testing.T) {
 	profile, _, err := seatbeltProfile(policy{Mode: ModeWorkspaceWrite, WritableRoots: []string{"/p"},
 		ProtectedNames: []string{".envrc"}}, nil)

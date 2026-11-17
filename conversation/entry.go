@@ -1,6 +1,3 @@
-// Package conversation is a conversation as what it is: a log that only grows. Every fact about a conversation is
-// an entry appended to it, and every state of it, its turns, its items, what it waits on, is folded from the entries.
-// The package does no I/O; a store keeps the entries and the views folded from them.
 package conversation
 
 import (
@@ -10,11 +7,9 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 )
 
-// Seq orders the entries of one conversation; the store gives each the next one as it appends it.
 type Entry struct {
 	Seq  int64
 	Turn string
-	// Item is the item the entry is part of, "" for a turn's own entries.
 	Item string
 	At   time.Time
 	Body Body
@@ -48,7 +43,6 @@ const (
 
 func KindOf(b Body) Kind { return b.kind() }
 
-// A turn waits behind the conversation's turn in progress until that one ends.
 type TurnQueued struct {
 	Model   llm.Model
 	Role    string
@@ -75,13 +69,11 @@ type UserMessage struct {
 	Attachments []Attachment
 }
 
-// Response names the model response the text came in.
 type AgentMessage struct {
 	Text     string
 	Response string
 }
 
-// Reasoning is the model's thinking, from when it began to when the answer began.
 type Reasoning struct {
 	Text     string
 	Response string
@@ -89,7 +81,6 @@ type Reasoning struct {
 	Ended    time.Time
 }
 
-// Native is the provider's own record of the response, replayed as is to the same kind of provider.
 type ModelResponded struct {
 	Response string
 	Usage    Usage
@@ -101,7 +92,6 @@ type ModelFailed struct {
 	Error string
 }
 
-// Annotations and Prepared are the tool's, kept as the tool gave them.
 type ToolCall struct {
 	Call        string
 	Tool        string
@@ -127,7 +117,6 @@ type Decided struct {
 
 type ToolStarted struct{}
 
-// The call waits on the user for as long as its questions go unanswered.
 type InputAsked struct {
 	Request json.RawMessage
 }
@@ -137,7 +126,6 @@ type Answered struct {
 	Skipped bool
 }
 
-// One of Output, Error or Declined.
 type ToolResult struct {
 	Output    json.RawMessage
 	Artifacts []Artifact
@@ -145,12 +133,10 @@ type ToolResult struct {
 	Declined  bool
 }
 
-// The call launched a subagent in a conversation of its own, whose report the turn waits for.
 type ChildLaunched struct {
 	Child string
 }
 
-// A report is an item of its own, of the turn that launched the subagent.
 type ChildReported struct {
 	Launch string
 	Child  string
@@ -159,7 +145,6 @@ type ChildReported struct {
 	Error  string
 }
 
-// The summary stands for every entry up to Through in what the model is sent.
 type Compacted struct {
 	Summary  string
 	Through  int64
@@ -167,13 +152,11 @@ type Compacted struct {
 	Stats    ContextStats
 }
 
-// Text is the memories as the model is shown them.
 type Recalled struct {
 	Text     string
 	Memories []MemoryRef
 }
 
-// A notice is the runtime's word to the model, such as why it must answer now.
 type Notice struct {
 	Text string
 }
@@ -228,9 +211,8 @@ type Artifact struct {
 }
 
 type Usage struct {
-	InputTokens       int64 `json:"inputTokens"`
-	CachedInputTokens int64 `json:"cachedInputTokens"`
-	// Part of InputTokens.
+	InputTokens           int64 `json:"inputTokens"`
+	CachedInputTokens     int64 `json:"cachedInputTokens"`
 	CacheWriteInputTokens int64 `json:"cacheWriteInputTokens"`
 	OutputTokens          int64 `json:"outputTokens"`
 }
@@ -259,7 +241,6 @@ type MemoryStats struct {
 	IDs    []string `json:"ids"`
 }
 
-// Scope is GlobalScope, or the scope of one workspace or of conversations outside any.
 const GlobalScope = "global"
 
 type MemoryRef struct {

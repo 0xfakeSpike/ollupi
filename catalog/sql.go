@@ -13,25 +13,18 @@ import (
 	"gorm.io/gorm"
 )
 
-// SQL keeps the catalog in a database of its own, one file that every shard and router of a deployment opens. It
-// decides each lease by the database's clock, as one served from elsewhere would by its server's.
 type SQL struct {
 	gorm *gorm.DB
 }
 
 var _ Catalog = (*SQL)(nil)
 
-// now is the database's clock in Unix milliseconds.
 const now = "CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)"
 
-// The address is that of the process that holds the shard's lease, until ExpiresAt in Unix milliseconds by the
-// database's clock.
 type ShardRow struct {
-	ID      string `gorm:"primaryKey"`
-	Address string `gorm:"not null"`
-	// A shard kept for one customer takes no new users, and one its host finds full stops taking them.
-	Accepting bool `gorm:"not null"`
-	// Load is by a measure all shards share; lower is lighter.
+	ID        string `gorm:"primaryKey"`
+	Address   string `gorm:"not null"`
+	Accepting bool   `gorm:"not null"`
 	Load      int64  `gorm:"not null;default:0"`
 	Owner     string `gorm:"not null;default:''"`
 	Epoch     int64  `gorm:"not null;default:0"`
@@ -65,9 +58,8 @@ func OpenSQL(path string) (*SQL, error) {
 	return &SQL{gorm: g}, nil
 }
 
-// The first step is the schema gorm made before there were steps, so a catalog from then takes it as it is.
 func migrate(g *gorm.DB) error {
-	dir, _ := fs.Sub(migrationFiles, "migrations") // a valid path: it cannot fail
+	dir, _ := fs.Sub(migrationFiles, "migrations")
 	all, err := sqlitedb.Steps(dir)
 	if err != nil {
 		return err
@@ -145,8 +137,6 @@ func (c *SQL) ShardOf(ctx context.Context, user string) (string, error) {
 	return shardOf(c.gorm.WithContext(ctx), user)
 }
 
-// The lighter of two drawn at random, rather than the lightest of all, keeps a shard just added, or one whose load is
-// not yet reported, from taking every new user until it catches up, and places nearly as evenly.
 func assign(tx *gorm.DB, user string) (string, error) {
 	if shard, err := shardOf(tx, user); err != nil || shard != "" {
 		return shard, err

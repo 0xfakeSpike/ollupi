@@ -9,7 +9,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/tool"
 )
 
-// claudeMachine answers every command as Claude Code would.
 type claudeMachine struct {
 	*memoryMachine
 	stdout string
@@ -35,7 +34,6 @@ func TestClaudeRunsWithItsFlagsInTheUsersMachine(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The cloud sandbox cannot be left, so Claude Code runs confined in it.
 	if !p.Sandboxed || p.Escalated || p.Program != ToolClaude || p.Cwd != machineRoot || p.TimeoutSec != r.maxTimeoutSec {
 		t.Errorf("prepared %+v", p)
 	}
@@ -57,7 +55,6 @@ func TestClaudeRunsWithItsFlagsInTheUsersMachine(t *testing.T) {
 	}
 }
 
-// Claude Code that fails before it answers comes back as what it printed.
 func TestClaudeThatCannotAnswerReturnsItsOutput(t *testing.T) {
 	m := claudeMachine{memoryMachine: machineWith(map[string]string{"a.go": "package a\n"}), stdout: "Not logged in"}
 	r, err := New(Options{Box: sandbox.Remote(m, []string{machineRoot}, "cloud")})

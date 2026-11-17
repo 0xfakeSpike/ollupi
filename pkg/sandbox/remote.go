@@ -12,22 +12,16 @@ import (
 	"time"
 )
 
-// Creating, finding, waking and putting a Machine to sleep stay with the code that returns it, as do its network
-// rules, which providers set on the sandbox itself.
 type Machine interface {
-	// A command that ran and failed is a Result with its exit code, not an error.
 	Run(ctx context.Context, c Command) (Result, error)
 	Start(ctx context.Context, c Command, stderr io.Writer) (Process, error)
 	Stat(ctx context.Context, path string) (fs.FileInfo, error)
 	ReadDir(ctx context.Context, path string) ([]fs.DirEntry, error)
 	Open(ctx context.Context, path string) (io.ReadCloser, error)
 	WriteFile(ctx context.Context, path string, data []byte, perm fs.FileMode) error
-	// Close drops the connection; the sandbox and its files stay for the next one.
 	Close() error
 }
 
-// remote is a Box on a Machine. The machine is the confinement, and it holds one user's work alone, so nothing in it
-// is closed to them and there is nowhere to escalate to.
 type remote struct {
 	Machine
 	roots     []string
@@ -35,12 +29,10 @@ type remote struct {
 	transport *http.Transport
 }
 
-// A nil machine only describes the tools.
 func Remote(m Machine, roots []string, summary string) Box {
 	return &remote{Machine: m, roots: roots, summary: summary, transport: PublicTransport()}
 }
 
-// Transport keeps to public addresses: the requests leave from this process, whose network is not the user's.
 func (r *remote) Transport() http.RoundTripper { return r.transport }
 
 func (r *remote) Run(ctx context.Context, c Command) (Result, error) {
@@ -59,8 +51,6 @@ func (r *remote) Start(ctx context.Context, c Command, stderr io.Writer) (Proces
 
 func (r *remote) Same(_ context.Context, a, b string) bool { return a == b }
 
-// The machine's files are reached only through its commands. mv puts a folder inside one that is already there, so
-// an empty target is removed first.
 func (r *remote) Move(ctx context.Context, from, to string) error {
 	if r.Machine == nil {
 		return errors.New("sandbox: this box has no machine to move files in")
@@ -69,7 +59,6 @@ func (r *remote) Move(ctx context.Context, from, to string) error {
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 	case err != nil:
-		// mv puts a folder inside one that is there, so a target it cannot see is not known to be absent.
 		return fmt.Errorf("sandbox: move %s to %s: %w", from, to, err)
 	case st.IsDir():
 		entries, err := r.Machine.ReadDir(ctx, to)
@@ -130,7 +119,6 @@ func (r *remote) Directory(ctx context.Context, path string) (string, error) {
 	return dir, nil
 }
 
-// Executable leaves a bare name to the machine's own PATH.
 func (r *remote) Executable(ctx context.Context, program, cwd string) (string, error) {
 	if !strings.ContainsRune(program, filepath.Separator) {
 		return program, nil
@@ -177,5 +165,4 @@ func (r *remote) CheckWrite(roots []string, path string) error {
 	return fmt.Errorf("sandbox: %q is outside the command directories", path)
 }
 
-// moveTimeout is how long a machine's mv may take: a move of the user's whole folder, not a command of theirs.
 const moveTimeout = 10 * time.Minute

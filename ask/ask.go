@@ -1,5 +1,3 @@
-// Package ask is what an agent asks the user mid-call, and the answers that may come back: the questions are the
-// call's request, the answers its output.
 package ask
 
 import (
@@ -10,7 +8,6 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
-// Tool is the tool that asks.
 const Tool = "request_user_input"
 
 type Question struct {
@@ -59,7 +56,6 @@ func Decode(raw json.RawMessage) (Request, error) {
 	return r, nil
 }
 
-// Validate says whether the questions can be shown: each with its own id, a header, a question and labelled options.
 func (r Request) Validate() error {
 	seen := make(map[string]bool, len(r.Questions))
 	for _, q := range r.Questions {
@@ -79,7 +75,6 @@ func (r Request) Validate() error {
 	return nil
 }
 
-// Check says whether answers answer every question asked, and only those, within maxRunes in all.
 func (r Request) Check(answers Answers, maxRunes int) error {
 	total := 0
 	for _, q := range r.Questions {

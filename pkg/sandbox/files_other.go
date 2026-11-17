@@ -10,8 +10,6 @@ import (
 	"path/filepath"
 )
 
-// Without the unix calls that open a path folder by folder, a link put in place after the check is not refused here.
-
 func (s *Sandbox) open(path string) (*os.File, error) {
 	path, err := CanonicalPath(path, "")
 	if err != nil {

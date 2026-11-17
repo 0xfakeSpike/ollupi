@@ -1,6 +1,4 @@
 #!/bin/sh
-# Runs every comparison experiment in turn; each holds .locks/compare.lock (see locked.sh) while it measures.
-# Results are appended to results/results.txt. Takes roughly an hour and a half.
 set -e
 cd "$(dirname "$0")"
 node="node --expose-gc --no-warnings"

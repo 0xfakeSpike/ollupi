@@ -1,5 +1,3 @@
-// Package outputs gives the model read_tool_output, which reads the part of a tool output the conversation shows
-// shortened: the prompt cuts a long output and names the characters it left out, of the output's text as it renders it.
 package outputs
 
 import (
@@ -48,7 +46,6 @@ func (Provider) Tools(context.Context) ([]kit.Spec, error) {
 
 func (p Provider) Invoke(ctx context.Context, c tool.Call) (kit.Result, error) {
 	id, _ := c.Arguments["output_id"].(string)
-	// The schema holds offset and length to whole numbers in their ranges.
 	offset, _ := c.Arguments["offset"].(float64)
 	length := float64(defaultReadRunes)
 	if l, ok := c.Arguments["length"].(float64); ok {

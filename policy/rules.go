@@ -17,8 +17,6 @@ const (
 	ruleOpaque
 )
 
-// A rule's specifier is compared as the content it names is: a command by its program in lower case and its
-// arguments as written, folded content in lower case throughout.
 type rule struct {
 	text    string
 	tool    string
@@ -139,8 +137,6 @@ func (s ruleSet) decide(tool string, content Content, hasContent bool) (ruleVerd
 	if r, ok := firstMatch(s.ask, tool, entries, hasContent, content.Folded); ok {
 		return ruleAsk, r.text
 	}
-	// A deny or ask rule with a specifier cannot be shown not to apply to content it cannot read. The rule named is a
-	// deny rule that might apply, so that a policy nobody is asked under can refuse the call; with only ask rules, none.
 	if hasContent && content.Opaque {
 		specified := func(r rule) bool { return r.tool == tool && r.pattern != nil }
 		if i := slices.IndexFunc(s.deny, specified); i >= 0 {

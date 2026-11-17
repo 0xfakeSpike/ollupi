@@ -14,7 +14,6 @@ import (
 
 var quick = Options{PerKey: 2, Rate: 1000, Burst: 100, RetryWithin: 3 * time.Second, PingEvery: 20 * time.Millisecond, PongWithin: 50 * time.Millisecond, MaxAge: time.Hour}
 
-// start serves each connection under key "k", reading it until it fails, and says when each Serve returned.
 func start(t *testing.T, h *Hub[string]) (string, <-chan struct{}) {
 	t.Helper()
 	ended := make(chan struct{}, 8)
@@ -162,7 +161,6 @@ func TestAPeerThatStopsAnsweringPingsIsDropped(t *testing.T) {
 	}
 	url, ended := start(t, h)
 
-	// A client answers pings only while it reads.
 	answering := dial(ctx, t, url, "answering")
 	go func() {
 		for {

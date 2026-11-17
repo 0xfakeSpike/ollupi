@@ -11,8 +11,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// StartThread starts a conversation, in a workspace when one is named and in an environment, this machine when none
-// is; it runs under the workspace's permissions until its own are set.
 func (a *App) StartThread(ctx context.Context, u, workspace, environment, title string) (store.Thread, error) {
 	title, err := user.Title(title, false)
 	if err != nil {
@@ -60,8 +58,6 @@ func (a *App) Threads(ctx context.Context, u string, f store.ThreadFilter) (thre
 	return threads, more, err
 }
 
-// Page is a conversation's latest items before seq before, with the commit it was read at: a change to it reaches the
-// feed after that commit.
 func (a *App) Page(ctx context.Context, u, id string, before int64, limit int) (th store.Thread, page store.Page, more bool, seq int64, err error) {
 	err = a.st.Read(ctx, func(r store.Reader) error {
 		if th, err = thread(r, u, id); err != nil {
@@ -95,7 +91,6 @@ func (a *App) MarkThreadRead(ctx context.Context, u, id string) (store.Thread, e
 	})
 }
 
-// ArchiveThread archives an idle conversation, whose tasks stop running meanwhile, or restores one.
 func (a *App) ArchiveThread(ctx context.Context, u, id string, archived bool) (store.Thread, error) {
 	return a.changeThread(ctx, u, id, func(th *store.Thread) error {
 		th.Archived = nil
@@ -126,7 +121,6 @@ func (a *App) changeThread(ctx context.Context, u, id string, change func(*store
 	return th, err
 }
 
-// DeleteThread deletes an idle conversation with its subagents', its tasks and its attachments.
 func (a *App) DeleteThread(ctx context.Context, u, id string) error {
 	err := a.st.Update(ctx, func(tx store.Tx) error {
 		th, err := topThread(tx, u, id)

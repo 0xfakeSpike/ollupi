@@ -27,9 +27,7 @@ type ChatMessage struct {
 	ReasoningContent string        `json:"reasoning,omitempty"`
 	ToolCalls        []ToolCall    `json:"toolCalls,omitempty"`
 	ToolCallID       string        `json:"toolCallId,omitempty"`
-	// Native is a provider's own record of an assistant message. Only the client of the same provider reads it,
-	// and replays it in place of Content, ReasoningContent and ToolCalls.
-	Native []byte `json:"-"`
+	Native           []byte        `json:"-"`
 }
 
 type PartType string
@@ -92,18 +90,16 @@ func (m Model) Clone() Model {
 }
 
 type ChatRequest struct {
-	Model      Model
-	Messages   []ChatMessage
-	Tools      []ToolSpec
-	ToolChoice ToolChoice
-	// InputTokens is the caller's estimate of the prompt; clients that must state a longest answer fit it beside this.
+	Model       Model
+	Messages    []ChatMessage
+	Tools       []ToolSpec
+	ToolChoice  ToolChoice
 	InputTokens int
 }
 
 type Usage struct {
-	PromptTokens       int64
-	CachedPromptTokens int64
-	// CacheWritePromptTokens are part of PromptTokens.
+	PromptTokens           int64
+	CachedPromptTokens     int64
 	CacheWritePromptTokens int64
 	CompletionTokens       int64
 }

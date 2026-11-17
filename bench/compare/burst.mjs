@@ -1,8 +1,3 @@
-// Experiment 3, burst against a provider's concurrency limit: n turns submitted at once, each in its own session,
-// against a provider that refuses requests beyond `limit` in flight with 429. Neither pi harness has a client-side
-// limit on model calls in flight, so what happens is whatever its retry policy does with the 429s.
-//
-//   node --expose-gc burst.mjs --harness pi-sdk|pi-durable|dsh --n 3000 --limit 256
 import { args, cpuSeconds, freshDir, pct, peakSampler, report, secs, startProvider } from "./common.mjs";
 import { openHarness, pool } from "./harnesses.mjs";
 

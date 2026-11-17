@@ -1,6 +1,3 @@
-// Package render reads a call's output as the text it shows: structured output as indented JSON, and in each string of
-// it a run of decorative lines, such as a table's borders, as one "...". A model reads outputs so, and where one is
-// shortened for it, the offsets it is told count the characters of this text: whatever reads the rest renders it so.
 package render
 
 import (

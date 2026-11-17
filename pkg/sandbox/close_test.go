@@ -19,7 +19,6 @@ func TestCloseEndsWhatTheCommandLeftRunning(t *testing.T) {
 	}
 	defer s.Close()
 	var stderr strings.Builder
-	// The child keeps the command's stderr open after the command ends, as a server's browser can.
 	p, err := s.Start(context.Background(), Command{Program: "/bin/sh", Args: []string{"-c", "sleep 60 & echo $!; cat"}}, &stderr)
 	if err != nil {
 		t.Fatal(err)

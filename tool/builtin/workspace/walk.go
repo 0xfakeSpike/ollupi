@@ -12,7 +12,6 @@ import (
 
 var errStopWalk = errors.New("stop walk")
 
-// A link to a file is read where it leads, so a link cannot reach a closed path.
 type walker struct {
 	box       sandbox.Box
 	root      string

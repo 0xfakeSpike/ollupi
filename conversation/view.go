@@ -8,9 +8,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 )
 
-// View is a conversation folded from its entries. A store keeps it beside them, so that it is read rather than folded
-// again, and folds each entry into it as it appends the entry. Apply indexes a view decoded from a store the first
-// time it folds an entry into it.
 type View struct {
 	Head      int64
 	Turns     []Turn
@@ -22,18 +19,16 @@ type View struct {
 }
 
 type Turn struct {
-	ID       string
-	Model    llm.Model
-	Role     string
-	CronJob  string
-	QueuedAt time.Time
-	Ended    *Ending
-	// Usage is the sum of the responses'.
+	ID        string
+	Model     llm.Model
+	Role      string
+	CronJob   string
+	QueuedAt  time.Time
+	Ended     *Ending
 	Usage     Usage
 	Responses []Used
 }
 
-// Used is what one model response used.
 type Used struct {
 	Response string
 	Usage    Usage
@@ -83,7 +78,6 @@ const (
 
 var ItemStatuses = []ItemStatus{Pending, InProgress, Done, Errored, Declined}
 
-// Seq is the item's first entry and Updated its latest.
 type Item struct {
 	ID          string
 	Turn        string
@@ -146,7 +140,6 @@ func Fold(entries []Entry) View {
 	return v
 }
 
-// Apply folds e into the view; Check says first whether e may be appended.
 func (v *View) Apply(e Entry) {
 	if v.turn == nil {
 		v.index()
@@ -281,7 +274,6 @@ func (v View) ItemOf(id string) (Item, bool) {
 	return v.Items[i], true
 }
 
-// Active is the turn in progress: the first that has not ended. Those after it wait behind it.
 func (v View) Active() (Turn, bool) {
 	i := slices.IndexFunc(v.Turns, func(t Turn) bool { return t.Ended == nil })
 	if i < 0 {
@@ -320,8 +312,6 @@ const (
 	WaitChildren Wait = "children"
 )
 
-// Waiting says what the turn in progress waits on, the user first: a turn waits on its subagents only once it has
-// answered, and the reports bring it back.
 func (v View) Waiting() Wait {
 	active, ok := v.Active()
 	if !ok {
@@ -339,7 +329,6 @@ func (v View) Waiting() Wait {
 	return WaitNone
 }
 
-// Requests are what the turn in progress asks the user, in the order it asked.
 func (v View) Requests() []Item {
 	active, ok := v.Active()
 	if !ok {
@@ -354,14 +343,11 @@ func (v View) Requests() []Item {
 	return out
 }
 
-// Runnable says whether the turn in progress has work a runner can do now.
 func (v View) Runnable() bool {
 	_, ok := v.Active()
 	return ok && v.Waiting() == WaitNone
 }
 
-// Answered says whether the turn's latest model response answered without calling a tool, and nothing has come in
-// since that the model has not seen: a message the user sent, or a subagent's report.
 func (v View) Answered(turn string) bool {
 	i := len(v.Responses) - 1
 	for i >= 0 && v.Responses[i].Turn != turn {
@@ -396,7 +382,6 @@ const (
 
 var ThreadStatuses = []ThreadStatus{ThreadIdle, ThreadActive, ThreadWaitingOnApproval, ThreadWaitingOnUserInput}
 
-// Status is this conversation's alone; RollUp takes in its subagents'.
 func (v View) Status() ThreadStatus {
 	if _, ok := v.Active(); !ok {
 		return ThreadIdle
@@ -410,8 +395,6 @@ func (v View) Status() ThreadStatus {
 	return ThreadActive
 }
 
-// RollUp is a conversation's status with its subagents' in it: what it waits on the user for first, then what one of
-// its subagents does, an approval before an answer.
 func RollUp(own ThreadStatus, subagents []ThreadStatus) ThreadStatus {
 	if own == ThreadWaitingOnApproval || own == ThreadWaitingOnUserInput {
 		return own
@@ -436,7 +419,6 @@ func (it Item) waitsForInput() bool {
 	return it.Kind == ItemToolCall && it.Status == InProgress && it.Input != nil && !it.Input.Answered
 }
 
-// AwaitsReport says the call launched a subagent that has not reported yet.
 func (it Item) AwaitsReport() bool {
 	return it.Kind == ItemToolCall && it.Child != "" && !it.Reported
 }

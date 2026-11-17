@@ -11,7 +11,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/tool/kit"
 )
 
-// A call works on the skills of its caller's role alone.
 func TestACallReachesOnlyItsRolesSkills(t *testing.T) {
 	root := t.TempDir()
 	for _, role := range []string{"full-main-agent", "browser-sub-agent"} {

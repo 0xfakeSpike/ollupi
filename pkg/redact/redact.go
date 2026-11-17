@@ -36,7 +36,6 @@ var detectors = []detector{
 	{category: catSecret, priority: 100, match: regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----`)},
 	{category: catSecret, priority: 99, match: regexp.MustCompile(`\b(?:AKIA|ASIA)[0-9A-Z]{16}\b`)},
 	{category: catSecret, priority: 99, match: regexp.MustCompile(`\bg(?:hp|ho|hu|hs|hr)_[A-Za-z0-9]{36}\b`)},
-	// OpenAI's keys, sk-proj-... among them, and Anthropic's, sk-ant-api03-...
 	{category: catSecret, priority: 99, match: regexp.MustCompile(`\bsk-[A-Za-z0-9_-]{20,}`)},
 	{category: catSecret, priority: 99, match: regexp.MustCompile(`\bgithub_pat_[A-Za-z0-9_]{22,}`)},
 	{category: catSecret, priority: 99, match: regexp.MustCompile(`\bAIza[0-9A-Za-z_-]{35}`)},
@@ -48,8 +47,6 @@ var detectors = []detector{
 	{category: catPhone, priority: 88, match: regexp.MustCompile(`\b1[3-9]\d{9}\b`)},
 	{category: catEmail, priority: 80, match: regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b`)},
 	{category: catIP, priority: 70, match: regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`), validate: validIPv4},
-	// A run of hex pairs is matched whole, so that six pairs inside a longer run, such as a certificate's
-	// fingerprint, are not taken for a MAC address.
 	{category: catMAC, priority: 70, match: regexp.MustCompile(`\b[0-9A-Fa-f]{2}(?:[:-][0-9A-Fa-f]{2}){5,}\b`),
 		validate: func(s string) bool { return len(s) == len("00:00:00:00:00:00") }},
 }
@@ -57,12 +54,9 @@ var detectors = []detector{
 type Redactor struct {
 	key     []byte
 	reverse map[string]string
-	// masked keeps what Mask made of each text, so a history sent again with every model call of a turn is
-	// searched once; the placeholders in it stay in reverse.
-	masked map[string]string
+	masked  map[string]string
 }
 
-// The same key masks a value to the same placeholder.
 func New(key string) *Redactor {
 	return &Redactor{key: []byte(key), reverse: map[string]string{}, masked: map[string]string{}}
 }
@@ -156,8 +150,6 @@ func (s *Stream) Flush() string {
 	return out
 }
 
-// Cuts moves head and tail, rune offsets, out of the spans Spans gives, so that what is kept of a span is all of it,
-// which Mask still finds, never a part that it would not.
 func Cuts(s string, spans [][2]int, head, tail int) (int, int) {
 	for _, sp := range spans {
 		start, end := utf8.RuneCountInString(s[:sp[0]]), utf8.RuneCountInString(s[:sp[1]])
@@ -171,7 +163,6 @@ func Cuts(s string, spans [][2]int, head, tail int) (int, int) {
 	return head, tail
 }
 
-// Spans are the byte offsets of the sensitive values of s.
 func Spans(s string) [][2]int {
 	found := findSpans(s)
 	out := make([][2]int, len(found))
@@ -272,8 +263,6 @@ func validIDCard(s string) bool {
 	return check[sum%11] == last
 }
 
-// No card starts with 0, where zero-padded addresses and offsets start (readelf's 0000000000401000), or with 1,
-// where millisecond and nanosecond Unix times start; a tenth of those pass Luhn alone.
 func validBankCard(s string) bool {
 	if s[0] == '0' || s[0] == '1' {
 		return false

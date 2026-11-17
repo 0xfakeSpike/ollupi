@@ -14,9 +14,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 )
 
-// resume times what bringing work back costs: a message to a conversation idle in the store, by the length of its
-// history, until its model request goes out; and a restart of the process with conversations waiting and turns
-// running, until the running turns have sent their requests again.
 func resume(args []string) {
 	fs := flag.NewFlagSet("resume", flag.ExitOnError)
 	histories := fs.String("history", "10,100,1000", "turns of history in the conversations resumed")
@@ -31,7 +28,6 @@ func resume(args []string) {
 	}
 	defer os.RemoveAll(dir)
 	answer := strings.Repeat("A paragraph of an answer, about as long as a short reply in a chat. ", 6)
-	// open puts a host together on the store in dir and starts it, and says how long that took.
 	open := func(m *model, tr *tracker) (*engine, time.Duration) {
 		at := time.Now()
 		e := newEngine(host.Config{

@@ -4,8 +4,6 @@ import (
 	"time"
 )
 
-// Cursor is the latest turn read of a user's: turns are read in the order they ended, by the seq of the commit that
-// ended them, then by thread and turn for those a commit ended together.
 type Cursor struct {
 	Seq    int64  `json:"seq"`
 	Thread string `json:"thread,omitempty"`
@@ -35,7 +33,6 @@ type Skip struct {
 	Failure
 }
 
-// State is how far extraction has read a user's turns, and how it went.
 type State struct {
 	Cursor      Cursor     `json:"-"`
 	Attempts    int        `json:"attempts,omitempty"`
@@ -46,19 +43,15 @@ type State struct {
 	LastSkip    *Skip      `json:"lastSkip,omitempty"`
 }
 
-// MaxAttempts is how many times a turn is tried before it is skipped: a turn that fails every time must not hold up
-// the ones after it.
 const MaxAttempts = 10
 
 func (s State) Due(now time.Time) bool { return s.NextAttempt == nil || !now.Before(*s.NextAttempt) }
 
-// Read is s once the turn at c is learned from.
 func (s State) Read(c Cursor, now time.Time) State {
 	s.Cursor, s.Attempts, s.NextAttempt, s.LastSuccess, s.LastFailure = c, 0, nil, &now, nil
 	return s
 }
 
-// Failed is s once the turn at c failed: tried again later, each time later, and skipped at the last attempt.
 func (s State) Failed(c Cursor, f Failure, now time.Time) State {
 	f.Error = clip(f.Error, 1000)
 	if s.Attempts+1 >= MaxAttempts {

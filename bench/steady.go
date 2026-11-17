@@ -25,8 +25,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/tool/kit"
 )
 
-// steady keeps c conversations busy, each sending its next turn as soon as the last one ends, as c people using
-// the service at once would; when the turns start taking longer than they would alone, the process is full.
 func steady(args []string) {
 	fs := flag.NewFlagSet("steady", flag.ExitOnError)
 	c := fs.Int("c", 1024, "conversations running at once")
@@ -76,7 +74,6 @@ func steady(args []string) {
 		log.Fatal(err)
 	}
 	url = strings.TrimSpace(url)
-	// As in burst: keep a connection per call in flight, as a real provider's HTTP/2 connection would serve them.
 	http.DefaultTransport.(*http.Transport).MaxIdleConnsPerHost = *calls
 	dir, err := os.MkdirTemp("", "ollupi-bench-")
 	if err != nil {
@@ -189,8 +186,6 @@ func steady(args []string) {
 	e.stop()
 }
 
-// providerMain serves the fake provider in a process of its own, so what it holds is not counted against the agent;
-// it prints its URL, and /stats answers with the peak in flight, the requests refused, all requests and those failed.
 func providerMain(args []string) {
 	fs := flag.NewFlagSet("provider", flag.ExitOnError)
 	latency := fs.Duration("latency", 5*time.Second, "model latency")

@@ -41,7 +41,6 @@ class Ollupi(BaseInstalledAgent):
     async def run(self, instruction: str, environment: BaseEnvironment, context: AgentContext) -> None:
         if not self.model_name:
             raise ValueError("ollupi: pass the model with -m")
-        # The key and settings go through the environment, never on a command line.
         env = {name: value for name, value in os.environ.items() if name.startswith("OLLUPI_")}
         env |= {"OLLUPI_INSTRUCTION": instruction, "OLLUPI_MODEL": self.model_name.split("/", 1)[-1]}
         await self.exec_as_agent(

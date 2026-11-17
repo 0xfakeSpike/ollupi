@@ -45,7 +45,6 @@ func Errorf(code int, format string, args ...any) *Error {
 }
 
 type Handler interface {
-	// Call answers a request; ctx ends when the connection does.
 	Call(ctx context.Context, method string, params json.RawMessage) (result any, after func(), err *Error)
 	Notify(method string, params json.RawMessage)
 }
@@ -53,12 +52,10 @@ type Handler interface {
 type ResponseFunc func(result json.RawMessage, err *Error)
 
 const (
-	writeTimeout     = 10 * time.Second
-	maxOutboxBytes   = 16 << 20
-	maxInboxMessages = 64
-	maxInboxBytes    = 8 << 20
-	// A client is read at most this many messages a second, after a first burst, so that one that floods its
-	// connection, with calls or with messages that are not, slows down rather than takes the server's time.
+	writeTimeout      = 10 * time.Second
+	maxOutboxBytes    = 16 << 20
+	maxInboxMessages  = 64
+	maxInboxBytes     = 8 << 20
 	messagesPerSecond = 50
 	messageBurst      = 200
 )
@@ -81,8 +78,6 @@ func NewConn(ws *websocket.Conn) *Conn {
 	return &Conn{ws: ws, pending: make(map[string]ResponseFunc), ready: make(chan struct{}, 1)}
 }
 
-// Reading goes on while a message is handled: the pong to a ping is read only while a read is in progress, so a slow
-// call would otherwise look like a dead peer.
 func (c *Conn) Serve(ctx context.Context, h Handler) (err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	written := make(chan struct{})
@@ -173,8 +168,6 @@ func (c *Conn) handle(ctx context.Context, h Handler, data []byte) {
 	}
 }
 
-// HoldUntilReplied holds what is sent behind the reply to the call being answered, so that a client reads a view
-// before the changes made after it was read. Only Call may use it.
 func (c *Conn) HoldUntilReplied() {
 	c.mu.Lock()
 	c.holding = true
@@ -237,8 +230,6 @@ func (c *Conn) enqueue(data []byte, reply bool) {
 		c.mu.Unlock()
 		return
 	}
-	// The bound is on what waits behind the client, not on one message: a reply larger than it, such as an image,
-	// goes out alone when nothing else waits.
 	if c.queued > 0 && c.queued+len(data) > maxOutboxBytes {
 		c.closed, c.outbox, c.held, c.queued = true, nil, nil, 0
 		c.mu.Unlock()

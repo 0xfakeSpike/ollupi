@@ -11,7 +11,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/policy"
 )
 
-// Tool is a tool as the model is offered it.
 type Tool struct {
 	Name        string
 	Provider    string
@@ -27,9 +26,6 @@ func Specs(tools []Tool) []llm.ToolSpec {
 	return specs
 }
 
-// Offer splits the visible tools into those sent with their definitions and those only named, when not all fit: the
-// built-in ones are sent before the external, the role's core ones before the rest. A tool the model has loaded is
-// sent from then on, after the others, so that the list only grows.
 func (w Window) Offer(visible []Tool, core []string, transcript []conversation.Item) (sent, deferred []Tool) {
 	sent, deferred = w.split(visible, core)
 	for _, name := range loaded(transcript) {

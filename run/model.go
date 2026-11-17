@@ -18,8 +18,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// callModel asks the model for the turn's next response, after telling it why tool use stopped, recalling memory, or
-// compacting the transcript when it needs to: each of those is a step of its own.
 func (r *Runner) callModel(ctx context.Context, s *step, a agent.CallModel) error {
 	if a.Notice != nil {
 		return r.append(ctx, s.th.ID, conversation.Entry{Turn: s.turn.ID, Item: uuid.NewString(), Body: *a.Notice})
@@ -47,8 +45,6 @@ func (r *Runner) callModel(ctx context.Context, s *step, a agent.CallModel) erro
 		choice = llm.ToolChoiceNone
 	}
 	response, message, reasoning := uuid.NewString(), uuid.NewString(), uuid.NewString()
-	// Thinking runs from its first piece to the answer's; a model that does not stream thinks from the request to the
-	// response.
 	sent := time.Now().UTC()
 	var began, answered time.Time
 	resp, err := r.send(ctx, s, req, in.Tools, choice, func(d llm.Delta) {
@@ -117,8 +113,6 @@ func usage(resp llm.ChatResponse) conversation.Usage {
 		CacheWriteInputTokens: u.CacheWritePromptTokens, OutputTokens: u.CompletionTokens}
 }
 
-// recall is what the turn recalls of memory, once in the transcript and again after each compaction; nil when it
-// recalls nothing.
 func (r *Runner) recall(ctx context.Context, s *step) (*conversation.Recalled, error) {
 	if !s.role.Recalls || !s.settings.Memory {
 		return nil, nil
@@ -169,7 +163,6 @@ func (r *Runner) input(s *step) (prompt.Input, error) {
 	return prompt.Input{Items: items, Responses: responses, System: s.window.System(system, s.deferred), Tools: prompt.Specs(s.sent)}, nil
 }
 
-// compact asks the model to sum up the transcript, which from then on stands for everything before it.
 func (r *Runner) compact(ctx context.Context, s *step, in prompt.Input) error {
 	req, err := s.window.Compaction(in)
 	if err != nil {
@@ -197,7 +190,6 @@ func (r *Runner) compact(ctx context.Context, s *step, in prompt.Input) error {
 		conversation.Entry{Turn: s.turn.ID, Item: uuid.NewString(), Body: conversation.Compacted{Summary: summary, Through: through, Response: response, Stats: req.Stats}})
 }
 
-// send calls the model with what the user's redaction masks, and restores it in what comes back.
 func (r *Runner) send(ctx context.Context, s *step, req prompt.Request, tools []llm.ToolSpec, choice llm.ToolChoice, onDelta func(llm.Delta)) (llm.ChatResponse, error) {
 	client, err := r.models.Client(s.th.User, s.turn.Model)
 	if err != nil {
@@ -239,7 +231,6 @@ func (r *Runner) send(ctx context.Context, s *step, req prompt.Request, tools []
 	return resp, err
 }
 
-// parts reads the files attached to a message: an image as it is, a text file into the message, masked.
 func (r *Runner) parts(ctx context.Context, parts []llm.ContentPart, mask func(string) string) ([]llm.ContentPart, error) {
 	out := slices.Clone(parts)
 	for i, p := range out {

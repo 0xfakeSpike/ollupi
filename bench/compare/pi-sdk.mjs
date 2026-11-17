@@ -1,6 +1,3 @@
-// pi-sdk: plain @earendil-works/pi-coding-agent sessions (AgentSession), many in one process. Each session persists to
-// its own JSONL file through SessionManager.create(), as the CLI does; the model is an openai-completions provider in a
-// models.json under run/, so the user's ~/.pi is never read or written.
 import fs from "node:fs";
 import path from "node:path";
 import { Type } from "typebox";
@@ -16,7 +13,6 @@ import { sleep } from "./common.mjs";
 
 process.env.PI_OFFLINE = "1";
 
-// benchWork is the bench__work tool: it writes its call id to log (when given), then takes toolMs.
 export function benchWork({ toolMs = 1000, log } = {}) {
 	return defineTool({
 		name: "bench__work",
@@ -100,7 +96,6 @@ export async function openPi({ dir, url, toolMs = 1000, log, retry }) {
 	};
 }
 
-// runTurn sends one prompt and resolves once pi settles; it reports whether the turn ended with an answer or an error.
 export async function runTurn(session, text = "work") {
 	const at = performance.now();
 	let error;

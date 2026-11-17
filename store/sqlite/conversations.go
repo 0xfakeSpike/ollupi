@@ -56,7 +56,6 @@ func deref(s *string) string {
 	return *s
 }
 
-// orNull keeps "" as NULL, for a reference to nothing.
 func orNull(s string) *string {
 	if s == "" {
 		return nil
@@ -168,7 +167,6 @@ type tx struct {
 	seq     int64
 }
 
-// number is the commit's seq, taken from the feed the first time the commit needs it.
 func (t *tx) number() (int64, error) {
 	if t.seq == 0 {
 		if err := t.g.Raw("UPDATE feed SET seq = seq + 1 WHERE id = 1 RETURNING seq").Scan(&t.seq).Error; err != nil {
@@ -178,7 +176,6 @@ func (t *tx) number() (int64, error) {
 	return t.seq, nil
 }
 
-// pending is what the transaction did to one thread, for the feed.
 type pending struct {
 	user   string
 	change store.Change
@@ -197,7 +194,7 @@ func (t *tx) note(thread, owner string) *pending {
 }
 
 func (t *tx) CreateThread(th store.Thread) error {
-	settings, _ := json.Marshal(th.Settings) // plain data: it cannot fail
+	settings, _ := json.Marshal(th.Settings)
 	err := t.g.Exec(`INSERT INTO threads(id, user_id, title, settings, workspace_id, environment_id, parent_id, parent_item, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, th.ID, th.User, th.Title, string(settings), orNull(th.Workspace), orNull(th.Environment), orNull(th.Parent),
 		th.ParentItem, th.Created, th.Updated).Error
@@ -209,7 +206,7 @@ func (t *tx) CreateThread(th store.Thread) error {
 }
 
 func (t *tx) UpdateThread(th store.Thread) error {
-	settings, _ := json.Marshal(th.Settings) // plain data: it cannot fail
+	settings, _ := json.Marshal(th.Settings)
 	res := t.g.Exec(`UPDATE threads SET title = ?, settings = ?, workspace_id = ?, updated_at = ?, archived_at = ?, read_at = ? WHERE id = ?`,
 		th.Title, string(settings), orNull(th.Workspace), th.Updated, th.Archived, th.Read, th.ID)
 	if res.Error != nil {
@@ -288,7 +285,6 @@ func (t *tx) Append(thread string, entries ...conversation.Entry) (conversation.
 	return v, nil
 }
 
-// touched are the items an entry changes: its own, and the call a report answers.
 func touched(e conversation.Entry) []string {
 	var ids []string
 	if e.Item != "" {
@@ -300,13 +296,12 @@ func touched(e conversation.Entry) []string {
 	return ids
 }
 
-// persist writes what the entries changed of the view, and the thread's folded columns.
 func (t *tx) persist(thread string, th store.Thread, v conversation.View, p *pending, entries []conversation.Entry, now time.Time) error {
 	for ord, turn := range v.Turns {
 		if !slices.ContainsFunc(entries, func(e conversation.Entry) bool { return e.Turn == turn.ID }) {
 			continue
 		}
-		body, _ := json.Marshal(turn) // plain data: it cannot fail
+		body, _ := json.Marshal(turn)
 		var ended *int64
 		if turn.Ended != nil {
 			seq, err := t.number()
@@ -329,7 +324,7 @@ func (t *tx) persist(thread string, th store.Thread, v conversation.View, p *pen
 		if !slices.Contains(changed, it.ID) {
 			continue
 		}
-		body, _ := json.Marshal(it) // plain data: it cannot fail
+		body, _ := json.Marshal(it)
 		text := ""
 		if it.Kind == conversation.ItemUserMessage || it.Kind == conversation.ItemAgentMessage {
 			text = it.Text
@@ -344,7 +339,7 @@ func (t *tx) persist(thread string, th store.Thread, v conversation.View, p *pen
 		if !slices.ContainsFunc(entries, func(e conversation.Entry) bool { return e.Seq == r.Seq }) {
 			continue
 		}
-		body, _ := json.Marshal(r) // plain data: it cannot fail
+		body, _ := json.Marshal(r)
 		if err := t.g.Exec("INSERT INTO responses(thread_id, id, seq, body) VALUES (?, ?, ?, ?)", thread, r.ID, r.Seq, string(body)).Error; err != nil {
 			return err
 		}
@@ -375,8 +370,6 @@ func (t *tx) persist(thread string, th store.Thread, v conversation.View, p *pen
 
 var waitsOnUser = []string{string(conversation.ThreadWaitingOnApproval), string(conversation.ThreadWaitingOnUserInput)}
 
-// rollUp brings a thread's status, then each of its parents', up to date with the subagents', each of whose status a
-// parent's takes in; a parent whose status stays as it was is noted as changed by none.
 func (t *tx) rollUp(id string) error {
 	for id != "" {
 		var row struct {

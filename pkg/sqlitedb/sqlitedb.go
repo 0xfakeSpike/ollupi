@@ -1,11 +1,3 @@
-// Package sqlitedb opens a SQLite file for one process and brings its schema forward.
-//
-// The schema changes by numbered steps, NNNN_<what>.sql, each run once, in order, in its own transaction. A database
-// records how many steps it has taken in PRAGMA user_version; one taken further than the program knows, by a newer
-// version of it, is refused rather than used. Steps only go forward.
-//
-// Steps run with foreign keys off, so one can rebuild a table the others refer to without cascading deletes; before a
-// step commits, the keys of every row are checked, and any that points nowhere fails the step.
 package sqlitedb
 
 import (
@@ -24,16 +16,13 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Other processes may open the same file.
 func Open(path string) (*gorm.DB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("storage: create directory of %s: %w", path, err)
 	}
 	dsn := (&url.URL{
-		Scheme: "file",
-		Path:   filepath.ToSlash(path),
-		// A transaction takes the write lock when it begins: one that read and then writes cannot then fail because
-		// another process wrote in between, as a deferred one does in WAL mode whatever the busy timeout.
+		Scheme:   "file",
+		Path:     filepath.ToSlash(path),
 		RawQuery: "_busy_timeout=5000&_journal_mode=WAL&_foreign_keys=on&_txlock=immediate",
 	}).String()
 	g, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
@@ -104,7 +93,6 @@ func Migrate(g *gorm.DB, steps []string, version int) error {
 	}
 	for i := version; i < len(steps); i++ {
 		if err := g.Transaction(func(tx *gorm.DB) error {
-			// Another process that opened the file may have taken the step since version was read.
 			var now int
 			if err := tx.Raw("PRAGMA user_version").Scan(&now).Error; err != nil {
 				return err

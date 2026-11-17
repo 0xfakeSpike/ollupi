@@ -21,7 +21,6 @@ func (f handlerFunc) Call(ctx context.Context, method string, params json.RawMes
 
 func (handlerFunc) Notify(string, json.RawMessage) {}
 
-// serve runs Serve with h for each connection and gives the server's side of the one the test dials, with the client's.
 func serve(ctx context.Context, t *testing.T, h func(*Conn) Handler) (*websocket.Conn, *websocket.Conn) {
 	t.Helper()
 	accepted := make(chan *websocket.Conn, 1)
@@ -76,7 +75,6 @@ func TestAPeerIsHeardWhileACallIsSlow(t *testing.T) {
 	})
 	write(ctx, t, client, `{"jsonrpc":"2.0","id":1,"method":"slow"}`)
 	write(ctx, t, client, `{"jsonrpc":"2.0","id":2,"method":"slow"}`)
-	// The client answers the ping only while it reads, so it reads the replies meanwhile.
 	replies := make(chan string, 2)
 	go func() {
 		for range 2 {

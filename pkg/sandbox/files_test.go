@@ -13,7 +13,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// tree makes, in a temporary folder, a project with sub/note.txt and a secret folder the read rules close.
 func tree(t *testing.T) (s *Sandbox, root, secret string) {
 	t.Helper()
 	base, err := CanonicalPath(t.TempDir(), "")
@@ -34,7 +33,6 @@ func tree(t *testing.T) (s *Sandbox, root, secret string) {
 	return &Sandbox{policy: policy{Mode: ModeWorkspaceWrite, WritableRoots: []string{root}, DenyRead: []string{secret}}}, root, secret
 }
 
-// swap puts a link to target in place of the folder dir, as a command left running can after a check.
 func swap(t *testing.T, dir, target string) {
 	t.Helper()
 	if err := os.RemoveAll(dir); err != nil {

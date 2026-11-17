@@ -18,7 +18,7 @@ var shanghai, _ = time.LoadLocation("Asia/Shanghai")
 
 func TestATaskIsCheckedAndRunsAtItsTimes(t *testing.T) {
 	cal := NewCalendar(shanghai)
-	now := time.Date(2026, 3, 1, 0, 30, 0, 0, time.UTC) // 08:30 in Shanghai
+	now := time.Date(2026, 3, 1, 0, 30, 0, 0, time.UTC)
 	for _, c := range []struct{ name, spec, prompt, err string }{
 		{"Bad Name", "0 9 * * *", "p", "name"},
 		{"daily", "0 9 * *", "p", "5 fields"},
@@ -100,7 +100,6 @@ func (f *fixture) stored() user.CronJob {
 	return j
 }
 
-// queue queues the prompt as a turn of the task's.
 func queue(tx store.Tx, thread, prompt, job string) error {
 	turn := uuid.NewString()
 	_, err := tx.Append(thread, conversation.Entry{Turn: turn, Body: conversation.TurnQueued{CronJob: job}},

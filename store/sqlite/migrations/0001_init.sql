@@ -1,5 +1,3 @@
--- A shard's store: its users and what each owns and sets, the headers of their conversations, each conversation's log
--- and the views folded from it.
 CREATE TABLE users (
   id text PRIMARY KEY,
   created_at datetime NOT NULL
@@ -60,7 +58,6 @@ CREATE TABLE threads (
   archived_at datetime,
   replied_at datetime,
   read_at datetime,
-  -- Folded from the log, beside the header, so that the scheduler and lists read them without folding.
   head integer NOT NULL DEFAULT 0,
   status text NOT NULL DEFAULT 'idle',
   runnable_since datetime
@@ -101,7 +98,6 @@ CREATE TABLE turns (
   thread_id text NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
   id text NOT NULL,
   ord integer NOT NULL,
-  -- ended_seq is the commit that ended the turn, as the feed numbers them; NULL while it has not ended.
   ended_seq integer,
   body text NOT NULL CHECK (json_valid(body)),
   PRIMARY KEY (thread_id, id)
@@ -109,7 +105,6 @@ CREATE TABLE turns (
 CREATE INDEX turns_open ON turns(thread_id, ord) WHERE ended_seq IS NULL;
 CREATE INDEX turns_ended ON turns(ended_seq, thread_id, id) WHERE ended_seq IS NOT NULL;
 
--- text is a message's, for search; the rest of an item is its body.
 CREATE TABLE items (
   thread_id text NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
   id text NOT NULL,
@@ -125,7 +120,6 @@ CREATE TABLE items (
 );
 CREATE INDEX items_thread_seq ON items(thread_id, seq);
 
--- Messages never change once written, so the index takes them as they are written and drops them as they go.
 CREATE VIRTUAL TABLE items_search USING fts5(text, content='items', content_rowid='rowid', tokenize='trigram');
 CREATE TRIGGER items_search_insert AFTER INSERT ON items WHEN new.text <> ''
 BEGIN
@@ -145,7 +139,6 @@ CREATE TABLE responses (
 );
 CREATE INDEX responses_thread_seq ON responses(thread_id, seq);
 
--- workspace_id is '' outside the workspace scope, so that a topic is unique at each place.
 CREATE TABLE memories (
   id text PRIMARY KEY,
   user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -165,7 +158,6 @@ CREATE TABLE memories (
 );
 CREATE UNIQUE INDEX memories_topic ON memories(user_id, scope, workspace_id, topic);
 
--- How far extraction has read a user's ended turns, and how it went.
 CREATE TABLE memory_state (
   user_id text PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   cursor_seq integer NOT NULL,
@@ -174,14 +166,12 @@ CREATE TABLE memory_state (
   state text NOT NULL CHECK (json_valid(state))
 );
 
--- One row: the latest commit, as the feed numbers them.
 CREATE TABLE feed (
   id integer PRIMARY KEY CHECK (id = 1),
   seq integer NOT NULL
 );
 INSERT INTO feed(id, seq) VALUES (1, 0);
 
--- One row: the epoch of the shard's latest holder, which only grows.
 CREATE TABLE shard_epoch (
   id integer PRIMARY KEY CHECK (id = 1),
   epoch integer NOT NULL

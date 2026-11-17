@@ -63,8 +63,6 @@ func CanonicalDirectory(path string) (string, error) {
 	return filepath.Clean(resolved), nil
 }
 
-// caselessNames says this machine's filesystems match names in any case, as they do by default on macOS and Windows: a
-// rule on ~/.ssh must then hold for ~/.SSH too, as the seatbelt profile's rules do.
 var caselessNames = runtime.GOOS == "darwin" || runtime.GOOS == "windows"
 
 func within(root, path string) bool {

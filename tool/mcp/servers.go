@@ -1,6 +1,3 @@
-// Package mcp runs each user's MCP servers in their sandbox, and gives a user's tools: the built-in ones beside those
-// of their servers. A user's servers start when their tools are first asked for, and again once one has gone, as it
-// does when the sandbox sleeps, or once the user changes them.
 package mcp
 
 import (
@@ -19,7 +16,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Server is a server as it is started.
 type Server struct {
 	user.MCPServer
 	Timeout time.Duration
@@ -58,7 +54,6 @@ type Users struct {
 	users map[string]*connected
 }
 
-// connected is a user's servers as they run, with the tools they and the built-in ones make.
 type connected struct {
 	mu       sync.Mutex
 	servers  []Server
@@ -67,7 +62,6 @@ type connected struct {
 	set      tool.Set
 }
 
-// NewUsers runs users' servers within ctx; builtins are the tools every user has.
 func NewUsers(ctx context.Context, client Client, st store.Store, boxes func(user string) (sandbox.Box, error), builtins ...kit.Provider) *Users {
 	u := &Users{ctx: ctx, client: mcp.NewClient(&mcp.Implementation{Name: client.Name, Version: client.Version}, nil),
 		st: st, boxes: boxes, builtins: builtins, users: map[string]*connected{}}
@@ -75,7 +69,6 @@ func NewUsers(ctx context.Context, client Client, st store.Store, boxes func(use
 	return u
 }
 
-// hear restarts a user's servers once they change: those running are closed meanwhile, without holding up the feed.
 func (u *Users) hear(e store.Event) {
 	changed := e.Owned != nil && (e.Owned.MCPServer != nil || e.Owned.MCPServerDeleted != "")
 	if !changed {
@@ -110,7 +103,6 @@ func (u *Users) of(name string) (*connected, error) {
 	return c, nil
 }
 
-// Tools are a user's tools: the same set for as long as the same servers run.
 func (u *Users) Tools(ctx context.Context, name string) (tool.Set, error) {
 	c, err := u.of(name)
 	if err != nil {

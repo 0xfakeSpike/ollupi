@@ -9,16 +9,12 @@ import (
 	"strings"
 )
 
-// Authenticate says whose token this is: ErrUnknownToken for one that is no one's, or for none; any other error says
-// it could not be told now, as when the service that gave the tokens out does not answer, and the client tries again.
 type Authenticate func(ctx context.Context, token string) (user string, err error)
 
 var ErrUnknownToken = errors.New("invalid or missing token")
 
-// tokenProtocol is the WebSocket subprotocol a browser, which cannot set Authorization, offers just before its token.
 const tokenProtocol = "ollupi.token"
 
-// The token stays out of the URL, which access logs keep.
 func TokenOf(header http.Header) string {
 	if bearer, ok := strings.CutPrefix(header.Get("Authorization"), "Bearer "); ok {
 		return bearer

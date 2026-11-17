@@ -16,15 +16,12 @@ import (
 
 const providerAnthropic = "anthropic"
 
-// Responses are kept as Native records so thinking blocks go back with their signatures.
 type Anthropic struct {
 	connection
 	client anthropic.Client
 }
 
 func NewAnthropic(baseURL, apiKey string, calls int, limits map[string]Limits) *Anthropic {
-	// The connection's key and address are the only ones: the SDK would otherwise read the process's own credentials
-	// and base URL from its environment, and send them where a connection without a key points.
 	opts := []option.RequestOption{option.WithoutEnvironmentDefaults(), option.WithEnvironmentProduction(),
 		option.WithAPIKey(apiKey), option.WithMaxRetries(retries), option.WithHTTPClient(httpClient)}
 	if baseURL != "" {
@@ -143,8 +140,7 @@ func anthropicParams(req ChatRequest, maxTokens int) (anthropic.BetaMessageNewPa
 	}
 	if req.Model.thinkingOn() {
 		p.Thinking.OfAdaptive = &anthropic.BetaThinkingConfigAdaptiveParam{
-			Display: anthropic.BetaThinkingConfigAdaptiveDisplaySummarized,
-			// replayable already leaves out the blocks it knows are stale; this keeps any it missed from failing the request.
+			Display:      anthropic.BetaThinkingConfigAdaptiveDisplaySummarized,
 			BlockBinding: anthropic.BetaThinkingBlockBindingParam{PrefixMismatchBehavior: anthropic.BetaThinkingPrefixMismatchBehaviorDropBlock},
 		}
 		p.Betas = []anthropic.AnthropicBeta{anthropic.AnthropicBetaThinkingBindingControls2026_08_01}
@@ -227,7 +223,6 @@ func anthropicParams(req ChatRequest, maxTokens int) (anthropic.BetaMessageNewPa
 		if len(blocks) == 0 {
 			continue
 		}
-		// Tool results and the user messages after them go back as one user turn, as the API expects.
 		if n := len(p.Messages); m.Role != RoleAssistant && n > 0 && p.Messages[n-1].Role == anthropic.BetaMessageParamRoleUser {
 			p.Messages[n-1].Content = append(p.Messages[n-1].Content, blocks...)
 			continue
@@ -243,8 +238,6 @@ func anthropicParams(req ChatRequest, maxTokens int) (anthropic.BetaMessageNewPa
 	return p, prefix, err
 }
 
-// A thinking block is bound to everything sent before it, so a record whose stored prefix hash no longer matches is
-// stale. The API accepts removing thinking from the front, so all of it up to the last stale record is removed.
 func replayable(p *anthropic.BetaMessageNewParams, natives []*native) (string, error) {
 	head, err := json.Marshal(struct {
 		System []anthropic.BetaTextBlockParam `json:"system"`

@@ -147,10 +147,10 @@ func (r *Provider) change(ctx context.Context, caller tool.Caller, args map[stri
 
 func newContent(c fileChange, args map[string]any) (string, error) {
 	if _, ok := args["content"]; ok {
-		w, _ := kit.DecodeArguments[WriteFile](args) // the schema checked its fields: it cannot fail
+		w, _ := kit.DecodeArguments[WriteFile](args)
 		return w.Content, nil
 	}
-	e, _ := kit.DecodeArguments[EditFile](args) // the schema checked its fields: it cannot fail
+	e, _ := kit.DecodeArguments[EditFile](args)
 	if !c.exists {
 		return "", fmt.Errorf("workspace: %s does not exist; create it with %s", c.rel, ToolWriteFile)
 	}

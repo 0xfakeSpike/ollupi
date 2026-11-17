@@ -8,7 +8,6 @@ import (
 	"testing"
 )
 
-// A skill's resource stays inside its folder: no path, link or parent reaches a file beside it.
 func TestAResourceStaysInsideItsSkill(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "skill")
@@ -44,8 +43,6 @@ func writeSkill(t *testing.T, dir, name string) {
 	}
 }
 
-// Each role has the skills installed in the directory of its name, and no other role's; one installed later is
-// read from then on.
 func TestARoleHasTheSkillsOfItsDirectory(t *testing.T) {
 	root := t.TempDir()
 	writeSkill(t, filepath.Join(root, "full-main-agent"), "deploy")

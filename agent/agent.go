@@ -1,7 +1,3 @@
-// Package agent is what an agent does next. A turn's state is its conversation's log, so the next action is read from
-// the log alone, by Next, whether the turn runs for the first time or again after a crash. A role is what kind of
-// agent runs the turn: its rules, the tools it keeps, its budget. The package does no I/O; a runner does what Next
-// says and appends what came of it to the log.
 package agent
 
 import (
@@ -23,7 +19,6 @@ const (
 
 var Names = []Name{FullMain, CompactMain, GeneralSub, BrowserSub}
 
-// The built-in tools and providers the roles name; the tools take their names from here.
 const (
 	ReadFileTool       = "read_file"
 	RunCommandTool     = "run_command"
@@ -41,13 +36,10 @@ const (
 )
 
 type Role struct {
-	Name  Name
-	Rules string
-	// A main agent answers the user; a subagent reports to the agent that launched it.
-	AnswersUser bool
-	// Own layers sit below every other, which decide over them.
-	Own []policy.Layer
-	// Core tools are offered first when not all fit; none means every built-in tool.
+	Name                   Name
+	Rules                  string
+	AnswersUser            bool
+	Own                    []policy.Layer
 	Core                   []string
 	Recalls                bool
 	MaxModelCalls          int
@@ -60,7 +52,6 @@ var roles = map[Name]Role{
 		MaxModelCalls: 200, MaxToolCalls: 400, MaxConsecutiveFailures: 10},
 	CompactMain: {Name: CompactMain, Rules: compactMainRules, AnswersUser: true, Recalls: true, Core: []string{ReadFileTool, RunCommandTool},
 		MaxModelCalls: 200, MaxToolCalls: 400, MaxConsecutiveFailures: 10},
-	// Launching subagents or scheduling tasks would come back to the thread after the subagent reported.
 	GeneralSub: {Name: GeneralSub, Rules: generalSubRules, Recalls: true,
 		Own:           []policy.Layer{{Of: "the general subagent's role", Without: []string{SubagentsProvider, CronProvider}}},
 		MaxModelCalls: 200, MaxToolCalls: 400, MaxConsecutiveFailures: 10},
@@ -74,8 +65,6 @@ func RoleOf(name Name) (Role, bool) {
 	return r, ok
 }
 
-// Main is the main agent for a model's context window: about 8k tokens are what the full one's prompt and tools need,
-// which the window holds to half of it.
 func Main(inputTokens int) Name {
 	if inputTokens < compactBelowTokens {
 		return CompactMain
@@ -85,20 +74,15 @@ func Main(inputTokens int) Name {
 
 type Action interface{ action() }
 
-// Wait yields the turn: it waits on the user, or on its subagents.
 type Wait struct{}
 
-// RunTools runs the calls the model made that may run now.
 type RunTools struct{ Calls []conversation.Item }
 
-// SkipTools ends the calls the model made without running them: tool use stopped before they ran.
 type SkipTools struct {
 	Calls  []conversation.Item
 	Reason string
 }
 
-// CallModel asks the model for its next response. A notice is appended first, to tell the model why tool use
-// stopped; then, and until it answers, it may call no tool.
 type CallModel struct {
 	NoTools bool
 	Notice  *conversation.Notice
@@ -112,8 +96,6 @@ func (SkipTools) action() {}
 func (CallModel) action() {}
 func (Finish) action()    {}
 
-// Next reads the turn in progress of v: what it waits on comes first, then the calls to run, unless its budget or a
-// declined call stopped tool use, then whether it has answered, then whether tool use stopped.
 func Next(v conversation.View, r Role) Action {
 	turn, ok := v.Active()
 	if !ok || v.Waiting() != conversation.WaitNone {
@@ -187,8 +169,6 @@ func declined(it conversation.Item) bool {
 	return it.Kind == conversation.ItemToolCall && it.Status == conversation.Declined
 }
 
-// fresh is where the input the agent works on now starts: after the latest message from the user, or after the
-// latest answer, a response that called no tool.
 func fresh(items []conversation.Item) int {
 	called := map[string]bool{}
 	for _, it := range items {
@@ -205,7 +185,6 @@ func fresh(items []conversation.Item) int {
 	return 0
 }
 
-// A compaction's response is no step of the turn's work.
 func responses(v conversation.View, turn string) int {
 	compactions := map[string]bool{}
 	for _, it := range v.ItemsOf(turn) {
@@ -222,8 +201,6 @@ func responses(v conversation.View, turn string) int {
 	return n
 }
 
-// Launchable leaves out of visible the subagents that would have nothing to work with. A subagent is launched by the
-// tool named after its role, and keeps what its role's own layers keep of the tools visible where it is launched.
 func Launchable(visible []policy.Tool) []policy.Tool {
 	out := slices.Clone(visible)
 	for _, name := range []Name{GeneralSub, BrowserSub} {

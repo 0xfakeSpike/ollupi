@@ -1,5 +1,3 @@
-// A Cordis plugin that registers the bench__work tool with dsh's tool registry: it writes its call id to
-// $BENCH_TOOL_LOG (when set), then takes $BENCH_TOOL_MS (default 1000) milliseconds and answers "ok".
 import fs from "node:fs";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 

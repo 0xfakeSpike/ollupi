@@ -20,24 +20,16 @@ import (
 const lookupTimeout = 10 * time.Second
 
 type Options struct {
-	// Token is the default user's, for a gateway with one user; Authenticate takes its place for many.
-	Token string
-	// Logging in happens before ollupi: Authenticate only checks what that gave out.
+	Token          string
 	Authenticate   Authenticate
 	AllowedOrigins []string
-	// AllowedHosts are the names clients reach this gateway by, besides the local ones.
-	AllowedHosts []string
-	Connections  wshub.Options
-	// Admit refuses a user this process does not serve now, such as one on another shard; without it every user
-	// Authenticate knows is served.
-	Admit func(ctx context.Context, user string) error
+	AllowedHosts   []string
+	Connections    wshub.Options
+	Admit          func(ctx context.Context, user string) error
 }
 
-// DefaultUser is the one user of a gateway with a token of its own.
 const DefaultUser = "default"
 
-// NewServer serves a's commands, and what the feed tells of each user's; servers are the users' MCP servers, whose
-// state their list shows.
 func NewServer(a *app.App, feed *store.Feed, servers *mcp.Users, opts Options) (*Server, error) {
 	if opts.Authenticate == nil {
 		if strings.TrimSpace(opts.Token) == "" {
@@ -99,8 +91,6 @@ const (
 	idleTimeout       = 2 * time.Minute
 )
 
-// The admission rate is a guess, not yet measured: each new connection sets off database work. MaxAge stays under the
-// 24 hours that Google Cloud's global external Application Load Balancer keeps a WebSocket open at most.
 var DefaultConnections = wshub.Options{
 	PerKey:      4,
 	Rate:        200,

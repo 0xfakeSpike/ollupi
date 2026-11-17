@@ -39,7 +39,6 @@ func TestATextMaskedAgainIsMaskedAlike(t *testing.T) {
 
 func TestOnlyNumbersThatCouldBeCardsAreMaskedAsCards(t *testing.T) {
 	r := New("k1")
-	// Each passes the Luhn check.
 	for _, number := range []string{"4111111111111111", "5555555555554444", "378282246310005", "6222021234567890102"} {
 		if got := r.Mask("card " + number); got == "card "+number {
 			t.Errorf("the card number %s was not masked", number)

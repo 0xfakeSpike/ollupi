@@ -1,16 +1,3 @@
-// Command bench runs ollupi's experiments against fake models and tools:
-//
-//	bench parked  what conversations that are not running cost the turns that are
-//	bench burst   how a burst of turns drains through the slots and a provider's concurrency limit
-//	bench steady  how many conversations busy at once the process serves before their turns slow down
-//	bench crash   whether turns survive the process being killed at random moments
-//	bench isolated  the memory of one process for each conversation, the baseline the pool replaces
-//	bench resume  how long a conversation idle in the database takes to answer again, and a restart takes
-//	bench mix     how long user, subagent and scheduled-task turns wait for their first model request, side by side
-//	bench fanout  whether turns that each start many subagents at once, more than there are slots, all end
-//	bench soak    whether turn time, memory, collector pauses and the database stay flat over a long run
-//	bench users   whether one user who keeps more conversations busy than their key serves holds back the other users
-//	bench conns   what idle client connections cost a shard and a router, and how long clients take to return after a shard restarts
 package main
 
 import (
@@ -40,13 +27,10 @@ import (
 	"github.com/0xfakeSpike/ollupi/store"
 )
 
-// defaultUser is whom every experiment but users runs its conversations for.
 const defaultUser = "default"
 
 const askArgs = `{"questions":[{"id":"pick","header":"Pick","question":"Which one?","options":[{"label":"A"},{"label":"B"}]}]}`
 
-// model answers after a fixed delay: a message containing "ASK" gets a request_user_input call, anything else
-// answer, or "ok" when answer is empty. onCall, when set, hears of each request as it arrives.
 type model struct {
 	latency atomic.Int64
 	calls   atomic.Int64
@@ -54,10 +38,8 @@ type model struct {
 	onCall  atomic.Pointer[func()]
 }
 
-// here gives every user this machine's files, as a host with one user does.
 func here(string) (sandbox.Box, error) { return sandbox.Here(), nil }
 
-// engine is a host the bench drives through its app, run until stop.
 type engine struct {
 	*host.Host
 	ctx    context.Context
@@ -65,8 +47,6 @@ type engine struct {
 	done   chan error
 }
 
-// newEngine puts a host together for the bench, on cfg's home and models: every user gets this machine, no call is
-// asked about, and the default user is ready. It runs once run is called, so that what watches it can hook in first.
 func newEngine(cfg host.Config) *engine {
 	cfg.Name, cfg.Boxes = "bench", here
 	cfg.Permissions = policy.Settings{ApprovalPolicy: string(policy.Never)}
@@ -93,7 +73,6 @@ func (e *engine) newThread(user string) string {
 	return th.ID
 }
 
-// stop stops the host's runs, leaving the turns in progress as they are, and closes it.
 func (e *engine) stop() {
 	e.cancel()
 	if err := <-e.done; err != nil {
@@ -130,17 +109,14 @@ func (m *model) Limits(string) (llm.Limits, error) {
 	return llm.Limits{Context: 200_000, Output: 32_000}, nil
 }
 
-// tracker counts parked conversations and times turns from Send to the end the feed tells of.
 type tracker struct {
 	asked, ended, failed atomic.Int64
 	mu                   sync.Mutex
 	startedAt            map[string]time.Time
 	endedAt              map[string]time.Time
-	// done signals a workload conversation's ended turn, so the workload never polls the database it measures.
-	done map[string]chan struct{}
+	done                 map[string]chan struct{}
 }
 
-// on hears every commit: a question asked, a turn of any conversation ended, subagents' among them.
 func (t *tracker) on(e store.Event) {
 	if e.Change == nil {
 		return
@@ -165,7 +141,6 @@ func (t *tracker) on(e store.Event) {
 	}
 }
 
-// start holds no lock while Send runs: the commit delivers events to on, which takes it.
 func (t *tracker) start(e *engine, user, threadID, text string) string {
 	at := time.Now()
 	turn, _, err := e.App.Send(context.Background(), user, threadID, app.Input{Text: text})
@@ -178,7 +153,6 @@ func (t *tracker) start(e *engine, user, threadID, text string) string {
 	return turn.ID
 }
 
-// took lists how long the given turns ran, shortest first.
 func (t *tracker) took(turnIDs []string) []time.Duration {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -208,7 +182,6 @@ func cpu() time.Duration {
 	return time.Duration(ru.Utime.Nano() + ru.Stime.Nano())
 }
 
-// childCPU is the CPU the commands this process ran and waited for took, the sandbox's launcher included.
 func childCPU() time.Duration {
 	var ru syscall.Rusage
 	_ = syscall.Getrusage(syscall.RUSAGE_CHILDREN, &ru)
@@ -224,7 +197,6 @@ func rssMB() float64 {
 	return kb / 1024
 }
 
-// memory is the process's resident memory and the Go heap in use after a collection, in MB.
 func memory() (rss, heap float64) {
 	runtime.GC()
 	var m runtime.MemStats
@@ -232,7 +204,6 @@ func memory() (rss, heap float64) {
 	return rssMB(), float64(m.HeapInuse) / (1 << 20)
 }
 
-// dbMB is the size of the database under home, its write-ahead log included, in MB.
 func dbMB(home string) float64 {
 	entries, _ := os.ReadDir(filepath.Join(home, "data"))
 	var size int64
@@ -251,7 +222,6 @@ func pct(d []time.Duration, p float64) time.Duration {
 	return d[min(len(d)-1, int(float64(len(d))*p))]
 }
 
-// experiments are what the first argument names, the processes some of them start among them.
 var experiments = map[string]func([]string){"parked": parked, "burst": burst, "steady": steady, "crash": crash, "crashchild": crashChild, "provider": providerMain, "isolated": isolated, "lone": lone, "resume": resume, "mix": mix, "fanout": fanout, "soak": soak, "users": users, "conns": conns, "connsshard": connsShard, "connsrouter": connsRouter}
 
 func main() {

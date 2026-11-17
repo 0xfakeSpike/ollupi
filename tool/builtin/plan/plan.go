@@ -33,7 +33,6 @@ type Plan struct {
 	Steps       []Step `json:"plan"`
 }
 
-// The schema already holds how many steps and which statuses.
 func (p Plan) validate() error {
 	inProgress := 0
 	for i, step := range p.Steps {
@@ -65,7 +64,6 @@ func (Plan) Constrain(s *jsonschema.Schema) {
 	s.Properties["plan"].MinItems, s.Properties["plan"].MaxItems = jsonschema.Ptr(1), jsonschema.Ptr(maxSteps)
 }
 
-// Provider keeps no plan: the plan the user sees is the latest call's arguments.
 type Provider struct{}
 
 func (Provider) Name() (string, string) {
@@ -83,7 +81,7 @@ func (Provider) Tools(context.Context) ([]kit.Spec, error) {
 }
 
 func (Provider) Invoke(_ context.Context, c tool.Call) (kit.Result, error) {
-	p, _ := kit.DecodeArguments[Plan](c.Arguments) // the schema checked its fields: it cannot fail
+	p, _ := kit.DecodeArguments[Plan](c.Arguments)
 	if err := p.validate(); err != nil {
 		return kit.Result{}, fmt.Errorf("invalid plan: %w", err)
 	}

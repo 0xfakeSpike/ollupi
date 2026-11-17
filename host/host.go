@@ -1,6 +1,3 @@
-// Package host puts ollupi together into one process: the store, the models, every user's tools, the flows that run
-// turns, learn memory and send scheduled tasks, the app, and the gateway clients reach it by. A host serves alone, or
-// as one shard of a deployment, which shard.Member decides; the parts know nothing of which.
 package host
 
 import (
@@ -48,39 +45,23 @@ const (
 )
 
 type Config struct {
-	// Home holds the store and the attachments.
-	Home string
-	// Name is what the agent calls itself, and Prompt the main agents' prompt, "" for the default one.
-	Name   string
-	Prompt string
-	// Models are those turns run on, the first the default; each names its connection, one model to a connection.
+	Home        string
+	Name        string
+	Prompt      string
 	Models      []llm.Model
 	Connections map[string]llm.Client
-	// ClientFor, when set, gives the client a user's turns call a connection through, so that they run on the user's
-	// own key; it should give the same client each time.
-	ClientFor func(user, connection string) (llm.Client, error)
-	// Memory is the model extraction asks, on one of Connections; nil learns no memory.
-	Memory *llm.Model
-	// Tools are the deployment's own beside the built-in ones, such as the workspace's and the web's.
-	Tools []kit.Provider
-	// Allowlist, unless nil, is every tool the deployment lets be offered.
-	Allowlist []string
-	// Permissions are the deployment's, beneath every user's; the approval policy is on-request unless they set one.
+	ClientFor   func(user, connection string) (llm.Client, error)
+	Memory      *llm.Model
+	Tools       []kit.Provider
+	Allowlist   []string
 	Permissions policy.Settings
-	// Boxes gives a user's sandbox, where their paths are and their MCP servers run. Required: a host with one user
-	// passes sandbox.Here, and none gives every user this machine by leaving it out.
-	Boxes func(user string) (sandbox.Box, error)
-	// SkillsDir holds the skills, as SkillsDir/<role>/<skill>/SKILL.md; "" has none.
-	SkillsDir string
-	// Slots is how many turns run at once, 32 by default; UserSlots how many of one user's, all by default.
-	Slots     int
-	UserSlots int
-	// RunLimit is how long a turn runs at most, four hours by default.
-	RunLimit time.Duration
-	// Location is the zone scheduled tasks read their specs in, the local one by default.
-	Location *time.Location
-	// Gateway, when set, serves clients; a host without one is driven by its App, as one that runs a benchmark is.
-	Gateway *gateway.Options
+	Boxes       func(user string) (sandbox.Box, error)
+	SkillsDir   string
+	Slots       int
+	UserSlots   int
+	RunLimit    time.Duration
+	Location    *time.Location
+	Gateway     *gateway.Options
 }
 
 type Host struct {
@@ -92,11 +73,9 @@ type Host struct {
 	scheduler *schedule.Scheduler
 	extractor *extract.Extractor
 	cal       cron.Calendar
-	// Gateway is the server clients reach the host by, nil without Config.Gateway.
-	Gateway *gateway.Server
+	Gateway   *gateway.Server
 }
 
-// New puts a host together within ctx, which its users' MCP servers run in.
 func New(ctx context.Context, cfg Config) (*Host, error) {
 	if strings.TrimSpace(cfg.Name) == "" {
 		return nil, errors.New("host: a name is required")
@@ -133,8 +112,6 @@ func New(ctx context.Context, cfg Config) (*Host, error) {
 	if cfg.SkillsDir != "" {
 		builtins = append(builtins, skills.New(cfg.SkillsDir))
 	}
-	// The scheduled-task tools are the app's commands, and the app needs the users' tools: the tools come first, and
-	// reach the app through jobs once it is made.
 	jobs := &jobs{}
 	builtins = append(builtins, tasks.New(jobs, location))
 	h.Users = mcp.NewUsers(ctx, mcp.Client{Name: cfg.Name, Version: version()}, st, cfg.Boxes, builtins...)
@@ -165,7 +142,6 @@ func New(ctx context.Context, cfg Config) (*Host, error) {
 	return h, nil
 }
 
-// jobs are the app's task commands, for the tools that schedule tasks.
 type jobs struct{ *app.App }
 
 func skillsOf(dir string) run.Skills {
@@ -182,7 +158,6 @@ func skillsOf(dir string) run.Skills {
 	}
 }
 
-// Run runs the flows until ctx ends or one fails: the scheduler, memory extraction, and scheduled tasks.
 func (h *Host) Run(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return h.scheduler.Run(ctx) })

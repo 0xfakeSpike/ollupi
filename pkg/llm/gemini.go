@@ -11,29 +11,23 @@ import (
 )
 
 const (
-	providerGemini = "gemini"
-	// geminiCallPrefix marks a call id ollupi made up because Gemini returned the call without one;
-	// such ids are not sent back to Gemini.
+	providerGemini   = "gemini"
 	geminiCallPrefix = "gemini-"
 	geminiBaseURL    = "https://generativelanguage.googleapis.com/"
 )
 
-// Responses are kept as Native records so the thought signatures Gemini attaches to its parts go back with them.
 type Gemini struct {
 	connection
 	client *genai.Client
 }
 
 func NewGemini(baseURL, apiKey string, calls int, limits map[string]Limits) (*Gemini, error) {
-	// Without a key, or an address, of its own the client would take the process's (GEMINI_API_KEY,
-	// GOOGLE_GEMINI_BASE_URL) from its environment.
 	if apiKey == "" {
 		return nil, fmt.Errorf("llm.Gemini: the connection needs an API key")
 	}
 	if baseURL == "" {
 		baseURL = geminiBaseURL
 	}
-	// Without RetryOptions the client sends a request once; these retry as the other providers' clients do.
 	cfg := &genai.ClientConfig{APIKey: apiKey, Backend: genai.BackendGeminiAPI, HTTPClient: httpClient, HTTPOptions: genai.HTTPOptions{BaseURL: baseURL,
 		RetryOptions: &genai.HTTPRetryOptions{Attempts: genai.Ptr[int32](retries + 1), InitialDelay: genai.Ptr(0.5), MaxDelay: genai.Ptr(8.0)}}}
 	client, err := genai.NewClient(context.Background(), cfg)
@@ -87,8 +81,6 @@ func (c *Gemini) Chat(ctx context.Context, req ChatRequest, onDelta func(Delta))
 			continue
 		}
 		for _, part := range candidate.Content.Parts {
-			// Streamed text arrives in fragments; one part per run of text keeps the stored response small.
-			// A signature closes its part, so text after it starts a new one.
 			if n := len(parts); n > 0 && isText(parts[n-1]) && isText(part) && parts[n-1].Thought == part.Thought && parts[n-1].ThoughtSignature == nil {
 				parts[n-1].Text += part.Text
 				parts[n-1].ThoughtSignature = part.ThoughtSignature
@@ -184,7 +176,6 @@ func geminiRequest(req ChatRequest, maxTokens int) ([]*genai.Content, *genai.Gen
 	var contents []*genai.Content
 	names := map[string]string{}
 	add := func(role string, parts []*genai.Part) {
-		// Parallel tool results and the user message after them go back as one user turn.
 		if n := len(contents); role == genai.RoleUser && n > 0 && contents[n-1].Role == genai.RoleUser {
 			contents[n-1].Parts = append(contents[n-1].Parts, parts...)
 			return

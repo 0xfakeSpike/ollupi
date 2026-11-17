@@ -16,8 +16,6 @@ const compactionInstructions = `You are performing a CONTEXT CHECKPOINT COMPACTI
 - what remains to be done, as clear next steps.
 Be concise and structured. Write in the user's language. Do not call tools.`
 
-// Compaction is the request for a summary of the transcript, which drops the oldest of it, a user message at a time,
-// until it fits.
 func (w Window) Compaction(in Input) (Request, error) {
 	instructions := llm.ChatMessage{Role: llm.RoleUser, Content: compactionInstructions}
 	keep := 0

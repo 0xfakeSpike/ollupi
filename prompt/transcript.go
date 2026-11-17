@@ -9,7 +9,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 )
 
-// fixed is how many of the tokens are the recalled memories and the compacted history, which compaction cannot shrink.
 func (w Window) transcript(obs *observations, natives map[string][]byte, items []conversation.Item, limit int, compacting bool) ([]llm.ChatMessage, int, error) {
 	var out []llm.ChatMessage
 	latest := ""
@@ -38,7 +37,6 @@ func (w Window) transcript(obs *observations, natives map[string][]byte, items [
 			out = append(out, llm.ChatMessage{Role: llm.RoleUser, Content: it.Text})
 			i++
 		case conversation.ItemReport:
-			// A subagent's report is data too: the subagent's words.
 			content := obs.callResult(it, w.observationBudget(1, maxObservationTokens))
 			kind, call := "subagent", ""
 			if launch := slices.IndexFunc(items, func(l conversation.Item) bool { return l.ID == it.Launch }); launch >= 0 {

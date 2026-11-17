@@ -8,8 +8,6 @@ import (
 
 const diffContext = 3
 
-// The diff need not be the shortest: its work is bounded, so a file rewritten whole costs no more than a few
-// passes over it.
 func unifiedDiff(path, before, after string, created bool) (string, int, int, error) {
 	from := "a/" + path
 	if created {

@@ -1,8 +1,4 @@
 #!/bin/sh
-# Runs Terminal-Bench 2.0 tasks through ollupi with Harbor, then compares the result with earlier versions; see
-# eval/README.md.
-#
-#   eval/run.sh [subset] [harbor run flags...]
 set -eu
 root=$(cd "$(dirname "$0")/.." && pwd)
 subset=smoke
@@ -26,8 +22,6 @@ command -v harbor >/dev/null || fail "harbor is not installed: uv tool install -
 docker info >/dev/null 2>&1 || fail "Docker is not running"
 [ -n "${OLLUPI_API_KEY:-}" ] || fail "set OLLUPI_API_KEY to the provider's key"
 
-# harbor download exports into the folder it is given, under terminal-bench/; runs read the tasks from there, so
-# they need no clone from GitHub.
 if [ ! -d "$tasks_dir" ]; then
 	echo "Downloading terminal-bench@2.0 into $tasks_dir"
 	tmp=$(mktemp -d)
@@ -37,8 +31,6 @@ if [ ! -d "$tasks_dir" ]; then
 	rmdir "$tmp"
 fi
 
-# Verifiers install their tools with apt over HTTP and fetch uv over HTTPS before they test anything, and an
-# agent reaches its model over HTTPS: a container that cannot do both scores 0 whatever the agent did.
 echo "Checking that containers reach the internet"
 docker run --rm python:3.12-slim python -c '
 import sys, urllib.request
@@ -65,7 +57,6 @@ fi
 "$root/eval/build.sh" --if-stale
 
 cd "$root"
-# Task names hold no spaces, so $includes splits into its -i flags.
 # shellcheck disable=SC2086
 PYTHONPATH="$root/eval/harbor${PYTHONPATH:+:$PYTHONPATH}" \
 	harbor run -p "$tasks_dir" -m "$model" -a ollupi_agent:Ollupi $includes -n "${N:-2}" --max-retries 1 \

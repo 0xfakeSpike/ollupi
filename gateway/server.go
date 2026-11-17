@@ -1,6 +1,3 @@
-// Package gateway is the protocol clients speak to a shard: JSON-RPC over a WebSocket. Its methods are the app's
-// commands and queries; what they change, and what runs change, reaches each client from the store's feed, numbered
-// by the commit that changed it.
 package gateway
 
 import (
@@ -22,10 +19,7 @@ import (
 	"github.com/coder/websocket"
 )
 
-// Requests are traced through the global TracerProvider, which the host sets up.
 const (
-	// The largest message a client has reason to send is one user message, held to a quarter of a model's input:
-	// files go by path. A megabyte is about that for a million tokens of input.
 	maxMessageBytes = 4 << 20
 	defaultLimit    = 20
 	maxLimit        = 100
@@ -42,14 +36,10 @@ type Server struct {
 	hosts        []string
 	origins      []string
 	hub          *wshub.Hub[*conn]
-	// ready holds the users admitted and made ready, so that their reconnections ask and write nothing: a user
-	// admitted stays admitted, and none is removed.
-	ready  sync.Map
-	served sync.WaitGroup
+	ready        sync.Map
+	served       sync.WaitGroup
 }
 
-// HealthPath answers 200 while the process serves, for a load balancer's health check: a shard serves only once it
-// holds its lease, so the check sends a shard's connections to the process that holds it.
 const HealthPath = "/healthz"
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -106,11 +96,9 @@ type conn struct {
 	mu          sync.Mutex
 	initialized bool
 	sub         *store.Subscription
-	// asked are the items this client was asked about and has not answered.
-	asked map[string]bool
+	asked       map[string]bool
 }
 
-// Notify takes a client's notification, which asks for no answer and changes nothing on the shard.
 func (c *conn) Notify(string, json.RawMessage) {}
 
 func (c *conn) Call(ctx context.Context, method string, params json.RawMessage) (any, func(), *jsonrpc.Error) {
@@ -131,8 +119,6 @@ func (c *conn) Call(ctx context.Context, method string, params json.RawMessage) 
 }
 
 func (c *conn) initialize(ctx context.Context, _ InitializeParams) (InitializeResult, func(), error) {
-	// What is published from here on reaches the client; what waited on them before is asked again, which
-	// c.request does not ask twice.
 	after := func() {
 		sub := c.s.feed.Subscribe(c.user, c.event)
 		c.mu.Lock()
@@ -209,8 +195,6 @@ func (c *conn) owned(thread string, o store.Owned) {
 	}
 }
 
-// A client that cannot be told what waits on it would wait without knowing, so it is dropped and asked again when it
-// comes back.
 func (c *conn) requests(pending []app.Request, err error) {
 	if err != nil {
 		go c.ws.Close(websocket.StatusInternalError, "pending requests could not be read")
@@ -221,7 +205,6 @@ func (c *conn) requests(pending []app.Request, err error) {
 	}
 }
 
-// request asks the client about an item that waits on its user, once until it answers.
 func (c *conn) request(thread string, it conversation.Item) {
 	c.mu.Lock()
 	if c.asked[it.ID] {
@@ -303,5 +286,4 @@ func (s *Server) admits(w http.ResponseWriter, r *http.Request, user string) boo
 	return true
 }
 
-// Connections is how many clients are connected now.
 func (s *Server) Connections() int { return s.hub.Count() }

@@ -75,7 +75,6 @@ def show_turn(turn, items, clip):
     print("task: " + clip(turn.get("input") or items[0].get("text", ""), 300))
     print()
 
-    # The model's time for a response runs from when it was asked (the end of what came before) to when it was done.
     done = answered(items)
     model_secs, responses, asked, response = 0.0, 0, t0, None
     tools = defaultdict(lambda: [0, 0.0])

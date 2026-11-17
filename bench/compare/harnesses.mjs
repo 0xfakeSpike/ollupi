@@ -1,7 +1,3 @@
-// One interface over the harnesses compared, so each experiment is written once:
-//   open({ dir, url, toolMs, log, settings }) -> { newSession, turn, idOf, drop, reopen, diskBytes, memory, cpu, pid, close }
-// The pi harnesses run inside this process (memory is read after forced collections, so run node with --expose-gc);
-// dsh runs as its own SDK runtime process, whose resident memory and CPU are read with ps.
 import fs from "node:fs";
 import path from "node:path";
 import { cpuSeconds, cpuSecondsOf, dirBytes, footprintMB, rssMB, settledMemory, sleep } from "./common.mjs";
@@ -34,8 +30,6 @@ export async function openHarness(name, { dir, url, toolMs = 1000, log, settings
 			newSession: () => d.newConversation(),
 			turn: (c, text) => runTurn(c, text),
 			idOf: (c) => c.id,
-			// A Conversation handle holds no state; what pi-durable keeps per conversation is governed by
-			// settings.contextRetentionMs and documentRetentionMs (default ten minutes each).
 			drop: () => {},
 			reopen: (id) => d.conversation(id),
 			diskBytes: () => ["", "-wal", "-shm"].reduce((n, s) => n + (fs.existsSync(file + s) ? fs.statSync(file + s).size : 0), 0),
@@ -54,13 +48,10 @@ export async function openHarness(name, { dir, url, toolMs = 1000, log, settings
 		return {
 			name,
 			dsh: d,
-			// A session id the runtime does not know creates the session at its first prompt.
 			newSession: async () => `s-${process.pid}-${Date.now().toString(36)}-${++n}`,
 			turn: (id, text) => d.turn(id, text),
 			idOf: (id) => id,
-			// The SDK protocol has no session close: a session stays resident until the process ends.
 			drop: () => {},
-			// session/resume restores a persisted session into a runtime that does not hold it yet.
 			reopen: async (id) => {
 				await d.call("session/resume", { sessionId: id });
 				return id;
@@ -78,7 +69,6 @@ export async function openHarness(name, { dir, url, toolMs = 1000, log, settings
 	throw new Error(`unknown harness ${name}`);
 }
 
-// pool runs fn over items with at most n in flight.
 export async function pool(items, n, fn) {
 	let next = 0;
 	const out = new Array(items.length);

@@ -20,17 +20,13 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// cutOffCall is why no call of a response the output limit cut off runs: the last may be incomplete, and the model
-// would read a missing piece as a failed call instead of a request too long for one response.
 const cutOffCall = "not run: the response reached the model's output limit before it was complete; do this in smaller steps, such as a long file written in parts"
 
-// decide is what a call the model made comes to, as the response is kept: a call to run, one that asks the user
-// first, or one that ends at once, refused or not runnable.
 func (r *Runner) decide(ctx context.Context, s *step, response string, call llm.ToolCall, cutOff bool) []conversation.Entry {
 	item := uuid.NewString()
 	spec := s.specs[call.Name]
 	tc := conversation.ToolCall{Call: call.ID, Tool: call.Name, Server: spec.Provider, Arguments: call.Arguments, Response: response}
-	tc.Annotations, _ = json.Marshal(spec.Annotations) // plain data: it cannot fail
+	tc.Annotations, _ = json.Marshal(spec.Annotations)
 	entries := []conversation.Entry{{Turn: s.turn.ID, Item: item}}
 	end := func(reason string) []conversation.Entry {
 		entries[0].Body = tc
@@ -105,8 +101,6 @@ func (r *Runner) skip(ctx context.Context, s *step, a agent.SkipTools) error {
 
 const maxParallelCalls = 8
 
-// runTools runs the first of calls, or the calls that only read at the head of them, together; the rest wait for the
-// next step, which may find tool use stopped.
 func (r *Runner) runTools(ctx context.Context, s *step, calls []conversation.Item) error {
 	n := 1
 	for parallel(s, calls[0]) && n < min(len(calls), maxParallelCalls) && parallel(s, calls[n]) {
@@ -124,12 +118,12 @@ func (r *Runner) runTools(ctx context.Context, s *step, calls []conversation.Ite
 	var g errgroup.Group
 	for i, it := range group {
 		g.Go(func() error {
-			args, _ := arguments(it.Call.Arguments) // decide read them before the call was kept
+			args, _ := arguments(it.Call.Arguments)
 			results[i] = s.set.Invoke(ctx, tool.Call{Caller: s.caller(it.ID), Tool: it.Call.Tool, Arguments: args, Prepared: it.Call.Prepared})
 			return nil
 		})
 	}
-	g.Wait() // a call's failure is its result
+	g.Wait()
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -148,8 +142,6 @@ func parallel(s *step, it conversation.Item) bool {
 	return spec.Annotations.ReadOnlyHint && !spec.Serial
 }
 
-// keep appends what a call came to: its output or error, the question it waits on the user to answer, or the subagent
-// it launched.
 func (r *Runner) keep(tx store.Tx, s *step, it conversation.Item, res tool.Result) error {
 	entry := conversation.Entry{Turn: s.turn.ID, Item: it.ID}
 	switch {
@@ -169,15 +161,12 @@ func (r *Runner) keep(tx store.Tx, s *step, it conversation.Item, res tool.Resul
 	return err
 }
 
-// Launched is the output of a call that launched a subagent.
 type Launched struct {
 	Subagent    string `json:"subagent"`
 	Description string `json:"description"`
 	Note        string `json:"note"`
 }
 
-// launch starts a subagent's conversation with its task, on the model of the turn that launched it; the scheduler
-// finds it runnable, and its ending reports back.
 func launch(tx store.Tx, s *step, it conversation.Item, l tool.Launch) error {
 	now := time.Now().UTC()
 	child := store.Thread{User: s.th.User, Thread: user.Thread{ID: uuid.NewString(), Title: l.Title, Workspace: s.th.Workspace,
@@ -192,7 +181,7 @@ func launch(tx store.Tx, s *step, it conversation.Item, l tool.Launch) error {
 	if err != nil {
 		return err
 	}
-	output, _ := json.Marshal(Launched{Subagent: child.ID, Description: l.Title, // strings: it cannot fail
+	output, _ := json.Marshal(Launched{Subagent: child.ID, Description: l.Title,
 		Note: "It works on its own; its report comes back to this conversation when it ends."})
 	_, err = tx.Append(s.th.ID,
 		conversation.Entry{Turn: s.turn.ID, Item: it.ID, Body: conversation.ChildLaunched{Child: child.ID}},

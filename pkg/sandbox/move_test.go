@@ -9,7 +9,6 @@ import (
 	"testing"
 )
 
-// A folder moves onto an empty folder a user picked, and never over one that holds something.
 func TestMoveReplacesAnEmptyFolderAndRefusesAFullOne(t *testing.T) {
 	root := t.TempDir()
 	from := filepath.Join(root, "app")
@@ -59,7 +58,6 @@ func TestMoveReplacesAnEmptyFolderAndRefusesAFullOne(t *testing.T) {
 		t.Error("a folder that is not there was moved")
 	}
 
-	// A move that fails for another reason leaves the empty folder the user picked as it was.
 	spare := filepath.Join(root, "spare")
 	if err := os.Mkdir(spare, 0o755); err != nil {
 		t.Fatal(err)
@@ -72,7 +70,6 @@ func TestMoveReplacesAnEmptyFolderAndRefusesAFullOne(t *testing.T) {
 	}
 }
 
-// blindMachine cannot say what is at a path, and records the commands it is asked to run.
 type blindMachine struct {
 	Machine
 	ran *[]string
@@ -87,7 +84,6 @@ func (m blindMachine) Run(_ context.Context, c Command) (Result, error) {
 	return Result{}, nil
 }
 
-// A target the machine cannot see is not taken as absent: mv would put the folder inside one that is there.
 func TestARemoteMoveStopsWhenItCannotSeeTheTarget(t *testing.T) {
 	var ran []string
 	box := Remote(blindMachine{ran: &ran}, []string{"/cloud"}, "cloud")
