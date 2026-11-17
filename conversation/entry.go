@@ -162,7 +162,9 @@ type Compacted struct {
 	Stats    ContextStats
 }
 
+// Text is the memories as the model is shown them.
 type Recalled struct {
+	Text     string
 	Memories []MemoryRef
 }
 
@@ -232,16 +234,26 @@ func (u Usage) Plus(v Usage) Usage {
 }
 
 type ContextStats struct {
-	Model            string `json:"model,omitempty"`
-	BudgetTokens     int    `json:"budgetTokens"`
-	CompactAtTokens  int    `json:"compactAtTokens"`
-	SystemTokens     int    `json:"systemTokens"`
-	MessagesTokens   int    `json:"messagesTokens"`
-	MemoryTokens     int    `json:"memoryTokens,omitempty"`
-	ToolsTokens      int    `json:"toolsTokens"`
-	EstimatedTokens  int    `json:"estimatedTokens"`
-	CalibratedTokens int    `json:"calibratedTokens,omitempty"`
+	Model            string       `json:"model,omitempty"`
+	BudgetTokens     int          `json:"budgetTokens"`
+	CompactAtTokens  int          `json:"compactAtTokens"`
+	SystemTokens     int          `json:"systemTokens"`
+	MessagesTokens   int          `json:"messagesTokens"`
+	MemoryTokens     int          `json:"memoryTokens,omitempty"`
+	GlobalMemory     *MemoryStats `json:"globalMemory,omitempty"`
+	LocalMemory      *MemoryStats `json:"localMemory,omitempty"`
+	ToolsTokens      int          `json:"toolsTokens"`
+	EstimatedTokens  int          `json:"estimatedTokens"`
+	CalibratedTokens int          `json:"calibratedTokens,omitempty"`
 }
+
+type MemoryStats struct {
+	Tokens int      `json:"tokens"`
+	IDs    []string `json:"ids"`
+}
+
+// Scope is GlobalScope, or the scope of one workspace or of conversations outside any.
+const GlobalScope = "global"
 
 type MemoryRef struct {
 	ID          string `json:"id"`

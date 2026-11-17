@@ -28,6 +28,8 @@ const (
 	ReadFileTool       = "read_file"
 	RunCommandTool     = "run_command"
 	PlanTool           = "update_plan"
+	ReadOutputTool     = "read_tool_output"
+	LoadToolsTool      = "load_tools"
 	BrowserProvider    = "browser"
 	OutputsProvider    = "context"
 	SkillsProvider     = "skills"
