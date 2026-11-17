@@ -87,7 +87,6 @@ func (r *Resources) Client(user, connection string) (llm.Client, error) {
 }
 
 // Settings shared by all may then name tools one user lacks.
-func (r *Resources) Shared() bool { return r.cfg.ToolsFor != nil }
 
 func (r *Resources) Tools() *tools.Registry { return r.registry }
 
