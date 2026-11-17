@@ -81,6 +81,9 @@ func (m *Manager) RunOnce(ctx context.Context) error {
 		return failure{db.MemoryStorage, fmt.Errorf("could not list the users: %w", err)}
 	}
 	for _, user := range users {
+		if settings, err := m.db.Settings(user); err == nil && !settings.Memory {
+			continue
+		}
 		err := m.runFor(ctx, user)
 		if ctx.Err() != nil {
 			return ctx.Err()

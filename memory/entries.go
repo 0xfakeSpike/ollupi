@@ -64,8 +64,12 @@ func (m *Manager) Move(user, id string) (db.MemoryRow, error) {
 }
 
 func (m *Manager) Status(user string) (db.MemoryStatus, error) {
+	settings, err := m.db.Settings(user)
+	if err != nil {
+		return db.MemoryStatus{}, err
+	}
 	s, err := m.db.MemoryStatus(user)
-	s.GenerationEnabled, s.UseEnabled = m.opts.Generate, m.opts.Use
+	s.GenerationEnabled, s.UseEnabled = m.opts.Generate && settings.Memory, m.opts.Use && settings.Memory
 	return s, err
 }
 

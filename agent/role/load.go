@@ -34,7 +34,7 @@ func (rt *Runtime) Load(turnID string) error {
 	if err != nil {
 		return fmt.Errorf("role: the settings of the user: %w", err)
 	}
-	rt.redactor, rt.masking = redact.New(settings.RedactionKey), settings.Redaction
+	rt.redactor, rt.settings = redact.New(settings.RedactionKey), settings
 	return rt.permitIn(thread)
 }
 
@@ -52,7 +52,7 @@ func (rt *Runtime) reload() error {
 	if err != nil {
 		return fmt.Errorf("role: the settings of the user: %w", err)
 	}
-	rt.items, rt.masking = items, settings.Redaction
+	rt.items, rt.settings = items, settings
 	return rt.permitIn(thread)
 }
 
@@ -80,7 +80,7 @@ func (rt *Runtime) permitIn(t db.ThreadRow) error {
 }
 
 func (rt *Runtime) Permit(workspace db.WorkspaceRow, conversation ...permission.Layer) error {
-	checker, err := rt.permissions.Checker(rt.role.own, workspace, rt.registry, conversation...)
+	checker, err := rt.permissions.Checker(rt.role.own, rt.settings, workspace, rt.registry, conversation...)
 	if err != nil {
 		return err
 	}

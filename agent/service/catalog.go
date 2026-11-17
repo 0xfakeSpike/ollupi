@@ -10,7 +10,6 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent/event"
 	"github.com/0xfakeSpike/ollupi/repo/db"
-	"github.com/0xfakeSpike/ollupi/tools/mcp"
 )
 
 var (
@@ -45,10 +44,19 @@ func (sv *Service) Settings(ctx context.Context, user string) (db.SettingsRow, e
 	return sv.cfg.DB.WithContext(ctx).Settings(user)
 }
 
-func (sv *Service) SetRedaction(ctx context.Context, user string, on bool) (db.SettingsRow, error) {
-	settings, err := sv.cfg.DB.WithContext(ctx).SetRedaction(user, on)
+// A setting left nil stays as it is.
+func (sv *Service) UpdateSettings(ctx context.Context, user string, redaction, memory *bool) (db.SettingsRow, error) {
+	settings, err := sv.cfg.DB.WithContext(ctx).UpdateSettings(user, func(s db.SettingsRow) db.SettingsRow {
+		if redaction != nil {
+			s.Redaction = *redaction
+		}
+		if memory != nil {
+			s.Memory = *memory
+		}
+		return s
+	})
 	if err != nil {
-		return db.SettingsRow{}, err
+		return db.SettingsRow{}, fmt.Errorf("service: the settings of the user: %w", err)
 	}
 	sv.ev.Publish(event.Event{Kind: event.SettingsChanged, User: user, Settings: &settings})
 	return settings, nil
@@ -76,15 +84,4 @@ func (sv *Service) Search(ctx context.Context, user, query, workspaceID string, 
 	}
 	memories, err := sv.cfg.Memory.Search(user, query, workspaceID, limit)
 	return found, memories, err
-}
-
-func (sv *Service) MCPServers(user string) ([]mcp.ServerStatus, error) {
-	if sv.cfg.MCP == nil {
-		return nil, nil
-	}
-	mine, err := sv.cfg.MCP.For(user)
-	if err != nil {
-		return nil, err
-	}
-	return mine.Statuses(), nil
 }
