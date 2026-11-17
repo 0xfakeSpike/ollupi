@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/repo/catalog"
-	"github.com/0xfakeSpike/ollupi/repo/db"
+	"github.com/0xfakeSpike/ollupi/catalog"
+	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/google/uuid"
 )
 
@@ -31,7 +31,7 @@ const catalogTimeout = 10 * time.Second
 
 // Run waits until it holds the shard, then serves until ctx ends or the shard is lost. serve's context ends when the
 // lease is lost: every write fails from then on, so the process must stop.
-func (m *Member) Run(ctx context.Context, store *db.DB, serve func(context.Context) error) error {
+func (m *Member) Run(ctx context.Context, st store.Store, serve func(context.Context) error) error {
 	if m.TTL <= 0 {
 		return errors.New("shard: a lease needs a TTL")
 	}
@@ -45,7 +45,7 @@ func (m *Member) Run(ctx context.Context, store *db.DB, serve func(context.Conte
 		defer cancel()
 		m.Catalog.Release(ctx, m.ID, owner, epoch) // a lease not released lapses
 	}()
-	if err := store.Fence(epoch); err != nil {
+	if err := st.Fence(epoch); err != nil {
 		return fmt.Errorf("shard %s: %w", m.ID, err)
 	}
 	held, lose := context.WithCancelCause(ctx)
@@ -58,7 +58,7 @@ func (m *Member) Run(ctx context.Context, store *db.DB, serve func(context.Conte
 	err = serve(held)
 	lose(nil)
 	<-kept
-	if cause := context.Cause(held); errors.Is(cause, db.ErrShardLost) {
+	if cause := context.Cause(held); errors.Is(cause, store.ErrShardLost) {
 		return fmt.Errorf("shard %s: %w", m.ID, cause)
 	}
 	return err
@@ -114,7 +114,7 @@ func (m *Member) keep(ctx context.Context, owner string, epoch int64, until time
 		if time.Now().Before(until) {
 			continue
 		}
-		lose(db.ErrShardLost)
+		lose(store.ErrShardLost)
 		return
 	}
 }

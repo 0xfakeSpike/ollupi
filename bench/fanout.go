@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -12,13 +11,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/event"
-	"github.com/0xfakeSpike/ollupi/agent/permission"
-	"github.com/0xfakeSpike/ollupi/agent/service"
+	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/host"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo/db"
-	"github.com/0xfakeSpike/ollupi/tools"
-	"github.com/0xfakeSpike/ollupi/tools/subagent"
+	"github.com/0xfakeSpike/ollupi/tool/kit"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -44,7 +40,7 @@ func fanout(args []string) {
 		next: func(ask string, answered int) (string, string) {
 			switch {
 			case ask == "delegate" && answered == 0:
-				return subagent.General, `{"description":"Do the work","prompt":"work"}`
+				return string(agent.GeneralSub), `{"description":"Do the work","prompt":"work"}`
 			case ask == "work" && answered < *rounds:
 				return "bench__work", "{}"
 			}
@@ -58,36 +54,22 @@ func fanout(args []string) {
 		log.Fatal(err)
 	}
 	defer os.RemoveAll(dir)
-	store, err := db.Open(dir)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer store.Close()
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}}
-	events := event.New()
-	events.SubscribeAll(tr.on)
-	ag := service.New(service.Config{
-		BoxFor: here,
-		Name:   "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
+	e := newEngine(host.Config{
+		Home: dir, Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", *calls, map[string]llm.Limits{"fake": {Context: 200_000, Output: 32_000}})},
-		Providers:   []tools.Provider{work{latency: *toolLatency}},
-		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
-		Slots:       *slots, DB: store, Events: events,
+		Tools:       []kit.Provider{work{latency: *toolLatency}},
+		Slots:       *slots,
 	})
-	ctx, cancel := context.WithCancel(context.Background())
-	if err := ag.Start(ctx); err != nil {
-		log.Fatal(err)
-	}
+	e.Store.Feed().SubscribeAll(tr.on)
+	e.run()
 	threads := make([]string, *parents)
 	for i := range threads {
-		th, err := ag.StartThread(db.DefaultUser, "", "", "bench")
-		if err != nil {
-			log.Fatal(err)
-		}
-		threads[i] = th.ID
+		threads[i] = e.newThread(defaultUser)
 	}
-	// A second connection reads, beside the agent's, how many parents hold a slot while their subagents run.
-	g, err := gorm.Open(sqlite.Open(filepath.Join(dir, "data", "ollupi.sqlite")), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	// A second connection reads, beside the host's, how many parents can run, holding a slot or waiting for one, and
+	// how many wait on their subagents: the store keeps no record of slots.
+	g, err := gorm.Open(sqlite.Open(filepath.Join(dir, "data", "store.sqlite")), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -101,8 +83,8 @@ func fanout(args []string) {
 			case <-time.After(250 * time.Millisecond):
 			}
 			var c struct{ Holding, Waiting int64 }
-			if err := g.Raw(`SELECT coalesce(sum(turns.status = 'inProgress'), 0) AS holding, coalesce(sum(turns.status = 'waitingOnAgent'), 0) AS waiting
-				FROM turns JOIN threads ON threads.id = turns.thread_id WHERE threads.parent_thread_id IS NULL`).Scan(&c).Error; err != nil {
+			if err := g.Raw(`SELECT coalesce(sum(runnable_since IS NOT NULL), 0) AS holding,
+				coalesce(sum(status = 'active' AND runnable_since IS NULL), 0) AS waiting FROM threads WHERE parent_id IS NULL`).Scan(&c).Error; err != nil {
 				log.Fatal(err)
 			}
 			holding.Store(max(holding.Load(), c.Holding))
@@ -113,23 +95,24 @@ func fanout(args []string) {
 	startAt := time.Now()
 	var ids []string
 	for _, th := range threads {
-		ids = append(ids, tr.start(ag, db.DefaultUser, th, "delegate"))
+		ids = append(ids, tr.start(e, defaultUser, th, "delegate"))
 	}
 	waitFor("the parents", func() bool { return len(tr.took(ids)) == len(ids) })
 	total := time.Since(startAt)
 	close(stop)
 
-	// Each parent makes two model calls of its own; each subagent, rounds+1 calls and rounds tool calls.
+	// Each parent makes at least three model calls of its own: one launches the subagents, one answers while they run,
+	// and one answers their reports, of which those that come apart wake it more than once; each subagent makes
+	// rounds+1 calls and rounds tool calls. The answer while they run is not on the parent's way to its end.
 	child := time.Duration(*rounds+1)*(*latency) + time.Duration(*rounds)*(*toolLatency)
 	children := *parents * *n
 	bound := max(2*(*latency)+child,
 		time.Duration(children)*child/time.Duration(*slots),
-		time.Duration(*parents*2+children*(*rounds+1))*(*latency)/time.Duration(*calls))
+		time.Duration(*parents*3+children*(*rounds+1))*(*latency)/time.Duration(*calls))
 	took := tr.took(ids)
 	fmt.Printf("parents=%d n=%d subagents=%d slots=%d calls=%d total_s=%.1f bound_s=%.1f efficiency=%.2f p50_s=%.1f max_s=%.1f "+
 		"failed_turns=%d turns_ended=%d parents_holding_slot_peak=%d parents_waiting_peak=%d refused_429=%d\n",
 		*parents, *n, children, *slots, *calls, total.Seconds(), bound.Seconds(), bound.Seconds()/total.Seconds(),
 		pct(took, .5).Seconds(), pct(took, 1).Seconds(), tr.failed.Load(), tr.ended.Load(), holding.Load(), waiting.Load(), p.refused.Load())
-	cancel()
-	ag.Wait()
+	e.stop()
 }

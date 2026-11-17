@@ -31,13 +31,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/event"
-	"github.com/0xfakeSpike/ollupi/agent/permission"
-	"github.com/0xfakeSpike/ollupi/agent/service"
+	"github.com/0xfakeSpike/ollupi/app"
+	"github.com/0xfakeSpike/ollupi/conversation"
+	"github.com/0xfakeSpike/ollupi/host"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
-	"github.com/0xfakeSpike/ollupi/repo/db"
+	"github.com/0xfakeSpike/ollupi/policy"
+	"github.com/0xfakeSpike/ollupi/store"
 )
+
+// defaultUser is whom every experiment but users runs its conversations for.
+const defaultUser = "default"
 
 const askArgs = `{"questions":[{"id":"pick","header":"Pick","question":"Which one?","options":[{"label":"A"},{"label":"B"}]}]}`
 
@@ -52,6 +56,53 @@ type model struct {
 
 // here gives every user this machine's files, as a host with one user does.
 func here(string) (sandbox.Box, error) { return sandbox.Here(), nil }
+
+// engine is a host the bench drives through its app, run until stop.
+type engine struct {
+	*host.Host
+	ctx    context.Context
+	cancel context.CancelFunc
+	done   chan error
+}
+
+// newEngine puts a host together for the bench, on cfg's home and models: every user gets this machine, no call is
+// asked about, and the default user is ready. It runs once run is called, so that what watches it can hook in first.
+func newEngine(cfg host.Config) *engine {
+	cfg.Name, cfg.Boxes = "bench", here
+	cfg.Permissions = policy.Settings{ApprovalPolicy: string(policy.Never)}
+	ctx, cancel := context.WithCancel(context.Background())
+	h, err := host.New(ctx, cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := h.App.EnsureUser(ctx, defaultUser); err != nil {
+		log.Fatal(err)
+	}
+	return &engine{Host: h, ctx: ctx, cancel: cancel, done: make(chan error, 1)}
+}
+
+func (e *engine) run() {
+	go func() { e.done <- e.Run(e.ctx) }()
+}
+
+func (e *engine) newThread(user string) string {
+	th, err := e.App.StartThread(context.Background(), user, "", "", "bench")
+	if err != nil {
+		log.Fatal(err)
+	}
+	return th.ID
+}
+
+// stop stops the host's runs, leaving the turns in progress as they are, and closes it.
+func (e *engine) stop() {
+	e.cancel()
+	if err := <-e.done; err != nil {
+		log.Printf("the host stopped with %v", err)
+	}
+	if err := e.Close(); err != nil {
+		log.Printf("close the host: %v", err)
+	}
+}
 
 func (m *model) Chat(ctx context.Context, req llm.ChatRequest, _ func(llm.Delta)) (llm.ChatResponse, error) {
 	n := m.calls.Add(1)
@@ -79,7 +130,7 @@ func (m *model) Limits(string) (llm.Limits, error) {
 	return llm.Limits{Context: 200_000, Output: 32_000}, nil
 }
 
-// tracker counts parked conversations and times turns from StartTurn to turn_completed.
+// tracker counts parked conversations and times turns from Send to the end the feed tells of.
 type tracker struct {
 	asked, ended, failed atomic.Int64
 	mu                   sync.Mutex
@@ -89,29 +140,35 @@ type tracker struct {
 	done map[string]chan struct{}
 }
 
-func (t *tracker) on(e event.Event) {
-	switch e.Kind {
-	case event.UserInputRequested:
-		t.asked.Add(1)
-	case event.TurnCompleted:
-		t.ended.Add(1)
-		if e.Turn.Status != db.TurnCompleted {
-			t.failed.Add(1)
-		}
-		t.mu.Lock()
-		t.endedAt[e.Turn.ID] = time.Now()
-		ch := t.done[e.Thread.ID]
-		t.mu.Unlock()
-		if ch != nil {
-			ch <- struct{}{}
+// on hears every commit: a question asked, a turn of any conversation ended, subagents' among them.
+func (t *tracker) on(e store.Event) {
+	if e.Change == nil {
+		return
+	}
+	for _, entry := range e.Change.Entries {
+		switch body := entry.Body.(type) {
+		case conversation.InputAsked:
+			t.asked.Add(1)
+		case conversation.TurnEnded:
+			t.ended.Add(1)
+			if body.Status != conversation.Completed {
+				t.failed.Add(1)
+			}
+			t.mu.Lock()
+			t.endedAt[entry.Turn] = time.Now()
+			ch := t.done[e.Thread]
+			t.mu.Unlock()
+			if ch != nil {
+				ch <- struct{}{}
+			}
 		}
 	}
 }
 
-// start holds no lock while StartTurn runs: the agent's loop delivers events to on, which takes it.
-func (t *tracker) start(ag *service.Service, user, threadID, text string) string {
+// start holds no lock while Send runs: the commit delivers events to on, which takes it.
+func (t *tracker) start(e *engine, user, threadID, text string) string {
 	at := time.Now()
-	turn, _, err := ag.StartTurn(context.Background(), user, threadID, service.Input{Text: text})
+	turn, _, err := e.App.Send(context.Background(), user, threadID, app.Input{Text: text})
 	if err != nil {
 		log.Fatalf("start turn: %v", err)
 	}
@@ -220,33 +277,14 @@ func parked(args []string) {
 		log.Fatal(err)
 	}
 	defer os.RemoveAll(dir)
-	store, err := db.Open(dir)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer store.Close()
 	m := &model{}
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}}
-	events := event.New()
-	events.SubscribeAll(tr.on)
-	ag := service.New(service.Config{
-		BoxFor: here,
-		Name:   "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
-		Connections: map[string]llm.Client{"fake": m},
-		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
-		Slots:       *slots, DB: store, Events: events,
+	e := newEngine(host.Config{
+		Home: dir, Models: []llm.Model{{Name: "fake", Connection: "fake"}},
+		Connections: map[string]llm.Client{"fake": m}, Slots: *slots,
 	})
-	ctx, cancel := context.WithCancel(context.Background())
-	if err := ag.Start(ctx); err != nil {
-		log.Fatal(err)
-	}
-	newThread := func() string {
-		th, err := ag.StartThread(db.DefaultUser, "", "", "bench")
-		if err != nil {
-			log.Fatal(err)
-		}
-		return th.ID
-	}
+	e.Store.Feed().SubscribeAll(tr.on)
+	e.run()
 
 	setupAt := time.Now()
 	text := "hello"
@@ -254,7 +292,7 @@ func parked(args []string) {
 		text = "ASK"
 	}
 	for range *parked {
-		tr.start(ag, db.DefaultUser, newThread(), text)
+		tr.start(e, defaultUser, e.newThread(defaultUser), text)
 	}
 	waitFor("parked conversations", func() bool {
 		if *state == "waiting" {
@@ -275,7 +313,7 @@ func parked(args []string) {
 	tr.mu.Lock()
 	tr.done = map[string]chan struct{}{}
 	for i := range ids {
-		ids[i] = newThread()
+		ids[i] = e.newThread(defaultUser)
 		tr.done[ids[i]] = make(chan struct{}, 1)
 	}
 	tr.mu.Unlock()
@@ -298,7 +336,7 @@ func parked(args []string) {
 		go func() {
 			defer wg.Done()
 			for range *rounds {
-				turnID := tr.start(ag, db.DefaultUser, id, "hello")
+				turnID := tr.start(e, defaultUser, id, "hello")
 				idsMu.Lock()
 				workload = append(workload, turnID)
 				idsMu.Unlock()
@@ -322,6 +360,5 @@ func parked(args []string) {
 		*state, *parked, setup.Seconds(), float64(idleCPU)/float64(time.Millisecond)/3, rssParked, heapParked, dbMB(dir),
 		turns, run.Seconds(), float64(turns)/run.Seconds(), float64(busyCPU)/float64(time.Millisecond)/float64(turns),
 		ms(pct(took, .5)), ms(pct(took, .95)), ms(pct(took, .99)), ms(pct(took, .5)-*latency))
-	cancel()
-	ag.Wait()
+	e.stop()
 }

@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -14,11 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/event"
-	"github.com/0xfakeSpike/ollupi/agent/permission"
-	"github.com/0xfakeSpike/ollupi/agent/service"
+	"github.com/0xfakeSpike/ollupi/host"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo/db"
 )
 
 // isolated is the baseline the pool is measured against: one process for each conversation, each waiting on its
@@ -81,33 +77,19 @@ func isolated(args []string) {
 		*k, sum/float64(len(rss)), rss[0], rss[len(rss)/2], rss[len(rss)-1])
 }
 
-// lone is one conversation's process for isolated: it opens its own database, asks its user a question, and waits.
+// lone is one conversation's process for isolated: it opens its own store, asks its user a question, and waits.
 func lone(args []string) {
 	fs := flag.NewFlagSet("lone", flag.ExitOnError)
-	dir := fs.String("dir", "", "home of the database")
+	dir := fs.String("dir", "", "home of the store")
 	fs.Parse(args)
-	store, err := db.Open(*dir)
-	if err != nil {
-		log.Fatal(err)
-	}
 	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}}
-	events := event.New()
-	events.SubscribeAll(tr.on)
-	ag := service.New(service.Config{
-		BoxFor: here,
-		Name:   "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
+	e := newEngine(host.Config{
+		Home: *dir, Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": &model{}},
-		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
-		DB:          store, Events: events,
 	})
-	if err := ag.Start(context.Background()); err != nil {
-		log.Fatal(err)
-	}
-	th, err := ag.StartThread(db.DefaultUser, "", "", "bench")
-	if err != nil {
-		log.Fatal(err)
-	}
-	tr.start(ag, db.DefaultUser, th.ID, "ASK")
+	e.Store.Feed().SubscribeAll(tr.on)
+	e.run()
+	tr.start(e, defaultUser, e.newThread(defaultUser), "ASK")
 	waitFor("the question", func() bool { return tr.asked.Load() == 1 })
 	runtime.GC()
 	fmt.Println("ready")

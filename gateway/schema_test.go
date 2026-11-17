@@ -17,17 +17,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/permission"
-	"github.com/0xfakeSpike/ollupi/agent/role"
+	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/ask"
+	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/memory"
-	"github.com/0xfakeSpike/ollupi/repo/db"
-	"github.com/0xfakeSpike/ollupi/tools"
-	"github.com/0xfakeSpike/ollupi/tools/cron"
-	"github.com/0xfakeSpike/ollupi/tools/plan"
-	"github.com/0xfakeSpike/ollupi/tools/skills"
-	"github.com/0xfakeSpike/ollupi/tools/subagent"
-	"github.com/0xfakeSpike/ollupi/tools/userinput"
-	"github.com/0xfakeSpike/ollupi/tools/workspace"
+	"github.com/0xfakeSpike/ollupi/policy"
+	"github.com/0xfakeSpike/ollupi/run"
+	"github.com/0xfakeSpike/ollupi/tool/builtin/plan"
+	"github.com/0xfakeSpike/ollupi/tool/builtin/subagent"
+	"github.com/0xfakeSpike/ollupi/tool/builtin/workspace"
+	"github.com/0xfakeSpike/ollupi/tool/kit"
+	"github.com/0xfakeSpike/ollupi/user"
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
@@ -59,10 +59,10 @@ type toolSchemas struct {
 }
 
 var builtinTools = map[string]struct{ arguments, output reflect.Type }{
-	plan.Tool:                {arguments: reflect.TypeFor[plan.Plan]()},
-	subagent.General:         {arguments: reflect.TypeFor[subagent.Call](), output: reflect.TypeFor[subagent.Launch]()},
-	subagent.Browser:         {arguments: reflect.TypeFor[subagent.Call](), output: reflect.TypeFor[subagent.Launch]()},
-	userinput.Tool:           {arguments: reflect.TypeFor[userinput.Request](), output: reflect.TypeFor[userinput.Answers]()},
+	agent.PlanTool:           {arguments: reflect.TypeFor[plan.Plan]()},
+	string(agent.GeneralSub): {arguments: reflect.TypeFor[subagent.Call](), output: reflect.TypeFor[run.Launched]()},
+	string(agent.BrowserSub): {arguments: reflect.TypeFor[subagent.Call](), output: reflect.TypeFor[run.Launched]()},
+	ask.Tool:                 {arguments: reflect.TypeFor[ask.Request](), output: reflect.TypeFor[ask.Answers]()},
 	workspace.ToolRunCommand: {output: reflect.TypeFor[workspace.CommandOutput]()},
 	workspace.ToolEditFile:   {output: reflect.TypeFor[workspace.FileOutput]()},
 	workspace.ToolWriteFile:  {output: reflect.TypeFor[workspace.FileOutput]()},
@@ -71,14 +71,18 @@ var builtinTools = map[string]struct{ arguments, output reflect.Type }{
 	workspace.ToolGrep:       {arguments: reflect.TypeFor[workspace.Grep](), output: reflect.TypeFor[workspace.GrepOutput]()},
 }
 
-var providers = []string{cron.ProviderName, skills.ProviderName, memory.ProviderName}
+// preparedExecution is what a workspace call's preparedExecution holds.
+var preparedExecution = reflect.TypeFor[workspace.Prepared]()
+
+var providers = []string{agent.CronProvider, agent.SkillsProvider, user.MemoryProvider}
 
 var enums = []any{
-	db.ItemTypeValues, db.ItemStatusValues, db.TurnStatusValues, db.ThreadStatusValues,
-	db.DecisionValues, db.SubmissionValues, db.MemoryRowStatusValues, db.MemoryScopeValues, db.MemoryFailureCodeValues, permission.PolicyValues, role.NameValues, plan.StatusValues, tools.AwaitByValues, db.AttachmentKindValues, db.EnvironmentKindValues,
+	conversation.ItemKinds, conversation.ItemStatuses, conversation.ThreadStatuses, conversation.Ends, conversation.Decisions,
+	TurnStatuses, memory.Scopes, memory.Kinds, memory.Statuses, memory.FailureCodes, policy.PolicyValues, agent.Names,
+	plan.StatusValues, user.EnvironmentKinds,
 }
 
-var plainStrings = []reflect.Type{reflect.TypeFor[db.Ref]()}
+var plainStrings = []reflect.Type{}
 
 type field struct {
 	owner reflect.Type
@@ -86,7 +90,7 @@ type field struct {
 }
 
 var fieldTypes = map[field]reflect.Type{
-	{reflect.TypeFor[db.PermissionSettings](), "ApprovalPolicy"}: reflect.TypeFor[permission.Policy](),
+	{reflect.TypeFor[policy.Settings](), "ApprovalPolicy"}: reflect.TypeFor[policy.Policy](),
 }
 
 var arrays = []field{
@@ -101,25 +105,38 @@ var arrays = []field{
 	{reflect.TypeFor[EnvironmentListResult](), "Data"},
 	{reflect.TypeFor[CronListResult](), "Data"},
 	{reflect.TypeFor[MemoryListResult](), "Data"},
-	{reflect.TypeFor[db.MemoryStats](), "IDs"},
+	{reflect.TypeFor[Found](), "Threads"},
+	{reflect.TypeFor[Found](), "Messages"},
+	{reflect.TypeFor[Found](), "Tasks"},
+	{reflect.TypeFor[conversation.MemoryStats](), "IDs"},
 	{reflect.TypeFor[plan.Plan](), "Steps"},
-	{reflect.TypeFor[userinput.Request](), "Questions"},
-	{reflect.TypeFor[userinput.Question](), "Options"},
+	{reflect.TypeFor[ask.Request](), "Questions"},
+	{reflect.TypeFor[ask.Question](), "Options"},
+	{reflect.TypeFor[Approval](), "AvailableDecisions"},
 	{reflect.TypeFor[ApprovalRequestParams](), "AvailableDecisions"},
 	{reflect.TypeFor[UserInputRequestParams](), "Questions"},
 }
 
 var defNames = map[reflect.Type]string{
-	reflect.TypeFor[permission.Policy]():  "ApprovalPolicy",
-	reflect.TypeFor[role.Name]():          "AgentRole",
-	reflect.TypeFor[plan.Step]():          "PlanStep",
-	reflect.TypeFor[plan.Status]():        "PlanStepStatus",
-	reflect.TypeFor[subagent.Call]():      "SubagentCall",
-	reflect.TypeFor[userinput.Request]():  "UserInputRequest",
-	reflect.TypeFor[userinput.Question](): "UserInputQuestion",
-	reflect.TypeFor[userinput.Option]():   "UserInputOption",
-	reflect.TypeFor[userinput.Answer]():   "UserInputAnswer",
-	reflect.TypeFor[userinput.Answers]():  "UserInputAnswers",
+	reflect.TypeFor[policy.Policy]():          "ApprovalPolicy",
+	reflect.TypeFor[policy.Settings]():        "PermissionSettings",
+	reflect.TypeFor[policy.Rules]():           "PermissionRules",
+	reflect.TypeFor[agent.Name]():             "AgentRole",
+	reflect.TypeFor[plan.Step]():              "PlanStep",
+	reflect.TypeFor[plan.Status]():            "PlanStepStatus",
+	reflect.TypeFor[subagent.Call]():          "SubagentCall",
+	reflect.TypeFor[run.Launched]():           "SubagentLaunched",
+	reflect.TypeFor[ask.Request]():            "UserInputRequest",
+	reflect.TypeFor[ask.Question]():           "UserInputQuestion",
+	reflect.TypeFor[ask.Option]():             "UserInputOption",
+	reflect.TypeFor[ask.Answer]():             "UserInputAnswer",
+	reflect.TypeFor[ask.Answers]():            "UserInputAnswers",
+	reflect.TypeFor[workspace.Prepared]():     "PreparedExecution",
+	reflect.TypeFor[memory.Failure]():         "MemoryFailure",
+	reflect.TypeFor[memory.Skip]():            "MemorySkip",
+	reflect.TypeFor[memory.Source]():          "MemorySource",
+	reflect.TypeFor[conversation.Usage]():     "Usage",
+	reflect.TypeFor[conversation.MemoryRef](): "MemoryReference",
 }
 
 var special = map[reflect.Type]*jsonschema.Schema{
@@ -295,6 +312,7 @@ func generateSchema() ([]byte, error) {
 	for _, tool := range builtinTools {
 		roots = append(roots, tool.arguments, tool.output)
 	}
+	roots = append(roots, preparedExecution)
 	for _, root := range roots {
 		if root == nil {
 			continue
@@ -338,8 +356,8 @@ func generateSchema() ([]byte, error) {
 		c.ClientNotifications[name] = g.ref(typ)
 	}
 	for name, tool := range builtinTools {
-		if strings.Contains(name, tools.ProviderSeparator) {
-			return nil, fmt.Errorf("built-in tool %s: its name must not contain %q, which only MCP tools have", name, tools.ProviderSeparator)
+		if strings.Contains(name, policy.ProviderSeparator) {
+			return nil, fmt.Errorf("built-in tool %s: its name must not contain %q, which only MCP tools have", name, policy.ProviderSeparator)
 		}
 		c.BuiltinTools[name] = toolSchemas{g.ref(tool.arguments), g.ref(tool.output)}
 	}
@@ -490,7 +508,7 @@ func (g *generator) schema(t reflect.Type) (*jsonschema.Schema, error) {
 		}
 	}
 	nullableRefs(s)
-	if c, ok := reflect.Zero(t).Interface().(tools.Constrainer); ok {
+	if c, ok := reflect.Zero(t).Interface().(kit.Constrainer); ok {
 		c.Constrain(s)
 	}
 	return s, nil

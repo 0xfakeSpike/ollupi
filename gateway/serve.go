@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/event"
-	"github.com/0xfakeSpike/ollupi/agent/service"
+	"github.com/0xfakeSpike/ollupi/app"
 	"github.com/0xfakeSpike/ollupi/pkg/wshub"
-	"github.com/0xfakeSpike/ollupi/repo/db"
+	"github.com/0xfakeSpike/ollupi/store"
+	"github.com/0xfakeSpike/ollupi/tool/mcp"
 )
 
 const lookupTimeout = 10 * time.Second
@@ -33,7 +33,12 @@ type Options struct {
 	Admit func(ctx context.Context, user string) error
 }
 
-func NewServer(a *service.Service, events *event.Bus, opts Options) (*Server, error) {
+// DefaultUser is the one user of a gateway with a token of its own.
+const DefaultUser = "default"
+
+// NewServer serves a's commands, and what the feed tells of each user's; servers are the users' MCP servers, whose
+// state their list shows.
+func NewServer(a *app.App, feed *store.Feed, servers *mcp.Users, opts Options) (*Server, error) {
 	if opts.Authenticate == nil {
 		if strings.TrimSpace(opts.Token) == "" {
 			return nil, errors.New("gateway: a token is required; clients send it as Authorization: Bearer <token> or, from a browser, as the subprotocol after " + tokenProtocol)
@@ -42,7 +47,7 @@ func NewServer(a *service.Service, events *event.Bus, opts Options) (*Server, er
 			if subtle.ConstantTimeCompare([]byte(token), []byte(opts.Token)) != 1 {
 				return "", ErrUnknownToken
 			}
-			return db.DefaultUser, nil
+			return DefaultUser, nil
 		}
 	}
 	if opts.Connections == (wshub.Options{}) {
@@ -53,8 +58,9 @@ func NewServer(a *service.Service, events *event.Bus, opts Options) (*Server, er
 		return nil, fmt.Errorf("gateway: %w", err)
 	}
 	s := &Server{
-		service:      a,
-		events:       events,
+		app:          a,
+		feed:         feed,
+		mcp:          servers,
 		authenticate: opts.Authenticate,
 		admit:        opts.Admit,
 		hosts:        append(slices.Clone(localHosts), opts.AllowedHosts...),

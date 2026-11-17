@@ -21,13 +21,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/agent/event"
-	"github.com/0xfakeSpike/ollupi/agent/permission"
-	"github.com/0xfakeSpike/ollupi/agent/service"
+	"github.com/0xfakeSpike/ollupi/catalog"
 	"github.com/0xfakeSpike/ollupi/gateway"
+	"github.com/0xfakeSpike/ollupi/host"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/repo/catalog"
-	"github.com/0xfakeSpike/ollupi/repo/db"
 	"github.com/0xfakeSpike/ollupi/router"
 	"github.com/coder/websocket"
 )
@@ -391,42 +388,26 @@ func benchUser(_ context.Context, token string) (string, error) {
 func quiet() {
 }
 
-// connsShard is one shard's gateway and agent on a database, as conns starts it.
+// connsShard is one shard's gateway and host on a store, as conns starts it.
 func connsShard(args []string) {
 	fs := flag.NewFlagSet("connsshard", flag.ExitOnError)
 	dir := fs.String("dir", "", "the shard's home")
 	addr := fs.String("addr", "", "address to listen on")
 	fs.Parse(args)
 	quiet()
-	store, err := db.Open(*dir)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer store.Close()
-	var server *gateway.Server
-	events := event.New()
-	ag := service.New(service.Config{
-		BoxFor: here,
-		Name:   "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
+	e := newEngine(host.Config{
+		Home: *dir, Models: []llm.Model{{Name: "fake", Connection: "fake"}},
 		Connections: map[string]llm.Client{"fake": &model{}},
-		Settings:    permission.Settings{ApprovalPolicy: string(permission.Never)},
-		DB:          store, Events: events,
+		Gateway:     &gateway.Options{Authenticate: benchUser},
 	})
-	server, err = gateway.NewServer(ag, events, gateway.Options{Authenticate: benchUser})
-	if err != nil {
-		log.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	if err := ag.Start(ctx); err != nil {
-		log.Fatal(err)
-	}
+	defer e.stop()
+	e.run()
 	ln, err := net.Listen("tcp", *addr)
 	if err != nil {
 		log.Fatal(err)
 	}
 	go func() {
-		if err := server.Serve(ctx, ln); err != nil {
+		if err := e.Gateway.Serve(e.ctx, ln); err != nil {
 			log.Fatal(err)
 		}
 	}()
