@@ -59,7 +59,7 @@ func TestNamesAndKinds(t *testing.T) {
 	if _, err := Title(" ", true); !errors.Is(err, ErrInvalidName) {
 		t.Error("a rename to no title was taken")
 	}
-	if name, err := WorkspaceName("  app  "); err != nil || name != "app" {
+	if name, err := Name("a workspace name", "  app  "); err != nil || name != "app" {
 		t.Errorf("%q, %v", name, err)
 	}
 	if kind, err := NewEnvironmentKind(""); err != nil || kind != Machine {

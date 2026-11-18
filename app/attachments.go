@@ -3,14 +3,12 @@ package app
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"image"
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
-	"io"
 	"net/http"
 	"path/filepath"
 	"slices"
@@ -23,6 +21,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/google/uuid"
+	_ "golang.org/x/image/webp"
 )
 
 const (
@@ -118,10 +117,11 @@ func describe(data []byte, name, mime string) (conversation.Attachment, error) {
 	att := conversation.Attachment{ID: uuid.NewString(), Name: name, MimeType: sniffed, Size: int64(len(data))}
 	if ext, ok := imageTypes[sniffed]; ok {
 		att.Kind, att.File = imageKind, att.ID+ext
-		att.Width, att.Height = imageSize(bytes.NewReader(data), head)
-		if att.Width <= 0 || att.Height <= 0 {
+		cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+		if err != nil || cfg.Width <= 0 || cfg.Height <= 0 {
 			return conversation.Attachment{}, fmt.Errorf("image %q cannot be read", name)
 		}
+		att.Width, att.Height = cfg.Width, cfg.Height
 		att.Tokens = imageTokens(att.Width, att.Height)
 		return att, nil
 	}
@@ -152,29 +152,6 @@ func attachmentName(name string) string {
 		return "attachment"
 	}
 	return clipRunes(name, 120)
-}
-
-func imageSize(r io.Reader, head []byte) (int, int) {
-	if cfg, _, err := image.DecodeConfig(r); err == nil {
-		return cfg.Width, cfg.Height
-	}
-	return webpSize(head)
-}
-
-func webpSize(b []byte) (int, int) {
-	if len(b) < 30 || string(b[:4]) != "RIFF" || string(b[8:12]) != "WEBP" {
-		return 0, 0
-	}
-	switch string(b[12:16]) {
-	case "VP8X":
-		return 1 + int(b[24]) | int(b[25])<<8 | int(b[26])<<16, 1 + int(b[27]) | int(b[28])<<8 | int(b[29])<<16
-	case "VP8 ":
-		return int(binary.LittleEndian.Uint16(b[26:28]) & 0x3fff), int(binary.LittleEndian.Uint16(b[28:30]) & 0x3fff)
-	case "VP8L":
-		bits := binary.LittleEndian.Uint32(b[21:25])
-		return int(bits&0x3fff) + 1, int(bits>>14&0x3fff) + 1
-	}
-	return 0, 0
 }
 
 func imageTokens(w, h int) int {

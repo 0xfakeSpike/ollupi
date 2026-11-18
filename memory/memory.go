@@ -45,8 +45,8 @@ const (
 var Statuses = []Status{Active, Retired, Forgotten}
 
 type Place struct {
-	Scope     Scope
-	Workspace string
+	Scope     Scope  `json:"scope"`
+	Workspace string `json:"workspaceId,omitempty"`
 }
 
 func Local(workspace string) Place {
@@ -74,10 +74,9 @@ type Source struct {
 }
 
 type Memory struct {
-	ID         string    `json:"id"`
-	User       string    `json:"-"`
-	Scope      Scope     `json:"scope"`
-	Workspace  string    `json:"workspaceId,omitempty"`
+	ID   string `json:"id"`
+	User string `json:"-"`
+	Place
 	Origin     string    `json:"originWorkspaceId,omitempty"`
 	Topic      string    `json:"topic"`
 	Kind       Kind      `json:"kind"`
@@ -88,8 +87,6 @@ type Memory struct {
 	Created    time.Time `json:"createdAt"`
 	Updated    time.Time `json:"updatedAt"`
 }
-
-func (m Memory) Place() Place { return Place{Scope: m.Scope, Workspace: m.Workspace} }
 
 func (m Memory) Ref() conversation.MemoryRef {
 	return conversation.MemoryRef{ID: m.ID, Topic: m.Topic, Text: m.Text, Scope: string(m.Scope), WorkspaceID: m.Workspace}

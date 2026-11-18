@@ -42,12 +42,13 @@ type Ending struct {
 }
 
 type Response struct {
-	ID     string
-	Turn   string
-	Seq    int64
-	Usage  Usage
-	Stats  ContextStats
-	Native []byte
+	ID         string
+	Turn       string
+	Seq        int64
+	Usage      Usage
+	Stats      ContextStats
+	Native     []byte
+	Compaction bool
 }
 
 type ItemKind string
@@ -132,14 +133,6 @@ type Result struct {
 	Artifacts []Artifact
 }
 
-func Fold(entries []Entry) View {
-	var v View
-	for _, e := range entries {
-		v.Apply(e)
-	}
-	return v
-}
-
 func (v *View) Apply(e Entry) {
 	if v.turn == nil {
 		v.index()
@@ -160,7 +153,7 @@ func (v *View) Apply(e Entry) {
 		it := &v.Items[v.item[e.Item]]
 		it.StartedAt, it.CompletedAt = b.Started, &b.Ended
 	case ModelResponded:
-		v.Responses = append(v.Responses, Response{ID: b.Response, Turn: e.Turn, Seq: e.Seq, Usage: b.Usage, Stats: b.Stats, Native: b.Native})
+		v.Responses = append(v.Responses, Response{ID: b.Response, Turn: e.Turn, Seq: e.Seq, Usage: b.Usage, Stats: b.Stats, Native: b.Native, Compaction: b.Compaction})
 		t := &v.Turns[v.turn[e.Turn]]
 		t.Usage = t.Usage.Plus(b.Usage)
 		t.Responses = append(t.Responses, Used{Response: b.Response, Usage: b.Usage, Stats: b.Stats})

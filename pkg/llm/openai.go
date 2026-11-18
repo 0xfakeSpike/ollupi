@@ -80,7 +80,7 @@ func (c *OpenAI) Chat(ctx context.Context, req ChatRequest, onDelta func(Delta))
 		if err != nil {
 			return ChatResponse{}, err
 		}
-		emit(onDelta, delta)
+		Emit(onDelta, delta)
 	}
 	if err := stream.Err(); err != nil {
 		return ChatResponse{}, safeRequestError(err)

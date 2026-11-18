@@ -122,10 +122,6 @@ func Layers(deployment policy.Layer, s Settings, w *Workspace, conversation poli
 
 const maxNameRunes = 120
 
-func WorkspaceName(name string) (string, error) { return named("a workspace name", name) }
-
-func EnvironmentName(name string) (string, error) { return named("an environment name", name) }
-
 func Title(title string, required bool) (string, error) {
 	title = strings.TrimSpace(title)
 	if (required && title == "") || len([]rune(title)) > maxNameRunes {
@@ -134,7 +130,7 @@ func Title(title string, required bool) (string, error) {
 	return title, nil
 }
 
-func named(what, name string) (string, error) {
+func Name(what, name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" || len([]rune(name)) > maxNameRunes {
 		return "", fmt.Errorf("%w: %s must be 1 to %d characters", ErrInvalidName, what, maxNameRunes)

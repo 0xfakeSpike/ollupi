@@ -88,7 +88,7 @@ func (w Window) compactedHistory(before []conversation.Item, summary string) str
 			break
 		}
 	}
-	if users := recentUserMessages(before, share(w.inputTokens, 10)); len(users) > 0 {
+	if users := recentUserMessages(before, share(w.inputTokens, userMessagePercent)); len(users) > 0 {
 		b.WriteString("Earlier messages from the user:\n")
 		for _, text := range users {
 			b.WriteString("- " + strings.ReplaceAll(strings.TrimSpace(text), "\n", "\n  ") + "\n")

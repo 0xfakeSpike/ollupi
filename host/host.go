@@ -69,7 +69,6 @@ type Host struct {
 	App   *app.App
 	Users *mcp.Users
 
-	runner    *run.Runner
 	scheduler *schedule.Scheduler
 	extractor *extract.Extractor
 	cal       cron.Calendar
@@ -114,9 +113,10 @@ func New(ctx context.Context, cfg Config) (*Host, error) {
 	builtins = append(builtins, tasks.New(st, h.cal))
 	h.Users = mcp.NewUsers(ctx, mcp.Client{Name: cfg.Name, Version: version()}, st, cfg.Boxes, builtins...)
 	h.App = app.New(st, ms, h.Users.Tools, h.Users.Statuses, cfg.Boxes, files, h.cal, cfg.Permissions)
-	h.runner = run.New(st, ms, h.Users.Tools, files, skillsOf(cfg.SkillsDir), cfg.Name, cfg.Prompt, cfg.Permissions, cfg.Allowlist)
+	runner := run.New(st, ms, h.Users.Tools, files, skillsOf(cfg.SkillsDir),
+		run.Deployment{Name: cfg.Name, Prompt: cfg.Prompt, Permissions: cfg.Permissions, Allowlist: cfg.Allowlist})
 	slots := cmp.Or(cfg.Slots, defaultSlots)
-	h.scheduler = schedule.New(st, h.runner, slots, cmp.Or(cfg.UserSlots, slots), cmp.Or(cfg.RunLimit, defaultRunLimit))
+	h.scheduler = schedule.New(st, runner, slots, cmp.Or(cfg.UserSlots, slots), cmp.Or(cfg.RunLimit, defaultRunLimit))
 	if cfg.Memory != nil {
 		limits, err := ms.Limits(*cfg.Memory)
 		if err != nil {

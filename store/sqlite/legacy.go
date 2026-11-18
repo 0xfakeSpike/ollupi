@@ -367,6 +367,7 @@ func (b *logBuilder) turn(t legacyTurn, all []legacyItem) {
 		if len(it.Native) > 0 {
 			r.Native = it.Native
 		}
+		r.Compaction = r.Compaction || it.Type == "contextCompaction"
 		responses[it.ResponseID] = r
 	}
 	responded := map[string]bool{}
@@ -531,7 +532,7 @@ func (l legacy) memories() error {
 				sources = append(sources, memory.Source{Thread: thread, Item: s.ID})
 			}
 		}
-		m := memory.Memory{ID: r.ID, User: r.UserID, Scope: memory.Scope(r.Scope), Workspace: r.WorkspaceID, Origin: r.OriginWorkspaceID,
+		m := memory.Memory{ID: r.ID, User: r.UserID, Place: memory.Place{Scope: memory.Scope(r.Scope), Workspace: r.WorkspaceID}, Origin: r.OriginWorkspaceID,
 			Topic: r.Topic, Kind: memory.Kind(r.Kind), Text: r.Text, Status: memory.Status(r.Status), UserEdited: r.UserEdited,
 			Sources: sources, Created: r.CreatedAt.UTC(), Updated: r.UpdatedAt.UTC()}
 		if err := l.t.PutMemory(m); err != nil {

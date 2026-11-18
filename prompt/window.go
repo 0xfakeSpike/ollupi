@@ -25,16 +25,16 @@ const (
 	minPooledTokens    = 512
 	artifactPercent    = 15
 	toolPercent        = 10
+	skillPercent       = 4
+	memoryPercent      = 8
+	maxMemoryTokens    = 4000
+	userMessagePercent = 10
 	sentLayout         = "Mon 2006-01-02 15:04 -07:00"
 )
 
 func share(inputTokens, pct int) int { return max(minOutputTokens, inputTokens*pct/100) }
 
-func (w Window) InputTokens() int { return w.inputTokens }
-
-func (w Window) SkillBudget() int { return share(w.inputTokens, 4) }
-
-func (w Window) MemoryBudget() int { return max(0, min(4000, w.inputTokens*8/100)) }
+func (w Window) MemoryBudget() int { return min(maxMemoryTokens, w.inputTokens*memoryPercent/100) }
 
 func (w Window) artifactBudget() int { return share(w.inputTokens, artifactPercent) }
 
@@ -127,21 +127,16 @@ func (w Window) stats(system string, messages []llm.ChatMessage, tools []llm.Too
 
 func (w Window) calibrate(s *conversation.ContextStats, items []conversation.Item, responses []conversation.Response) {
 	compaction := latestCompaction(items)
-	from, compactions := int64(0), map[string]bool{}
+	from := int64(0)
 	if compaction >= 0 {
 		from = items[compaction].Seq
-	}
-	for _, it := range items {
-		if it.Kind == conversation.ItemCompaction {
-			compactions[it.Response] = true
-		}
 	}
 	for i := len(responses) - 1; i >= 0; i-- {
 		r := responses[i]
 		if r.Usage.InputTokens <= 0 || r.Stats.EstimatedTokens <= 0 || r.Stats.Model != w.model {
 			continue
 		}
-		if r.Seq > from && !compactions[r.ID] {
+		if r.Seq > from && !r.Compaction {
 			s.CalibratedTokens = max(0, int(r.Usage.InputTokens)+s.EstimatedTokens-r.Stats.EstimatedTokens)
 		} else {
 			s.CalibratedTokens = max(s.EstimatedTokens, int(int64(s.EstimatedTokens)*r.Usage.InputTokens/int64(r.Stats.EstimatedTokens)))
