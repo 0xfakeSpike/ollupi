@@ -49,7 +49,7 @@ func TestAnAppendIsKeptFoldedAndToldOnceCommitted(t *testing.T) {
 	var heard []store.Event
 	s.Feed().Subscribe("u", func(e store.Event) { heard = append(heard, e) })
 	start(t, s, "u", "th")
-	if len(heard) != 2 || heard[0].Seq != 1 || heard[0].Change == nil || heard[0].Change.Header == nil || len(heard[0].Change.Entries) != 2 || !heard[0].Change.Runnable || heard[1].Owned == nil || heard[1].Owned.Environment == nil {
+	if len(heard) != 2 || heard[0].Seq != 1 || heard[0].Change == nil || heard[0].Change.Header == nil || len(heard[0].Change.Entries) != 2 || !heard[0].Change.Header.Runnable || heard[1].Owned == nil || heard[1].Owned.Environment == nil {
 		t.Fatalf("heard %+v", heard)
 	}
 	v := view(t, s, "th")
@@ -89,7 +89,7 @@ func TestAnAppendIsKeptFoldedAndToldOnceCommitted(t *testing.T) {
 		t.Fatal(err)
 	}
 	last := heard[len(heard)-1]
-	if last.Seq != 2 || last.Change.Status != conversation.ThreadWaitingOnApproval || last.Change.Runnable || len(last.Change.Items) != 1 || last.Change.Items[0].Approval == nil {
+	if last.Seq != 2 || last.Change.Header.Status != conversation.ThreadWaitingOnApproval || last.Change.Header.Runnable || len(last.Change.Items) != 1 || last.Change.Items[0].Approval == nil {
 		t.Fatalf("the approval's change: %+v", last.Change)
 	}
 	if run := runnable(t, s); len(run) != 0 {
@@ -253,7 +253,7 @@ func TestASubagentWaitingOnTheUserMakesItsParentWait(t *testing.T) {
 		return err
 	})
 	told := slices.ContainsFunc(heard, func(e store.Event) bool {
-		return e.Thread == "th" && e.Change != nil && e.Change.Status == conversation.ThreadWaitingOnApproval
+		return e.Thread == "th" && e.Change != nil && e.Change.Header.Status == conversation.ThreadWaitingOnApproval
 	})
 	if th := thread(t, s, "th"); th.Status != conversation.ThreadWaitingOnApproval || !told {
 		t.Errorf("the parent %s, told %v", th.Status, told)

@@ -105,10 +105,9 @@ type Usage struct {
 }
 
 type ChatResponse struct {
-	Message       ChatMessage
-	FinishReason  string
-	Usage         Usage
-	UsageReported bool
+	Message      ChatMessage
+	FinishReason string
+	Usage        Usage
 }
 
 type Delta struct {

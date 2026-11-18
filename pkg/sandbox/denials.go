@@ -24,7 +24,6 @@ type denialLog struct {
 	tagRe  *regexp.Regexp
 
 	mu      sync.Mutex
-	cmd     *exec.Cmd
 	stdin   io.Closer
 	alive   bool
 	pending map[string]*denialSet
@@ -60,7 +59,7 @@ func (l *denialLog) start() error {
 		return err
 	}
 	l.mu.Lock()
-	l.cmd, l.stdin, l.alive = cmd, stdin, true
+	l.stdin, l.alive = stdin, true
 	l.mu.Unlock()
 	go func() {
 		l.consume(bufio.NewScanner(out))
@@ -85,7 +84,6 @@ func (l *denialLog) close() {
 		_ = l.stdin.Close()
 		l.stdin = nil
 	}
-	l.cmd = nil
 }
 
 func (l *denialLog) newTag() (id, tag string) {

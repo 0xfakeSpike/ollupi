@@ -33,7 +33,6 @@ type Spec struct {
 
 type Result struct {
 	Output    any
-	Err       error
 	Artifacts []conversation.Artifact
 	Ask       any
 	Launch    *tool.Launch
@@ -166,13 +165,10 @@ func (r *Registry) Invoke(ctx context.Context, c tool.Call) (out tool.Result) {
 		}
 	}()
 	res, err := r.providers[r.owner[c.Tool]].Invoke(ctx, c)
-	if err != nil {
-		res.Err = err
-	}
-	return settle(res)
+	return settle(res, err)
 }
 
-func settle(res Result) tool.Result {
+func settle(res Result, err error) tool.Result {
 	out := tool.Result{Artifacts: res.Artifacts, Launch: res.Launch}
 	if res.Ask != nil {
 		raw, err := json.Marshal(res.Ask)
@@ -191,8 +187,8 @@ func settle(res Result) tool.Result {
 		}
 		out.Output = raw
 	}
-	if res.Err != nil {
-		out.Error = res.Err.Error()
+	if err != nil {
+		out.Error = err.Error()
 		if len(out.Error) > maxErrorBytes {
 			out.Error = clip(out.Error, maxErrorBytes, "error")
 		}

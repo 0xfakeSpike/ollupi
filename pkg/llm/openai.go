@@ -84,29 +84,27 @@ func (c *OpenAI) Chat(ctx context.Context, req ChatRequest, onDelta func(Delta))
 	for stream.Next() {
 		delta, err := acc.add(stream.Current())
 		if err != nil {
-			return acc.usageResponse(), err
+			return ChatResponse{}, err
 		}
 		emit(onDelta, delta)
 	}
 	if err := stream.Err(); err != nil {
-		return acc.usageResponse(), safeRequestError(err)
+		return ChatResponse{}, safeRequestError(err)
 	}
 	return acc.response()
 }
 
 type streamAccumulator struct {
-	sawChoice     bool
-	content       strings.Builder
-	reasoning     strings.Builder
-	finish        string
-	calls         []ToolCall
-	usage         Usage
-	usageReported bool
+	sawChoice bool
+	content   strings.Builder
+	reasoning strings.Builder
+	finish    string
+	calls     []ToolCall
+	usage     Usage
 }
 
 func (a *streamAccumulator) add(chunk openai.ChatCompletionChunk) (Delta, error) {
 	if chunk.JSON.Usage.Valid() {
-		a.usageReported = true
 		a.usage = Usage{
 			PromptTokens:       chunk.Usage.PromptTokens,
 			CachedPromptTokens: chunk.Usage.PromptTokensDetails.CachedTokens,
@@ -147,27 +145,22 @@ func (a *streamAccumulator) add(chunk openai.ChatCompletionChunk) (Delta, error)
 
 func (a *streamAccumulator) response() (ChatResponse, error) {
 	if !a.sawChoice {
-		return a.usageResponse(), fmt.Errorf("llm.OpenAI: empty completion choices")
+		return ChatResponse{}, fmt.Errorf("llm.OpenAI: empty completion choices")
 	}
 
 	if a.finish == "" {
-		return a.usageResponse(), fmt.Errorf("llm.OpenAI: the stream ended before the response finished")
+		return ChatResponse{}, fmt.Errorf("llm.OpenAI: the stream ended before the response finished")
 	}
 	for _, call := range a.calls {
 		if call.ID == "" || call.Name == "" {
-			return a.usageResponse(), fmt.Errorf("llm.OpenAI: tool call without id or function name")
+			return ChatResponse{}, fmt.Errorf("llm.OpenAI: tool call without id or function name")
 		}
 	}
 	return ChatResponse{
-		Message:       ChatMessage{Role: RoleAssistant, Content: a.content.String(), ReasoningContent: a.reasoning.String(), ToolCalls: a.calls},
-		FinishReason:  a.finish,
-		Usage:         a.usage,
-		UsageReported: a.usageReported,
+		Message:      ChatMessage{Role: RoleAssistant, Content: a.content.String(), ReasoningContent: a.reasoning.String(), ToolCalls: a.calls},
+		FinishReason: a.finish,
+		Usage:        a.usage,
 	}, nil
-}
-
-func (a *streamAccumulator) usageResponse() ChatResponse {
-	return ChatResponse{Usage: a.usage, UsageReported: a.usageReported}
 }
 
 func extraString(fields map[string]respjson.Field, name string) (string, error) {

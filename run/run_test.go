@@ -179,7 +179,7 @@ func TestAResponseKeepsWhatItUsedAndHowLongItThought(t *testing.T) {
 	f.m.answer = func(llm.ChatRequest) llm.ChatResponse {
 		resp := answer("Monday")
 		resp.Message.ReasoningContent = "weighing the days"
-		resp.Usage, resp.UsageReported = llm.Usage{PromptTokens: 100, CompletionTokens: 7}, true
+		resp.Usage = llm.Usage{PromptTokens: 100, CompletionTokens: 7}
 		return resp
 	}
 	f.ask("th", "which day?")

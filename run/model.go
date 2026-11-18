@@ -105,9 +105,6 @@ func checkResponse(resp llm.ChatResponse, choice llm.ToolChoice) error {
 }
 
 func usage(resp llm.ChatResponse) conversation.Usage {
-	if !resp.UsageReported {
-		return conversation.Usage{}
-	}
 	u := resp.Usage
 	return conversation.Usage{InputTokens: u.PromptTokens, CachedInputTokens: u.CachedPromptTokens,
 		CacheWriteInputTokens: u.CacheWritePromptTokens, OutputTokens: u.CompletionTokens}
