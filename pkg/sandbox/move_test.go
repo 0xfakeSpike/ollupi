@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -22,7 +23,10 @@ func TestMoveReplacesAnEmptyFolderAndRefusesAFullOne(t *testing.T) {
 	if err := os.Mkdir(to, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	box := Here()
+	box, err := Here()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := box.Move(context.Background(), from, to); err != nil {
 		t.Fatal(err)
 	}
@@ -89,5 +93,26 @@ func TestARemoteMoveStopsWhenItCannotSeeTheTarget(t *testing.T) {
 	box := Remote(blindMachine{ran: &ran}, []string{"/cloud"}, "cloud")
 	if err := box.Move(context.Background(), "/cloud/app", "/cloud/moved"); err == nil || len(ran) > 0 {
 		t.Errorf("moved without seeing the target: %v, ran %v", err, ran)
+	}
+}
+
+func TestHereIsThisMachineUnsandboxed(t *testing.T) {
+	box, err := Here()
+	if err != nil {
+		t.Fatal(err)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	home, err = filepath.EvalSymlinks(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if roots := box.Roots(); len(roots) != 1 || roots[0] != home {
+		t.Errorf("roots %v, want [%s]", roots, home)
+	}
+	if box.Enforced() || box.CanEscalate() || !strings.HasPrefix(box.Summary(), "No sandbox") {
+		t.Errorf("enforced %v, can escalate %v, summary %q", box.Enforced(), box.CanEscalate(), box.Summary())
 	}
 }

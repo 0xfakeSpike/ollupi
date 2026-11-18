@@ -126,7 +126,7 @@ func TestAClientHearsWhatChangesAndAnswersWhatWaitsOnIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	boxes := func(string) (sandbox.Box, error) { return sandbox.Here(), nil }
+	boxes := func(string) (sandbox.Box, error) { return sandbox.Here() }
 	users := mcp.NewUsers(ctx, mcp.Client{Name: "ollupi", Version: "test"}, st, boxes)
 	defer users.Close()
 	a := app.New(st, models{}, users.Tools, users.Statuses, boxes, noFiles{}, cron.NewCalendar(time.UTC), policy.Settings{ApprovalPolicy: string(policy.OnRequest)})
