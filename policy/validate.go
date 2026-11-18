@@ -27,7 +27,7 @@ func checkLayer(l Layer, previous *Settings, box Toolbox) error {
 			kept = append(kept, strings.TrimSpace(text))
 		}
 	}
-	for _, r := range set.all() {
+	for _, r := range slices.Concat(set.deny, set.ask, set.allow) {
 		switch {
 		case box.unavailable(r.tool):
 			if previous != nil && !slices.Contains(kept, r.text) {

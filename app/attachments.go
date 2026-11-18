@@ -202,15 +202,13 @@ func (a *App) detach(ctx context.Context, atts []conversation.Attachment) {
 func (a *App) ReadAttachment(ctx context.Context, u, threadID, id string) (conversation.Attachment, []byte, error) {
 	var att *conversation.Attachment
 	err := a.st.Read(ctx, func(r store.Reader) error {
-		if _, err := thread(r, u, threadID); err != nil {
-			return err
-		}
-		v, err := r.View(threadID)
+		v, err := view(r, u, threadID)
 		if err != nil {
 			return err
 		}
+		named := func(x conversation.Attachment) bool { return x.ID == id }
 		for _, it := range v.Items {
-			if i := slices.IndexFunc(it.Attachments, func(x conversation.Attachment) bool { return x.ID == id }); i >= 0 {
+			if i := slices.IndexFunc(it.Attachments, named); i >= 0 {
 				att = &it.Attachments[i]
 			}
 		}

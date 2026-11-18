@@ -36,28 +36,30 @@ const (
 )
 
 type Role struct {
-	Name                   Name
-	Rules                  string
-	AnswersUser            bool
-	Own                    []policy.Layer
-	Core                   []string
-	Recalls                bool
+	Name        Name
+	Rules       string
+	AnswersUser bool
+	Own         []policy.Layer
+	Core        []string
+	Recalls     bool
+	Limits
+}
+
+type Limits struct {
 	MaxModelCalls          int
 	MaxToolCalls           int
 	MaxConsecutiveFailures int
 }
 
+var standard = Limits{MaxModelCalls: 200, MaxToolCalls: 400, MaxConsecutiveFailures: 10}
+
 var roles = map[Name]Role{
-	FullMain: {Name: FullMain, Rules: fullMainRules, AnswersUser: true, Recalls: true,
-		MaxModelCalls: 200, MaxToolCalls: 400, MaxConsecutiveFailures: 10},
-	CompactMain: {Name: CompactMain, Rules: compactMainRules, AnswersUser: true, Recalls: true, Core: []string{ReadFileTool, RunCommandTool},
-		MaxModelCalls: 200, MaxToolCalls: 400, MaxConsecutiveFailures: 10},
+	FullMain:    {Name: FullMain, Rules: fullMainRules, AnswersUser: true, Recalls: true, Limits: standard},
+	CompactMain: {Name: CompactMain, Rules: compactMainRules, AnswersUser: true, Recalls: true, Core: []string{ReadFileTool, RunCommandTool}, Limits: standard},
 	GeneralSub: {Name: GeneralSub, Rules: generalSubRules, Recalls: true,
-		Own:           []policy.Layer{{Of: "the general subagent's role", Without: []string{SubagentsProvider, CronProvider}}},
-		MaxModelCalls: 200, MaxToolCalls: 400, MaxConsecutiveFailures: 10},
+		Own: []policy.Layer{{Of: "the general subagent's role", Without: []string{SubagentsProvider, CronProvider}}}, Limits: standard},
 	BrowserSub: {Name: BrowserSub, Rules: browserSubRules,
-		Own:           []policy.Layer{{Of: "the browser subagent's role", Providers: []string{BrowserProvider, OutputsProvider, SkillsProvider, PlanProvider}}},
-		MaxModelCalls: 200, MaxToolCalls: 400, MaxConsecutiveFailures: 10},
+		Own: []policy.Layer{{Of: "the browser subagent's role", Providers: []string{BrowserProvider, OutputsProvider, SkillsProvider, PlanProvider}}}, Limits: standard},
 }
 
 func RoleOf(name Name) (Role, bool) {
@@ -108,7 +110,8 @@ func Next(v conversation.View, r Role) Action {
 			runnable = append(runnable, it)
 		}
 	}
-	stopped := stop(v, turn.ID, items, r)
+	from := fresh(items)
+	stopped := stop(v, turn.ID, items, from, r)
 	switch {
 	case len(runnable) > 0 && stopped != "":
 		return SkipTools{Calls: runnable, Reason: stopped}
@@ -117,7 +120,6 @@ func Next(v conversation.View, r Role) Action {
 	case v.Answered(turn.ID):
 		return Finish{}
 	}
-	from := fresh(items)
 	told := slices.ContainsFunc(items[from:], func(it conversation.Item) bool { return it.Kind == conversation.ItemNotice })
 	if told {
 		return CallModel{NoTools: true}
@@ -128,8 +130,7 @@ func Next(v conversation.View, r Role) Action {
 	return CallModel{}
 }
 
-func stop(v conversation.View, turn string, items []conversation.Item, r Role) string {
-	from := fresh(items)
+func stop(v conversation.View, turn string, items []conversation.Item, from int, r Role) string {
 	if i := slices.IndexFunc(items[from:], declined); i >= 0 {
 		return fmt.Sprintf("the user declined %s", items[from+i].Call.Tool)
 	}
@@ -206,7 +207,7 @@ func Launchable(visible []policy.Tool) []policy.Tool {
 	for _, name := range []Name{GeneralSub, BrowserSub} {
 		own := roles[name].Own
 		workable := slices.ContainsFunc(visible, func(t policy.Tool) bool {
-			return t.Provider != OutputsProvider && !slices.ContainsFunc(own, func(l policy.Layer) bool { return !l.Keeps(t) })
+			return t.Provider != OutputsProvider && policy.Kept(own, t)
 		})
 		if !workable {
 			out = slices.DeleteFunc(out, func(t policy.Tool) bool { return t.Name == string(name) })

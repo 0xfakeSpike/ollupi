@@ -33,8 +33,9 @@ func Check(v View, e Entry) error {
 	}
 	switch b := e.Body.(type) {
 	case TurnEnded:
-		if open := slices.IndexFunc(v.ItemsOf(turn.ID), Item.open); open >= 0 {
-			return refuse("turn %s still has call %s open", turn.ID, v.ItemsOf(turn.ID)[open].ID)
+		items := v.ItemsOf(turn.ID)
+		if open := slices.IndexFunc(items, Item.Open); open >= 0 {
+			return refuse("turn %s still has call %s open", turn.ID, items[open].ID)
 		}
 		return nil
 	case ModelResponded:
@@ -64,11 +65,11 @@ func Check(v View, e Entry) error {
 			return refuse("call %s cannot ask for approval now", it.ID)
 		}
 	case Decided:
-		if !it.waitsForApproval() || !slices.Contains(it.Approval.Decisions(), b.Decision) {
+		if !it.WaitsForApproval() || !slices.Contains(it.Approval.Decisions(), b.Decision) {
 			return refuse("call %s does not wait for the decision %q", it.ID, b.Decision)
 		}
 	case ToolStarted:
-		if it.Status != Pending || it.waitsForApproval() {
+		if it.Status != Pending || it.WaitsForApproval() {
 			return refuse("call %s cannot start now", it.ID)
 		}
 	case InputAsked:
@@ -76,11 +77,11 @@ func Check(v View, e Entry) error {
 			return refuse("call %s cannot ask the user now", it.ID)
 		}
 	case Answered:
-		if !it.waitsForInput() {
+		if !it.WaitsForInput() {
 			return refuse("call %s does not wait for an answer", it.ID)
 		}
 	case ToolResult:
-		if !it.open() || it.waitsForInput() {
+		if !it.Open() || it.WaitsForInput() {
 			return refuse("call %s cannot end now", it.ID)
 		}
 	case ChildLaunched:

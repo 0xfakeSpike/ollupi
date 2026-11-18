@@ -105,35 +105,42 @@ func shown(j store.Task) job {
 
 func (p Provider) Invoke(ctx context.Context, c tool.Call) (kit.Result, error) {
 	var task store.Task
+	var out any
+	var err error
 	switch c.Tool {
 	case CreateTool:
 		args, _ := kit.DecodeArguments[createArgs](c.Arguments)
-		err := p.update(ctx, c, func(tx store.Tx, th store.Thread) (err error) {
+		err = p.update(ctx, c, func(tx store.Tx, th store.Thread) (err error) {
 			task, err = cron.Create(tx, p.cal, th, args.Name, args.Spec, args.Prompt, args.Times, time.Now().UTC())
 			return err
 		})
-		return kit.Result{Output: shown(task)}, err
+		out = shown(task)
 	case PauseTool:
 		args, _ := kit.DecodeArguments[pauseArgs](c.Arguments)
-		err := p.update(ctx, c, func(tx store.Tx, th store.Thread) (err error) {
+		err = p.update(ctx, c, func(tx store.Tx, th store.Thread) (err error) {
 			task, err = cron.Pause(tx, p.cal, th, args.Name, args.Paused, time.Now().UTC())
 			return err
 		})
-		return kit.Result{Output: shown(task)}, err
+		out = shown(task)
 	case DeleteTool:
 		args, _ := kit.DecodeArguments[nameArgs](c.Arguments)
-		err := p.update(ctx, c, func(tx store.Tx, th store.Thread) error { return cron.Delete(tx, th, args.Name) })
-		return kit.Result{Output: map[string]string{"deleted": args.Name}}, err
+		err = p.update(ctx, c, func(tx store.Tx, th store.Thread) error { return cron.Delete(tx, th, args.Name) })
+		out = map[string]string{"deleted": args.Name}
 	case ListTool:
 		var jobs []store.Task
-		err := p.st.Read(ctx, func(r store.Reader) (err error) { jobs, err = r.CronJobs(c.User, c.Thread); return err })
-		out := []job{}
+		err = p.st.Read(ctx, func(r store.Reader) (err error) { jobs, err = r.CronJobs(c.User, c.Thread); return err })
+		listed := []job{}
 		for _, j := range jobs {
-			out = append(out, shown(j))
+			listed = append(listed, shown(j))
 		}
-		return kit.Result{Output: map[string]any{"jobs": out}}, err
+		out = map[string]any{"jobs": listed}
+	default:
+		return kit.Result{}, fmt.Errorf("tasks: unknown tool %q", c.Tool)
 	}
-	return kit.Result{}, fmt.Errorf("tasks: unknown tool %q", c.Tool)
+	if err != nil {
+		return kit.Result{}, err
+	}
+	return kit.Result{Output: out}, nil
 }
 
 func (p Provider) update(ctx context.Context, c tool.Call, change func(tx store.Tx, th store.Thread) error) error {

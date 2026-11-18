@@ -61,30 +61,31 @@ func (a *App) RenameWorkspace(ctx context.Context, u, id, name string) (user.Wor
 	if err != nil {
 		return user.Workspace{}, err
 	}
-	return a.changeWorkspace(ctx, u, id, func(w *user.Workspace) { w.Name = name })
+	return a.changeWorkspace(ctx, u, id, func(_ store.Tx, w *user.Workspace) error {
+		w.Name = name
+		return nil
+	})
 }
 
 func (a *App) ArchiveWorkspace(ctx context.Context, u, id string, archived bool) (user.Workspace, error) {
-	return a.changeWorkspace(ctx, u, id, func(w *user.Workspace) {
+	return a.changeWorkspace(ctx, u, id, func(_ store.Tx, w *user.Workspace) error {
 		w.Archived = nil
 		if archived {
 			at := w.Updated
 			w.Archived = &at
 		}
+		return nil
 	})
 }
 
-func (a *App) changeWorkspace(ctx context.Context, u, id string, change func(*user.Workspace)) (user.Workspace, error) {
-	var w user.Workspace
-	err := a.st.Update(ctx, func(tx store.Tx) (err error) {
-		if w, err = tx.Workspace(u, id); err != nil {
-			return err
-		}
-		w.Updated = time.Now().UTC()
-		change(&w)
-		return tx.PutWorkspace(u, w)
-	})
-	return w, err
+func (a *App) changeWorkspace(ctx context.Context, u, id string, change func(store.Tx, *user.Workspace) error) (user.Workspace, error) {
+	return edit(ctx, a.st,
+		func(tx store.Tx) (user.Workspace, error) { return tx.Workspace(u, id) },
+		func(tx store.Tx, w *user.Workspace) error {
+			w.Updated = time.Now().UTC()
+			return change(tx, w)
+		},
+		func(tx store.Tx, w user.Workspace) error { return tx.PutWorkspace(u, w) })
 }
 
 func (a *App) MoveWorkspace(ctx context.Context, u, id, path string) (user.Workspace, error) {
@@ -200,15 +201,13 @@ func (a *App) RenameEnvironment(ctx context.Context, u, id, name string) (user.E
 	if err != nil {
 		return user.Environment{}, err
 	}
-	var e user.Environment
-	err = a.st.Update(ctx, func(tx store.Tx) (err error) {
-		if e, err = tx.Environment(u, id); err != nil {
-			return err
-		}
-		e.Name, e.Updated = name, time.Now().UTC()
-		return a.putEnvironment(tx, u, e)
-	})
-	return e, err
+	return edit(ctx, a.st,
+		func(tx store.Tx) (user.Environment, error) { return tx.Environment(u, id) },
+		func(_ store.Tx, e *user.Environment) error {
+			e.Name, e.Updated = name, time.Now().UTC()
+			return nil
+		},
+		func(tx store.Tx, e user.Environment) error { return a.putEnvironment(tx, u, e) })
 }
 
 func (a *App) putEnvironment(tx store.Tx, u string, e user.Environment) error {
@@ -261,7 +260,8 @@ func (a *App) MCPServers(ctx context.Context, u string) ([]MCPServer, error) {
 	out := make([]MCPServer, len(stored))
 	for i, s := range stored {
 		out[i].MCPServer = s
-		if j := slices.IndexFunc(statuses, func(st user.MCPStatus) bool { return st.Name == s.Name }); j >= 0 {
+		ofServer := func(st user.MCPStatus) bool { return st.Name == s.Name }
+		if j := slices.IndexFunc(statuses, ofServer); j >= 0 {
 			out[i].Status = &statuses[j]
 		}
 	}

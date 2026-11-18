@@ -33,7 +33,6 @@ type Scheduler struct {
 }
 
 type worker struct {
-	user    string
 	cancel  context.CancelFunc
 	stopped bool
 }
@@ -77,7 +76,8 @@ func (s *Scheduler) hear(e store.Event) {
 	if e.Change == nil {
 		return
 	}
-	if e.Change.Runnable {
+	runnable := e.Change.Header != nil && e.Change.Header.Runnable
+	if runnable {
 		s.signal()
 	}
 	ended := slices.ContainsFunc(e.Change.Entries, func(entry conversation.Entry) bool {
@@ -133,7 +133,7 @@ var errLimit = errors.New("the turn reached its time limit")
 
 func (s *Scheduler) start(ctx context.Context, rn store.Runnable) {
 	wctx, cancel := context.WithTimeoutCause(ctx, s.limit, errLimit)
-	w := &worker{user: rn.User, cancel: cancel}
+	w := &worker{cancel: cancel}
 	s.runs[rn.Thread] = w
 	s.ofUser[rn.User]++
 	s.done.Add(1)

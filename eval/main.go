@@ -113,7 +113,7 @@ func main() {
 			if it.Status != conversation.Pending && it.Status != conversation.InProgress {
 				logItem(it)
 			}
-			if it.Input != nil && !it.Input.Answered {
+			if it.WaitsForInput() {
 				go answer(h.App, e.Thread, it)
 			}
 		}

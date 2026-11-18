@@ -145,10 +145,7 @@ func (a *App) Steer(ctx context.Context, u, id, expected string, in Input) (conv
 
 func (a *App) Interrupt(ctx context.Context, u, id, expected string) error {
 	return a.st.Update(ctx, func(tx store.Tx) error {
-		if _, err := thread(tx, u, id); err != nil {
-			return err
-		}
-		v, err := tx.View(id)
+		v, err := view(tx, u, id)
 		if err != nil {
 			return err
 		}
@@ -282,18 +279,17 @@ func (a *App) Decide(ctx context.Context, u, id, approval string, decision conve
 		return err
 	}
 	return a.st.Update(ctx, func(tx store.Tx) error {
-		if _, err := thread(tx, u, id); err != nil {
-			return err
-		}
-		v, err := tx.View(id)
+		v, err := view(tx, u, id)
 		if err != nil {
 			return err
 		}
-		i := slices.IndexFunc(v.Requests(), func(it conversation.Item) bool { return it.Approval != nil && it.Approval.Approval == approval })
+		requests := v.Requests()
+		asked := func(it conversation.Item) bool { return it.Approval != nil && it.Approval.Approval == approval }
+		i := slices.IndexFunc(requests, asked)
 		if i < 0 {
 			return ErrNoSuchRequest
 		}
-		it := v.Requests()[i]
+		it := requests[i]
 		if available := it.Approval.Decisions(); !slices.Contains(available, decision) {
 			return fmt.Errorf("%w: %q is not one of %q", ErrInvalidDecision, decision, available)
 		}
@@ -309,18 +305,17 @@ func (a *App) Decide(ctx context.Context, u, id, approval string, decision conve
 
 func (a *App) Answer(ctx context.Context, u, id, item string, answers ask.Answers) error {
 	return a.st.Update(ctx, func(tx store.Tx) error {
-		if _, err := thread(tx, u, id); err != nil {
-			return err
-		}
-		v, err := tx.View(id)
+		v, err := view(tx, u, id)
 		if err != nil {
 			return err
 		}
-		i := slices.IndexFunc(v.Requests(), func(it conversation.Item) bool { return it.ID == item && it.Input != nil })
+		requests := v.Requests()
+		asked := func(it conversation.Item) bool { return it.ID == item && it.Input != nil }
+		i := slices.IndexFunc(requests, asked)
 		if i < 0 {
 			return ErrNoSuchRequest
 		}
-		it := v.Requests()[i]
+		it := requests[i]
 		answered := conversation.Answered{Skipped: true}
 		if answers != nil {
 			req, err := ask.Decode(it.Input.Request)
@@ -330,14 +325,10 @@ func (a *App) Answer(ctx context.Context, u, id, item string, answers ask.Answer
 			if err := req.Check(answers, maxAnswerRunes); err != nil {
 				return fmt.Errorf("%w: %v", ErrInvalidAnswer, err)
 			}
-			answered = conversation.Answered{Output: mustJSON(answers)}
+			output, _ := json.Marshal(answers)
+			answered = conversation.Answered{Output: output}
 		}
 		_, err = tx.Append(id, conversation.Entry{Turn: it.Turn, Item: it.ID, Body: answered})
 		return err
 	})
-}
-
-func mustJSON(v any) json.RawMessage {
-	raw, _ := json.Marshal(v)
-	return raw
 }

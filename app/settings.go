@@ -15,21 +15,23 @@ func (a *App) Settings(ctx context.Context, u string) (user.Settings, error) {
 	return s, err
 }
 
+func (a *App) changeSettings(ctx context.Context, u string, change func(*user.Settings) error) (user.Settings, error) {
+	return edit(ctx, a.st,
+		func(tx store.Tx) (user.Settings, error) { return tx.Settings(u) },
+		func(_ store.Tx, s *user.Settings) error { return change(s) },
+		func(tx store.Tx, s user.Settings) error { return tx.SetSettings(u, s) })
+}
+
 func (a *App) UpdateSettings(ctx context.Context, u string, redaction, memory *bool) (user.Settings, error) {
-	var s user.Settings
-	err := a.st.Update(ctx, func(tx store.Tx) (err error) {
-		if s, err = tx.Settings(u); err != nil {
-			return err
-		}
+	return a.changeSettings(ctx, u, func(s *user.Settings) error {
 		if redaction != nil {
 			s.Redaction = *redaction
 		}
 		if memory != nil {
 			s.Memory = *memory
 		}
-		return tx.SetSettings(u, s)
+		return nil
 	})
-	return s, err
 }
 
 func (a *App) UpdateUserPermissions(ctx context.Context, u string, p policy.Settings) (user.Settings, error) {
@@ -37,20 +39,15 @@ func (a *App) UpdateUserPermissions(ctx context.Context, u string, p policy.Sett
 	if err != nil {
 		return user.Settings{}, err
 	}
-	var s user.Settings
-	err = a.st.Update(ctx, func(tx store.Tx) (err error) {
-		if s, err = tx.Settings(u); err != nil {
-			return err
-		}
-		next := s
+	return a.changeSettings(ctx, u, func(s *user.Settings) error {
+		next := *s
 		next.Permissions = p
 		if err := policy.Validate([]policy.Layer{user.Deployment(a.deployment)}, s.Permissions, next.Layer(), box); err != nil {
 			return err
 		}
-		s = next
-		return tx.SetSettings(u, s)
+		*s = next
+		return nil
 	})
-	return s, err
 }
 
 func (a *App) UpdateWorkspacePermissions(ctx context.Context, u, id string, p policy.Settings) (user.Workspace, error) {
@@ -58,29 +55,23 @@ func (a *App) UpdateWorkspacePermissions(ctx context.Context, u, id string, p po
 	if err != nil {
 		return user.Workspace{}, err
 	}
-	var w user.Workspace
-	err = a.st.Update(ctx, func(tx store.Tx) (err error) {
-		if w, err = tx.Workspace(u, id); err != nil {
-			return err
-		}
-		return a.setWorkspacePermissions(tx, box, u, &w, func(policy.Settings) policy.Settings { return p })
+	return a.changeWorkspace(ctx, u, id, func(tx store.Tx, w *user.Workspace) error {
+		return a.permitWorkspace(tx, box, u, w, p)
 	})
-	return w, err
 }
 
-func (a *App) setWorkspacePermissions(tx store.Tx, box policy.Toolbox, u string, w *user.Workspace, change func(policy.Settings) policy.Settings) error {
+func (a *App) permitWorkspace(tx store.Tx, box policy.Toolbox, u string, w *user.Workspace, next policy.Settings) error {
 	s, err := tx.Settings(u)
 	if err != nil {
 		return err
 	}
-	next := *w
-	next.Settings = change(w.Settings)
-	if err := policy.Validate([]policy.Layer{user.Deployment(a.deployment), s.Layer()}, w.Settings, next.Layer(), box); err != nil {
+	changed := *w
+	changed.Settings = next
+	if err := policy.Validate([]policy.Layer{user.Deployment(a.deployment), s.Layer()}, w.Settings, changed.Layer(), box); err != nil {
 		return err
 	}
-	next.Updated = time.Now().UTC()
-	*w = next
-	return tx.PutWorkspace(u, next)
+	w.Settings = next
+	return nil
 }
 
 func (a *App) UpdateThreadPermissions(ctx context.Context, u, id string, p policy.Settings) (store.Thread, error) {
@@ -88,38 +79,29 @@ func (a *App) UpdateThreadPermissions(ctx context.Context, u, id string, p polic
 	if err != nil {
 		return store.Thread{}, err
 	}
-	var th store.Thread
-	err = a.st.Update(ctx, func(tx store.Tx) (err error) {
-		if th, err = topThread(tx, u, id); err != nil {
-			return err
-		}
-		return a.setThreadPermissions(tx, box, &th, func(policy.Settings) policy.Settings { return p })
-	})
-	return th, err
+	return a.changeThread(ctx, u, id, func(tx store.Tx, th *store.Thread) error { return a.permitThread(tx, box, th, p) })
 }
 
-func (a *App) setThreadPermissions(tx store.Tx, box policy.Toolbox, th *store.Thread, change func(policy.Settings) policy.Settings) error {
+func (a *App) permitThread(tx store.Tx, box policy.Toolbox, th *store.Thread, next policy.Settings) error {
 	s, err := tx.Settings(th.User)
 	if err != nil {
 		return err
 	}
-	var w *user.Workspace
+	below := []policy.Layer{user.Deployment(a.deployment), s.Layer()}
 	if th.Workspace != "" {
-		ws, err := tx.Workspace(th.User, th.Workspace)
+		w, err := tx.Workspace(th.User, th.Workspace)
 		if err != nil {
 			return err
 		}
-		w = &ws
+		below = append(below, w.Layer())
 	}
-	next := *th
-	next.Settings = change(th.Settings)
-	base := user.Layers(user.Deployment(a.deployment), s, w, next.Layer())
-	if err := policy.Validate(base[:len(base)-1], th.Settings, next.Layer(), box); err != nil {
+	changed := *th
+	changed.Settings = next
+	if err := policy.Validate(below, th.Settings, changed.Layer(), box); err != nil {
 		return err
 	}
-	next.Updated = time.Now().UTC()
-	*th = next
-	return tx.UpdateThread(next)
+	th.Settings = next
+	return nil
 }
 
 func (a *App) allowAlways(tx store.Tx, box policy.Toolbox, id string, rules []string) error {
@@ -132,15 +114,22 @@ func (a *App) allowAlways(tx store.Tx, box policy.Toolbox, id string, rules []st
 			return err
 		}
 	}
-	widen := func(s policy.Settings) policy.Settings {
-		return policy.Resolve(s, policy.Settings{Rules: policy.Rules{Allow: rules}})
-	}
+	allowed := policy.Settings{Rules: policy.Rules{Allow: rules}}
+	now := time.Now().UTC()
 	if th.Workspace == "" {
-		return a.setThreadPermissions(tx, box, &th, widen)
+		if err := a.permitThread(tx, box, &th, policy.Resolve(th.Settings, allowed)); err != nil {
+			return err
+		}
+		th.Updated = now
+		return tx.UpdateThread(th)
 	}
 	w, err := tx.Workspace(th.User, th.Workspace)
 	if err != nil {
 		return err
 	}
-	return a.setWorkspacePermissions(tx, box, th.User, &w, widen)
+	if err := a.permitWorkspace(tx, box, th.User, &w, policy.Resolve(w.Settings, allowed)); err != nil {
+		return err
+	}
+	w.Updated = now
+	return tx.PutWorkspace(th.User, w)
 }

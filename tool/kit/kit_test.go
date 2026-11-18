@@ -27,7 +27,7 @@ func (crashing) Invoke(_ context.Context, c tool.Call) (Result, error) {
 	}
 	flood := "ab" + strings.Repeat("中", maxOutputBytes)
 	if c.Tool == "fail" {
-		return Result{Output: flood, Err: errors.New(flood)}, nil
+		return Result{Output: flood}, errors.New(flood)
 	}
 	return Result{Output: flood}, nil
 }

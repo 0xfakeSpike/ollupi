@@ -20,32 +20,18 @@ var (
 	errProgram = errors.New(`workspace: argument "program" must be non-empty string`)
 )
 
-func programOf(arguments map[string]any) (string, error) {
-	program, _ := arguments["program"].(string)
-	if program = strings.TrimSpace(program); program == "" {
-		return "", errProgram
-	}
-	return program, nil
-}
-
 func permissionContent(_ context.Context, call tool.Call) (policy.Content, error) {
-	arguments := call.Arguments
-	program, err := programOf(arguments)
+	a, err := commandOf(call.Arguments)
 	if err != nil {
 		return policy.Content{}, err
 	}
-	args := parseExecArgsSlice(arguments["args"])
-	env, err := commandEnvironment(arguments["env"])
-	if err != nil {
-		return policy.Content{}, err
+	c := contentOf(a.Program, a.Args)
+	c.Opaque = c.Opaque || len(a.Env) > 0
+	words := make([]string, 0, len(a.Env)+1+len(a.Args))
+	for _, k := range slices.Sorted(maps.Keys(a.Env)) {
+		words = append(words, k+"="+a.Env[k])
 	}
-	c := contentOf(program, args)
-	c.Opaque = c.Opaque || len(env) > 0
-	words := make([]string, 0, len(env)+1+len(args))
-	for _, k := range slices.Sorted(maps.Keys(env)) {
-		words = append(words, k+"="+env[k])
-	}
-	c.Text = strings.Join(append(append(words, program), args...), " ")
+	c.Text = strings.Join(append(append(words, a.Program), a.Args...), " ")
 	return c, nil
 }
 

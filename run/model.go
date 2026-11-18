@@ -105,9 +105,6 @@ func checkResponse(resp llm.ChatResponse, choice llm.ToolChoice) error {
 }
 
 func usage(resp llm.ChatResponse) conversation.Usage {
-	if !resp.UsageReported {
-		return conversation.Usage{}
-	}
 	u := resp.Usage
 	return conversation.Usage{InputTokens: u.PromptTokens, CachedInputTokens: u.CachedPromptTokens,
 		CacheWriteInputTokens: u.CacheWritePromptTokens, OutputTokens: u.CompletionTokens}
@@ -117,8 +114,7 @@ func (r *Runner) recall(ctx context.Context, s *step) (*conversation.Recalled, e
 	if !s.role.Recalls || !s.settings.Memory {
 		return nil, nil
 	}
-	items, _ := prompt.Transcript(s.v)
-	if recalledSinceCompaction(items) {
+	if recalledSinceCompaction(s.items) {
 		return nil, nil
 	}
 	place := memory.Local(s.th.Workspace)
@@ -159,8 +155,7 @@ func (r *Runner) input(s *step) (prompt.Input, error) {
 	if inProject && s.workspace != nil {
 		system.Project = s.workspace.Root
 	}
-	items, responses := prompt.Transcript(s.v)
-	return prompt.Input{Items: items, Responses: responses, System: s.window.System(system, s.deferred), Tools: prompt.Specs(s.sent)}, nil
+	return prompt.Input{Items: s.items, Responses: s.v.Responses, System: s.window.System(system, s.deferred), Tools: prompt.Specs(s.sent)}, nil
 }
 
 func (r *Runner) compact(ctx context.Context, s *step, in prompt.Input) error {
@@ -169,13 +164,8 @@ func (r *Runner) compact(ctx context.Context, s *step, in prompt.Input) error {
 		return fmt.Errorf("run: %w", err)
 	}
 	resp, err := r.send(ctx, s, req, in.Tools, llm.ToolChoiceNone, nil)
-	summary := strings.TrimSpace(resp.Message.Content)
-	switch {
-	case err != nil:
-	case len(resp.Message.ToolCalls) > 0 || summary == "":
-		err = fmt.Errorf("the model returned no summary (finish_reason=%s)", resp.FinishReason)
-	case resp.FinishReason == "length":
-		err = errors.New("the summary was cut off by the model's output limit")
+	if err == nil {
+		err = checkResponse(resp, llm.ToolChoiceNone)
 	}
 	if err != nil {
 		return fmt.Errorf("run: compaction: %w", err)
@@ -187,7 +177,7 @@ func (r *Runner) compact(ctx context.Context, s *step, in prompt.Input) error {
 	response := uuid.NewString()
 	return r.append(ctx, s.th.ID,
 		conversation.Entry{Turn: s.turn.ID, Body: conversation.ModelResponded{Response: response, Usage: usage(resp), Stats: req.Stats}},
-		conversation.Entry{Turn: s.turn.ID, Item: uuid.NewString(), Body: conversation.Compacted{Summary: summary, Through: through, Response: response, Stats: req.Stats}})
+		conversation.Entry{Turn: s.turn.ID, Item: uuid.NewString(), Body: conversation.Compacted{Summary: strings.TrimSpace(resp.Message.Content), Through: through, Response: response, Stats: req.Stats}})
 }
 
 func (r *Runner) send(ctx context.Context, s *step, req prompt.Request, tools []llm.ToolSpec, choice llm.ToolChoice, onDelta func(llm.Delta)) (llm.ChatResponse, error) {

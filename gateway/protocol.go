@@ -93,10 +93,10 @@ var protocol = struct {
 	limits              Limits
 }{
 	methods: map[string]method{
-		methodInitialize:              handle((*conn).initialize),
+		methodInitialize:              handleThen((*conn).initialize),
 		"thread/start":                handle((*conn).threadStart),
-		"thread/resume":               handle(threadPage(true)),
-		"thread/read":                 handle(threadPage(false)),
+		"thread/resume":               handleThen(threadPage(true)),
+		"thread/read":                 handleThen(threadPage(false)),
 		"thread/list":                 handle((*conn).threadList),
 		"thread/updatePermissions":    handle((*conn).threadPermissions),
 		"thread/rename":               handle((*conn).threadRename),
@@ -207,7 +207,14 @@ type serverRequest struct {
 	params, result reflect.Type
 }
 
-func handle[P, R any](h func(*conn, context.Context, P) (R, func(), error)) method {
+func handle[P, R any](h func(*conn, context.Context, P) (R, error)) method {
+	return handleThen(func(c *conn, ctx context.Context, p P) (R, func(), error) {
+		r, err := h(c, ctx, p)
+		return r, nil, err
+	})
+}
+
+func handleThen[P, R any](h func(*conn, context.Context, P) (R, func(), error)) method {
 	return method{
 		params: reflect.TypeFor[P](),
 		result: reflect.TypeFor[R](),
