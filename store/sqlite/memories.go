@@ -44,17 +44,9 @@ func (r reader) Memories(owner string, places ...memory.Place) ([]memory.Memory,
 		}
 		q = q.Where(at)
 	}
-	var rows []memoryRow
-	if err := q.Order("updated_at DESC, id").Find(&rows).Error; err != nil {
+	out, err := each(q.Order("updated_at DESC, id"), memoryRow.memory)
+	if err != nil {
 		return nil, fmt.Errorf("store: the memories of user %s: %w", owner, err)
-	}
-	out := make([]memory.Memory, 0, len(rows))
-	for _, row := range rows {
-		m, err := row.memory()
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, m)
 	}
 	return out, nil
 }
