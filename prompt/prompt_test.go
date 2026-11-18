@@ -30,7 +30,7 @@ var wide = NewWindow("m", llm.Limits{Context: 200_000, Output: 8_000})
 
 func build(t *testing.T, w Window, v conversation.View) Request {
 	t.Helper()
-	r, err := w.Build(Input{Items: Transcript(v), Responses: v.Responses, System: "sys"})
+	r, err := w.Build(Context{Items: Transcript(v), Responses: v.Responses, System: "sys"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestALongHistoryAsksForCompaction(t *testing.T) {
 		l.add("t", "", conversation.ModelResponded{Response: resp})
 		l.add("t", fmt.Sprint("a", i), conversation.AgentMessage{Text: strings.Repeat("words of the agent ", 80), Response: resp})
 	}
-	in := Input{Items: Transcript(l.v), Responses: l.v.Responses}
+	in := Context{Items: Transcript(l.v), Responses: l.v.Responses}
 	r, err := w.Build(in)
 	if err != nil || !r.NeedsCompaction {
 		t.Fatalf("a history over the window: needs compaction %v, %v", r.NeedsCompaction, err)

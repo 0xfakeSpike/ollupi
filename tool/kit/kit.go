@@ -164,10 +164,10 @@ func (r *Registry) Invoke(ctx context.Context, c tool.Call) (out tool.Result) {
 		}
 	}()
 	res, err := e.provider.Invoke(ctx, c)
-	return settle(res, err)
+	return toResult(res, err)
 }
 
-func settle(res Result, err error) tool.Result {
+func toResult(res Result, err error) tool.Result {
 	out := tool.Result{Artifacts: res.Artifacts, Launch: res.Launch}
 	if res.Ask != nil {
 		raw, err := json.Marshal(res.Ask)

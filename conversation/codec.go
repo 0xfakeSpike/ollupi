@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-func Decode(kind Kind, raw []byte) (Body, error) {
+func Decode(kind EntryKind, raw []byte) (Body, error) {
 	var b Body
 	var err error
 	switch kind {

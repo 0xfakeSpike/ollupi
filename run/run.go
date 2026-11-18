@@ -52,7 +52,7 @@ func New(st store.Store, models Models, tools tool.Tools, attachments Attachment
 }
 
 func (r *Runner) Run(ctx context.Context, thread string) error {
-	if err := r.settle(ctx, thread); err != nil {
+	if err := r.closeStranded(ctx, thread); err != nil {
 		return err
 	}
 	var set tool.Set
@@ -92,7 +92,7 @@ func (r *Runner) Run(ctx context.Context, thread string) error {
 
 const stranded = "the call was cut off when the run that made it stopped; it may have taken effect in part or in full, so check before trying it again"
 
-func (r *Runner) settle(ctx context.Context, thread string) error {
+func (r *Runner) closeStranded(ctx context.Context, thread string) error {
 	return r.st.Update(ctx, func(tx store.Tx) error {
 		v, err := tx.View(thread)
 		if err != nil {

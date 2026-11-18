@@ -38,7 +38,7 @@ func (w Window) MemoryBudget() int { return min(maxMemoryTokens, w.inputTokens*m
 
 func (w Window) artifactBudget() int { return percentOf(w.inputTokens, artifactPercent) }
 
-type Input struct {
+type Context struct {
 	Items     []conversation.Item
 	Responses []conversation.Response
 	System    string
@@ -63,7 +63,7 @@ type Request struct {
 	Stats           conversation.ContextStats
 }
 
-func (w Window) Build(in Input) (Request, error) {
+func (w Window) Build(in Context) (Request, error) {
 	compactable, natural := 0, 0
 	obs := newObservations(in.Items, w.artifactBudget())
 	natives := nativesOf(in.Responses)
