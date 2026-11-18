@@ -32,11 +32,11 @@ const (
 	sentLayout         = "Mon 2006-01-02 15:04 -07:00"
 )
 
-func share(inputTokens, pct int) int { return max(minOutputTokens, inputTokens*pct/100) }
+func percentOf(inputTokens, pct int) int { return max(minOutputTokens, inputTokens*pct/100) }
 
 func (w Window) MemoryBudget() int { return min(maxMemoryTokens, w.inputTokens*memoryPercent/100) }
 
-func (w Window) artifactBudget() int { return share(w.inputTokens, artifactPercent) }
+func (w Window) artifactBudget() int { return percentOf(w.inputTokens, artifactPercent) }
 
 type Input struct {
 	Items     []conversation.Item
@@ -74,7 +74,7 @@ func (w Window) Build(in Input) (Request, error) {
 		}
 		r := Request{System: in.System, Messages: messages}
 		r.Stats = w.stats(in.System, messages, in.Tools)
-		if s := snapshot(in.Items); s != nil {
+		if s := latestRecall(in.Items); s != nil {
 			r.Stats.MemoryTokens = llm.EstimateTokens(s.Text)
 			r.Stats.GlobalMemory, r.Stats.LocalMemory = memory.Section(s.Memories, true), memory.Section(s.Memories, false)
 		}
@@ -88,7 +88,7 @@ func (w Window) Build(in Input) (Request, error) {
 		return Request{}, err
 	}
 	r.NeedsCompaction = natural > r.Stats.CompactAtTokens &&
-		hasItemsAfterCompaction(in.Items) && compactable >= share(w.inputTokens, compactMinPercent)
+		hasItemsAfterCompaction(in.Items) && compactable >= percentOf(w.inputTokens, compactMinPercent)
 	if r.Stats.CalibratedTokens > w.inputTokens && !r.NeedsCompaction {
 		return Request{}, fmt.Errorf("prompt: the request needs %d tokens even with the latest tool results clipped and nothing is left to compact; model %s allows %d", r.Stats.CalibratedTokens, w.model, w.inputTokens)
 	}
@@ -155,7 +155,7 @@ func nativesOf(responses []conversation.Response) map[string][]byte {
 	return out
 }
 
-func snapshot(items []conversation.Item) *conversation.Item {
+func latestRecall(items []conversation.Item) *conversation.Item {
 	for i := len(items) - 1; i >= 0; i-- {
 		if it := &items[i]; it.Kind == conversation.ItemMemory {
 			return it

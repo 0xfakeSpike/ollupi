@@ -60,7 +60,7 @@ func InputSchema[T any]() *jsonschema.Schema {
 }
 
 func inputSchema(t reflect.Type, known map[reflect.Type]*jsonschema.Schema) (*jsonschema.Schema, error) {
-	for _, u := range reached(t) {
+	for _, u := range fieldTypes(t) {
 		if _, done := known[u]; done || !u.Implements(constrainer) {
 			continue
 		}
@@ -83,7 +83,7 @@ func inputSchema(t reflect.Type, known map[reflect.Type]*jsonschema.Schema) (*js
 
 var constrainer = reflect.TypeFor[Constrainer]()
 
-func reached(t reflect.Type) []reflect.Type {
+func fieldTypes(t reflect.Type) []reflect.Type {
 	var out []reflect.Type
 	var add func(reflect.Type)
 	add = func(u reflect.Type) {

@@ -73,14 +73,14 @@ func (a *App) queue(tx store.Tx, th store.Thread, text string, atts []conversati
 	if err != nil {
 		return conversation.Turn{}, false, err
 	}
-	if len(v.Behind()) >= maxQueued {
+	if len(v.Queued()) >= maxQueued {
 		return conversation.Turn{}, false, ErrQueueFull
 	}
 	var last *llm.Model
 	if n := len(v.Turns); n > 0 {
 		last = &v.Turns[n-1].Model
 	}
-	model, err := a.model(connection, last)
+	model, err := a.pickModel(connection, last)
 	if err != nil {
 		return conversation.Turn{}, false, err
 	}
@@ -90,7 +90,7 @@ func (a *App) queue(tx store.Tx, th store.Thread, text string, atts []conversati
 	}
 	id := uuid.NewString()
 	v, err = tx.Append(th.ID,
-		conversation.Entry{Turn: id, Body: conversation.TurnQueued{Model: model, Role: string(agent.Main(limits.Input())), CronJob: job}},
+		conversation.Entry{Turn: id, Body: conversation.TurnQueued{Model: model, Role: string(agent.MainRole(limits.Input())), CronJob: job}},
 		conversation.Entry{Turn: id, Item: uuid.NewString(), Body: conversation.UserMessage{Text: text, Attachments: atts}})
 	if err != nil {
 		return conversation.Turn{}, false, err

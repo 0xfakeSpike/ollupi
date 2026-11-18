@@ -35,10 +35,10 @@ func (r *Runner) decide(ctx context.Context, s *step, response string, call llm.
 	if cutOff {
 		return end(cutOffCall)
 	}
-	if reason := unavailable(s, call.Name); reason != "" {
+	if reason := unavailableReason(s, call.Name); reason != "" {
 		return end(reason)
 	}
-	args, err := arguments(call.Arguments)
+	args, err := parseArguments(call.Arguments)
 	if err != nil {
 		return end(err.Error())
 	}
@@ -65,7 +65,7 @@ func (r *Runner) decide(ctx context.Context, s *step, response string, call llm.
 	return entries
 }
 
-func unavailable(s *step, name string) string {
+func unavailableReason(s *step, name string) string {
 	sent := slices.ContainsFunc(s.sent, func(t prompt.Tool) bool { return t.Name == name })
 	deferred := slices.ContainsFunc(s.deferred, func(t prompt.Tool) bool { return t.Name == name })
 	switch {
@@ -77,7 +77,7 @@ func unavailable(s *step, name string) string {
 	return fmt.Sprintf("tool %q is not available in this turn; use an exact tool name from the tool list", name)
 }
 
-func arguments(raw string) (map[string]any, error) {
+func parseArguments(raw string) (map[string]any, error) {
 	args := map[string]any{}
 	if strings.TrimSpace(raw) == "" {
 		return args, nil
@@ -118,7 +118,7 @@ func (r *Runner) runTools(ctx context.Context, s *step, calls []conversation.Ite
 	var g errgroup.Group
 	for i, it := range group {
 		g.Go(func() error {
-			args, _ := arguments(it.Call.Arguments)
+			args, _ := parseArguments(it.Call.Arguments)
 			results[i] = s.set.Invoke(ctx, tool.Call{Caller: s.caller(it.ID), Tool: it.Call.Tool, Arguments: args, Prepared: it.Call.Prepared})
 			return nil
 		})
@@ -129,7 +129,7 @@ func (r *Runner) runTools(ctx context.Context, s *step, calls []conversation.Ite
 	}
 	return r.st.Update(ctx, func(tx store.Tx) error {
 		for i, it := range group {
-			if err := r.keep(tx, s, it, results[i]); err != nil {
+			if err := r.recordResult(tx, s, it, results[i]); err != nil {
 				return err
 			}
 		}
@@ -142,7 +142,7 @@ func parallel(s *step, it conversation.Item) bool {
 	return spec.Annotations.ReadOnlyHint && !spec.Serial
 }
 
-func (r *Runner) keep(tx store.Tx, s *step, it conversation.Item, res tool.Result) error {
+func (r *Runner) recordResult(tx store.Tx, s *step, it conversation.Item, res tool.Result) error {
 	entry := conversation.Entry{Turn: s.turn.ID, Item: it.ID}
 	switch {
 	case res.Ask != nil:

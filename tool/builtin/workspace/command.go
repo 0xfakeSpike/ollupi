@@ -38,8 +38,8 @@ func permissionContent(_ context.Context, call tool.Call) (policy.Content, error
 
 func contentOf(program string, args []string) policy.Content {
 	words := append([]string{program}, args...)
-	c := policy.Content{Text: strings.Join(words, " "), Match: line(words)}
-	parts, opaque := expand(words, 0)
+	c := policy.Content{Text: strings.Join(words, " "), Match: matchLine(words)}
+	parts, opaque := commandParts(words, 0)
 	c.Opaque = opaque
 	if len(parts) != 1 || parts[0] != c.Match {
 		c.Parts = parts
@@ -47,7 +47,7 @@ func contentOf(program string, args []string) policy.Content {
 	return c
 }
 
-func line(words []string) string {
+func matchLine(words []string) string {
 	return strings.Join(append([]string{programName(words[0])}, words[1:]...), " ")
 }
 
@@ -70,11 +70,11 @@ func trustedProgram(word string) bool {
 	return false
 }
 
-func expand(words []string, depth int) ([]string, bool) {
+func commandParts(words []string, depth int) ([]string, bool) {
 	if len(words) == 0 {
 		return nil, false
 	}
-	whole := []string{line(words)}
+	whole := []string{matchLine(words)}
 	if depth > maxCommandDepth || !trustedProgram(words[0]) {
 		return whole, true
 	}
@@ -94,7 +94,7 @@ func expand(words []string, depth int) ([]string, bool) {
 			if assignment.MatchString(cmd[0]) || reserved(cmd[0]) || strings.ContainsAny(cmd[0], "*?[]=") {
 				opaque = true
 			}
-			sub, subOpaque := expand(cmd, depth+1)
+			sub, subOpaque := commandParts(cmd, depth+1)
 			parts, opaque = append(parts, sub...), opaque || subOpaque
 		}
 		return parts, opaque
@@ -103,7 +103,7 @@ func expand(words []string, depth int) ([]string, bool) {
 		if !ok || len(rest) == 0 {
 			return whole, true
 		}
-		parts, opaque := expand(rest, depth+1)
+		parts, opaque := commandParts(rest, depth+1)
 		return parts, opaque
 	case reserved(name):
 		return whole, true

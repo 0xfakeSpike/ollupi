@@ -106,14 +106,14 @@ func TestATurnsEvidenceLeavesOutWhatAForgottenNoteWasLearnedFrom(t *testing.T) {
 
 func TestEvidenceIsSlicedToFitAndNotesAreShownBesideIt(t *testing.T) {
 	b := Gather("u", "th", "w", endedTurn(t, 6, 1500), "t", nil)
-	parts := Pack(b, 2500)
+	parts := Split(b, 2500)
 	if len(parts) < 2 {
 		t.Fatalf("%d slices", len(parts))
 	}
 	n := 0
 	for _, p := range parts {
 		n += len(p.Evidence)
-		if _, err := Input(p, 2500); err != nil {
+		if _, err := Prompt(p, 2500); err != nil {
 			t.Error(err)
 		}
 	}
@@ -121,7 +121,7 @@ func TestEvidenceIsSlicedToFitAndNotesAreShownBesideIt(t *testing.T) {
 		t.Errorf("%d pieces sliced of %d", n, len(b.Evidence))
 	}
 	small := Gather("u", "th", "w", endedTurn(t, 1, 10), "t", []Memory{kept("k", Local("w"), "build", Fact, "Builds with make.")})
-	payload, err := Input(small, 8000)
+	payload, err := Prompt(small, 8000)
 	if err != nil || !strings.Contains(payload, `"id":"k"`) {
 		t.Errorf("the note is not shown: %v %s", err, payload)
 	}

@@ -52,7 +52,7 @@ type Reader interface {
 	Memories(user string, places ...memory.Place) ([]memory.Memory, error)
 	Memory(user, id string) (memory.Memory, error)
 	MemoryState(user string) (memory.State, error)
-	Ended(user string, after memory.Cursor, limit int) ([]memory.Cursor, error)
+	EndedTurns(user string, after memory.Cursor, limit int) ([]memory.Cursor, error)
 	Unread(user string, after memory.Cursor) (int64, error)
 }
 

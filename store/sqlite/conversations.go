@@ -163,7 +163,7 @@ type tx struct {
 	seq     int64
 }
 
-func (t *tx) number() (int64, error) {
+func (t *tx) commitSeq() (int64, error) {
 	if t.seq == 0 {
 		if err := t.g.Raw("UPDATE feed SET seq = seq + 1 WHERE id = 1 RETURNING seq").Scan(&t.seq).Error; err != nil {
 			return 0, fmt.Errorf("store: number the commit: %w", err)
@@ -179,7 +179,7 @@ type pending struct {
 	turns  []string
 }
 
-func (t *tx) note(thread, owner string) *pending {
+func (t *tx) pendingFor(thread, owner string) *pending {
 	p := t.threads[thread]
 	if p == nil {
 		p = &pending{user: owner}
@@ -197,7 +197,7 @@ func (t *tx) CreateThread(th store.Thread) error {
 	if err != nil {
 		return fmt.Errorf("store: create thread %s: %w", th.ID, err)
 	}
-	t.note(th.ID, th.User)
+	t.pendingFor(th.ID, th.User)
 	return nil
 }
 
@@ -211,7 +211,7 @@ func (t *tx) UpdateThread(th store.Thread) error {
 	if res.RowsAffected == 0 {
 		return fmt.Errorf("store: thread %s: %w", th.ID, store.ErrNotFound)
 	}
-	t.note(th.ID, th.User)
+	t.pendingFor(th.ID, th.User)
 	return nil
 }
 
@@ -236,10 +236,10 @@ func (t *tx) Append(thread string, entries ...conversation.Entry) (conversation.
 	if err != nil {
 		return conversation.View{}, err
 	}
-	p := t.note(thread, th.User)
+	pend := t.pendingFor(thread, th.User)
 	before, _ := v.Active()
 	now := time.Now().UTC()
-	w := written{turns: map[string]bool{}, items: map[string]bool{}, seqs: map[int64]bool{}}
+	wrote := written{turns: map[string]bool{}, items: map[string]bool{}, seqs: map[int64]bool{}}
 	for _, e := range entries {
 		e.Seq = v.Head + 1
 		if e.At.IsZero() {
@@ -257,26 +257,26 @@ func (t *tx) Append(thread string, entries ...conversation.Entry) (conversation.
 			thread, e.Seq, e.Turn, e.Item, e.At, string(conversation.KindOf(e.Body)), string(body)).Error; err != nil {
 			return conversation.View{}, fmt.Errorf("store: append to thread %s: %w", thread, err)
 		}
-		p.change.Entries = append(p.change.Entries, e)
-		w.turns[e.Turn], w.seqs[e.Seq] = true, true
+		pend.change.Entries = append(pend.change.Entries, e)
+		wrote.turns[e.Turn], wrote.seqs[e.Seq] = true, true
 		for _, id := range touched(e) {
-			w.items[id] = true
-			if !slices.Contains(p.items, id) {
-				p.items = append(p.items, id)
+			wrote.items[id] = true
+			if !slices.Contains(pend.items, id) {
+				pend.items = append(pend.items, id)
 			}
 		}
-		if !slices.Contains(p.turns, e.Turn) {
-			p.turns = append(p.turns, e.Turn)
+		if !slices.Contains(pend.turns, e.Turn) {
+			pend.turns = append(pend.turns, e.Turn)
 		}
 		if _, ended := e.Body.(conversation.TurnEnded); ended && th.Parent == "" {
 			th.Replied = &e.At
 		}
 	}
-	if after, _ := v.Active(); after.ID != before.ID && after.ID != "" && !slices.Contains(p.turns, after.ID) {
-		p.turns = append(p.turns, after.ID)
+	if after, _ := v.Active(); after.ID != before.ID && after.ID != "" && !slices.Contains(pend.turns, after.ID) {
+		pend.turns = append(pend.turns, after.ID)
 	}
 	t.views[thread] = v
-	if err := t.persist(thread, th, v, p, w, now); err != nil {
+	if err := t.persist(thread, th, v, pend, wrote, now); err != nil {
 		return conversation.View{}, err
 	}
 	return v, nil
@@ -307,7 +307,7 @@ func (t *tx) persist(thread string, th store.Thread, v conversation.View, p *pen
 		body, _ := json.Marshal(turn)
 		var ended *int64
 		if turn.Ended != nil {
-			seq, err := t.number()
+			seq, err := t.commitSeq()
 			if err != nil {
 				return err
 			}
@@ -391,7 +391,7 @@ func (t *tx) rollUp(id string) error {
 		if err := t.g.Exec("UPDATE threads SET status = ? WHERE id = ?", string(status), id).Error; err != nil {
 			return err
 		}
-		t.note(id, row.UserID)
+		t.pendingFor(id, row.UserID)
 		id = deref(row.ParentID)
 	}
 	return nil

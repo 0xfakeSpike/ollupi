@@ -86,7 +86,7 @@ func (s *Store) Update(ctx context.Context, fn func(store.Tx) error) error {
 		if events, err = t.events(); err != nil || len(events) == 0 {
 			return err
 		}
-		seq, err := t.number()
+		seq, err := t.commitSeq()
 		if err != nil {
 			return err
 		}

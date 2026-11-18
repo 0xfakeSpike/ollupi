@@ -37,7 +37,7 @@ type Draft struct {
 	Times  *int
 }
 
-func (c Calendar) Job(id, thread string, d Draft, now time.Time) (user.CronJob, error) {
+func (c Calendar) NewJob(id, thread string, d Draft, now time.Time) (user.CronJob, error) {
 	name, spec, prompt, times := strings.TrimSpace(d.Name), strings.TrimSpace(d.Spec), strings.TrimSpace(d.Prompt), d.Times
 	if !NamePattern.MatchString(name) {
 		return user.CronJob{}, fmt.Errorf("cron: %w: name %q must match %s", ErrInvalidJob, name, NamePattern)
@@ -69,7 +69,7 @@ func (c Calendar) Pause(job user.CronJob, paused bool, now time.Time) (user.Cron
 	return job, lastRun(job, now)
 }
 
-func (c Calendar) Ran(job user.CronJob, now time.Time, counted bool) (next user.CronJob, done bool, err error) {
+func (c Calendar) Advance(job user.CronJob, now time.Time, counted bool) (next user.CronJob, done bool, err error) {
 	if counted {
 		job.Runs++
 	}

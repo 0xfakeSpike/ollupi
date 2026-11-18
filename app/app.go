@@ -85,7 +85,7 @@ func (a *App) Tools(ctx context.Context, u string) ([]tool.Spec, error) {
 	return set.Specs(), nil
 }
 
-func (a *App) model(connection string, last *llm.Model) (llm.Model, error) {
+func (a *App) pickModel(connection string, last *llm.Model) (llm.Model, error) {
 	models := a.models.Models()
 	if connection == "" && last != nil {
 		connection = last.Connection

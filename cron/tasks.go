@@ -10,7 +10,7 @@ import (
 )
 
 func Create(tx store.Tx, cal Calendar, th store.Thread, d Draft, now time.Time) (store.Task, error) {
-	job, err := cal.Job(uuid.NewString(), th.ID, d, now)
+	job, err := cal.NewJob(uuid.NewString(), th.ID, d, now)
 	if err != nil {
 		return store.Task{}, err
 	}

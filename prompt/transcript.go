@@ -15,7 +15,7 @@ func (w Window) transcript(obs *observations, natives map[string][]byte, items [
 	if !compacting {
 		latest = latestResponse(items)
 	}
-	if s := snapshot(items); s != nil && s.Text != "" && !compacting {
+	if s := latestRecall(items); s != nil && s.Text != "" && !compacting {
 		out = append(out, llm.ChatMessage{Role: llm.RoleUser, Content: s.Text})
 	}
 	start := 0
@@ -107,7 +107,7 @@ func inResponse(it conversation.Item, response string) bool {
 }
 
 func (w Window) observationBudget(calls, limit int) int {
-	return min(limit, max(minPooledTokens, min(w.inputTokens/8, share(w.inputTokens, responsePercent)/max(1, calls))))
+	return min(limit, max(minPooledTokens, min(w.inputTokens/8, percentOf(w.inputTokens, responsePercent)/max(1, calls))))
 }
 
 func attachmentParts(atts []conversation.Attachment) []llm.ContentPart {

@@ -176,7 +176,7 @@ const (
 	sandboxRequireEscalated = "require_escalated"
 )
 
-func (r *Provider) tool() kit.Spec {
+func (r *Provider) commandTool() kit.Spec {
 	desc := "Run a command: set arguments.program to argv0 (a binary on PATH or an absolute path). work_dir defaults to the project root, or outside a project to " + r.box.Roots()[0] +
 		", and must stay inside the project (outside a project: inside " + strings.Join(r.box.Roots(), ", ") + "). " + r.box.Summary() +
 		". A non-zero exit_code is returned with the output, not as an error. To read, find or search files use " +

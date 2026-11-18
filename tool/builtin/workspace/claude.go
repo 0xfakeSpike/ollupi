@@ -77,7 +77,7 @@ func claudePermissionContent(_ context.Context, c tool.Call) (policy.Content, er
 		return policy.Content{}, err
 	}
 	words := append([]string{ToolClaude}, claudeArgs(t.Prompt)...)
-	return policy.Content{Text: strings.Join(words, " "), Match: line(words)}, nil
+	return policy.Content{Text: strings.Join(words, " "), Match: matchLine(words)}, nil
 }
 
 func (r *Provider) prepareClaude(ctx context.Context, call tool.Call) (*Prepared, error) {
