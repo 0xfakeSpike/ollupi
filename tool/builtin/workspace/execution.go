@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"strings"
@@ -9,89 +10,107 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/tool"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
+	"github.com/google/jsonschema-go/jsonschema"
 )
+
+type commandArgs struct {
+	Program            string            `json:"program" jsonschema:"argv0: executable name or path (e.g. opencli, npm, git, sh, bash)"`
+	Args               []string          `json:"args,omitempty" jsonschema:"Argv after program. For sh/bash/zsh/dash: use [\"-c\", \"whole shell command\"] for one-liners; otherwise the first arg is a script path and the rest are its arguments (sh myscript.sh a b). For other programs use normal argv."`
+	WorkDir            string            `json:"work_dir,omitempty" jsonschema:"Optional command directory, relative to the current project/default command directory; must stay within this turn's allowed directories"`
+	TimeoutSec         int               `json:"timeout_sec,omitempty" jsonschema:"Optional timeout in seconds"`
+	Env                map[string]string `json:"env,omitempty" jsonschema:"Optional environment variables"`
+	SandboxPermissions string            `json:"sandbox_permissions,omitempty" jsonschema:"use_default (the default) runs in the sandbox; require_escalated runs this command outside the sandbox, and its justification is shown to the user"`
+	Justification      string            `json:"justification,omitempty" jsonschema:"Required with require_escalated: one sentence telling the user what the command needs that the sandbox does not allow, such as writing /usr/local or reaching a host"`
+}
+
+func (commandArgs) Constrain(s *jsonschema.Schema) {
+	constrainRun(s)
+	s.Properties["sandbox_permissions"].Enum = []any{sandboxUseDefault, sandboxRequireEscalated}
+}
+
+func constrainRun(s *jsonschema.Schema) {
+	s.Properties["work_dir"].MinLength = jsonschema.Ptr(1)
+	s.Properties["timeout_sec"].Minimum = jsonschema.Ptr(1.0)
+}
+
+func (r *Provider) inputSchema() *jsonschema.Schema {
+	s := kit.InputSchema[commandArgs]()
+	s.Properties["timeout_sec"].Maximum = jsonschema.Ptr(float64(r.maxTimeoutSec))
+	if !r.box.CanEscalate() {
+		delete(s.Properties, "sandbox_permissions")
+		delete(s.Properties, "justification")
+	}
+	return s
+}
+
+func commandOf(args map[string]any) (commandArgs, error) {
+	a, err := kit.DecodeArguments[commandArgs](args)
+	if err != nil {
+		return a, err
+	}
+	if a.Program = strings.TrimSpace(a.Program); a.Program == "" {
+		return a, errProgram
+	}
+	for k, v := range a.Env {
+		if sandbox.ValidateEnvNames([]string{k}) != nil || strings.ContainsRune(v, 0) {
+			return a, fmt.Errorf("workspace: invalid environment variable %q; names are letters, digits and _, not starting with a digit", k)
+		}
+	}
+	return a, nil
+}
 
 func (r *Provider) prepareCommand(ctx context.Context, caller tool.Caller, args map[string]any) (*Prepared, error) {
 	d, err := r.dirs(ctx, caller)
 	if err != nil {
 		return nil, err
 	}
-	program, err := programOf(args)
+	a, err := commandOf(args)
 	if err != nil {
 		return nil, err
 	}
-	argv := parseExecArgsSlice(args["args"])
-	cwd, err := d.workDir(ctx, args)
+	cwd, err := d.resolve(ctx, a.WorkDir)
 	if err != nil {
 		return nil, err
 	}
-	content := contentOf(program, argv)
+	content := contentOf(a.Program, a.Args)
 	for _, blocked := range r.blacklist {
 		if blacklisted(content, blocked) {
-			return nil, fmt.Errorf("workspace: command is forbidden by the blacklist entry %q: %s", blocked, strings.Join(append([]string{program}, argv...), " "))
+			return nil, fmt.Errorf("workspace: command is forbidden by the blacklist entry %q: %s", blocked, strings.Join(append([]string{a.Program}, a.Args...), " "))
 		}
 	}
-	timeout := r.timeoutSec
-	if raw, ok := args["timeout_sec"]; ok {
-		timeout, err = parseTimeoutSec(raw, r.maxTimeoutSec)
-		if err != nil {
-			return nil, err
-		}
-	}
-	env, err := commandEnvironment(args["env"])
+	escalated, err := escalation(d.box, a)
 	if err != nil {
 		return nil, err
 	}
-	escalated, justification, err := escalation(d.box, args)
+	program, err := d.box.Executable(ctx, a.Program, cwd)
 	if err != nil {
 		return nil, err
 	}
-	program, err = d.box.Executable(ctx, program, cwd)
-	if err != nil {
-		return nil, err
-	}
-	return &Prepared{
+	p := &Prepared{
 		Cwd: cwd, SettingsDigest: r.settingsDigest(d), ArgumentsDigest: digest(args),
-		Program: program, Args: append([]string(nil), argv...), Env: env, TimeoutSec: timeout,
-		Sandboxed: d.box.Enforced() && !escalated, Escalated: escalated, Justification: justification,
-	}, nil
+		Program: program, Args: a.Args, Env: a.Env, TimeoutSec: cmp.Or(a.TimeoutSec, r.timeoutSec),
+		Sandboxed: d.box.Enforced() && !escalated, Escalated: escalated,
+	}
+	if escalated {
+		p.Justification = strings.TrimSpace(a.Justification)
+	}
+	return p, nil
 }
 
-func escalation(box sandbox.Box, args map[string]any) (bool, string, error) {
-	if args["sandbox_permissions"] != sandboxRequireEscalated {
-		return false, "", nil
+func escalation(box sandbox.Box, a commandArgs) (bool, error) {
+	if a.SandboxPermissions != sandboxRequireEscalated {
+		return false, nil
 	}
-	justification, _ := args["justification"].(string)
-	justification = strings.TrimSpace(justification)
 	if !box.Enforced() {
-		return false, "", fmt.Errorf("workspace: commands already run without a sandbox here; omit sandbox_permissions")
+		return false, fmt.Errorf("workspace: commands already run without a sandbox here; omit sandbox_permissions")
 	}
 	if !box.CanEscalate() {
-		return false, "", fmt.Errorf("workspace: commands cannot leave this sandbox; omit sandbox_permissions")
+		return false, fmt.Errorf("workspace: commands cannot leave this sandbox; omit sandbox_permissions")
 	}
-	if justification == "" {
-		return false, "", fmt.Errorf("workspace: sandbox_permissions %q needs a justification for the user", sandboxRequireEscalated)
+	if strings.TrimSpace(a.Justification) == "" {
+		return false, fmt.Errorf("workspace: sandbox_permissions %q needs a justification for the user", sandboxRequireEscalated)
 	}
-	return true, justification, nil
-}
-
-func commandEnvironment(raw any) (map[string]string, error) {
-	if raw == nil {
-		return nil, nil
-	}
-	values, _ := raw.(map[string]any)
-	if len(values) == 0 {
-		return nil, nil
-	}
-	out := make(map[string]string, len(values))
-	for k, v := range values {
-		value, _ := v.(string)
-		if sandbox.ValidateEnvNames([]string{k}) != nil || strings.ContainsRune(value, 0) {
-			return nil, fmt.Errorf("workspace: invalid environment variable %q; names are letters, digits and _, not starting with a digit", k)
-		}
-		out[k] = value
-	}
-	return out, nil
+	return true, nil
 }
 
 type CommandOutput struct {
@@ -105,29 +124,45 @@ type CommandOutput struct {
 	Sandbox        string   `json:"sandbox,omitempty"`
 }
 
-func (r *Provider) runCommand(ctx context.Context, caller tool.Caller, args map[string]any, p *Prepared) (kit.Result, error) {
+func commandOutput(res sandbox.Result, cwd string) CommandOutput {
+	return CommandOutput{Stdout: res.Stdout, Stderr: res.Stderr, ExitCode: res.ExitCode, WorkDir: cwd,
+		Signal: res.Signal, Truncated: res.Truncated, SandboxDenials: res.Denials}
+}
+
+func (r *Provider) execute(ctx context.Context, caller tool.Caller, args map[string]any, p *Prepared, program string) (sandbox.Result, error) {
 	d, err := r.dirs(ctx, caller)
 	if err != nil {
-		return kit.Result{}, err
+		return sandbox.Result{}, err
 	}
 	if err := r.validatePrepared(ctx, d, p, args); err != nil {
-		return kit.Result{}, err
+		return sandbox.Result{}, err
 	}
-	if err := d.sameExecutable(ctx, p.Program, p); err != nil {
-		return kit.Result{}, err
+	current, err := d.box.Executable(ctx, program, p.Cwd)
+	if err != nil {
+		return sandbox.Result{}, err
 	}
-	res, err := d.box.Run(ctx, sandbox.Command{
+	if current != p.Program {
+		return sandbox.Result{}, fmt.Errorf("workspace: approved executable now resolves to a different path")
+	}
+	return d.box.Run(ctx, sandbox.Command{
 		Program: p.Program, Args: p.Args, Cwd: p.Cwd, Env: p.Env,
 		Timeout: time.Duration(p.TimeoutSec) * time.Second,
 
 		Roots:       d.roots,
 		Unsandboxed: p.Escalated,
 	})
+}
+
+func (r *Provider) runCommand(ctx context.Context, caller tool.Caller, args map[string]any, p *Prepared) (kit.Result, error) {
+	a, err := commandOf(args)
 	if err != nil {
 		return kit.Result{}, err
 	}
-	out := CommandOutput{Stdout: res.Stdout, Stderr: res.Stderr, ExitCode: res.ExitCode, WorkDir: p.Cwd,
-		Signal: res.Signal, Truncated: res.Truncated, SandboxDenials: res.Denials}
+	res, err := r.execute(ctx, caller, args, p, a.Program)
+	if err != nil {
+		return kit.Result{}, err
+	}
+	out := commandOutput(res, p.Cwd)
 	if p.Escalated {
 		out.Sandbox = "escalated: ran on the host without the sandbox"
 	}
@@ -170,78 +205,4 @@ func (r *Provider) tool() kit.Spec {
 		Content: permissionContent,
 		Prepare: r.locals()[ToolRunCommand].plan,
 	}
-}
-
-func toolInputSchema() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"program": map[string]any{
-				"type":        "string",
-				"description": "argv0: executable name or path (e.g. opencli, npm, git, sh, bash)",
-			},
-			"args": map[string]any{
-				"type":  "array",
-				"items": map[string]any{"type": "string"},
-				"description": "Argv after program. For sh/bash/zsh/dash: use [\"-c\", \"whole shell command\"] for one-liners; " +
-					"otherwise the first arg is a script path and the rest are its arguments (sh myscript.sh a b). For other programs use normal argv.",
-			},
-			"work_dir": map[string]any{
-				"type":        "string",
-				"description": "Optional command directory, relative to the current project/default command directory; must stay within this turn's allowed directories",
-			},
-			"timeout_sec": map[string]any{
-				"type":        "integer",
-				"description": "Optional timeout in seconds",
-			},
-			"env": map[string]any{
-				"type":                 "object",
-				"description":          "Optional environment variables",
-				"additionalProperties": map[string]any{"type": "string"},
-			},
-		},
-		"required":             []string{"program"},
-		"additionalProperties": false,
-	}
-}
-
-func (r *Provider) inputSchema() map[string]any {
-	schema := toolInputSchema()
-	if !r.box.CanEscalate() {
-		return schema
-	}
-	props := schema["properties"].(map[string]any)
-	props["sandbox_permissions"] = map[string]any{
-		"type":        "string",
-		"enum":        []string{sandboxUseDefault, sandboxRequireEscalated},
-		"description": "use_default (the default) runs in the sandbox; require_escalated runs this command outside the sandbox, and its justification is shown to the user",
-	}
-	props["justification"] = map[string]any{
-		"type":        "string",
-		"description": "Required with require_escalated: one sentence telling the user what the command needs that the sandbox does not allow, such as writing /usr/local or reaching a host",
-	}
-	return schema
-}
-
-func parseExecArgsSlice(v any) []string {
-	if v == nil {
-		return nil
-	}
-	arr, _ := v.([]any)
-	out := make([]string, len(arr))
-	for i, el := range arr {
-		out[i], _ = el.(string)
-	}
-	return out
-}
-
-func parseTimeoutSec(v any, limit int) (int, error) {
-	sec, _ := v.(float64)
-	if sec <= 0 {
-		return 0, fmt.Errorf("workspace: argument \"timeout_sec\" must be > 0")
-	}
-	if sec > float64(limit) {
-		return 0, fmt.Errorf("workspace: argument \"timeout_sec\" must be at most %d", limit)
-	}
-	return int(sec), nil
 }

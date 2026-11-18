@@ -31,9 +31,6 @@ func digest(value any) string {
 }
 
 func (r *Provider) validatePrepared(ctx context.Context, d dirs, p *Prepared, args map[string]any) error {
-	if p == nil {
-		return fmt.Errorf("workspace: missing prepared command")
-	}
 	if p.SettingsDigest != r.settingsDigest(d) {
 		return fmt.Errorf("workspace: the command settings or the project directory changed after this call was prepared, so it was not run; call run_command again")
 	}
@@ -46,17 +43,6 @@ func (r *Provider) validatePrepared(ctx context.Context, d dirs, p *Prepared, ar
 	}
 	if cwd != p.Cwd {
 		return fmt.Errorf("workspace: prepared command directory changed")
-	}
-	return nil
-}
-
-func (d dirs) sameExecutable(ctx context.Context, program string, p *Prepared) error {
-	current, err := d.box.Executable(ctx, program, p.Cwd)
-	if err != nil {
-		return err
-	}
-	if current != p.Program {
-		return fmt.Errorf("workspace: approved executable now resolves to a different path")
 	}
 	return nil
 }

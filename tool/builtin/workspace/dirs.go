@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/tool"
@@ -48,14 +47,18 @@ func (r *Provider) dirs(ctx context.Context, caller tool.Caller) (dirs, error) {
 	return dirs{box: box, roots: []string{root}}, nil
 }
 
-func (d dirs) resolve(ctx context.Context, requested string) (string, error) {
-	path := requested
-	if path == "" {
-		path = d.roots[0]
-	} else if !filepath.IsAbs(path) {
-		path = filepath.Join(d.roots[0], path)
+func (d dirs) abs(path string) string {
+	switch {
+	case path == "":
+		return d.roots[0]
+	case filepath.IsAbs(path):
+		return path
 	}
-	resolved, err := d.box.Directory(ctx, path)
+	return filepath.Join(d.roots[0], path)
+}
+
+func (d dirs) resolve(ctx context.Context, requested string) (string, error) {
+	resolved, err := d.box.Directory(ctx, d.abs(requested))
 	if err != nil {
 		return "", err
 	}
@@ -65,15 +68,4 @@ func (d dirs) resolve(ctx context.Context, requested string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("workspace: directory %q is outside the command directories", requested)
-}
-
-func (d dirs) workDir(ctx context.Context, args map[string]any) (string, error) {
-	requested := ""
-	if raw, ok := args["work_dir"]; ok {
-		requested, _ = raw.(string)
-		if strings.TrimSpace(requested) == "" {
-			return "", fmt.Errorf("workspace: argument work_dir must be a non-empty string")
-		}
-	}
-	return d.resolve(ctx, requested)
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/tool"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
+	"github.com/google/jsonschema-go/jsonschema"
 )
 
 type memoryMachine struct {
@@ -174,7 +175,7 @@ func TestToolsRunOnTheUsersMachine(t *testing.T) {
 	if _, err := act("a", ToolRunCommand, map[string]any{"program": "make", "sandbox_permissions": sandboxRequireEscalated, "justification": "x"}); err == nil {
 		t.Error("a command left the machine")
 	}
-	if _, ok := spec[ToolRunCommand].InputSchema.(map[string]any)["properties"].(map[string]any)["sandbox_permissions"]; ok {
+	if _, ok := spec[ToolRunCommand].InputSchema.(*jsonschema.Schema).Properties["sandbox_permissions"]; ok {
 		t.Error("the tool offers to leave a sandbox that has no way out")
 	}
 	if strings.Contains(spec[ToolRunCommand].Description, "require_escalated") {
