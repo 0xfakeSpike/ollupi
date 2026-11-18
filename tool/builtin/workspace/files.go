@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"path/filepath"
 	"strings"
 	"unicode/utf8"
 
@@ -99,25 +98,14 @@ func (r *Provider) change(ctx context.Context, caller tool.Caller, args map[stri
 	if strings.TrimSpace(raw) == "" {
 		return dirs{}, fileChange{}, fmt.Errorf("workspace: argument path must be a non-empty string")
 	}
-	path := raw
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(d.roots[0], path)
-	}
-	abs, err := d.box.Canonical(ctx, path)
+	abs, err := d.box.Canonical(ctx, d.abs(raw))
 	if err != nil {
 		return dirs{}, fileChange{}, err
 	}
 	if err := d.box.CheckWrite(d.roots, abs); err != nil {
 		return dirs{}, fileChange{}, err
 	}
-	c := fileChange{abs: abs, mode: 0o644}
-	for _, root := range d.roots {
-		if sandbox.Within(root, abs) {
-			c.rel, _ = filepath.Rel(root, abs)
-			break
-		}
-	}
-	c.rel = filepath.ToSlash(c.rel)
+	c := fileChange{abs: abs, rel: d.display(abs), mode: 0o644}
 	switch st, err := d.box.Stat(ctx, abs); {
 	case errors.Is(err, fs.ErrNotExist):
 	case err != nil:
