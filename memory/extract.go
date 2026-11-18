@@ -230,87 +230,114 @@ func Parse(content string, b Batch, restore func(string) string) ([]Operation, e
 	if err != nil {
 		return nil, err
 	}
-	existing := map[string]Memory{}
-	known, fresh := map[Source]bool{}, map[Source]bool{}
+	c := opChecker{existing: map[string]Memory{}, known: map[Source]bool{}, fresh: map[Source]bool{}, touched: map[string]bool{}}
 	for _, m := range b.Existing {
-		existing[m.ID] = m
+		c.existing[m.ID] = m
 		for _, s := range m.Sources {
-			known[s] = true
+			c.known[s] = true
 		}
 	}
 	for _, f := range b.Evidence {
-		known[f.Source], fresh[f.Source] = true, true
+		c.known[f.Source], c.fresh[f.Source] = true, true
 	}
-	touched := map[string]bool{}
 	accepted := make([]Operation, 0, len(operations))
 	for _, op := range operations {
 		op.Topic, op.Text = strings.TrimSpace(restore(op.Topic)), strings.TrimSpace(restore(op.Text))
-		switch op.Action {
-		case Add:
-			if op.ID != "" {
-				return nil, fmt.Errorf("%w: an add targeted an existing note", ErrInvalidResponse)
-			}
-			if op.Scope != string(Global) {
-				op.Scope = ""
-			}
-			op.Topic = normalizeTopic(op.Topic)
-		case Update, Retire:
-			m, ok := existing[op.ID]
-			if !ok || m.Status == Forgotten || touched[op.ID] {
-				return nil, fmt.Errorf("%w: it targeted an unavailable note", ErrInvalidResponse)
-			}
-			if op.Topic != "" && normalizeTopic(op.Topic) != m.Topic {
-				return nil, fmt.Errorf("%w: a note's topic is immutable; update the existing stable topic", ErrInvalidResponse)
-			}
-			op.Scope = ""
-			if m.Scope == Global {
-				op.Scope = string(Global)
-			}
-			if m.UserEdited {
-				continue
-			}
-			touched[op.ID] = true
-		default:
-			return nil, fmt.Errorf("%w: an unsupported operation", ErrInvalidResponse)
+		protected, err := c.target(&op)
+		if err != nil {
+			return nil, err
 		}
-		if op.Action != Retire {
-			if op.Topic == "" || utf8.RuneCountInString(op.Topic) > maxTopicRunes || op.Text == "" || utf8.RuneCountInString(op.Text) > maxTextRunes {
-				return nil, fmt.Errorf("%w: a topic or text of the wrong length", ErrInvalidResponse)
-			}
-			if !slices.Contains(Kinds, op.Kind) {
-				return nil, fmt.Errorf("%w: an unsupported kind of note", ErrInvalidResponse)
-			}
-			if op.Scope == string(Global) && op.Kind != Preference && op.Kind != Fact {
-				if op.Action != Add {
-					return nil, fmt.Errorf("%w: only preferences and facts can be global memories", ErrInvalidResponse)
-				}
-				op.Scope = ""
-			}
+		if protected {
+			continue
 		}
-		if len(op.Sources) > maxSourcesPerNote {
-			return nil, fmt.Errorf("%w: too many sources cited", ErrInvalidResponse)
+		if err := checkNote(&op); err != nil {
+			return nil, err
 		}
-		cited := make([]Source, 0, len(op.Sources))
-		seen := map[Source]bool{}
-		current := false
-		for _, s := range op.Sources {
-			if !known[s] {
-				return nil, fmt.Errorf("%w: unknown evidence cited", ErrInvalidResponse)
-			}
-			if seen[s] {
-				continue
-			}
-			seen[s] = true
-			cited = append(cited, s)
-			current = current || fresh[s]
+		if op.Sources, err = c.cite(op.Sources); err != nil {
+			return nil, err
 		}
-		if !current {
-			return nil, fmt.Errorf("%w: no current evidence cited", ErrInvalidResponse)
-		}
-		op.Sources = cited
 		accepted = append(accepted, op)
 	}
 	return accepted, nil
+}
+
+type opChecker struct {
+	existing     map[string]Memory
+	known, fresh map[Source]bool
+	touched      map[string]bool
+}
+
+func (c opChecker) target(op *Operation) (protected bool, err error) {
+	switch op.Action {
+	case Add:
+		if op.ID != "" {
+			return false, fmt.Errorf("%w: an add targeted an existing note", ErrInvalidResponse)
+		}
+		if op.Scope != string(Global) {
+			op.Scope = ""
+		}
+		op.Topic = normalizeTopic(op.Topic)
+		return false, nil
+	case Update, Retire:
+		m, ok := c.existing[op.ID]
+		if !ok || m.Status == Forgotten || c.touched[op.ID] {
+			return false, fmt.Errorf("%w: it targeted an unavailable note", ErrInvalidResponse)
+		}
+		if op.Topic != "" && normalizeTopic(op.Topic) != m.Topic {
+			return false, fmt.Errorf("%w: a note's topic is immutable; update the existing stable topic", ErrInvalidResponse)
+		}
+		op.Scope = ""
+		if m.Scope == Global {
+			op.Scope = string(Global)
+		}
+		if m.UserEdited {
+			return true, nil
+		}
+		c.touched[op.ID] = true
+		return false, nil
+	}
+	return false, fmt.Errorf("%w: an unsupported operation", ErrInvalidResponse)
+}
+
+func checkNote(op *Operation) error {
+	if op.Action == Retire {
+		return nil
+	}
+	if op.Topic == "" || utf8.RuneCountInString(op.Topic) > maxTopicRunes || op.Text == "" || utf8.RuneCountInString(op.Text) > maxTextRunes {
+		return fmt.Errorf("%w: a topic or text of the wrong length", ErrInvalidResponse)
+	}
+	if !slices.Contains(Kinds, op.Kind) {
+		return fmt.Errorf("%w: an unsupported kind of note", ErrInvalidResponse)
+	}
+	globalKind := op.Kind == Preference || op.Kind == Fact
+	if op.Scope == string(Global) && !globalKind {
+		if op.Action != Add {
+			return fmt.Errorf("%w: only preferences and facts can be global memories", ErrInvalidResponse)
+		}
+		op.Scope = ""
+	}
+	return nil
+}
+
+func (c opChecker) cite(sources []Source) ([]Source, error) {
+	if len(sources) > maxSourcesPerNote {
+		return nil, fmt.Errorf("%w: too many sources cited", ErrInvalidResponse)
+	}
+	cited := make([]Source, 0, len(sources))
+	current := false
+	for _, s := range sources {
+		if !c.known[s] {
+			return nil, fmt.Errorf("%w: unknown evidence cited", ErrInvalidResponse)
+		}
+		if !slices.Contains(cited, s) {
+			cited = append(cited, s)
+		}
+		current = current || c.fresh[s]
+	}
+	if !current {
+		return nil, fmt.Errorf("%w: no current evidence cited", ErrInvalidResponse)
+	}
+	return cited, nil
 }
 
 func decodeOperations(content string) ([]Operation, error) {
