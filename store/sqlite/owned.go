@@ -514,7 +514,7 @@ func (t *tx) DeleteThread(id string) error {
 	if err := t.g.Exec("DELETE FROM threads WHERE id = ?", id).Error; err != nil {
 		return fmt.Errorf("store: delete thread %s: %w", id, err)
 	}
-	t.note(id, th.User).change.Deleted = true
+	t.pendingFor(id, th.User).change.Deleted = true
 	for _, j := range jobs {
 		t.owned = append(t.owned, store.Event{User: th.User, Thread: id, Owned: &store.Owned{CronJobDeleted: j}})
 	}

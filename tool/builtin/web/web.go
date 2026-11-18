@@ -100,7 +100,7 @@ func textual(mediaType string) bool {
 		mediaType == "application/json" || mediaType == "application/xml" || strings.HasSuffix(mediaType, "+json") || strings.HasSuffix(mediaType, "+xml")
 }
 
-func text(resp *http.Response, mediaType string) (title, text string, err error) {
+func bodyText(resp *http.Response, mediaType string) (title, text string, err error) {
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes+1))
 	if err != nil {
 		return "", "", fmt.Errorf("read: %w", err)
@@ -184,7 +184,7 @@ func (p *Provider) fetch(ctx context.Context, raw string) (fetchOutput, error) {
 	if !textual(mediaType) {
 		return fetchOutput{}, fmt.Errorf("web: %s is %s, which web_fetch does not read; use run_command to download it", out.URL, mediaType)
 	}
-	if out.Title, out.Text, err = text(resp, mediaType); err != nil {
+	if out.Title, out.Text, err = bodyText(resp, mediaType); err != nil {
 		return fetchOutput{}, fmt.Errorf("web: %s: %w", out.URL, err)
 	}
 	if utf8.RuneCountInString(out.Text) > maxTextRunes {

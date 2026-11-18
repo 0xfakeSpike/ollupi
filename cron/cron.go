@@ -63,14 +63,14 @@ func send(tx store.Tx, cal Calendar, submit Submit, due user.CronJob, now time.T
 	if err != nil {
 		return err
 	}
-	waiting := slices.ContainsFunc(v.Behind(), func(t conversation.Turn) bool { return t.CronJob == job.ID })
+	waiting := slices.ContainsFunc(v.Queued(), func(t conversation.Turn) bool { return t.CronJob == job.ID })
 	sent := sending && !waiting
 	if sent {
 		if err := submit(tx, job.Thread, job.Prompt, job.ID); err != nil {
 			return errSubmit{err}
 		}
 	}
-	next, done, err := cal.Ran(job, now, sent)
+	next, done, err := cal.Advance(job, now, sent)
 	if err != nil {
 		return err
 	}

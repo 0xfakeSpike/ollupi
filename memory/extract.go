@@ -59,7 +59,7 @@ func Gather(user, thread, workspace string, v conversation.View, turn string, ex
 		if !isEvidence(it) || blocked[source] {
 			continue
 		}
-		b.Evidence = append(b.Evidence, observe(source, it))
+		b.Evidence = append(b.Evidence, evidenceOf(source, it))
 	}
 	return b
 }
@@ -89,7 +89,7 @@ type field struct {
 	bound      int
 }
 
-func observe(source Source, it conversation.Item) Evidence {
+func evidenceOf(source Source, it conversation.Item) Evidence {
 	textBound := 3000
 	if it.Kind == conversation.ItemUserMessage {
 		textBound = 1500
@@ -132,7 +132,7 @@ func clip(s string, n int) string {
 	return string(r[:n]) + "\n[truncated]"
 }
 
-func Pack(b Batch, budget int) []Batch {
+func Split(b Batch, budget int) []Batch {
 	if len(b.Evidence) == 0 {
 		return nil
 	}
@@ -153,7 +153,7 @@ func Pack(b Batch, budget int) []Batch {
 
 const maxExistingShown = 40
 
-func Input(b Batch, budget int) (string, error) {
+func Prompt(b Batch, budget int) (string, error) {
 	if used := tokens(b, nil); used > budget {
 		return "", fmt.Errorf("memory evidence of turn %s needs %d tokens but the extraction budget is %d", b.Turn, used, budget)
 	}
@@ -382,8 +382,8 @@ func Apply(b Batch, ops []Operation, now time.Time, id func() string) []Memory {
 	blocked := forgottenSources(b.Existing)
 	var order []string
 	for _, op := range ops {
-		m, ok := target(b, op, byID, byTopic, now, id)
-		if !ok || m.Status == Forgotten || m.UserEdited || learnedFrom(op.Sources, blocked) {
+		m, ok := noteFor(b, op, byID, byTopic, now, id)
+		if !ok || m.Status == Forgotten || m.UserEdited || citesForgotten(op.Sources, blocked) {
 			continue
 		}
 		if op.Action == Retire {
@@ -405,7 +405,7 @@ func Apply(b Batch, ops []Operation, now time.Time, id func() string) []Memory {
 	return changed
 }
 
-func target(b Batch, op Operation, byID map[string]Memory, byTopic map[topicKey]string, now time.Time, id func() string) (Memory, bool) {
+func noteFor(b Batch, op Operation, byID map[string]Memory, byTopic map[topicKey]string, now time.Time, id func() string) (Memory, bool) {
 	if op.Action != Add {
 		m, ok := byID[op.ID]
 		return m, ok
@@ -424,7 +424,7 @@ func target(b Batch, op Operation, byID map[string]Memory, byTopic map[topicKey]
 	return m, true
 }
 
-func learnedFrom(sources []Source, blocked map[Source]bool) bool {
+func citesForgotten(sources []Source, blocked map[Source]bool) bool {
 	for _, s := range sources {
 		if blocked[s] {
 			return true

@@ -272,7 +272,7 @@ func (v View) Active() (Turn, bool) {
 	return find(v.Turns, func(t Turn) bool { return t.Ended == nil })
 }
 
-func (v View) Behind() []Turn {
+func (v View) Queued() []Turn {
 	var out []Turn
 	active, _ := v.Active()
 	for _, t := range v.Turns {

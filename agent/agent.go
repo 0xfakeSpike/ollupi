@@ -67,7 +67,7 @@ func RoleOf(name Name) (Role, bool) {
 	return r, ok
 }
 
-func Main(inputTokens int) Name {
+func MainRole(inputTokens int) Name {
 	if inputTokens < compactBelowTokens {
 		return CompactMain
 	}

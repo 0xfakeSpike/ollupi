@@ -148,11 +148,11 @@ func TestATurnSentDuringAnotherWaitsBehindIt(t *testing.T) {
 	l.append("t2", "m2", UserMessage{Text: "second"})
 	l.refused("t2", "", ModelResponded{Response: "r"})
 	l.refused("t1", "", TurnQueued{})
-	if active, _ := l.v.Active(); active.ID != "t1" || len(l.v.Behind()) != 1 {
-		t.Fatalf("active %s, %d behind", active.ID, len(l.v.Behind()))
+	if active, _ := l.v.Active(); active.ID != "t1" || len(l.v.Queued()) != 1 {
+		t.Fatalf("active %s, %d behind", active.ID, len(l.v.Queued()))
 	}
 	l.append("t1", "", TurnEnded{Status: Interrupted, Reason: "interrupted by the user"})
-	if active, _ := l.v.Active(); active.ID != "t2" || len(l.v.Behind()) != 0 || !l.v.Runnable() {
+	if active, _ := l.v.Active(); active.ID != "t2" || len(l.v.Queued()) != 0 || !l.v.Runnable() {
 		t.Errorf("after the first ended: active %s", active.ID)
 	}
 	l.refused("t2", "m2", UserMessage{Text: "again"})

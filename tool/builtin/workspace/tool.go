@@ -74,5 +74,5 @@ func (r *Provider) Invoke(ctx context.Context, c tool.Call) (kit.Result, error) 
 }
 
 func (r *Provider) Tools(context.Context) ([]kit.Spec, error) {
-	return slices.Concat([]kit.Spec{r.tool(), r.claudeTool()}, r.fileTools(), r.readTools()), nil
+	return slices.Concat([]kit.Spec{r.commandTool(), r.claudeTool()}, r.fileTools(), r.readTools()), nil
 }

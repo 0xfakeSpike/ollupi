@@ -49,10 +49,10 @@ func (x *Extractor) Run(ctx context.Context) error {
 	if err := x.st.Read(ctx, func(r store.Reader) (err error) { users, err = r.Users(); return err }); err != nil {
 		return err
 	}
-	x.mark(users...)
+	x.markDirty(users...)
 	retry := map[string]time.Time{}
 	for {
-		for _, u := range x.take() {
+		for _, u := range x.takeDirty() {
 			delete(retry, u)
 			due, err := x.readAll(ctx, u)
 			if ctx.Err() != nil {
@@ -77,7 +77,7 @@ func (x *Extractor) Run(ctx context.Context) error {
 			now := time.Now()
 			for u, due := range retry {
 				if !now.Before(due) {
-					x.mark(u)
+					x.markDirty(u)
 				}
 			}
 		}
@@ -90,13 +90,13 @@ func (x *Extractor) hear(e store.Event) {
 	}
 	for _, entry := range e.Change.Entries {
 		if _, ended := entry.Body.(conversation.TurnEnded); ended {
-			x.mark(e.User)
+			x.markDirty(e.User)
 			return
 		}
 	}
 }
 
-func (x *Extractor) mark(users ...string) {
+func (x *Extractor) markDirty(users ...string) {
 	x.mu.Lock()
 	for _, u := range users {
 		x.dirty[u] = true
@@ -108,7 +108,7 @@ func (x *Extractor) mark(users ...string) {
 	}
 }
 
-func (x *Extractor) take() []string {
+func (x *Extractor) takeDirty() []string {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	users := make([]string, 0, len(x.dirty))
@@ -141,7 +141,7 @@ func (x *Extractor) readAll(ctx context.Context, u string) (time.Time, error) {
 			if settings, err = r.Settings(u); err != nil {
 				return err
 			}
-			ended, err = r.Ended(u, state.Cursor, skipTurns)
+			ended, err = r.EndedTurns(u, state.Cursor, skipTurns)
 			return err
 		})
 		switch {
@@ -202,13 +202,13 @@ func (x *Extractor) learn(ctx context.Context, u string, settings user.Settings,
 	if err != nil {
 		return learned{}, err
 	}
-	l := learned{places: places, read: map[string]time.Time{}}
+	out := learned{places: places, read: map[string]time.Time{}}
 	for _, m := range b.Existing {
-		l.read[m.ID] = m.Updated
+		out.read[m.ID] = m.Updated
 	}
-	parts := memory.Pack(b, x.budget)
+	parts := memory.Split(b, x.budget)
 	if len(parts) == 0 {
-		return l, nil
+		return out, nil
 	}
 	client, err := x.client(u)
 	if err != nil {
@@ -218,7 +218,7 @@ func (x *Extractor) learn(ctx context.Context, u string, settings user.Settings,
 	current := b.Existing
 	for _, part := range parts {
 		part.Existing = current
-		payload, err := memory.Input(part, x.budget)
+		payload, err := memory.Prompt(part, x.budget)
 		if err != nil {
 			return learned{}, failure{memory.BadEvidence, err}
 		}
@@ -235,10 +235,10 @@ func (x *Extractor) learn(ctx context.Context, u string, settings user.Settings,
 		}
 		for _, m := range memory.Apply(part, ops, time.Now().UTC(), uuid.NewString) {
 			current = replace(current, m)
-			l.changes = replace(l.changes, m)
+			out.changes = replace(out.changes, m)
 		}
 	}
-	return l, nil
+	return out, nil
 }
 
 func (x *Extractor) batch(ctx context.Context, u string, turn memory.Cursor) (b memory.Batch, places []memory.Place, err error) {

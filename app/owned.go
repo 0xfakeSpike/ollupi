@@ -100,7 +100,7 @@ func (a *App) MoveWorkspace(ctx context.Context, u, id, path string) (user.Works
 	if err != nil {
 		return user.Workspace{}, fmt.Errorf("%w: %v", ErrInvalidPath, err)
 	}
-	w, all, err := a.claim(ctx, u, id)
+	w, all, err := a.claimForMove(ctx, u, id)
 	if err != nil {
 		return user.Workspace{}, err
 	}
@@ -129,7 +129,7 @@ func (a *App) MoveWorkspace(ctx context.Context, u, id, path string) (user.Works
 	return w, nil
 }
 
-func (a *App) claim(ctx context.Context, u, id string) (user.Workspace, []user.Workspace, error) {
+func (a *App) claimForMove(ctx context.Context, u, id string) (user.Workspace, []user.Workspace, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	var w user.Workspace

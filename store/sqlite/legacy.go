@@ -544,7 +544,7 @@ func (l legacy) memories() error {
 		return err
 	}
 	for _, u := range users {
-		ended, err := l.t.Ended(u, memory.Cursor{}, math.MaxInt32)
+		ended, err := l.t.EndedTurns(u, memory.Cursor{}, math.MaxInt32)
 		if err != nil {
 			return err
 		}

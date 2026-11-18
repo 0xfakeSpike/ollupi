@@ -72,11 +72,11 @@ func TestEndedTurnsAreReadInTheOrderTheyEnded(t *testing.T) {
 		}
 		return tx.SetMemoryState("u", memory.State{Cursor: memory.Cursor{Seq: 1}, Skipped: 2})
 	})
-	ended := read(t, s, func(r store.Reader) ([]memory.Cursor, error) { return r.Ended("u", memory.Cursor{}, 10) })
+	ended := read(t, s, func(r store.Reader) ([]memory.Cursor, error) { return r.EndedTurns("u", memory.Cursor{}, 10) })
 	if len(ended) != 2 || ended[0].Thread != "b" || ended[1].Thread != "a" || ended[0].Seq >= ended[1].Seq {
 		t.Fatalf("ended %+v", ended)
 	}
-	if after := read(t, s, func(r store.Reader) ([]memory.Cursor, error) { return r.Ended("u", ended[0], 10) }); len(after) != 1 || after[0] != ended[1] {
+	if after := read(t, s, func(r store.Reader) ([]memory.Cursor, error) { return r.EndedTurns("u", ended[0], 10) }); len(after) != 1 || after[0] != ended[1] {
 		t.Errorf("after the first: %+v", after)
 	}
 	state := read(t, s, func(r store.Reader) (memory.State, error) { return r.MemoryState("u") })

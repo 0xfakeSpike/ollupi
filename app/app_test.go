@@ -161,8 +161,8 @@ func TestMessagesQueueTurnsAndSteeringAnswersWhatTheTurnAsked(t *testing.T) {
 		t.Errorf("the turn %+v", first)
 	}
 	second := sent(t)(f.a.Send(f.ctx, "u", th.ID, Input{Text: "then test it", Connection: "text"}))
-	if v := f.view(th.ID); len(v.Behind()) != 1 || v.Behind()[0].ID != second.ID || second.Model.Name != "small" {
-		t.Fatalf("the second turn waits behind: %+v", v.Behind())
+	if v := f.view(th.ID); len(v.Queued()) != 1 || v.Queued()[0].ID != second.ID || second.Model.Name != "small" {
+		t.Fatalf("the second turn waits behind: %+v", v.Queued())
 	}
 	f.waitOnApproval(th.ID, first)
 	if _, err := f.a.Steer(f.ctx, "u", th.ID, second.ID, Input{Text: "no"}); !errors.Is(err, ErrTurnMismatch) {
