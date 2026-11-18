@@ -38,22 +38,15 @@ func NewGemini(baseURL, apiKey string, calls int, limits map[string]Limits) (*Ge
 }
 
 func (c *Gemini) Chat(ctx context.Context, req ChatRequest, onDelta func(Delta)) (ChatResponse, error) {
-	if req.Model.Name == "" {
-		return ChatResponse{}, fmt.Errorf("llm.Gemini: model required")
-	}
-	limits, err := c.Limits(req.Model.Name)
-	if err != nil {
-		return ChatResponse{}, err
-	}
-	contents, config, err := geminiRequest(req, limits.Answer(req.InputTokens))
-	if err != nil {
-		return ChatResponse{}, fmt.Errorf("llm.Gemini: %w", err)
-	}
-	release, err := c.acquire(ctx)
+	maxTokens, release, err := c.begin(ctx, req)
 	if err != nil {
 		return ChatResponse{}, err
 	}
 	defer release()
+	contents, config, err := geminiRequest(req, maxTokens)
+	if err != nil {
+		return ChatResponse{}, fmt.Errorf("llm.Gemini: %w", err)
+	}
 
 	var usage Usage
 	var parts []*genai.Part
@@ -163,12 +156,8 @@ func geminiRequest(req ChatRequest, maxTokens int) ([]*genai.Content, *genai.Gen
 			declarations = append(declarations, &genai.FunctionDeclaration{Name: tool.Name, Description: tool.Description, ParametersJsonSchema: tool.Parameters})
 		}
 		config.Tools = []*genai.Tool{{FunctionDeclarations: declarations}}
-		switch req.ToolChoice {
-		case ToolChoiceAuto:
-		case ToolChoiceNone:
+		if req.ToolChoice == ToolChoiceNone {
 			config.ToolConfig = &genai.ToolConfig{FunctionCallingConfig: &genai.FunctionCallingConfig{Mode: genai.FunctionCallingConfigModeNone}}
-		default:
-			return nil, nil, fmt.Errorf("unsupported tool choice %q", req.ToolChoice)
 		}
 	}
 
@@ -191,18 +180,10 @@ func geminiRequest(req ChatRequest, maxTokens int) ([]*genai.Content, *genai.Gen
 			config.SystemInstruction.Parts = append(config.SystemInstruction.Parts, genai.NewPartFromText(m.Content))
 			continue
 		case RoleUser:
-			if m.Content != "" {
-				parts = append(parts, genai.NewPartFromText(m.Content))
-			}
-			for _, part := range m.Parts {
-				switch part.Type {
-				case PartImage:
-					parts = append(parts, genai.NewPartFromBytes(part.Data, part.MimeType))
-				case PartText:
-					parts = append(parts, genai.NewPartFromText(part.Text))
-				default:
-					return nil, nil, fmt.Errorf("message %d: unsupported content part %q", i, part.Type)
-				}
+			var err error
+			parts, err = userParts(m, genai.NewPartFromText, func(part ContentPart) *genai.Part { return genai.NewPartFromBytes(part.Data, part.MimeType) })
+			if err != nil {
+				return nil, nil, fmt.Errorf("message %d: %w", i, err)
 			}
 		case RoleTool:
 			name, ok := names[m.ToolCallID]

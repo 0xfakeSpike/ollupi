@@ -48,19 +48,15 @@ func Recall(memories []Memory, place Place, budget int) conversation.Recalled {
 	}
 	text := recallIntro
 	if len(g) > 0 {
-		text += globalTitle + render(g)
+		text += globalTitle + render(refs(g))
 	}
 	if len(l) > 0 {
-		text += localTitle + render(l)
+		text += localTitle + render(refs(l))
 	}
 	if omitted := len(global) + len(local) - len(g) - len(l); omitted > 0 {
 		text += fmt.Sprintf(omittedNote, omitted)
 	}
-	recalled := conversation.Recalled{Text: text}
-	for _, m := range slices.Concat(g, l) {
-		recalled.Memories = append(recalled.Memories, m.Ref())
-	}
-	return recalled
+	return conversation.Recalled{Text: text, Memories: refs(slices.Concat(g, l))}
 }
 
 var recallKinds = []Kind{Fact, Procedure, Decision, Preference}
@@ -76,7 +72,7 @@ func fit(memories []Memory, budget int) ([]Memory, int) {
 	var out []Memory
 	used := 0
 	for _, m := range memories {
-		if cost := llm.EstimateTokens(render([]Memory{m})); used+cost <= budget {
+		if cost := llm.EstimateTokens(render([]conversation.MemoryRef{m.Ref()})); used+cost <= budget {
 			out, used = append(out, m), used+cost
 		}
 	}
@@ -89,10 +85,33 @@ type note struct {
 	Text  string `json:"text"`
 }
 
-func render(memories []Memory) string {
-	notes := make([]note, len(memories))
+func refs(memories []Memory) []conversation.MemoryRef {
+	out := make([]conversation.MemoryRef, len(memories))
 	for i, m := range memories {
-		notes[i] = note{ID: m.ID, Topic: m.Topic, Text: m.Text}
+		out[i] = m.Ref()
+	}
+	return out
+}
+
+func Section(recalled []conversation.MemoryRef, global bool) *conversation.MemoryStats {
+	s := &conversation.MemoryStats{IDs: []string{}}
+	var shown []conversation.MemoryRef
+	for _, r := range recalled {
+		if (r.Scope == conversation.GlobalScope) == global {
+			s.IDs = append(s.IDs, r.ID)
+			shown = append(shown, r)
+		}
+	}
+	if len(shown) > 0 {
+		s.Tokens = llm.EstimateTokens(render(shown))
+	}
+	return s
+}
+
+func render(recalled []conversation.MemoryRef) string {
+	notes := make([]note, len(recalled))
+	for i, r := range recalled {
+		notes[i] = note{ID: r.ID, Topic: r.Topic, Text: r.Text}
 	}
 	b, _ := json.MarshalIndent(notes, "", "  ")
 	return string(b)

@@ -42,6 +42,18 @@ func (c connection) Limits(model string) (Limits, error) {
 	return l, nil
 }
 
+func (c connection) begin(ctx context.Context, req ChatRequest) (int, func(), error) {
+	limits, err := c.Limits(req.Model.Name)
+	if err != nil {
+		return 0, nil, err
+	}
+	release, err := c.acquire(ctx)
+	if err != nil {
+		return 0, nil, err
+	}
+	return limits.Answer(req.InputTokens), release, nil
+}
+
 func (c connection) acquire(ctx context.Context) (func(), error) {
 	select {
 	case c.calls <- struct{}{}:

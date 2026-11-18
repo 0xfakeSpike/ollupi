@@ -31,13 +31,7 @@ func NewOpenAI(baseURL, apiKey string, calls int, limits map[string]Limits) *Ope
 }
 
 func (c *OpenAI) Chat(ctx context.Context, req ChatRequest, onDelta func(Delta)) (ChatResponse, error) {
-	if req.Model.Name == "" {
-		return ChatResponse{}, fmt.Errorf("llm.OpenAI: model required")
-	}
-	if req.ToolChoice != ToolChoiceAuto && req.ToolChoice != ToolChoiceNone {
-		return ChatResponse{}, fmt.Errorf("llm.OpenAI: unsupported tool choice %q", req.ToolChoice)
-	}
-	release, err := c.acquire(ctx)
+	_, release, err := c.begin(ctx, req)
 	if err != nil {
 		return ChatResponse{}, err
 	}
@@ -183,16 +177,11 @@ func toMessageParam(message ChatMessage) (openai.ChatCompletionMessageParamUnion
 		if len(message.Parts) == 0 {
 			return openai.UserMessage(message.Content), nil
 		}
-		parts := []openai.ChatCompletionContentPartUnionParam{openai.TextContentPart(message.Content)}
-		for _, p := range message.Parts {
-			switch p.Type {
-			case PartImage:
-				parts = append(parts, openai.ImageContentPart(openai.ChatCompletionContentPartImageImageURLParam{URL: "data:" + p.MimeType + ";base64," + base64.StdEncoding.EncodeToString(p.Data)}))
-			case PartText:
-				parts = append(parts, openai.TextContentPart(p.Text))
-			default:
-				return openai.ChatCompletionMessageParamUnion{}, fmt.Errorf("unsupported content part %q", p.Type)
-			}
+		parts, err := userParts(message, openai.TextContentPart, func(p ContentPart) openai.ChatCompletionContentPartUnionParam {
+			return openai.ImageContentPart(openai.ChatCompletionContentPartImageImageURLParam{URL: "data:" + p.MimeType + ";base64," + base64.StdEncoding.EncodeToString(p.Data)})
+		})
+		if err != nil {
+			return openai.ChatCompletionMessageParamUnion{}, err
 		}
 		return openai.UserMessage(parts), nil
 	case RoleAssistant:
@@ -214,9 +203,6 @@ func toMessageParam(message ChatMessage) (openai.ChatCompletionMessageParamUnion
 		}
 		return openai.ChatCompletionMessageParamUnion{OfAssistant: &assistant}, nil
 	case RoleTool:
-		if message.ToolCallID == "" {
-			return openai.ChatCompletionMessageParamUnion{}, fmt.Errorf("tool message requires tool_call_id")
-		}
 		return openai.ToolMessage(message.Content, message.ToolCallID), nil
 	default:
 		return openai.ChatCompletionMessageParamUnion{}, fmt.Errorf("unsupported role %q", message.Role)
