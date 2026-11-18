@@ -23,7 +23,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/0xfakeSpike/ollupi/tool"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
-	"github.com/0xfakeSpike/ollupi/tool/mcp"
 	"github.com/0xfakeSpike/ollupi/user"
 	"github.com/coder/websocket"
 )
@@ -372,7 +371,15 @@ type MCPServerListResult struct {
 
 type MCPServer struct {
 	MCPServerConfig
-	Status *mcp.ServerStatus `json:"status,omitempty"`
+	Status *MCPServerStatus `json:"status,omitempty"`
+}
+
+type MCPServerStatus struct {
+	Name         string   `json:"name"`
+	Connected    bool     `json:"connected"`
+	Tools        int      `json:"tools"`
+	SkippedTools []string `json:"skippedTools,omitempty"`
+	Error        string   `json:"error,omitempty"`
 }
 
 type MCPServerDeleteParams struct {

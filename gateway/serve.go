@@ -12,16 +12,16 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/app"
+	"github.com/0xfakeSpike/ollupi/auth"
 	"github.com/0xfakeSpike/ollupi/pkg/wshub"
 	"github.com/0xfakeSpike/ollupi/store"
-	"github.com/0xfakeSpike/ollupi/tool/mcp"
 )
 
 const lookupTimeout = 10 * time.Second
 
 type Options struct {
 	Token          string
-	Authenticate   Authenticate
+	Authenticate   auth.Authenticate
 	AllowedOrigins []string
 	AllowedHosts   []string
 	Connections    wshub.Options
@@ -30,14 +30,14 @@ type Options struct {
 
 const DefaultUser = "default"
 
-func NewServer(a *app.App, feed *store.Feed, servers *mcp.Users, opts Options) (*Server, error) {
+func NewServer(a *app.App, feed *store.Feed, opts Options) (*Server, error) {
 	if opts.Authenticate == nil {
 		if strings.TrimSpace(opts.Token) == "" {
-			return nil, errors.New("gateway: a token is required; clients send it as Authorization: Bearer <token> or, from a browser, as the subprotocol after " + tokenProtocol)
+			return nil, errors.New("gateway: a token is required; clients send it as Authorization: Bearer <token> or, from a browser, as the subprotocol after " + auth.TokenProtocol)
 		}
 		opts.Authenticate = func(_ context.Context, token string) (string, error) {
 			if subtle.ConstantTimeCompare([]byte(token), []byte(opts.Token)) != 1 {
-				return "", ErrUnknownToken
+				return "", auth.ErrUnknownToken
 			}
 			return DefaultUser, nil
 		}
@@ -52,7 +52,6 @@ func NewServer(a *app.App, feed *store.Feed, servers *mcp.Users, opts Options) (
 	s := &Server{
 		app:          a,
 		feed:         feed,
-		mcp:          servers,
 		authenticate: opts.Authenticate,
 		admit:        opts.Admit,
 		hosts:        append(slices.Clone(localHosts), opts.AllowedHosts...),

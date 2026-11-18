@@ -151,6 +151,14 @@ type MCPServer struct {
 	Headers map[string]string
 }
 
+type MCPStatus struct {
+	Name      string
+	Connected bool
+	Tools     int
+	Skipped   []string
+	Error     string
+}
+
 var serverName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$`)
 
 func (s MCPServer) Check(providers []string) error {
