@@ -11,11 +11,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/policy"
 	"github.com/0xfakeSpike/ollupi/tool"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
-	"github.com/0xfakeSpike/ollupi/user"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -33,7 +33,7 @@ type Session struct {
 	down error
 }
 
-func connect(ctx, running context.Context, client *mcp.Client, box sandbox.Box, s user.MCPServer) (*Session, error) {
+func connect(ctx, running context.Context, client *mcp.Client, box sandbox.Box, s account.MCPServer) (*Session, error) {
 	out := &Session{name: s.Name, timeout: defaultCallTimeout, tools: map[string]*mcp.Tool{}}
 	var transport mcp.Transport
 	if s.Command != "" {

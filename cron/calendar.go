@@ -8,7 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/0xfakeSpike/ollupi/user"
+	"github.com/0xfakeSpike/ollupi/account"
 	robfig "github.com/robfig/cron/v3"
 )
 
@@ -37,39 +37,39 @@ type Draft struct {
 	Times  *int
 }
 
-func (c Calendar) NewJob(id, thread string, d Draft, now time.Time) (user.CronJob, error) {
+func (c Calendar) NewJob(id, thread string, d Draft, now time.Time) (account.CronJob, error) {
 	name, spec, prompt, times := strings.TrimSpace(d.Name), strings.TrimSpace(d.Spec), strings.TrimSpace(d.Prompt), d.Times
 	if !NamePattern.MatchString(name) {
-		return user.CronJob{}, fmt.Errorf("cron: %w: name %q must match %s", ErrInvalidJob, name, NamePattern)
+		return account.CronJob{}, fmt.Errorf("cron: %w: name %q must match %s", ErrInvalidJob, name, NamePattern)
 	}
 	if prompt == "" || utf8.RuneCountInString(prompt) > MaxPromptRunes {
-		return user.CronJob{}, fmt.Errorf("cron: %w: prompt must be 1 to %d characters", ErrInvalidJob, MaxPromptRunes)
+		return account.CronJob{}, fmt.Errorf("cron: %w: prompt must be 1 to %d characters", ErrInvalidJob, MaxPromptRunes)
 	}
 	if times != nil && *times < 1 {
-		return user.CronJob{}, fmt.Errorf("cron: %w: times must be at least 1", ErrInvalidJob)
+		return account.CronJob{}, fmt.Errorf("cron: %w: times must be at least 1", ErrInvalidJob)
 	}
 	next, err := c.Next(spec, now)
 	if err != nil {
-		return user.CronJob{}, err
+		return account.CronJob{}, err
 	}
-	job := user.CronJob{ID: id, Thread: thread, Name: name, Spec: spec, Prompt: prompt, Times: times, NextRun: next, Created: now}
+	job := account.CronJob{ID: id, Thread: thread, Name: name, Spec: spec, Prompt: prompt, Times: times, NextRun: next, Created: now}
 	return job, lastRun(job, now)
 }
 
-func (c Calendar) Pause(job user.CronJob, paused bool, now time.Time) (user.CronJob, error) {
+func (c Calendar) Pause(job account.CronJob, paused bool, now time.Time) (account.CronJob, error) {
 	job.Paused = paused
 	if paused {
 		return job, nil
 	}
 	next, err := c.Next(job.Spec, now)
 	if err != nil {
-		return user.CronJob{}, err
+		return account.CronJob{}, err
 	}
 	job.NextRun = next
 	return job, lastRun(job, now)
 }
 
-func (c Calendar) Advance(job user.CronJob, now time.Time, counted bool) (next user.CronJob, done bool, err error) {
+func (c Calendar) Advance(job account.CronJob, now time.Time, counted bool) (next account.CronJob, done bool, err error) {
 	if counted {
 		job.Runs++
 	}
@@ -77,12 +77,12 @@ func (c Calendar) Advance(job user.CronJob, now time.Time, counted bool) (next u
 		return job, true, nil
 	}
 	if job.NextRun, err = c.Next(job.Spec, now); err != nil {
-		return user.CronJob{}, false, err
+		return account.CronJob{}, false, err
 	}
 	return job, false, nil
 }
 
-func lastRun(job user.CronJob, now time.Time) error {
+func lastRun(job account.CronJob, now time.Time) error {
 	if job.Times != nil && *job.Times-job.Runs == 1 && job.NextRun.After(now.AddDate(1, -1, 0)) {
 		return fmt.Errorf("cron: %w: the time of job %q's last run has passed; a spec has no year, so it would run next year", ErrInvalidJob, job.Name)
 	}

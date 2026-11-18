@@ -49,7 +49,7 @@ stateDiagram-v2
 - **移动**：`app.MoveWorkspace` 把文件夹搬到一个已存在且为空的目录，只改 `root`。会话、记忆、定时任务都按工作区 id 引用它。移动要求名下的会话都空闲（`Reader.WorkspaceBusy`），移动期间 app 拦住新轮次。
 - **归档**：已归档的工作区不能新建会话，名下的会话也不能发新消息（`user.ErrWorkspaceArchived`）。
 
-代码：[user/user.go](../user/user.go)、[app/owned.go](../app/owned.go)。
+代码：[account/account.go](../account/account.go)、[app/owned.go](../app/owned.go)。
 
 ## 会话
 

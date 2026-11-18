@@ -30,13 +30,13 @@ type Input struct {
 	Connection  string
 }
 
-func (a *App) Send(ctx context.Context, u, id string, in Input) (turn conversation.Turn, inProgress bool, err error) {
-	atts, err := a.attach(ctx, u, id, in.Attachments)
+func (a *App) Send(ctx context.Context, user, id string, in Input) (turn conversation.Turn, inProgress bool, err error) {
+	atts, err := a.attach(ctx, user, id, in.Attachments)
 	if err != nil {
 		return conversation.Turn{}, false, err
 	}
 	err = a.st.Update(ctx, func(tx store.Tx) error {
-		th, err := topThread(tx, u, id)
+		th, err := topThread(tx, user, id)
 		if err != nil {
 			return err
 		}
@@ -100,14 +100,14 @@ func (a *App) queue(tx store.Tx, th store.Thread, text string, atts []conversati
 	return turn, active.ID == id, nil
 }
 
-func (a *App) Steer(ctx context.Context, u, id, expected string, in Input) (conversation.Turn, error) {
-	atts, err := a.attach(ctx, u, id, in.Attachments)
+func (a *App) Steer(ctx context.Context, user, id, expected string, in Input) (conversation.Turn, error) {
+	atts, err := a.attach(ctx, user, id, in.Attachments)
 	if err != nil {
 		return conversation.Turn{}, err
 	}
 	var turn conversation.Turn
 	err = a.st.Update(ctx, func(tx store.Tx) error {
-		th, err := topThread(tx, u, id)
+		th, err := topThread(tx, user, id)
 		if err != nil {
 			return err
 		}
@@ -129,7 +129,7 @@ func (a *App) Steer(ctx context.Context, u, id, expected string, in Input) (conv
 		for _, it := range v.Requests() {
 			body := conversation.Body(conversation.Answered{Skipped: true})
 			if it.Approval != nil {
-				body = conversation.Decided{Decision: conversation.Decline, By: u}
+				body = conversation.Decided{Decision: conversation.Decline, By: user}
 			}
 			entries = append(entries, conversation.Entry{Turn: turn.ID, Item: it.ID, Body: body})
 		}
@@ -143,9 +143,9 @@ func (a *App) Steer(ctx context.Context, u, id, expected string, in Input) (conv
 	return turn, err
 }
 
-func (a *App) Interrupt(ctx context.Context, u, id, expected string) error {
+func (a *App) Interrupt(ctx context.Context, user, id, expected string) error {
 	return a.st.Update(ctx, func(tx store.Tx) error {
-		v, err := view(tx, u, id)
+		v, err := view(tx, user, id)
 		if err != nil {
 			return err
 		}
@@ -224,12 +224,12 @@ type Request struct {
 	Item   conversation.Item
 }
 
-func (a *App) Requests(ctx context.Context, u, id string) ([]Request, error) {
+func (a *App) Requests(ctx context.Context, user, id string) ([]Request, error) {
 	var out []Request
 	err := a.st.Read(ctx, func(r store.Reader) error {
 		var threads []store.Thread
 		if id == "" {
-			ids, err := r.Waiting(u)
+			ids, err := r.Waiting(user)
 			if err != nil {
 				return err
 			}
@@ -241,7 +241,7 @@ func (a *App) Requests(ctx context.Context, u, id string) ([]Request, error) {
 				threads = append(threads, th)
 			}
 		} else {
-			th, err := thread(r, u, id)
+			th, err := thread(r, user, id)
 			if err != nil {
 				return err
 			}
@@ -273,13 +273,13 @@ func askedAt(it conversation.Item) time.Time {
 	return it.Input.AskedAt
 }
 
-func (a *App) Decide(ctx context.Context, u, id, approval string, decision conversation.Decision) error {
-	box, err := a.toolbox(ctx, u)
+func (a *App) Decide(ctx context.Context, user, id, approval string, decision conversation.Decision) error {
+	box, err := a.toolbox(ctx, user)
 	if err != nil {
 		return err
 	}
 	return a.st.Update(ctx, func(tx store.Tx) error {
-		v, err := view(tx, u, id)
+		v, err := view(tx, user, id)
 		if err != nil {
 			return err
 		}
@@ -293,7 +293,7 @@ func (a *App) Decide(ctx context.Context, u, id, approval string, decision conve
 		if available := it.Approval.Decisions(); !slices.Contains(available, decision) {
 			return fmt.Errorf("%w: %q is not one of %q", ErrInvalidDecision, decision, available)
 		}
-		if _, err := tx.Append(id, conversation.Entry{Turn: it.Turn, Item: it.ID, Body: conversation.Decided{Decision: decision, By: u}}); err != nil {
+		if _, err := tx.Append(id, conversation.Entry{Turn: it.Turn, Item: it.ID, Body: conversation.Decided{Decision: decision, By: user}}); err != nil {
 			return err
 		}
 		if decision != conversation.AcceptAlways {
@@ -303,9 +303,9 @@ func (a *App) Decide(ctx context.Context, u, id, approval string, decision conve
 	})
 }
 
-func (a *App) Answer(ctx context.Context, u, id, item string, answers ask.Answers) error {
+func (a *App) Answer(ctx context.Context, user, id, item string, answers ask.Answers) error {
 	return a.st.Update(ctx, func(tx store.Tx) error {
-		v, err := view(tx, u, id)
+		v, err := view(tx, user, id)
 		if err != nil {
 			return err
 		}

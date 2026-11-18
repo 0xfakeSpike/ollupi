@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/cron"
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/0xfakeSpike/ollupi/store/sqlite"
 	"github.com/0xfakeSpike/ollupi/tool"
-	"github.com/0xfakeSpike/ollupi/user"
 )
 
 func TestACronJobMadeInAConversationIsListedPausedAndDeleted(t *testing.T) {
@@ -24,7 +24,7 @@ func TestACronJobMadeInAConversationIsListedPausedAndDeleted(t *testing.T) {
 		if err := tx.EnsureUser("u"); err != nil {
 			return err
 		}
-		return tx.CreateThread(store.Thread{User: "u", Thread: user.Thread{ID: "th", Title: "news", Created: now, Updated: now}})
+		return tx.CreateThread(store.Thread{User: "u", Thread: account.Thread{ID: "th", Title: "news", Created: now, Updated: now}})
 	})
 	if err != nil {
 		t.Fatal(err)

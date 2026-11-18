@@ -3,12 +3,12 @@ package memory
 import (
 	"context"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/0xfakeSpike/ollupi/tool"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
-	"github.com/0xfakeSpike/ollupi/user"
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
@@ -27,7 +27,7 @@ type Provider struct{ st store.Store }
 func New(st store.Store) Provider { return Provider{st: st} }
 
 func (Provider) Name() (string, string) {
-	return user.MemoryProvider, "Searches long-term memory beyond what the conversation starts with."
+	return account.MemoryProvider, "Searches long-term memory beyond what the conversation starts with."
 }
 
 func (Provider) Tools(context.Context) ([]kit.Spec, error) {

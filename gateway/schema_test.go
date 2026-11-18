@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/ask"
 	"github.com/0xfakeSpike/ollupi/conversation"
@@ -27,7 +28,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/tool/builtin/subagent"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/workspace"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
-	"github.com/0xfakeSpike/ollupi/user"
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
@@ -73,12 +73,12 @@ var builtinTools = map[string]struct{ arguments, output reflect.Type }{
 
 var preparedExecution = reflect.TypeFor[workspace.Prepared]()
 
-var providers = []string{agent.CronProvider, agent.SkillsProvider, user.MemoryProvider}
+var providers = []string{agent.CronProvider, agent.SkillsProvider, account.MemoryProvider}
 
 var enums = []any{
 	conversation.ItemKinds, conversation.ItemStatuses, conversation.ThreadStatuses, conversation.Ends, conversation.Decisions,
 	TurnStatuses, memory.Scopes, memory.Kinds, memory.Statuses, memory.FailureCodes, policy.PolicyValues, agent.Names,
-	plan.StatusValues, user.EnvironmentKinds,
+	plan.StatusValues, account.EnvironmentKinds,
 }
 
 var plainStrings = []reflect.Type{}

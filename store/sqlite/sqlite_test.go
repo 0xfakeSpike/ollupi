@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/store"
-	"github.com/0xfakeSpike/ollupi/user"
 )
 
 func open(t *testing.T, home string) *Store {
@@ -30,7 +30,7 @@ func start(t *testing.T, s *Store, owner, thread string) {
 		if err := tx.EnsureUser(owner); err != nil {
 			return err
 		}
-		if err := tx.CreateThread(store.Thread{User: owner, Thread: user.Thread{ID: thread, Title: "a chat", Created: now, Updated: now}}); err != nil {
+		if err := tx.CreateThread(store.Thread{User: owner, Thread: account.Thread{ID: thread, Title: "a chat", Created: now, Updated: now}}); err != nil {
 			return err
 		}
 		_, err := tx.Append(thread,
@@ -237,7 +237,7 @@ func TestASubagentWaitingOnTheUserMakesItsParentWait(t *testing.T) {
 	start(t, s, "u", "th")
 	now := time.Now().UTC()
 	update(t, s, func(tx store.Tx) error {
-		if err := tx.CreateThread(store.Thread{User: "u", Thread: user.Thread{ID: "child", Parent: "th", ParentItem: "launch", Created: now, Updated: now}}); err != nil {
+		if err := tx.CreateThread(store.Thread{User: "u", Thread: account.Thread{ID: "child", Parent: "th", ParentItem: "launch", Created: now, Updated: now}}); err != nil {
 			return err
 		}
 		_, err := tx.Append("child", conversation.Entry{Turn: "c1", Body: conversation.TurnQueued{Role: "general-sub-agent"}},

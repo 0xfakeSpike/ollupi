@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/run"
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/0xfakeSpike/ollupi/store/sqlite"
-	"github.com/0xfakeSpike/ollupi/user"
 )
 
 type runner func(ctx context.Context, thread string) error
@@ -36,7 +36,7 @@ func ask(t *testing.T, st store.Store, thread string) {
 		if err := tx.EnsureUser("u"); err != nil {
 			return err
 		}
-		if err := tx.CreateThread(store.Thread{User: "u", Thread: user.Thread{ID: thread, Created: now, Updated: now}}); err != nil {
+		if err := tx.CreateThread(store.Thread{User: "u", Thread: account.Thread{ID: thread, Created: now, Updated: now}}); err != nil {
 			return err
 		}
 		_, err := tx.Append(thread, conversation.Entry{Turn: "t1", Body: conversation.TurnQueued{}},

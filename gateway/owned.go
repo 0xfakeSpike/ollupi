@@ -3,10 +3,10 @@ package gateway
 import (
 	"context"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/cron"
 	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
-	"github.com/0xfakeSpike/ollupi/user"
 )
 
 func (c *conn) modelList(ctx context.Context, _ Empty) (ModelListResult, error) {
@@ -36,7 +36,7 @@ func (c *conn) mcpServerList(ctx context.Context, _ Empty) (MCPServerListResult,
 }
 
 func (c *conn) mcpServerSet(ctx context.Context, p MCPServerConfig) (MCPServerConfig, error) {
-	s := user.MCPServer{Name: p.Name, Command: p.Command, Args: p.Args, Env: p.Env, URL: p.URL, Headers: p.Headers}
+	s := account.MCPServer{Name: p.Name, Command: p.Command, Args: p.Args, Env: p.Env, URL: p.URL, Headers: p.Headers}
 	return p, c.s.app.SetMCPServer(ctx, c.user, s)
 }
 
