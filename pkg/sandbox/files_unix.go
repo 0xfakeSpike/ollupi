@@ -84,7 +84,7 @@ func openRegular(path string) (*os.File, error) {
 func (s *Sandbox) open(path string) (*os.File, error) {
 	f, err := openRegular(path)
 	if errors.Is(err, errLink) {
-		if path, err = CanonicalPath(path, ""); err != nil {
+		if path, err = canonicalPath(path, ""); err != nil {
 			return nil, err
 		}
 		f, err = openRegular(path)
