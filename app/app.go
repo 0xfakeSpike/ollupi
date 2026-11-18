@@ -126,9 +126,5 @@ func (a *App) toolbox(ctx context.Context, u string) (policy.Toolbox, error) {
 	if err != nil {
 		return policy.Toolbox{}, fmt.Errorf("the tools of the user: %w", err)
 	}
-	box := policy.Toolbox{Unavailable: set.Unavailable()}
-	for _, t := range set.Specs() {
-		box.Tools = append(box.Tools, policy.Tool{Name: t.Name, Provider: t.Provider, Content: t.Content})
-	}
-	return box, nil
+	return tool.Toolbox(set), nil
 }

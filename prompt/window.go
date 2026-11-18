@@ -44,7 +44,7 @@ type Input struct {
 	Tools     []llm.ToolSpec
 }
 
-func Transcript(v conversation.View) ([]conversation.Item, []conversation.Response) {
+func Transcript(v conversation.View) []conversation.Item {
 	active, _ := v.Active()
 	var items []conversation.Item
 	for _, t := range v.Turns {
@@ -52,7 +52,7 @@ func Transcript(v conversation.View) ([]conversation.Item, []conversation.Respon
 			items = append(items, v.ItemsOf(t.ID)...)
 		}
 	}
-	return items, v.Responses
+	return items
 }
 
 type Request struct {
