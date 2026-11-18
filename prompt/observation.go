@@ -76,7 +76,7 @@ func (o *observations) callResult(it conversation.Item, outputBudget int) string
 		o.rendered[key] = text
 		return text
 	case it.Status == conversation.Errored || it.Status == conversation.Declined:
-		return "error: " + clipText(it.Error, outputBudget)
+		return "error: " + clip(it.Error, outputBudget, redact.Spans, omitted)
 	}
 	return "error: the call did not finish"
 }
@@ -123,10 +123,6 @@ func decoded(raw json.RawMessage) any {
 		return string(raw)
 	}
 	return v
-}
-
-func clipText(s string, budget int) string {
-	return clip(s, budget, redact.Spans, omitted)
 }
 
 func omitted(from, to int) string {
