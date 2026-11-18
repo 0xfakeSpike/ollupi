@@ -45,15 +45,12 @@ func fanout(args []string) {
 	srv := httptest.NewServer(p)
 	defer srv.Close()
 	http.DefaultTransport.(*http.Transport).MaxIdleConnsPerHost = *calls
-	dir, err := os.MkdirTemp("", "ollupi-bench-")
-	if err != nil {
-		log.Fatal(err)
-	}
+	dir := tempHome()
 	defer os.RemoveAll(dir)
-	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}}
+	tr := newTracker()
 	e := newEngine(host.Config{
-		Home: dir, Models: []llm.Model{{Name: "fake", Connection: "fake"}},
-		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(srv.URL, "", *calls, map[string]llm.Limits{"fake": {Context: 200_000, Output: 32_000}})},
+		Home: dir, Models: fakeModels,
+		Connections: map[string]llm.Client{"fake": fakeConnection(srv.URL, *calls)},
 		Tools:       []kit.Provider{work{latency: *toolLatency}},
 		Slots:       *slots,
 	})
