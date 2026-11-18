@@ -12,6 +12,11 @@ import (
 type dirs struct {
 	box   sandbox.Box
 	roots []string
+	// inWorkspace is whether roots is the conversation's workspace. A path
+	// in it is shown relative to it, so a client finds the file under the
+	// workspace's root as it is now, after a move too. Without a workspace
+	// a path is shown whole: the client has no root to join it to.
+	inWorkspace bool
 }
 
 func (r *Provider) dirs(ctx context.Context, caller tool.Caller) (dirs, error) {
@@ -44,7 +49,7 @@ func (r *Provider) dirs(ctx context.Context, caller tool.Caller) (dirs, error) {
 	if err := box.Check(root); err != nil {
 		return dirs{}, err
 	}
-	return dirs{box: box, roots: []string{root}}, nil
+	return dirs{box: box, roots: []string{root}, inWorkspace: true}, nil
 }
 
 func (d dirs) abs(path string) string {

@@ -131,13 +131,13 @@ func TestToolsRunOnTheUsersMachine(t *testing.T) {
 	if out := read("a", ToolReadFile, map[string]any{"path": "src/a.go"}).(ReadFileOutput); !strings.Contains(out.Text, "needle") {
 		t.Errorf("read: %+v", out)
 	}
-	if out := read("a", ToolGlob, map[string]any{"pattern": "**/*.go"}).(GlobOutput); !slices.Equal(out.Files, []string{"src/a.go"}) {
+	if out := read("a", ToolGlob, map[string]any{"pattern": "**/*.go"}).(GlobOutput); !slices.Equal(out.Files, []string{machineRoot + "/src/a.go"}) {
 		t.Errorf("glob, with gen/ ignored: %+v", out)
 	}
-	if out := read("a", ToolGrep, map[string]any{"pattern": "needle"}).(GrepOutput); len(out.Files) != 1 || out.Files[0].Path != "src/a.go" {
+	if out := read("a", ToolGrep, map[string]any{"pattern": "needle"}).(GrepOutput); len(out.Files) != 1 || out.Files[0].Path != machineRoot+"/src/a.go" {
 		t.Errorf("grep: %+v", out)
 	}
-	if out := read("b", ToolGlob, map[string]any{"pattern": "**/*.go"}).(GlobOutput); !slices.Equal(out.Files, []string{"src/b.go"}) {
+	if out := read("b", ToolGlob, map[string]any{"pattern": "**/*.go"}).(GlobOutput); !slices.Equal(out.Files, []string{machineRoot + "/src/b.go"}) {
 		t.Errorf("b's files: %+v", out)
 	}
 
@@ -218,10 +218,10 @@ func TestACallRunsInTheEnvironmentItNames(t *testing.T) {
 		}
 		return res.Output.(GlobOutput).Files
 	}
-	if files := glob(""); !slices.Equal(files, []string{"here.txt"}) {
+	if files := glob(""); !slices.Equal(files, []string{machineRoot + "/here.txt"}) {
 		t.Errorf("a conversation that names no environment saw %v", files)
 	}
-	if files := glob("cloud"); !slices.Equal(files, []string{"there.txt"}) {
+	if files := glob("cloud"); !slices.Equal(files, []string{machineRoot + "/there.txt"}) {
 		t.Errorf("a conversation on the cloud saw %v", files)
 	}
 }
@@ -241,7 +241,7 @@ func TestBoxInMayLeaveTheCallInTheProvidersBox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if files := res.Output.(GlobOutput).Files; !slices.Equal(files, []string{"here.txt"}) {
+	if files := res.Output.(GlobOutput).Files; !slices.Equal(files, []string{machineRoot + "/here.txt"}) {
 		t.Errorf("the call ran in %v, want this machine's box", files)
 	}
 }

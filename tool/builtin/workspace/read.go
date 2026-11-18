@@ -195,7 +195,12 @@ func readable(ctx context.Context, d dirs, raw string) (string, error) {
 	return abs, nil
 }
 
+// display is a path as tools show it: relative to the workspace when it is
+// in it, whole otherwise.
 func (d dirs) display(abs string) string {
+	if !d.inWorkspace {
+		return abs
+	}
 	for _, root := range d.roots {
 		if sandbox.Within(root, abs) {
 			rel, _ := filepath.Rel(root, abs)
