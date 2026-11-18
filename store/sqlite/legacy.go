@@ -498,11 +498,10 @@ func (b *logBuilder) end(t legacyTurn, last time.Time) {
 	}
 	why := cmp.Or(reason, "the turn ended before the call did")
 	for _, it := range b.v.ItemsOf(t.ID) {
-		open := it.Kind == conversation.ItemToolCall && (it.Status == conversation.Pending || it.Status == conversation.InProgress)
 		switch {
-		case open && it.Input != nil && !it.Input.Answered:
+		case it.WaitsForInput():
 			b.add(t.ID, it.ID, at, conversation.Answered{Skipped: true})
-		case open:
+		case it.Open():
 			b.add(t.ID, it.ID, at, conversation.ToolResult{Declined: true, Error: why})
 		}
 	}

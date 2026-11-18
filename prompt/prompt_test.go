@@ -30,8 +30,7 @@ var wide = NewWindow("m", llm.Limits{Context: 200_000, Output: 8_000})
 
 func build(t *testing.T, w Window, v conversation.View) Request {
 	t.Helper()
-	items, responses := Transcript(v)
-	r, err := w.Build(Input{Items: items, Responses: responses, System: "sys"})
+	r, err := w.Build(Input{Items: Transcript(v), Responses: v.Responses, System: "sys"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +81,7 @@ func TestATurnFromBehindReadsAfterTheOneBeforeIt(t *testing.T) {
 	l.add("t2", "m2", conversation.UserMessage{Text: "second"})
 	l.add("t1", "", conversation.ModelResponded{Response: "r1"})
 	l.add("t1", "a1", conversation.AgentMessage{Text: "one", Response: "r1"})
-	if items, _ := Transcript(l.v); len(items) != 2 {
+	if items := Transcript(l.v); len(items) != 2 {
 		t.Fatalf("the turn behind is shown: %d items", len(items))
 	}
 	l.add("t1", "", conversation.TurnEnded{Status: conversation.Completed})
@@ -117,12 +116,12 @@ func TestALongHistoryAsksForCompaction(t *testing.T) {
 		l.add("t", "", conversation.ModelResponded{Response: resp})
 		l.add("t", fmt.Sprint("a", i), conversation.AgentMessage{Text: strings.Repeat("words of the agent ", 80), Response: resp})
 	}
-	items, responses := Transcript(l.v)
-	r, err := w.Build(Input{Items: items, Responses: responses})
+	in := Input{Items: Transcript(l.v), Responses: l.v.Responses}
+	r, err := w.Build(in)
 	if err != nil || !r.NeedsCompaction {
 		t.Fatalf("a history over the window: needs compaction %v, %v", r.NeedsCompaction, err)
 	}
-	c, err := w.Compaction(Input{Items: items, Responses: responses})
+	c, err := w.Compaction(in)
 	if err != nil || c.Stats.CalibratedTokens > w.InputTokens() || !strings.Contains(c.Messages[len(c.Messages)-1].Content, "CONTEXT CHECKPOINT COMPACTION") {
 		t.Fatalf("the compaction request: %d tokens, %v", c.Stats.CalibratedTokens, err)
 	}

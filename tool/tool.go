@@ -18,6 +18,14 @@ type Set interface {
 	Invoke(ctx context.Context, c Call) Result
 }
 
+func Toolbox(s Set) policy.Toolbox {
+	box := policy.Toolbox{Unavailable: s.Unavailable()}
+	for _, t := range s.Specs() {
+		box.Tools = append(box.Tools, policy.Tool{Name: t.Name, Provider: t.Provider, Content: t.Content})
+	}
+	return box
+}
+
 type Spec struct {
 	Name        string
 	Provider    string

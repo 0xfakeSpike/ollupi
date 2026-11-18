@@ -98,8 +98,8 @@ func (r *Runner) settle(ctx context.Context, thread string) error {
 		}
 		var entries []conversation.Entry
 		for _, it := range v.ItemsOf(turn.ID) {
-			waitsForAnswer := it.Input != nil && !it.Input.Answered
-			if it.Kind == conversation.ItemToolCall && it.Status == conversation.InProgress && !waitsForAnswer {
+			cutOff := it.Kind == conversation.ItemToolCall && it.Status == conversation.InProgress && !it.WaitsForInput()
+			if cutOff {
 				entries = append(entries, conversation.Entry{Turn: turn.ID, Item: it.ID, Body: conversation.ToolResult{Error: stranded}})
 			}
 		}
@@ -117,6 +117,7 @@ type step struct {
 	workspace *user.Workspace
 	settings  user.Settings
 	v         conversation.View
+	items     []conversation.Item
 	turn      conversation.Turn
 	role      agent.Role
 	window    prompt.Window
@@ -142,6 +143,7 @@ func (r *Runner) load(ctx context.Context, thread string) (*step, error) {
 		if s.turn, active = s.v.Active(); !active {
 			return nil
 		}
+		s.items = prompt.Transcript(s.v)
 		if s.settings, err = rd.Settings(s.th.User); err != nil {
 			return err
 		}
@@ -183,7 +185,7 @@ func (s *step) permit(r *Runner, set tool.Set) error {
 	}
 	layers := slices.Concat(s.role.Own, user.Layers(user.Deployment(r.deployment),
 		s.settings, s.workspace, conversationLayer))
-	box := policy.Toolbox{Unavailable: set.Unavailable()}
+	box := tool.Toolbox(set)
 	s.specs = map[string]tool.Spec{}
 	var allowlist []string
 	if r.allowlist != nil {
@@ -191,7 +193,6 @@ func (s *step) permit(r *Runner, set tool.Set) error {
 	}
 	for _, t := range set.Specs() {
 		s.specs[t.Name] = t
-		box.Tools = append(box.Tools, policy.Tool{Name: t.Name, Provider: t.Provider, Content: t.Content})
 		if slices.Contains(r.allowlist, t.Name) {
 			allowlist = append(allowlist, t.Name)
 		}
@@ -205,9 +206,8 @@ func (s *step) permit(r *Runner, set tool.Set) error {
 		spec := s.specs[t.Name]
 		visible = append(visible, prompt.Tool{Name: spec.Name, Provider: spec.Provider, Description: spec.Description, Schema: spec.Schema})
 	}
-	items, _ := prompt.Transcript(s.v)
 	s.set, s.checker = set, checker
-	s.sent, s.deferred = s.window.Offer(visible, s.role.Core, items)
+	s.sent, s.deferred = s.window.Offer(visible, s.role.Core, s.items)
 	return nil
 }
 

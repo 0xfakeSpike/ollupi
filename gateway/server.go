@@ -152,16 +152,10 @@ func (c *conn) change(seq int64, thread string, ch store.Change) {
 	}
 	for _, it := range ch.Items {
 		c.rpc.Notify(notifyItemChanged, ItemChangedNotification{ThreadID: thread, Item: itemRow(it), Seq: seq})
-		if waitsOnUser(it) {
+		if it.WaitsForApproval() || it.WaitsForInput() {
 			c.request(thread, it)
 		}
 	}
-}
-
-func waitsOnUser(it conversation.Item) bool {
-	asksApproval := it.Status == conversation.Pending && it.Approval != nil && it.Approval.Decision == ""
-	asksInput := it.Status == conversation.InProgress && it.Input != nil && !it.Input.Answered
-	return asksApproval || asksInput
 }
 
 func (c *conn) owned(thread string, o store.Owned) {

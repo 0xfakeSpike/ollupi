@@ -76,6 +76,15 @@ type Layer struct {
 	Without   []string
 }
 
+func Kept(layers []Layer, t Tool) bool {
+	for _, l := range layers {
+		if !l.Keeps(t) {
+			return false
+		}
+	}
+	return true
+}
+
 func (l Layer) Keeps(t Tool) bool {
 	return (l.Providers == nil || slices.Contains(l.Providers, t.Provider)) && !slices.Contains(l.Without, t.Provider)
 }
@@ -108,6 +117,13 @@ type Content struct {
 	Parts  []string
 	Opaque bool
 	Folded bool
+}
+
+func (c Content) parts() []string {
+	if len(c.Parts) == 0 {
+		return []string{c.Match}
+	}
+	return c.Parts
 }
 
 type Call struct {
