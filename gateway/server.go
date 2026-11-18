@@ -46,14 +46,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	s.served.Add(1)
 	defer s.served.Done()
-	user, status, why := s.authorize(r)
-	switch status {
-	case 0:
-	case http.StatusServiceUnavailable:
-		s.hub.Refuse(w, why)
-		return
-	default:
-		http.Error(w, why, status)
+	user, ok := s.authorize(w, r)
+	if !ok {
 		return
 	}
 	if !s.hub.Admit(w) {
@@ -148,7 +142,7 @@ func (c *conn) change(seq int64, thread string, ch store.Change) {
 	header := threadRow(*ch.Header)
 	c.rpc.Notify(notifyThreadChanged, ThreadChangedNotification{ThreadID: thread, Thread: &header, Seq: seq})
 	for _, t := range ch.Turns {
-		c.rpc.Notify(notifyTurnChanged, TurnChangedNotification{ThreadID: thread, Turn: turnRow(thread, t, ch.Active), Seq: seq})
+		c.rpc.Notify(notifyTurnChanged, TurnChangedNotification{ThreadID: thread, Turn: turnRow(thread, t, t.ID == ch.Active), Seq: seq})
 	}
 	for _, it := range ch.Items {
 		c.rpc.Notify(notifyItemChanged, ItemChangedNotification{ThreadID: thread, Item: itemRow(it), Seq: seq})

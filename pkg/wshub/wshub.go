@@ -95,7 +95,7 @@ func (h *Hub) Count() int {
 
 func (h *Hub) add(key string, ws *websocket.Conn) {
 	h.mu.Lock()
-	held := append(slices.Clone(h.held[key]), ws)
+	held := append(h.held[key], ws)
 	var oldest *websocket.Conn
 	if len(held) > h.opts.PerKey {
 		oldest, held = held[0], held[1:]
@@ -110,7 +110,7 @@ func (h *Hub) add(key string, ws *websocket.Conn) {
 func (h *Hub) remove(key string, ws *websocket.Conn) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	held := slices.DeleteFunc(slices.Clone(h.held[key]), func(x *websocket.Conn) bool { return x == ws })
+	held := slices.DeleteFunc(h.held[key], func(x *websocket.Conn) bool { return x == ws })
 	if len(held) == 0 {
 		delete(h.held, key)
 		return
