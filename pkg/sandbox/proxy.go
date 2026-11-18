@@ -3,17 +3,21 @@ package sandbox
 import (
 	"bufio"
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
+	"net/http/httputil"
 	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/things-go/go-socks5"
+	"github.com/things-go/go-socks5/statute"
 )
 
 const (
@@ -27,6 +31,9 @@ type proxy struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
 	resolve func(ctx context.Context, host string) ([]netip.Addr, error)
+	web     *http.Server
+	socks   *socks5.Server
+	plain   *handoff
 
 	mu      sync.Mutex
 	conns   map[net.Conn]struct{}
@@ -47,9 +54,41 @@ func startProxy(compiled compiledRules) (*proxy, error) {
 		resolve: func(ctx context.Context, host string) ([]netip.Addr, error) {
 			return net.DefaultResolver.LookupNetIP(ctx, "ip", host)
 		},
+		plain: &handoff{addr: ln.Addr(), conns: make(chan net.Conn), done: make(chan struct{})},
 	}
-	p.wg.Add(1)
+	forward := &httputil.ReverseProxy{
+		Rewrite: func(*httputil.ProxyRequest) {},
+		Transport: &http.Transport{DialContext: func(_ context.Context, _, addr string) (net.Conn, error) {
+			host, port, err := splitTarget(addr, "80")
+			if err != nil {
+				return nil, err
+			}
+			return p.dial(host, port)
+		}},
+		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) { refuseHTTP(w, err) },
+	}
+	p.web = &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodConnect:
+			p.serveConnect(w, r)
+		case r.URL.Scheme != "http" || r.URL.Host == "":
+			refuseHTTP(w, fmt.Errorf("a proxy request needs an absolute http:// URL; use CONNECT for https"))
+		default:
+			forward.ServeHTTP(w, r)
+		}
+	}), ErrorLog: log.New(io.Discard, "", 0)}
+	p.socks = socks5.NewServer(
+		socks5.WithResolver(byName{}),
+		socks5.WithRule(&socks5.PermitCommand{EnableConnect: true}),
+		socks5.WithConnectHandle(p.serveSOCKS),
+		socks5.WithLogger(socks5.NewLogger(log.New(io.Discard, "", 0))),
+	)
+	p.wg.Add(2)
 	go p.serve()
+	go func() {
+		defer p.wg.Done()
+		p.web.Serve(p.plain)
+	}()
 	return p, nil
 }
 
@@ -84,6 +123,7 @@ func (p *proxy) close() {
 	}
 	p.mu.Unlock()
 	p.ln.Close()
+	p.web.Close()
 	p.wg.Wait()
 }
 
@@ -135,20 +175,68 @@ func (p *proxy) serve() {
 		p.wg.Add(1)
 		go func() {
 			defer p.wg.Done()
-			defer p.untrack(c)
-			defer func() { recover() }()
 			br := bufio.NewReader(c)
 			first, err := br.Peek(1)
-			if err != nil {
-				return
+			socks := err == nil && first[0] == 0x05
+			if !socks {
+				p.mu.Lock()
+				delete(p.conns, c)
+				p.mu.Unlock()
 			}
-			if first[0] == 0x05 {
-				p.serveSOCKS(c, br)
-				return
+			switch conn := (peeked{Conn: c, r: br}); {
+			case socks:
+				p.socks.ServeConn(conn)
+				p.untrack(c)
+			case err != nil || !p.plain.give(conn):
+				c.Close()
 			}
-			p.serveHTTP(c, br)
 		}()
 	}
+}
+
+type peeked struct {
+	net.Conn
+	r *bufio.Reader
+}
+
+func (c peeked) Read(b []byte) (int, error) { return c.r.Read(b) }
+
+type handoff struct {
+	addr  net.Addr
+	conns chan net.Conn
+	done  chan struct{}
+	once  sync.Once
+}
+
+func (h *handoff) give(c net.Conn) bool {
+	select {
+	case h.conns <- c:
+		return true
+	case <-h.done:
+		return false
+	}
+}
+
+func (h *handoff) Accept() (net.Conn, error) {
+	select {
+	case c := <-h.conns:
+		return c, nil
+	case <-h.done:
+		return nil, net.ErrClosed
+	}
+}
+
+func (h *handoff) Close() error {
+	h.once.Do(func() { close(h.done) })
+	return nil
+}
+
+func (h *handoff) Addr() net.Addr { return h.addr }
+
+type byName struct{}
+
+func (byName) Resolve(ctx context.Context, _ string) (context.Context, net.IP, error) {
+	return ctx, nil, nil
 }
 
 func (p *proxy) dial(host string, port int) (net.Conn, error) {
@@ -199,182 +287,84 @@ func splitTarget(hostport, defaultPort string) (string, int, error) {
 	return host, n, nil
 }
 
-func (p *proxy) serveHTTP(c net.Conn, br *bufio.Reader) {
-	req, err := http.ReadRequest(br)
-	if err != nil {
-		return
-	}
-	if req.Method == http.MethodConnect {
-		p.serveConnect(c, br, req)
-		return
-	}
-	p.forward(c, req)
-}
-
-func (p *proxy) refuseHTTP(c net.Conn, err error) {
-	status, reason := http.StatusBadGateway, err.Error()
+func refuseHTTP(w http.ResponseWriter, err error) {
+	status := http.StatusBadGateway
 	if errors.Is(err, errBlocked) {
 		status = http.StatusForbidden
 	}
-	body := "sandbox: " + reason + "\n"
-	fmt.Fprintf(c, "HTTP/1.1 %d %s\r\nContent-Type: text/plain\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s", status, http.StatusText(status), len(body), body)
+	http.Error(w, "sandbox: "+err.Error(), status)
 }
 
-func (p *proxy) serveConnect(c net.Conn, br *bufio.Reader, req *http.Request) {
-	host, port, err := splitTarget(req.Host, "443")
+func (p *proxy) serveConnect(w http.ResponseWriter, r *http.Request) {
+	host, port, err := splitTarget(r.Host, "443")
 	if err != nil {
-		p.refuseHTTP(c, err)
+		refuseHTTP(w, err)
 		return
 	}
 	up, err := p.dial(host, port)
 	if err != nil {
-		p.refuseHTTP(c, err)
+		refuseHTTP(w, err)
 		return
 	}
 	if !p.track(up) {
 		return
 	}
 	defer p.untrack(up)
+	c, brw, err := http.NewResponseController(w).Hijack()
+	if err != nil {
+		return
+	}
+	if !p.track(c) {
+		return
+	}
+	defer p.untrack(c)
 	if _, err := io.WriteString(c, "HTTP/1.1 200 Connection Established\r\n\r\n"); err != nil {
 		return
 	}
-
-	tunnel(c, br, up)
+	tunnel(c, brw.Reader, up)
 }
 
-var hopHeaders = []string{"Connection", "Proxy-Connection", "Keep-Alive", "Proxy-Authenticate", "Proxy-Authorization", "Te", "Trailer", "Transfer-Encoding", "Upgrade"}
-
-func (p *proxy) forward(c net.Conn, req *http.Request) {
-	if req.URL.Scheme != "http" || req.URL.Host == "" {
-		p.refuseHTTP(c, fmt.Errorf("a proxy request needs an absolute http:// URL; use CONNECT for https"))
-		return
+func (p *proxy) serveSOCKS(_ context.Context, w io.Writer, req *socks5.Request) error {
+	host := req.DestAddr.FQDN
+	if host == "" {
+		host = req.DestAddr.IP.String()
 	}
-	host, port, err := splitTarget(req.URL.Host, "80")
+	up, err := p.dial(host, req.DestAddr.Port)
 	if err != nil {
-		p.refuseHTTP(c, err)
-		return
-	}
-	up, err := p.dial(host, port)
-	if err != nil {
-		p.refuseHTTP(c, err)
-		return
-	}
-	if !p.track(up) {
-		return
-	}
-	defer p.untrack(up)
-	for _, h := range hopHeaders {
-		req.Header.Del(h)
-	}
-	req.RequestURI = ""
-	req.Close = true
-	if err := req.Write(up); err != nil {
-		p.refuseHTTP(c, err)
-		return
-	}
-	resp, err := http.ReadResponse(bufio.NewReader(up), req)
-	if err != nil {
-		p.refuseHTTP(c, err)
-		return
-	}
-	defer resp.Body.Close()
-	for _, h := range hopHeaders {
-		if h != "Transfer-Encoding" {
-			resp.Header.Del(h)
-		}
-	}
-	resp.Close = true
-	resp.Write(c)
-}
-
-func (p *proxy) serveSOCKS(c net.Conn, br *bufio.Reader) {
-	hdr := make([]byte, 2)
-	if _, err := io.ReadFull(br, hdr); err != nil {
-		return
-	}
-	methods := make([]byte, hdr[1])
-	if _, err := io.ReadFull(br, methods); err != nil {
-		return
-	}
-	if !strings.ContainsRune(string(methods), 0x00) {
-		c.Write([]byte{0x05, 0xff})
-		return
-	}
-	if _, err := c.Write([]byte{0x05, 0x00}); err != nil {
-		return
-	}
-	req := make([]byte, 4)
-	if _, err := io.ReadFull(br, req); err != nil {
-		return
-	}
-	reply := func(code byte) { c.Write([]byte{0x05, code, 0x00, 0x01, 0, 0, 0, 0, 0, 0}) }
-	if req[0] != 0x05 {
-		return
-	}
-	var host string
-	switch req[3] {
-	case 0x01:
-		b := make([]byte, 4)
-		if _, err := io.ReadFull(br, b); err != nil {
-			return
-		}
-		host = netip.AddrFrom4([4]byte(b)).String()
-	case 0x04:
-		b := make([]byte, 16)
-		if _, err := io.ReadFull(br, b); err != nil {
-			return
-		}
-		host = netip.AddrFrom16([16]byte(b)).String()
-	case 0x03:
-		n, err := br.ReadByte()
-		if err != nil {
-			return
-		}
-		b := make([]byte, n)
-		if _, err := io.ReadFull(br, b); err != nil {
-			return
-		}
-		host = string(b)
-	default:
-		reply(0x08)
-		return
-	}
-	pb := make([]byte, 2)
-	if _, err := io.ReadFull(br, pb); err != nil {
-		return
-	}
-	if req[1] != 0x01 {
-		reply(0x07)
-		return
-	}
-	port := int(binary.BigEndian.Uint16(pb))
-	up, err := p.dial(host, port)
-	if err != nil {
+		reply := statute.RepConnectionRefused
 		if errors.Is(err, errBlocked) {
-			reply(0x02)
-		} else {
-			reply(0x05)
+			reply = statute.RepRuleFailure
 		}
-		return
+		return socks5.SendReply(w, reply, nil)
 	}
 	if !p.track(up) {
-		return
+		return nil
 	}
 	defer p.untrack(up)
-	reply(0x00)
-	tunnel(c, br, up)
+	if err := socks5.SendReply(w, statute.RepSuccess, up.LocalAddr()); err != nil {
+		return err
+	}
+	tunnel(w.(net.Conn), req.Reader, up)
+	return nil
 }
 
-func tunnel(c net.Conn, br *bufio.Reader, up net.Conn) {
+func closeWrite(c net.Conn) {
+	if p, ok := c.(peeked); ok {
+		c = p.Conn
+	}
+	if tc, ok := c.(*net.TCPConn); ok {
+		tc.CloseWrite()
+	}
+}
+
+func tunnel(c net.Conn, from io.Reader, up net.Conn) {
 	done := make(chan struct{}, 2)
 	cp := func(dst net.Conn, src io.Reader) {
 		_, _ = io.Copy(dst, src)
-		if tc, ok := dst.(*net.TCPConn); ok {
-			_ = tc.CloseWrite()
-		}
+		closeWrite(dst)
 		done <- struct{}{}
 	}
-	go cp(up, br)
+	go cp(up, from)
 	go cp(c, up)
 	<-done
 	<-done
