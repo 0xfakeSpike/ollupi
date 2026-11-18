@@ -150,6 +150,12 @@ func (s *Sandbox) Same(_ context.Context, a, b string) bool {
 	return err == nil && os.SameFile(left, right)
 }
 
-func Here() Box { return &Sandbox{} }
+func Here() (Box, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("sandbox: the home directory roots this machine's box: %w", err)
+	}
+	return New(Config{Mode: string(ModeFullAccess), Roots: []string{home}})
+}
 
 func (s *Sandbox) CanEscalate() bool { return s.Enforced() }

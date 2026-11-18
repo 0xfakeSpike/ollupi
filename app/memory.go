@@ -104,7 +104,7 @@ func (a *App) Search(ctx context.Context, user, query, workspace string, limit i
 		}
 		var places []memory.Place
 		if workspace != "" {
-			places = append(places, memory.Local(workspace))
+			places = append(places, memory.GlobalPlace, memory.Local(workspace))
 		}
 		notes, err = r.Memories(user, places...)
 		return err
