@@ -11,6 +11,7 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/policy"
 	"github.com/0xfakeSpike/ollupi/tool"
+	"mvdan.cc/sh/v3/syntax"
 )
 
 const maxCommandDepth = 4
@@ -167,119 +168,100 @@ func reserved(word string) bool {
 }
 
 func splitScript(script string) ([][]string, bool) {
-	var (
-		commands [][]string
-		words    []string
-		word     strings.Builder
-		inWord   bool
-		single   bool
-		double   bool
-		opaque   bool
-		skipNext bool
-	)
-	endWord := func() {
-		if !inWord {
-			return
-		}
-		if skipNext {
-			skipNext = false
-		} else {
-			words = append(words, word.String())
-		}
-		word.Reset()
-		inWord = false
+	f, err := syntax.NewParser().Parse(strings.NewReader(script), "")
+	if err != nil {
+		return nil, true
 	}
-	endCommand := func() {
-		endWord()
-		if len(words) > 0 {
-			commands = append(commands, words)
-		}
-		words = nil
-	}
-	runes := []rune(script)
-	for i := 0; i < len(runes); i++ {
-		r := runes[i]
-		switch {
-		case single:
-			if r == '\'' {
-				single = false
-			} else {
-				word.WriteRune(r)
-			}
-		case double:
-			switch {
-			case r == '"':
-				double = false
-			case r == '$' || r == '`':
-				opaque = true
-				word.WriteRune(r)
-			case r == '\\' && i+1 < len(runes):
-				i++
-				if runes[i] == '\n' {
-					opaque = true
+	var commands [][]string
+	opaque := false
+	syntax.Walk(f, func(n syntax.Node) bool {
+		switch n := n.(type) {
+		case *syntax.File, *syntax.BinaryCmd, *syntax.Word, *syntax.Lit, *syntax.SglQuoted, *syntax.DblQuoted, nil:
+		case *syntax.Stmt:
+			opaque = opaque || n.Negated || n.Coprocess || n.Disown
+		case *syntax.CallExpr:
+			var words []string
+			for _, w := range n.Args {
+				word, ok := literal(w.Parts, false)
+				if !ok {
+					word, opaque = source(w), true
 				}
-				if !strings.ContainsRune("$`\"\\", runes[i]) {
-					word.WriteRune('\\')
-				}
-				word.WriteRune(runes[i])
-			default:
-				word.WriteRune(r)
+				words = append(words, word)
 			}
-		case r == '\'':
-			single, inWord = true, true
-		case r == '"':
-			double, inWord = true, true
-		case r == '\\':
-			if i+1 >= len(runes) || runes[i+1] == '\n' {
-				opaque = true
-				continue
+			if len(words) > 0 {
+				commands = append(commands, words)
 			}
-			i++
-			word.WriteRune(runes[i])
-			inWord = true
-		case r == '<' || r == '>':
-			if inWord && isDigits(word.String()) {
-				word.Reset()
-				inWord = false
-			}
-			endWord()
-			if i+1 < len(runes) && runes[i+1] == '(' {
-				opaque = true
-			}
-			for i+1 < len(runes) && strings.ContainsRune("<>&|", runes[i+1]) {
-				i++
-			}
-			skipNext = true
-		case r == ';' || r == '&' || r == '|' || r == '\n':
-			endCommand()
-		case r == ' ' || r == '\t' || r == '\r':
-			endWord()
-		case r > 127 || strings.ContainsRune("$`(){}#!~", r):
-			opaque = true
-			word.WriteRune(r)
-			inWord = true
+		case *syntax.Redirect:
+			_, plainTarget := literal(wordParts(n.Word), false)
+			_, plainBody := literal(wordParts(n.Hdoc), true)
+			plainFD := n.N == nil || isDigits(n.N.Value)
+			opaque = opaque || !plainTarget || !plainBody || !plainFD
 		default:
-			word.WriteRune(r)
-			inWord = true
+			opaque = true
 		}
-	}
-	endCommand()
-	if single || double || skipNext {
-		opaque = true
-	}
+		return true
+	})
 	return commands, opaque
 }
 
-func isDigits(s string) bool {
-	if s == "" {
-		return false
+func wordParts(w *syntax.Word) []syntax.WordPart {
+	if w == nil {
+		return nil
 	}
-	for _, r := range s {
-		if r < '0' || r > '9' {
-			return false
+	return w.Parts
+}
+
+func source(w *syntax.Word) string {
+	var b strings.Builder
+	syntax.NewPrinter().Print(&b, w)
+	return b.String()
+}
+
+func literal(parts []syntax.WordPart, quoted bool) (string, bool) {
+	var b strings.Builder
+	for _, part := range parts {
+		switch p := part.(type) {
+		case *syntax.Lit:
+			if !quoted && strings.ContainsFunc(p.Value, unsettled) {
+				return "", false
+			}
+			b.WriteString(unescape(p.Value, quoted))
+		case *syntax.SglQuoted:
+			if p.Dollar {
+				return "", false
+			}
+			b.WriteString(p.Value)
+		case *syntax.DblQuoted:
+			inner, ok := literal(p.Parts, true)
+			if p.Dollar || !ok {
+				return "", false
+			}
+			b.WriteString(inner)
+		default:
+			return "", false
 		}
 	}
-	return true
+	return b.String(), true
+}
+
+func unescape(s string, quoted bool) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		escapes := s[i] == '\\' && i+1 < len(s) && (!quoted || strings.IndexByte("$`\"\\", s[i+1]) >= 0)
+		if escapes {
+			i++
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
+}
+
+func unsettled(r rune) bool {
+	return r > 127 || strings.ContainsRune("{}~!#", r)
+}
+
+func isDigits(s string) bool {
+	return s != "" && strings.Trim(s, "0123456789") == ""
 }
 
 func blacklisted(c policy.Content, blocked string) bool {

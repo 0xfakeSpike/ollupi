@@ -167,7 +167,7 @@ func TestGrep(t *testing.T) {
 
 func TestIgnoreRules(t *testing.T) {
 	f := parseIgnore("", "# comment\n/top.txt\nnode_modules/\n*.tmp\n!keep.tmp\ndocs/**/draft.md\n")
-	g := &ignores{top: "/r", files: []ignoreFile{f, parseIgnore("sub", "local.txt\n")}}
+	g := &ignores{top: "/r", patterns: append(f, parseIgnore("sub", "local.txt\n")...)}
 	for path, want := range map[string]bool{
 		"/r/top.txt": true, "/r/a/top.txt": false, "/r/node_modules": true, "/r/a/x.tmp": true, "/r/keep.tmp": false,
 		"/r/docs/a/b/draft.md": true, "/r/docs/draft.md": true, "/r/sub/local.txt": true, "/r/local.txt": false,

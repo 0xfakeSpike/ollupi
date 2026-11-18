@@ -35,10 +35,10 @@ func TestHTMLText(t *testing.T) {
 		t.Errorf("title %q", title)
 	}
 	want := "# Version 2\n\n" +
-		"An unusual release with [the intro](https://example.com/docs/intro) and `go test`.\n\n" +
-		"- Faster builds\n- Fewer bugs\n\n" +
+		"An **un**usual release with [the intro](https://example.com/docs/intro) and `go test`.\n\n" +
+		"- Faster builds\n- Fewer *bugs*\n\n" +
 		"```\nline one\n  line two\n```\n\n" +
-		"| Name | Size |\n| app | 2 MB |"
+		"| Name | Size |\n|------|------|\n| app  | 2 MB |"
 	if text != want {
 		t.Errorf("text:\n%s\n--- want:\n%s", text, want)
 	}
