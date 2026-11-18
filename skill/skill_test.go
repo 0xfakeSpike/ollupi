@@ -22,12 +22,12 @@ func TestAResourceStaysInsideItsSkill(t *testing.T) {
 	if err := os.Symlink(filepath.Join(base, "secret.txt"), filepath.Join(root, "docs", "link.md")); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := safeResourcePath(root, "docs/guide.md"); err != nil || got != filepath.Join(root, "docs", "guide.md") {
+	if got, err := readResource(root, "docs/guide.md"); err != nil || string(got) != "guide" {
 		t.Errorf("a file in the skill: %q %v", got, err)
 	}
 	for _, bad := range []string{"../secret.txt", "docs/../../secret.txt", filepath.Join(base, "secret.txt"), "docs/link.md", "..", "."} {
-		if got, err := safeResourcePath(root, bad); err == nil {
-			t.Errorf("%s reached %s", bad, got)
+		if got, err := readResource(root, bad); err == nil {
+			t.Errorf("%s reached %q", bad, got)
 		}
 	}
 }

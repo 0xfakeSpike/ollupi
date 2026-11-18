@@ -15,11 +15,11 @@ import (
 )
 
 const (
-	ProviderName      = "skills"
-	ToolGetRootDir    = "get_skills_root_dir"
-	ToolListSkills    = "list_skills"
-	ToolActivateSkill = "activate_skill"
-	ToolReadResource  = "read_skill_resource"
+	providerName      = "skills"
+	toolGetRootDir    = "get_skills_root_dir"
+	toolListSkills    = "list_skills"
+	toolActivateSkill = "activate_skill"
+	toolReadResource  = "read_skill_resource"
 )
 
 type Tools struct {
@@ -29,28 +29,23 @@ type Tools struct {
 func New(root string) *Tools { return &Tools{root: root} }
 
 func (*Tools) Name() (string, string) {
-	return ProviderName, "Directory-based Agent Skills with explicit activation and on-demand resources."
+	return providerName, "Directory-based Agent Skills with explicit activation and on-demand resources."
 }
 
 func (t *Tools) Invoke(_ context.Context, c tool.Call) (kit.Result, error) {
-	caller, toolName, arguments := c.Caller, c.Tool, c.Arguments
-	switch strings.TrimSpace(toolName) {
-	case ToolGetRootDir:
-		return kit.Result{Output: map[string]any{"skills_root_dir": filepath.Join(t.root, caller.Role)}}, nil
-	case ToolListSkills:
-		own, err := skills.Load(t.root, caller.Role)
+	switch c.Tool {
+	case toolGetRootDir:
+		return kit.Result{Output: map[string]any{"skills_root_dir": filepath.Join(t.root, c.Role)}}, nil
+	case toolListSkills:
+		own, err := skills.Load(t.root, c.Role)
 		if err != nil {
 			return kit.Result{}, err
 		}
 		return kit.Result{Output: map[string]any{"skills": own}}, nil
-	case ToolActivateSkill:
-		return t.activate(caller.Role, arguments)
-	case ToolReadResource:
-		return t.readResource(caller.Role, arguments)
-	default:
-		err := fmt.Errorf("skills: unknown tool %q", toolName)
-		return kit.Result{}, err
+	case toolActivateSkill:
+		return t.activate(c.Role, c.Arguments)
 	}
+	return t.readResource(c.Role, c.Arguments)
 }
 
 type activateArgs struct {
@@ -71,28 +66,28 @@ func (resourceArgs) Constrain(s *jsonschema.Schema) {
 }
 
 func (*Tools) Tools(context.Context) ([]kit.Spec, error) {
-	read := tool.Annotations{ReadOnlyHint: true, OpenWorldHint: kit.Hint(false)}
+	read := tool.Annotations{ReadOnlyHint: true, OpenWorldHint: new(false)}
 	return []kit.Spec{
 		{
-			Name:        ToolGetRootDir,
+			Name:        toolGetRootDir,
 			Annotations: read,
 			Description: "Return the directory of your Agent Skills, where each of them lives.",
 			InputSchema: kit.InputSchema[struct{}](),
 		},
 		{
-			Name:        ToolListSkills,
+			Name:        toolListSkills,
 			Annotations: read,
 			Description: "List available Agent Skills and their supporting resource files.",
 			InputSchema: kit.InputSchema[struct{}](),
 		},
 		{
-			Name:        ToolActivateSkill,
+			Name:        toolActivateSkill,
 			Annotations: read,
 			Description: "Activate one exact Agent Skill. Its complete SKILL.md instructions remain active for the conversation.",
 			InputSchema: kit.InputSchema[activateArgs](),
 		},
 		{
-			Name:        ToolReadResource,
+			Name:        toolReadResource,
 			Annotations: read,
 			Description: "Read a supporting UTF-8 resource from an activated Agent Skill. Use only paths listed for that skill.",
 			InputSchema: kit.InputSchema[resourceArgs](),
@@ -102,13 +97,9 @@ func (*Tools) Tools(context.Context) ([]kit.Spec, error) {
 
 func (t *Tools) activate(role string, arguments map[string]any) (kit.Result, error) {
 	args, _ := kit.DecodeArguments[activateArgs](arguments)
-	name := strings.TrimSpace(args.Name)
-	skill, ok, err := t.find(role, name)
+	skill, err := t.find(role, args.Name)
 	if err != nil {
 		return kit.Result{}, err
-	}
-	if !ok {
-		return kit.Result{}, fmt.Errorf("skills: you have no skill named %q; use a name from AVAILABLE SKILLS", name)
 	}
 	return kit.Result{
 		Output: map[string]any{
@@ -131,12 +122,9 @@ func (t *Tools) readResource(role string, arguments map[string]any) (kit.Result,
 	if err != nil {
 		return kit.Result{}, err
 	}
-	skill, ok, err := t.find(role, args.Skill)
+	skill, err := t.find(role, args.Skill)
 	if err != nil {
 		return kit.Result{}, err
-	}
-	if !ok {
-		return kit.Result{}, fmt.Errorf("skills: you have no skill named %q; use a name from AVAILABLE SKILLS", args.Skill)
 	}
 	page, err := skill.Page(args.Path, args.OffsetRunes, args.LimitRunes)
 	if err != nil {
@@ -145,11 +133,14 @@ func (t *Tools) readResource(role string, arguments map[string]any) (kit.Result,
 	return kit.Result{Output: page}, nil
 }
 
-func (t *Tools) find(role, name string) (skills.Skill, bool, error) {
+func (t *Tools) find(role, name string) (skills.Skill, error) {
 	own, err := skills.Load(t.root, role)
 	if err != nil {
-		return skills.Skill{}, false, err
+		return skills.Skill{}, err
 	}
 	skill, ok := skills.Find(own, name)
-	return skill, ok, nil
+	if !ok {
+		return skills.Skill{}, fmt.Errorf("skills: you have no skill named %q; use a name from AVAILABLE SKILLS", strings.TrimSpace(name))
+	}
+	return skill, nil
 }

@@ -60,10 +60,10 @@ func New(o Options) (*Provider, error) {
 
 func (r *Provider) Close() error { return r.box.Close() }
 
-const ProviderName = "workspace"
+const providerName = "workspace"
 
 func (r *Provider) Name() (string, string) {
-	return ProviderName, "Run commands and edit files in the working folders, under the sandbox unless it is turned off."
+	return providerName, "Run commands and edit files in the working folders, under the sandbox unless it is turned off."
 }
 
 func (r *Provider) Invoke(ctx context.Context, c tool.Call) (kit.Result, error) {

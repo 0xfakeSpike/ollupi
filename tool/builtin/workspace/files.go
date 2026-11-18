@@ -60,7 +60,7 @@ type FileOutput struct {
 
 func (r *Provider) fileTools() []kit.Spec {
 	annotations := func(title string) tool.Annotations {
-		return tool.Annotations{Title: title, DestructiveHint: kit.Hint(true), OpenWorldHint: kit.Hint(false)}
+		return tool.Annotations{Title: title, DestructiveHint: new(true), OpenWorldHint: new(false)}
 	}
 	where := "Writes only inside the project (outside a project: inside " + strings.Join(r.box.Roots(), ", ") + "), never to protected settings files. "
 	return []kit.Spec{{
@@ -89,12 +89,12 @@ type fileChange struct {
 	after    string
 }
 
-func (r *Provider) change(ctx context.Context, caller tool.Caller, args map[string]any) (dirs, fileChange, error) {
-	d, err := r.dirs(ctx, caller)
+func (r *Provider) change(ctx context.Context, call tool.Call) (dirs, fileChange, error) {
+	d, err := r.dirs(ctx, call.Caller)
 	if err != nil {
 		return dirs{}, fileChange{}, err
 	}
-	raw, _ := args["path"].(string)
+	raw, _ := call.Arguments["path"].(string)
 	if strings.TrimSpace(raw) == "" {
 		return dirs{}, fileChange{}, fmt.Errorf("workspace: argument path must be a non-empty string")
 	}
@@ -124,7 +124,7 @@ func (r *Provider) change(ctx context.Context, caller tool.Caller, args map[stri
 		}
 		c.exists, c.mode, c.before = true, st.Mode().Perm(), string(body)
 	}
-	if c.after, err = newContent(c, args); err != nil {
+	if c.after, err = newContent(c, call); err != nil {
 		return dirs{}, fileChange{}, err
 	}
 	if len(c.after) > maxFileBytes {
@@ -133,12 +133,12 @@ func (r *Provider) change(ctx context.Context, caller tool.Caller, args map[stri
 	return d, c, nil
 }
 
-func newContent(c fileChange, args map[string]any) (string, error) {
-	if _, ok := args["content"]; ok {
-		w, _ := kit.DecodeArguments[WriteFile](args)
+func newContent(c fileChange, call tool.Call) (string, error) {
+	if call.Tool == ToolWriteFile {
+		w, _ := kit.DecodeArguments[WriteFile](call.Arguments)
 		return w.Content, nil
 	}
-	e, _ := kit.DecodeArguments[EditFile](args)
+	e, _ := kit.DecodeArguments[EditFile](call.Arguments)
 	if !c.exists {
 		return "", fmt.Errorf("workspace: %s does not exist; create it with %s", c.rel, ToolWriteFile)
 	}
@@ -172,8 +172,7 @@ func (c fileChange) frozen() (FileChange, error) {
 }
 
 func (r *Provider) fileContent(ctx context.Context, call tool.Call) (policy.Content, error) {
-	caller, args := call.Caller, call.Arguments
-	_, c, err := r.change(ctx, caller, args)
+	_, c, err := r.change(ctx, call)
 	if err != nil {
 		return policy.Content{}, err
 	}
@@ -184,8 +183,8 @@ func (r *Provider) fileContent(ctx context.Context, call tool.Call) (policy.Cont
 	return policy.Content{Text: f.Diff, Match: strings.ToLower(c.rel), Folded: true}, nil
 }
 
-func (r *Provider) prepareFile(ctx context.Context, caller tool.Caller, args map[string]any) (*Prepared, error) {
-	d, c, err := r.change(ctx, caller, args)
+func (r *Provider) prepareFile(ctx context.Context, call tool.Call) (*Prepared, error) {
+	d, c, err := r.change(ctx, call)
 	if err != nil {
 		return nil, err
 	}
@@ -194,20 +193,20 @@ func (r *Provider) prepareFile(ctx context.Context, caller tool.Caller, args map
 		return nil, err
 	}
 	return &Prepared{
-		Cwd: d.roots[0], SettingsDigest: r.settingsDigest(d), ArgumentsDigest: digest(args),
+		Cwd: d.roots[0], SettingsDigest: r.settingsDigest(d), ArgumentsDigest: digest(call.Arguments),
 		Sandboxed: d.box.Enforced(), Files: []FileChange{f},
 	}, nil
 }
 
-func (r *Provider) runFile(ctx context.Context, caller tool.Caller, args map[string]any, p *Prepared) (kit.Result, error) {
-	d, err := r.dirs(ctx, caller)
+func (r *Provider) runFile(ctx context.Context, call tool.Call, p *Prepared) (kit.Result, error) {
+	d, err := r.dirs(ctx, call.Caller)
 	if err != nil {
 		return kit.Result{}, err
 	}
-	if err := r.validatePrepared(ctx, d, p, args); err != nil {
+	if err := r.validatePrepared(ctx, d, p, call.Arguments); err != nil {
 		return kit.Result{}, err
 	}
-	_, c, err := r.change(ctx, caller, args)
+	_, c, err := r.change(ctx, call)
 	if err != nil {
 		return kit.Result{}, fmt.Errorf("%w; the file changed after this edit was prepared, so nothing was written", err)
 	}

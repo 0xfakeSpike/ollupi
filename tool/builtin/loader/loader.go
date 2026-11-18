@@ -11,7 +11,7 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
-const ProviderName = "deferred_tools"
+const providerName = "deferred_tools"
 
 type Provider struct{}
 
@@ -26,13 +26,13 @@ func (loadArgs) Constrain(s *jsonschema.Schema) {
 }
 
 func (Provider) Name() (string, string) {
-	return ProviderName, "Loads the tools named in DEFERRED TOOLS."
+	return providerName, "Loads the tools named in DEFERRED TOOLS."
 }
 
 func (Provider) Tools(context.Context) ([]kit.Spec, error) {
 	return []kit.Spec{{
 		Name:        agent.LoadToolsTool,
-		Annotations: tool.Annotations{ReadOnlyHint: true, OpenWorldHint: kit.Hint(false)},
+		Annotations: tool.Annotations{ReadOnlyHint: true, OpenWorldHint: new(false)},
 		Description: "Load deferred tools so you can call them. A loaded tool stays callable for the rest of the conversation.",
 		InputSchema: kit.InputSchema[loadArgs](),
 	}}, nil

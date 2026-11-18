@@ -14,10 +14,10 @@ import (
 )
 
 const (
-	CreateTool = "create_scheduled_job"
-	DeleteTool = "delete_scheduled_job"
-	PauseTool  = "pause_scheduled_job"
-	ListTool   = "list_scheduled_jobs"
+	createTool = "create_scheduled_job"
+	deleteTool = "delete_scheduled_job"
+	pauseTool  = "pause_scheduled_job"
+	listTool   = "list_scheduled_jobs"
 )
 
 type Provider struct {
@@ -58,8 +58,8 @@ type nameArgs struct {
 func (p Provider) Tools(context.Context) ([]kit.Spec, error) {
 	return []kit.Spec{
 		{
-			Name:        CreateTool,
-			Annotations: tool.Annotations{DestructiveHint: kit.Hint(false), OpenWorldHint: kit.Hint(false)},
+			Name:        createTool,
+			Annotations: tool.Annotations{DestructiveHint: new(false), OpenWorldHint: new(false)},
 			Description: fmt.Sprintf("Schedule a task in this conversation: at each time the cron schedule names (timezone %s), "+
 				"prompt is sent here as a new message and you work on it with this conversation's history, project, and settings. "+
 				"If a turn is still running then, the message waits as the next turn. "+
@@ -68,21 +68,21 @@ func (p Provider) Tools(context.Context) ([]kit.Spec, error) {
 			InputSchema: kit.InputSchema[createArgs](),
 		},
 		{
-			Name:        PauseTool,
+			Name:        pauseTool,
 			Description: "Pause or resume a scheduled task of this conversation. A resumed task runs next at its next scheduled time.",
-			Annotations: tool.Annotations{DestructiveHint: kit.Hint(false), OpenWorldHint: kit.Hint(false)},
+			Annotations: tool.Annotations{DestructiveHint: new(false), OpenWorldHint: new(false)},
 			InputSchema: kit.InputSchema[pauseArgs](),
 		},
 		{
-			Name:        DeleteTool,
+			Name:        deleteTool,
 			Description: "Delete a scheduled task of this conversation by name.",
-			Annotations: tool.Annotations{DestructiveHint: kit.Hint(true), OpenWorldHint: kit.Hint(false)},
+			Annotations: tool.Annotations{DestructiveHint: new(true), OpenWorldHint: new(false)},
 			InputSchema: kit.InputSchema[nameArgs](),
 		},
 		{
-			Name:        ListTool,
+			Name:        listTool,
 			Description: "List the scheduled tasks of this conversation with their next run time.",
-			Annotations: tool.Annotations{ReadOnlyHint: true, OpenWorldHint: kit.Hint(false)},
+			Annotations: tool.Annotations{ReadOnlyHint: true, OpenWorldHint: new(false)},
 			InputSchema: kit.InputSchema[struct{}](),
 		},
 	}, nil
@@ -108,25 +108,25 @@ func (p Provider) Invoke(ctx context.Context, c tool.Call) (kit.Result, error) {
 	var out any
 	var err error
 	switch c.Tool {
-	case CreateTool:
+	case createTool:
 		args, _ := kit.DecodeArguments[createArgs](c.Arguments)
 		err = p.update(ctx, c, func(tx store.Tx, th store.Thread) (err error) {
 			task, err = cron.Create(tx, p.cal, th, args.Name, args.Spec, args.Prompt, args.Times, time.Now().UTC())
 			return err
 		})
 		out = shown(task)
-	case PauseTool:
+	case pauseTool:
 		args, _ := kit.DecodeArguments[pauseArgs](c.Arguments)
 		err = p.update(ctx, c, func(tx store.Tx, th store.Thread) (err error) {
 			task, err = cron.Pause(tx, p.cal, th, args.Name, args.Paused, time.Now().UTC())
 			return err
 		})
 		out = shown(task)
-	case DeleteTool:
+	case deleteTool:
 		args, _ := kit.DecodeArguments[nameArgs](c.Arguments)
 		err = p.update(ctx, c, func(tx store.Tx, th store.Thread) error { return cron.Delete(tx, th, args.Name) })
 		out = map[string]string{"deleted": args.Name}
-	case ListTool:
+	case listTool:
 		var jobs []store.Task
 		err = p.st.Read(ctx, func(r store.Reader) (err error) { jobs, err = r.CronJobs(c.User, c.Thread); return err })
 		listed := []job{}
