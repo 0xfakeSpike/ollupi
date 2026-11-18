@@ -23,26 +23,26 @@ func (a *App) CronJobs(ctx context.Context, u, thread string) ([]store.Task, err
 	return tasks, err
 }
 
-func (a *App) CreateCronJob(ctx context.Context, u, thread, name, spec, prompt string, times *int) (store.Task, error) {
-	var task store.Task
-	err := a.st.Update(ctx, func(tx store.Tx) error {
+func (a *App) inThread(ctx context.Context, u, thread string, change func(store.Tx, store.Thread) error) error {
+	return a.st.Update(ctx, func(tx store.Tx) error {
 		th, err := topThread(tx, u, thread)
 		if err != nil {
 			return err
 		}
+		return change(tx, th)
+	})
+}
+
+func (a *App) CreateCronJob(ctx context.Context, u, thread, name, spec, prompt string, times *int) (task store.Task, err error) {
+	err = a.inThread(ctx, u, thread, func(tx store.Tx, th store.Thread) (err error) {
 		task, err = cron.Create(tx, a.cal, th, name, spec, prompt, times, time.Now().UTC())
 		return err
 	})
 	return task, err
 }
 
-func (a *App) PauseCronJob(ctx context.Context, u, thread, name string, paused bool) (store.Task, error) {
-	var task store.Task
-	err := a.st.Update(ctx, func(tx store.Tx) error {
-		th, err := topThread(tx, u, thread)
-		if err != nil {
-			return err
-		}
+func (a *App) PauseCronJob(ctx context.Context, u, thread, name string, paused bool) (task store.Task, err error) {
+	err = a.inThread(ctx, u, thread, func(tx store.Tx, th store.Thread) (err error) {
 		task, err = cron.Pause(tx, a.cal, th, name, paused, time.Now().UTC())
 		return err
 	})
@@ -50,11 +50,5 @@ func (a *App) PauseCronJob(ctx context.Context, u, thread, name string, paused b
 }
 
 func (a *App) DeleteCronJob(ctx context.Context, u, thread, name string) error {
-	return a.st.Update(ctx, func(tx store.Tx) error {
-		th, err := topThread(tx, u, thread)
-		if err != nil {
-			return err
-		}
-		return cron.Delete(tx, th, name)
-	})
+	return a.inThread(ctx, u, thread, func(tx store.Tx, th store.Thread) error { return cron.Delete(tx, th, name) })
 }

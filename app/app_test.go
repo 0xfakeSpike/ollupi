@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -215,7 +216,7 @@ func TestAnswersMustAnswerEveryQuestionAsked(t *testing.T) {
 	f := setup(t)
 	th := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", "", "", ""))
 	turn := sent(t)(f.a.Send(f.ctx, "u", th.ID, Input{Text: "plan a trip"}))
-	request := mustJSON(ask.Request{Questions: []ask.Question{{ID: "where", Header: "Where", Question: "Where to?"}}})
+	request, _ := json.Marshal(ask.Request{Questions: []ask.Question{{ID: "where", Header: "Where", Question: "Where to?"}}})
 	f.st.Update(f.ctx, func(tx store.Tx) error {
 		_, err := tx.Append(th.ID,
 			conversation.Entry{Turn: turn.ID, Body: conversation.ModelResponded{Response: "r"}},
