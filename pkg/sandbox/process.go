@@ -29,41 +29,30 @@ func randomHex(n int) string {
 }
 
 func runProcess(ctx context.Context, cmd *exec.Cmd, program string, limit time.Duration, maxOutput int, marker string) (Result, error) {
-	stdout := newCappedBuffer(maxOutput)
-	stderr := newCappedBuffer(maxOutput)
-
-	outR, outW, err := os.Pipe()
+	stdout, err := newCapture(maxOutput)
 	if err != nil {
 		return Result{}, fmt.Errorf("sandbox: %s: %w", program, err)
 	}
-	defer outR.Close()
-	errR, errW, err := os.Pipe()
+	defer stdout.r.Close()
+	stderr, err := newCapture(maxOutput)
 	if err != nil {
-		outW.Close()
+		stdout.w.Close()
 		return Result{}, fmt.Errorf("sandbox: %s: %w", program, err)
 	}
-	defer errR.Close()
-	cmd.Stdout, cmd.Stderr = outW, errW
+	defer stderr.r.Close()
+	cmd.Stdout, cmd.Stderr = stdout.w, stderr.w
 	tag := runTag(marker)
 	cmd.Env = append(cmd.Env, tag)
 	ownProcessGroup(cmd, tag)
 	err = cmd.Start()
-
-	outW.Close()
-	errW.Close()
+	stdout.w.Close()
+	stderr.w.Close()
 	if err != nil {
 		return Result{}, fmt.Errorf("sandbox: start %s: %w", program, err)
 	}
 	var copies sync.WaitGroup
-	copies.Add(2)
-	go func() {
-		defer copies.Done()
-		_, _ = io.Copy(stdout, outR)
-	}()
-	go func() {
-		defer copies.Done()
-		_, _ = io.Copy(stderr, errR)
-	}()
+	copies.Go(stdout.copy)
+	copies.Go(stderr.copy)
 	err = cmd.Wait()
 	killRun(cmd, tag)
 	drained := make(chan struct{})
@@ -71,9 +60,8 @@ func runProcess(ctx context.Context, cmd *exec.Cmd, program string, limit time.D
 	select {
 	case <-drained:
 	case <-time.After(drainDelay):
-
-		outR.Close()
-		errR.Close()
+		stdout.r.Close()
+		stderr.r.Close()
 		<-drained
 	}
 	code, signal := 0, ""
@@ -85,19 +73,31 @@ func runProcess(ctx context.Context, cmd *exec.Cmd, program string, limit time.D
 		}
 	}
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return Result{}, fmt.Errorf("sandbox: %s timed out after %s and was killed%s", program, limit, outputTail(stdout, stderr))
+		return Result{}, fmt.Errorf("sandbox: %s timed out after %s and was killed%s", program, limit, outputTail(stdout.buf, stderr.buf))
 	}
 	if ctx.Err() != nil {
-		return Result{}, fmt.Errorf("sandbox: %s was cancelled: %w%s", program, ctx.Err(), outputTail(stdout, stderr))
+		return Result{}, fmt.Errorf("sandbox: %s was cancelled: %w%s", program, ctx.Err(), outputTail(stdout.buf, stderr.buf))
 	}
 	if err != nil {
 		var exitErr *exec.ExitError
 		if !errors.As(err, &exitErr) || code < 0 {
-			return Result{}, fmt.Errorf("sandbox: %s failed: %w%s", program, err, outputTail(stdout, stderr))
+			return Result{}, fmt.Errorf("sandbox: %s failed: %w%s", program, err, outputTail(stdout.buf, stderr.buf))
 		}
 	}
-	return Result{Stdout: stdout.String(), Stderr: stderr.String(), ExitCode: code, Signal: signal, Truncated: stdout.dropped > 0 || stderr.dropped > 0}, nil
+	return Result{Stdout: stdout.buf.String(), Stderr: stderr.buf.String(), ExitCode: code, Signal: signal, Truncated: stdout.buf.dropped > 0 || stderr.buf.dropped > 0}, nil
 }
+
+type capture struct {
+	buf  *cappedBuffer
+	r, w *os.File
+}
+
+func newCapture(max int) (capture, error) {
+	r, w, err := os.Pipe()
+	return capture{buf: newCappedBuffer(max), r: r, w: w}, err
+}
+
+func (c capture) copy() { _, _ = io.Copy(c.buf, c.r) }
 
 func outputTail(stdout, stderr *cappedBuffer) string {
 	var parts []string

@@ -161,6 +161,11 @@ func geminiRequest(req ChatRequest, maxTokens int) ([]*genai.Content, *genai.Gen
 		}
 	}
 
+	contents, err := geminiContents(req.Messages, config)
+	return contents, config, err
+}
+
+func geminiContents(messages []ChatMessage, config *genai.GenerateContentConfig) ([]*genai.Content, error) {
 	var contents []*genai.Content
 	names := map[string]string{}
 	add := func(role string, parts []*genai.Part) {
@@ -170,7 +175,7 @@ func geminiRequest(req ChatRequest, maxTokens int) ([]*genai.Content, *genai.Gen
 		}
 		contents = append(contents, &genai.Content{Role: role, Parts: parts})
 	}
-	for i, m := range req.Messages {
+	for i, m := range messages {
 		var parts []*genai.Part
 		switch m.Role {
 		case RoleSystem:
@@ -183,12 +188,12 @@ func geminiRequest(req ChatRequest, maxTokens int) ([]*genai.Content, *genai.Gen
 			var err error
 			parts, err = userParts(m, genai.NewPartFromText, func(part ContentPart) *genai.Part { return genai.NewPartFromBytes(part.Data, part.MimeType) })
 			if err != nil {
-				return nil, nil, fmt.Errorf("message %d: %w", i, err)
+				return nil, fmt.Errorf("message %d: %w", i, err)
 			}
 		case RoleTool:
 			name, ok := names[m.ToolCallID]
 			if !ok {
-				return nil, nil, fmt.Errorf("message %d: tool result %q follows no call", i, m.ToolCallID)
+				return nil, fmt.Errorf("message %d: tool result %q follows no call", i, m.ToolCallID)
 			}
 			response := &genai.FunctionResponse{Name: name, Response: map[string]any{"output": m.Content}}
 			if !strings.HasPrefix(m.ToolCallID, geminiCallPrefix) {
@@ -202,7 +207,7 @@ func geminiRequest(req ChatRequest, maxTokens int) ([]*genai.Content, *genai.Gen
 			if n, ok := nativeOf(m, providerGemini); ok {
 				var c genai.Content
 				if err := json.Unmarshal(n.Message, &c); err != nil {
-					return nil, nil, fmt.Errorf("message %d: decode the native response: %w", i, err)
+					return nil, fmt.Errorf("message %d: decode the native response: %w", i, err)
 				}
 				contents = append(contents, &c)
 				continue
@@ -222,7 +227,7 @@ func geminiRequest(req ChatRequest, maxTokens int) ([]*genai.Content, *genai.Gen
 				parts = append(parts, &genai.Part{FunctionCall: fc})
 			}
 		default:
-			return nil, nil, fmt.Errorf("message %d: unsupported role %q", i, m.Role)
+			return nil, fmt.Errorf("message %d: unsupported role %q", i, m.Role)
 		}
 		if len(parts) == 0 {
 			continue
@@ -233,5 +238,5 @@ func geminiRequest(req ChatRequest, maxTokens int) ([]*genai.Content, *genai.Gen
 		}
 		add(role, parts)
 	}
-	return contents, config, nil
+	return contents, nil
 }

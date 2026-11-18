@@ -70,10 +70,7 @@ func users(args []string) {
 	defer srv.Close()
 	http.DefaultTransport.(*http.Transport).MaxIdleConnsPerHost = p.limit
 
-	dir, err := os.MkdirTemp("", "ollupi-bench-")
-	if err != nil {
-		log.Fatal(err)
-	}
+	dir := tempHome()
 	defer os.RemoveAll(dir)
 	limits := map[string]llm.Limits{"fake": {Context: 200_000, Output: 32_000}}
 	clients := map[string]llm.Client{heavyUser: llm.NewOpenAI(srv.URL, heavyUser, *heavyCalls, limits)}
@@ -81,9 +78,9 @@ func users(args []string) {
 		clients[u] = llm.NewOpenAI(srv.URL, u, *calls, limits)
 	}
 	var failed sync.Map
-	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}, done: map[string]chan struct{}{}}
+	tr := newTracker()
 	e := newEngine(host.Config{
-		Home: dir, Models: []llm.Model{{Name: "fake", Connection: "fake"}},
+		Home: dir, Models: fakeModels,
 		Connections: map[string]llm.Client{"fake": clients[heavyUser]},
 		ClientFor: func(user, _ string) (llm.Client, error) {
 			if cl := clients[user]; cl != nil {

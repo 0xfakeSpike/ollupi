@@ -91,6 +91,34 @@ func permissionContent(_ context.Context, c tool.Call) (policy.Content, error) {
 	return policy.Content{Text: u.String(), Match: strings.TrimSuffix(strings.ToLower(u.Hostname()), "."), Folded: true}, nil
 }
 
+func isHTML(mediaType string) bool {
+	return mediaType == "text/html" || mediaType == "application/xhtml+xml"
+}
+
+func textual(mediaType string) bool {
+	return isHTML(mediaType) || strings.HasPrefix(mediaType, "text/") || mediaType == "" ||
+		mediaType == "application/json" || mediaType == "application/xml" || strings.HasSuffix(mediaType, "+json") || strings.HasSuffix(mediaType, "+xml")
+}
+
+func text(resp *http.Response, mediaType string) (title, text string, err error) {
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes+1))
+	if err != nil {
+		return "", "", fmt.Errorf("read: %w", err)
+	}
+	if len(body) > maxBodyBytes {
+		return "", "", fmt.Errorf("larger than %d MB; use run_command to download it", maxBodyBytes>>20)
+	}
+	decoded, err := charset.NewReader(bytes.NewReader(body), resp.Header.Get("Content-Type"))
+	if err != nil {
+		return "", "", fmt.Errorf("decode: %w", err)
+	}
+	if isHTML(mediaType) {
+		return htmlText(decoded, resp.Request.URL)
+	}
+	b, err := io.ReadAll(decoded)
+	return "", strings.TrimSpace(strings.ToValidUTF8(string(b), "\uFFFD")), err
+}
+
 func parseURL(raw string) (*url.URL, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
@@ -153,32 +181,11 @@ func (p *Provider) fetch(ctx context.Context, raw string) (fetchOutput, error) {
 	}
 	mediaType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	out.ContentType = mediaType
-	isHTML := mediaType == "text/html" || mediaType == "application/xhtml+xml"
-	textual := isHTML || strings.HasPrefix(mediaType, "text/") || mediaType == "" ||
-		mediaType == "application/json" || mediaType == "application/xml" || strings.HasSuffix(mediaType, "+json") || strings.HasSuffix(mediaType, "+xml")
-	if !textual {
+	if !textual(mediaType) {
 		return fetchOutput{}, fmt.Errorf("web: %s is %s, which web_fetch does not read; use run_command to download it", out.URL, mediaType)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes+1))
-	if err != nil {
-		return fetchOutput{}, fmt.Errorf("web: read %s: %w", out.URL, err)
-	}
-	if len(body) > maxBodyBytes {
-		return fetchOutput{}, fmt.Errorf("web: %s is larger than %d MB; use run_command to download it", out.URL, maxBodyBytes>>20)
-	}
-	decoded, err := charset.NewReader(bytes.NewReader(body), resp.Header.Get("Content-Type"))
-	if err != nil {
-		return fetchOutput{}, fmt.Errorf("web: decode %s: %w", out.URL, err)
-	}
-	if isHTML {
-		out.Title, out.Text, err = htmlText(decoded, resp.Request.URL)
-	} else {
-		var b []byte
-		b, err = io.ReadAll(decoded)
-		out.Text = strings.TrimSpace(strings.ToValidUTF8(string(b), "�"))
-	}
-	if err != nil {
-		return fetchOutput{}, fmt.Errorf("web: read %s: %w", out.URL, err)
+	if out.Title, out.Text, err = text(resp, mediaType); err != nil {
+		return fetchOutput{}, fmt.Errorf("web: %s: %w", out.URL, err)
 	}
 	if utf8.RuneCountInString(out.Text) > maxTextRunes {
 		out.Text, out.Truncated = string([]rune(out.Text)[:maxTextRunes]), true

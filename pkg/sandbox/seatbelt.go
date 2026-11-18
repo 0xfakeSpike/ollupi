@@ -89,8 +89,6 @@ func caselessPattern(pattern string) string {
 	return b.String()
 }
 
-func protectedNamePattern(name string) string { return name + "(/|$)" }
-
 var dependencyDirs = []string{"node_modules", "vendor", "Pods"}
 
 func seatbeltArgs(p policy, tempDirs []string, argv []string) ([]string, error) {
@@ -142,23 +140,8 @@ func seatbeltProfile(p policy, tempDirs []string) (string, [][2]string, error) {
 	}
 
 	b.WriteString("\n(allow system-socket (socket-domain AF_UNIX))\n")
-	switch {
-	case p.Network && p.ProxyPort != 0:
-
-		b.WriteString(fmt.Sprintf("\n; network: the sandbox's proxy only\n(allow network-outbound (remote ip \"localhost:%d\"))\n", p.ProxyPort))
-		b.WriteString(seatbeltNetwork)
-		b.WriteString("\n" + seatbeltTLSTrust + "\n")
-		if err := writeUnixSocketAllows(&b, p.UnixSockets); err != nil {
-			return "", nil, err
-		}
-	case p.Network:
-		b.WriteString("\n; network\n(allow network-outbound)\n(allow network-inbound)\n")
-		b.WriteString(seatbeltNetwork)
-		b.WriteString("\n" + seatbeltTLSTrust + "\n")
-		b.WriteString("\n; unix sockets (after the network allow)\n")
-		b.WriteString("(deny network-outbound (remote unix-socket)" + msg + ")\n")
-		b.WriteString(seatbeltMDNS)
-		if err := writeUnixSocketAllows(&b, p.UnixSockets); err != nil {
+	if p.Network {
+		if err := networkRules(&b, p, msg); err != nil {
 			return "", nil, err
 		}
 	}
@@ -168,7 +151,7 @@ func seatbeltProfile(p policy, tempDirs []string) (string, [][2]string, error) {
 	if p.Mode == ModeWorkspaceWrite {
 		for _, root := range writable {
 			for _, name := range p.ProtectedNames {
-				b.WriteString(rootRule("deny", root, protectedNamePattern(name), msg) + "\n")
+				b.WriteString(rootRule("deny", root, name+"(/|$)", msg) + "\n")
 			}
 			for _, dir := range dependencyDirs {
 				b.WriteString(rootRule("allow", root, dir+"/", "") + "\n")
@@ -191,6 +174,23 @@ func seatbeltProfile(p policy, tempDirs []string) (string, [][2]string, error) {
 
 	b.WriteString("(deny system-fcntl (fcntl-command 80 110))\n")
 	return b.String(), params, nil
+}
+
+func networkRules(b *strings.Builder, p policy, msg string) error {
+	proxied := p.ProxyPort != 0
+	if proxied {
+		fmt.Fprintf(b, "\n; network: the sandbox's proxy only\n(allow network-outbound (remote ip \"localhost:%d\"))\n", p.ProxyPort)
+	} else {
+		b.WriteString("\n; network\n(allow network-outbound)\n(allow network-inbound)\n")
+	}
+	b.WriteString(seatbeltNetwork)
+	b.WriteString("\n" + seatbeltTLSTrust + "\n")
+	if !proxied {
+		b.WriteString("\n; unix sockets (after the network allow)\n")
+		b.WriteString("(deny network-outbound (remote unix-socket)" + msg + ")\n")
+		b.WriteString(seatbeltMDNS)
+	}
+	return writeUnixSocketAllows(b, p.UnixSockets)
 }
 
 func seatbeltPathRegex(path string) (string, error) {
