@@ -8,7 +8,7 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/prompt"
-	skills "github.com/0xfakeSpike/ollupi/skill"
+	"github.com/0xfakeSpike/ollupi/skill"
 	"github.com/0xfakeSpike/ollupi/tool"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
 	"github.com/google/jsonschema-go/jsonschema"
@@ -22,22 +22,22 @@ const (
 	toolReadResource  = "read_skill_resource"
 )
 
-type Tools struct {
+type Provider struct {
 	root string
 }
 
-func New(root string) *Tools { return &Tools{root: root} }
+func New(root string) *Provider { return &Provider{root: root} }
 
-func (*Tools) Name() (string, string) {
+func (*Provider) Name() (string, string) {
 	return providerName, "Directory-based Agent Skills with explicit activation and on-demand resources."
 }
 
-func (t *Tools) Invoke(_ context.Context, c tool.Call) (kit.Result, error) {
+func (t *Provider) Invoke(_ context.Context, c tool.Call) (kit.Result, error) {
 	switch c.Tool {
 	case toolGetRootDir:
 		return kit.Result{Output: map[string]any{"skills_root_dir": filepath.Join(t.root, c.Role)}}, nil
 	case toolListSkills:
-		own, err := skills.Load(t.root, c.Role)
+		own, err := skill.Load(t.root, c.Role)
 		if err != nil {
 			return kit.Result{}, err
 		}
@@ -62,10 +62,10 @@ type resourceArgs struct {
 func (resourceArgs) Constrain(s *jsonschema.Schema) {
 	s.Properties["offset_runes"].Minimum = jsonschema.Ptr(0.0)
 	s.Properties["limit_runes"].Minimum = jsonschema.Ptr(1.0)
-	s.Properties["limit_runes"].Maximum = jsonschema.Ptr(float64(skills.MaxResourceRunes))
+	s.Properties["limit_runes"].Maximum = jsonschema.Ptr(float64(skill.MaxResourceRunes))
 }
 
-func (*Tools) Tools(context.Context) ([]kit.Spec, error) {
+func (*Provider) Tools(context.Context) ([]kit.Spec, error) {
 	read := tool.Annotations{ReadOnlyHint: true, OpenWorldHint: new(false)}
 	return []kit.Spec{
 		{
@@ -95,52 +95,52 @@ func (*Tools) Tools(context.Context) ([]kit.Spec, error) {
 	}, nil
 }
 
-func (t *Tools) activate(role string, arguments map[string]any) (kit.Result, error) {
+func (t *Provider) activate(role string, arguments map[string]any) (kit.Result, error) {
 	args, _ := kit.DecodeArguments[activateArgs](arguments)
-	skill, err := t.find(role, args.Name)
+	found, err := t.find(role, args.Name)
 	if err != nil {
 		return kit.Result{}, err
 	}
 	return kit.Result{
 		Output: map[string]any{
-			"activated":   skill.Name,
-			"description": skill.Description,
-			"version":     skill.Version,
-			"digest":      skill.Digest,
-			"resources":   skill.Resources,
+			"activated":   found.Name,
+			"description": found.Description,
+			"version":     found.Version,
+			"digest":      found.Digest,
+			"resources":   found.Resources,
 		},
 		Artifacts: []conversation.Artifact{{
 			Kind:    prompt.SkillArtifact,
-			Name:    skill.Name,
-			Content: skill.Instructions,
+			Name:    found.Name,
+			Content: found.Instructions,
 		}},
 	}, nil
 }
 
-func (t *Tools) readResource(role string, arguments map[string]any) (kit.Result, error) {
+func (t *Provider) readResource(role string, arguments map[string]any) (kit.Result, error) {
 	args, err := kit.DecodeArguments[resourceArgs](arguments)
 	if err != nil {
 		return kit.Result{}, err
 	}
-	skill, err := t.find(role, args.Skill)
+	found, err := t.find(role, args.Skill)
 	if err != nil {
 		return kit.Result{}, err
 	}
-	page, err := skill.Page(args.Path, args.OffsetRunes, args.LimitRunes)
+	page, err := found.Page(args.Path, args.OffsetRunes, args.LimitRunes)
 	if err != nil {
 		return kit.Result{}, err
 	}
 	return kit.Result{Output: page}, nil
 }
 
-func (t *Tools) find(role, name string) (skills.Skill, error) {
-	own, err := skills.Load(t.root, role)
+func (t *Provider) find(role, name string) (skill.Skill, error) {
+	own, err := skill.Load(t.root, role)
 	if err != nil {
-		return skills.Skill{}, err
+		return skill.Skill{}, err
 	}
-	skill, ok := skills.Find(own, name)
+	found, ok := skill.Find(own, name)
 	if !ok {
-		return skills.Skill{}, fmt.Errorf("skills: you have no skill named %q; use a name from AVAILABLE SKILLS", strings.TrimSpace(name))
+		return skill.Skill{}, fmt.Errorf("skills: you have no skill named %q; use a name from AVAILABLE SKILLS", strings.TrimSpace(name))
 	}
-	return skill, nil
+	return found, nil
 }

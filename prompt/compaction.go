@@ -16,7 +16,7 @@ const compactionInstructions = `You are performing a CONTEXT CHECKPOINT COMPACTI
 - what remains to be done, as clear next steps.
 Be concise and structured. Write in the user's language. Do not call tools.`
 
-func (w Window) Compaction(in Input) (Request, error) {
+func (w Window) Compaction(in Context) (Request, error) {
 	instructions := llm.ChatMessage{Role: llm.RoleUser, Content: compactionInstructions}
 	keep := 0
 	if latestCompaction(in.Items) >= 0 {
