@@ -198,7 +198,11 @@ func TestACallThatGetsNoAnswerEnds(t *testing.T) {
 	defer web.Close()
 	defer close(release)
 	client := mcp.NewClient(&mcp.Implementation{Name: "ollupi", Version: "test"}, nil)
-	sess, err := connect(ctx, ctx, client, sandbox.Here(), account.MCPServer{Name: "slow", URL: web.URL})
+	box, err := sandbox.Here()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := connect(ctx, ctx, client, box, account.MCPServer{Name: "slow", URL: web.URL})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +241,7 @@ func TestHeadersStayWithTheirServer(t *testing.T) {
 	defer front.Close()
 	users, _ := newUsers(t, context.Background(), map[string][]account.MCPServer{"someone": {
 		{Name: "moved", URL: front.URL, Headers: map[string]string{"Authorization": "Bearer secret"}},
-	}}, func(string) (sandbox.Box, error) { return sandbox.Here(), nil })
+	}}, func(string) (sandbox.Box, error) { return sandbox.Here() })
 	defer users.Close()
 	if _, err := users.Tools(context.Background(), "someone"); err != nil {
 		t.Fatal(err)
@@ -276,5 +280,19 @@ func TestAServersWordDoesNotMakeAToolReadOnly(t *testing.T) {
 	spec := toSpec("srv__send", &mcp.Tool{Name: "send", Annotations: &mcp.ToolAnnotations{Title: "Send", ReadOnlyHint: true, OpenWorldHint: &closed}})
 	if a := spec.Annotations; a.ReadOnlyHint || !a.OpenWorld() || a.Title != "Send" {
 		t.Errorf("annotations %+v, want the title alone", a)
+	}
+}
+
+func TestStdioServerRunsInThisMachinesBox(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	users, _ := newUsers(t, context.Background(), map[string][]account.MCPServer{"someone": {
+		{Name: "local", Command: self, Env: map[string]string{"OLLUPI_MCP_TEST_SERVER": "serve", "GREETING": "from here"}},
+	}}, func(string) (sandbox.Box, error) { return sandbox.Here() })
+	defer users.Close()
+	if st := statuses(t, users, "someone")["local"]; !st.Connected || st.Error != "" {
+		t.Errorf("local: %+v", st)
 	}
 }
