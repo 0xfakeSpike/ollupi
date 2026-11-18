@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
@@ -39,6 +40,46 @@ type model struct {
 }
 
 func here(string) (sandbox.Box, error) { return sandbox.Here(), nil }
+
+func tempHome() string {
+	dir, err := os.MkdirTemp("", "ollupi-bench-")
+	if err != nil {
+		log.Fatal(err)
+	}
+	return dir
+}
+
+func spawn(args ...string) (*exec.Cmd, string) {
+	exe, err := os.Executable()
+	if err != nil {
+		log.Fatal(err)
+	}
+	cmd := exec.Command(exe, args...)
+	cmd.Stderr = os.Stderr
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		log.Fatal(err)
+	}
+	line, err := bufio.NewReader(out).ReadString('\n')
+	if err != nil {
+		cmd.Process.Kill()
+		log.Fatalf("%s did not start: %v", args[0], err)
+	}
+	return cmd, strings.TrimSpace(line)
+}
+
+var fakeModels = []llm.Model{{Name: "fake", Connection: "fake"}}
+
+func fakeConnection(url string, calls int) llm.Client {
+	return llm.NewOpenAI(url, "", calls, map[string]llm.Limits{"fake": {Context: 200_000, Output: 32_000}})
+}
+
+func newTracker() *tracker {
+	return &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}, done: map[string]chan struct{}{}}
+}
 
 type engine struct {
 	*host.Host
@@ -242,15 +283,12 @@ func parked(args []string) {
 	profile := fs.String("cpuprofile", "", "write a CPU profile of the workload to this file")
 	fs.Parse(args)
 
-	dir, err := os.MkdirTemp("", "ollupi-bench-")
-	if err != nil {
-		log.Fatal(err)
-	}
+	dir := tempHome()
 	defer os.RemoveAll(dir)
 	m := &model{}
-	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}}
+	tr := newTracker()
 	e := newEngine(host.Config{
-		Home: dir, Models: []llm.Model{{Name: "fake", Connection: "fake"}},
+		Home: dir, Models: fakeModels,
 		Connections: map[string]llm.Client{"fake": m}, Slots: *slots,
 	})
 	e.Store.Feed().SubscribeAll(tr.on)

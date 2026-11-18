@@ -195,32 +195,14 @@ type learned struct {
 }
 
 func (x *Extractor) learn(ctx context.Context, u string, settings user.Settings, turn memory.Cursor) (learned, error) {
-	var b memory.Batch
-	var l learned
-	err := x.st.Read(ctx, func(r store.Reader) error {
-		th, err := r.Thread(turn.Thread)
-		if err != nil {
-			return err
-		}
-		v, err := r.View(turn.Thread)
-		if err != nil {
-			return err
-		}
-		l.places = []memory.Place{memory.GlobalPlace, memory.Local(th.Workspace)}
-		existing, err := r.Memories(u, l.places...)
-		if err != nil {
-			return err
-		}
-		b = memory.Gather(u, turn.Thread, th.Workspace, v, turn.Turn, existing)
-		return nil
-	})
+	b, places, err := x.batch(ctx, u, turn)
 	if errors.Is(err, store.ErrNotFound) {
 		return learned{}, nil
 	}
 	if err != nil {
 		return learned{}, err
 	}
-	l.read = map[string]time.Time{}
+	l := learned{places: places, read: map[string]time.Time{}}
 	for _, m := range b.Existing {
 		l.read[m.ID] = m.Updated
 	}
@@ -257,6 +239,27 @@ func (x *Extractor) learn(ctx context.Context, u string, settings user.Settings,
 		}
 	}
 	return l, nil
+}
+
+func (x *Extractor) batch(ctx context.Context, u string, turn memory.Cursor) (b memory.Batch, places []memory.Place, err error) {
+	err = x.st.Read(ctx, func(r store.Reader) error {
+		th, err := r.Thread(turn.Thread)
+		if err != nil {
+			return err
+		}
+		v, err := r.View(turn.Thread)
+		if err != nil {
+			return err
+		}
+		places = []memory.Place{memory.GlobalPlace, memory.Local(th.Workspace)}
+		existing, err := r.Memories(u, places...)
+		if err != nil {
+			return err
+		}
+		b = memory.Gather(u, turn.Thread, th.Workspace, v, turn.Turn, existing)
+		return nil
+	})
+	return b, places, err
 }
 
 func replace(memories []memory.Memory, m memory.Memory) []memory.Memory {

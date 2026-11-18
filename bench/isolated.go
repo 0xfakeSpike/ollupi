@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
 	"log"
@@ -21,10 +20,6 @@ func isolated(args []string) {
 	fs := flag.NewFlagSet("isolated", flag.ExitOnError)
 	k := fs.Int("k", 20, "processes, one conversation each")
 	fs.Parse(args)
-	exe, err := os.Executable()
-	if err != nil {
-		log.Fatal(err)
-	}
 	var cmds []*exec.Cmd
 	var dirs []string
 	defer func() {
@@ -37,23 +32,12 @@ func isolated(args []string) {
 		}
 	}()
 	for range *k {
-		dir, err := os.MkdirTemp("", "ollupi-bench-")
-		if err != nil {
-			log.Fatal(err)
-		}
+		dir := tempHome()
 		dirs = append(dirs, dir)
-		cmd := exec.Command(exe, "lone", "-dir", dir)
-		cmd.Stderr = os.Stderr
-		out, err := cmd.StdoutPipe()
-		if err != nil {
-			log.Fatal(err)
-		}
-		if err := cmd.Start(); err != nil {
-			log.Fatal(err)
-		}
+		cmd, line := spawn("lone", "-dir", dir)
 		cmds = append(cmds, cmd)
-		if line, err := bufio.NewReader(out).ReadString('\n'); err != nil || !strings.HasPrefix(line, "ready") {
-			log.Fatalf("a conversation's process did not start: %q %v", line, err)
+		if !strings.HasPrefix(line, "ready") {
+			log.Fatalf("a conversation's process did not start: %q", line)
 		}
 	}
 	time.Sleep(3 * time.Second)
@@ -79,9 +63,9 @@ func lone(args []string) {
 	fs := flag.NewFlagSet("lone", flag.ExitOnError)
 	dir := fs.String("dir", "", "home of the store")
 	fs.Parse(args)
-	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}}
+	tr := newTracker()
 	e := newEngine(host.Config{
-		Home: *dir, Models: []llm.Model{{Name: "fake", Connection: "fake"}},
+		Home: *dir, Models: fakeModels,
 		Connections: map[string]llm.Client{"fake": &model{}},
 	})
 	e.Store.Feed().SubscribeAll(tr.on)

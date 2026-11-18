@@ -57,33 +57,12 @@ func (w *walker) dir(ctx context.Context, dir string, visit func(string, fs.File
 			continue
 		}
 		abs := filepath.Join(dir, e.Name())
-		if w.box.CheckRead(abs) != nil {
-			w.skipped++
+		info, ok := w.entry(ctx, abs, e)
+		if !ok || w.ignores.ignored(abs, info.IsDir()) {
 			continue
 		}
-		info, err := e.Info()
-		if err != nil {
-			w.skipped++
-			continue
-		}
-		isDir := info.IsDir()
-		if info.Mode()&fs.ModeSymlink != 0 {
-			target, err := w.box.Canonical(ctx, abs)
-			if err != nil {
-				continue
-			}
-			if w.box.CheckRead(target) != nil {
-				w.skipped++
-				continue
-			}
-			if info, err = w.box.Stat(ctx, target); err != nil || info.IsDir() {
-				continue
-			}
-		}
-		if w.ignores.ignored(abs, isDir) {
-			continue
-		}
-		if isDir {
+		var err error
+		if info.IsDir() {
 			err = w.dir(ctx, abs, visit)
 		} else if info.Mode().IsRegular() {
 			err = visit(abs, info)
@@ -93,4 +72,31 @@ func (w *walker) dir(ctx context.Context, dir string, visit func(string, fs.File
 		}
 	}
 	return nil
+}
+
+func (w *walker) entry(ctx context.Context, abs string, e fs.DirEntry) (fs.FileInfo, bool) {
+	if w.box.CheckRead(abs) != nil {
+		w.skipped++
+		return nil, false
+	}
+	info, err := e.Info()
+	if err != nil {
+		w.skipped++
+		return nil, false
+	}
+	if info.Mode()&fs.ModeSymlink == 0 {
+		return info, true
+	}
+	target, err := w.box.Canonical(ctx, abs)
+	if err != nil {
+		return nil, false
+	}
+	if w.box.CheckRead(target) != nil {
+		w.skipped++
+		return nil, false
+	}
+	if info, err = w.box.Stat(ctx, target); err != nil || info.IsDir() {
+		return nil, false
+	}
+	return info, true
 }

@@ -3,6 +3,7 @@ package workspace
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -261,15 +262,18 @@ func readFile(ctx context.Context, d dirs, args map[string]any) (ReadFileOutput,
 		out.MimeType, _, _ = strings.Cut(http.DetectContentType(head), ";")
 		return out, nil
 	}
-	start, limit := max(in.Offset, 1), in.Limit
-	if limit <= 0 {
-		limit = maxReadLines
+	if err := page(ctx, br, max(in.Offset, 1), cmp.Or(max(in.Limit, 0), maxReadLines), &out); err != nil {
+		return ReadFileOutput{}, err
 	}
+	return out, nil
+}
+
+func page(ctx context.Context, br *bufio.Reader, start, limit int, out *ReadFileOutput) error {
 	var text strings.Builder
 	scanned := 0
 	for {
 		if err := ctx.Err(); err != nil {
-			return ReadFileOutput{}, err
+			return err
 		}
 		line, n, err := readLine(br, maxLineRunes*utf8.UTFMax)
 		scanned += n
@@ -284,7 +288,7 @@ func readFile(ctx context.Context, d dirs, args map[string]any) (ReadFileOutput,
 			break
 		}
 		if err != nil {
-			return ReadFileOutput{}, err
+			return err
 		}
 		if scanned > maxReadScan && (out.TotalLines >= start+limit-1 || text.Len() >= maxReadBytes) {
 			out.TotalLinesAtLeast = true
@@ -292,10 +296,10 @@ func readFile(ctx context.Context, d dirs, args map[string]any) (ReadFileOutput,
 		}
 	}
 	if out.TotalLines > 0 && start > out.TotalLines {
-		return ReadFileOutput{}, fmt.Errorf("workspace: %s has %d lines; offset %d is past its end", out.Path, out.TotalLines, start)
+		return fmt.Errorf("workspace: %s has %d lines; offset %d is past its end", out.Path, out.TotalLines, start)
 	}
 	out.Text = text.String()
-	return out, nil
+	return nil
 }
 
 func glob(ctx context.Context, d dirs, args map[string]any) (GlobOutput, error) {

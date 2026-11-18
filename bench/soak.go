@@ -1,14 +1,12 @@
 package main
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"runtime/metrics"
@@ -47,36 +45,16 @@ func soak(args []string) {
 		*calls = *c
 	}
 
-	exe, err := os.Executable()
-	if err != nil {
-		log.Fatal(err)
-	}
-	served := exec.Command(exe, "provider", "-latency", latency.String(), "-jitter", jitter.String(),
+	served, url := spawn("provider", "-latency", latency.String(), "-jitter", jitter.String(),
 		"-rounds", strconv.Itoa(*rounds), "-limit", strconv.Itoa(*calls))
-	served.Stderr = os.Stderr
-	pipe, err := served.StdoutPipe()
-	if err != nil {
-		log.Fatal(err)
-	}
-	if err := served.Start(); err != nil {
-		log.Fatal(err)
-	}
 	defer served.Process.Kill()
-	url, err := bufio.NewReader(pipe).ReadString('\n')
-	if err != nil {
-		log.Fatal(err)
-	}
-	url = strings.TrimSpace(url)
 	http.DefaultTransport.(*http.Transport).MaxIdleConnsPerHost = *calls
-	dir, err := os.MkdirTemp("", "ollupi-bench-")
-	if err != nil {
-		log.Fatal(err)
-	}
+	dir := tempHome()
 	defer os.RemoveAll(dir)
-	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}, done: map[string]chan struct{}{}}
+	tr := newTracker()
 	e := newEngine(host.Config{
-		Home: dir, Models: []llm.Model{{Name: "fake", Connection: "fake"}},
-		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(url, "", *calls, map[string]llm.Limits{"fake": {Context: 200_000, Output: 32_000}})},
+		Home: dir, Models: fakeModels,
+		Connections: map[string]llm.Client{"fake": fakeConnection(url, *calls)},
 		Tools:       []kit.Provider{work{latency: *toolLatency}},
 		Slots:       *slots,
 	})
