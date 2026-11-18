@@ -14,7 +14,7 @@ import (
 
 var quick = Options{PerKey: 2, Rate: 1000, Burst: 100, RetryWithin: 3 * time.Second, PingEvery: 20 * time.Millisecond, PongWithin: 50 * time.Millisecond, MaxAge: time.Hour}
 
-func start(t *testing.T, h *Hub[string]) (string, <-chan struct{}) {
+func start(t *testing.T, h *Hub) (string, <-chan struct{}) {
 	t.Helper()
 	ended := make(chan struct{}, 8)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -26,7 +26,7 @@ func start(t *testing.T, h *Hub[string]) (string, <-chan struct{}) {
 			t.Error(err)
 			return
 		}
-		h.Serve(r.Context(), "k", ws, r.URL.Query().Get("name"), func(ctx context.Context) error {
+		h.Serve(r.Context(), "k", ws, func(ctx context.Context) error {
 			for {
 				if _, _, err := ws.Read(ctx); err != nil {
 					return err
@@ -61,17 +61,17 @@ func eventually(t *testing.T, what string, ok func() bool) {
 func TestOptionsMustBound(t *testing.T) {
 	bad := quick
 	bad.PerKey = 0
-	if _, err := New[string](bad); err == nil {
+	if _, err := New(bad); err == nil {
 		t.Error("a hub that holds no connection per key")
 	}
 	bad = quick
 	bad.MaxAge = 0
-	if _, err := New[string](bad); err == nil {
+	if _, err := New(bad); err == nil {
 		t.Error("a hub that keeps connections forever")
 	}
 	bad = quick
 	bad.RetryWithin = time.Millisecond
-	if _, err := New[string](bad); err == nil {
+	if _, err := New(bad); err == nil {
 		t.Error("a Retry-After under a second")
 	}
 }
@@ -79,7 +79,7 @@ func TestOptionsMustBound(t *testing.T) {
 func TestConnectionsBeyondTheRateAreToldWhenToComeBack(t *testing.T) {
 	opts := quick
 	opts.Rate, opts.Burst = 0.001, 1
-	h, err := New[string](opts)
+	h, err := New(opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestConnectionsBeyondTheRateAreToldWhenToComeBack(t *testing.T) {
 func TestANewerConnectionTakesTheOldestsPlace(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	h, err := New[string](quick)
+	h, err := New(quick)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestAConnectionIsClosedNearItsAge(t *testing.T) {
 	defer cancel()
 	opts := quick
 	opts.MaxAge = 400 * time.Millisecond
-	h, err := New[string](opts)
+	h, err := New(opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestAConnectionIsClosedNearItsAge(t *testing.T) {
 func TestAPeerThatStopsAnsweringPingsIsDropped(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	h, err := New[string](quick)
+	h, err := New(quick)
 	if err != nil {
 		t.Fatal(err)
 	}

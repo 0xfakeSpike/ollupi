@@ -26,27 +26,22 @@ type Options struct {
 
 const StatusReplaced websocket.StatusCode = 4000
 
-type Hub[T any] struct {
+type Hub struct {
 	opts  Options
 	admit *rate.Limiter
 
 	mu   sync.Mutex
-	held map[string][]*entry[T]
+	held map[string][]*websocket.Conn
 }
 
-type entry[T any] struct {
-	value T
-	ws    *websocket.Conn
-}
-
-func New[T any](opts Options) (*Hub[T], error) {
+func New(opts Options) (*Hub, error) {
 	if opts.PerKey <= 0 || opts.Rate <= 0 || opts.Burst <= 0 || opts.RetryWithin < time.Second || opts.PingEvery <= 0 || opts.PongWithin <= 0 || opts.MaxAge <= 0 {
 		return nil, errors.New("wshub: PerKey, Rate, Burst, PingEvery, PongWithin and MaxAge must be positive and RetryWithin at least a second")
 	}
-	return &Hub[T]{opts: opts, admit: rate.NewLimiter(opts.Rate, opts.Burst), held: map[string][]*entry[T]{}}, nil
+	return &Hub{opts: opts, admit: rate.NewLimiter(opts.Rate, opts.Burst), held: map[string][]*websocket.Conn{}}, nil
 }
 
-func (h *Hub[T]) Admit(w http.ResponseWriter) bool {
+func (h *Hub) Admit(w http.ResponseWriter) bool {
 	if h.admit.Allow() {
 		return true
 	}
@@ -54,16 +49,15 @@ func (h *Hub[T]) Admit(w http.ResponseWriter) bool {
 	return false
 }
 
-func (h *Hub[T]) Refuse(w http.ResponseWriter, why string) {
+func (h *Hub) Refuse(w http.ResponseWriter, why string) {
 	seconds := 1 + rand.IntN(int(h.opts.RetryWithin/time.Second))
 	w.Header().Set("Retry-After", strconv.Itoa(seconds))
 	http.Error(w, why, http.StatusServiceUnavailable)
 }
 
-func (h *Hub[T]) Serve(ctx context.Context, key string, ws *websocket.Conn, value T, serve func(context.Context) error) {
-	e := &entry[T]{value: value, ws: ws}
-	h.add(key, e)
-	defer h.remove(key, e)
+func (h *Hub) Serve(ctx context.Context, key string, ws *websocket.Conn, serve func(context.Context) error) {
+	h.add(key, ws)
+	defer h.remove(key, ws)
 
 	age := h.opts.MaxAge
 	if quarter := age / 4; quarter > 0 {
@@ -89,7 +83,7 @@ func (h *Hub[T]) Serve(ctx context.Context, key string, ws *websocket.Conn, valu
 	}
 }
 
-func (h *Hub[T]) Count() int {
+func (h *Hub) Count() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	n := 0
@@ -99,24 +93,24 @@ func (h *Hub[T]) Count() int {
 	return n
 }
 
-func (h *Hub[T]) add(key string, e *entry[T]) {
+func (h *Hub) add(key string, ws *websocket.Conn) {
 	h.mu.Lock()
-	held := append(slices.Clone(h.held[key]), e)
-	var oldest *entry[T]
+	held := append(slices.Clone(h.held[key]), ws)
+	var oldest *websocket.Conn
 	if len(held) > h.opts.PerKey {
 		oldest, held = held[0], held[1:]
 	}
 	h.held[key] = held
 	h.mu.Unlock()
 	if oldest != nil {
-		go oldest.ws.Close(StatusReplaced, "replaced by a newer connection")
+		go oldest.Close(StatusReplaced, "replaced by a newer connection")
 	}
 }
 
-func (h *Hub[T]) remove(key string, e *entry[T]) {
+func (h *Hub) remove(key string, ws *websocket.Conn) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	held := slices.DeleteFunc(slices.Clone(h.held[key]), func(x *entry[T]) bool { return x == e })
+	held := slices.DeleteFunc(slices.Clone(h.held[key]), func(x *websocket.Conn) bool { return x == ws })
 	if len(held) == 0 {
 		delete(h.held, key)
 		return
@@ -124,7 +118,7 @@ func (h *Hub[T]) remove(key string, e *entry[T]) {
 	h.held[key] = held
 }
 
-func (h *Hub[T]) keepAlive(ctx context.Context, key string, ws *websocket.Conn) {
+func (h *Hub) keepAlive(ctx context.Context, key string, ws *websocket.Conn) {
 	tick := time.NewTicker(h.opts.PingEvery)
 	defer tick.Stop()
 	for {

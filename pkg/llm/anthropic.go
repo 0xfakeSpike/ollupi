@@ -55,7 +55,7 @@ func (c *Anthropic) Chat(ctx context.Context, req ChatRequest, onDelta func(Delt
 	for stream.Next() {
 		event := stream.Current()
 		if err := msg.Accumulate(event); err != nil {
-			return anthropicUsage(msg, started), fmt.Errorf("llm.Anthropic: %w", err)
+			return ChatResponse{}, fmt.Errorf("llm.Anthropic: %w", err)
 		}
 		switch event.Type {
 		case "message_start":
@@ -66,7 +66,7 @@ func (c *Anthropic) Chat(ctx context.Context, req ChatRequest, onDelta func(Delt
 		}
 	}
 	if err := stream.Err(); err != nil {
-		return anthropicUsage(msg, started), safeRequestError(err)
+		return ChatResponse{}, safeRequestError(err)
 	}
 	if !started {
 		return ChatResponse{}, fmt.Errorf("llm.Anthropic: the stream ended before the response started")
@@ -74,21 +74,14 @@ func (c *Anthropic) Chat(ctx context.Context, req ChatRequest, onDelta func(Delt
 	return anthropicResponse(msg, prefix)
 }
 
-func anthropicUsage(msg anthropic.BetaMessage, started bool) ChatResponse {
-	u := msg.Usage
-	return ChatResponse{
-		Usage: Usage{
-			PromptTokens:           u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens,
-			CachedPromptTokens:     u.CacheReadInputTokens,
-			CacheWritePromptTokens: u.CacheCreationInputTokens,
-			CompletionTokens:       u.OutputTokens,
-		},
-		UsageReported: started,
-	}
-}
-
 func anthropicResponse(msg anthropic.BetaMessage, prefix string) (ChatResponse, error) {
-	resp := anthropicUsage(msg, true)
+	u := msg.Usage
+	resp := ChatResponse{Usage: Usage{
+		PromptTokens:           u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens,
+		CachedPromptTokens:     u.CacheReadInputTokens,
+		CacheWritePromptTokens: u.CacheCreationInputTokens,
+		CompletionTokens:       u.OutputTokens,
+	}}
 	switch msg.StopReason {
 	case anthropic.BetaStopReasonEndTurn, anthropic.BetaStopReasonStopSequence:
 		resp.FinishReason = "stop"

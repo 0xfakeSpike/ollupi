@@ -55,16 +55,15 @@ func (c *Gemini) Chat(ctx context.Context, req ChatRequest, onDelta func(Delta))
 	}
 	defer release()
 
-	var resp ChatResponse
+	var usage Usage
 	var parts []*genai.Part
 	var finish genai.FinishReason
 	for chunk, err := range c.client.Models.GenerateContentStream(ctx, req.Model.Name, contents, config) {
 		if err != nil {
-			return ChatResponse{Usage: resp.Usage, UsageReported: resp.UsageReported}, safeRequestError(err)
+			return ChatResponse{}, safeRequestError(err)
 		}
 		if u := chunk.UsageMetadata; u != nil {
-			resp.UsageReported = true
-			resp.Usage = Usage{
+			usage = Usage{
 				PromptTokens:       int64(u.PromptTokenCount),
 				CachedPromptTokens: int64(u.CachedContentTokenCount),
 				CompletionTokens:   int64(u.CandidatesTokenCount + u.ThoughtsTokenCount),
@@ -94,15 +93,15 @@ func (c *Gemini) Chat(ctx context.Context, req ChatRequest, onDelta func(Delta))
 			emit(onDelta, d)
 		}
 	}
-	return geminiResponse(resp, parts, finish)
+	return geminiResponse(usage, parts, finish)
 }
 
 func isText(p *genai.Part) bool {
 	return p.FunctionCall == nil && p.InlineData == nil && p.FileData == nil
 }
 
-func geminiResponse(resp ChatResponse, parts []*genai.Part, finish genai.FinishReason) (ChatResponse, error) {
-	out := ChatResponse{Usage: resp.Usage, UsageReported: resp.UsageReported}
+func geminiResponse(usage Usage, parts []*genai.Part, finish genai.FinishReason) (ChatResponse, error) {
+	out := ChatResponse{Usage: usage}
 	var content, reasoning strings.Builder
 	var calls []ToolCall
 	for _, part := range parts {

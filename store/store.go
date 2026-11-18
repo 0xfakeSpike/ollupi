@@ -115,15 +115,12 @@ type Owned struct {
 }
 
 type Change struct {
-	Entries  []conversation.Entry
-	Items    []conversation.Item
-	Turns    []conversation.Turn
-	Header   *Thread
-	Deleted  bool
-	Status   conversation.ThreadStatus
-	Active   string
-	Runnable bool
-	At       time.Time
+	Entries []conversation.Entry
+	Items   []conversation.Item
+	Turns   []conversation.Turn
+	Header  *Thread
+	Deleted bool
+	Active  string
 }
 
 type Delta struct {

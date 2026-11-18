@@ -45,7 +45,7 @@ func NewServer(a *app.App, feed *store.Feed, opts Options) (*Server, error) {
 	if opts.Connections == (wshub.Options{}) {
 		opts.Connections = DefaultConnections
 	}
-	hub, err := wshub.New[*conn](opts.Connections)
+	hub, err := wshub.New(opts.Connections)
 	if err != nil {
 		return nil, fmt.Errorf("gateway: %w", err)
 	}

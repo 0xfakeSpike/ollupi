@@ -355,7 +355,7 @@ func (t *tx) persist(thread string, th store.Thread, v conversation.View, p *pen
 		return err
 	}
 	active, _ := v.Active()
-	p.change.Active, p.change.Runnable, p.change.At = active.ID, runnable, now
+	p.change.Active = active.ID
 	p.change.Items, p.change.Turns = nil, nil
 	for _, id := range p.items {
 		it, _ := v.ItemOf(id)
@@ -398,18 +398,19 @@ func (t *tx) rollUp(id string) error {
 	return nil
 }
 
-func (t *tx) events() []store.Event {
+func (t *tx) events() ([]store.Event, error) {
 	var out []store.Event
 	for _, thread := range t.order {
 		p := t.threads[thread]
 		change := p.change
 		if !change.Deleted {
-			if th, err := t.Thread(thread); err == nil {
-				change.Header = &th
-				change.Status, change.Runnable = th.Status, th.Runnable
+			th, err := t.Thread(thread)
+			if err != nil {
+				return nil, err
 			}
+			change.Header = &th
 		}
 		out = append(out, store.Event{User: p.user, Thread: thread, Change: &change})
 	}
-	return append(out, t.owned...)
+	return append(out, t.owned...), nil
 }
