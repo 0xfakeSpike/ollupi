@@ -7,29 +7,9 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+
+	"github.com/0xfakeSpike/ollupi/auth"
 )
-
-type Authenticate func(ctx context.Context, token string) (user string, err error)
-
-var ErrUnknownToken = errors.New("invalid or missing token")
-
-const tokenProtocol = "ollupi.token"
-
-func TokenOf(header http.Header) string {
-	if bearer, ok := strings.CutPrefix(header.Get("Authorization"), "Bearer "); ok {
-		return bearer
-	}
-	var offered []string
-	for _, header := range header.Values("Sec-WebSocket-Protocol") {
-		for protocol := range strings.SplitSeq(header, ",") {
-			offered = append(offered, strings.TrimSpace(protocol))
-		}
-	}
-	if i := slices.Index(offered, tokenProtocol); i >= 0 && i+1 < len(offered) {
-		return offered[i+1]
-	}
-	return ""
-}
 
 func (s *Server) authorize(r *http.Request) (string, int, string) {
 	host := r.Host
@@ -41,9 +21,9 @@ func (s *Server) authorize(r *http.Request) (string, int, string) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), lookupTimeout)
 	defer cancel()
-	user, err := s.authenticate(ctx, TokenOf(r.Header))
+	user, err := s.authenticate(ctx, auth.TokenOf(r.Header))
 	switch {
-	case errors.Is(err, ErrUnknownToken):
+	case errors.Is(err, auth.ErrUnknownToken):
 		return "", http.StatusUnauthorized, "invalid or missing gateway token"
 	case err != nil:
 		return "", http.StatusServiceUnavailable, "the token cannot be checked now; try again"

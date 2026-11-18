@@ -244,10 +244,28 @@ func (a *App) DeleteEnvironment(ctx context.Context, u, id string) error {
 	})
 }
 
-func (a *App) MCPServers(ctx context.Context, u string) ([]user.MCPServer, error) {
-	var servers []user.MCPServer
-	err := a.st.Read(ctx, func(r store.Reader) (err error) { servers, err = r.MCPServers(u); return err })
-	return servers, err
+type MCPServer struct {
+	user.MCPServer
+	Status *user.MCPStatus
+}
+
+func (a *App) MCPServers(ctx context.Context, u string) ([]MCPServer, error) {
+	var stored []user.MCPServer
+	if err := a.st.Read(ctx, func(r store.Reader) (err error) { stored, err = r.MCPServers(u); return err }); err != nil {
+		return nil, err
+	}
+	statuses, err := a.statuses(u)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]MCPServer, len(stored))
+	for i, s := range stored {
+		out[i].MCPServer = s
+		if j := slices.IndexFunc(statuses, func(st user.MCPStatus) bool { return st.Name == s.Name }); j >= 0 {
+			out[i].Status = &statuses[j]
+		}
+	}
+	return out, nil
 }
 
 func (a *App) SetMCPServer(ctx context.Context, u string, s user.MCPServer) error {

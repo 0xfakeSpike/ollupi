@@ -40,6 +40,8 @@ type Models interface {
 
 type Boxes func(user string) (sandbox.Box, error)
 
+type Statuses func(user string) ([]user.MCPStatus, error)
+
 type Attachments interface {
 	Put(ctx context.Context, key string, data []byte) error
 	Get(ctx context.Context, key string) ([]byte, error)
@@ -51,6 +53,7 @@ type App struct {
 	st          store.Store
 	models      Models
 	tools       tool.Tools
+	statuses    Statuses
 	boxes       Boxes
 	attachments Attachments
 	cal         cron.Calendar
@@ -60,8 +63,8 @@ type App struct {
 	moving map[string]bool
 }
 
-func New(st store.Store, models Models, tools tool.Tools, boxes Boxes, attachments Attachments, cal cron.Calendar, deployment policy.Settings) *App {
-	return &App{st: st, models: models, tools: tools, boxes: boxes, attachments: attachments, cal: cal, deployment: deployment, moving: map[string]bool{}}
+func New(st store.Store, models Models, tools tool.Tools, statuses Statuses, boxes Boxes, attachments Attachments, cal cron.Calendar, deployment policy.Settings) *App {
+	return &App{st: st, models: models, tools: tools, statuses: statuses, boxes: boxes, attachments: attachments, cal: cal, deployment: deployment, moving: map[string]bool{}}
 }
 
 func (a *App) EnsureUser(ctx context.Context, u string) error {

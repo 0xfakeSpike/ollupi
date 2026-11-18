@@ -1265,7 +1265,7 @@
               "type": "null"
             },
             {
-              "$ref": "#/$defs/ServerStatus"
+              "$ref": "#/$defs/MCPServerStatus"
             }
           ]
         }
@@ -1361,6 +1361,38 @@
       },
       "required": [
         "data"
+      ],
+      "additionalProperties": false
+    },
+    "MCPServerStatus": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "connected": {
+          "type": "boolean"
+        },
+        "tools": {
+          "type": "integer"
+        },
+        "skippedTools": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "connected",
+        "tools"
       ],
       "additionalProperties": false
     },
@@ -2090,38 +2122,6 @@
       "required": [
         "name",
         "version"
-      ],
-      "additionalProperties": false
-    },
-    "ServerStatus": {
-      "type": "object",
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "connected": {
-          "type": "boolean"
-        },
-        "tools": {
-          "type": "integer"
-        },
-        "skippedTools": {
-          "type": [
-            "null",
-            "array"
-          ],
-          "items": {
-            "type": "string"
-          }
-        },
-        "error": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "name",
-        "connected",
-        "tools"
       ],
       "additionalProperties": false
     },

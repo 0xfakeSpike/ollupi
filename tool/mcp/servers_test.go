@@ -91,13 +91,13 @@ func invoke(set tool.Set, name string, caller tool.Caller) (string, string) {
 	return text, r.Error
 }
 
-func statuses(t *testing.T, users *Users, name string) map[string]ServerStatus {
+func statuses(t *testing.T, users *Users, name string) map[string]user.MCPStatus {
 	t.Helper()
 	list, err := users.Statuses(name)
 	if err != nil {
 		t.Fatal(err)
 	}
-	out := map[string]ServerStatus{}
+	out := map[string]user.MCPStatus{}
 	for _, st := range list {
 		out[st.Name] = st
 	}
@@ -146,7 +146,7 @@ func TestConnect(t *testing.T) {
 	byName := statuses(t, users, "someone")
 	for _, name := range []string{"local", "web"} {
 		st := byName[name]
-		if !st.Connected || st.Tools != 2 || !slices.Equal(st.SkippedTools, []string{"a.dotted.name", "lookahead"}) || st.Error != "" {
+		if !st.Connected || st.Tools != 2 || !slices.Equal(st.Skipped, []string{"a.dotted.name", "lookahead"}) || st.Error != "" {
 			t.Errorf("%s: %+v", name, st)
 		}
 	}
