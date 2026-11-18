@@ -107,24 +107,31 @@ func TestATurnTeachesANoteAndIsReadOnce(t *testing.T) {
 	}
 }
 
-func TestAUserWithMemoryOffIsPassedOver(t *testing.T) {
-	m := &model{answer: func(string) (string, error) { return addEditor, nil }}
-	x, st := setup(t, m)
-	converse(t, st, "u", "th")
-	update(t, st, func(tx store.Tx) error {
-		s, err := tx.Settings("u")
-		if err != nil {
-			return err
-		}
-		s.Memory = false
-		return tx.SetSettings("u", s)
-	})
-	if _, err := x.readAll(context.Background(), "u"); err != nil {
-		t.Fatal(err)
-	}
-	state := read(t, st, func(r store.Reader) (memory.State, error) { return r.MemoryState("u") })
-	if m.calls != 0 || state.Cursor.Thread != "th" || state.LastSuccess != nil {
-		t.Errorf("%d calls, state %+v", m.calls, state)
+func TestAUserWithMemoryOrLearningOffIsPassedOver(t *testing.T) {
+	for name, off := range map[string]func(*account.Settings){
+		"memory":   func(s *account.Settings) { s.Memory = false },
+		"learning": func(s *account.Settings) { s.Learn = false },
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := &model{answer: func(string) (string, error) { return addEditor, nil }}
+			x, st := setup(t, m)
+			converse(t, st, "u", "th")
+			update(t, st, func(tx store.Tx) error {
+				s, err := tx.Settings("u")
+				if err != nil {
+					return err
+				}
+				off(&s)
+				return tx.SetSettings("u", s)
+			})
+			if _, err := x.readAll(context.Background(), "u"); err != nil {
+				t.Fatal(err)
+			}
+			state := read(t, st, func(r store.Reader) (memory.State, error) { return r.MemoryState("u") })
+			if m.calls != 0 || state.Cursor.Thread != "th" || state.LastSuccess != nil {
+				t.Errorf("%d calls, state %+v", m.calls, state)
+			}
+		})
 	}
 }
 

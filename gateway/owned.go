@@ -161,10 +161,10 @@ func (c *conn) settingsRead(ctx context.Context, _ Empty) (SettingsRow, error) {
 }
 
 func (c *conn) settingsUpdate(ctx context.Context, p SettingsUpdateParams) (SettingsRow, error) {
-	if p.Redaction == nil && p.Memory == nil {
-		return SettingsRow{}, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "give redaction or memory")
+	if p.Redaction == nil && p.Memory == nil && p.Learn == nil {
+		return SettingsRow{}, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "give redaction, memory or learn")
 	}
-	s, err := c.s.app.UpdateSettings(ctx, c.user, p.Redaction, p.Memory)
+	s, err := c.s.app.UpdateSettings(ctx, c.user, p.Redaction, p.Memory, p.Learn)
 	return settingsRow(s), err
 }
 

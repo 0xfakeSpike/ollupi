@@ -24,6 +24,7 @@ type Settings struct {
 	Redaction    bool
 	RedactionKey string
 	Memory       bool
+	Learn        bool
 	Permissions  policy.Settings
 }
 

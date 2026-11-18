@@ -2149,6 +2149,9 @@
         "memory": {
           "type": "boolean"
         },
+        "learn": {
+          "type": "boolean"
+        },
         "permissions": {
           "$ref": "#/$defs/PermissionSettings"
         }
@@ -2156,6 +2159,7 @@
       "required": [
         "redaction",
         "memory",
+        "learn",
         "permissions"
       ],
       "additionalProperties": false
@@ -2170,6 +2174,12 @@
           ]
         },
         "memory": {
+          "type": [
+            "null",
+            "boolean"
+          ]
+        },
+        "learn": {
           "type": [
             "null",
             "boolean"

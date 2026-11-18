@@ -578,6 +578,7 @@ type SearchResult struct {
 type SettingsUpdateParams struct {
 	Redaction *bool `json:"redaction,omitempty"`
 	Memory    *bool `json:"memory,omitempty"`
+	Learn     *bool `json:"learn,omitempty"`
 }
 
 type SettingsPermissionsParams struct {
