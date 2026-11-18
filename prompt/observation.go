@@ -10,7 +10,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/redact"
-	"github.com/0xfakeSpike/ollupi/pkg/render"
 )
 
 type observations struct {
@@ -112,8 +111,6 @@ func (o *observations) render(it conversation.Item, budget int) string {
 	}
 	return text
 }
-
-func OutputText(raw json.RawMessage) string { return render.Output(decoded(raw), nil) }
 
 func decoded(raw json.RawMessage) any {
 	if len(raw) == 0 {

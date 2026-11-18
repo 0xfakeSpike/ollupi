@@ -129,8 +129,8 @@ func TestAClientHearsWhatChangesAndAnswersWhatWaitsOnIt(t *testing.T) {
 	boxes := func(string) (sandbox.Box, error) { return sandbox.Here(), nil }
 	users := mcp.NewUsers(ctx, mcp.Client{Name: "ollupi", Version: "test"}, st, boxes)
 	defer users.Close()
-	a := app.New(st, models{}, users.Tools, boxes, noFiles{}, cron.NewCalendar(time.UTC), policy.Settings{ApprovalPolicy: string(policy.OnRequest)})
-	server, err := NewServer(a, st.Feed(), users, Options{Token: "secret"})
+	a := app.New(st, models{}, users.Tools, users.Statuses, boxes, noFiles{}, cron.NewCalendar(time.UTC), policy.Settings{ApprovalPolicy: string(policy.OnRequest)})
+	server, err := NewServer(a, st.Feed(), Options{Token: "secret"})
 	if err != nil {
 		t.Fatal(err)
 	}

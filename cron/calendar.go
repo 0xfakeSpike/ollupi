@@ -22,12 +22,12 @@ var NamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 var ErrInvalidJob = errors.New("invalid scheduled task")
 
 type Calendar struct {
-	location *time.Location
+	Location *time.Location
 	parser   robfig.Parser
 }
 
 func NewCalendar(location *time.Location) Calendar {
-	return Calendar{location: location, parser: robfig.NewParser(robfig.Minute | robfig.Hour | robfig.Dom | robfig.Month | robfig.Dow | robfig.Descriptor)}
+	return Calendar{Location: location, parser: robfig.NewParser(robfig.Minute | robfig.Hour | robfig.Dom | robfig.Month | robfig.Dow | robfig.Descriptor)}
 }
 
 func (c Calendar) Job(id, thread, name, spec, prompt string, times *int, now time.Time) (user.CronJob, error) {
@@ -84,7 +84,7 @@ func lastRun(job user.CronJob, now time.Time) error {
 
 func (c Calendar) schedule(spec string) (robfig.Schedule, error) {
 	if strings.HasPrefix(spec, "CRON_TZ=") || strings.HasPrefix(spec, "TZ=") {
-		return nil, fmt.Errorf("cron: %w: time-zone prefixes are not allowed; tasks use %s", ErrInvalidJob, c.location)
+		return nil, fmt.Errorf("cron: %w: time-zone prefixes are not allowed; tasks use %s", ErrInvalidJob, c.Location)
 	}
 	if strings.HasPrefix(spec, "@") {
 		switch spec {
@@ -107,15 +107,15 @@ func (c Calendar) Next(spec string, after time.Time) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, err
 	}
-	local := after.In(c.location)
+	local := after.In(c.Location)
 	wall := time.Date(local.Year(), local.Month(), local.Day(), local.Hour(), local.Minute(), local.Second(), local.Nanosecond(), time.UTC)
 	for range 1000 {
 		wall = s.Next(wall)
 		if wall.IsZero() {
 			break
 		}
-		at := time.Date(wall.Year(), wall.Month(), wall.Day(), wall.Hour(), wall.Minute(), 0, 0, c.location)
-		got := at.In(c.location)
+		at := time.Date(wall.Year(), wall.Month(), wall.Day(), wall.Hour(), wall.Minute(), 0, 0, c.Location)
+		got := at.In(c.Location)
 		if shown := time.Date(got.Year(), got.Month(), got.Day(), got.Hour(), got.Minute(), 0, 0, time.UTC); !shown.Equal(wall) {
 			at = at.Add(wall.Sub(shown))
 		}

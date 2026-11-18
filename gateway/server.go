@@ -11,11 +11,11 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/app"
 	"github.com/0xfakeSpike/ollupi/ask"
+	"github.com/0xfakeSpike/ollupi/auth"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/pkg/wshub"
 	"github.com/0xfakeSpike/ollupi/store"
-	"github.com/0xfakeSpike/ollupi/tool/mcp"
 	"github.com/coder/websocket"
 )
 
@@ -30,8 +30,7 @@ const (
 type Server struct {
 	app          *app.App
 	feed         *store.Feed
-	mcp          *mcp.Users
-	authenticate Authenticate
+	authenticate auth.Authenticate
 	admit        func(ctx context.Context, user string) error
 	hosts        []string
 	origins      []string
@@ -40,10 +39,8 @@ type Server struct {
 	served       sync.WaitGroup
 }
 
-const HealthPath = "/healthz"
-
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == HealthPath {
+	if r.URL.Path == auth.HealthPath {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
@@ -72,7 +69,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		s.ready.Store(user, struct{}{})
 	}
-	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: s.origins, Subprotocols: []string{tokenProtocol}})
+	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: s.origins, Subprotocols: []string{auth.TokenProtocol}})
 	if err != nil {
 		return
 	}

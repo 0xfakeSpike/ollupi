@@ -5,7 +5,6 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
-	"github.com/0xfakeSpike/ollupi/tool/mcp"
 	"github.com/0xfakeSpike/ollupi/user"
 )
 
@@ -25,25 +24,14 @@ func (c *conn) toolList(ctx context.Context, _ Empty) (ToolListResult, func(), e
 
 func (c *conn) mcpServerList(ctx context.Context, _ Empty) (MCPServerListResult, func(), error) {
 	servers, err := c.s.app.MCPServers(ctx, c.user)
-	if err != nil {
-		return MCPServerListResult{}, nil, err
-	}
-	statuses, err := c.s.mcp.Statuses(c.user)
-	if err != nil {
-		return MCPServerListResult{}, nil, err
-	}
-	byName := map[string]mcp.ServerStatus{}
-	for _, st := range statuses {
-		byName[st.Name] = st
-	}
 	out := make([]MCPServer, len(servers))
 	for i, s := range servers {
-		out[i] = MCPServer{MCPServerConfig: mcpServerConfig(s)}
-		if st, ok := byName[s.Name]; ok {
-			out[i].Status = &st
+		out[i] = MCPServer{MCPServerConfig: mcpServerConfig(s.MCPServer)}
+		if st := s.Status; st != nil {
+			out[i].Status = &MCPServerStatus{Name: st.Name, Connected: st.Connected, Tools: st.Tools, SkippedTools: st.Skipped, Error: st.Error}
 		}
 	}
-	return MCPServerListResult{Data: out}, nil, nil
+	return MCPServerListResult{Data: out}, nil, err
 }
 
 func (c *conn) mcpServerSet(ctx context.Context, p MCPServerConfig) (MCPServerConfig, func(), error) {
