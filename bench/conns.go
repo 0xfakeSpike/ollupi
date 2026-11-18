@@ -50,10 +50,7 @@ func conns(args []string) {
 		ns = append(ns, n)
 	}
 
-	dir, err := os.MkdirTemp("", "ollupi-bench-")
-	if err != nil {
-		log.Fatal(err)
-	}
+	dir := tempHome()
 	defer os.RemoveAll(dir)
 	shardAddr := freeAddress()
 	shard := startChild("connsshard", "-dir", dir, "-addr", shardAddr)
@@ -372,7 +369,7 @@ func connsShard(args []string) {
 	fs.Parse(args)
 	quiet()
 	e := newEngine(host.Config{
-		Home: *dir, Models: []llm.Model{{Name: "fake", Connection: "fake"}},
+		Home: *dir, Models: fakeModels,
 		Connections: map[string]llm.Client{"fake": &model{}},
 		Gateway:     &gateway.Options{Authenticate: benchUser},
 	})

@@ -66,10 +66,7 @@ func crash(args []string) {
 	}}
 	srv := httptest.NewServer(p)
 	defer srv.Close()
-	dir, err := os.MkdirTemp("", "ollupi-bench-")
-	if err != nil {
-		log.Fatal(err)
-	}
+	dir := tempHome()
 	defer os.RemoveAll(dir)
 	exe, err := os.Executable()
 	if err != nil {
@@ -223,8 +220,8 @@ func crashChild(args []string) {
 	}
 	startAt := time.Now()
 	h, err := host.New(context.Background(), host.Config{
-		Home: *dir, Name: "bench", Models: []llm.Model{{Name: "fake", Connection: "fake"}},
-		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(*url, "", *calls, map[string]llm.Limits{"fake": {Context: 200_000, Output: 32_000}})},
+		Home: *dir, Name: "bench", Models: fakeModels,
+		Connections: map[string]llm.Client{"fake": fakeConnection(*url, *calls)},
 		Tools:       []kit.Provider{work{latency: *toolLatency, log: toolLog}},
 		Permissions: policy.Settings{ApprovalPolicy: string(policy.Never)},
 		Boxes:       here, Slots: *slots,

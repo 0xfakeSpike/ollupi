@@ -22,16 +22,13 @@ func resume(args []string) {
 	running := fs.Int("running", 500, "turns in a model call when the process stops")
 	fs.Parse(args)
 
-	dir, err := os.MkdirTemp("", "ollupi-bench-")
-	if err != nil {
-		log.Fatal(err)
-	}
+	dir := tempHome()
 	defer os.RemoveAll(dir)
 	answer := strings.Repeat("A paragraph of an answer, about as long as a short reply in a chat. ", 6)
 	open := func(m *model, tr *tracker) (*engine, time.Duration) {
 		at := time.Now()
 		e := newEngine(host.Config{
-			Home: dir, Models: []llm.Model{{Name: "fake", Connection: "fake"}},
+			Home: dir, Models: fakeModels,
 			Connections: map[string]llm.Client{"fake": m}, Slots: *running + 32,
 		})
 		e.Store.Feed().SubscribeAll(tr.on)
@@ -39,7 +36,7 @@ func resume(args []string) {
 		return e, time.Since(at)
 	}
 	m := &model{answer: answer}
-	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}, done: map[string]chan struct{}{}}
+	tr := newTracker()
 	e, _ := open(m, tr)
 	newThread := func() string {
 		id := e.newThread(defaultUser)
@@ -101,7 +98,7 @@ func resume(args []string) {
 
 	m2 := &model{answer: answer}
 	m2.latency.Store(int64(time.Hour))
-	tr2 := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}}
+	tr2 := newTracker()
 	at := time.Now()
 	e2, started := open(m2, tr2)
 	waitFor("the running turns to send again", func() bool { return m2.calls.Load() >= int64(*running) })

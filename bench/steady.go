@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"cmp"
 	"flag"
 	"fmt"
@@ -9,12 +8,10 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"runtime/pprof"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -49,36 +46,16 @@ func steady(args []string) {
 		*calls = *c
 	}
 
-	exe, err := os.Executable()
-	if err != nil {
-		log.Fatal(err)
-	}
 	call, callArgs := "bench__work", "{}"
 	if *command != "" {
 		call, callArgs = workspace.ToolRunCommand, fmt.Sprintf(`{"program":"sleep","args":["%g"]}`, toolLatency.Seconds())
 	}
-	served := exec.Command(exe, "provider", "-call", call, "-call-args", callArgs, "-latency", latency.String(), "-jitter", jitter.String(),
+	served, url := spawn("provider", "-call", call, "-call-args", callArgs, "-latency", latency.String(), "-jitter", jitter.String(),
 		"-sigma", strconv.FormatFloat(*sigma, 'g', -1, 64), "-others", strconv.Itoa(*others), "-fail", strconv.FormatFloat(*fail, 'g', -1, 64),
 		"-rounds", strconv.Itoa(*rounds), "-limit", strconv.Itoa(*calls))
-	served.Stderr = os.Stderr
-	out, err := served.StdoutPipe()
-	if err != nil {
-		log.Fatal(err)
-	}
-	if err := served.Start(); err != nil {
-		log.Fatal(err)
-	}
 	defer served.Process.Kill()
-	url, err := bufio.NewReader(out).ReadString('\n')
-	if err != nil {
-		log.Fatal(err)
-	}
-	url = strings.TrimSpace(url)
 	http.DefaultTransport.(*http.Transport).MaxIdleConnsPerHost = *calls
-	dir, err := os.MkdirTemp("", "ollupi-bench-")
-	if err != nil {
-		log.Fatal(err)
-	}
+	dir := tempHome()
 	defer os.RemoveAll(dir)
 	providers := []kit.Provider{work{latency: *toolLatency}}
 	if *command != "" {
@@ -94,10 +71,10 @@ func steady(args []string) {
 		defer runner.Close()
 		providers = []kit.Provider{runner}
 	}
-	tr := &tracker{startedAt: map[string]time.Time{}, endedAt: map[string]time.Time{}, done: map[string]chan struct{}{}}
+	tr := newTracker()
 	e := newEngine(host.Config{
-		Home: dir, Models: []llm.Model{{Name: "fake", Connection: "fake"}},
-		Connections: map[string]llm.Client{"fake": llm.NewOpenAI(url, "", *calls, map[string]llm.Limits{"fake": {Context: 200_000, Output: 32_000}})},
+		Home: dir, Models: fakeModels,
+		Connections: map[string]llm.Client{"fake": fakeConnection(url, *calls)},
 		Tools:       providers,
 		Slots:       *slots,
 	})
