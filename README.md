@@ -33,7 +33,7 @@ Sessions, subagents and scheduled jobs all share one execution pool. [ollupi-des
 
 ## Benchmarks
 
-These results use a simulated model and tools. They measure scheduling and persistence, not model quality. See [bench](bench/README.md) for the method, full data and commands to reproduce them.
+These results use a simulated model and tools. They measure scheduling and persistence, not model quality. They were measured on v0.8.3 to v0.8.5, before multi-user, shards and the conversation log, and have not been measured again since. See [bench](bench/README.md) for the method, full data and commands to reproduce them.
 
 ![Comparison with pi and DeepSeek Harness](docs/images/bench-compare.svg)
 
@@ -65,7 +65,7 @@ One database is one shard. Users in a shard share tables and are isolated per us
 
 Everything a user runs stays in their own sandbox: commands, files and MCP servers are reached through `sandbox.Box`, and integrating a cloud sandbox only takes implementing `sandbox.Machine`. A user's environments are the boxes a conversation can be started in — this machine, and cloud sandboxes they add — and a conversation keeps the one it was started in (`environment/list`, `thread/start` with `environmentId`). HTTP MCP requests from cloud sandbox users leave from the shard process and can only reach public addresses. Model calls can go through the user's own client, and attachments are stored as files under the home's `attachments` folder (`blob.Dir`).
 
-Two choices of the sandbox trade safety for ordinary work. A repository's `.git` is writable inside it, hooks included, so `git init` and `git clone` work there; a hook a command writes runs later for whoever runs git outside the sandbox. Under the `never` approval policy, a command that asks to leave the sandbox runs on the host without asking; a server that runs users' commands with `sandbox.Here` should not offer that policy.
+Two choices of the sandbox trade safety for ordinary work. A repository's `.git` is writable inside it, hooks included, so `git init` and `git clone` work there; a hook a command writes runs later for whoever runs git outside the sandbox. Under the `never` approval policy, a command that asks to leave the sandbox runs on the host without asking; a server that runs users' commands in a sandbox on its own machine should not offer that policy. `sandbox.Here` is no sandbox at all: every command it runs reaches the host under any policy, so it suits only users who may use the machine fully.
 
 Building and testing need SQLite's FTS5: `go test -tags sqlite_fts5 ./...`, or set `GOFLAGS=-tags=sqlite_fts5`.
 
