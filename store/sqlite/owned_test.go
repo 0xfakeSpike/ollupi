@@ -119,7 +119,7 @@ func (s *Store) readWorkspace(owner, id string) (user.Workspace, error) {
 	return w, err
 }
 
-func TestThreadsListTheirTasksAndGoWithThem(t *testing.T) {
+func TestThreadsListTheirCronJobsAndGoWithThem(t *testing.T) {
 	s := open(t, t.TempDir())
 	start(t, s, "u", "first")
 	time.Sleep(2 * time.Millisecond)
@@ -159,12 +159,12 @@ func TestThreadsListTheirTasksAndGoWithThem(t *testing.T) {
 	if _, err := s.readThread("child"); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("a subagent's conversation outlived its parent: %v", err)
 	}
-	if jobs := read(t, s, func(r store.Reader) ([]store.Task, error) { return r.CronJobs("u", "") }); len(jobs) != 1 || jobs[0].ID != "j2" {
+	if jobs := read(t, s, func(r store.Reader) ([]store.CronJobView, error) { return r.CronJobs("u", "") }); len(jobs) != 1 || jobs[0].ID != "j2" {
 		t.Errorf("tasks after the delete %+v", jobs)
 	}
 	deleted := slices.ContainsFunc(heard, func(e store.Event) bool { return e.Change != nil && e.Change.Deleted && e.Thread == "first" })
-	taskGone := slices.ContainsFunc(heard, func(e store.Event) bool { return e.Owned != nil && e.Owned.CronJobDeleted == "j1" })
-	if !deleted || !taskGone {
+	jobGone := slices.ContainsFunc(heard, func(e store.Event) bool { return e.Owned != nil && e.Owned.CronJobDeleted == "j1" })
+	if !deleted || !jobGone {
 		t.Errorf("heard %+v", heard)
 	}
 	if busy := read(t, s, func(r store.Reader) (int64, error) { return r.Busy() }); busy != 1 {
@@ -196,7 +196,7 @@ func read2[T any](t *testing.T, s *Store, fn func(store.Reader) (T, bool, error)
 	return out, more
 }
 
-func TestSearchFindsTitlesMessagesAndTasks(t *testing.T) {
+func TestSearchFindsTitlesMessagesAndCronJobs(t *testing.T) {
 	s := open(t, t.TempDir())
 	start(t, s, "u", "th")
 	now := time.Now().UTC()
@@ -216,7 +216,7 @@ func TestSearchFindsTitlesMessagesAndTasks(t *testing.T) {
 		return tx.PutCronJob(user.CronJob{ID: "j", Thread: "th", Name: "quarterly", Spec: "@monthly", Prompt: "remind me", NextRun: now, Created: now})
 	})
 	found := read(t, s, func(r store.Reader) (store.Found, error) { return r.Search("u", []string{"quarterly"}, "", 10) })
-	if len(found.Threads) != 1 || len(found.Messages) != 1 || len(found.Tasks) != 1 {
+	if len(found.Threads) != 1 || len(found.Messages) != 1 || len(found.CronJobs) != 1 {
 		t.Fatalf("found %+v", found)
 	}
 	if hit := found.Messages[0]; hit.Item != "a1" || hit.Kind != conversation.ItemAgentMessage || hit.Title != "Quarterly report" {

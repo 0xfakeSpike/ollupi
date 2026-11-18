@@ -285,20 +285,20 @@ func TestAWorkspaceMovesOnlyWhenItsConversationsAreIdle(t *testing.T) {
 	}
 }
 
-func TestTasksAreNamedOncePerConversation(t *testing.T) {
+func TestCronJobsAreNamedOncePerConversation(t *testing.T) {
 	f := setup(t)
 	th := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", "", "", ""))
-	must[store.Task](t)(f.a.CreateCronJob(f.ctx, "u", th.ID, cron.Draft{Name: "news", Spec: "@daily", Prompt: "read the news"}))
+	must[store.CronJobView](t)(f.a.CreateCronJob(f.ctx, "u", th.ID, cron.Draft{Name: "news", Spec: "@daily", Prompt: "read the news"}))
 	if _, err := f.a.CreateCronJob(f.ctx, "u", th.ID, cron.Draft{Name: "news", Spec: "@hourly", Prompt: "again"}); !errors.Is(err, cron.ErrInvalidJob) {
 		t.Errorf("a name twice: %v", err)
 	}
-	if j := must[store.Task](t)(f.a.PauseCronJob(f.ctx, "u", th.ID, "news", true)); !j.Paused {
+	if j := must[store.CronJobView](t)(f.a.PauseCronJob(f.ctx, "u", th.ID, "news", true)); !j.Paused {
 		t.Error("not paused")
 	}
 	if err := f.a.DeleteCronJob(f.ctx, "u", th.ID, "news"); err != nil {
 		t.Fatal(err)
 	}
-	if jobs := must[[]store.Task](t)(f.a.CronJobs(f.ctx, "u", th.ID)); len(jobs) != 0 {
+	if jobs := must[[]store.CronJobView](t)(f.a.CronJobs(f.ctx, "u", th.ID)); len(jobs) != 0 {
 		t.Errorf("left %+v", jobs)
 	}
 }

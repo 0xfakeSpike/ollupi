@@ -13,7 +13,7 @@ Instead of isolating each agent in its own VM or container, Ollupi pools the run
 - **Inactive sessions cost nothing.** A session waiting on a user, an approval or a subagent leaves the execution pool and remains only as database records, using no memory or compute.
 - **Controlled concurrency.** The execution pool schedules by slot, and model calls are limited per connection to match the provider's account quota; bursts queue.
 
-Sessions, subagents and scheduled tasks all share one execution pool. [ollupi-desktop](https://github.com/0xfakeSpike/ollupi-desktop) is the desktop client built on Ollupi.
+Sessions, subagents and scheduled jobs all share one execution pool. [ollupi-desktop](https://github.com/0xfakeSpike/ollupi-desktop) is the desktop client built on Ollupi.
 
 ![Ollupi architecture](docs/images/architecture.svg)
 
@@ -27,7 +27,7 @@ Sessions, subagents and scheduled tasks all share one execution pool. [ollupi-de
 | Scheduling state | Process memory | SQLite |
 | After a restart | In-progress work is interrupted | Continues from where it stopped |
 | Subagents | Special mechanism or child process | Ordinary sessions, queued in the same pool |
-| Scheduled tasks | External cron starts a process | A message to the session when due, queued in the same pool |
+| Scheduled jobs | External cron starts a process | A message to the session when due, queued in the same pool |
 
 ![Per-agent isolation compared with Ollupi](docs/images/cli-vs-ollupi.svg)
 
@@ -55,7 +55,7 @@ These results use a simulated model and tools. They measure scheduling and persi
 
 ![Shared execution pool](docs/images/execution-pool.svg)
 
-Every runnable turn in every session, whether it comes from a user, a subagent or a scheduled task, enters one queue and runs on a fixed number of slots (32 by default). A turn waiting on a user, an approval or a subagent releases its slot, holds no goroutine or model concurrency, and becomes ready again when the wait ends. When slots run short, ordinary sessions go before subagents, and turns of the same kind run in the order they became ready. Model concurrency is limited per connection (4 per connection by default), and tool execution uses none of it. Model requests that hit a 429, a 5xx or a dropped connection retry with backoff, up to 8 times, keeping their slot and model concurrency while they wait.
+Every runnable turn in every session, whether it comes from a user, a subagent or a scheduled job, enters one queue and runs on a fixed number of slots (32 by default). A turn waiting on a user, an approval or a subagent releases its slot, holds no goroutine or model concurrency, and becomes ready again when the wait ends. When slots run short, ordinary sessions go before subagents, and turns of the same kind run in the order they became ready. Model concurrency is limited per connection (4 per connection by default), and tool execution uses none of it. Model requests that hit a 429, a 5xx or a dropped connection retry with backoff, up to 8 times, keeping their slot and model concurrency while they wait.
 
 Each conversation is an append-only log: a turn's state, what it waits on and what runs next are read from the log, every step is appended before it runs, and no scheduling state lives in memory, so after a process restart the same logic picks up in-progress turns. A tool call appended but not started runs as usual; one started without a result may have taken effect, so it is ended as cut off with a prompt to verify, and is never run twice. Everything a commit changes reaches clients, the scheduler and memory extraction through one change feed, numbered by commit.
 

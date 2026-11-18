@@ -151,7 +151,7 @@ func (row cronRow) job() (user.CronJob, error) {
 		Runs: row.Runs, Paused: row.Paused, NextRun: row.NextRunAt, Created: row.CreatedAt}, nil
 }
 
-type taskRow struct {
+type cronJobViewRow struct {
 	Job         cronRow `gorm:"embedded"`
 	Title       string
 	WorkspaceID *string
@@ -159,42 +159,42 @@ type taskRow struct {
 	LastTurn    *string
 }
 
-const tasksFrom = `SELECT j.*, t.title, t.workspace_id, t.archived_at,
+const cronJobViewsFrom = `SELECT j.*, t.title, t.workspace_id, t.archived_at,
 		(SELECT u.body FROM turns u WHERE u.cron_job = j.id ORDER BY u.ord DESC LIMIT 1) AS last_turn
 	FROM cron_jobs j JOIN threads t ON t.id = j.thread_id`
 
-func (row taskRow) task() (store.Task, error) {
+func (row cronJobViewRow) view() (store.CronJobView, error) {
 	job, _ := row.Job.job()
-	t := store.Task{CronJob: job, Title: row.Title, Workspace: deref(row.WorkspaceID), Archived: row.ArchivedAt != nil}
+	t := store.CronJobView{CronJob: job, Title: row.Title, Workspace: deref(row.WorkspaceID), Archived: row.ArchivedAt != nil}
 	if row.LastTurn == nil {
 		return t, nil
 	}
 	var last conversation.Turn
 	if err := json.Unmarshal([]byte(*row.LastTurn), &last); err != nil {
-		return store.Task{}, fmt.Errorf("store: the last run of task %s: %w", job.ID, err)
+		return store.CronJobView{}, fmt.Errorf("store: the last run of task %s: %w", job.ID, err)
 	}
 	t.LastTurn, t.LastRun = last.ID, &last.QueuedAt
 	return t, nil
 }
 
-func tasks(g *gorm.DB, query string, args ...any) ([]store.Task, error) {
-	return each(g.Raw(tasksFrom+" "+query, args...), taskRow.task)
+func cronJobViews(g *gorm.DB, query string, args ...any) ([]store.CronJobView, error) {
+	return each(g.Raw(cronJobViewsFrom+" "+query, args...), cronJobViewRow.view)
 }
 
-func (r reader) CronJobs(owner, thread string) ([]store.Task, error) {
+func (r reader) CronJobs(owner, thread string) ([]store.CronJobView, error) {
 	query := "WHERE t.user_id = ?"
 	args := []any{owner}
 	if thread != "" {
 		query += " AND j.thread_id = ?"
 		args = append(args, thread)
 	}
-	return tasks(r.g, query+" ORDER BY j.created_at, j.id", args...)
+	return cronJobViews(r.g, query+" ORDER BY j.created_at, j.id", args...)
 }
 
 func (r reader) CronJob(id string) (user.CronJob, error) {
 	var row cronRow
 	if err := notFound(r.g.Raw("SELECT * FROM cron_jobs WHERE id = ?", id).Take(&row).Error); err != nil {
-		return user.CronJob{}, fmt.Errorf("store: scheduled task %s: %w", id, err)
+		return user.CronJob{}, fmt.Errorf("store: scheduled job %s: %w", id, err)
 	}
 	return row.job()
 }
@@ -310,7 +310,7 @@ func (r reader) Search(owner string, terms []string, workspace string, limit int
 
 	like, likeArgs = likeAll("(j.name || ' ' || j.prompt)", terms)
 	query, args = inWorkspace("WHERE t.user_id = ?"+like, append([]any{owner}, likeArgs...), "t.workspace_id")
-	if found.Tasks, err = tasks(r.g, query+" ORDER BY j.created_at DESC, j.id LIMIT ?", append(args, limit)...); err != nil {
+	if found.CronJobs, err = cronJobViews(r.g, query+" ORDER BY j.created_at DESC, j.id LIMIT ?", append(args, limit)...); err != nil {
 		return store.Found{}, err
 	}
 	return found, nil
@@ -476,9 +476,9 @@ func (t *tx) PutCronJob(j user.CronJob) error {
 			paused = excluded.paused, next_run_at = excluded.next_run_at`,
 		j.ID, j.Thread, j.Name, j.Spec, j.Prompt, j.Times, j.Runs, j.Paused, j.NextRun.UTC(), j.Created).Error
 	if err != nil {
-		return fmt.Errorf("store: scheduled task %s: %w", j.Name, err)
+		return fmt.Errorf("store: scheduled job %s: %w", j.Name, err)
 	}
-	put, err := tasks(t.g, "WHERE j.id = ?", j.ID)
+	put, err := cronJobViews(t.g, "WHERE j.id = ?", j.ID)
 	if err != nil {
 		return err
 	}

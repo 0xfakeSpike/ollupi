@@ -19,7 +19,7 @@ const (
 
 var NamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 
-var ErrInvalidJob = errors.New("invalid scheduled task")
+var ErrInvalidJob = errors.New("invalid scheduled job")
 
 type Calendar struct {
 	Location *time.Location
@@ -84,14 +84,14 @@ func (c Calendar) Advance(job user.CronJob, now time.Time, counted bool) (next u
 
 func lastRun(job user.CronJob, now time.Time) error {
 	if job.Times != nil && *job.Times-job.Runs == 1 && job.NextRun.After(now.AddDate(1, -1, 0)) {
-		return fmt.Errorf("cron: %w: the time of task %q's last run has passed; a spec has no year, so it would run next year", ErrInvalidJob, job.Name)
+		return fmt.Errorf("cron: %w: the time of job %q's last run has passed; a spec has no year, so it would run next year", ErrInvalidJob, job.Name)
 	}
 	return nil
 }
 
 func (c Calendar) schedule(spec string) (robfig.Schedule, error) {
 	if strings.HasPrefix(spec, "CRON_TZ=") || strings.HasPrefix(spec, "TZ=") {
-		return nil, fmt.Errorf("cron: %w: time-zone prefixes are not allowed; tasks use %s", ErrInvalidJob, c.Location)
+		return nil, fmt.Errorf("cron: %w: time-zone prefixes are not allowed; jobs use %s", ErrInvalidJob, c.Location)
 	}
 	if strings.HasPrefix(spec, "@") {
 		switch spec {

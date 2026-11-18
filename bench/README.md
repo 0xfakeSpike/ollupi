@@ -45,7 +45,7 @@ go run -tags sqlite_fts5 ./bench conns -n 1000,2000,4000 -router -storm
 | `burst` | Queueing and quota when many turns are submitted at once | `results/burst.csv` (timeline) |
 | `resume` | Time from waking an idle session to its model request going out | `results/resume.txt`, not yet measured with run.sh |
 | `crash` | Recovery after random `kill -9`; with `-lease`, a standby process takes over | `results/crash.txt` and `crash-lease.txt`, not yet measured with run.sh |
-| `mix` | Waiting and fairness when user turns, subagents and scheduled tasks mix | `results/mix.txt` |
+| `mix` | Waiting and fairness when user turns, subagents and scheduled jobs mix | `results/mix.txt` |
 | `fanout` | Whether parent turns give up their slots when subagents outnumber slots | `results/fanout.txt` |
 | `soak` | Latency, memory, goroutines, GC and database growth over a long run | `results/soak.csv` |
 | `users` | Many users on one shard, each on their own key and quota, beside one user who keeps more conversations busy than their key serves; with `-user-slots`, whether `UserSlots` keeps the others' turns from waiting on that user, and with `-heavy-limit`, whether that user's 429s stay theirs | `results/users.txt`, `users-slots.txt` and `users-limit.txt`, not yet measured |
@@ -86,7 +86,7 @@ Under mixed load (tool calls, questions to the user, spawned subagents), 90 rand
 
 ### Mixed load
 
-256 sessions send turns continuously (20% of them handed to subagents) while 1000 scheduled tasks come due at once mid-run. Off-peak, the wait for a turn's first model request has a p50 of 7 ms and a p99 of 274 ms. Turns arriving during the peak queue with the scheduled tasks in ready order, with a p50 of 44.1 s, and the peak drains in 59.4 s, about the floor the model quota allows. Subagents wait 4.6 s at p99, and the Jain fairness index of turn time across sessions is 0.978.
+256 sessions send turns continuously (20% of them handed to subagents) while 1000 scheduled jobs come due at once mid-run. Off-peak, the wait for a turn's first model request has a p50 of 7 ms and a p99 of 274 ms. Turns arriving during the peak queue with the scheduled jobs in ready order, with a p50 of 44.1 s, and the peak drains in 59.4 s, about the floor the model quota allows. Subagents wait 4.6 s at p99, and the Jain fairness index of turn time across sessions is 0.978.
 
 ### Subagent fan-out
 
