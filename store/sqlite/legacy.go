@@ -77,19 +77,14 @@ func snapshot(from, to string) error {
 }
 
 func migrateLegacy(g *gorm.DB) error {
-	dir, _ := fs.Sub(legacyMigrations, "legacy")
-	steps, err := sqlitedb.Steps(dir)
-	if err != nil {
-		return err
-	}
-	version, err := sqlitedb.Version(g, len(steps))
+	version, err := sqlitedb.Version(g)
 	if err != nil {
 		return err
 	}
 	if version == 0 {
 		return errors.New("the database is from an ollupi before v0.8.0; open it once with ollupi v0.15.1, then again with this one")
 	}
-	return sqlitedb.Migrate(g, steps, version)
+	return sqlitedb.Migrate(g, legacyMigrations, "legacy")
 }
 
 type legacy struct {
@@ -498,11 +493,10 @@ func (b *logBuilder) end(t legacyTurn, last time.Time) {
 	}
 	why := cmp.Or(reason, "the turn ended before the call did")
 	for _, it := range b.v.ItemsOf(t.ID) {
-		open := it.Kind == conversation.ItemToolCall && (it.Status == conversation.Pending || it.Status == conversation.InProgress)
 		switch {
-		case open && it.Input != nil && !it.Input.Answered:
+		case it.WaitsForInput():
 			b.add(t.ID, it.ID, at, conversation.Answered{Skipped: true})
-		case open:
+		case it.Open():
 			b.add(t.ID, it.ID, at, conversation.ToolResult{Declined: true, Error: why})
 		}
 	}

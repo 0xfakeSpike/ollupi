@@ -1,10 +1,10 @@
 package jsonrpc
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -44,10 +44,7 @@ func Errorf(code int, format string, args ...any) *Error {
 	return &Error{Code: code, Message: fmt.Sprintf(format, args...)}
 }
 
-type Handler interface {
-	Call(ctx context.Context, method string, params json.RawMessage) (result any, after func(), err *Error)
-	Notify(method string, params json.RawMessage)
-}
+type Handler func(ctx context.Context, method string, params json.RawMessage) (result any, after func(), err *Error)
 
 type ResponseFunc func(result json.RawMessage, err *Error)
 
@@ -67,8 +64,6 @@ type Conn struct {
 	nextID  int
 	pending map[string]ResponseFunc
 	outbox  [][]byte
-	held    [][]byte
-	holding bool
 	queued  int
 	closed  bool
 	ready   chan struct{}
@@ -153,14 +148,12 @@ func (c *Conn) handle(ctx context.Context, h Handler, data []byte) {
 	case m.JSONRPC != "2.0":
 		c.reply(m.ID, nil, Errorf(CodeInvalidRequest, `jsonrpc must be "2.0"`))
 	case m.Method != "" && m.ID != nil:
-		result, after, rerr := h.Call(ctx, m.Method, m.Params)
+		result, after, rerr := h(ctx, m.Method, m.Params)
 		c.reply(m.ID, result, rerr)
-		c.release()
 		if rerr == nil && after != nil {
 			after()
 		}
 	case m.Method != "":
-		h.Notify(m.Method, m.Params)
 	case m.ID != nil:
 		c.response(m)
 	default:
@@ -168,21 +161,8 @@ func (c *Conn) handle(ctx context.Context, h Handler, data []byte) {
 	}
 }
 
-func (c *Conn) HoldUntilReplied() {
-	c.mu.Lock()
-	c.holding = true
-	c.mu.Unlock()
-}
-
-func (c *Conn) release() {
-	c.mu.Lock()
-	c.outbox, c.held, c.holding = append(c.outbox, c.held...), nil, false
-	c.mu.Unlock()
-	c.wake()
-}
-
 func (c *Conn) Notify(method string, params any) {
-	c.send(Message{JSONRPC: "2.0", Method: method, Params: encode(params)})
+	c.enqueue(encode(Message{JSONRPC: "2.0", Method: method, Params: encode(params)}))
 }
 
 func (c *Conn) Request(method string, params any, onResponse ResponseFunc) {
@@ -191,7 +171,7 @@ func (c *Conn) Request(method string, params any, onResponse ResponseFunc) {
 	id := fmt.Sprint(c.nextID)
 	c.pending[id] = onResponse
 	c.mu.Unlock()
-	c.send(Message{JSONRPC: "2.0", ID: json.RawMessage(id), Method: method, Params: encode(params)})
+	c.enqueue(encode(Message{JSONRPC: "2.0", ID: json.RawMessage(id), Method: method, Params: encode(params)}))
 }
 
 func (c *Conn) response(m Message) {
@@ -217,31 +197,23 @@ func (c *Conn) reply(id json.RawMessage, result any, rerr *Error) {
 		}
 		m.Result = raw
 	}
-	c.enqueue(encode(m), true)
+	c.enqueue(encode(m))
 }
 
-func (c *Conn) send(m Message) {
-	c.enqueue(encode(m), false)
-}
-
-func (c *Conn) enqueue(data []byte, reply bool) {
+func (c *Conn) enqueue(data []byte) {
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
 		return
 	}
 	if c.queued > 0 && c.queued+len(data) > maxOutboxBytes {
-		c.closed, c.outbox, c.held, c.queued = true, nil, nil, 0
+		c.closed, c.outbox, c.queued = true, nil, 0
 		c.mu.Unlock()
 		go c.ws.Close(websocket.StatusPolicyViolation, "client is not reading fast enough")
 		c.wake()
 		return
 	}
-	if c.holding && !reply {
-		c.held = append(c.held, data)
-	} else {
-		c.outbox = append(c.outbox, data)
-	}
+	c.outbox = append(c.outbox, data)
 	c.queued += len(data)
 	c.mu.Unlock()
 	c.wake()
@@ -270,7 +242,7 @@ func (c *Conn) write() {
 			if err != nil {
 				c.ws.Close(websocket.StatusInternalError, "write failed")
 				c.mu.Lock()
-				c.closed, c.outbox, c.held, c.queued = true, nil, nil, 0
+				c.closed, c.outbox, c.queued = true, nil, 0
 				c.mu.Unlock()
 				closed = true
 				break
@@ -286,7 +258,7 @@ func DecodeParams(params json.RawMessage, out any) *Error {
 	if len(params) == 0 {
 		params = json.RawMessage("{}")
 	}
-	dec := json.NewDecoder(strings.NewReader(string(params)))
+	dec := json.NewDecoder(bytes.NewReader(params))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(out); err != nil {
 		return Errorf(CodeInvalidParams, "%v", err)

@@ -34,7 +34,7 @@ type Server struct {
 	admit        func(ctx context.Context, user string) error
 	hosts        []string
 	origins      []string
-	hub          *wshub.Hub[*conn]
+	hub          *wshub.Hub
 	ready        sync.Map
 	served       sync.WaitGroup
 }
@@ -75,7 +75,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	ws.SetReadLimit(maxMessageBytes)
 	c := &conn{s: s, user: user, ws: ws, rpc: jsonrpc.NewConn(ws), asked: make(map[string]bool)}
-	s.hub.Serve(r.Context(), user, ws, c, func(ctx context.Context) error { return c.rpc.Serve(ctx, c) })
+	s.hub.Serve(r.Context(), user, ws, func(ctx context.Context) error { return c.rpc.Serve(ctx, c.Call) })
 	c.mu.Lock()
 	sub := c.sub
 	c.mu.Unlock()
@@ -95,8 +95,6 @@ type conn struct {
 	sub         *store.Subscription
 	asked       map[string]bool
 }
-
-func (c *conn) Notify(string, json.RawMessage) {}
 
 func (c *conn) Call(ctx context.Context, method string, params json.RawMessage) (any, func(), *jsonrpc.Error) {
 	c.mu.Lock()
@@ -154,16 +152,10 @@ func (c *conn) change(seq int64, thread string, ch store.Change) {
 	}
 	for _, it := range ch.Items {
 		c.rpc.Notify(notifyItemChanged, ItemChangedNotification{ThreadID: thread, Item: itemRow(it), Seq: seq})
-		if waitsOnUser(it) {
+		if it.WaitsForApproval() || it.WaitsForInput() {
 			c.request(thread, it)
 		}
 	}
-}
-
-func waitsOnUser(it conversation.Item) bool {
-	asksApproval := it.Status == conversation.Pending && it.Approval != nil && it.Approval.Decision == ""
-	asksInput := it.Status == conversation.InProgress && it.Input != nil && !it.Input.Answered
-	return asksApproval || asksInput
 }
 
 func (c *conn) owned(thread string, o store.Owned) {

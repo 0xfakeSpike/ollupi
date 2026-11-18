@@ -13,14 +13,6 @@ import (
 	"github.com/coder/websocket"
 )
 
-type handlerFunc func(ctx context.Context, method string, params json.RawMessage) (any, func(), *Error)
-
-func (f handlerFunc) Call(ctx context.Context, method string, params json.RawMessage) (any, func(), *Error) {
-	return f(ctx, method, params)
-}
-
-func (handlerFunc) Notify(string, json.RawMessage) {}
-
 func serve(ctx context.Context, t *testing.T, h func(*Conn) Handler) (*websocket.Conn, *websocket.Conn) {
 	t.Helper()
 	accepted := make(chan *websocket.Conn, 1)
@@ -68,7 +60,7 @@ func TestAPeerIsHeardWhileACallIsSlow(t *testing.T) {
 	defer cancel()
 	release := make(chan struct{})
 	server, client := serve(ctx, t, func(*Conn) Handler {
-		return handlerFunc(func(context.Context, string, json.RawMessage) (any, func(), *Error) {
+		return Handler(func(context.Context, string, json.RawMessage) (any, func(), *Error) {
 			<-release
 			return "done", nil, nil
 		})
@@ -106,40 +98,11 @@ func TestAPeerIsHeardWhileACallIsSlow(t *testing.T) {
 	}
 }
 
-func TestWhatIsSentWhileACallHoldsComesAfterItsReply(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-	_, client := serve(ctx, t, func(c *Conn) Handler {
-		return handlerFunc(func(_ context.Context, method string, _ json.RawMessage) (any, func(), *Error) {
-			if method == "view" {
-				c.HoldUntilReplied()
-			}
-			c.Notify("changed", nil)
-			return "view", nil, nil
-		})
-	})
-	write(ctx, t, client, `{"jsonrpc":"2.0","id":1,"method":"view"}`)
-	if m := next(ctx, t, client); string(m.ID) != "1" {
-		t.Errorf("first came %+v, want the reply", m)
-	}
-	if m := next(ctx, t, client); m.Method != "changed" {
-		t.Errorf("then came %+v, want the held notification", m)
-	}
-
-	write(ctx, t, client, `{"jsonrpc":"2.0","id":2,"method":"plain"}`)
-	if m := next(ctx, t, client); m.Method != "changed" {
-		t.Errorf("a call that does not hold: first came %+v", m)
-	}
-	if m := next(ctx, t, client); string(m.ID) != "2" {
-		t.Errorf("a call that does not hold: then came %+v", m)
-	}
-}
-
 func TestAReplyLargerThanTheOutboxGoesOutAlone(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	_, client := serve(ctx, t, func(*Conn) Handler {
-		return handlerFunc(func(_ context.Context, method string, _ json.RawMessage) (any, func(), *Error) {
+		return Handler(func(_ context.Context, method string, _ json.RawMessage) (any, func(), *Error) {
 			if method == "big" {
 				return strings.Repeat("a", maxOutboxBytes+1), nil, nil
 			}
@@ -162,7 +125,7 @@ func TestAFloodingClientIsReadAtItsPace(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	_, client := serve(ctx, t, func(*Conn) Handler {
-		return handlerFunc(func(context.Context, string, json.RawMessage) (any, func(), *Error) { return "ok", nil, nil })
+		return Handler(func(context.Context, string, json.RawMessage) (any, func(), *Error) { return "ok", nil, nil })
 	})
 	const sent = messageBurst + messagesPerSecond
 	go func() {

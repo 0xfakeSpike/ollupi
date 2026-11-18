@@ -2,7 +2,6 @@ package prompt
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 	"unicode"
 )
@@ -12,11 +11,7 @@ func OutputText(raw json.RawMessage) string {
 	if s, ok := v.(string); ok {
 		return strings.TrimSpace(s)
 	}
-	b, merr := json.MarshalIndent(v, "", "  ")
-	if merr != nil {
-		panic(fmt.Sprintf("prompt: an output that is no JSON value: %v", merr))
-	}
-	return strings.TrimSpace(string(b))
+	return strings.TrimSpace(prettyJSON(v))
 }
 
 func compactStructured(v any) any {

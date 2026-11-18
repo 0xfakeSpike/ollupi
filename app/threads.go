@@ -77,14 +77,14 @@ func (a *App) RenameThread(ctx context.Context, u, id, title string) (store.Thre
 	if err != nil {
 		return store.Thread{}, err
 	}
-	return a.changeThread(ctx, u, id, func(th *store.Thread) error {
+	return a.changeThread(ctx, u, id, func(_ store.Tx, th *store.Thread) error {
 		th.Title = title
 		return nil
 	})
 }
 
 func (a *App) MarkThreadRead(ctx context.Context, u, id string) (store.Thread, error) {
-	return a.changeThread(ctx, u, id, func(th *store.Thread) error {
+	return a.changeThread(ctx, u, id, func(_ store.Tx, th *store.Thread) error {
 		now := time.Now().UTC()
 		th.Read = &now
 		return nil
@@ -92,7 +92,7 @@ func (a *App) MarkThreadRead(ctx context.Context, u, id string) (store.Thread, e
 }
 
 func (a *App) ArchiveThread(ctx context.Context, u, id string, archived bool) (store.Thread, error) {
-	return a.changeThread(ctx, u, id, func(th *store.Thread) error {
+	return a.changeThread(ctx, u, id, func(_ store.Tx, th *store.Thread) error {
 		th.Archived = nil
 		if !archived {
 			return nil
@@ -106,19 +106,14 @@ func (a *App) ArchiveThread(ctx context.Context, u, id string, archived bool) (s
 	})
 }
 
-func (a *App) changeThread(ctx context.Context, u, id string, change func(*store.Thread) error) (store.Thread, error) {
-	var th store.Thread
-	err := a.st.Update(ctx, func(tx store.Tx) (err error) {
-		if th, err = topThread(tx, u, id); err != nil {
-			return err
-		}
-		if err := change(&th); err != nil {
-			return err
-		}
-		th.Updated = time.Now().UTC()
-		return tx.UpdateThread(th)
-	})
-	return th, err
+func (a *App) changeThread(ctx context.Context, u, id string, change func(store.Tx, *store.Thread) error) (store.Thread, error) {
+	return edit(ctx, a.st,
+		func(tx store.Tx) (store.Thread, error) { return topThread(tx, u, id) },
+		func(tx store.Tx, th *store.Thread) error {
+			th.Updated = time.Now().UTC()
+			return change(tx, th)
+		},
+		store.Tx.UpdateThread)
 }
 
 func (a *App) DeleteThread(ctx context.Context, u, id string) error {

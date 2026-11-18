@@ -31,22 +31,15 @@ func NewAnthropic(baseURL, apiKey string, calls int, limits map[string]Limits) *
 }
 
 func (c *Anthropic) Chat(ctx context.Context, req ChatRequest, onDelta func(Delta)) (ChatResponse, error) {
-	if req.Model.Name == "" {
-		return ChatResponse{}, fmt.Errorf("llm.Anthropic: model required")
-	}
-	limits, err := c.Limits(req.Model.Name)
-	if err != nil {
-		return ChatResponse{}, err
-	}
-	params, prefix, err := anthropicParams(req, limits.Answer(req.InputTokens))
-	if err != nil {
-		return ChatResponse{}, fmt.Errorf("llm.Anthropic: %w", err)
-	}
-	release, err := c.acquire(ctx)
+	maxTokens, release, err := c.begin(ctx, req)
 	if err != nil {
 		return ChatResponse{}, err
 	}
 	defer release()
+	params, prefix, err := anthropicParams(req, maxTokens)
+	if err != nil {
+		return ChatResponse{}, fmt.Errorf("llm.Anthropic: %w", err)
+	}
 
 	stream := c.client.Beta.Messages.NewStreaming(ctx, params)
 	defer stream.Close()
@@ -55,7 +48,7 @@ func (c *Anthropic) Chat(ctx context.Context, req ChatRequest, onDelta func(Delt
 	for stream.Next() {
 		event := stream.Current()
 		if err := msg.Accumulate(event); err != nil {
-			return anthropicUsage(msg, started), fmt.Errorf("llm.Anthropic: %w", err)
+			return ChatResponse{}, fmt.Errorf("llm.Anthropic: %w", err)
 		}
 		switch event.Type {
 		case "message_start":
@@ -66,7 +59,7 @@ func (c *Anthropic) Chat(ctx context.Context, req ChatRequest, onDelta func(Delt
 		}
 	}
 	if err := stream.Err(); err != nil {
-		return anthropicUsage(msg, started), safeRequestError(err)
+		return ChatResponse{}, safeRequestError(err)
 	}
 	if !started {
 		return ChatResponse{}, fmt.Errorf("llm.Anthropic: the stream ended before the response started")
@@ -74,21 +67,14 @@ func (c *Anthropic) Chat(ctx context.Context, req ChatRequest, onDelta func(Delt
 	return anthropicResponse(msg, prefix)
 }
 
-func anthropicUsage(msg anthropic.BetaMessage, started bool) ChatResponse {
-	u := msg.Usage
-	return ChatResponse{
-		Usage: Usage{
-			PromptTokens:           u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens,
-			CachedPromptTokens:     u.CacheReadInputTokens,
-			CacheWritePromptTokens: u.CacheCreationInputTokens,
-			CompletionTokens:       u.OutputTokens,
-		},
-		UsageReported: started,
-	}
-}
-
 func anthropicResponse(msg anthropic.BetaMessage, prefix string) (ChatResponse, error) {
-	resp := anthropicUsage(msg, true)
+	u := msg.Usage
+	resp := ChatResponse{Usage: Usage{
+		PromptTokens:           u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens,
+		CachedPromptTokens:     u.CacheReadInputTokens,
+		CacheWritePromptTokens: u.CacheCreationInputTokens,
+		CompletionTokens:       u.OutputTokens,
+	}}
 	switch msg.StopReason {
 	case anthropic.BetaStopReasonEndTurn, anthropic.BetaStopReasonStopSequence:
 		resp.FinishReason = "stop"
@@ -160,14 +146,10 @@ func anthropicParams(req ChatRequest, maxTokens int) (anthropic.BetaMessageNewPa
 		p.Tools = append(p.Tools, anthropic.BetaToolUnionParam{OfTool: &t})
 	}
 	if len(req.Tools) > 0 {
-		switch req.ToolChoice {
-		case ToolChoiceAuto:
-			p.ToolChoice.OfAuto = &anthropic.BetaToolChoiceAutoParam{}
-		case ToolChoiceNone:
+		p.ToolChoice.OfAuto = &anthropic.BetaToolChoiceAutoParam{}
+		if req.ToolChoice == ToolChoiceNone {
 			none := anthropic.NewBetaToolChoiceNoneParam()
-			p.ToolChoice.OfNone = &none
-		default:
-			return p, "", fmt.Errorf("unsupported tool choice %q", req.ToolChoice)
+			p.ToolChoice = anthropic.BetaToolChoiceUnionParam{OfNone: &none}
 		}
 	}
 
@@ -181,25 +163,16 @@ func anthropicParams(req ChatRequest, maxTokens int) (anthropic.BetaMessageNewPa
 			}
 			continue
 		case RoleUser:
-			if m.Content != "" {
-				blocks = append(blocks, anthropic.NewBetaTextBlock(m.Content))
-			}
-			for _, part := range m.Parts {
-				switch part.Type {
-				case PartImage:
-					blocks = append(blocks, anthropic.NewBetaImageBlock(anthropic.BetaBase64ImageSourceParam{
-						Data: base64.StdEncoding.EncodeToString(part.Data), MediaType: anthropic.BetaBase64ImageSourceMediaType(part.MimeType),
-					}))
-				case PartText:
-					blocks = append(blocks, anthropic.NewBetaTextBlock(part.Text))
-				default:
-					return p, "", fmt.Errorf("message %d: unsupported content part %q", i, part.Type)
-				}
+			var err error
+			blocks, err = userParts(m, anthropic.NewBetaTextBlock, func(part ContentPart) anthropic.BetaContentBlockParamUnion {
+				return anthropic.NewBetaImageBlock(anthropic.BetaBase64ImageSourceParam{
+					Data: base64.StdEncoding.EncodeToString(part.Data), MediaType: anthropic.BetaBase64ImageSourceMediaType(part.MimeType),
+				})
+			})
+			if err != nil {
+				return p, "", fmt.Errorf("message %d: %w", i, err)
 			}
 		case RoleTool:
-			if m.ToolCallID == "" {
-				return p, "", fmt.Errorf("message %d: tool message requires tool_call_id", i)
-			}
 			blocks = append(blocks, anthropic.NewBetaToolResultBlock(m.ToolCallID, m.Content, false))
 		case RoleAssistant:
 			if n, ok := nativeOf(m, providerAnthropic); ok {

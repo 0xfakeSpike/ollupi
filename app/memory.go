@@ -71,17 +71,13 @@ func (a *App) ForgetMemory(ctx context.Context, u, id string) error {
 }
 
 func (a *App) changeMemory(ctx context.Context, u, id string, change func(store.Reader, memory.Memory) (memory.Memory, error)) (memory.Memory, error) {
-	var m memory.Memory
-	err := a.st.Update(ctx, func(tx store.Tx) (err error) {
-		if m, err = tx.Memory(u, id); err != nil {
+	return edit(ctx, a.st,
+		func(tx store.Tx) (memory.Memory, error) { return tx.Memory(u, id) },
+		func(tx store.Tx, m *memory.Memory) (err error) {
+			*m, err = change(tx, *m)
 			return err
-		}
-		if m, err = change(tx, m); err != nil {
-			return err
-		}
-		return tx.PutMemory(m)
-	})
-	return m, err
+		},
+		store.Tx.PutMemory)
 }
 
 const (

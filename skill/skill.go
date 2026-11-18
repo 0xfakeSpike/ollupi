@@ -37,7 +37,6 @@ type Skill struct {
 	Resources    []Resource `json:"resources"`
 	ByteSize     int64      `json:"byte_size"`
 	RootDir      string     `json:"-"`
-	SourcePath   string     `json:"-"`
 	Instructions string     `json:"-"`
 	Digest       string     `json:"-"`
 }
@@ -256,7 +255,6 @@ func parseSkill(root, skillDir, sourcePath string, byteSize int64) (Skill, error
 		Description:  description,
 		Version:      version(fm.Metadata),
 		RootDir:      skillDir,
-		SourcePath:   sourcePath,
 		SourceFile:   filepath.ToSlash(sourceFile),
 		Instructions: instructions,
 		Digest:       hex.EncodeToString(digestBytes[:]),

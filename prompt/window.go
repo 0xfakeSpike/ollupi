@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/0xfakeSpike/ollupi/conversation"
+	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 )
 
@@ -27,7 +28,7 @@ const (
 	sentLayout         = "Mon 2006-01-02 15:04 -07:00"
 )
 
-func share(inputTokens, pct int) int { return max(256, inputTokens*pct/100) }
+func share(inputTokens, pct int) int { return max(minOutputTokens, inputTokens*pct/100) }
 
 func (w Window) InputTokens() int { return w.inputTokens }
 
@@ -44,7 +45,7 @@ type Input struct {
 	Tools     []llm.ToolSpec
 }
 
-func Transcript(v conversation.View) ([]conversation.Item, []conversation.Response) {
+func Transcript(v conversation.View) []conversation.Item {
 	active, _ := v.Active()
 	var items []conversation.Item
 	for _, t := range v.Turns {
@@ -52,7 +53,7 @@ func Transcript(v conversation.View) ([]conversation.Item, []conversation.Respon
 			items = append(items, v.ItemsOf(t.ID)...)
 		}
 	}
-	return items, v.Responses
+	return items
 }
 
 type Request struct {
@@ -75,7 +76,7 @@ func (w Window) Build(in Input) (Request, error) {
 		r.Stats = w.stats(in.System, messages, in.Tools)
 		if s := snapshot(in.Items); s != nil {
 			r.Stats.MemoryTokens = llm.EstimateTokens(s.Text)
-			r.Stats.GlobalMemory, r.Stats.LocalMemory = memorySection(s.Memories, true), memorySection(s.Memories, false)
+			r.Stats.GlobalMemory, r.Stats.LocalMemory = memory.Section(s.Memories, true), memory.Section(s.Memories, false)
 		}
 		w.calibrate(&r.Stats, in.Items, in.Responses)
 		if limit == maxObservationTokens {
@@ -166,26 +167,6 @@ func snapshot(items []conversation.Item) *conversation.Item {
 		}
 	}
 	return nil
-}
-
-func memorySection(entries []conversation.MemoryRef, global bool) *conversation.MemoryStats {
-	s := &conversation.MemoryStats{IDs: []string{}}
-	type note struct {
-		ID    string `json:"id"`
-		Topic string `json:"topic,omitempty"`
-		Text  string `json:"text"`
-	}
-	var shown []note
-	for _, e := range entries {
-		if (e.Scope == conversation.GlobalScope) == global {
-			s.IDs = append(s.IDs, e.ID)
-			shown = append(shown, note{e.ID, e.Topic, e.Text})
-		}
-	}
-	if len(shown) > 0 {
-		s.Tokens = llm.EstimateTokens(prettyJSON(shown))
-	}
-	return s
 }
 
 func prettyJSON(v any) string {

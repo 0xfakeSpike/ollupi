@@ -183,13 +183,7 @@ func readLine(br *bufio.Reader, limit int) (string, int, error) {
 }
 
 func readable(ctx context.Context, d dirs, raw string) (string, error) {
-	path := strings.TrimSpace(raw)
-	if path == "" {
-		path = d.roots[0]
-	} else if !filepath.IsAbs(path) {
-		path = filepath.Join(d.roots[0], path)
-	}
-	abs, err := d.box.Canonical(ctx, path)
+	abs, err := d.box.Canonical(ctx, d.abs(strings.TrimSpace(raw)))
 	if err != nil {
 		return "", err
 	}

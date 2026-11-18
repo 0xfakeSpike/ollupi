@@ -117,7 +117,7 @@ func TestAnthropicReplaysThinkingUntilThePrefixChanges(t *testing.T) {
 	if reasoning.String() != "look it up" || a.Message.ReasoningContent != "look it up" {
 		t.Errorf("reasoning streamed %q, kept %q", reasoning.String(), a.Message.ReasoningContent)
 	}
-	if want := (Usage{PromptTokens: 18, CachedPromptTokens: 5, CacheWritePromptTokens: 3, CompletionTokens: 20}); a.Usage != want || !a.UsageReported {
+	if want := (Usage{PromptTokens: 18, CachedPromptTokens: 5, CacheWritePromptTokens: 3, CompletionTokens: 20}); a.Usage != want {
 		t.Errorf("usage %+v, want %+v", a.Usage, want)
 	}
 	first := fake.bodies[0]

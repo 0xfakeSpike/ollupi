@@ -116,10 +116,6 @@ func parseList(name string, texts []string) ([]rule, error) {
 	return out, nil
 }
 
-func (s ruleSet) all() []rule {
-	return append(append(append([]rule(nil), s.deny...), s.ask...), s.allow...)
-}
-
 func (s ruleSet) removes(tool string) bool {
 	for _, r := range s.deny {
 		if r.tool == tool && r.pattern == nil {
@@ -154,11 +150,8 @@ func (s ruleSet) decide(tool string, content Content, hasContent bool) (ruleVerd
 	if !hasContent || content.Opaque {
 		return ruleNone, ""
 	}
-	if len(content.Parts) == 0 {
-		content.Parts = []string{content.Match}
-	}
 	var used []string
-	for _, part := range content.Parts {
+	for _, part := range content.parts() {
 		i := slices.IndexFunc(s.allow, func(r rule) bool { return r.matches(tool, part, true, content.Folded) })
 		if i < 0 {
 			return ruleNone, ""
@@ -182,12 +175,8 @@ func suggest(call Call) []string {
 	if call.Content.Opaque {
 		return nil
 	}
-	parts := call.Content.Parts
-	if len(parts) == 0 {
-		parts = []string{call.Content.Match}
-	}
 	var out []string
-	for _, part := range parts {
+	for _, part := range call.Content.parts() {
 		words := strings.Fields(part)
 		if len(words) == 0 || strings.Contains(part, "*") {
 			return nil

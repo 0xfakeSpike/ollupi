@@ -12,20 +12,10 @@ import (
 const stoppedWithParent = "stopped with the turn that launched it"
 
 func (r *Runner) finish(ctx context.Context, s *step) error {
-	var answer string
-	for _, it := range s.v.ItemsOf(s.turn.ID) {
-		if it.Kind == conversation.ItemAgentMessage {
-			answer = it.Text
-		}
-	}
-	return r.st.Update(ctx, func(tx store.Tx) error { return end(tx, s.th.ID, conversation.Completed, "", answer) })
+	return r.st.Update(ctx, func(tx store.Tx) error { return End(tx, s.th.ID, conversation.Completed, "") })
 }
 
 func End(tx store.Tx, thread string, status conversation.End, reason string) error {
-	return end(tx, thread, status, reason, "")
-}
-
-func end(tx store.Tx, thread string, status conversation.End, reason, answer string) error {
 	th, err := tx.Thread(thread)
 	if err != nil {
 		return err
@@ -41,7 +31,7 @@ func end(tx store.Tx, thread string, status conversation.End, reason, answer str
 	items := v.ItemsOf(turn.ID)
 	for _, it := range items {
 		if it.AwaitsReport() {
-			if err := end(tx, it.Child, conversation.Interrupted, stoppedWithParent, ""); err != nil {
+			if err := End(tx, it.Child, conversation.Interrupted, stoppedWithParent); err != nil {
 				return err
 			}
 		}
@@ -52,12 +42,10 @@ func end(tx store.Tx, thread string, status conversation.End, reason, answer str
 	}
 	var entries []conversation.Entry
 	for _, it := range items {
-		open := it.Kind == conversation.ItemToolCall && (it.Status == conversation.Pending || it.Status == conversation.InProgress)
-		waitsForAnswer := open && it.Input != nil && !it.Input.Answered
 		switch {
-		case waitsForAnswer:
+		case it.WaitsForInput():
 			entries = append(entries, conversation.Entry{Turn: turn.ID, Item: it.ID, Body: conversation.Answered{Skipped: true}})
-		case open:
+		case it.Open():
 			entries = append(entries, conversation.Entry{Turn: turn.ID, Item: it.ID, Body: conversation.ToolResult{Declined: true, Error: why}})
 		}
 	}
@@ -68,20 +56,23 @@ func end(tx store.Tx, thread string, status conversation.End, reason, answer str
 	if th.Parent == "" {
 		return nil
 	}
-	return report(tx, th, v, turn, status, reason, answer)
+	return report(tx, th, v, turn, status, reason)
 }
 
-func report(tx store.Tx, th store.Thread, v conversation.View, turn conversation.Turn, status conversation.End, reason, answer string) error {
+func report(tx store.Tx, th store.Thread, v conversation.View, turn conversation.Turn, status conversation.End, reason string) error {
 	parent, err := tx.View(th.Parent)
 	if err != nil {
 		return err
 	}
 	launch, _ := parent.ItemOf(th.ParentItem)
 	body := conversation.ChildReported{Launch: th.ParentItem, Child: th.ID}
+	var answer string
 	for _, it := range v.ItemsOf(turn.ID) {
-		if it.Kind == conversation.ItemUserMessage {
+		switch {
+		case it.Kind == conversation.ItemUserMessage && body.Task == "":
 			body.Task = it.Text
-			break
+		case it.Kind == conversation.ItemAgentMessage:
+			answer = it.Text
 		}
 	}
 	if status == conversation.Completed {

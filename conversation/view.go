@@ -258,35 +258,32 @@ func (it *Item) finish(status ItemStatus, at time.Time) {
 	it.Status, it.CompletedAt = status, &at
 }
 
-func (v View) TurnOf(id string) (Turn, bool) {
-	i := slices.IndexFunc(v.Turns, func(t Turn) bool { return t.ID == id })
+func find[T any](s []T, match func(T) bool) (T, bool) {
+	i := slices.IndexFunc(s, match)
 	if i < 0 {
-		return Turn{}, false
+		var zero T
+		return zero, false
 	}
-	return v.Turns[i], true
+	return s[i], true
+}
+
+func (v View) TurnOf(id string) (Turn, bool) {
+	return find(v.Turns, func(t Turn) bool { return t.ID == id })
 }
 
 func (v View) ItemOf(id string) (Item, bool) {
-	i := slices.IndexFunc(v.Items, func(it Item) bool { return it.ID == id })
-	if i < 0 {
-		return Item{}, false
-	}
-	return v.Items[i], true
+	return find(v.Items, func(it Item) bool { return it.ID == id })
 }
 
 func (v View) Active() (Turn, bool) {
-	i := slices.IndexFunc(v.Turns, func(t Turn) bool { return t.Ended == nil })
-	if i < 0 {
-		return Turn{}, false
-	}
-	return v.Turns[i], true
+	return find(v.Turns, func(t Turn) bool { return t.Ended == nil })
 }
 
 func (v View) Behind() []Turn {
 	var out []Turn
-	active, ok := v.Active()
+	active, _ := v.Active()
 	for _, t := range v.Turns {
-		if ok && t.Ended == nil && t.ID != active.ID {
+		if t.Ended == nil && t.ID != active.ID {
 			out = append(out, t)
 		}
 	}
@@ -319,9 +316,9 @@ func (v View) Waiting() Wait {
 	}
 	items := v.ItemsOf(active.ID)
 	switch {
-	case slices.ContainsFunc(items, Item.waitsForApproval):
+	case slices.ContainsFunc(items, Item.WaitsForApproval):
 		return WaitApproval
-	case slices.ContainsFunc(items, Item.waitsForInput):
+	case slices.ContainsFunc(items, Item.WaitsForInput):
 		return WaitInput
 	case v.Answered(active.ID) && slices.ContainsFunc(items, Item.AwaitsReport):
 		return WaitChildren
@@ -336,7 +333,7 @@ func (v View) Requests() []Item {
 	}
 	var out []Item
 	for _, it := range v.ItemsOf(active.ID) {
-		if it.waitsForApproval() || it.waitsForInput() {
+		if it.WaitsForApproval() || it.WaitsForInput() {
 			out = append(out, it)
 		}
 	}
@@ -407,15 +404,15 @@ func RollUp(own ThreadStatus, subagents []ThreadStatus) ThreadStatus {
 	return own
 }
 
-func (it Item) open() bool {
+func (it Item) Open() bool {
 	return it.Kind == ItemToolCall && (it.Status == Pending || it.Status == InProgress)
 }
 
-func (it Item) waitsForApproval() bool {
+func (it Item) WaitsForApproval() bool {
 	return it.Kind == ItemToolCall && it.Status == Pending && it.Approval != nil && it.Approval.Decision == ""
 }
 
-func (it Item) waitsForInput() bool {
+func (it Item) WaitsForInput() bool {
 	return it.Kind == ItemToolCall && it.Status == InProgress && it.Input != nil && !it.Input.Answered
 }
 

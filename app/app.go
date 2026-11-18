@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/cron"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
@@ -110,6 +111,27 @@ func thread(r store.Reader, u, id string) (store.Thread, error) {
 	return th, nil
 }
 
+func edit[T any](ctx context.Context, st store.Store, get func(store.Tx) (T, error), change func(store.Tx, *T) error, put func(store.Tx, T) error) (T, error) {
+	var v T
+	err := st.Update(ctx, func(tx store.Tx) (err error) {
+		if v, err = get(tx); err != nil {
+			return err
+		}
+		if err := change(tx, &v); err != nil {
+			return err
+		}
+		return put(tx, v)
+	})
+	return v, err
+}
+
+func view(r store.Reader, u, id string) (conversation.View, error) {
+	if _, err := thread(r, u, id); err != nil {
+		return conversation.View{}, err
+	}
+	return r.View(id)
+}
+
 func topThread(r store.Reader, u, id string) (store.Thread, error) {
 	th, err := thread(r, u, id)
 	if err != nil {
@@ -126,9 +148,5 @@ func (a *App) toolbox(ctx context.Context, u string) (policy.Toolbox, error) {
 	if err != nil {
 		return policy.Toolbox{}, fmt.Errorf("the tools of the user: %w", err)
 	}
-	box := policy.Toolbox{Unavailable: set.Unavailable()}
-	for _, t := range set.Specs() {
-		box.Tools = append(box.Tools, policy.Tool{Name: t.Name, Provider: t.Provider, Content: t.Content})
-	}
-	return box, nil
+	return tool.Toolbox(set), nil
 }

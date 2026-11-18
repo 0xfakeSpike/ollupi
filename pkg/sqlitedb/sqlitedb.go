@@ -6,8 +6,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -48,23 +46,17 @@ func Close(g *gorm.DB) error {
 	return conn.Close()
 }
 
-func Steps(fsys fs.FS) ([]string, error) {
+func steps(fsys fs.FS) ([]string, error) {
 	entries, err := fs.ReadDir(fsys, ".")
 	if err != nil {
 		return nil, err
 	}
-	names := make([]string, 0, len(entries))
-	for _, e := range entries {
-		names = append(names, e.Name())
-	}
-	slices.Sort(names)
-	out := make([]string, 0, len(names))
-	for i, name := range names {
-		number, _, ok := strings.Cut(name, "_")
-		if n, err := strconv.Atoi(number); !ok || err != nil || n != i+1 || len(number) != 4 || !strings.HasSuffix(name, ".sql") {
-			return nil, fmt.Errorf("migration %s: want %04d_<what>.sql", name, i+1)
+	out := make([]string, 0, len(entries))
+	for i, e := range entries {
+		if want := fmt.Sprintf("%04d_", i+1); !strings.HasPrefix(e.Name(), want) || !strings.HasSuffix(e.Name(), ".sql") {
+			return nil, fmt.Errorf("migration %s: want %s<what>.sql", e.Name(), want)
 		}
-		sql, err := fs.ReadFile(fsys, name)
+		sql, err := fs.ReadFile(fsys, e.Name())
 		if err != nil {
 			return nil, err
 		}
@@ -73,18 +65,30 @@ func Steps(fsys fs.FS) ([]string, error) {
 	return out, nil
 }
 
-func Version(g *gorm.DB, known int) (int, error) {
+func Version(g *gorm.DB) (int, error) {
 	var version int
 	if err := g.Raw("PRAGMA user_version").Scan(&version).Error; err != nil {
 		return 0, fmt.Errorf("read schema version: %w", err)
 	}
-	if version > known {
-		return 0, fmt.Errorf("the database is at schema version %d, from a newer version of this program; this one knows up to %d", version, known)
-	}
 	return version, nil
 }
 
-func Migrate(g *gorm.DB, steps []string, version int) error {
+func Migrate(g *gorm.DB, fsys fs.FS, dir string) error {
+	sub, err := fs.Sub(fsys, dir)
+	if err != nil {
+		return err
+	}
+	steps, err := steps(sub)
+	if err != nil {
+		return err
+	}
+	version, err := Version(g)
+	if err != nil {
+		return err
+	}
+	if version > len(steps) {
+		return fmt.Errorf("the database is at schema version %d, from a newer version of this program; this one knows up to %d", version, len(steps))
+	}
 	if version == len(steps) {
 		return nil
 	}

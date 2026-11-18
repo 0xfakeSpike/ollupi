@@ -31,13 +31,7 @@ func NewOpenAI(baseURL, apiKey string, calls int, limits map[string]Limits) *Ope
 }
 
 func (c *OpenAI) Chat(ctx context.Context, req ChatRequest, onDelta func(Delta)) (ChatResponse, error) {
-	if req.Model.Name == "" {
-		return ChatResponse{}, fmt.Errorf("llm.OpenAI: model required")
-	}
-	if req.ToolChoice != ToolChoiceAuto && req.ToolChoice != ToolChoiceNone {
-		return ChatResponse{}, fmt.Errorf("llm.OpenAI: unsupported tool choice %q", req.ToolChoice)
-	}
-	release, err := c.acquire(ctx)
+	_, release, err := c.begin(ctx, req)
 	if err != nil {
 		return ChatResponse{}, err
 	}
@@ -84,29 +78,27 @@ func (c *OpenAI) Chat(ctx context.Context, req ChatRequest, onDelta func(Delta))
 	for stream.Next() {
 		delta, err := acc.add(stream.Current())
 		if err != nil {
-			return acc.usageResponse(), err
+			return ChatResponse{}, err
 		}
 		emit(onDelta, delta)
 	}
 	if err := stream.Err(); err != nil {
-		return acc.usageResponse(), safeRequestError(err)
+		return ChatResponse{}, safeRequestError(err)
 	}
 	return acc.response()
 }
 
 type streamAccumulator struct {
-	sawChoice     bool
-	content       strings.Builder
-	reasoning     strings.Builder
-	finish        string
-	calls         []ToolCall
-	usage         Usage
-	usageReported bool
+	sawChoice bool
+	content   strings.Builder
+	reasoning strings.Builder
+	finish    string
+	calls     []ToolCall
+	usage     Usage
 }
 
 func (a *streamAccumulator) add(chunk openai.ChatCompletionChunk) (Delta, error) {
 	if chunk.JSON.Usage.Valid() {
-		a.usageReported = true
 		a.usage = Usage{
 			PromptTokens:       chunk.Usage.PromptTokens,
 			CachedPromptTokens: chunk.Usage.PromptTokensDetails.CachedTokens,
@@ -147,27 +139,22 @@ func (a *streamAccumulator) add(chunk openai.ChatCompletionChunk) (Delta, error)
 
 func (a *streamAccumulator) response() (ChatResponse, error) {
 	if !a.sawChoice {
-		return a.usageResponse(), fmt.Errorf("llm.OpenAI: empty completion choices")
+		return ChatResponse{}, fmt.Errorf("llm.OpenAI: empty completion choices")
 	}
 
 	if a.finish == "" {
-		return a.usageResponse(), fmt.Errorf("llm.OpenAI: the stream ended before the response finished")
+		return ChatResponse{}, fmt.Errorf("llm.OpenAI: the stream ended before the response finished")
 	}
 	for _, call := range a.calls {
 		if call.ID == "" || call.Name == "" {
-			return a.usageResponse(), fmt.Errorf("llm.OpenAI: tool call without id or function name")
+			return ChatResponse{}, fmt.Errorf("llm.OpenAI: tool call without id or function name")
 		}
 	}
 	return ChatResponse{
-		Message:       ChatMessage{Role: RoleAssistant, Content: a.content.String(), ReasoningContent: a.reasoning.String(), ToolCalls: a.calls},
-		FinishReason:  a.finish,
-		Usage:         a.usage,
-		UsageReported: a.usageReported,
+		Message:      ChatMessage{Role: RoleAssistant, Content: a.content.String(), ReasoningContent: a.reasoning.String(), ToolCalls: a.calls},
+		FinishReason: a.finish,
+		Usage:        a.usage,
 	}, nil
-}
-
-func (a *streamAccumulator) usageResponse() ChatResponse {
-	return ChatResponse{Usage: a.usage, UsageReported: a.usageReported}
 }
 
 func extraString(fields map[string]respjson.Field, name string) (string, error) {
@@ -190,16 +177,11 @@ func toMessageParam(message ChatMessage) (openai.ChatCompletionMessageParamUnion
 		if len(message.Parts) == 0 {
 			return openai.UserMessage(message.Content), nil
 		}
-		parts := []openai.ChatCompletionContentPartUnionParam{openai.TextContentPart(message.Content)}
-		for _, p := range message.Parts {
-			switch p.Type {
-			case PartImage:
-				parts = append(parts, openai.ImageContentPart(openai.ChatCompletionContentPartImageImageURLParam{URL: "data:" + p.MimeType + ";base64," + base64.StdEncoding.EncodeToString(p.Data)}))
-			case PartText:
-				parts = append(parts, openai.TextContentPart(p.Text))
-			default:
-				return openai.ChatCompletionMessageParamUnion{}, fmt.Errorf("unsupported content part %q", p.Type)
-			}
+		parts, err := userParts(message, openai.TextContentPart, func(p ContentPart) openai.ChatCompletionContentPartUnionParam {
+			return openai.ImageContentPart(openai.ChatCompletionContentPartImageImageURLParam{URL: "data:" + p.MimeType + ";base64," + base64.StdEncoding.EncodeToString(p.Data)})
+		})
+		if err != nil {
+			return openai.ChatCompletionMessageParamUnion{}, err
 		}
 		return openai.UserMessage(parts), nil
 	case RoleAssistant:
@@ -221,9 +203,6 @@ func toMessageParam(message ChatMessage) (openai.ChatCompletionMessageParamUnion
 		}
 		return openai.ChatCompletionMessageParamUnion{OfAssistant: &assistant}, nil
 	case RoleTool:
-		if message.ToolCallID == "" {
-			return openai.ChatCompletionMessageParamUnion{}, fmt.Errorf("tool message requires tool_call_id")
-		}
 		return openai.ToolMessage(message.Content, message.ToolCallID), nil
 	default:
 		return openai.ChatCompletionMessageParamUnion{}, fmt.Errorf("unsupported role %q", message.Role)

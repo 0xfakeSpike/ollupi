@@ -163,7 +163,7 @@ func (s *Session) Invoke(ctx context.Context, c tool.Call) (kit.Result, error) {
 		if msg == "" {
 			msg = "tool error"
 		}
-		return kit.Result{Output: msg, Err: errors.New(msg)}, nil
+		return kit.Result{Output: msg}, errors.New(msg)
 	}
 	if res.StructuredContent != nil {
 		return kit.Result{Output: res.StructuredContent}, nil
