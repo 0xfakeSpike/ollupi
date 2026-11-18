@@ -20,6 +20,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/policy"
 	"github.com/0xfakeSpike/ollupi/tool"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
@@ -299,7 +300,7 @@ func readFile(ctx context.Context, d dirs, args map[string]any) (ReadFileOutput,
 
 func glob(ctx context.Context, d dirs, args map[string]any) (GlobOutput, error) {
 	in, _ := kit.DecodeArguments[Glob](args)
-	re, err := compilePattern(strings.TrimPrefix(in.Pattern, "./"), true)
+	pattern, err := checkPattern(in.Pattern)
 	if err != nil {
 		return GlobOutput{}, fmt.Errorf("workspace: %w", err)
 	}
@@ -315,7 +316,7 @@ func glob(ctx context.Context, d dirs, args map[string]any) (GlobOutput, error) 
 	w := newWalker(ctx, d.box, dir)
 	err = w.walk(ctx, func(abs string, info fs.FileInfo) error {
 		rel, _ := filepath.Rel(dir, abs)
-		if re.MatchString(filepath.ToSlash(rel)) {
+		if matched, _ := doublestar.Match(pattern, filepath.ToSlash(rel)); matched {
 			all = append(all, found{d.display(abs), info.ModTime()})
 		}
 		return nil
@@ -341,9 +342,9 @@ func grep(ctx context.Context, d dirs, args map[string]any) (GrepOutput, error) 
 	if err != nil {
 		return GrepOutput{}, fmt.Errorf("workspace: pattern: %w", err)
 	}
-	var include *regexp.Regexp
+	include := ""
 	if in.Include != "" {
-		if include, err = compilePattern(strings.TrimPrefix(in.Include, "./"), true); err != nil {
+		if include, err = checkPattern(in.Include); err != nil {
 			return GrepOutput{}, fmt.Errorf("workspace: include: %w", err)
 		}
 	}
@@ -359,9 +360,9 @@ func grep(ctx context.Context, d dirs, args map[string]any) (GrepOutput, error) 
 		if out.Truncated {
 			return errStopWalk
 		}
-		if include != nil {
+		if include != "" {
 			rel, _ := filepath.Rel(path, abs)
-			if !include.MatchString(filepath.ToSlash(rel)) {
+			if matched, _ := doublestar.Match(include, filepath.ToSlash(rel)); !matched {
 				return nil
 			}
 		}
