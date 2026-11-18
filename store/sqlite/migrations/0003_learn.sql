@@ -1,0 +1,1 @@
+ALTER TABLE settings ADD COLUMN learn integer NOT NULL DEFAULT 1;

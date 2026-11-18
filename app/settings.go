@@ -22,13 +22,16 @@ func (a *App) changeSettings(ctx context.Context, user string, change func(*acco
 		func(tx store.Tx, s account.Settings) error { return tx.SetSettings(user, s) })
 }
 
-func (a *App) UpdateSettings(ctx context.Context, user string, redaction, memory *bool) (account.Settings, error) {
+func (a *App) UpdateSettings(ctx context.Context, user string, redaction, memory, learn *bool) (account.Settings, error) {
 	return a.changeSettings(ctx, user, func(s *account.Settings) error {
 		if redaction != nil {
 			s.Redaction = *redaction
 		}
 		if memory != nil {
 			s.Memory = *memory
+		}
+		if learn != nil {
+			s.Learn = *learn
 		}
 		return nil
 	})

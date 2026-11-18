@@ -251,11 +251,12 @@ type MemoryStatus struct {
 type SettingsRow struct {
 	Redaction   bool            `json:"redaction"`
 	Memory      bool            `json:"memory"`
+	Learn       bool            `json:"learn"`
 	Permissions policy.Settings `json:"permissions"`
 }
 
 func settingsRow(s account.Settings) SettingsRow {
-	return SettingsRow{Redaction: s.Redaction, Memory: s.Memory, Permissions: s.Permissions}
+	return SettingsRow{Redaction: s.Redaction, Memory: s.Memory, Learn: s.Learn, Permissions: s.Permissions}
 }
 
 type MCPServerConfig struct {

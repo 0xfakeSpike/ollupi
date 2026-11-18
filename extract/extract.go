@@ -152,7 +152,7 @@ func (x *Extractor) readAll(ctx context.Context, user string) (time.Time, error)
 		case !state.Due(time.Now()):
 			return *state.NextAttempt, nil
 		}
-		if !settings.Memory {
+		if !settings.Memory || !settings.Learn {
 			state.Cursor = ended[len(ended)-1]
 			if err := x.st.Update(ctx, func(tx store.Tx) error { return tx.SetMemoryState(user, state) }); err != nil {
 				return time.Time{}, err
