@@ -47,7 +47,7 @@ stateDiagram-v2
 
 - **添加**：`app.AddWorkspace` 先让沙箱确认路径是个目录（`box.Directory`），再按文件夹去重：同一用户已有指向同一文件夹的工作区（`box.Same`）就用它，已归档的顺带恢复。
 - **移动**：`app.MoveWorkspace` 把文件夹搬到一个已存在且为空的目录，只改 `root`。会话、记忆、定时任务都按工作区 id 引用它。移动要求名下的会话都空闲（`Reader.WorkspaceBusy`），移动期间 app 拦住新轮次。
-- **归档**：已归档的工作区不能新建会话，名下的会话也不能发新消息（`user.ErrWorkspaceArchived`）。
+- **归档**：已归档的工作区不能新建会话，名下的会话也不能发新消息（`account.ErrWorkspaceArchived`）。
 
 代码：[account/account.go](../account/account.go)、[app/owned.go](../app/owned.go)。
 
@@ -56,7 +56,7 @@ stateDiagram-v2
 会话是一段对话。它运行在一个执行环境里（不指定时是这台机器），可选地挂在一个工作区上，带一层自己的权限设置。
 
 - **顶层会话**：用户通过 `app.StartThread` 创建，出现在会话列表里。
-- **子会话**：子 agent 的会话。父会话里启动它的调用结束时，runner 在同一事务里创建子会话、给它排上第一个轮次和任务消息（`run.launch`）。它记着 `parent_id` 和 `parent_item`，继承父会话的工作区和环境，按父会话的权限运行；它不接受用户的消息（`user.ErrSubagentThread`），随父会话一起删除。
+- **子会话**：子 agent 的会话。父会话里启动它的调用结束时，runner 在同一事务里创建子会话、给它排上第一个轮次和任务消息（`run.launch`）。它记着 `parent_id` 和 `parent_item`，继承父会话的工作区和环境，按父会话的权限运行；它不接受用户的消息（`account.ErrSubagentThread`），随父会话一起删除。
 
 ```mermaid
 stateDiagram-v2
