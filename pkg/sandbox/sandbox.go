@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 )
@@ -110,6 +111,43 @@ func New(c Config) (*Sandbox, error) {
 	if home, err = canonicalPath(home, ""); err != nil {
 		return nil, err
 	}
+	for _, name := range c.ProtectedNames {
+		if err := validProtectedName(name); err != nil {
+			return nil, err
+		}
+	}
+	p, err := pathsOf(c, mode, home)
+	if err != nil {
+		return nil, err
+	}
+	rules, err := compileRules(c.Domains)
+	if err != nil {
+		return nil, err
+	}
+	if len(rules.allow) == 0 && len(rules.deny) > 0 {
+		return nil, fmt.Errorf("sandbox: denied_domains needs allowed_domains; without it the network is either off or open")
+	}
+	s := &Sandbox{
+		home:           home,
+		policy:         p,
+		rules:          rules,
+		envPassthrough: append([]string(nil), c.EnvPassthrough...),
+		maxOutputBytes: c.MaxOutputBytes,
+		envMarker:      c.EnvMarker,
+	}
+	if s.maxOutputBytes == 0 {
+		s.maxOutputBytes = defaultMaxOutputBytes
+	}
+	if mode != ModeFullAccess && runtime.GOOS == "darwin" {
+		l := newDenialLog()
+		if err := l.start(); err == nil {
+			s.denials = l
+		}
+	}
+	return s, nil
+}
+
+func pathsOf(c Config, mode Mode, home string) (policy, error) {
 	canonical := func(what string, paths []string) ([]string, error) {
 		out := make([]string, 0, len(paths))
 		for _, path := range paths {
@@ -121,75 +159,36 @@ func New(c Config) (*Sandbox, error) {
 		}
 		return out, nil
 	}
-	roots, err := canonical("command directory", c.Roots)
-	if err != nil {
-		return nil, err
+	p := policy{Mode: mode, Network: c.Network, ProtectedNames: append(slices.Clone(defaultProtectedNames), c.ProtectedNames...)}
+	var err error
+	if p.WritableRoots, err = canonical("command directory", c.Roots); err != nil {
+		return policy{}, err
 	}
 	if mode != ModeFullAccess {
-		for _, root := range roots {
+		for _, root := range p.WritableRoots {
 			if err := validateRoot(root, home); err != nil {
-				return nil, err
+				return policy{}, err
 			}
 		}
 	}
-	denyRead, err := canonical("deny_read", append(defaultDenyRead(home), c.DenyRead...))
-	if err != nil {
-		return nil, err
+	if p.DenyRead, err = canonical("deny_read", append(defaultDenyRead(home), c.DenyRead...)); err != nil {
+		return policy{}, err
 	}
-	readOnly, err := canonical("read_only", c.ReadOnly)
-	if err != nil {
-		return nil, err
+	if p.ReadOnly, err = canonical("read_only", c.ReadOnly); err != nil {
+		return policy{}, err
 	}
-	extraWritable, err := canonical("extra_writable", append(defaultWritableCaches(home), c.ExtraWritable...))
-	if err != nil {
-		return nil, err
+	if p.ExtraWritable, err = canonical("extra_writable", append(defaultWritableCaches(home), c.ExtraWritable...)); err != nil {
+		return policy{}, err
 	}
-	sockets, err := canonical("unix_sockets", c.UnixSockets)
-	if err != nil {
-		return nil, err
+	if p.UnixSockets, err = canonical("unix_sockets", c.UnixSockets); err != nil {
+		return policy{}, err
 	}
-	for _, path := range sockets {
+	for _, path := range p.UnixSockets {
 		if _, err := seatbeltPathRegex(path); err != nil {
-			return nil, err
+			return policy{}, err
 		}
 	}
-	rules, err := compileRules(c.Domains)
-	if err != nil {
-		return nil, err
-	}
-	if len(rules.allow) == 0 && len(rules.deny) > 0 {
-		return nil, fmt.Errorf("sandbox: denied_domains needs allowed_domains; without it the network is either off or open")
-	}
-	s := &Sandbox{
-		home: home,
-		policy: policy{
-			Mode: mode, Network: c.Network, WritableRoots: roots, ExtraWritable: extraWritable,
-			DenyRead: denyRead, ReadOnly: readOnly, UnixSockets: sockets,
-			ProtectedNames: append(append([]string(nil), defaultProtectedNames...), c.ProtectedNames...),
-		},
-		rules:          rules,
-		envPassthrough: append([]string(nil), c.EnvPassthrough...),
-		maxOutputBytes: c.MaxOutputBytes,
-		envMarker:      c.EnvMarker,
-	}
-	if mode == ModeWorkspaceWrite && len(roots) == 0 {
-		return nil, fmt.Errorf("sandbox: %s needs at least one writable root", ModeWorkspaceWrite)
-	}
-	for _, name := range c.ProtectedNames {
-		if err := validProtectedName(name); err != nil {
-			return nil, err
-		}
-	}
-	if s.maxOutputBytes <= 0 {
-		s.maxOutputBytes = defaultMaxOutputBytes
-	}
-	if mode != ModeFullAccess && runtime.GOOS == "darwin" {
-		l := newDenialLog()
-		if err := l.start(); err == nil {
-			s.denials = l
-		}
-	}
-	return s, nil
+	return p, nil
 }
 
 func (s *Sandbox) Close() error {
