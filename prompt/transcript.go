@@ -37,45 +37,18 @@ func (w Window) transcript(obs *observations, natives map[string][]byte, items [
 			out = append(out, llm.ChatMessage{Role: llm.RoleUser, Content: it.Text})
 			i++
 		case conversation.ItemReport:
-			content := obs.callResult(it, w.observationBudget(1, maxObservationTokens))
-			kind, call := "subagent", ""
-			if launch := slices.IndexFunc(items, func(l conversation.Item) bool { return l.ID == it.Launch }); launch >= 0 {
-				kind, call = items[launch].Call.Tool, items[launch].Call.Call
-			}
-			header := fmt.Sprintf("[report of the %s launched by call %s, %q: %s]\n", kind, call, it.Text, it.Status)
-			out = append(out, llm.ChatMessage{Role: llm.RoleUser, Content: header + content})
+			out = append(out, w.report(obs, items, it))
 			i++
 		case conversation.ItemReasoning, conversation.ItemAgentMessage, conversation.ItemToolCall:
-			response := it.Response
-			n := 0
 			j := i
-			for ; j < len(items) && inResponse(items[j], response); j++ {
-				if items[j].Kind == conversation.ItemToolCall {
-					n++
-				}
+			for j < len(items) && inResponse(items[j], it.Response) {
+				j++
 			}
 			budget := maxObservationTokens
-			if compacting || response == latest {
+			if compacting || it.Response == latest {
 				budget = limit
 			}
-			perObservation := w.observationBudget(n, budget)
-			assistant := llm.ChatMessage{Role: llm.RoleAssistant, Native: natives[response]}
-			var calls []llm.ChatMessage
-			for _, part := range items[i:j] {
-				switch part.Kind {
-				case conversation.ItemReasoning:
-					assistant.ReasoningContent += part.Text
-				case conversation.ItemAgentMessage:
-					assistant.Content += part.Text
-				case conversation.ItemToolCall:
-					assistant.ToolCalls = append(assistant.ToolCalls, llm.ToolCall{ID: part.Call.Call, Name: part.Call.Tool, Arguments: part.Call.Arguments})
-					calls = append(calls, llm.ChatMessage{Role: llm.RoleTool, ToolCallID: part.Call.Call, Content: obs.callResult(part, perObservation)})
-				}
-			}
-			if assistant.Content != "" || len(assistant.ToolCalls) > 0 {
-				out = append(out, assistant)
-				out = append(out, calls...)
-			}
+			out = append(out, w.response(obs, natives[it.Response], items[i:j], budget)...)
 			i = j
 		default:
 			return nil, 0, fmt.Errorf("prompt: item %s (%s) has no place in the transcript", it.ID, it.Kind)
@@ -86,6 +59,43 @@ func (w Window) transcript(obs *observations, natives map[string][]byte, items [
 		fixedTokens = llm.EstimateTokens(prettyJSON(fixed))
 	}
 	return out, fixedTokens, nil
+}
+
+func (w Window) report(obs *observations, items []conversation.Item, it conversation.Item) llm.ChatMessage {
+	kind, call := "subagent", ""
+	launched := func(l conversation.Item) bool { return l.ID == it.Launch }
+	if launch := slices.IndexFunc(items, launched); launch >= 0 {
+		kind, call = items[launch].Call.Tool, items[launch].Call.Call
+	}
+	header := fmt.Sprintf("[report of the %s launched by call %s, %q: %s]\n", kind, call, it.Text, it.Status)
+	return llm.ChatMessage{Role: llm.RoleUser, Content: header + obs.callResult(it, w.observationBudget(1, maxObservationTokens))}
+}
+
+func (w Window) response(obs *observations, native []byte, parts []conversation.Item, budget int) []llm.ChatMessage {
+	n := 0
+	for _, part := range parts {
+		if part.Kind == conversation.ItemToolCall {
+			n++
+		}
+	}
+	perObservation := w.observationBudget(n, budget)
+	assistant := llm.ChatMessage{Role: llm.RoleAssistant, Native: native}
+	var calls []llm.ChatMessage
+	for _, part := range parts {
+		switch part.Kind {
+		case conversation.ItemReasoning:
+			assistant.ReasoningContent += part.Text
+		case conversation.ItemAgentMessage:
+			assistant.Content += part.Text
+		case conversation.ItemToolCall:
+			assistant.ToolCalls = append(assistant.ToolCalls, llm.ToolCall{ID: part.Call.Call, Name: part.Call.Tool, Arguments: part.Call.Arguments})
+			calls = append(calls, llm.ChatMessage{Role: llm.RoleTool, ToolCallID: part.Call.Call, Content: obs.callResult(part, perObservation)})
+		}
+	}
+	if assistant.Content == "" && len(assistant.ToolCalls) == 0 {
+		return nil
+	}
+	return append([]llm.ChatMessage{assistant}, calls...)
 }
 
 func inResponse(it conversation.Item, response string) bool {

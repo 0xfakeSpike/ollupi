@@ -44,21 +44,12 @@ func (r *Runner) callModel(ctx context.Context, s *step, a agent.CallModel) erro
 	if a.NoTools {
 		choice = llm.ToolChoiceNone
 	}
-	response, message, reasoning := uuid.NewString(), uuid.NewString(), uuid.NewString()
-	sent := time.Now().UTC()
-	var began, answered time.Time
+	ans := modelAnswer{response: uuid.NewString(), message: uuid.NewString(), reasoning: uuid.NewString(), sent: time.Now().UTC()}
 	resp, err := r.send(ctx, s, req, in.Tools, choice, func(d llm.Delta) {
-		delta := store.Delta{Turn: s.turn.ID, Item: message, Text: d.Content}
-		firstThought := d.Reasoning != "" && began.IsZero()
-		firstAnswer := d.Content != "" && !began.IsZero() && answered.IsZero()
-		switch {
-		case firstThought:
-			began = time.Now().UTC()
-		case firstAnswer:
-			answered = time.Now().UTC()
-		}
+		ans.hear(d)
+		delta := store.Delta{Turn: s.turn.ID, Item: ans.message, Text: d.Content}
 		if d.Reasoning != "" {
-			delta = store.Delta{Turn: s.turn.ID, Item: reasoning, Reasoning: d.Reasoning}
+			delta = store.Delta{Turn: s.turn.ID, Item: ans.reasoning, Reasoning: d.Reasoning}
 		}
 		r.st.Feed().Publish(store.Event{User: s.th.User, Thread: s.th.ID, Delta: &delta})
 	})
@@ -73,19 +64,40 @@ func (r *Runner) callModel(ctx context.Context, s *step, a agent.CallModel) erro
 		failed := conversation.Entry{Turn: s.turn.ID, Item: uuid.NewString(), Body: conversation.ModelFailed{Error: cause.Error()}}
 		return errors.Join(cause, r.append(ctx, s.th.ID, failed))
 	}
-	entries := []conversation.Entry{{Turn: s.turn.ID, Body: conversation.ModelResponded{Response: response, Usage: usage(resp), Stats: req.Stats, Native: resp.Message.Native}}}
-	if text := resp.Message.ReasoningContent; text != "" {
-		thinking := conversation.Reasoning{Text: text, Response: response, Started: cmp.Or(began, sent), Ended: cmp.Or(answered, time.Now().UTC())}
-		entries = append(entries, conversation.Entry{Turn: s.turn.ID, Item: reasoning, Body: thinking})
-	}
-	if text := resp.Message.Content; text != "" {
-		entries = append(entries, conversation.Entry{Turn: s.turn.ID, Item: message, Body: conversation.AgentMessage{Text: text, Response: response}})
-	}
+	entries := ans.entries(s.turn.ID, resp, req.Stats)
 	cutOff := resp.FinishReason == "length"
 	for _, call := range resp.Message.ToolCalls {
-		entries = append(entries, r.decide(ctx, s, response, call, cutOff)...)
+		entries = append(entries, r.decide(ctx, s, ans.response, call, cutOff)...)
 	}
 	return r.append(ctx, s.th.ID, entries...)
+}
+
+type modelAnswer struct {
+	response, message, reasoning string
+	sent, began, answered        time.Time
+}
+
+func (a *modelAnswer) hear(d llm.Delta) {
+	firstThought := d.Reasoning != "" && a.began.IsZero()
+	firstAnswer := d.Content != "" && !a.began.IsZero() && a.answered.IsZero()
+	switch {
+	case firstThought:
+		a.began = time.Now().UTC()
+	case firstAnswer:
+		a.answered = time.Now().UTC()
+	}
+}
+
+func (a *modelAnswer) entries(turn string, resp llm.ChatResponse, stats conversation.ContextStats) []conversation.Entry {
+	entries := []conversation.Entry{{Turn: turn, Body: conversation.ModelResponded{Response: a.response, Usage: usage(resp), Stats: stats, Native: resp.Message.Native}}}
+	if text := resp.Message.ReasoningContent; text != "" {
+		thinking := conversation.Reasoning{Text: text, Response: a.response, Started: cmp.Or(a.began, a.sent), Ended: cmp.Or(a.answered, time.Now().UTC())}
+		entries = append(entries, conversation.Entry{Turn: turn, Item: a.reasoning, Body: thinking})
+	}
+	if text := resp.Message.Content; text != "" {
+		entries = append(entries, conversation.Entry{Turn: turn, Item: a.message, Body: conversation.AgentMessage{Text: text, Response: a.response}})
+	}
+	return entries
 }
 
 func checkResponse(resp llm.ChatResponse, choice llm.ToolChoice) error {
