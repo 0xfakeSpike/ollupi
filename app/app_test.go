@@ -45,7 +45,7 @@ func (set) Content(context.Context, tool.Call) (policy.Content, error) { return 
 func (set) Prepare(context.Context, tool.Call) (tool.Plan, error)      { return tool.Plan{}, nil }
 func (set) Invoke(context.Context, tool.Call) tool.Result              { return tool.Result{} }
 func tools(context.Context, string) (tool.Set, error)                  { return set{}, nil }
-func here(string) (sandbox.Box, error)                                 { return sandbox.Here(), nil }
+func here(string) (sandbox.Box, error)                                 { return sandbox.Here() }
 
 type blobs struct {
 	mu    sync.Mutex
@@ -315,9 +315,11 @@ func TestTheUserCorrectsTheirNotes(t *testing.T) {
 	if m := must[memory.Memory](t)(f.a.MoveMemory(f.ctx, "u", "n")); m.Scope != memory.Global {
 		t.Errorf("moved %+v", m)
 	}
-	_, found, err := f.a.Search(f.ctx, "u", "helix", "", 10)
-	if err != nil || len(found) != 1 {
-		t.Errorf("found %+v %v", found, err)
+	for _, workspace := range []string{"", "w"} {
+		_, found, err := f.a.Search(f.ctx, "u", "helix", workspace, 10)
+		if err != nil || len(found) != 1 {
+			t.Errorf("in %q found %+v %v", workspace, found, err)
+		}
 	}
 	if err := f.a.ForgetMemory(f.ctx, "u", "n"); err != nil {
 		t.Fatal(err)

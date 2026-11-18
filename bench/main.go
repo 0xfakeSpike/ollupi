@@ -39,7 +39,7 @@ type model struct {
 	onCall  atomic.Pointer[func()]
 }
 
-func here(string) (sandbox.Box, error) { return sandbox.Here(), nil }
+func here(string) (sandbox.Box, error) { return sandbox.Here() }
 
 func tempHome() string {
 	dir, err := os.MkdirTemp("", "ollupi-bench-")

@@ -89,7 +89,7 @@ func main() {
 		Connections: map[string]llm.Client{"model": client},
 		Tools:       []kit.Provider{files, web.New()},
 		Permissions: policy.Settings{ApprovalPolicy: string(policy.Never)},
-		Boxes:       func(string) (sandbox.Box, error) { return sandbox.Here(), nil },
+		Boxes:       func(string) (sandbox.Box, error) { return sandbox.Here() },
 	})
 	if err != nil {
 		log.Fatalf("eval: %v", err)
