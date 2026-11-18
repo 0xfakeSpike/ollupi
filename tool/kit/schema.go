@@ -10,22 +10,31 @@ import (
 )
 
 func ResolveSchema(schema any) (*jsonschema.Resolved, error) {
+	resolved, _, err := schemas(schema)
+	return resolved, err
+}
+
+func schemas(schema any) (*jsonschema.Resolved, map[string]any, error) {
 	if schema == nil {
-		return nil, fmt.Errorf("missing input schema")
+		return nil, nil, fmt.Errorf("missing input schema")
 	}
 	raw, err := json.Marshal(schema)
 	if err != nil {
-		return nil, fmt.Errorf("marshal input schema: %w", err)
+		return nil, nil, fmt.Errorf("marshal input schema: %w", err)
 	}
 	var parsed jsonschema.Schema
 	if err := json.Unmarshal(raw, &parsed); err != nil {
-		return nil, fmt.Errorf("parse input schema: %w", err)
+		return nil, nil, fmt.Errorf("parse input schema: %w", err)
 	}
 	resolved, err := parsed.Resolve(nil)
 	if err != nil {
-		return nil, fmt.Errorf("resolve input schema: %w", err)
+		return nil, nil, fmt.Errorf("resolve input schema: %w", err)
 	}
-	return resolved, nil
+	var listed map[string]any
+	if err := json.Unmarshal(raw, &listed); err != nil {
+		return nil, nil, fmt.Errorf("parse input schema: %w", err)
+	}
+	return resolved, listed, nil
 }
 
 func validate(schema *jsonschema.Resolved, args map[string]any) error {
@@ -38,35 +47,16 @@ func validate(schema *jsonschema.Resolved, args map[string]any) error {
 	return nil
 }
 
-func normalizeInputSchema(schema any) (map[string]any, error) {
-	if value, ok := schema.(map[string]any); ok {
-		return value, nil
-	}
-	raw, err := json.Marshal(schema)
-	if err != nil {
-		return nil, err
-	}
-	var value map[string]any
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return nil, err
-	}
-	return value, nil
-}
-
 type Constrainer interface {
 	Constrain(*jsonschema.Schema)
 }
 
 func InputSchema[T any]() *jsonschema.Schema {
-	s, err := InputSchemaOf(reflect.TypeFor[T]())
+	s, err := inputSchema(reflect.TypeFor[T](), map[reflect.Type]*jsonschema.Schema{})
 	if err != nil {
 		panic(fmt.Sprintf("tools: input schema of %s: %v", reflect.TypeFor[T](), err))
 	}
 	return s
-}
-
-func InputSchemaOf(t reflect.Type) (*jsonschema.Schema, error) {
-	return inputSchema(t, map[reflect.Type]*jsonschema.Schema{})
 }
 
 func inputSchema(t reflect.Type, known map[reflect.Type]*jsonschema.Schema) (*jsonschema.Schema, error) {

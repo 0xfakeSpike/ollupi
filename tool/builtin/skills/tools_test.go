@@ -28,17 +28,17 @@ func TestACallReachesOnlyItsRolesSkills(t *testing.T) {
 	call := func(role, name string, args map[string]any) (kit.Result, error) {
 		return ts.Invoke(context.Background(), tool.Call{Caller: tool.Caller{Role: role}, Tool: name, Arguments: args})
 	}
-	if _, err := call("full-main-agent", ToolActivateSkill, map[string]any{"name": "deploy"}); err != nil {
+	if _, err := call("full-main-agent", toolActivateSkill, map[string]any{"name": "deploy"}); err != nil {
 		t.Errorf("a role's own skill: %v", err)
 	}
-	if _, err := call("browser-sub-agent", ToolActivateSkill, map[string]any{"name": "deploy"}); err == nil {
+	if _, err := call("browser-sub-agent", toolActivateSkill, map[string]any{"name": "deploy"}); err == nil {
 		t.Error("the browser subagent activated a skill of the main agent")
 	}
-	listed, err := call("browser-sub-agent", ToolListSkills, map[string]any{})
+	listed, err := call("browser-sub-agent", toolListSkills, map[string]any{})
 	if got := listed.Output.(map[string]any)["skills"].([]skills.Skill); err != nil || len(got) != 1 || got[0].Name != "site-login" {
 		t.Errorf("the browser subagent's list: %+v %v", listed, err)
 	}
-	dir, err := call("browser-sub-agent", ToolGetRootDir, map[string]any{})
+	dir, err := call("browser-sub-agent", toolGetRootDir, map[string]any{})
 	if err != nil || dir.Output.(map[string]any)["skills_root_dir"] != filepath.Join(root, "browser-sub-agent") {
 		t.Errorf("the browser subagent's directory: %+v %v", dir, err)
 	}

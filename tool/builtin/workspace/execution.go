@@ -59,12 +59,12 @@ func commandOf(args map[string]any) (commandArgs, error) {
 	return a, nil
 }
 
-func (r *Provider) prepareCommand(ctx context.Context, caller tool.Caller, args map[string]any) (*Prepared, error) {
-	d, err := r.dirs(ctx, caller)
+func (r *Provider) prepareCommand(ctx context.Context, call tool.Call) (*Prepared, error) {
+	d, err := r.dirs(ctx, call.Caller)
 	if err != nil {
 		return nil, err
 	}
-	a, err := commandOf(args)
+	a, err := commandOf(call.Arguments)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +87,7 @@ func (r *Provider) prepareCommand(ctx context.Context, caller tool.Caller, args 
 		return nil, err
 	}
 	p := &Prepared{
-		Cwd: cwd, SettingsDigest: r.settingsDigest(d), ArgumentsDigest: digest(args),
+		Cwd: cwd, SettingsDigest: r.settingsDigest(d), ArgumentsDigest: digest(call.Arguments),
 		Program: program, Args: a.Args, Env: a.Env, TimeoutSec: cmp.Or(a.TimeoutSec, r.timeoutSec),
 		Sandboxed: d.box.Enforced() && !escalated, Escalated: escalated,
 	}
@@ -129,12 +129,12 @@ func commandOutput(res sandbox.Result, cwd string) CommandOutput {
 		Signal: res.Signal, Truncated: res.Truncated, SandboxDenials: res.Denials}
 }
 
-func (r *Provider) execute(ctx context.Context, caller tool.Caller, args map[string]any, p *Prepared, program string) (sandbox.Result, error) {
-	d, err := r.dirs(ctx, caller)
+func (r *Provider) execute(ctx context.Context, call tool.Call, p *Prepared, program string) (sandbox.Result, error) {
+	d, err := r.dirs(ctx, call.Caller)
 	if err != nil {
 		return sandbox.Result{}, err
 	}
-	if err := r.validatePrepared(ctx, d, p, args); err != nil {
+	if err := r.validatePrepared(ctx, d, p, call.Arguments); err != nil {
 		return sandbox.Result{}, err
 	}
 	current, err := d.box.Executable(ctx, program, p.Cwd)
@@ -153,12 +153,12 @@ func (r *Provider) execute(ctx context.Context, caller tool.Caller, args map[str
 	})
 }
 
-func (r *Provider) runCommand(ctx context.Context, caller tool.Caller, args map[string]any, p *Prepared) (kit.Result, error) {
-	a, err := commandOf(args)
+func (r *Provider) runCommand(ctx context.Context, call tool.Call, p *Prepared) (kit.Result, error) {
+	a, err := commandOf(call.Arguments)
 	if err != nil {
 		return kit.Result{}, err
 	}
-	res, err := r.execute(ctx, caller, args, p, a.Program)
+	res, err := r.execute(ctx, call, p, a.Program)
 	if err != nil {
 		return kit.Result{}, err
 	}
@@ -200,7 +200,7 @@ func (r *Provider) tool() kit.Spec {
 		Name:        ToolRunCommand,
 		Description: desc,
 		InputSchema: r.inputSchema(),
-		Annotations: tool.Annotations{DestructiveHint: kit.Hint(true), OpenWorldHint: kit.Hint(true)},
+		Annotations: tool.Annotations{DestructiveHint: new(true), OpenWorldHint: new(true)},
 
 		Content: permissionContent,
 		Prepare: r.locals()[ToolRunCommand].plan,

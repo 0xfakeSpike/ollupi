@@ -60,7 +60,7 @@ type weather struct{}
 
 func (weather) Name() (string, string) { return "weather", "Reads the weather." }
 func (weather) Tools(context.Context) ([]kit.Spec, error) {
-	return []kit.Spec{{Name: "weather", InputSchema: map[string]any{"type": "object"}, Annotations: tool.Annotations{ReadOnlyHint: true, OpenWorldHint: kit.Hint(false)}}}, nil
+	return []kit.Spec{{Name: "weather", InputSchema: map[string]any{"type": "object"}, Annotations: tool.Annotations{ReadOnlyHint: true, OpenWorldHint: new(false)}}}, nil
 }
 func (weather) Invoke(context.Context, tool.Call) (kit.Result, error) {
 	return kit.Result{Output: "rain"}, nil

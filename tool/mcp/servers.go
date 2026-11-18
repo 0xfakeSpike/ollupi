@@ -16,11 +16,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-type Server struct {
-	user.MCPServer
-	Timeout time.Duration
-}
-
 type Client struct {
 	Name    string
 	Version string
@@ -47,11 +42,15 @@ type Users struct {
 }
 
 type connected struct {
-	mu       sync.Mutex
-	servers  []Server
-	sessions []*Session
-	failures []error
-	set      tool.Set
+	mu    sync.Mutex
+	links []link
+	set   tool.Set
+}
+
+type link struct {
+	server user.MCPServer
+	sess   *Session
+	err    error
 }
 
 func NewUsers(ctx context.Context, client Client, st store.Store, boxes func(user string) (sandbox.Box, error), builtins ...kit.Provider) *Users {
@@ -110,11 +109,11 @@ func (u *Users) Statuses(name string) ([]user.MCPStatus, error) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	out := make([]user.MCPStatus, len(c.servers))
-	for i, server := range c.servers {
-		st := user.MCPStatus{Name: server.Name}
-		err := c.failures[i]
-		if sess := c.sessions[i]; sess != nil {
+	out := make([]user.MCPStatus, len(c.links))
+	for i, l := range c.links {
+		st := user.MCPStatus{Name: l.server.Name}
+		err := l.err
+		if sess := l.sess; sess != nil {
 			st.Tools, st.Skipped = len(sess.specs), sess.skipped
 			sess.mu.Lock()
 			err = sess.down
@@ -149,25 +148,24 @@ func (u *Users) connect(c *connected, name string) error {
 	if err != nil {
 		return fmt.Errorf("mcp: the sandbox of the user: %w", err)
 	}
-	c.servers = make([]Server, len(stored))
-	c.sessions, c.failures = make([]*Session, len(stored)), make([]error, len(stored))
+	c.links = make([]link, len(stored))
 	var wg sync.WaitGroup
 	for i, s := range stored {
-		c.servers[i] = Server{MCPServer: s}
 		wg.Go(func() {
 			ctx, cancel := context.WithTimeout(u.ctx, connectTimeout)
 			defer cancel()
-			c.sessions[i], c.failures[i] = connect(ctx, u.ctx, u.client, box, c.servers[i])
+			sess, err := connect(ctx, u.ctx, u.client, box, s)
+			c.links[i] = link{server: s, sess: sess, err: err}
 		})
 	}
 	wg.Wait()
 	providers := append([]kit.Provider{}, u.builtins...)
 	var unavailable []string
-	for i, sess := range c.sessions {
-		if sess != nil {
-			providers = append(providers, sess)
+	for _, l := range c.links {
+		if l.sess != nil {
+			providers = append(providers, l.sess)
 		} else {
-			unavailable = append(unavailable, c.servers[i].Name)
+			unavailable = append(unavailable, l.server.Name)
 		}
 	}
 	set, err := kit.New(u.ctx, unavailable, providers...)
@@ -180,13 +178,13 @@ func (u *Users) connect(c *connected, name string) error {
 }
 
 func (c *connected) gone() bool {
-	for _, sess := range c.sessions {
-		if sess == nil {
+	for _, l := range c.links {
+		if l.sess == nil {
 			continue
 		}
-		sess.mu.Lock()
-		down := sess.down
-		sess.mu.Unlock()
+		l.sess.mu.Lock()
+		down := l.sess.down
+		l.sess.mu.Unlock()
 		if down != nil {
 			return true
 		}
@@ -202,11 +200,11 @@ func (c *connected) close() error {
 
 func (c *connected) closeLocked() error {
 	var errs []error
-	for _, sess := range c.sessions {
-		if sess != nil {
-			errs = append(errs, sess.sess.Close())
+	for _, l := range c.links {
+		if l.sess != nil {
+			errs = append(errs, l.sess.sess.Close())
 		}
 	}
-	c.servers, c.sessions, c.failures, c.set = nil, nil, nil, nil
+	c.links, c.set = nil, nil
 	return errors.Join(errs...)
 }

@@ -198,10 +198,11 @@ func TestACallThatGetsNoAnswerEnds(t *testing.T) {
 	defer web.Close()
 	defer close(release)
 	client := mcp.NewClient(&mcp.Implementation{Name: "ollupi", Version: "test"}, nil)
-	sess, err := connect(ctx, ctx, client, sandbox.Here(), Server{MCPServer: user.MCPServer{Name: "slow", URL: web.URL}, Timeout: 100 * time.Millisecond})
+	sess, err := connect(ctx, ctx, client, sandbox.Here(), user.MCPServer{Name: "slow", URL: web.URL})
 	if err != nil {
 		t.Fatal(err)
 	}
+	sess.timeout = 100 * time.Millisecond
 	_, err = sess.Invoke(ctx, tool.Call{Tool: "slow__hang", Arguments: map[string]any{}})
 	if err == nil || !strings.Contains(err.Error(), "may still have taken effect") {
 		t.Errorf("the call: %v", err)
