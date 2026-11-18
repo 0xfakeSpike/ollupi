@@ -7,12 +7,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/redact"
 	"github.com/0xfakeSpike/ollupi/store"
-	"github.com/0xfakeSpike/ollupi/user"
 	"github.com/google/uuid"
 )
 
@@ -49,10 +49,10 @@ func (x *Extractor) Run(ctx context.Context) error {
 	if err := x.st.Read(ctx, func(r store.Reader) (err error) { users, err = r.Users(); return err }); err != nil {
 		return err
 	}
-	x.mark(users...)
+	x.markDirty(users...)
 	retry := map[string]time.Time{}
 	for {
-		for _, u := range x.take() {
+		for _, u := range x.takeDirty() {
 			delete(retry, u)
 			due, err := x.readAll(ctx, u)
 			if ctx.Err() != nil {
@@ -77,7 +77,7 @@ func (x *Extractor) Run(ctx context.Context) error {
 			now := time.Now()
 			for u, due := range retry {
 				if !now.Before(due) {
-					x.mark(u)
+					x.markDirty(u)
 				}
 			}
 		}
@@ -90,13 +90,13 @@ func (x *Extractor) hear(e store.Event) {
 	}
 	for _, entry := range e.Change.Entries {
 		if _, ended := entry.Body.(conversation.TurnEnded); ended {
-			x.mark(e.User)
+			x.markDirty(e.User)
 			return
 		}
 	}
 }
 
-func (x *Extractor) mark(users ...string) {
+func (x *Extractor) markDirty(users ...string) {
 	x.mu.Lock()
 	for _, u := range users {
 		x.dirty[u] = true
@@ -108,7 +108,7 @@ func (x *Extractor) mark(users ...string) {
 	}
 }
 
-func (x *Extractor) take() []string {
+func (x *Extractor) takeDirty() []string {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	users := make([]string, 0, len(x.dirty))
@@ -129,19 +129,19 @@ func earliest(retry map[string]time.Time) (time.Time, bool) {
 	return next, !next.IsZero()
 }
 
-func (x *Extractor) readAll(ctx context.Context, u string) (time.Time, error) {
+func (x *Extractor) readAll(ctx context.Context, user string) (time.Time, error) {
 	for {
 		var state memory.State
-		var settings user.Settings
+		var settings account.Settings
 		var ended []memory.Cursor
 		err := x.st.Read(ctx, func(r store.Reader) (err error) {
-			if state, err = r.MemoryState(u); err != nil {
+			if state, err = r.MemoryState(user); err != nil {
 				return err
 			}
-			if settings, err = r.Settings(u); err != nil {
+			if settings, err = r.Settings(user); err != nil {
 				return err
 			}
-			ended, err = r.Ended(u, state.Cursor, skipTurns)
+			ended, err = r.EndedTurns(user, state.Cursor, skipTurns)
 			return err
 		})
 		switch {
@@ -154,13 +154,13 @@ func (x *Extractor) readAll(ctx context.Context, u string) (time.Time, error) {
 		}
 		if !settings.Memory {
 			state.Cursor = ended[len(ended)-1]
-			if err := x.st.Update(ctx, func(tx store.Tx) error { return tx.SetMemoryState(u, state) }); err != nil {
+			if err := x.st.Update(ctx, func(tx store.Tx) error { return tx.SetMemoryState(user, state) }); err != nil {
 				return time.Time{}, err
 			}
 			continue
 		}
 		turn := ended[0]
-		learned, err := x.learn(ctx, u, settings, turn)
+		learned, err := x.learn(ctx, user, settings, turn)
 		if ctx.Err() != nil {
 			return time.Time{}, ctx.Err()
 		}
@@ -174,7 +174,7 @@ func (x *Extractor) readAll(ctx context.Context, u string) (time.Time, error) {
 		default:
 			state = state.Read(turn, now)
 		}
-		if err := x.commit(ctx, u, learned, state); err != nil {
+		if err := x.commit(ctx, user, learned, state); err != nil {
 			return time.Time{}, err
 		}
 	}
@@ -194,23 +194,23 @@ type learned struct {
 	read    map[string]time.Time
 }
 
-func (x *Extractor) learn(ctx context.Context, u string, settings user.Settings, turn memory.Cursor) (learned, error) {
-	b, places, err := x.batch(ctx, u, turn)
+func (x *Extractor) learn(ctx context.Context, user string, settings account.Settings, turn memory.Cursor) (learned, error) {
+	b, places, err := x.batch(ctx, user, turn)
 	if errors.Is(err, store.ErrNotFound) {
 		return learned{}, nil
 	}
 	if err != nil {
 		return learned{}, err
 	}
-	l := learned{places: places, read: map[string]time.Time{}}
+	out := learned{places: places, read: map[string]time.Time{}}
 	for _, m := range b.Existing {
-		l.read[m.ID] = m.Updated
+		out.read[m.ID] = m.Updated
 	}
-	parts := memory.Pack(b, x.budget)
+	parts := memory.Split(b, x.budget)
 	if len(parts) == 0 {
-		return l, nil
+		return out, nil
 	}
-	client, err := x.client(u)
+	client, err := x.client(user)
 	if err != nil {
 		return learned{}, failure{memory.ModelRequest, fmt.Errorf("no model client for the user: %w", err)}
 	}
@@ -218,7 +218,7 @@ func (x *Extractor) learn(ctx context.Context, u string, settings user.Settings,
 	current := b.Existing
 	for _, part := range parts {
 		part.Existing = current
-		payload, err := memory.Input(part, x.budget)
+		payload, err := memory.Prompt(part, x.budget)
 		if err != nil {
 			return learned{}, failure{memory.BadEvidence, err}
 		}
@@ -235,13 +235,13 @@ func (x *Extractor) learn(ctx context.Context, u string, settings user.Settings,
 		}
 		for _, m := range memory.Apply(part, ops, time.Now().UTC(), uuid.NewString) {
 			current = replace(current, m)
-			l.changes = replace(l.changes, m)
+			out.changes = replace(out.changes, m)
 		}
 	}
-	return l, nil
+	return out, nil
 }
 
-func (x *Extractor) batch(ctx context.Context, u string, turn memory.Cursor) (b memory.Batch, places []memory.Place, err error) {
+func (x *Extractor) batch(ctx context.Context, user string, turn memory.Cursor) (b memory.Batch, places []memory.Place, err error) {
 	err = x.st.Read(ctx, func(r store.Reader) error {
 		th, err := r.Thread(turn.Thread)
 		if err != nil {
@@ -252,11 +252,11 @@ func (x *Extractor) batch(ctx context.Context, u string, turn memory.Cursor) (b 
 			return err
 		}
 		places = []memory.Place{memory.GlobalPlace, memory.Local(th.Workspace)}
-		existing, err := r.Memories(u, places...)
+		existing, err := r.Memories(user, places...)
 		if err != nil {
 			return err
 		}
-		b = memory.Gather(u, turn.Thread, th.Workspace, v, turn.Turn, existing)
+		b = memory.Gather(user, turn.Thread, th.Workspace, v, turn.Turn, existing)
 		return nil
 	})
 	return b, places, err
@@ -290,10 +290,10 @@ func (x *Extractor) ask(ctx context.Context, client llm.Client, payload string) 
 	return resp.Message.Content, nil
 }
 
-func (x *Extractor) commit(ctx context.Context, u string, l learned, state memory.State) error {
+func (x *Extractor) commit(ctx context.Context, user string, l learned, state memory.State) error {
 	return x.st.Update(ctx, func(tx store.Tx) error {
 		if len(l.changes) > 0 {
-			now, err := tx.Memories(u, l.places...)
+			now, err := tx.Memories(user, l.places...)
 			if err != nil {
 				return err
 			}
@@ -319,6 +319,6 @@ func (x *Extractor) commit(ctx context.Context, u string, l learned, state memor
 				}
 			}
 		}
-		return tx.SetMemoryState(u, state)
+		return tx.SetMemoryState(user, state)
 	})
 }

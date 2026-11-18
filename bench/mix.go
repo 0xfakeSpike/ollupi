@@ -30,8 +30,8 @@ func mix(args []string) {
 	fs := flag.NewFlagSet("mix", flag.ExitOnError)
 	c := fs.Int("c", 256, "conversations whose user sends a turn as soon as the last one ends")
 	delegate := fs.Float64("delegate", 0.2, "share of user turns that hand the work to a subagent")
-	peak := fs.Int("peak", 1000, "scheduled-task turns that fall due at once, each in a conversation of its own")
-	peakAt := fs.Duration("peak-at", time.Minute, "when into the run the scheduled-task turns fall due")
+	peak := fs.Int("peak", 1000, "scheduled-job turns that fall due at once, each in a conversation of its own")
+	peakAt := fs.Duration("peak-at", time.Minute, "when into the run the scheduled-job turns fall due")
 	d := fs.Duration("d", 4*time.Minute, "how long users keep sending turns")
 	slots := fs.Int("slots", 512, "agent slots")
 	calls := fs.Int("calls", 256, "model calls the connection and the provider allow in flight")
@@ -138,7 +138,7 @@ func mix(args []string) {
 		send("cron", th)
 	}
 	wg.Wait()
-	waitFor("the scheduled-task turns", func() bool {
+	waitFor("the scheduled-job turns", func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		var ids []string

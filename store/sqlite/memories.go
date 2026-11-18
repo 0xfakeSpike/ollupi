@@ -80,7 +80,7 @@ func (r reader) MemoryState(owner string) (memory.State, error) {
 	return s, nil
 }
 
-func (r reader) Ended(owner string, after memory.Cursor, limit int) ([]memory.Cursor, error) {
+func (r reader) EndedTurns(owner string, after memory.Cursor, limit int) ([]memory.Cursor, error) {
 	var rows []struct {
 		EndedSeq int64
 		ThreadID string

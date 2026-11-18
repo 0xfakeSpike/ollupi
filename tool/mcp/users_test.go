@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/0xfakeSpike/ollupi/tool"
-	"github.com/0xfakeSpike/ollupi/user"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -45,10 +45,10 @@ func TestEachUsersServersRunInTheirMachine(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	machines := map[string]*serverMachine{"a": {user: "a"}, "b": {user: "b"}, "c": {user: "c"}}
-	own := func(u string) []user.MCPServer {
-		return []user.MCPServer{{Name: "own", Command: "mcp-server", Args: []string{"--stdio"}, Env: map[string]string{"TOKEN": "of-" + u}}}
+	own := func(u string) []account.MCPServer {
+		return []account.MCPServer{{Name: "own", Command: "mcp-server", Args: []string{"--stdio"}, Env: map[string]string{"TOKEN": "of-" + u}}}
 	}
-	users, st := newUsers(t, ctx, map[string][]user.MCPServer{"a": own("a"), "b": own("b"), "c": nil}, func(u string) (sandbox.Box, error) {
+	users, st := newUsers(t, ctx, map[string][]account.MCPServer{"a": own("a"), "b": own("b"), "c": nil}, func(u string) (sandbox.Box, error) {
 		return sandbox.Remote(machines[u], []string{"/cloud/work"}, "cloud"), nil
 	})
 	defer users.Close()

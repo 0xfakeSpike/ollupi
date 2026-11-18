@@ -26,10 +26,10 @@ type Turn struct {
 	QueuedAt  time.Time
 	Ended     *Ending
 	Usage     Usage
-	Responses []Used
+	Responses []ResponseUsage
 }
 
-type Used struct {
+type ResponseUsage struct {
 	Response string
 	Usage    Usage
 	Stats    ContextStats
@@ -93,7 +93,7 @@ type Item struct {
 	Response    string
 	Call        *ToolCall
 	Approval    *Approval
-	Input       *Input
+	Input       *InputRequest
 	Result      *Result
 	Error       string
 	Child       string
@@ -122,7 +122,7 @@ func (a Approval) Decisions() []Decision {
 	return []Decision{Accept, AcceptForSession, AcceptAlways, Decline}
 }
 
-type Input struct {
+type InputRequest struct {
 	Request  json.RawMessage
 	AskedAt  time.Time
 	Answered bool
@@ -156,7 +156,7 @@ func (v *View) Apply(e Entry) {
 		v.Responses = append(v.Responses, Response{ID: b.Response, Turn: e.Turn, Seq: e.Seq, Usage: b.Usage, Stats: b.Stats, Native: b.Native, Compaction: b.Compaction})
 		t := &v.Turns[v.turn[e.Turn]]
 		t.Usage = t.Usage.Plus(b.Usage)
-		t.Responses = append(t.Responses, Used{Response: b.Response, Usage: b.Usage, Stats: b.Stats})
+		t.Responses = append(t.Responses, ResponseUsage{Response: b.Response, Usage: b.Usage, Stats: b.Stats})
 	case ModelFailed:
 		v.add(e, Item{Kind: ItemError, Status: Errored, Error: b.Error})
 	case ToolCall:
@@ -176,7 +176,7 @@ func (v *View) Apply(e Entry) {
 	case ToolStarted:
 		v.update(e, func(it *Item) { it.Status = InProgress })
 	case InputAsked:
-		v.update(e, func(it *Item) { it.Input = &Input{Request: b.Request, AskedAt: e.At} })
+		v.update(e, func(it *Item) { it.Input = &InputRequest{Request: b.Request, AskedAt: e.At} })
 	case Answered:
 		v.update(e, func(it *Item) {
 			it.Input.Answered = true
@@ -272,7 +272,7 @@ func (v View) Active() (Turn, bool) {
 	return find(v.Turns, func(t Turn) bool { return t.Ended == nil })
 }
 
-func (v View) Behind() []Turn {
+func (v View) Queued() []Turn {
 	var out []Turn
 	active, _ := v.Active()
 	for _, t := range v.Turns {

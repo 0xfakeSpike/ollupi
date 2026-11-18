@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	skills "github.com/0xfakeSpike/ollupi/skill"
+	"github.com/0xfakeSpike/ollupi/skill"
 	"github.com/0xfakeSpike/ollupi/tool"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
 )
@@ -35,7 +35,7 @@ func TestACallReachesOnlyItsRolesSkills(t *testing.T) {
 		t.Error("the browser subagent activated a skill of the main agent")
 	}
 	listed, err := call("browser-sub-agent", toolListSkills, map[string]any{})
-	if got := listed.Output.(map[string]any)["skills"].([]skills.Skill); err != nil || len(got) != 1 || got[0].Name != "site-login" {
+	if got := listed.Output.(map[string]any)["skills"].([]skill.Skill); err != nil || len(got) != 1 || got[0].Name != "site-login" {
 		t.Errorf("the browser subagent's list: %+v %v", listed, err)
 	}
 	dir, err := call("browser-sub-agent", toolGetRootDir, map[string]any{})

@@ -16,7 +16,7 @@ const compactionInstructions = `You are performing a CONTEXT CHECKPOINT COMPACTI
 - what remains to be done, as clear next steps.
 Be concise and structured. Write in the user's language. Do not call tools.`
 
-func (w Window) Compaction(in Input) (Request, error) {
+func (w Window) Compaction(in Context) (Request, error) {
 	instructions := llm.ChatMessage{Role: llm.RoleUser, Content: compactionInstructions}
 	keep := 0
 	if latestCompaction(in.Items) >= 0 {
@@ -88,7 +88,7 @@ func (w Window) compactedHistory(before []conversation.Item, summary string) str
 			break
 		}
 	}
-	if users := recentUserMessages(before, share(w.inputTokens, userMessagePercent)); len(users) > 0 {
+	if users := recentUserMessages(before, percentOf(w.inputTokens, userMessagePercent)); len(users) > 0 {
 		b.WriteString("Earlier messages from the user:\n")
 		for _, text := range users {
 			b.WriteString("- " + strings.ReplaceAll(strings.TrimSpace(text), "\n", "\n  ") + "\n")

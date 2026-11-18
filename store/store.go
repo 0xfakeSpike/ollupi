@@ -5,9 +5,9 @@ import (
 	"errors"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/memory"
-	"github.com/0xfakeSpike/ollupi/user"
 )
 
 var (
@@ -25,17 +25,17 @@ type Store interface {
 
 type Reader interface {
 	Users() ([]string, error)
-	Settings(user string) (user.Settings, error)
-	Workspaces(user string) ([]user.Workspace, error)
-	Workspace(user, id string) (user.Workspace, error)
-	Environments(user string) ([]user.Environment, error)
-	Environment(user, id string) (user.Environment, error)
+	Settings(user string) (account.Settings, error)
+	Workspaces(user string) ([]account.Workspace, error)
+	Workspace(user, id string) (account.Workspace, error)
+	Environments(user string) ([]account.Environment, error)
+	Environment(user, id string) (account.Environment, error)
 	EnvironmentInUse(user, id string) (bool, error)
 	WorkspaceBusy(user, id string) (bool, error)
-	MCPServers(user string) ([]user.MCPServer, error)
-	CronJobs(user, thread string) ([]Task, error)
-	CronJob(id string) (user.CronJob, error)
-	Due(now time.Time) ([]user.CronJob, error)
+	MCPServers(user string) ([]account.MCPServer, error)
+	CronJobs(user, thread string) ([]CronJobView, error)
+	CronJob(id string) (account.CronJob, error)
+	Due(now time.Time) ([]account.CronJob, error)
 	Threads(user string, f ThreadFilter) (threads []Thread, more bool, err error)
 	Waiting(user string) ([]string, error)
 	Children(thread string) ([]Thread, error)
@@ -52,20 +52,20 @@ type Reader interface {
 	Memories(user string, places ...memory.Place) ([]memory.Memory, error)
 	Memory(user, id string) (memory.Memory, error)
 	MemoryState(user string) (memory.State, error)
-	Ended(user string, after memory.Cursor, limit int) ([]memory.Cursor, error)
+	EndedTurns(user string, after memory.Cursor, limit int) ([]memory.Cursor, error)
 	Unread(user string, after memory.Cursor) (int64, error)
 }
 
 type Tx interface {
 	Reader
 	EnsureUser(id string) error
-	SetSettings(user string, s user.Settings) error
-	PutWorkspace(user string, w user.Workspace) error
-	PutEnvironment(user string, e user.Environment) error
+	SetSettings(user string, s account.Settings) error
+	PutWorkspace(user string, w account.Workspace) error
+	PutEnvironment(user string, e account.Environment) error
 	DeleteEnvironment(user, id string) error
-	PutMCPServer(user string, s user.MCPServer) error
+	PutMCPServer(user string, s account.MCPServer) error
 	DeleteMCPServer(user, name string) error
-	PutCronJob(j user.CronJob) error
+	PutCronJob(j account.CronJob) error
 	DeleteCronJob(id string) error
 	PutMemory(m memory.Memory) error
 	SetMemoryState(user string, s memory.State) error
@@ -76,7 +76,7 @@ type Tx interface {
 }
 
 type Thread struct {
-	user.Thread
+	account.Thread
 	User     string
 	Head     int64
 	Status   conversation.ThreadStatus
@@ -103,13 +103,13 @@ type Event struct {
 }
 
 type Owned struct {
-	Settings           *user.Settings
-	Workspace          *user.Workspace
-	Environment        *user.Environment
+	Settings           *account.Settings
+	Workspace          *account.Workspace
+	Environment        *account.Environment
 	EnvironmentDeleted string
-	MCPServer          *user.MCPServer
+	MCPServer          *account.MCPServer
 	MCPServerDeleted   string
-	CronJob            *Task
+	CronJob            *CronJobView
 	CronJobDeleted     string
 	Memory             *memory.Memory
 }
@@ -146,11 +146,11 @@ type ThreadCursor struct {
 type Found struct {
 	Threads  []Thread
 	Messages []Hit
-	Tasks    []Task
+	CronJobs []CronJobView
 }
 
-type Task struct {
-	user.CronJob
+type CronJobView struct {
+	account.CronJob
 	Title     string
 	Workspace string
 	Archived  bool

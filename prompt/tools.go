@@ -68,7 +68,7 @@ func partition(tools []Tool, keep func(Tool) bool) (kept, rest []Tool) {
 }
 
 func (w Window) toolsFit(tools []Tool) bool {
-	return llm.EstimateTokens(prettyJSON(Specs(tools))) <= share(w.inputTokens, toolPercent)
+	return llm.EstimateTokens(prettyJSON(Specs(tools))) <= percentOf(w.inputTokens, toolPercent)
 }
 
 func loaded(transcript []conversation.Item) []string {

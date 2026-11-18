@@ -7,16 +7,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/0xfakeSpike/ollupi/store/sqlite"
-	"github.com/0xfakeSpike/ollupi/user"
 	"github.com/google/uuid"
 )
 
 var shanghai, _ = time.LoadLocation("Asia/Shanghai")
 
-func TestATaskIsCheckedAndRunsAtItsTimes(t *testing.T) {
+func TestACronJobIsCheckedAndRunsAtItsTimes(t *testing.T) {
 	cal := NewCalendar(shanghai)
 	now := time.Date(2026, 3, 1, 0, 30, 0, 0, time.UTC)
 	for _, c := range []struct{ name, spec, prompt, err string }{
@@ -26,24 +26,24 @@ func TestATaskIsCheckedAndRunsAtItsTimes(t *testing.T) {
 		{"daily", "@every 5m", "p", "descriptor"},
 		{"daily", "0 9 * * *", " ", "prompt"},
 	} {
-		if _, err := cal.Job("j", "th", Draft{Name: c.name, Spec: c.spec, Prompt: c.prompt, Times: nil}, now); err == nil || !strings.Contains(err.Error(), c.err) {
+		if _, err := cal.NewJob("j", "th", Draft{Name: c.name, Spec: c.spec, Prompt: c.prompt, Times: nil}, now); err == nil || !strings.Contains(err.Error(), c.err) {
 			t.Errorf("%+v: %v", c, err)
 		}
 	}
 	once := 1
-	if _, err := cal.Job("j", "th", Draft{Name: "past", Spec: "0 8 1 3 *", Prompt: "p", Times: &once}, now); err == nil || !strings.Contains(err.Error(), "next year") {
+	if _, err := cal.NewJob("j", "th", Draft{Name: "past", Spec: "0 8 1 3 *", Prompt: "p", Times: &once}, now); err == nil || !strings.Contains(err.Error(), "next year") {
 		t.Errorf("a one-time task whose time has passed: %v", err)
 	}
 	twice := 2
-	job, err := cal.Job("j", "th", Draft{Name: "daily", Spec: "0 9 * * *", Prompt: "say hi", Times: &twice}, now)
+	job, err := cal.NewJob("j", "th", Draft{Name: "daily", Spec: "0 9 * * *", Prompt: "say hi", Times: &twice}, now)
 	if err != nil || !job.NextRun.Equal(time.Date(2026, 3, 1, 1, 0, 0, 0, time.UTC)) {
 		t.Fatalf("the first run: %v %v", job.NextRun, err)
 	}
-	job, done, err := cal.Ran(job, job.NextRun, true)
+	job, done, err := cal.Advance(job, job.NextRun, true)
 	if err != nil || done || job.Runs != 1 || !job.NextRun.Equal(time.Date(2026, 3, 2, 1, 0, 0, 0, time.UTC)) {
 		t.Fatalf("after a run: %+v %v %v", job, done, err)
 	}
-	if _, done, _ := cal.Ran(job, job.NextRun, true); !done {
+	if _, done, _ := cal.Advance(job, job.NextRun, true); !done {
 		t.Error("a task run as many times as it was to is not done")
 	}
 	paused, _ := cal.Pause(job, true, now)
@@ -57,7 +57,7 @@ type fixture struct {
 	t   *testing.T
 	st  store.Store
 	cal Calendar
-	job user.CronJob
+	job account.CronJob
 }
 
 func setup(t *testing.T) *fixture {
@@ -68,7 +68,7 @@ func setup(t *testing.T) *fixture {
 	t.Cleanup(func() { st.Close() })
 	f := &fixture{t: t, st: st, cal: NewCalendar(time.UTC)}
 	now := time.Now().UTC()
-	f.job, err = f.cal.Job("j", "th", Draft{Name: "hourly", Spec: "@hourly", Prompt: "check the news", Times: nil}, now)
+	f.job, err = f.cal.NewJob("j", "th", Draft{Name: "hourly", Spec: "@hourly", Prompt: "check the news", Times: nil}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func setup(t *testing.T) *fixture {
 		if err := tx.EnsureUser("u"); err != nil {
 			return err
 		}
-		if err := tx.CreateThread(store.Thread{User: "u", Thread: user.Thread{ID: "th", Created: now, Updated: now}}); err != nil {
+		if err := tx.CreateThread(store.Thread{User: "u", Thread: account.Thread{ID: "th", Created: now, Updated: now}}); err != nil {
 			return err
 		}
 		return tx.PutCronJob(f.job)
@@ -91,9 +91,9 @@ func (f *fixture) update(fn func(store.Tx) error) {
 	}
 }
 
-func (f *fixture) stored() user.CronJob {
+func (f *fixture) stored() account.CronJob {
 	f.t.Helper()
-	var j user.CronJob
+	var j account.CronJob
 	if err := f.st.Read(context.Background(), func(r store.Reader) (err error) { j, err = r.CronJob("j"); return err }); err != nil {
 		f.t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func queue(tx store.Tx, thread, prompt, job string) error {
 	return err
 }
 
-func TestADueTaskIsSentAndARunStillWaitingIsSkipped(t *testing.T) {
+func TestADueCronJobIsSentAndARunStillWaitingIsSkipped(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
 	at := f.job.NextRun
@@ -128,7 +128,7 @@ func TestADueTaskIsSentAndARunStillWaitingIsSkipped(t *testing.T) {
 	if len(v.Turns) != 2 {
 		t.Fatalf("the first run is in progress, so the second waits behind it: %d turns", len(v.Turns))
 	}
-	var listed []store.Task
+	var listed []store.CronJobView
 	f.st.Read(ctx, func(r store.Reader) (err error) { listed, err = r.CronJobs("u", ""); return err })
 	if len(listed) != 1 || listed[0].LastTurn != v.Turns[1].ID || listed[0].LastRun == nil || !listed[0].LastRun.Equal(v.Turns[1].QueuedAt) {
 		t.Errorf("the task's last run %+v", listed)

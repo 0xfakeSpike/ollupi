@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/app"
 	"github.com/0xfakeSpike/ollupi/ask"
 	"github.com/0xfakeSpike/ollupi/conversation"
@@ -23,7 +24,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/0xfakeSpike/ollupi/tool"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
-	"github.com/0xfakeSpike/ollupi/user"
 	"github.com/coder/websocket"
 )
 
@@ -479,8 +479,8 @@ type EnvironmentListResult struct {
 }
 
 type EnvironmentAddParams struct {
-	Name string               `json:"name"`
-	Kind user.EnvironmentKind `json:"kind,omitempty"`
+	Name string                  `json:"name"`
+	Kind account.EnvironmentKind `json:"kind,omitempty"`
 }
 
 type EnvironmentRenameParams struct {
@@ -623,8 +623,8 @@ var errorCodes = []struct {
 	{app.ErrNoActiveTurn, errNoActiveTurn},
 	{app.ErrTurnMismatch, errTurnMismatch},
 	{app.ErrNoSuchRequest, errNoSuchRequest},
-	{user.ErrSubagentThread, errSubagentThread},
-	{user.ErrWorkspaceArchived, errWorkspaceArchived},
+	{account.ErrSubagentThread, errSubagentThread},
+	{account.ErrWorkspaceArchived, errWorkspaceArchived},
 	{app.ErrThreadBusy, errThreadBusy},
 	{app.ErrThreadArchived, errThreadArchived},
 	{app.ErrWorkspaceBusy, errThreadBusy},
@@ -637,8 +637,8 @@ var errorCodes = []struct {
 	{app.ErrInvalidPath, jsonrpc.CodeInvalidParams},
 	{app.ErrInvalidQuery, jsonrpc.CodeInvalidParams},
 	{app.ErrSearchTimedOut, errSearchTimedOut},
-	{user.ErrInvalidName, jsonrpc.CodeInvalidParams},
-	{user.ErrInvalidMCPServer, jsonrpc.CodeInvalidParams},
+	{account.ErrInvalidName, jsonrpc.CodeInvalidParams},
+	{account.ErrInvalidMCPServer, jsonrpc.CodeInvalidParams},
 	{policy.ErrInvalidSettings, jsonrpc.CodeInvalidParams},
 	{memory.ErrInvalidChange, jsonrpc.CodeInvalidParams},
 	{kit.ErrUnknownTool, jsonrpc.CodeInvalidParams},
