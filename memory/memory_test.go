@@ -13,7 +13,7 @@ import (
 var base = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 func kept(id string, place Place, topic string, kind Kind, text string) Memory {
-	return Memory{ID: id, User: "u", Scope: place.Scope, Workspace: place.Workspace, Topic: topic, Kind: kind, Text: text, Status: Active,
+	return Memory{ID: id, User: "u", Place: place, Topic: topic, Kind: kind, Text: text, Status: Active,
 		Sources: []Source{{Thread: "old", Item: id}}, Created: base, Updated: base}
 }
 
@@ -24,7 +24,7 @@ func TestRecallShowsGlobalAndLocalNotesThatFit(t *testing.T) {
 	memories := []Memory{
 		kept("g", GlobalPlace, "language", Preference, "Answers in Chinese."),
 		kept("l", w, "build", Fact, "Builds with make."),
-		{ID: "r", Scope: Workspace, Workspace: "w", Topic: "old", Text: "Retired.", Status: Retired},
+		{ID: "r", Place: Place{Scope: Workspace, Workspace: "w"}, Topic: "old", Text: "Retired.", Status: Retired},
 	}
 	r := Recall(memories, w, 2000)
 	if !strings.Contains(r.Text, "Global memories") || !strings.Contains(r.Text, "this conversation's workspace") || len(r.Memories) != 2 {
@@ -89,7 +89,7 @@ func endedTurn(t *testing.T, messages int, size int) conversation.View {
 
 func TestATurnsEvidenceLeavesOutWhatAForgottenNoteWasLearnedFrom(t *testing.T) {
 	v := endedTurn(t, 2, 10)
-	forgotten := Memory{ID: "f", Scope: General, Topic: "x", Status: Forgotten, Sources: []Source{{Thread: "th", Item: "m1"}}}
+	forgotten := Memory{ID: "f", Place: Place{Scope: General}, Topic: "x", Status: Forgotten, Sources: []Source{{Thread: "th", Item: "m1"}}}
 	b := Gather("u", "th", "", v, "t", []Memory{forgotten})
 	var items []string
 	for _, e := range b.Evidence {
@@ -131,7 +131,7 @@ func TestParseKeepsScopesAndRefusesWhatItCannotTrust(t *testing.T) {
 	global := kept("g", GlobalPlace, "language", Preference, "Answers in English.")
 	edited := kept("e", Local("w"), "style", Preference, "Short answers.")
 	edited.UserEdited = true
-	b := Batch{Scope: Workspace, Workspace: "w", Thread: "th", Turn: "t",
+	b := Batch{Place: Place{Scope: Workspace, Workspace: "w"}, Thread: "th", Turn: "t",
 		Evidence: []Evidence{{Source: Source{Thread: "th", Item: "i1"}, Data: []byte(`{}`)}}, Existing: []Memory{global, edited}}
 	op := func(fields, sources string) string {
 		return `{"operations":[{` + fields + `,"sources":[` + sources + `]}]}`
@@ -168,8 +168,8 @@ func TestParseKeepsScopesAndRefusesWhatItCannotTrust(t *testing.T) {
 
 func TestApplyAddsToAKeptTopicAndPlacesNotesByScope(t *testing.T) {
 	local := kept("l", Local("w"), "build", Fact, "Builds with go.")
-	forgotten := Memory{ID: "f", Scope: Workspace, Workspace: "w", Topic: "secret", Status: Forgotten, Sources: []Source{{Thread: "th", Item: "bad"}}}
-	b := Batch{User: "u", Scope: Workspace, Workspace: "w", Existing: []Memory{local, forgotten}}
+	forgotten := Memory{ID: "f", Place: Place{Scope: Workspace, Workspace: "w"}, Topic: "secret", Status: Forgotten, Sources: []Source{{Thread: "th", Item: "bad"}}}
+	b := Batch{User: "u", Place: Place{Scope: Workspace, Workspace: "w"}, Existing: []Memory{local, forgotten}}
 	src := []Source{{Thread: "th", Item: "i1"}}
 	ops := []Operation{
 		{Action: Add, Topic: "build", Kind: Fact, Text: "Builds with make.", Sources: src},
@@ -197,7 +197,7 @@ func TestTheUserMovesEditsAndForgetsNotes(t *testing.T) {
 		t.Fatalf("moved global: %+v %v", g, err)
 	}
 	back, err := Move(g, nil, base)
-	if err != nil || back.Place() != Local("w") || back.Origin != "" {
+	if err != nil || back.Place != Local("w") || back.Origin != "" {
 		t.Fatalf("moved back: %+v %v", back, err)
 	}
 	if _, err := Move(m, []Memory{kept("x", GlobalPlace, "editor", Fact, "")}, base); err == nil {

@@ -176,7 +176,7 @@ func (r *Runner) compact(ctx context.Context, s *step, in prompt.Input) error {
 	}
 	response := uuid.NewString()
 	return r.append(ctx, s.th.ID,
-		conversation.Entry{Turn: s.turn.ID, Body: conversation.ModelResponded{Response: response, Usage: usage(resp), Stats: req.Stats}},
+		conversation.Entry{Turn: s.turn.ID, Body: conversation.ModelResponded{Response: response, Usage: usage(resp), Stats: req.Stats, Compaction: true}},
 		conversation.Entry{Turn: s.turn.ID, Item: uuid.NewString(), Body: conversation.Compacted{Summary: strings.TrimSpace(resp.Message.Content), Through: through, Response: response, Stats: req.Stats}})
 }
 
@@ -203,16 +203,11 @@ func (r *Runner) send(ctx context.Context, s *step, req prompt.Request, tools []
 		messages = append(messages, m)
 	}
 	content, reasoning := s.redactor.Stream(), s.redactor.Stream()
-	emit := func(d llm.Delta) {
-		if onDelta != nil && (d.Content != "" || d.Reasoning != "") {
-			onDelta(d)
-		}
-	}
 	resp, err := client.Chat(ctx, llm.ChatRequest{Model: s.turn.Model, Messages: messages, Tools: tools, ToolChoice: choice,
 		InputTokens: req.Stats.CalibratedTokens}, func(d llm.Delta) {
-		emit(llm.Delta{Content: content.Write(d.Content), Reasoning: reasoning.Write(d.Reasoning)})
+		llm.Emit(onDelta, llm.Delta{Content: content.Write(d.Content), Reasoning: reasoning.Write(d.Reasoning)})
 	})
-	emit(llm.Delta{Content: content.Flush(), Reasoning: reasoning.Flush()})
+	llm.Emit(onDelta, llm.Delta{Content: content.Flush(), Reasoning: reasoning.Flush()})
 	resp.Message.Content = s.redactor.Restore(resp.Message.Content)
 	resp.Message.ReasoningContent = s.redactor.Restore(resp.Message.ReasoningContent)
 	for i := range resp.Message.ToolCalls {

@@ -272,27 +272,19 @@ func blacklisted(c policy.Content, blocked string) bool {
 	for _, entry := range append([]string{c.Match}, c.Parts...) {
 		words := strings.Fields(entry)
 		for i := 0; i+len(want) <= len(words); i++ {
-			match := true
-			for j, w := range want {
-				got := words[i+j]
-				if j == 0 {
-					if !strings.EqualFold(got, programName(w)) && (strings.Contains(w, "/") || !strings.EqualFold(programName(got), programName(w))) {
-						match = false
-						break
-					}
-					continue
-				}
-				if got != w {
-					match = false
-					break
-				}
-			}
-			if match {
+			if startsWith(words[i:], want) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+func startsWith(words, want []string) bool {
+	got, program := words[0], want[0]
+	sameProgram := strings.EqualFold(got, programName(program)) ||
+		!strings.Contains(program, "/") && strings.EqualFold(programName(got), programName(program))
+	return sameProgram && slices.Equal(words[1:len(want)], want[1:])
 }
 
 func isShell(name string) bool {

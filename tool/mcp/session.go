@@ -15,6 +15,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/policy"
 	"github.com/0xfakeSpike/ollupi/tool"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
+	"github.com/0xfakeSpike/ollupi/user"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -32,11 +33,8 @@ type Session struct {
 	down error
 }
 
-func connect(ctx, running context.Context, client *mcp.Client, box sandbox.Box, s Server) (*Session, error) {
-	out := &Session{name: s.Name, timeout: s.Timeout, tools: map[string]*mcp.Tool{}}
-	if out.timeout <= 0 {
-		out.timeout = defaultCallTimeout
-	}
+func connect(ctx, running context.Context, client *mcp.Client, box sandbox.Box, s user.MCPServer) (*Session, error) {
+	out := &Session{name: s.Name, timeout: defaultCallTimeout, tools: map[string]*mcp.Tool{}}
 	var transport mcp.Transport
 	if s.Command != "" {
 		cwd := box.Roots()[0]
@@ -141,10 +139,7 @@ type caller struct {
 }
 
 func (s *Session) Invoke(ctx context.Context, c tool.Call) (kit.Result, error) {
-	t, ok := s.tools[c.Tool]
-	if !ok {
-		return kit.Result{}, fmt.Errorf("mcp: tool %q not exposed by MCP server %q", c.Tool, s.name)
-	}
+	t := s.tools[c.Tool]
 	params := &mcp.CallToolParams{Name: t.Name, Arguments: c.Arguments}
 	if c.Thread != "" {
 		params.Meta = mcp.Meta{metaCaller: caller{ThreadID: c.Thread, WorkspaceID: c.Workspace, Subagent: c.Subagent}}

@@ -15,7 +15,7 @@ import (
 
 func tree(t *testing.T) (s *Sandbox, root, secret string) {
 	t.Helper()
-	base, err := CanonicalPath(t.TempDir(), "")
+	base, err := canonicalPath(t.TempDir(), "")
 	if err != nil {
 		t.Fatal(err)
 	}

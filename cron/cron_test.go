@@ -26,16 +26,16 @@ func TestATaskIsCheckedAndRunsAtItsTimes(t *testing.T) {
 		{"daily", "@every 5m", "p", "descriptor"},
 		{"daily", "0 9 * * *", " ", "prompt"},
 	} {
-		if _, err := cal.Job("j", "th", c.name, c.spec, c.prompt, nil, now); err == nil || !strings.Contains(err.Error(), c.err) {
+		if _, err := cal.Job("j", "th", Draft{Name: c.name, Spec: c.spec, Prompt: c.prompt, Times: nil}, now); err == nil || !strings.Contains(err.Error(), c.err) {
 			t.Errorf("%+v: %v", c, err)
 		}
 	}
 	once := 1
-	if _, err := cal.Job("j", "th", "past", "0 8 1 3 *", "p", &once, now); err == nil || !strings.Contains(err.Error(), "next year") {
+	if _, err := cal.Job("j", "th", Draft{Name: "past", Spec: "0 8 1 3 *", Prompt: "p", Times: &once}, now); err == nil || !strings.Contains(err.Error(), "next year") {
 		t.Errorf("a one-time task whose time has passed: %v", err)
 	}
 	twice := 2
-	job, err := cal.Job("j", "th", "daily", "0 9 * * *", "say hi", &twice, now)
+	job, err := cal.Job("j", "th", Draft{Name: "daily", Spec: "0 9 * * *", Prompt: "say hi", Times: &twice}, now)
 	if err != nil || !job.NextRun.Equal(time.Date(2026, 3, 1, 1, 0, 0, 0, time.UTC)) {
 		t.Fatalf("the first run: %v %v", job.NextRun, err)
 	}
@@ -68,7 +68,7 @@ func setup(t *testing.T) *fixture {
 	t.Cleanup(func() { st.Close() })
 	f := &fixture{t: t, st: st, cal: NewCalendar(time.UTC)}
 	now := time.Now().UTC()
-	f.job, err = f.cal.Job("j", "th", "hourly", "@hourly", "check the news", nil, now)
+	f.job, err = f.cal.Job("j", "th", Draft{Name: "hourly", Spec: "@hourly", Prompt: "check the news", Times: nil}, now)
 	if err != nil {
 		t.Fatal(err)
 	}

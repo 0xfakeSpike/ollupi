@@ -207,7 +207,7 @@ func (c *Conn) enqueue(data []byte) {
 		return
 	}
 	if c.queued > 0 && c.queued+len(data) > maxOutboxBytes {
-		c.closed, c.outbox, c.queued = true, nil, 0
+		c.shutLocked()
 		c.mu.Unlock()
 		go c.ws.Close(websocket.StatusPolicyViolation, "client is not reading fast enough")
 		c.wake()
@@ -217,6 +217,10 @@ func (c *Conn) enqueue(data []byte) {
 	c.queued += len(data)
 	c.mu.Unlock()
 	c.wake()
+}
+
+func (c *Conn) shutLocked() {
+	c.closed, c.outbox, c.queued = true, nil, 0
 }
 
 func (c *Conn) wake() {
@@ -242,7 +246,7 @@ func (c *Conn) write() {
 			if err != nil {
 				c.ws.Close(websocket.StatusInternalError, "write failed")
 				c.mu.Lock()
-				c.closed, c.outbox, c.queued = true, nil, 0
+				c.shutLocked()
 				c.mu.Unlock()
 				closed = true
 				break

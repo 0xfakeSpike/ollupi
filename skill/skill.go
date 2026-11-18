@@ -63,20 +63,7 @@ func Load(root, role string) ([]Skill, error) {
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		return nil, nil
 	}
-	byName, err := scanRole(root, dir)
-	if err != nil {
-		return nil, err
-	}
-	names := make([]string, 0, len(byName))
-	for name := range byName {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	out := make([]Skill, 0, len(names))
-	for _, name := range names {
-		out = append(out, byName[name])
-	}
-	return out, nil
+	return scanRole(root, dir)
 }
 
 func Check(root string, roles []string) error {
@@ -116,37 +103,17 @@ func (skill Skill) Page(resourcePath string, offset, limit int) (ResourcePage, e
 	if resourcePath == "" {
 		return ResourcePage{}, fmt.Errorf("skills: resource path is required")
 	}
-	known := false
-	for _, resource := range skill.Resources {
-		if resource.Path == resourcePath {
-			known = true
-			break
-		}
-	}
-	if !known {
+	exposed := func(r Resource) bool { return r.Path == resourcePath }
+	if !slices.ContainsFunc(skill.Resources, exposed) {
 		return ResourcePage{}, fmt.Errorf("skills: resource %q is not exposed by skill %q", resourcePath, skill.Name)
 	}
 	if limit <= 0 {
 		limit = defaultResourceRunes
 	}
 
-	fullPath, err := safeResourcePath(skill.RootDir, resourcePath)
+	raw, err := readResource(skill.RootDir, resourcePath)
 	if err != nil {
 		return ResourcePage{}, err
-	}
-	info, err := os.Lstat(fullPath)
-	if err != nil {
-		return ResourcePage{}, fmt.Errorf("skills: stat resource %q: %w", resourcePath, err)
-	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return ResourcePage{}, fmt.Errorf("skills: resource %q must be a regular non-symlink file", resourcePath)
-	}
-	if info.Size() > maxReadableResourceB {
-		return ResourcePage{}, fmt.Errorf("skills: resource %q exceeds %d bytes", resourcePath, maxReadableResourceB)
-	}
-	raw, err := os.ReadFile(fullPath)
-	if err != nil {
-		return ResourcePage{}, fmt.Errorf("skills: read resource %q: %w", resourcePath, err)
 	}
 	if !utf8.Valid(raw) {
 		return ResourcePage{}, fmt.Errorf("skills: resource %q is not valid UTF-8", resourcePath)
@@ -177,12 +144,12 @@ type frontmatter struct {
 	Metadata    map[string]any `yaml:"metadata"`
 }
 
-func scanRole(root, dir string) (map[string]Skill, error) {
+func scanRole(root, dir string) ([]Skill, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("skills: read %q: %w", dir, err)
 	}
-	loaded := make(map[string]Skill)
+	var loaded []Skill
 	for _, entry := range entries {
 		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
 			continue
@@ -206,7 +173,7 @@ func scanRole(root, dir string) (map[string]Skill, error) {
 		if skill.Name != entry.Name() {
 			return nil, fmt.Errorf("skills: directory %q must match frontmatter name %q", entry.Name(), skill.Name)
 		}
-		loaded[skill.Name] = skill
+		loaded = append(loaded, skill)
 	}
 	return loaded, nil
 }
@@ -337,31 +304,28 @@ func isReadableResource(name string) bool {
 	}
 }
 
-func safeResourcePath(root, resourcePath string) (string, error) {
-	if filepath.IsAbs(resourcePath) {
-		return "", fmt.Errorf("skills: resource path must be relative")
+func readResource(root, resourcePath string) ([]byte, error) {
+	r, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, fmt.Errorf("skills: open the skill: %w", err)
 	}
-	clean := filepath.Clean(filepath.FromSlash(resourcePath))
-	if clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(os.PathSeparator)) {
-		return "", fmt.Errorf("skills: resource path escapes the skill root")
+	defer r.Close()
+	name := filepath.FromSlash(resourcePath)
+	info, err := r.Lstat(name)
+	if err != nil {
+		return nil, fmt.Errorf("skills: resource %q: %w", resourcePath, err)
 	}
-	fullPath := filepath.Join(root, clean)
-	rel, err := filepath.Rel(root, fullPath)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
-		return "", fmt.Errorf("skills: resource path escapes the skill root")
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("skills: resource %q must be a regular non-symlink file", resourcePath)
 	}
-	current := root
-	for _, part := range strings.Split(clean, string(os.PathSeparator)) {
-		current = filepath.Join(current, part)
-		info, err := os.Lstat(current)
-		if err != nil {
-			return "", fmt.Errorf("skills: stat resource path component %q: %w", part, err)
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			return "", fmt.Errorf("skills: resource path contains symlink component %q", part)
-		}
+	if info.Size() > maxReadableResourceB {
+		return nil, fmt.Errorf("skills: resource %q exceeds %d bytes", resourcePath, maxReadableResourceB)
 	}
-	return fullPath, nil
+	raw, err := r.ReadFile(name)
+	if err != nil {
+		return nil, fmt.Errorf("skills: read resource %q: %w", resourcePath, err)
+	}
+	return raw, nil
 }
 
 func version(metadata map[string]any) string {

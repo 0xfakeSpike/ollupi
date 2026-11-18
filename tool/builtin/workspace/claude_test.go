@@ -30,7 +30,7 @@ func TestClaudeRunsWithItsFlagsInTheUsersMachine(t *testing.T) {
 	}
 	defer r.Close()
 	args := map[string]any{"prompt": " fix the test "}
-	p, err := r.prepareClaude(context.Background(), tool.Caller{}, args)
+	p, err := r.prepareClaude(context.Background(), tool.Call{Tool: ToolClaude, Arguments: args})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func TestClaudeRunsWithItsFlagsInTheUsersMachine(t *testing.T) {
 	if !slices.Equal(p.Args, want) {
 		t.Errorf("args %q, want %q", p.Args, want)
 	}
-	res, err := r.runClaude(context.Background(), tool.Caller{}, args, p)
+	res, err := r.runClaude(context.Background(), tool.Call{Tool: ToolClaude, Arguments: args}, p)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,11 +63,11 @@ func TestClaudeThatCannotAnswerReturnsItsOutput(t *testing.T) {
 	}
 	defer r.Close()
 	args := map[string]any{"prompt": "x"}
-	p, err := r.prepareClaude(context.Background(), tool.Caller{}, args)
+	p, err := r.prepareClaude(context.Background(), tool.Call{Tool: ToolClaude, Arguments: args})
 	if err != nil {
 		t.Fatal(err)
 	}
-	res, err := r.runClaude(context.Background(), tool.Caller{}, args, p)
+	res, err := r.runClaude(context.Background(), tool.Call{Tool: ToolClaude, Arguments: args}, p)
 	if err != nil {
 		t.Fatal(err)
 	}

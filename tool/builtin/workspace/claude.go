@@ -33,7 +33,7 @@ func (r *Provider) claudeTool() kit.Spec {
 			"Write the prompt as a full brief: it does not see this conversation. work_dir defaults to the project root; " +
 			"timeout_sec defaults to " + fmt.Sprint(r.maxTimeoutSec) + ", the most allowed",
 		InputSchema: r.claudeSchema(),
-		Annotations: tool.Annotations{Title: "Claude Code", DestructiveHint: kit.Hint(true), OpenWorldHint: kit.Hint(true)},
+		Annotations: tool.Annotations{Title: "Claude Code", DestructiveHint: new(true), OpenWorldHint: new(true)},
 		Content:     claudePermissionContent,
 		Prepare:     r.locals()[ToolClaude].plan,
 	}
@@ -80,12 +80,12 @@ func claudePermissionContent(_ context.Context, c tool.Call) (policy.Content, er
 	return policy.Content{Text: strings.Join(words, " "), Match: line(words)}, nil
 }
 
-func (r *Provider) prepareClaude(ctx context.Context, caller tool.Caller, args map[string]any) (*Prepared, error) {
-	d, err := r.dirs(ctx, caller)
+func (r *Provider) prepareClaude(ctx context.Context, call tool.Call) (*Prepared, error) {
+	d, err := r.dirs(ctx, call.Caller)
 	if err != nil {
 		return nil, err
 	}
-	t, err := claudeTaskOf(args)
+	t, err := claudeTaskOf(call.Arguments)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func (r *Provider) prepareClaude(ctx context.Context, caller tool.Caller, args m
 	}
 	escalated := d.box.Enforced() && d.box.CanEscalate()
 	p := &Prepared{
-		Cwd: cwd, SettingsDigest: r.settingsDigest(d), ArgumentsDigest: digest(args),
+		Cwd: cwd, SettingsDigest: r.settingsDigest(d), ArgumentsDigest: digest(call.Arguments),
 		Program: program, Args: claudeArgs(t.Prompt), TimeoutSec: cmp.Or(t.TimeoutSec, r.maxTimeoutSec),
 		Sandboxed: d.box.Enforced() && !escalated, Escalated: escalated,
 	}
@@ -118,8 +118,8 @@ type ClaudeOutput struct {
 	WorkDir   string `json:"work_dir"`
 }
 
-func (r *Provider) runClaude(ctx context.Context, caller tool.Caller, args map[string]any, p *Prepared) (kit.Result, error) {
-	res, err := r.execute(ctx, caller, args, p, ToolClaude)
+func (r *Provider) runClaude(ctx context.Context, call tool.Call, p *Prepared) (kit.Result, error) {
+	res, err := r.execute(ctx, call, p, ToolClaude)
 	if err != nil {
 		return kit.Result{}, err
 	}

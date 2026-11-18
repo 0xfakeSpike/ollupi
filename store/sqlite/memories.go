@@ -26,7 +26,7 @@ type memoryRow struct {
 }
 
 func (row memoryRow) memory() (memory.Memory, error) {
-	m := memory.Memory{ID: row.ID, User: row.UserID, Scope: memory.Scope(row.Scope), Workspace: row.WorkspaceID, Origin: row.OriginWorkspaceID,
+	m := memory.Memory{ID: row.ID, User: row.UserID, Place: memory.Place{Scope: memory.Scope(row.Scope), Workspace: row.WorkspaceID}, Origin: row.OriginWorkspaceID,
 		Topic: row.Topic, Kind: memory.Kind(row.Kind), Text: row.Text, Status: memory.Status(row.Status), UserEdited: row.UserEdited,
 		Created: row.CreatedAt, Updated: row.UpdatedAt}
 	if err := json.Unmarshal([]byte(row.Sources), &m.Sources); err != nil {

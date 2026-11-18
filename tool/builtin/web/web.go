@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -30,15 +31,15 @@ const (
 	fetchAccepted = "text/html,application/xhtml+xml,text/plain;q=0.9,application/json;q=0.9,*/*;q=0.1"
 )
 
-type Fetch struct {
+type fetchArgs struct {
 	URL string `json:"url" jsonschema:"The http or https URL to read."`
 }
 
-func (Fetch) Constrain(s *jsonschema.Schema) {
+func (fetchArgs) Constrain(s *jsonschema.Schema) {
 	s.Properties["url"].MinLength = jsonschema.Ptr(1)
 }
 
-type FetchOutput struct {
+type fetchOutput struct {
 	URL          string `json:"url"`
 	RedirectedTo string `json:"redirectedTo,omitempty"`
 	Title        string `json:"title,omitempty"`
@@ -75,15 +76,14 @@ func (p *Provider) Tools(context.Context) ([]kit.Spec, error) {
 		Description: "Read a public web page and return its text; HTML comes back as Markdown-like text with its links. " +
 			"Only http and https on public addresses. A redirect to another host is reported, not followed: fetch the new URL to follow it. " +
 			"For downloads, APIs that need headers or methods other than GET, or local servers, use run_command.",
-		InputSchema: kit.InputSchema[Fetch](),
-		Annotations: tool.Annotations{Title: "Fetch web page", DestructiveHint: kit.Hint(false), OpenWorldHint: kit.Hint(true)},
+		InputSchema: kit.InputSchema[fetchArgs](),
+		Annotations: tool.Annotations{Title: "Fetch web page", DestructiveHint: new(false), OpenWorldHint: new(true)},
 		Content:     permissionContent,
 	}}, nil
 }
 
 func permissionContent(_ context.Context, c tool.Call) (policy.Content, error) {
-	arguments := c.Arguments
-	f, _ := kit.DecodeArguments[Fetch](arguments)
+	f, _ := kit.DecodeArguments[fetchArgs](c.Arguments)
 	u, err := parseURL(f.URL)
 	if err != nil {
 		return policy.Content{}, err
@@ -107,8 +107,7 @@ func parseURL(raw string) (*url.URL, error) {
 }
 
 func (p *Provider) Invoke(ctx context.Context, c tool.Call) (kit.Result, error) {
-	arguments := c.Arguments
-	f, _ := kit.DecodeArguments[Fetch](arguments)
+	f, _ := kit.DecodeArguments[fetchArgs](c.Arguments)
 	out, err := p.fetch(ctx, f.URL)
 	if err != nil {
 		return kit.Result{}, err
@@ -116,14 +115,14 @@ func (p *Provider) Invoke(ctx context.Context, c tool.Call) (kit.Result, error) 
 	return kit.Result{Output: out}, nil
 }
 
-func (p *Provider) fetch(ctx context.Context, raw string) (FetchOutput, error) {
+func (p *Provider) fetch(ctx context.Context, raw string) (fetchOutput, error) {
 	u, err := parseURL(raw)
 	if err != nil {
-		return FetchOutput{}, err
+		return fetchOutput{}, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
-		return FetchOutput{}, fmt.Errorf("web: %w", err)
+		return fetchOutput{}, fmt.Errorf("web: %w", err)
 	}
 	req.Header.Set("User-Agent", "ollupi")
 	req.Header.Set("Accept", fetchAccepted)
@@ -134,23 +133,23 @@ func (p *Provider) fetch(ctx context.Context, raw string) (FetchOutput, error) {
 			err = urlErr.Err
 		}
 		if errors.Is(err, sandbox.ErrLocalAddress) {
-			return FetchOutput{}, fmt.Errorf("web: fetch %s: %w; use run_command to reach it", u.Redacted(), err)
+			return fetchOutput{}, fmt.Errorf("web: fetch %s: %w; use run_command to reach it", u.Redacted(), err)
 		}
-		return FetchOutput{}, fmt.Errorf("web: fetch %s: %w", u.Redacted(), err)
+		return fetchOutput{}, fmt.Errorf("web: fetch %s: %w", u.Redacted(), err)
 	}
 	defer resp.Body.Close()
-	out := FetchOutput{URL: resp.Request.URL.String()}
+	out := fetchOutput{URL: resp.Request.URL.String()}
 	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
 		next, err := resp.Request.URL.Parse(resp.Header.Get("Location"))
 		if err != nil || resp.Header.Get("Location") == "" {
-			return FetchOutput{}, fmt.Errorf("web: %s answered HTTP %d without a usable Location", out.URL, resp.StatusCode)
+			return fetchOutput{}, fmt.Errorf("web: %s answered HTTP %d without a usable Location", out.URL, resp.StatusCode)
 		}
 		out.RedirectedTo = next.String()
 		out.Text = fmt.Sprintf("The page redirects to %s on another host. Fetch that URL to follow it.", out.RedirectedTo)
 		return out, nil
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return FetchOutput{}, fmt.Errorf("web: %s answered HTTP %d", out.URL, resp.StatusCode)
+		return fetchOutput{}, fmt.Errorf("web: %s answered HTTP %d", out.URL, resp.StatusCode)
 	}
 	mediaType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	out.ContentType = mediaType
@@ -158,18 +157,18 @@ func (p *Provider) fetch(ctx context.Context, raw string) (FetchOutput, error) {
 	textual := isHTML || strings.HasPrefix(mediaType, "text/") || mediaType == "" ||
 		mediaType == "application/json" || mediaType == "application/xml" || strings.HasSuffix(mediaType, "+json") || strings.HasSuffix(mediaType, "+xml")
 	if !textual {
-		return FetchOutput{}, fmt.Errorf("web: %s is %s, which web_fetch does not read; use run_command to download it", out.URL, mediaType)
+		return fetchOutput{}, fmt.Errorf("web: %s is %s, which web_fetch does not read; use run_command to download it", out.URL, mediaType)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes+1))
 	if err != nil {
-		return FetchOutput{}, fmt.Errorf("web: read %s: %w", out.URL, err)
+		return fetchOutput{}, fmt.Errorf("web: read %s: %w", out.URL, err)
 	}
 	if len(body) > maxBodyBytes {
-		return FetchOutput{}, fmt.Errorf("web: %s is larger than %d MB; use run_command to download it", out.URL, maxBodyBytes>>20)
+		return fetchOutput{}, fmt.Errorf("web: %s is larger than %d MB; use run_command to download it", out.URL, maxBodyBytes>>20)
 	}
-	decoded, err := charset.NewReader(strings.NewReader(string(body)), resp.Header.Get("Content-Type"))
+	decoded, err := charset.NewReader(bytes.NewReader(body), resp.Header.Get("Content-Type"))
 	if err != nil {
-		return FetchOutput{}, fmt.Errorf("web: decode %s: %w", out.URL, err)
+		return fetchOutput{}, fmt.Errorf("web: decode %s: %w", out.URL, err)
 	}
 	if isHTML {
 		out.Title, out.Text, err = htmlText(decoded, resp.Request.URL)
@@ -179,7 +178,7 @@ func (p *Provider) fetch(ctx context.Context, raw string) (FetchOutput, error) {
 		out.Text = strings.TrimSpace(strings.ToValidUTF8(string(b), "�"))
 	}
 	if err != nil {
-		return FetchOutput{}, fmt.Errorf("web: read %s: %w", out.URL, err)
+		return fetchOutput{}, fmt.Errorf("web: read %s: %w", out.URL, err)
 	}
 	if utf8.RuneCountInString(out.Text) > maxTextRunes {
 		out.Text, out.Truncated = string([]rune(out.Text)[:maxTextRunes]), true

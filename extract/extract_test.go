@@ -150,7 +150,7 @@ func TestTheUsersEditMeanwhileComesFirst(t *testing.T) {
 	x, st := setup(t, m)
 	converse(t, st, "u", "th")
 	now := time.Now().UTC().Add(-time.Hour)
-	kept := memory.Memory{ID: "k", User: "u", Scope: memory.General, Topic: "editor", Kind: memory.Preference, Text: "Uses emacs.",
+	kept := memory.Memory{ID: "k", User: "u", Place: memory.Place{Scope: memory.General}, Topic: "editor", Kind: memory.Preference, Text: "Uses emacs.",
 		Status: memory.Active, Sources: []memory.Source{{Thread: "th", Item: "m1"}}, Created: now, Updated: now}
 	update(t, st, func(tx store.Tx) error { return tx.PutMemory(kept) })
 	m.answer = func(string) (string, error) {

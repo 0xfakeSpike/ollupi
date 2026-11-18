@@ -87,11 +87,11 @@ func TestFileTools(t *testing.T) {
 	}
 	ctx, caller := context.Background(), tool.Caller{Root: root}
 	run := func(name string, args map[string]any) (kit.Result, *Prepared, error) {
-		p, err := r.locals()[name].prepare(ctx, caller, args)
+		p, err := r.locals()[name].prepare(ctx, tool.Call{Caller: caller, Tool: name, Arguments: args})
 		if err != nil {
 			return kit.Result{}, nil, err
 		}
-		res, err := r.locals()[name].run(ctx, caller, args, p)
+		res, err := r.locals()[name].run(ctx, tool.Call{Caller: caller, Tool: name, Arguments: args}, p)
 		return res, p, err
 	}
 
@@ -103,12 +103,12 @@ func TestFileTools(t *testing.T) {
 	if err != nil || content.Match != "src/a.go" || !strings.Contains(content.Text, "+package b") {
 		t.Fatalf("content %+v: %v", content, err)
 	}
-	p, err := r.locals()[ToolEditFile].prepare(ctx, caller, args)
+	p, err := r.locals()[ToolEditFile].prepare(ctx, tool.Call{Caller: caller, Tool: ToolEditFile, Arguments: args})
 	if err != nil {
 		t.Fatal(err)
 	}
 	os.WriteFile(filepath.Join(root, "src/a.go"), []byte("package a\n// changed\n"), 0o644)
-	if _, err := r.locals()[ToolEditFile].run(ctx, caller, args, p); err == nil || !strings.Contains(err.Error(), "changed after") {
+	if _, err := r.locals()[ToolEditFile].run(ctx, tool.Call{Caller: caller, Tool: ToolEditFile, Arguments: args}, p); err == nil || !strings.Contains(err.Error(), "changed after") {
 		t.Errorf("edit of a changed file: %v", err)
 	}
 	if res, _, err := run(ToolEditFile, args); err != nil || res.Output.(FileOutput).Added != 1 {

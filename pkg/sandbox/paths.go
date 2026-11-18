@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-func CanonicalPath(path, home string) (string, error) {
+func canonicalPath(path, home string) (string, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return "", fmt.Errorf("sandbox: empty path")

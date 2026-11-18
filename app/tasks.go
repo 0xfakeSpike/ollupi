@@ -33,9 +33,9 @@ func (a *App) inThread(ctx context.Context, u, thread string, change func(store.
 	})
 }
 
-func (a *App) CreateCronJob(ctx context.Context, u, thread, name, spec, prompt string, times *int) (task store.Task, err error) {
+func (a *App) CreateCronJob(ctx context.Context, u, thread string, d cron.Draft) (task store.Task, err error) {
 	err = a.inThread(ctx, u, thread, func(tx store.Tx, th store.Thread) (err error) {
-		task, err = cron.Create(tx, a.cal, th, name, spec, prompt, times, time.Now().UTC())
+		task, err = cron.Create(tx, a.cal, th, d, time.Now().UTC())
 		return err
 	})
 	return task, err

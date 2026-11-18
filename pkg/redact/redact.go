@@ -54,12 +54,12 @@ var detectors = []detector{
 
 type Redactor struct {
 	key     []byte
-	reverse map[string]string
+	reverse map[string]original
 	masked  map[string]string
 }
 
 func New(key string) *Redactor {
-	return &Redactor{key: []byte(key), reverse: map[string]string{}, masked: map[string]string{}}
+	return &Redactor{key: []byte(key), reverse: map[string]original{}, masked: map[string]string{}}
 }
 
 func (r *Redactor) Mask(s string) string {
@@ -95,33 +95,43 @@ func (r *Redactor) RestoreJSON(s string) string {
 	return r.restore(s, true)
 }
 
+type original struct {
+	value, plain, json string
+}
+
+func originalOf(value string) original {
+	quoted, _ := json.Marshal(value)
+	o := original{value: value, plain: value, json: string(quoted[1 : len(quoted)-1])}
+	if strings.Contains(value, "\\") {
+		o.json = value
+		var plain string
+		if json.Unmarshal([]byte(`"`+value+`"`), &plain) == nil {
+			o.plain = plain
+		}
+	}
+	return o
+}
+
+var placeholders = regexp.MustCompile(`<[A-Z]+:[0-9a-f]{8,64}>|\\u003c[A-Z]+:[0-9a-f]{8,64}\\u003e`)
+
 func (r *Redactor) restore(s string, inJSON bool) string {
 	if len(r.reverse) == 0 || !strings.ContainsAny(s, "<\\") {
 		return s
 	}
-	for placeholder, value := range r.reverse {
-		quoted, _ := json.Marshal(value)
-		escapedValue := string(quoted[1 : len(quoted)-1])
-		if strings.Contains(value, "\\") {
-			escapedValue = value
-			var plain string
-			if json.Unmarshal([]byte(`"`+value+`"`), &plain) == nil {
-				value = plain
-			}
+	return placeholders.ReplaceAllStringFunc(s, func(match string) string {
+		key, escaped := match, strings.HasPrefix(match, `\u003c`)
+		if escaped {
+			key = "<" + match[len(`\u003c`):len(match)-len(`\u003e`)] + ">"
 		}
-		if strings.Contains(s, placeholder) {
-			if inJSON {
-				s = strings.ReplaceAll(s, placeholder, escapedValue)
-			} else {
-				s = strings.ReplaceAll(s, placeholder, value)
-			}
+		o, ok := r.reverse[key]
+		switch {
+		case !ok:
+			return match
+		case escaped || inJSON:
+			return o.json
 		}
-		escaped := `\u003c` + placeholder[1:len(placeholder)-1] + `\u003e`
-		if strings.Contains(s, escaped) {
-			s = strings.ReplaceAll(s, escaped, escapedValue)
-		}
-	}
-	return s
+		return o.plain
+	})
 }
 
 const maxPlaceholderLen = 64
@@ -229,8 +239,8 @@ func (r *Redactor) placeholder(cat category, value string) string {
 	hexSum := hex.EncodeToString(mac.Sum(nil))
 	for n := 8; ; n += 4 {
 		p := fmt.Sprintf("<%s:%s>", cat, hexSum[:n])
-		if existing, ok := r.reverse[p]; !ok || existing == value {
-			r.reverse[p] = value
+		if existing, ok := r.reverse[p]; !ok || existing.value == value {
+			r.reverse[p] = originalOf(value)
 			return p
 		}
 	}

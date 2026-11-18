@@ -3,6 +3,7 @@ package sandbox
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"runtime"
@@ -52,7 +53,7 @@ func defaultSeatbeltSupported() error {
 	return nil
 }
 
-func ResolveMode(mode string) (Mode, error) {
+func resolveMode(mode string) (Mode, error) {
 	m := ModeWorkspaceWrite
 	if mode != "" {
 		var err error
@@ -71,7 +72,7 @@ func ResolveMode(mode string) (Mode, error) {
 type Sandbox struct {
 	home           string
 	policy         policy
-	domains        DomainRules
+	rules          compiledRules
 	envPassthrough []string
 	maxOutputBytes int
 	denials        *denialLog
@@ -82,7 +83,7 @@ func New(c Config) (*Sandbox, error) {
 	if len(c.Roots) == 0 {
 		return nil, fmt.Errorf("sandbox: at least one command directory is required")
 	}
-	mode, err := ResolveMode(c.Mode)
+	mode, err := resolveMode(c.Mode)
 	if err != nil {
 		return nil, err
 	}
@@ -106,13 +107,13 @@ func New(c Config) (*Sandbox, error) {
 	if err != nil {
 		return nil, fmt.Errorf("sandbox: the rules name folders in the home directory: %w", err)
 	}
-	if home, err = CanonicalPath(home, ""); err != nil {
+	if home, err = canonicalPath(home, ""); err != nil {
 		return nil, err
 	}
 	canonical := func(what string, paths []string) ([]string, error) {
 		out := make([]string, 0, len(paths))
 		for _, path := range paths {
-			p, err := CanonicalPath(path, home)
+			p, err := canonicalPath(path, home)
 			if err != nil {
 				return nil, fmt.Errorf("sandbox: %s: %w", what, err)
 			}
@@ -152,14 +153,11 @@ func New(c Config) (*Sandbox, error) {
 			return nil, err
 		}
 	}
-	var domains DomainRules
-	if domains.Allowed, err = ParseDomains(c.Domains.Allowed); err != nil {
+	rules, err := compileRules(c.Domains)
+	if err != nil {
 		return nil, err
 	}
-	if domains.Denied, err = ParseDomains(c.Domains.Denied); err != nil {
-		return nil, err
-	}
-	if len(domains.Allowed) == 0 && len(domains.Denied) > 0 {
+	if len(rules.allow) == 0 && len(rules.deny) > 0 {
 		return nil, fmt.Errorf("sandbox: denied_domains needs allowed_domains; without it the network is either off or open")
 	}
 	s := &Sandbox{
@@ -169,15 +167,20 @@ func New(c Config) (*Sandbox, error) {
 			DenyRead: denyRead, ReadOnly: readOnly, UnixSockets: sockets,
 			ProtectedNames: append(append([]string(nil), defaultProtectedNames...), c.ProtectedNames...),
 		},
-		domains:        domains,
+		rules:          rules,
 		envPassthrough: append([]string(nil), c.EnvPassthrough...),
 		maxOutputBytes: c.MaxOutputBytes,
 		envMarker:      c.EnvMarker,
 	}
-	if err := s.policy.Validate(); err != nil {
-		return nil, err
+	if mode == ModeWorkspaceWrite && len(roots) == 0 {
+		return nil, fmt.Errorf("sandbox: %s needs at least one writable root", ModeWorkspaceWrite)
 	}
-	if s.maxOutputBytes == 0 {
+	for _, name := range c.ProtectedNames {
+		if err := validProtectedName(name); err != nil {
+			return nil, err
+		}
+	}
+	if s.maxOutputBytes <= 0 {
 		s.maxOutputBytes = defaultMaxOutputBytes
 	}
 	if mode != ModeFullAccess && runtime.GOOS == "darwin" {
@@ -203,7 +206,7 @@ func (s *Sandbox) runMarker() string {
 	return s.envMarker + "_RUN_ID"
 }
 
-func (s *Sandbox) proxied() bool { return s.policy.Network && len(s.domains.Allowed) > 0 }
+func (s *Sandbox) proxied() bool { return s.policy.Network && len(s.rules.allow) > 0 }
 
 func (s *Sandbox) Enforced() bool { return s.policy.Mode != ModeFullAccess }
 
@@ -215,7 +218,7 @@ func (s *Sandbox) Fingerprint() any {
 		Domains        DomainRules
 		EnvPassthrough []string
 		MaxOutputBytes int
-	}{s.policy, s.domains, s.envPassthrough, s.maxOutputBytes}
+	}{s.policy, s.rules.named(), s.envPassthrough, s.maxOutputBytes}
 }
 
 func (s *Sandbox) Summary() string {
@@ -234,7 +237,7 @@ func (s *Sandbox) Summary() string {
 	}
 	switch {
 	case s.proxied():
-		allowed := strings.Join(s.domains.Allowed, ", ")
+		allowed := strings.Join(s.rules.named().Allowed, ", ")
 		if len(allowed) > 300 {
 			allowed = allowed[:300] + ", ..."
 		}
@@ -263,7 +266,7 @@ func (s *Sandbox) commandRoots(c Command) ([]string, error) {
 		return s.policy.WritableRoots, nil
 	}
 	for _, root := range c.Roots {
-		canonical, err := CanonicalPath(root, s.home)
+		canonical, err := canonicalPath(root, s.home)
 		if err != nil {
 			return nil, err
 		}
@@ -327,6 +330,7 @@ func (s *Sandbox) command(ctx context.Context, c Command) (*exec.Cmd, *proxy, st
 	policy := s.policy
 	policy.WritableRoots = roots
 	env := map[string]string{}
+	maps.Copy(env, c.Env)
 	if s.envMarker != "" {
 		env[s.envMarker] = "seatbelt"
 		if !policy.Network {
@@ -335,14 +339,11 @@ func (s *Sandbox) command(ctx context.Context, c Command) (*exec.Cmd, *proxy, st
 	}
 	var px *proxy
 	if s.proxied() {
-		if px, err = startProxy(s.domains); err != nil {
+		if px, err = startProxy(s.rules); err != nil {
 			return nil, nil, "", err
 		}
 		policy.ProxyPort = px.port()
-		for k, v := range px.env() {
-			env[k] = v
-		}
-
+		maps.Copy(env, px.env())
 		if own := c.Env["JAVA_TOOL_OPTIONS"]; own != "" {
 			env["JAVA_TOOL_OPTIONS"] = own + " " + env["JAVA_TOOL_OPTIONS"]
 		}
@@ -362,15 +363,8 @@ func (s *Sandbox) command(ctx context.Context, c Command) (*exec.Cmd, *proxy, st
 		return nil, nil, "", err
 	}
 
-	merged := make(map[string]string, len(c.Env)+len(env))
-	for k, v := range c.Env {
-		merged[k] = v
-	}
-	for k, v := range env {
-		merged[k] = v
-	}
 	cmd := exec.CommandContext(ctx, seatbeltExecutable, args...)
 	cmd.Dir = c.Cwd
-	cmd.Env = environ(os.Environ(), s.envPassthrough, merged)
+	cmd.Env = environ(os.Environ(), s.envPassthrough, env)
 	return cmd, px, tagID, nil
 }

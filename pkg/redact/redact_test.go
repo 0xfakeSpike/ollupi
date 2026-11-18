@@ -93,3 +93,18 @@ func TestCutsKeepASensitiveValueWholeOrNotAtAll(t *testing.T) {
 		t.Errorf("cuts at %d and %d, want at the key's start %d and end %d", head, tail, len("before "), len("before ")+len(key))
 	}
 }
+
+func TestAPlaceholderComesBackInTheFormItWasWrittenIn(t *testing.T) {
+	r := New("k1")
+	masked := r.Mask(`token sk-ant-abcdefghijklmnopqrstuvwx"y and a@example.com`)
+	mail := masked[strings.LastIndex(masked, "<"):]
+	escaped := `<` + mail[1:len(mail)-1] + `>`
+	if got := r.Restore("to " + mail + " and " + escaped + " and <EMAIL:00000000>"); got != "to a@example.com and a@example.com and <EMAIL:00000000>" {
+		t.Errorf("plain: %q", got)
+	}
+	secret := masked[strings.Index(masked, "<") : strings.Index(masked, ">")+1]
+	plain, inJSON := r.Restore(secret), r.RestoreJSON(`{"t":"`+secret+`"}`)
+	if !strings.HasPrefix(plain, "sk-ant-") || !strings.Contains(inJSON, `\"`) && strings.Contains(plain, `"`) {
+		t.Errorf("a secret restored as %q, and in JSON as %q", plain, inJSON)
+	}
+}

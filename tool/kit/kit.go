@@ -38,8 +38,6 @@ type Result struct {
 	Launch    *tool.Launch
 }
 
-func Hint(v bool) *bool { return &v }
-
 var (
 	ErrUnknownTool      = errors.New("unknown tool")
 	ErrInvalidArguments = errors.New("invalid arguments")
@@ -85,11 +83,7 @@ func New(ctx context.Context, unavailable []string, providers ...Provider) (*Reg
 			if prev, ok := r.tools[s.Name]; ok {
 				return nil, fmt.Errorf("tool registry: tool %q twice (providers %q and %q)", s.Name, prev.owner, id)
 			}
-			resolved, err := ResolveSchema(s.InputSchema)
-			if err != nil {
-				return nil, fmt.Errorf("tool registry: tool %q: %w", s.Name, err)
-			}
-			schema, err := normalizeInputSchema(s.InputSchema)
+			resolved, schema, err := schemas(s.InputSchema)
 			if err != nil {
 				return nil, fmt.Errorf("tool registry: tool %q: %w", s.Name, err)
 			}
@@ -222,7 +216,7 @@ func (introspection) Name() (string, string) {
 }
 
 func (introspection) Tools(context.Context) ([]Spec, error) {
-	readCatalog := tool.Annotations{ReadOnlyHint: true, OpenWorldHint: Hint(false)}
+	readCatalog := tool.Annotations{ReadOnlyHint: true, OpenWorldHint: new(false)}
 	return []Spec{
 		{
 			Name: ListProvidersTool, Annotations: readCatalog,

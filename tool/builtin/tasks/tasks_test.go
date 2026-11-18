@@ -34,22 +34,22 @@ func TestATaskMadeInAConversationIsListedPausedAndDeleted(t *testing.T) {
 		r, err := p.Invoke(ctx, tool.Call{Caller: tool.Caller{User: "u", Thread: "th"}, Tool: name, Arguments: args})
 		return r.Output, err
 	}
-	if _, err := call(CreateTool, map[string]any{"name": "daily", "spec": "@daily", "prompt": "read the news"}); err != nil {
+	if _, err := call(createTool, map[string]any{"name": "daily", "spec": "@daily", "prompt": "read the news"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := call(CreateTool, map[string]any{"name": "daily", "spec": "@hourly", "prompt": "again"}); err == nil {
+	if _, err := call(createTool, map[string]any{"name": "daily", "spec": "@hourly", "prompt": "again"}); err == nil {
 		t.Error("a second task of the same name")
 	}
-	if out, err := call(PauseTool, map[string]any{"name": "daily", "paused": true}); err != nil || !out.(job).Paused {
+	if out, err := call(pauseTool, map[string]any{"name": "daily", "paused": true}); err != nil || !out.(job).Paused {
 		t.Errorf("paused %+v, %v", out, err)
 	}
-	if out, _ := call(ListTool, map[string]any{}); len(out.(map[string]any)["jobs"].([]job)) != 1 {
+	if out, _ := call(listTool, map[string]any{}); len(out.(map[string]any)["jobs"].([]job)) != 1 {
 		t.Errorf("listed %+v", out)
 	}
-	if _, err := call(DeleteTool, map[string]any{"name": "daily"}); err != nil {
+	if _, err := call(deleteTool, map[string]any{"name": "daily"}); err != nil {
 		t.Fatal(err)
 	}
-	if out, _ := call(ListTool, map[string]any{}); len(out.(map[string]any)["jobs"].([]job)) != 0 {
+	if out, _ := call(listTool, map[string]any{}); len(out.(map[string]any)["jobs"].([]job)) != 0 {
 		t.Errorf("left %+v", out)
 	}
 }
