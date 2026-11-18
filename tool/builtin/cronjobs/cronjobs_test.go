@@ -1,4 +1,4 @@
-package tasks
+package cronjobs
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/user"
 )
 
-func TestATaskMadeInAConversationIsListedPausedAndDeleted(t *testing.T) {
+func TestACronJobMadeInAConversationIsListedPausedAndDeleted(t *testing.T) {
 	ctx := context.Background()
 	st, err := sqlite.Open(t.TempDir())
 	if err != nil {
@@ -40,16 +40,16 @@ func TestATaskMadeInAConversationIsListedPausedAndDeleted(t *testing.T) {
 	if _, err := call(createTool, map[string]any{"name": "daily", "spec": "@hourly", "prompt": "again"}); err == nil {
 		t.Error("a second task of the same name")
 	}
-	if out, err := call(pauseTool, map[string]any{"name": "daily", "paused": true}); err != nil || !out.(job).Paused {
+	if out, err := call(pauseTool, map[string]any{"name": "daily", "paused": true}); err != nil || !out.(listedJob).Paused {
 		t.Errorf("paused %+v, %v", out, err)
 	}
-	if out, _ := call(listTool, map[string]any{}); len(out.(map[string]any)["jobs"].([]job)) != 1 {
+	if out, _ := call(listTool, map[string]any{}); len(out.(map[string]any)["jobs"].([]listedJob)) != 1 {
 		t.Errorf("listed %+v", out)
 	}
 	if _, err := call(deleteTool, map[string]any{"name": "daily"}); err != nil {
 		t.Fatal(err)
 	}
-	if out, _ := call(listTool, map[string]any{}); len(out.(map[string]any)["jobs"].([]job)) != 0 {
+	if out, _ := call(listTool, map[string]any{}); len(out.(map[string]any)["jobs"].([]listedJob)) != 0 {
 		t.Errorf("left %+v", out)
 	}
 }

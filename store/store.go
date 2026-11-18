@@ -33,7 +33,7 @@ type Reader interface {
 	EnvironmentInUse(user, id string) (bool, error)
 	WorkspaceBusy(user, id string) (bool, error)
 	MCPServers(user string) ([]user.MCPServer, error)
-	CronJobs(user, thread string) ([]Task, error)
+	CronJobs(user, thread string) ([]CronJobView, error)
 	CronJob(id string) (user.CronJob, error)
 	Due(now time.Time) ([]user.CronJob, error)
 	Threads(user string, f ThreadFilter) (threads []Thread, more bool, err error)
@@ -109,7 +109,7 @@ type Owned struct {
 	EnvironmentDeleted string
 	MCPServer          *user.MCPServer
 	MCPServerDeleted   string
-	CronJob            *Task
+	CronJob            *CronJobView
 	CronJobDeleted     string
 	Memory             *memory.Memory
 }
@@ -146,10 +146,10 @@ type ThreadCursor struct {
 type Found struct {
 	Threads  []Thread
 	Messages []Hit
-	Tasks    []Task
+	CronJobs []CronJobView
 }
 
-type Task struct {
+type CronJobView struct {
 	user.CronJob
 	Title     string
 	Workspace string

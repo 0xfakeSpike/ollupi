@@ -210,7 +210,7 @@ type CronJobRow struct {
 	LastRunAt      *time.Time `json:"lastRunAt,omitempty"`
 }
 
-func cronJobRow(j store.Task) CronJobRow {
+func cronJobRow(j store.CronJobView) CronJobRow {
 	return CronJobRow{ID: j.ID, ThreadID: j.Thread, Name: j.Name, Spec: j.Spec, Prompt: j.Prompt, Times: j.Times, Runs: j.Runs,
 		Paused: j.Paused, NextRunAt: j.NextRun, CreatedAt: j.Created, ThreadTitle: j.Title, WorkspaceID: j.Workspace,
 		ThreadArchived: j.Archived, LastTurnID: j.LastTurn, LastRunAt: j.LastRun}
@@ -285,7 +285,7 @@ type MessageHit struct {
 type Found struct {
 	Threads  []ThreadRow  `json:"threads"`
 	Messages []MessageHit `json:"messages"`
-	Tasks    []CronJobRow `json:"tasks"`
+	CronJobs []CronJobRow `json:"tasks"`
 }
 
 func found(f store.Found) Found {
@@ -293,7 +293,7 @@ func found(f store.Found) Found {
 	for i, h := range f.Messages {
 		messages[i] = MessageHit{ThreadID: h.Thread, Title: h.Title, ItemID: h.Item, TurnID: h.Turn, Seq: h.Seq, Type: h.Kind, Snippet: h.Snippet, At: h.At}
 	}
-	return Found{Threads: each(f.Threads, threadRow), Messages: messages, Tasks: each(f.Tasks, cronJobRow)}
+	return Found{Threads: each(f.Threads, threadRow), Messages: messages, CronJobs: each(f.CronJobs, cronJobRow)}
 }
 
 func each[T, U any](rows []T, convert func(T) U) []U {

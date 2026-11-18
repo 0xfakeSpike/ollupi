@@ -106,7 +106,7 @@ var arrays = []field{
 	{reflect.TypeFor[MemoryListResult](), "Data"},
 	{reflect.TypeFor[Found](), "Threads"},
 	{reflect.TypeFor[Found](), "Messages"},
-	{reflect.TypeFor[Found](), "Tasks"},
+	{reflect.TypeFor[Found](), "CronJobs"},
 	{reflect.TypeFor[conversation.MemoryStats](), "IDs"},
 	{reflect.TypeFor[plan.Plan](), "Steps"},
 	{reflect.TypeFor[ask.Request](), "Questions"},

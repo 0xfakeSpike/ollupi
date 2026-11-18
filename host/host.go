@@ -27,13 +27,13 @@ import (
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/0xfakeSpike/ollupi/store/sqlite"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/ask"
+	"github.com/0xfakeSpike/ollupi/tool/builtin/cronjobs"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/loader"
 	memorytool "github.com/0xfakeSpike/ollupi/tool/builtin/memory"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/outputs"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/plan"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/skills"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/subagent"
-	"github.com/0xfakeSpike/ollupi/tool/builtin/tasks"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
 	"github.com/0xfakeSpike/ollupi/tool/mcp"
 	"golang.org/x/sync/errgroup"
@@ -110,7 +110,7 @@ func New(ctx context.Context, cfg Config) (*Host, error) {
 	if cfg.SkillsDir != "" {
 		builtins = append(builtins, skills.New(cfg.SkillsDir))
 	}
-	builtins = append(builtins, tasks.New(st, h.cal))
+	builtins = append(builtins, cronjobs.New(st, h.cal))
 	h.Users = mcp.NewUsers(ctx, mcp.Client{Name: cfg.Name, Version: version()}, st, cfg.Boxes, builtins...)
 	h.App = app.New(st, modelSet, h.Users.Tools, h.Users.Statuses, cfg.Boxes, files, h.cal, cfg.Permissions)
 	runner := run.New(st, modelSet, h.Users.Tools, files, skillsOf(cfg.SkillsDir),

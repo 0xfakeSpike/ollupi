@@ -16,7 +16,7 @@ import (
 
 var shanghai, _ = time.LoadLocation("Asia/Shanghai")
 
-func TestATaskIsCheckedAndRunsAtItsTimes(t *testing.T) {
+func TestACronJobIsCheckedAndRunsAtItsTimes(t *testing.T) {
 	cal := NewCalendar(shanghai)
 	now := time.Date(2026, 3, 1, 0, 30, 0, 0, time.UTC)
 	for _, c := range []struct{ name, spec, prompt, err string }{
@@ -107,7 +107,7 @@ func queue(tx store.Tx, thread, prompt, job string) error {
 	return err
 }
 
-func TestADueTaskIsSentAndARunStillWaitingIsSkipped(t *testing.T) {
+func TestADueCronJobIsSentAndARunStillWaitingIsSkipped(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
 	at := f.job.NextRun
@@ -128,7 +128,7 @@ func TestADueTaskIsSentAndARunStillWaitingIsSkipped(t *testing.T) {
 	if len(v.Turns) != 2 {
 		t.Fatalf("the first run is in progress, so the second waits behind it: %d turns", len(v.Turns))
 	}
-	var listed []store.Task
+	var listed []store.CronJobView
 	f.st.Read(ctx, func(r store.Reader) (err error) { listed, err = r.CronJobs("u", ""); return err })
 	if len(listed) != 1 || listed[0].LastTurn != v.Turns[1].ID || listed[0].LastRun == nil || !listed[0].LastRun.Equal(v.Turns[1].QueuedAt) {
 		t.Errorf("the task's last run %+v", listed)
