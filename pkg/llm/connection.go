@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	DefaultCalls = 4
+	defaultCalls = 4
 	retries      = 8
 )
 
@@ -26,7 +26,7 @@ type connection struct {
 
 func newConnection(calls int, limits map[string]Limits) connection {
 	if calls <= 0 {
-		calls = DefaultCalls
+		calls = defaultCalls
 	}
 	return connection{limits: maps.Clone(limits), calls: make(chan struct{}, calls)}
 }

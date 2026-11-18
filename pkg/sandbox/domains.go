@@ -17,20 +17,11 @@ type domainEntry struct {
 	port int
 }
 
-func ParseDomains(entries []string) ([]string, error) {
-	out := make([]string, 0, len(entries))
-	for _, raw := range entries {
-		e, err := parseDomainEntry(raw)
-		if err != nil {
-			return nil, err
-		}
-		s := e.host
-		if e.port != 0 {
-			s = net.JoinHostPort(e.host, strconv.Itoa(e.port))
-		}
-		out = append(out, s)
+func (e domainEntry) String() string {
+	if e.port == 0 {
+		return e.host
 	}
-	return out, nil
+	return net.JoinHostPort(e.host, strconv.Itoa(e.port))
 }
 
 func parseDomainEntry(raw string) (domainEntry, error) {
@@ -94,6 +85,17 @@ func compileRules(r DomainRules) (compiledRules, error) {
 		return compiledRules{}, err
 	}
 	return compiledRules{allow: allow, deny: deny}, nil
+}
+
+func (c compiledRules) named() DomainRules {
+	out := DomainRules{Allowed: []string{}, Denied: []string{}}
+	for _, e := range c.allow {
+		out.Allowed = append(out.Allowed, e.String())
+	}
+	for _, e := range c.deny {
+		out.Denied = append(out.Denied, e.String())
+	}
+	return out
 }
 
 func parseDomainEntries(raws []string) ([]domainEntry, error) {

@@ -95,7 +95,7 @@ func (s *Sandbox) Move(_ context.Context, from, to string) error {
 }
 
 func (s *Sandbox) Canonical(_ context.Context, path string) (string, error) {
-	return CanonicalPath(path, "")
+	return canonicalPath(path, "")
 }
 
 func (s *Sandbox) Directory(_ context.Context, path string) (string, error) {

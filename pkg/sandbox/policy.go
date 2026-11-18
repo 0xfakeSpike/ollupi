@@ -36,36 +36,6 @@ type policy struct {
 	LogTag         string
 }
 
-func (p policy) Validate() error {
-	if _, err := parseMode(string(p.Mode)); err != nil {
-		return err
-	}
-	if p.Mode == ModeWorkspaceWrite && len(p.WritableRoots) == 0 {
-		return fmt.Errorf("sandbox: %s needs at least one writable root", ModeWorkspaceWrite)
-	}
-	if p.ProxyPort < 0 || p.ProxyPort > 65535 || p.ProxyPort != 0 && !p.Network {
-		return fmt.Errorf("sandbox: invalid proxy port %d", p.ProxyPort)
-	}
-	for _, r := range p.LogTag {
-		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_') {
-			return fmt.Errorf("sandbox: invalid log tag %q", p.LogTag)
-		}
-	}
-	for _, name := range p.ProtectedNames {
-		if err := validProtectedName(name); err != nil {
-			return err
-		}
-	}
-	for _, list := range [][]string{p.WritableRoots, p.ExtraWritable, p.DenyRead, p.ReadOnly, p.UnixSockets} {
-		for _, path := range list {
-			if !filepath.IsAbs(path) || filepath.Clean(path) != path {
-				return fmt.Errorf("sandbox: path %q must be absolute and clean", path)
-			}
-		}
-	}
-	return nil
-}
-
 func validateRoot(root, home string) error {
 	if root == "/" {
 		return fmt.Errorf("sandbox: / cannot be a command directory")

@@ -35,16 +35,16 @@ func writeUnixSocketAllows(b *strings.Builder, sockets []string) error {
 	return nil
 }
 
-func rootRule(op, root, pattern string, fileOnly bool, message string) string {
+func rootRule(action, root, pattern, message string) string {
 	prefix := "/"
 	if quoted, err := seatbeltRegexQuote(root); err == nil {
 		prefix = "^" + caseless(quoted) + "/(.*/)?"
 	}
-	filter := "(regex #\"" + prefix + caselessPattern(pattern) + "\")"
-	if fileOnly {
-		filter = "(require-all (vnode-type REGULAR-FILE) " + filter + ")"
-	}
-	return "(deny " + op + " " + filter + message + ")"
+	return "(" + action + " file-write* (regex #\"" + prefix + caselessPattern(pattern) + "\")" + message + ")"
+}
+
+func letterClass(r rune) string {
+	return "[" + strings.ToLower(string(r)) + strings.ToUpper(string(r)) + "]"
 }
 
 func caseless(quoted string) string {
@@ -59,8 +59,7 @@ func caseless(quoted string) string {
 			b.WriteRune(r)
 			escaped = true
 		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z':
-			lower, upper := strings.ToLower(string(r)), strings.ToUpper(string(r))
-			b.WriteString("[" + lower + upper + "]")
+			b.WriteString(letterClass(r))
 		default:
 			b.WriteRune(r)
 		}
@@ -82,7 +81,7 @@ func caselessPattern(pattern string) string {
 		case c == '.':
 			b.WriteString("\\.")
 		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z':
-			b.WriteString("[" + strings.ToLower(string(c)) + strings.ToUpper(string(c)) + "]")
+			b.WriteString(letterClass(rune(c)))
 		default:
 			b.WriteByte(c)
 		}
@@ -108,9 +107,6 @@ func seatbeltArgs(p policy, tempDirs []string, argv []string) ([]string, error) 
 }
 
 func seatbeltProfile(p policy, tempDirs []string) (string, [][2]string, error) {
-	if err := p.Validate(); err != nil {
-		return "", nil, err
-	}
 	var params [][2]string
 	param := func(prefix string, i int, path string) string {
 		key := fmt.Sprintf("%s_%d", prefix, i)
@@ -172,10 +168,10 @@ func seatbeltProfile(p policy, tempDirs []string) (string, [][2]string, error) {
 	if p.Mode == ModeWorkspaceWrite {
 		for _, root := range writable {
 			for _, name := range p.ProtectedNames {
-				b.WriteString(rootRule("file-write*", root, protectedNamePattern(name), false, msg) + "\n")
+				b.WriteString(rootRule("deny", root, protectedNamePattern(name), msg) + "\n")
 			}
 			for _, dir := range dependencyDirs {
-				b.WriteString(strings.Replace(rootRule("file-write*", root, dir+"/", false, ""), "(deny ", "(allow ", 1) + "\n")
+				b.WriteString(rootRule("allow", root, dir+"/", "") + "\n")
 			}
 		}
 		b.WriteString("(deny file-clone (vnode-type DIRECTORY)" + msg + ")\n")
@@ -245,7 +241,7 @@ func protectedAncestors(denied, writable []string) []string {
 
 func seatbeltTempDirs() []string {
 	dirs := []string{"/private/tmp"}
-	if tmp, err := CanonicalPath(os.TempDir(), ""); err == nil && tmp != "/private/tmp" {
+	if tmp, err := canonicalPath(os.TempDir(), ""); err == nil && tmp != "/private/tmp" {
 		dirs = append(dirs, tmp)
 	}
 	return dirs

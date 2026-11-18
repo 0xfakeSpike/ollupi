@@ -36,11 +36,7 @@ type proxy struct {
 	wg      sync.WaitGroup
 }
 
-func startProxy(rules DomainRules) (*proxy, error) {
-	compiled, err := compileRules(rules)
-	if err != nil {
-		return nil, err
-	}
+func startProxy(compiled compiledRules) (*proxy, error) {
 	ln, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		return nil, fmt.Errorf("sandbox: start network proxy: %w", err)
@@ -174,7 +170,7 @@ func (p *proxy) dial(host string, port int) (net.Conn, error) {
 	}
 	var lastErr error = fmt.Errorf("no address for %s", host)
 	for _, a := range addrs {
-		if SensitiveAddr(a) && !literal {
+		if sensitiveAddr(a) && !literal {
 			p.block(target, "resolves to a local, private or link-local address; allow it by name or address to reach it")
 			lastErr = errBlocked
 			continue
