@@ -77,19 +77,14 @@ func snapshot(from, to string) error {
 }
 
 func migrateLegacy(g *gorm.DB) error {
-	dir, _ := fs.Sub(legacyMigrations, "legacy")
-	steps, err := sqlitedb.Steps(dir)
-	if err != nil {
-		return err
-	}
-	version, err := sqlitedb.Version(g, len(steps))
+	version, err := sqlitedb.Version(g)
 	if err != nil {
 		return err
 	}
 	if version == 0 {
 		return errors.New("the database is from an ollupi before v0.8.0; open it once with ollupi v0.15.1, then again with this one")
 	}
-	return sqlitedb.Migrate(g, steps, version)
+	return sqlitedb.Migrate(g, legacyMigrations, "legacy")
 }
 
 type legacy struct {

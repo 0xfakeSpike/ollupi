@@ -5,7 +5,6 @@ import (
 	"embed"
 	"errors"
 	"fmt"
-	"io/fs"
 	"math/rand/v2"
 	"time"
 
@@ -21,24 +20,24 @@ var _ Catalog = (*SQL)(nil)
 
 const now = "CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)"
 
-type ShardRow struct {
-	ID        string `gorm:"primaryKey"`
-	Address   string `gorm:"not null"`
-	Accepting bool   `gorm:"not null"`
-	Load      int64  `gorm:"not null;default:0"`
-	Owner     string `gorm:"not null;default:''"`
-	Epoch     int64  `gorm:"not null;default:0"`
-	ExpiresAt int64  `gorm:"not null;default:0"`
+type shardRow struct {
+	ID        string
+	Address   string
+	Accepting bool
+	Load      int64
+	Owner     string
+	Epoch     int64
+	ExpiresAt int64
 }
 
-func (ShardRow) TableName() string { return "shards" }
+func (shardRow) TableName() string { return "shards" }
 
-type PlacementRow struct {
-	UserID  string `gorm:"primaryKey"`
-	ShardID string `gorm:"not null;index"`
+type placementRow struct {
+	UserID  string
+	ShardID string
 }
 
-func (PlacementRow) TableName() string { return "placements" }
+func (placementRow) TableName() string { return "placements" }
 
 //go:embed migrations/*.sql
 var migrationFiles embed.FS
@@ -48,7 +47,7 @@ func OpenSQL(path string) (*SQL, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := migrate(g); err != nil {
+	if err := sqlitedb.Migrate(g, migrationFiles, "migrations"); err != nil {
 		err = fmt.Errorf("catalog: %s: %w", path, err)
 		if cerr := sqlitedb.Close(g); cerr != nil {
 			return nil, fmt.Errorf("%w (close: %v)", err, cerr)
@@ -56,19 +55,6 @@ func OpenSQL(path string) (*SQL, error) {
 		return nil, err
 	}
 	return &SQL{gorm: g}, nil
-}
-
-func migrate(g *gorm.DB) error {
-	dir, _ := fs.Sub(migrationFiles, "migrations")
-	all, err := sqlitedb.Steps(dir)
-	if err != nil {
-		return err
-	}
-	version, err := sqlitedb.Version(g, len(all))
-	if err != nil {
-		return err
-	}
-	return sqlitedb.Migrate(g, all, version)
 }
 
 func (c *SQL) Close() error { return sqlitedb.Close(c.gorm) }
@@ -83,13 +69,13 @@ func (c *SQL) Acquire(ctx context.Context, shard, owner, address string, accepti
 		if res.Error != nil || res.RowsAffected == 0 {
 			return res.Error
 		}
-		return tx.Model(&ShardRow{}).Where("id = ?", shard).Select("epoch").Scan(&epoch).Error
+		return tx.Model(&shardRow{}).Where("id = ?", shard).Select("epoch").Scan(&epoch).Error
 	})
 	return epoch, epoch > 0, err
 }
 
 func (c *SQL) Renew(ctx context.Context, shard, owner string, epoch int64, ttl time.Duration, load int64) error {
-	res := c.gorm.WithContext(ctx).Model(&ShardRow{}).Where("id = ? AND owner = ? AND epoch = ?", shard, owner, epoch).
+	res := c.gorm.WithContext(ctx).Model(&shardRow{}).Where("id = ? AND owner = ? AND epoch = ?", shard, owner, epoch).
 		Updates(map[string]any{"expires_at": gorm.Expr(now+" + ?", ttl.Milliseconds()), "load": load})
 	if res.Error != nil {
 		return res.Error
@@ -101,7 +87,7 @@ func (c *SQL) Renew(ctx context.Context, shard, owner string, epoch int64, ttl t
 }
 
 func (c *SQL) Release(ctx context.Context, shard, owner string, epoch int64) error {
-	return c.gorm.WithContext(ctx).Model(&ShardRow{}).Where("id = ? AND owner = ? AND epoch = ?", shard, owner, epoch).
+	return c.gorm.WithContext(ctx).Model(&shardRow{}).Where("id = ? AND owner = ? AND epoch = ?", shard, owner, epoch).
 		Updates(map[string]any{"owner": "", "expires_at": 0}).Error
 }
 
@@ -112,7 +98,7 @@ func (c *SQL) Locate(ctx context.Context, user string) (string, string, error) {
 		if shard, err = assign(tx, user); err != nil {
 			return err
 		}
-		return tx.Model(&ShardRow{}).Where("id = ? AND owner <> '' AND expires_at > "+now, shard).
+		return tx.Model(&shardRow{}).Where("id = ? AND owner <> '' AND expires_at > "+now, shard).
 			Select("address").Scan(&address).Error
 	})
 	return shard, address, err
@@ -150,7 +136,7 @@ func assign(tx *gorm.DB, user string) (string, error) {
 		return "", ErrNoShard
 	}
 	shard := lighterOfTwo(open).ID
-	return shard, tx.Create(&PlacementRow{UserID: user, ShardID: shard}).Error
+	return shard, tx.Create(&placementRow{UserID: user, ShardID: shard}).Error
 }
 
 type candidate struct {
@@ -176,7 +162,7 @@ func lighterOfTwo(open []candidate) candidate {
 }
 
 func shardOf(g *gorm.DB, user string) (string, error) {
-	var row PlacementRow
+	var row placementRow
 	err := g.Where("user_id = ?", user).Take(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return "", nil

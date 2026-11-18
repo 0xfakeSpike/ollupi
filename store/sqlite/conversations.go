@@ -76,14 +76,10 @@ type bodyRow struct {
 }
 
 func (r reader) View(thread string) (conversation.View, error) {
-	var head []int64
-	if err := r.g.Raw("SELECT head FROM threads WHERE id = ?", thread).Scan(&head).Error; err != nil {
-		return conversation.View{}, err
+	var v conversation.View
+	if err := notFound(r.g.Raw("SELECT head FROM threads WHERE id = ?", thread).Take(&v.Head).Error); err != nil {
+		return conversation.View{}, fmt.Errorf("store: thread %s: %w", thread, err)
 	}
-	if len(head) == 0 {
-		return conversation.View{}, fmt.Errorf("store: thread %s: %w", thread, store.ErrNotFound)
-	}
-	v := conversation.View{Head: head[0]}
 	var err error
 	if v.Turns, err = decodeRows[conversation.Turn](r.g, "SELECT body FROM turns WHERE thread_id = ? ORDER BY ord", thread); err != nil {
 		return conversation.View{}, err
@@ -243,7 +239,7 @@ func (t *tx) Append(thread string, entries ...conversation.Entry) (conversation.
 	p := t.note(thread, th.User)
 	before, _ := v.Active()
 	now := time.Now().UTC()
-	appended := make([]conversation.Entry, 0, len(entries))
+	w := written{turns: map[string]bool{}, items: map[string]bool{}, seqs: map[int64]bool{}}
 	for _, e := range entries {
 		e.Seq = v.Head + 1
 		if e.At.IsZero() {
@@ -261,9 +257,10 @@ func (t *tx) Append(thread string, entries ...conversation.Entry) (conversation.
 			thread, e.Seq, e.Turn, e.Item, e.At, string(conversation.KindOf(e.Body)), string(body)).Error; err != nil {
 			return conversation.View{}, fmt.Errorf("store: append to thread %s: %w", thread, err)
 		}
-		appended = append(appended, e)
 		p.change.Entries = append(p.change.Entries, e)
+		w.turns[e.Turn], w.seqs[e.Seq] = true, true
 		for _, id := range touched(e) {
+			w.items[id] = true
 			if !slices.Contains(p.items, id) {
 				p.items = append(p.items, id)
 			}
@@ -279,7 +276,7 @@ func (t *tx) Append(thread string, entries ...conversation.Entry) (conversation.
 		p.turns = append(p.turns, after.ID)
 	}
 	t.views[thread] = v
-	if err := t.persist(thread, th, v, p, appended, now); err != nil {
+	if err := t.persist(thread, th, v, p, w, now); err != nil {
 		return conversation.View{}, err
 	}
 	return v, nil
@@ -296,9 +293,15 @@ func touched(e conversation.Entry) []string {
 	return ids
 }
 
-func (t *tx) persist(thread string, th store.Thread, v conversation.View, p *pending, entries []conversation.Entry, now time.Time) error {
+type written struct {
+	turns map[string]bool
+	items map[string]bool
+	seqs  map[int64]bool
+}
+
+func (t *tx) persist(thread string, th store.Thread, v conversation.View, p *pending, w written, now time.Time) error {
 	for ord, turn := range v.Turns {
-		if !slices.ContainsFunc(entries, func(e conversation.Entry) bool { return e.Turn == turn.ID }) {
+		if !w.turns[turn.ID] {
 			continue
 		}
 		body, _ := json.Marshal(turn)
@@ -316,12 +319,8 @@ func (t *tx) persist(thread string, th store.Thread, v conversation.View, p *pen
 			return err
 		}
 	}
-	var changed []string
-	for _, e := range entries {
-		changed = append(changed, touched(e)...)
-	}
 	for _, it := range v.Items {
-		if !slices.Contains(changed, it.ID) {
+		if !w.items[it.ID] {
 			continue
 		}
 		body, _ := json.Marshal(it)
@@ -336,7 +335,7 @@ func (t *tx) persist(thread string, th store.Thread, v conversation.View, p *pen
 		}
 	}
 	for _, r := range v.Responses {
-		if !slices.ContainsFunc(entries, func(e conversation.Entry) bool { return e.Seq == r.Seq }) {
+		if !w.seqs[r.Seq] {
 			continue
 		}
 		body, _ := json.Marshal(r)

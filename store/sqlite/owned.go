@@ -3,6 +3,7 @@ package sqlite
 import (
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -60,19 +61,7 @@ func (row workspaceRow) workspace() (user.Workspace, error) {
 }
 
 func (r reader) Workspaces(owner string) ([]user.Workspace, error) {
-	var rows []workspaceRow
-	if err := r.g.Raw("SELECT * FROM workspaces WHERE user_id = ? ORDER BY name, id", owner).Scan(&rows).Error; err != nil {
-		return nil, err
-	}
-	out := make([]user.Workspace, 0, len(rows))
-	for _, row := range rows {
-		w, err := row.workspace()
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, w)
-	}
-	return out, nil
+	return each(r.g.Raw("SELECT * FROM workspaces WHERE user_id = ? ORDER BY name, id", owner), workspaceRow.workspace)
 }
 
 func (r reader) Workspace(owner, id string) (user.Workspace, error) {
@@ -91,20 +80,12 @@ type environmentRow struct {
 	UpdatedAt time.Time
 }
 
-func (row environmentRow) environment() user.Environment {
-	return user.Environment{ID: row.ID, Name: row.Name, Kind: user.EnvironmentKind(row.Kind), Created: row.CreatedAt, Updated: row.UpdatedAt}
+func (row environmentRow) environment() (user.Environment, error) {
+	return user.Environment{ID: row.ID, Name: row.Name, Kind: user.EnvironmentKind(row.Kind), Created: row.CreatedAt, Updated: row.UpdatedAt}, nil
 }
 
 func (r reader) Environments(owner string) ([]user.Environment, error) {
-	var rows []environmentRow
-	if err := r.g.Raw("SELECT * FROM environments WHERE user_id = ? ORDER BY kind <> ?, created_at, id", owner, string(user.Local)).Scan(&rows).Error; err != nil {
-		return nil, err
-	}
-	out := make([]user.Environment, len(rows))
-	for i, row := range rows {
-		out[i] = row.environment()
-	}
-	return out, nil
+	return each(r.g.Raw("SELECT * FROM environments WHERE user_id = ? ORDER BY kind <> ?, created_at, id", owner, string(user.Local)), environmentRow.environment)
 }
 
 func (r reader) Environment(owner, id string) (user.Environment, error) {
@@ -112,7 +93,7 @@ func (r reader) Environment(owner, id string) (user.Environment, error) {
 	if err := notFound(r.g.Raw("SELECT * FROM environments WHERE id = ? AND user_id = ?", id, owner).Take(&row).Error); err != nil {
 		return user.Environment{}, fmt.Errorf("store: environment %s: %w", id, err)
 	}
-	return row.environment(), nil
+	return row.environment()
 }
 
 func (r reader) EnvironmentInUse(owner, id string) (bool, error) {
@@ -144,21 +125,12 @@ func (r reader) MCPServers(owner string) ([]user.MCPServer, error) {
 	out := make([]user.MCPServer, len(rows))
 	for i, row := range rows {
 		s := user.MCPServer{Name: row.Name, Command: row.Command, URL: row.URL}
-		if err := firstErr(json.Unmarshal([]byte(row.Args), &s.Args), json.Unmarshal([]byte(row.Env), &s.Env), json.Unmarshal([]byte(row.Headers), &s.Headers)); err != nil {
+		if err := errors.Join(json.Unmarshal([]byte(row.Args), &s.Args), json.Unmarshal([]byte(row.Env), &s.Env), json.Unmarshal([]byte(row.Headers), &s.Headers)); err != nil {
 			return nil, fmt.Errorf("store: MCP server %s: %w", row.Name, err)
 		}
 		out[i] = s
 	}
 	return out, nil
-}
-
-func firstErr(errs ...error) error {
-	for _, err := range errs {
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 type cronRow struct {
@@ -174,34 +146,13 @@ type cronRow struct {
 	CreatedAt time.Time
 }
 
-func (row cronRow) job() user.CronJob {
+func (row cronRow) job() (user.CronJob, error) {
 	return user.CronJob{ID: row.ID, Thread: row.ThreadID, Name: row.Name, Spec: row.Spec, Prompt: row.Prompt, Times: row.Times,
-		Runs: row.Runs, Paused: row.Paused, NextRun: row.NextRunAt, Created: row.CreatedAt}
-}
-
-func cronJobs(g *gorm.DB, query string, args ...any) ([]user.CronJob, error) {
-	var rows []cronRow
-	if err := g.Raw(query, args...).Scan(&rows).Error; err != nil {
-		return nil, err
-	}
-	out := make([]user.CronJob, len(rows))
-	for i, row := range rows {
-		out[i] = row.job()
-	}
-	return out, nil
+		Runs: row.Runs, Paused: row.Paused, NextRun: row.NextRunAt, Created: row.CreatedAt}, nil
 }
 
 type taskRow struct {
-	ID          string
-	ThreadID    string
-	Name        string
-	Spec        string
-	Prompt      string
-	Times       *int
-	Runs        int
-	Paused      bool
-	NextRunAt   time.Time
-	CreatedAt   time.Time
+	Job         cronRow `gorm:"embedded"`
 	Title       string
 	WorkspaceID *string
 	ArchivedAt  *time.Time
@@ -212,26 +163,22 @@ const tasksFrom = `SELECT j.*, t.title, t.workspace_id, t.archived_at,
 		(SELECT u.body FROM turns u WHERE u.cron_job = j.id ORDER BY u.ord DESC LIMIT 1) AS last_turn
 	FROM cron_jobs j JOIN threads t ON t.id = j.thread_id`
 
+func (row taskRow) task() (store.Task, error) {
+	job, _ := row.Job.job()
+	t := store.Task{CronJob: job, Title: row.Title, Workspace: deref(row.WorkspaceID), Archived: row.ArchivedAt != nil}
+	if row.LastTurn == nil {
+		return t, nil
+	}
+	var last conversation.Turn
+	if err := json.Unmarshal([]byte(*row.LastTurn), &last); err != nil {
+		return store.Task{}, fmt.Errorf("store: the last run of task %s: %w", job.ID, err)
+	}
+	t.LastTurn, t.LastRun = last.ID, &last.QueuedAt
+	return t, nil
+}
+
 func tasks(g *gorm.DB, query string, args ...any) ([]store.Task, error) {
-	var rows []taskRow
-	if err := g.Raw(tasksFrom+" "+query, args...).Scan(&rows).Error; err != nil {
-		return nil, err
-	}
-	out := make([]store.Task, len(rows))
-	for i, row := range rows {
-		job := user.CronJob{ID: row.ID, Thread: row.ThreadID, Name: row.Name, Spec: row.Spec, Prompt: row.Prompt, Times: row.Times,
-			Runs: row.Runs, Paused: row.Paused, NextRun: row.NextRunAt, Created: row.CreatedAt}
-		out[i] = store.Task{CronJob: job, Title: row.Title, Workspace: deref(row.WorkspaceID), Archived: row.ArchivedAt != nil}
-		if row.LastTurn == nil {
-			continue
-		}
-		var last conversation.Turn
-		if err := json.Unmarshal([]byte(*row.LastTurn), &last); err != nil {
-			return nil, fmt.Errorf("store: the last run of task %s: %w", row.ID, err)
-		}
-		out[i].LastTurn, out[i].LastRun = last.ID, &last.QueuedAt
-	}
-	return out, nil
+	return each(g.Raw(tasksFrom+" "+query, args...), taskRow.task)
 }
 
 func (r reader) CronJobs(owner, thread string) ([]store.Task, error) {
@@ -245,19 +192,16 @@ func (r reader) CronJobs(owner, thread string) ([]store.Task, error) {
 }
 
 func (r reader) CronJob(id string) (user.CronJob, error) {
-	jobs, err := cronJobs(r.g, "SELECT * FROM cron_jobs WHERE id = ?", id)
-	if err != nil {
-		return user.CronJob{}, err
+	var row cronRow
+	if err := notFound(r.g.Raw("SELECT * FROM cron_jobs WHERE id = ?", id).Take(&row).Error); err != nil {
+		return user.CronJob{}, fmt.Errorf("store: scheduled task %s: %w", id, err)
 	}
-	if len(jobs) == 0 {
-		return user.CronJob{}, fmt.Errorf("store: scheduled task %s: %w", id, store.ErrNotFound)
-	}
-	return jobs[0], nil
+	return row.job()
 }
 
 func (r reader) Due(now time.Time) ([]user.CronJob, error) {
-	return cronJobs(r.g, `SELECT j.* FROM cron_jobs j JOIN threads t ON t.id = j.thread_id
-		WHERE j.paused = 0 AND j.next_run_at <= ? AND t.archived_at IS NULL ORDER BY j.next_run_at, j.id`, now.UTC())
+	return each(r.g.Raw(`SELECT j.* FROM cron_jobs j JOIN threads t ON t.id = j.thread_id
+		WHERE j.paused = 0 AND j.next_run_at <= ? AND t.archived_at IS NULL ORDER BY j.next_run_at, j.id`, now.UTC()), cronRow.job)
 }
 
 func (r reader) Threads(owner string, f store.ThreadFilter) ([]store.Thread, bool, error) {
@@ -298,17 +242,21 @@ func (r reader) Children(thread string) ([]store.Thread, error) {
 }
 
 func threads(g *gorm.DB, query string, args ...any) ([]store.Thread, error) {
-	var rows []threadRow
-	if err := g.Raw(query, args...).Scan(&rows).Error; err != nil {
+	return each(g.Raw(query, args...), threadRow.thread)
+}
+
+func each[R, T any](q *gorm.DB, convert func(R) (T, error)) ([]T, error) {
+	var rows []R
+	if err := q.Scan(&rows).Error; err != nil {
 		return nil, err
 	}
-	out := make([]store.Thread, 0, len(rows))
+	out := make([]T, 0, len(rows))
 	for _, row := range rows {
-		th, err := row.thread()
+		v, err := convert(row)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, th)
+		out = append(out, v)
 	}
 	return out, nil
 }
@@ -316,19 +264,15 @@ func threads(g *gorm.DB, query string, args ...any) ([]store.Thread, error) {
 const snippetRunes = 40
 
 func (r reader) Search(owner string, terms []string, workspace string, limit int) (store.Found, error) {
-	found := store.Found{Threads: []store.Thread{}, Messages: []store.Hit{}, Tasks: []store.Task{}}
+	found := store.Found{Messages: []store.Hit{}}
 	inWorkspace := func(query string, args []any, column string) (string, []any) {
 		if workspace == "" {
 			return query, args
 		}
 		return query + " AND " + column + " = ?", append(args, workspace)
 	}
-	query, args := "SELECT * FROM threads WHERE user_id = ? AND parent_id IS NULL", []any{owner}
-	for _, t := range terms {
-		query += ` AND title LIKE ? ESCAPE '\'`
-		args = append(args, likePattern(t))
-	}
-	query, args = inWorkspace(query, args, "workspace_id")
+	like, likeArgs := likeAll("title", terms)
+	query, args := inWorkspace("SELECT * FROM threads WHERE user_id = ? AND parent_id IS NULL"+like, append([]any{owner}, likeArgs...), "workspace_id")
 	var err error
 	if found.Threads, err = threads(r.g, query+" ORDER BY updated_at DESC, id LIMIT ?", append(args, limit)...); err != nil {
 		return store.Found{}, err
@@ -364,16 +308,22 @@ func (r reader) Search(owner string, terms []string, workspace string, limit int
 			Kind: conversation.ItemKind(h.Kind), Snippet: snippet(h.Text, terms[0]), At: h.At})
 	}
 
-	query, args = "WHERE t.user_id = ?", []any{owner}
-	for _, t := range terms {
-		query += ` AND (j.name || ' ' || j.prompt) LIKE ? ESCAPE '\'`
-		args = append(args, likePattern(t))
-	}
-	query, args = inWorkspace(query, args, "t.workspace_id")
+	like, likeArgs = likeAll("(j.name || ' ' || j.prompt)", terms)
+	query, args = inWorkspace("WHERE t.user_id = ?"+like, append([]any{owner}, likeArgs...), "t.workspace_id")
 	if found.Tasks, err = tasks(r.g, query+" ORDER BY j.created_at DESC, j.id LIMIT ?", append(args, limit)...); err != nil {
 		return store.Found{}, err
 	}
 	return found, nil
+}
+
+func likeAll(column string, terms []string) (string, []any) {
+	var query string
+	var args []any
+	for _, t := range terms {
+		query += " AND " + column + ` LIKE ? ESCAPE '\'`
+		args = append(args, likePattern(t))
+	}
+	return query, args
 }
 
 func likePattern(term string) string {
@@ -557,8 +507,8 @@ func (t *tx) DeleteThread(id string) error {
 	if err != nil {
 		return err
 	}
-	jobs, err := t.CronJobs(th.User, id)
-	if err != nil {
+	var jobs []string
+	if err := t.g.Raw("SELECT id FROM cron_jobs WHERE thread_id = ?", id).Scan(&jobs).Error; err != nil {
 		return err
 	}
 	if err := t.g.Exec("DELETE FROM threads WHERE id = ?", id).Error; err != nil {
@@ -566,7 +516,7 @@ func (t *tx) DeleteThread(id string) error {
 	}
 	t.note(id, th.User).change.Deleted = true
 	for _, j := range jobs {
-		t.owned = append(t.owned, store.Event{User: th.User, Thread: id, Owned: &store.Owned{CronJobDeleted: j.ID}})
+		t.owned = append(t.owned, store.Event{User: th.User, Thread: id, Owned: &store.Owned{CronJobDeleted: j}})
 	}
 	return nil
 }

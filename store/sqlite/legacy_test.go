@@ -2,7 +2,6 @@ package sqlite
 
 import (
 	"context"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -21,12 +20,7 @@ func oldDatabase(t *testing.T, home string) {
 		t.Fatal(err)
 	}
 	defer sqlitedb.Close(g)
-	dir, _ := fs.Sub(legacyMigrations, "legacy")
-	steps, err := sqlitedb.Steps(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := sqlitedb.Migrate(g, steps, 0); err != nil {
+	if err := sqlitedb.Migrate(g, legacyMigrations, "legacy"); err != nil {
 		t.Fatal(err)
 	}
 	at := func(minute int) time.Time { return time.Date(2026, 11, 1, 9, minute, 0, 0, time.UTC) }
