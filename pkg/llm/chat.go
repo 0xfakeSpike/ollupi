@@ -37,6 +37,24 @@ const (
 	PartText  PartType = "text"
 )
 
+func userParts[T any](m ChatMessage, text func(string) T, image func(ContentPart) T) ([]T, error) {
+	var out []T
+	if m.Content != "" {
+		out = append(out, text(m.Content))
+	}
+	for _, p := range m.Parts {
+		switch p.Type {
+		case PartImage:
+			out = append(out, image(p))
+		case PartText:
+			out = append(out, text(p.Text))
+		default:
+			return nil, fmt.Errorf("unsupported content part %q", p.Type)
+		}
+	}
+	return out, nil
+}
+
 type ContentPart struct {
 	Type     PartType `json:"type"`
 	Name     string   `json:"name,omitempty"`
