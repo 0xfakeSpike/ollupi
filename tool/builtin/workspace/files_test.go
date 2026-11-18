@@ -131,3 +131,40 @@ func TestFileTools(t *testing.T) {
 		}
 	}
 }
+
+func TestAChangeIsShownRelativeToItsWorkspaceAndWholeWithoutOne(t *testing.T) {
+	scratch, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := New(Options{Config: Config{WorkspaceDirs: []string{scratch}, ExtraWritable: []string{project}, SandboxMode: "full-access"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	write := func(caller tool.Caller) string {
+		t.Helper()
+		ctx, call := context.Background(), tool.Call{Caller: caller, Tool: ToolWriteFile, Arguments: map[string]any{"path": "notes/report.md", "content": "x\n"}}
+		p, err := r.locals()[ToolWriteFile].prepare(ctx, call)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := r.locals()[ToolWriteFile].run(ctx, call, p); err != nil {
+			t.Fatal(err)
+		}
+		return p.Files[0].Path
+	}
+	// A workspace can move: its files are named from its root, which the
+	// client knows as it is now.
+	if got := write(tool.Caller{Root: project}); got != "notes/report.md" {
+		t.Errorf("in a workspace the change names %q", got)
+	}
+	// Without one the client has no root to join a relative path to.
+	if got, want := write(tool.Caller{}), filepath.Join(scratch, "notes/report.md"); got != want {
+		t.Errorf("without a workspace the change names %q, want %q", got, want)
+	}
+}
