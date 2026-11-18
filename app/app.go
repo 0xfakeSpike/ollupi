@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/cron"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
@@ -14,7 +15,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/policy"
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/0xfakeSpike/ollupi/tool"
-	"github.com/0xfakeSpike/ollupi/user"
 )
 
 var (
@@ -41,7 +41,7 @@ type Models interface {
 
 type Boxes func(user string) (sandbox.Box, error)
 
-type Statuses func(user string) ([]user.MCPStatus, error)
+type Statuses func(user string) ([]account.MCPStatus, error)
 
 type Attachments interface {
 	Put(ctx context.Context, key string, data []byte) error
@@ -68,8 +68,8 @@ func New(st store.Store, models Models, tools tool.Tools, statuses Statuses, box
 	return &App{st: st, models: models, tools: tools, statuses: statuses, boxes: boxes, attachments: attachments, cal: cal, deployment: deployment, moving: map[string]bool{}}
 }
 
-func (a *App) EnsureUser(ctx context.Context, u string) error {
-	return a.st.Update(ctx, func(tx store.Tx) error { return tx.EnsureUser(u) })
+func (a *App) EnsureUser(ctx context.Context, user string) error {
+	return a.st.Update(ctx, func(tx store.Tx) error { return tx.EnsureUser(user) })
 }
 
 func (a *App) Models() ([]llm.Model, string) {
@@ -77,8 +77,8 @@ func (a *App) Models() ([]llm.Model, string) {
 	return models, models[0].Connection
 }
 
-func (a *App) Tools(ctx context.Context, u string) ([]tool.Spec, error) {
-	set, err := a.tools(ctx, u)
+func (a *App) Tools(ctx context.Context, user string) ([]tool.Spec, error) {
+	set, err := a.tools(ctx, user)
 	if err != nil {
 		return nil, err
 	}
@@ -100,12 +100,12 @@ func (a *App) pickModel(connection string, last *llm.Model) (llm.Model, error) {
 	return models[i].Clone(), nil
 }
 
-func thread(r store.Reader, u, id string) (store.Thread, error) {
+func thread(r store.Reader, user, id string) (store.Thread, error) {
 	th, err := r.Thread(id)
 	if err != nil {
 		return store.Thread{}, err
 	}
-	if th.User != u {
+	if th.User != user {
 		return store.Thread{}, fmt.Errorf("thread %s: %w", id, store.ErrNotFound)
 	}
 	return th, nil
@@ -125,26 +125,26 @@ func edit[T any](ctx context.Context, st store.Store, get func(store.Tx) (T, err
 	return v, err
 }
 
-func view(r store.Reader, u, id string) (conversation.View, error) {
-	if _, err := thread(r, u, id); err != nil {
+func view(r store.Reader, user, id string) (conversation.View, error) {
+	if _, err := thread(r, user, id); err != nil {
 		return conversation.View{}, err
 	}
 	return r.View(id)
 }
 
-func topThread(r store.Reader, u, id string) (store.Thread, error) {
-	th, err := thread(r, u, id)
+func topThread(r store.Reader, user, id string) (store.Thread, error) {
+	th, err := thread(r, user, id)
 	if err != nil {
 		return store.Thread{}, err
 	}
 	if th.Parent != "" {
-		return store.Thread{}, user.ErrSubagentThread
+		return store.Thread{}, account.ErrSubagentThread
 	}
 	return th, nil
 }
 
-func (a *App) toolbox(ctx context.Context, u string) (policy.Toolbox, error) {
-	set, err := a.tools(ctx, u)
+func (a *App) toolbox(ctx context.Context, user string) (policy.Toolbox, error) {
+	set, err := a.tools(ctx, user)
 	if err != nil {
 		return policy.Toolbox{}, fmt.Errorf("the tools of the user: %w", err)
 	}

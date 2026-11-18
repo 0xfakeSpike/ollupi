@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
@@ -13,7 +14,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/prompt"
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/0xfakeSpike/ollupi/tool"
-	"github.com/0xfakeSpike/ollupi/user"
 )
 
 type Models interface {
@@ -120,8 +120,8 @@ func (r *Runner) closeStranded(ctx context.Context, thread string) error {
 type step struct {
 	th        store.Thread
 	parent    *store.Thread
-	workspace *user.Workspace
-	settings  user.Settings
+	workspace *account.Workspace
+	settings  account.Settings
 	v         conversation.View
 	items     []conversation.Item
 	turn      conversation.Turn
@@ -189,7 +189,7 @@ func (s *step) permit(r *Runner, set tool.Set) error {
 	if s.parent != nil {
 		conversationLayer = s.parent.ParentLayer()
 	}
-	layers := slices.Concat(s.role.Own, user.Layers(user.Deployment(r.deployment),
+	layers := slices.Concat(s.role.Own, account.Layers(account.Deployment(r.deployment),
 		s.settings, s.workspace, conversationLayer))
 	box := tool.Toolbox(set)
 	s.specs = map[string]tool.Spec{}

@@ -6,9 +6,9 @@ import (
 	"slices"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/store"
-	"github.com/0xfakeSpike/ollupi/user"
 )
 
 type Submit func(tx store.Tx, thread, prompt, job string) error
@@ -29,7 +29,7 @@ func Run(ctx context.Context, st store.Store, cal Calendar, submit Submit) error
 }
 
 func sendDue(ctx context.Context, st store.Store, cal Calendar, submit Submit, now time.Time) error {
-	var due []user.CronJob
+	var due []account.CronJob
 	if err := st.Read(ctx, func(r store.Reader) (err error) { due, err = r.Due(now); return err }); err != nil {
 		return err
 	}
@@ -48,7 +48,7 @@ func sendDue(ctx context.Context, st store.Store, cal Calendar, submit Submit, n
 
 type errSubmit struct{ error }
 
-func send(tx store.Tx, cal Calendar, submit Submit, due user.CronJob, now time.Time, sending bool) error {
+func send(tx store.Tx, cal Calendar, submit Submit, due account.CronJob, now time.Time, sending bool) error {
 	job, err := tx.CronJob(due.ID)
 	if errors.Is(err, store.ErrNotFound) {
 		return nil

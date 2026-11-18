@@ -8,67 +8,67 @@ import (
 	"strings"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/store"
-	"github.com/0xfakeSpike/ollupi/user"
 	"github.com/google/uuid"
 )
 
 const workspaceTimeout = time.Minute
 
-func (a *App) Workspaces(ctx context.Context, u string) ([]user.Workspace, error) {
-	var ws []user.Workspace
-	err := a.st.Read(ctx, func(r store.Reader) (err error) { ws, err = r.Workspaces(u); return err })
+func (a *App) Workspaces(ctx context.Context, user string) ([]account.Workspace, error) {
+	var ws []account.Workspace
+	err := a.st.Read(ctx, func(r store.Reader) (err error) { ws, err = r.Workspaces(user); return err })
 	return ws, err
 }
 
-func (a *App) AddWorkspace(ctx context.Context, u, path, name string) (user.Workspace, error) {
+func (a *App) AddWorkspace(ctx context.Context, user, path, name string) (account.Workspace, error) {
 	ctx, cancel := context.WithTimeout(ctx, workspaceTimeout)
 	defer cancel()
-	box, err := a.boxes(u)
+	box, err := a.boxes(user)
 	if err != nil {
-		return user.Workspace{}, fmt.Errorf("the sandbox of the user: %w", err)
+		return account.Workspace{}, fmt.Errorf("the sandbox of the user: %w", err)
 	}
 	root, err := box.Directory(ctx, path)
 	if err != nil {
-		return user.Workspace{}, fmt.Errorf("%w: %v", ErrInvalidPath, err)
+		return account.Workspace{}, fmt.Errorf("%w: %v", ErrInvalidPath, err)
 	}
 	if name == "" {
 		name = filepath.Base(root)
 	}
-	if name, err = user.Name("a workspace name", name); err != nil {
-		return user.Workspace{}, err
+	if name, err = account.Name("a workspace name", name); err != nil {
+		return account.Workspace{}, err
 	}
-	existing, err := a.Workspaces(ctx, u)
+	existing, err := a.Workspaces(ctx, user)
 	if err != nil {
-		return user.Workspace{}, err
+		return account.Workspace{}, err
 	}
-	i := slices.IndexFunc(existing, func(w user.Workspace) bool { return box.Same(ctx, w.Root, root) })
+	i := slices.IndexFunc(existing, func(w account.Workspace) bool { return box.Same(ctx, w.Root, root) })
 	now := time.Now().UTC()
-	w := user.Workspace{ID: uuid.NewString(), Name: name, Root: root, Created: now, Updated: now}
+	w := account.Workspace{ID: uuid.NewString(), Name: name, Root: root, Created: now, Updated: now}
 	if i >= 0 {
 		if w = existing[i]; w.Archived == nil {
 			return w, nil
 		}
 		w.Archived, w.Updated = nil, now
 	}
-	err = a.st.Update(ctx, func(tx store.Tx) error { return tx.PutWorkspace(u, w) })
+	err = a.st.Update(ctx, func(tx store.Tx) error { return tx.PutWorkspace(user, w) })
 	return w, err
 }
 
-func (a *App) RenameWorkspace(ctx context.Context, u, id, name string) (user.Workspace, error) {
-	name, err := user.Name("a workspace name", name)
+func (a *App) RenameWorkspace(ctx context.Context, user, id, name string) (account.Workspace, error) {
+	name, err := account.Name("a workspace name", name)
 	if err != nil {
-		return user.Workspace{}, err
+		return account.Workspace{}, err
 	}
-	return a.changeWorkspace(ctx, u, id, func(_ store.Tx, w *user.Workspace) error {
+	return a.changeWorkspace(ctx, user, id, func(_ store.Tx, w *account.Workspace) error {
 		w.Name = name
 		return nil
 	})
 }
 
-func (a *App) ArchiveWorkspace(ctx context.Context, u, id string, archived bool) (user.Workspace, error) {
-	return a.changeWorkspace(ctx, u, id, func(_ store.Tx, w *user.Workspace) error {
+func (a *App) ArchiveWorkspace(ctx context.Context, user, id string, archived bool) (account.Workspace, error) {
+	return a.changeWorkspace(ctx, user, id, func(_ store.Tx, w *account.Workspace) error {
 		w.Archived = nil
 		if archived {
 			at := w.Updated
@@ -78,31 +78,31 @@ func (a *App) ArchiveWorkspace(ctx context.Context, u, id string, archived bool)
 	})
 }
 
-func (a *App) changeWorkspace(ctx context.Context, u, id string, change func(store.Tx, *user.Workspace) error) (user.Workspace, error) {
+func (a *App) changeWorkspace(ctx context.Context, user, id string, change func(store.Tx, *account.Workspace) error) (account.Workspace, error) {
 	return edit(ctx, a.st,
-		func(tx store.Tx) (user.Workspace, error) { return tx.Workspace(u, id) },
-		func(tx store.Tx, w *user.Workspace) error {
+		func(tx store.Tx) (account.Workspace, error) { return tx.Workspace(user, id) },
+		func(tx store.Tx, w *account.Workspace) error {
 			w.Updated = time.Now().UTC()
 			return change(tx, w)
 		},
-		func(tx store.Tx, w user.Workspace) error { return tx.PutWorkspace(u, w) })
+		func(tx store.Tx, w account.Workspace) error { return tx.PutWorkspace(user, w) })
 }
 
-func (a *App) MoveWorkspace(ctx context.Context, u, id, path string) (user.Workspace, error) {
+func (a *App) MoveWorkspace(ctx context.Context, user, id, path string) (account.Workspace, error) {
 	move := context.WithoutCancel(ctx)
 	ctx, cancel := context.WithTimeout(ctx, workspaceTimeout)
 	defer cancel()
-	box, err := a.boxes(u)
+	box, err := a.boxes(user)
 	if err != nil {
-		return user.Workspace{}, fmt.Errorf("the sandbox of the user: %w", err)
+		return account.Workspace{}, fmt.Errorf("the sandbox of the user: %w", err)
 	}
 	target, err := box.Directory(ctx, path)
 	if err != nil {
-		return user.Workspace{}, fmt.Errorf("%w: %v", ErrInvalidPath, err)
+		return account.Workspace{}, fmt.Errorf("%w: %v", ErrInvalidPath, err)
 	}
-	w, all, err := a.claimForMove(ctx, u, id)
+	w, all, err := a.claimForMove(ctx, user, id)
 	if err != nil {
-		return user.Workspace{}, err
+		return account.Workspace{}, err
 	}
 	defer func() {
 		a.mu.Lock()
@@ -113,35 +113,35 @@ func (a *App) MoveWorkspace(ctx context.Context, u, id, path string) (user.Works
 		return w, nil
 	}
 	if err := checkTarget(ctx, box, w, all, target); err != nil {
-		return user.Workspace{}, err
+		return account.Workspace{}, err
 	}
 	if err := box.Move(move, w.Root, target); err != nil {
-		return user.Workspace{}, err
+		return account.Workspace{}, err
 	}
 	from := w.Root
 	w.Root, w.Updated = target, time.Now().UTC()
-	if err := a.st.Update(move, func(tx store.Tx) error { return tx.PutWorkspace(u, w) }); err != nil {
+	if err := a.st.Update(move, func(tx store.Tx) error { return tx.PutWorkspace(user, w) }); err != nil {
 		if back := box.Move(move, target, from); back != nil {
-			return user.Workspace{}, fmt.Errorf("the folder is now at %s but the workspace still names %s: %w; moving it back failed too: %v", target, from, err, back)
+			return account.Workspace{}, fmt.Errorf("the folder is now at %s but the workspace still names %s: %w; moving it back failed too: %v", target, from, err, back)
 		}
-		return user.Workspace{}, err
+		return account.Workspace{}, err
 	}
 	return w, nil
 }
 
-func (a *App) claimForMove(ctx context.Context, u, id string) (user.Workspace, []user.Workspace, error) {
+func (a *App) claimForMove(ctx context.Context, user, id string) (account.Workspace, []account.Workspace, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	var w user.Workspace
-	var all []user.Workspace
+	var w account.Workspace
+	var all []account.Workspace
 	err := a.st.Read(ctx, func(r store.Reader) (err error) {
-		if w, err = r.Workspace(u, id); err != nil {
+		if w, err = r.Workspace(user, id); err != nil {
 			return err
 		}
-		if all, err = r.Workspaces(u); err != nil {
+		if all, err = r.Workspaces(user); err != nil {
 			return err
 		}
-		busy, err := r.WorkspaceBusy(u, id)
+		busy, err := r.WorkspaceBusy(user, id)
 		if err != nil {
 			return err
 		}
@@ -151,13 +151,13 @@ func (a *App) claimForMove(ctx context.Context, u, id string) (user.Workspace, [
 		return nil
 	})
 	if err != nil {
-		return user.Workspace{}, nil, err
+		return account.Workspace{}, nil, err
 	}
 	a.moving[id] = true
 	return w, all, nil
 }
 
-func checkTarget(ctx context.Context, box sandbox.Box, w user.Workspace, all []user.Workspace, target string) error {
+func checkTarget(ctx context.Context, box sandbox.Box, w account.Workspace, all []account.Workspace, target string) error {
 	if sandbox.Within(w.Root, target) {
 		return fmt.Errorf("%w: %q is inside the workspace", ErrInvalidPath, target)
 	}
@@ -176,91 +176,91 @@ func checkTarget(ctx context.Context, box sandbox.Box, w user.Workspace, all []u
 	return nil
 }
 
-func (a *App) Environments(ctx context.Context, u string) ([]user.Environment, error) {
-	var envs []user.Environment
-	err := a.st.Read(ctx, func(r store.Reader) (err error) { envs, err = r.Environments(u); return err })
+func (a *App) Environments(ctx context.Context, user string) ([]account.Environment, error) {
+	var envs []account.Environment
+	err := a.st.Read(ctx, func(r store.Reader) (err error) { envs, err = r.Environments(user); return err })
 	return envs, err
 }
 
-func (a *App) AddEnvironment(ctx context.Context, u, name string, kind user.EnvironmentKind) (user.Environment, error) {
-	name, err := user.Name("an environment name", name)
+func (a *App) AddEnvironment(ctx context.Context, user, name string, kind account.EnvironmentKind) (account.Environment, error) {
+	name, err := account.Name("an environment name", name)
 	if err != nil {
-		return user.Environment{}, err
+		return account.Environment{}, err
 	}
-	if kind, err = user.NewEnvironmentKind(kind); err != nil {
-		return user.Environment{}, err
+	if kind, err = account.NewEnvironmentKind(kind); err != nil {
+		return account.Environment{}, err
 	}
 	now := time.Now().UTC()
-	e := user.Environment{ID: uuid.NewString(), Name: name, Kind: kind, Created: now, Updated: now}
-	err = a.st.Update(ctx, func(tx store.Tx) error { return a.putEnvironment(tx, u, e) })
+	e := account.Environment{ID: uuid.NewString(), Name: name, Kind: kind, Created: now, Updated: now}
+	err = a.st.Update(ctx, func(tx store.Tx) error { return a.putEnvironment(tx, user, e) })
 	return e, err
 }
 
-func (a *App) RenameEnvironment(ctx context.Context, u, id, name string) (user.Environment, error) {
-	name, err := user.Name("an environment name", name)
+func (a *App) RenameEnvironment(ctx context.Context, user, id, name string) (account.Environment, error) {
+	name, err := account.Name("an environment name", name)
 	if err != nil {
-		return user.Environment{}, err
+		return account.Environment{}, err
 	}
 	return edit(ctx, a.st,
-		func(tx store.Tx) (user.Environment, error) { return tx.Environment(u, id) },
-		func(_ store.Tx, e *user.Environment) error {
+		func(tx store.Tx) (account.Environment, error) { return tx.Environment(user, id) },
+		func(_ store.Tx, e *account.Environment) error {
 			e.Name, e.Updated = name, time.Now().UTC()
 			return nil
 		},
-		func(tx store.Tx, e user.Environment) error { return a.putEnvironment(tx, u, e) })
+		func(tx store.Tx, e account.Environment) error { return a.putEnvironment(tx, user, e) })
 }
 
-func (a *App) putEnvironment(tx store.Tx, u string, e user.Environment) error {
-	envs, err := tx.Environments(u)
+func (a *App) putEnvironment(tx store.Tx, user string, e account.Environment) error {
+	envs, err := tx.Environments(user)
 	if err != nil {
 		return err
 	}
 	for _, other := range envs {
 		if other.ID != e.ID && strings.EqualFold(other.Name, e.Name) {
-			return fmt.Errorf("%w: you already have an environment called %q", user.ErrInvalidName, other.Name)
+			return fmt.Errorf("%w: you already have an environment called %q", account.ErrInvalidName, other.Name)
 		}
 	}
-	return tx.PutEnvironment(u, e)
+	return tx.PutEnvironment(user, e)
 }
 
-func (a *App) DeleteEnvironment(ctx context.Context, u, id string) error {
+func (a *App) DeleteEnvironment(ctx context.Context, user, id string) error {
 	return a.st.Update(ctx, func(tx store.Tx) error {
-		e, err := tx.Environment(u, id)
+		e, err := tx.Environment(user, id)
 		if err != nil {
 			return err
 		}
-		if e.Kind == user.Local {
-			return fmt.Errorf("%w: %s is this machine, whose folders the workspaces are", user.ErrInvalidName, e.Name)
+		if e.Kind == account.Local {
+			return fmt.Errorf("%w: %s is this machine, whose folders the workspaces are", account.ErrInvalidName, e.Name)
 		}
-		used, err := tx.EnvironmentInUse(u, id)
+		used, err := tx.EnvironmentInUse(user, id)
 		if err != nil {
 			return err
 		}
 		if used {
 			return fmt.Errorf("environment %s: %w", e.Name, ErrEnvironmentInUse)
 		}
-		return tx.DeleteEnvironment(u, id)
+		return tx.DeleteEnvironment(user, id)
 	})
 }
 
 type MCPServer struct {
-	user.MCPServer
-	Status *user.MCPStatus
+	account.MCPServer
+	Status *account.MCPStatus
 }
 
-func (a *App) MCPServers(ctx context.Context, u string) ([]MCPServer, error) {
-	var stored []user.MCPServer
-	if err := a.st.Read(ctx, func(r store.Reader) (err error) { stored, err = r.MCPServers(u); return err }); err != nil {
+func (a *App) MCPServers(ctx context.Context, user string) ([]MCPServer, error) {
+	var stored []account.MCPServer
+	if err := a.st.Read(ctx, func(r store.Reader) (err error) { stored, err = r.MCPServers(user); return err }); err != nil {
 		return nil, err
 	}
-	statuses, err := a.statuses(u)
+	statuses, err := a.statuses(user)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]MCPServer, len(stored))
 	for i, s := range stored {
 		out[i].MCPServer = s
-		ofServer := func(st user.MCPStatus) bool { return st.Name == s.Name }
+		ofServer := func(st account.MCPStatus) bool { return st.Name == s.Name }
 		if j := slices.IndexFunc(statuses, ofServer); j >= 0 {
 			out[i].Status = &statuses[j]
 		}
@@ -268,19 +268,19 @@ func (a *App) MCPServers(ctx context.Context, u string) ([]MCPServer, error) {
 	return out, nil
 }
 
-func (a *App) SetMCPServer(ctx context.Context, u string, s user.MCPServer) error {
-	box, err := a.toolbox(ctx, u)
+func (a *App) SetMCPServer(ctx context.Context, user string, s account.MCPServer) error {
+	box, err := a.toolbox(ctx, user)
 	if err != nil {
 		return err
 	}
 	return a.st.Update(ctx, func(tx store.Tx) error {
-		mine, err := tx.MCPServers(u)
+		mine, err := tx.MCPServers(user)
 		if err != nil {
 			return err
 		}
 		var providers []string
 		for _, t := range box.Tools {
-			mineToo := slices.ContainsFunc(mine, func(m user.MCPServer) bool { return m.Name == t.Provider })
+			mineToo := slices.ContainsFunc(mine, func(m account.MCPServer) bool { return m.Name == t.Provider })
 			if !mineToo && !slices.Contains(providers, t.Provider) {
 				providers = append(providers, t.Provider)
 			}
@@ -288,10 +288,10 @@ func (a *App) SetMCPServer(ctx context.Context, u string, s user.MCPServer) erro
 		if err := s.Check(providers); err != nil {
 			return err
 		}
-		return tx.PutMCPServer(u, s)
+		return tx.PutMCPServer(user, s)
 	})
 }
 
-func (a *App) DeleteMCPServer(ctx context.Context, u, name string) error {
-	return a.st.Update(ctx, func(tx store.Tx) error { return tx.DeleteMCPServer(u, name) })
+func (a *App) DeleteMCPServer(ctx context.Context, user, name string) error {
+	return a.st.Update(ctx, func(tx store.Tx) error { return tx.DeleteMCPServer(user, name) })
 }

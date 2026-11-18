@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/ask"
 	"github.com/0xfakeSpike/ollupi/conversation"
@@ -22,7 +23,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/0xfakeSpike/ollupi/store/sqlite"
 	"github.com/0xfakeSpike/ollupi/tool"
-	"github.com/0xfakeSpike/ollupi/user"
 	"github.com/google/uuid"
 )
 
@@ -265,8 +265,8 @@ func TestAWorkspaceMovesOnlyWhenItsConversationsAreIdle(t *testing.T) {
 	root, to := filepath.Join(dir, "project"), filepath.Join(dir, "moved")
 	os.Mkdir(root, 0o755)
 	os.Mkdir(to, 0o755)
-	w := must[user.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", root, ""))
-	if again := must[user.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", root+"/", "other")); again.ID != w.ID || w.Name != "project" {
+	w := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", root, ""))
+	if again := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", root+"/", "other")); again.ID != w.ID || w.Name != "project" {
 		t.Errorf("the same folder twice: %+v %+v", w, again)
 	}
 	th := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", w.ID, "", ""))
@@ -275,12 +275,12 @@ func TestAWorkspaceMovesOnlyWhenItsConversationsAreIdle(t *testing.T) {
 		t.Errorf("moving a busy workspace: %v", err)
 	}
 	f.a.Interrupt(f.ctx, "u", th.ID, turn.ID)
-	moved := must[user.Workspace](t)(f.a.MoveWorkspace(f.ctx, "u", w.ID, to))
+	moved := must[account.Workspace](t)(f.a.MoveWorkspace(f.ctx, "u", w.ID, to))
 	if _, err := os.Stat(root); !os.IsNotExist(err) || !strings.HasSuffix(moved.Root, "moved") {
 		t.Errorf("after the move: %+v, %v", moved, err)
 	}
-	must[user.Workspace](t)(f.a.ArchiveWorkspace(f.ctx, "u", w.ID, true))
-	if _, _, err := f.a.Send(f.ctx, "u", th.ID, Input{Text: "more"}); !errors.Is(err, user.ErrWorkspaceArchived) {
+	must[account.Workspace](t)(f.a.ArchiveWorkspace(f.ctx, "u", w.ID, true))
+	if _, _, err := f.a.Send(f.ctx, "u", th.ID, Input{Text: "more"}); !errors.Is(err, account.ErrWorkspaceArchived) {
 		t.Errorf("a message in an archived workspace: %v", err)
 	}
 }
@@ -330,4 +330,4 @@ func TestTheUserCorrectsTheirNotes(t *testing.T) {
 	}
 }
 
-func noStatuses(string) ([]user.MCPStatus, error) { return nil, nil }
+func noStatuses(string) ([]account.MCPStatus, error) { return nil, nil }

@@ -4,13 +4,13 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/policy"
 	"github.com/0xfakeSpike/ollupi/store"
-	"github.com/0xfakeSpike/ollupi/user"
 )
 
 type ThreadRow struct {
@@ -176,19 +176,19 @@ type WorkspaceRow struct {
 	ArchivedAt *time.Time      `json:"archivedAt,omitempty"`
 }
 
-func workspaceRow(w user.Workspace) WorkspaceRow {
+func workspaceRow(w account.Workspace) WorkspaceRow {
 	return WorkspaceRow{ID: w.ID, Name: w.Name, RootPath: w.Root, Settings: w.Settings, CreatedAt: w.Created, UpdatedAt: w.Updated, ArchivedAt: w.Archived}
 }
 
 type EnvironmentRow struct {
-	ID        string               `json:"id"`
-	Name      string               `json:"name"`
-	Kind      user.EnvironmentKind `json:"kind"`
-	CreatedAt time.Time            `json:"createdAt"`
-	UpdatedAt time.Time            `json:"updatedAt"`
+	ID        string                  `json:"id"`
+	Name      string                  `json:"name"`
+	Kind      account.EnvironmentKind `json:"kind"`
+	CreatedAt time.Time               `json:"createdAt"`
+	UpdatedAt time.Time               `json:"updatedAt"`
 }
 
-func environmentRow(e user.Environment) EnvironmentRow {
+func environmentRow(e account.Environment) EnvironmentRow {
 	return EnvironmentRow{ID: e.ID, Name: e.Name, Kind: e.Kind, CreatedAt: e.Created, UpdatedAt: e.Updated}
 }
 
@@ -254,7 +254,7 @@ type SettingsRow struct {
 	Permissions policy.Settings `json:"permissions"`
 }
 
-func settingsRow(s user.Settings) SettingsRow {
+func settingsRow(s account.Settings) SettingsRow {
 	return SettingsRow{Redaction: s.Redaction, Memory: s.Memory, Permissions: s.Permissions}
 }
 
@@ -267,7 +267,7 @@ type MCPServerConfig struct {
 	Headers map[string]string `json:"headers,omitempty"`
 }
 
-func mcpServerConfig(s user.MCPServer) MCPServerConfig {
+func mcpServerConfig(s account.MCPServer) MCPServerConfig {
 	return MCPServerConfig{Name: s.Name, Command: s.Command, Args: s.Args, Env: s.Env, URL: s.URL, Headers: s.Headers}
 }
 

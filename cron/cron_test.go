@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/0xfakeSpike/ollupi/store/sqlite"
-	"github.com/0xfakeSpike/ollupi/user"
 	"github.com/google/uuid"
 )
 
@@ -57,7 +57,7 @@ type fixture struct {
 	t   *testing.T
 	st  store.Store
 	cal Calendar
-	job user.CronJob
+	job account.CronJob
 }
 
 func setup(t *testing.T) *fixture {
@@ -76,7 +76,7 @@ func setup(t *testing.T) *fixture {
 		if err := tx.EnsureUser("u"); err != nil {
 			return err
 		}
-		if err := tx.CreateThread(store.Thread{User: "u", Thread: user.Thread{ID: "th", Created: now, Updated: now}}); err != nil {
+		if err := tx.CreateThread(store.Thread{User: "u", Thread: account.Thread{ID: "th", Created: now, Updated: now}}); err != nil {
 			return err
 		}
 		return tx.PutCronJob(f.job)
@@ -91,9 +91,9 @@ func (f *fixture) update(fn func(store.Tx) error) {
 	}
 }
 
-func (f *fixture) stored() user.CronJob {
+func (f *fixture) stored() account.CronJob {
 	f.t.Helper()
-	var j user.CronJob
+	var j account.CronJob
 	if err := f.st.Read(context.Background(), func(r store.Reader) (err error) { j, err = r.CronJob("j"); return err }); err != nil {
 		f.t.Fatal(err)
 	}

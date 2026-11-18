@@ -15,13 +15,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/sqlitedb"
 	"github.com/0xfakeSpike/ollupi/policy"
 	"github.com/0xfakeSpike/ollupi/store"
-	"github.com/0xfakeSpike/ollupi/user"
 	gormsqlite "gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -203,7 +203,7 @@ func (l legacy) threads() error {
 	for _, th := range threads {
 		var settings policy.Settings
 		json.Unmarshal([]byte(th.Settings), &settings)
-		header := store.Thread{User: th.UserID, Thread: user.Thread{ID: th.ID, Title: th.Title, Settings: settings,
+		header := store.Thread{User: th.UserID, Thread: account.Thread{ID: th.ID, Title: th.Title, Settings: settings,
 			Workspace: deref(th.WorkspaceID), Environment: deref(th.EnvironmentID), Parent: deref(th.ParentThreadID),
 			ParentItem: deref(th.ParentItemID), Created: th.CreatedAt.UTC(), Updated: th.UpdatedAt.UTC()}}
 		if err := l.t.CreateThread(header); err != nil {

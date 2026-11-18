@@ -6,10 +6,10 @@ import (
 	"slices"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/policy"
 	"github.com/0xfakeSpike/ollupi/store"
-	"github.com/0xfakeSpike/ollupi/user"
 	"gorm.io/gorm"
 )
 
@@ -42,7 +42,7 @@ func (r threadRow) thread() (store.Thread, error) {
 		return store.Thread{}, fmt.Errorf("store: the settings of thread %s: %w", r.ID, err)
 	}
 	t := store.Thread{
-		Thread: user.Thread{ID: r.ID, Title: r.Title, Settings: settings, Workspace: deref(r.WorkspaceID), Environment: deref(r.EnvironmentID),
+		Thread: account.Thread{ID: r.ID, Title: r.Title, Settings: settings, Workspace: deref(r.WorkspaceID), Environment: deref(r.EnvironmentID),
 			Parent: deref(r.ParentID), ParentItem: r.ParentItem, Created: r.CreatedAt, Updated: r.UpdatedAt, Archived: r.ArchivedAt, Replied: r.RepliedAt, Read: r.ReadAt},
 		User: r.UserID, Head: r.Head, Status: conversation.ThreadStatus(r.Status), Runnable: r.RunnableSince != nil,
 	}

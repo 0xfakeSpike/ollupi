@@ -46,7 +46,7 @@ type AttachmentInput struct {
 
 var imageTypes = map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}
 
-func (a *App) attach(ctx context.Context, u, thread string, ins []AttachmentInput) ([]conversation.Attachment, error) {
+func (a *App) attach(ctx context.Context, user, thread string, ins []AttachmentInput) ([]conversation.Attachment, error) {
 	if len(ins) == 0 {
 		return nil, nil
 	}
@@ -57,7 +57,7 @@ func (a *App) attach(ctx context.Context, u, thread string, ins []AttachmentInpu
 	defer cancel()
 	out := make([]conversation.Attachment, 0, len(ins))
 	for _, in := range ins {
-		att, err := a.keepAttachment(ctx, u, thread, in)
+		att, err := a.keepAttachment(ctx, user, thread, in)
 		if err != nil {
 			a.detach(ctx, out)
 			return nil, err
@@ -67,11 +67,11 @@ func (a *App) attach(ctx context.Context, u, thread string, ins []AttachmentInpu
 	return out, nil
 }
 
-func (a *App) keepAttachment(ctx context.Context, u, thread string, in AttachmentInput) (conversation.Attachment, error) {
+func (a *App) keepAttachment(ctx context.Context, user, thread string, in AttachmentInput) (conversation.Attachment, error) {
 	if !filepath.IsAbs(in.Path) {
 		return conversation.Attachment{}, fmt.Errorf("%w: attachment path %q is not absolute", ErrInvalidMessage, in.Path)
 	}
-	data, err := a.attachmentSource(ctx, u, in.Path)
+	data, err := a.attachmentSource(ctx, user, in.Path)
 	if err != nil {
 		return conversation.Attachment{}, fmt.Errorf("%w: attachment %s: %v", ErrInvalidMessage, in.Path, err)
 	}
@@ -90,8 +90,8 @@ func (a *App) keepAttachment(ctx context.Context, u, thread string, in Attachmen
 	return att, nil
 }
 
-func (a *App) attachmentSource(ctx context.Context, u, path string) ([]byte, error) {
-	box, err := a.boxes(u)
+func (a *App) attachmentSource(ctx context.Context, user, path string) ([]byte, error) {
+	box, err := a.boxes(user)
 	if err != nil {
 		return nil, err
 	}
@@ -176,10 +176,10 @@ func (a *App) detach(ctx context.Context, atts []conversation.Attachment) {
 	}
 }
 
-func (a *App) ReadAttachment(ctx context.Context, u, threadID, id string) (conversation.Attachment, []byte, error) {
+func (a *App) ReadAttachment(ctx context.Context, user, threadID, id string) (conversation.Attachment, []byte, error) {
 	var att *conversation.Attachment
 	err := a.st.Read(ctx, func(r store.Reader) error {
-		v, err := view(r, u, threadID)
+		v, err := view(r, user, threadID)
 		if err != nil {
 			return err
 		}
