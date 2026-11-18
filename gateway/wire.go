@@ -69,7 +69,7 @@ type ResponseRow struct {
 	ContextStats conversation.ContextStats `json:"contextStats"`
 }
 
-func turnRow(thread string, t conversation.Turn, active string) TurnRow {
+func turnRow(thread string, t conversation.Turn, running bool) TurnRow {
 	row := TurnRow{ID: t.ID, ThreadID: thread, Status: TurnQueued, Model: t.Model, Agent: agent.Name(t.Role), Usage: t.Usage,
 		CronJobID: t.CronJob, QueuedAt: t.QueuedAt, Responses: make([]ResponseRow, len(t.Responses))}
 	for i, r := range t.Responses {
@@ -79,18 +79,10 @@ func turnRow(thread string, t conversation.Turn, active string) TurnRow {
 	case t.Ended != nil:
 		at := t.Ended.At
 		row.Status, row.Error, row.CompletedAt = TurnStatus(t.Ended.Status), t.Ended.Reason, &at
-	case t.ID == active:
+	case running:
 		row.Status = TurnInProgress
 	}
 	return row
-}
-
-func turnRows(thread string, turns []conversation.Turn, active string) []TurnRow {
-	out := make([]TurnRow, len(turns))
-	for i, t := range turns {
-		out[i] = turnRow(thread, t, active)
-	}
-	return out
 }
 
 type Approval struct {

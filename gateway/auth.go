@@ -11,22 +11,25 @@ import (
 	"github.com/0xfakeSpike/ollupi/auth"
 )
 
-func (s *Server) authorize(r *http.Request) (string, int, string) {
+func (s *Server) authorize(w http.ResponseWriter, r *http.Request) (string, bool) {
 	host := r.Host
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}
 	if !slices.Contains(s.hosts, strings.Trim(host, "[]")) {
-		return "", http.StatusForbidden, "host not allowed"
+		http.Error(w, "host not allowed", http.StatusForbidden)
+		return "", false
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), lookupTimeout)
 	defer cancel()
 	user, err := s.authenticate(ctx, auth.TokenOf(r.Header))
 	switch {
 	case errors.Is(err, auth.ErrUnknownToken):
-		return "", http.StatusUnauthorized, "invalid or missing gateway token"
+		http.Error(w, "invalid or missing gateway token", http.StatusUnauthorized)
+		return "", false
 	case err != nil:
-		return "", http.StatusServiceUnavailable, "the token cannot be checked now; try again"
+		s.hub.Refuse(w, "the token cannot be checked now; try again")
+		return "", false
 	}
-	return user, 0, ""
+	return user, true
 }

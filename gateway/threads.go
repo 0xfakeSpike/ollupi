@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"slices"
 	"strings"
 
 	"github.com/0xfakeSpike/ollupi/app"
+	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/store"
 )
@@ -37,18 +39,17 @@ func threadPage(resume bool) func(*conn, context.Context, ThreadPageParams) (Thr
 				break
 			}
 		}
-		var active string
-		for _, t := range page.Turns {
-			if t.Ended == nil {
-				active = t.ID
-				break
-			}
+		turns := make([]TurnRow, len(page.Turns))
+		unended := func(t conversation.Turn) bool { return t.Ended == nil }
+		running := slices.IndexFunc(page.Turns, unended)
+		for i, t := range page.Turns {
+			turns[i] = turnRow(th.ID, t, i == running)
 		}
 		var after func()
 		if resume {
 			after = func() { c.requests(c.s.app.Requests(context.Background(), c.user, p.ThreadID)) }
 		}
-		view := ThreadView{Thread: threadRow(th), Turns: turnRows(th.ID, page.Turns, active), Items: items, Seq: seq}
+		view := ThreadView{Thread: threadRow(th), Turns: turns, Items: items, Seq: seq}
 		return ThreadPageResult{ThreadView: view, HasMore: more}, after, nil
 	}
 }
@@ -124,11 +125,7 @@ func (c *conn) turnStart(ctx context.Context, p TurnStartParams) (TurnResult, er
 	}
 	in.Connection = p.Connection
 	turn, inProgress, err := c.s.app.Send(ctx, c.user, p.ThreadID, in)
-	active := ""
-	if inProgress {
-		active = turn.ID
-	}
-	return TurnResult{Turn: turnRow(p.ThreadID, turn, active)}, err
+	return TurnResult{Turn: turnRow(p.ThreadID, turn, inProgress)}, err
 }
 
 func (c *conn) turnSteer(ctx context.Context, p TurnSteerParams) (TurnSteerResult, error) {
