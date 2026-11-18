@@ -243,13 +243,7 @@ func (p *proxy) serveConnect(c net.Conn, br *bufio.Reader, req *http.Request) {
 		return
 	}
 
-	if n := br.Buffered(); n > 0 {
-		buf, _ := br.Peek(n)
-		if _, err := up.Write(buf); err != nil {
-			return
-		}
-	}
-	tunnel(c, up)
+	tunnel(c, br, up)
 }
 
 var hopHeaders = []string{"Connection", "Proxy-Connection", "Keep-Alive", "Proxy-Authenticate", "Proxy-Authorization", "Te", "Trailer", "Transfer-Encoding", "Upgrade"}
@@ -372,26 +366,20 @@ func (p *proxy) serveSOCKS(c net.Conn, br *bufio.Reader) {
 	}
 	defer p.untrack(up)
 	reply(0x00)
-	if n := br.Buffered(); n > 0 {
-		buf, _ := br.Peek(n)
-		if _, err := up.Write(buf); err != nil {
-			return
-		}
-	}
-	tunnel(c, up)
+	tunnel(c, br, up)
 }
 
-func tunnel(a, b net.Conn) {
+func tunnel(c net.Conn, br *bufio.Reader, up net.Conn) {
 	done := make(chan struct{}, 2)
-	cp := func(dst, src net.Conn) {
+	cp := func(dst net.Conn, src io.Reader) {
 		_, _ = io.Copy(dst, src)
 		if tc, ok := dst.(*net.TCPConn); ok {
 			_ = tc.CloseWrite()
 		}
 		done <- struct{}{}
 	}
-	go cp(a, b)
-	go cp(b, a)
+	go cp(up, br)
+	go cp(c, up)
 	<-done
 	<-done
 }

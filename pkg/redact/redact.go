@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/netip"
 	"regexp"
 	"sort"
 	"strings"
@@ -288,21 +289,6 @@ func validBankCard(s string) bool {
 }
 
 func validIPv4(s string) bool {
-	parts := strings.Split(s, ".")
-	if len(parts) != 4 {
-		return false
-	}
-	for _, p := range parts {
-		if p == "" || len(p) > 3 || (len(p) > 1 && p[0] == '0') {
-			return false
-		}
-		n := 0
-		for _, c := range p {
-			n = n*10 + int(c-'0')
-		}
-		if n > 255 {
-			return false
-		}
-	}
-	return true
+	a, err := netip.ParseAddr(s)
+	return err == nil && a.Is4()
 }

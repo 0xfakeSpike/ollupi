@@ -48,17 +48,21 @@ var (
 type Registry struct {
 	unavailable []string
 	providers   map[string]Provider
-	owner       map[string]string
-	specs       map[string]Spec
-	schemas     map[string]*jsonschema.Resolved
+	tools       map[string]entry
 	listed      []tool.Spec
+}
+
+type entry struct {
+	owner    string
+	provider Provider
+	spec     Spec
+	schema   *jsonschema.Resolved
 }
 
 var _ tool.Set = (*Registry)(nil)
 
 func New(ctx context.Context, unavailable []string, providers ...Provider) (*Registry, error) {
-	r := &Registry{unavailable: slices.Clone(unavailable), providers: map[string]Provider{}, owner: map[string]string{},
-		specs: map[string]Spec{}, schemas: map[string]*jsonschema.Resolved{}}
+	r := &Registry{unavailable: slices.Clone(unavailable), providers: map[string]Provider{}, tools: map[string]entry{}}
 	for _, p := range append(providers, introspection{r}) {
 		id, _ := p.Name()
 		if id == "" {
@@ -78,8 +82,8 @@ func New(ctx context.Context, unavailable []string, providers ...Provider) (*Reg
 			if s.Name == "" {
 				return nil, fmt.Errorf("tool registry: provider %q has a tool without a name", id)
 			}
-			if prev, ok := r.owner[s.Name]; ok {
-				return nil, fmt.Errorf("tool registry: tool %q twice (providers %q and %q)", s.Name, prev, id)
+			if prev, ok := r.tools[s.Name]; ok {
+				return nil, fmt.Errorf("tool registry: tool %q twice (providers %q and %q)", s.Name, prev.owner, id)
 			}
 			resolved, err := ResolveSchema(s.InputSchema)
 			if err != nil {
@@ -89,7 +93,7 @@ func New(ctx context.Context, unavailable []string, providers ...Provider) (*Reg
 			if err != nil {
 				return nil, fmt.Errorf("tool registry: tool %q: %w", s.Name, err)
 			}
-			r.owner[s.Name], r.specs[s.Name], r.schemas[s.Name] = id, s, resolved
+			r.tools[s.Name] = entry{owner: id, provider: r.providers[id], spec: s, schema: resolved}
 			r.listed = append(r.listed, tool.Spec{Name: s.Name, Provider: id, Description: s.Description, Schema: schema,
 				Annotations: s.Annotations, Content: s.Content != nil, Serial: s.Serial})
 		}
@@ -115,33 +119,33 @@ func (r *Registry) ids() []string {
 func (r *Registry) Specs() []tool.Spec    { return slices.Clone(r.listed) }
 func (r *Registry) Unavailable() []string { return slices.Clone(r.unavailable) }
 
-func (r *Registry) check(c tool.Call) (Spec, error) {
-	resolved, ok := r.schemas[c.Tool]
+func (r *Registry) check(c tool.Call) (entry, error) {
+	e, ok := r.tools[c.Tool]
 	if !ok {
-		return Spec{}, fmt.Errorf("tool registry: %w %q", ErrUnknownTool, c.Tool)
+		return entry{}, fmt.Errorf("tool registry: %w %q", ErrUnknownTool, c.Tool)
 	}
-	if err := validate(resolved, c.Arguments); err != nil {
-		return Spec{}, fmt.Errorf("tool registry: %w for %q: %v", ErrInvalidArguments, c.Tool, err)
+	if err := validate(e.schema, c.Arguments); err != nil {
+		return entry{}, fmt.Errorf("tool registry: %w for %q: %v", ErrInvalidArguments, c.Tool, err)
 	}
-	return r.specs[c.Tool], nil
+	return e, nil
 }
 
 func (r *Registry) Content(ctx context.Context, c tool.Call) (content policy.Content, err error) {
-	spec, err := r.check(c)
+	e, err := r.check(c)
 	if err != nil {
 		return policy.Content{}, err
 	}
 	defer recovered(&err, "reading what the call touches")
-	return spec.Content(ctx, c)
+	return e.spec.Content(ctx, c)
 }
 
 func (r *Registry) Prepare(ctx context.Context, c tool.Call) (plan tool.Plan, err error) {
-	spec, err := r.check(c)
-	if err != nil || spec.Prepare == nil {
+	e, err := r.check(c)
+	if err != nil || e.spec.Prepare == nil {
 		return tool.Plan{}, err
 	}
 	defer recovered(&err, "preparing")
-	return spec.Prepare(ctx, c)
+	return e.spec.Prepare(ctx, c)
 }
 
 func recovered(err *error, while string) {
@@ -156,7 +160,8 @@ const (
 )
 
 func (r *Registry) Invoke(ctx context.Context, c tool.Call) (out tool.Result) {
-	if _, err := r.check(c); err != nil {
+	e, err := r.check(c)
+	if err != nil {
 		return tool.Result{Error: err.Error()}
 	}
 	defer func() {
@@ -164,7 +169,7 @@ func (r *Registry) Invoke(ctx context.Context, c tool.Call) (out tool.Result) {
 			out = tool.Result{Error: fmt.Sprintf("the tool crashed: %v", p)}
 		}
 	}()
-	res, err := r.providers[r.owner[c.Tool]].Invoke(ctx, c)
+	res, err := e.provider.Invoke(ctx, c)
 	return settle(res, err)
 }
 
