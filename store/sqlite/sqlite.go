@@ -35,12 +35,7 @@ func Open(home string) (*Store, error) {
 		sqlitedb.Close(g)
 		return nil, fmt.Errorf("store: %s: %w", path, err)
 	}
-	s := &Store{g: g, feed: store.NewFeed()}
-	if err := s.importLegacy(home); err != nil {
-		sqlitedb.Close(g)
-		return nil, err
-	}
-	return s, nil
+	return &Store{g: g, feed: store.NewFeed()}, nil
 }
 
 func (s *Store) Close() error { return sqlitedb.Close(s.g) }

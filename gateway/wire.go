@@ -286,7 +286,7 @@ type MessageHit struct {
 type Found struct {
 	Threads  []ThreadRow  `json:"threads"`
 	Messages []MessageHit `json:"messages"`
-	CronJobs []CronJobRow `json:"tasks"`
+	CronJobs []CronJobRow `json:"cronJobs"`
 }
 
 func found(f store.Found) Found {
