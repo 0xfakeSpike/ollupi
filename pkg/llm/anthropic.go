@@ -134,6 +134,18 @@ func anthropicParams(req ChatRequest, maxTokens int) (anthropic.BetaMessageNewPa
 		disabled := anthropic.NewBetaThinkingConfigDisabledParam()
 		p.Thinking.OfDisabled = &disabled
 	}
+	p.Tools, p.ToolChoice = anthropicTools(req)
+	natives, err := anthropicMessages(&p, req.Messages)
+	if err != nil {
+		return p, "", err
+	}
+	prefix, err := replayable(&p, natives)
+	return p, prefix, err
+}
+
+func anthropicTools(req ChatRequest) ([]anthropic.BetaToolUnionParam, anthropic.BetaToolChoiceUnionParam) {
+	var tools []anthropic.BetaToolUnionParam
+	var choice anthropic.BetaToolChoiceUnionParam
 	for _, tool := range req.Tools {
 		schema := tool.Parameters
 		if schema == nil {
@@ -143,18 +155,22 @@ func anthropicParams(req ChatRequest, maxTokens int) (anthropic.BetaMessageNewPa
 		if tool.Description != "" {
 			t.Description = anthropic.String(tool.Description)
 		}
-		p.Tools = append(p.Tools, anthropic.BetaToolUnionParam{OfTool: &t})
+		tools = append(tools, anthropic.BetaToolUnionParam{OfTool: &t})
 	}
 	if len(req.Tools) > 0 {
-		p.ToolChoice.OfAuto = &anthropic.BetaToolChoiceAutoParam{}
+		choice.OfAuto = &anthropic.BetaToolChoiceAutoParam{}
 		if req.ToolChoice == ToolChoiceNone {
 			none := anthropic.NewBetaToolChoiceNoneParam()
-			p.ToolChoice = anthropic.BetaToolChoiceUnionParam{OfNone: &none}
+			choice = anthropic.BetaToolChoiceUnionParam{OfNone: &none}
 		}
 	}
 
+	return tools, choice
+}
+
+func anthropicMessages(p *anthropic.BetaMessageNewParams, messages []ChatMessage) ([]*native, error) {
 	var natives []*native
-	for i, m := range req.Messages {
+	for i, m := range messages {
 		var blocks []anthropic.BetaContentBlockParamUnion
 		switch m.Role {
 		case RoleSystem:
@@ -170,7 +186,7 @@ func anthropicParams(req ChatRequest, maxTokens int) (anthropic.BetaMessageNewPa
 				})
 			})
 			if err != nil {
-				return p, "", fmt.Errorf("message %d: %w", i, err)
+				return nil, fmt.Errorf("message %d: %w", i, err)
 			}
 		case RoleTool:
 			blocks = append(blocks, anthropic.NewBetaToolResultBlock(m.ToolCallID, m.Content, false))
@@ -191,7 +207,7 @@ func anthropicParams(req ChatRequest, maxTokens int) (anthropic.BetaMessageNewPa
 				blocks = append(blocks, anthropic.NewBetaToolUseBlock(call.ID, args, call.Name))
 			}
 		default:
-			return p, "", fmt.Errorf("message %d: unsupported role %q", i, m.Role)
+			return nil, fmt.Errorf("message %d: unsupported role %q", i, m.Role)
 		}
 		if len(blocks) == 0 {
 			continue
@@ -207,8 +223,7 @@ func anthropicParams(req ChatRequest, maxTokens int) (anthropic.BetaMessageNewPa
 		p.Messages = append(p.Messages, anthropic.BetaMessageParam{Role: role, Content: blocks})
 		natives = append(natives, nil)
 	}
-	prefix, err := replayable(&p, natives)
-	return p, prefix, err
+	return natives, nil
 }
 
 func replayable(p *anthropic.BetaMessageNewParams, natives []*native) (string, error) {
