@@ -30,8 +30,15 @@ func NewCalendar(location *time.Location) Calendar {
 	return Calendar{Location: location, parser: robfig.NewParser(robfig.Minute | robfig.Hour | robfig.Dom | robfig.Month | robfig.Dow | robfig.Descriptor)}
 }
 
-func (c Calendar) Job(id, thread, name, spec, prompt string, times *int, now time.Time) (user.CronJob, error) {
-	name, spec, prompt = strings.TrimSpace(name), strings.TrimSpace(spec), strings.TrimSpace(prompt)
+type Draft struct {
+	Name   string
+	Spec   string
+	Prompt string
+	Times  *int
+}
+
+func (c Calendar) Job(id, thread string, d Draft, now time.Time) (user.CronJob, error) {
+	name, spec, prompt, times := strings.TrimSpace(d.Name), strings.TrimSpace(d.Spec), strings.TrimSpace(d.Prompt), d.Times
 	if !NamePattern.MatchString(name) {
 		return user.CronJob{}, fmt.Errorf("cron: %w: name %q must match %s", ErrInvalidJob, name, NamePattern)
 	}

@@ -111,7 +111,7 @@ func (p Provider) Invoke(ctx context.Context, c tool.Call) (kit.Result, error) {
 	case createTool:
 		args, _ := kit.DecodeArguments[createArgs](c.Arguments)
 		err = p.update(ctx, c, func(tx store.Tx, th store.Thread) (err error) {
-			task, err = cron.Create(tx, p.cal, th, args.Name, args.Spec, args.Prompt, args.Times, time.Now().UTC())
+			task, err = cron.Create(tx, p.cal, th, cron.Draft{Name: args.Name, Spec: args.Spec, Prompt: args.Prompt, Times: args.Times}, time.Now().UTC())
 			return err
 		})
 		out = shown(task)

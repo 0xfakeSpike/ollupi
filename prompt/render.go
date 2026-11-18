@@ -36,31 +36,15 @@ func compactStructured(v any) any {
 }
 
 func compactDecorativeLines(s string) string {
-	if s == "" {
-		return s
-	}
-	var b strings.Builder
-	skipping, first := false, true
+	var kept []string
 	for line := range strings.SplitSeq(s, "\n") {
-		if isDecorativeLine(line) {
-			if !skipping {
-				if !first {
-					b.WriteByte('\n')
-				}
-				b.WriteString("...")
-				first = false
-				skipping = true
-			}
-			continue
+		if !isDecorativeLine(line) {
+			kept = append(kept, line)
+		} else if len(kept) == 0 || kept[len(kept)-1] != "..." {
+			kept = append(kept, "...")
 		}
-		skipping = false
-		if !first {
-			b.WriteByte('\n')
-		}
-		b.WriteString(line)
-		first = false
 	}
-	return b.String()
+	return strings.Join(kept, "\n")
 }
 
 func isDecorativeLine(line string) bool {

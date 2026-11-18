@@ -172,8 +172,16 @@ func TestAViewFoldedAgainIsTheSame(t *testing.T) {
 	add("t1", "c1", ToolCall{Call: "x", Tool: "read_file", Response: "r1"})
 	add("t1", "c1", ToolStarted{})
 	add("t1", "c1", ToolResult{Error: "no such file"})
-	folded := Fold(entries)
+	folded := fold(entries)
 	if folded.Head != l.v.Head || len(folded.Items) != len(l.v.Items) || folded.Items[1].Status != Errored {
 		t.Errorf("folded again: head %d, %d items, %+v", folded.Head, len(folded.Items), folded.Items)
 	}
+}
+
+func fold(entries []Entry) View {
+	var v View
+	for _, e := range entries {
+		v.Apply(e)
+	}
+	return v
 }

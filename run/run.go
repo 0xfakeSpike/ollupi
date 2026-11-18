@@ -39,10 +39,16 @@ type Runner struct {
 	allowlist   []string
 }
 
-func New(st store.Store, models Models, tools tool.Tools, attachments Attachments, skills Skills,
-	name, prompt string, deployment policy.Settings, allowlist []string) *Runner {
+type Deployment struct {
+	Name        string
+	Prompt      string
+	Permissions policy.Settings
+	Allowlist   []string
+}
+
+func New(st store.Store, models Models, tools tool.Tools, attachments Attachments, skills Skills, d Deployment) *Runner {
 	return &Runner{st: st, models: models, tools: tools, attachments: attachments, skills: skills,
-		name: name, prompt: prompt, deployment: deployment, allowlist: allowlist}
+		name: d.Name, prompt: d.Prompt, deployment: d.Permissions, allowlist: d.Allowlist}
 }
 
 func (r *Runner) Run(ctx context.Context, thread string) error {

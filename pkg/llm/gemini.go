@@ -83,7 +83,7 @@ func (c *Gemini) Chat(ctx context.Context, req ChatRequest, onDelta func(Delta))
 			if part.Thought {
 				d = Delta{Reasoning: part.Text}
 			}
-			emit(onDelta, d)
+			Emit(onDelta, d)
 		}
 	}
 	return geminiResponse(usage, parts, finish)

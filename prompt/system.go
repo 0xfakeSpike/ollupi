@@ -59,7 +59,7 @@ func (w Window) listSkills(catalog []Skill) string {
 		return ""
 	}
 	listed := catalog
-	for len(listed) > 0 && llm.EstimateTokens(renderSkills(listed)) > w.SkillBudget() {
+	for len(listed) > 0 && llm.EstimateTokens(renderSkills(listed)) > share(w.inputTokens, skillPercent) {
 		listed = listed[:len(listed)-1]
 	}
 	text := "# AVAILABLE SKILLS"

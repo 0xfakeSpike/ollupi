@@ -122,10 +122,10 @@ func TestALongHistoryAsksForCompaction(t *testing.T) {
 		t.Fatalf("a history over the window: needs compaction %v, %v", r.NeedsCompaction, err)
 	}
 	c, err := w.Compaction(in)
-	if err != nil || c.Stats.CalibratedTokens > w.InputTokens() || !strings.Contains(c.Messages[len(c.Messages)-1].Content, "CONTEXT CHECKPOINT COMPACTION") {
+	if err != nil || c.Stats.CalibratedTokens > w.inputTokens || !strings.Contains(c.Messages[len(c.Messages)-1].Content, "CONTEXT CHECKPOINT COMPACTION") {
 		t.Fatalf("the compaction request: %d tokens, %v", c.Stats.CalibratedTokens, err)
 	}
-	l.add("t", "", conversation.ModelResponded{Response: "rc"})
+	l.add("t", "", conversation.ModelResponded{Response: "rc", Compaction: true})
 	l.add("t", "s", conversation.Compacted{Summary: "the gist", Through: l.v.Head, Response: "rc"})
 	l.add("t", "m-last", conversation.UserMessage{Text: "go on"})
 	r = build(t, w, l.v)

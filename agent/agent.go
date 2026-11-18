@@ -187,15 +187,9 @@ func fresh(items []conversation.Item) int {
 }
 
 func responses(v conversation.View, turn string) int {
-	compactions := map[string]bool{}
-	for _, it := range v.ItemsOf(turn) {
-		if it.Kind == conversation.ItemCompaction {
-			compactions[it.Response] = true
-		}
-	}
 	n := 0
 	for _, r := range v.Responses {
-		if r.Turn == turn && !compactions[r.ID] {
+		if r.Turn == turn && !r.Compaction {
 			n++
 		}
 	}
