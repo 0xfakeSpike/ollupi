@@ -134,7 +134,7 @@ class Figure:
 
 def architecture():
     f = Figure(960, "OLLUPI · ARCHITECTURE", "One process hosts every session",
-                "Sessions, subagents and scheduled tasks share one agent's scheduler, and all state lives in SQLite", "Every step is written to the database before it runs", SOURCE)
+                "Sessions, subagents and scheduled jobs share one scheduler, and each conversation is an append-only log in SQLite", "Every step is appended to the log before it runs", SOURCE)
     f.card(560, 196, 480, 60, TINT, LINE)
     f.text(800, 233, "ollupi-desktop · other clients", "hs", "middle")
     f.arrow("M800,258 V300")
@@ -142,21 +142,21 @@ def architecture():
     f.text(816, 284, "JSON-RPC 2.0 · WebSocket", "s")
     f.card(360, 302, 880, 64)
     f.text(392, 342, "gateway", "h code")
-    f.text(510, 341, "Request dispatch · event push · contract and method table from one source", "b")
+    f.text(510, 341, "Request dispatch · pushes the store's feed · contract and method table from one source", "b")
     f.arrow("M800,368 V404")
     f.card(330, 406, 940, 236, TINT, INDIGO, r=18)
-    f.text(360, 444, "agent", "h code")
-    mods = [("Scheduler", ["Shared pool, 32 slots by default", "Slots released while waiting", "Sessions before subagents"]),
-            ("runtime", ["Re-reads DB before model calls", "Model call → tool execution", "Steps written before they run"]),
-            ("Permissions · redaction", ["Three layers of permission rules", "Seatbelt sandbox", "Secrets replaced before sending"])]
+    f.text(360, 444, "app · run", "h code")
+    mods = [("schedule", ["Shared pool, 32 slots by default", "Slots released while waiting", "Sessions before subagents"]),
+            ("agent.Next", ["Reads the log at every step", "Model call → tool execution", "Appended before it runs"]),
+            ("Permissions · redaction", ["Four layers of permission rules", "Seatbelt or a cloud sandbox", "Secrets replaced before sending"])]
     for i, (h, lines) in enumerate(mods):
         x = 360 + i * 300
         f.card(x, 466, 280, 156)
-        f.text(x + 22, 504, h, "hs code" if h == "runtime" else "hs")
+        f.text(x + 22, 504, h, "hs code" if h in ("schedule", "agent.Next") else "hs")
         for j, line in enumerate(lines):
             f.text(x + 22, 540 + j * 26, line, "b")
-    for i, (h, lines) in enumerate([("Memory", ["Distilled from ended turns", "Global · general · workspace"]),
-                                     ("Scheduled tasks", ["Sends a message when due", "Queues with other turns"])]):
+    for i, (h, lines) in enumerate([("Memory", ["Learned from ended turns", "Global · general · workspace"]),
+                                     ("Scheduled jobs", ["Sends a message when due", "Queues with other turns"])]):
         y = 420 + i * 116
         f.card(72, y, 228, 100)
         f.text(94, y + 36, h, "hs")
@@ -173,8 +173,8 @@ def architecture():
     f.text(1322, 618, "Receive placeholders only", "s")
     f.arrow("M1414,522 V548")
     f.arrow("M800,644 V680")
-    f.text(816, 668, "Called after permission checks", "s")
-    tools = [("Built-in tools", "Subagent · plan · ask"), ("run_command", "Runs in the sandbox"), ("MCP servers", "stdio · HTTP"), ("App tools", "tools.Provider")]
+    f.text(816, 668, "Decided as each call is written", "s")
+    tools = [("Built-in tools", "Subagent · plan · ask · web"), ("run_command", "Runs in the sandbox"), ("MCP servers", "Each user's own"), ("App tools", "kit.Provider")]
     for i, (h, s) in enumerate(tools):
         x = 360 + i * 226
         f.card(x, 682, 206, 82)
@@ -184,9 +184,9 @@ def architecture():
     f.add(f'<g transform="translate(100,816)" fill="none" stroke="{INDIGO}" stroke-width="3"><ellipse cx="22" cy="10" rx="22" ry="8"/>'
           f'<path d="M0,10 V44 A22,8 0 0 0 44,44 V10"/><path d="M0,27 A22,8 0 0 0 44,27"/></g>')
     f.text(166, 836, "SQLite", "h")
-    f.text(166, 866, "thread · turn · item · memory · scheduled tasks · permission rules · message full-text index", "b")
-    f.text(1500, 836, "Write first, then run", "hs", "end")
-    f.text(1500, 866, "The queue and in-progress turns recover after a restart", "b", "end")
+    f.text(166, 866, "conversation log → turns · items · memory · scheduled jobs · permission settings · full-text index", "b")
+    f.text(1500, 836, "Append first, then run", "hs", "end")
+    f.text(1500, 866, "Queued and in-progress turns continue after a restart", "b", "end")
     f.arrow("M186,638 V792", dash=True)
     f.arrow("M800,766 V792")
     f.save("architecture.svg")

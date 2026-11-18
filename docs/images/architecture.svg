@@ -5,9 +5,9 @@
 <svg x="72" y="40" width="68" height="68" viewBox="0 0 100 100"><defs><linearGradient id="ollupi-ground" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f4ecda"/><stop offset="1" stop-color="#e3d5b6"/></linearGradient></defs><circle cx="50" cy="50" r="50" fill="url(#ollupi-ground)"/><circle cx="54" cy="44" r="31" fill="#fffaf0" stroke="#e6d8bb" stroke-width="1"/><g transform="translate(14 12) scale(.8)"><clipPath id="ollupi-body"><path d="M30 95 C18 95 13 83 19 73 C23 65 31 59 39 55 C43 47 45 39 46 31 L44.5 7 C44.5 4.5 47.5 4 48.5 6.5 L54.5 19.5 L58 5.5 C58.5 3 61.5 3 62 5.5 L63.5 22 C68 23.5 71.5 26 74 29 L86 34.5 C89 35.8 88.6 40 85.5 40.2 L74 41.5 C70.5 44 68.5 48 67.5 54 C66.5 62 68 72 69 82 L70 92 C70.2 94 69 95.3 67 95.3 L63.5 95.3 C61.5 95.3 61 93.8 61 92.5 L60 82 L58.5 92.5 C58.3 94.3 57 95.3 55 95.3 L50 95.3 Z"/></clipPath><path d="M30 95 C18 95 13 83 19 73 C23 65 31 59 39 55 C43 47 45 39 46 31 L44.5 7 C44.5 4.5 47.5 4 48.5 6.5 L54.5 19.5 L58 5.5 C58.5 3 61.5 3 62 5.5 L63.5 22 C68 23.5 71.5 26 74 29 L86 34.5 C89 35.8 88.6 40 85.5 40.2 L74 41.5 C70.5 44 68.5 48 67.5 54 C66.5 62 68 72 69 82 L70 92 C70.2 94 69 95.3 67 95.3 L63.5 95.3 C61.5 95.3 61 93.8 61 92.5 L60 82 L58.5 92.5 C58.3 94.3 57 95.3 55 95.3 L50 95.3 Z" fill="#c08a55"/><g clip-path="url(#ollupi-body)"><path d="M92 44 L72.5 44.5 C69.2 47.5 66.8 51.5 65.7 56.5 C64.8 61.5 65.6 68 69.2 76 L92 76 Z" fill="#ead2ab"/><path d="M8 92 L8 40 L30 40 L46.8 33 C48.4 44 44.5 52.5 37 59.5 C30 65.5 24.5 72 21.8 82 Z" fill="#3b3350"/></g><path d="M47.4 11.5 L51.4 19.8 L48.6 20.4 Z M59.9 10.2 L61 20.4 L58.6 19.4 Z" fill="#ead2ab"/><path d="M21 80 C8 84 8 99 24 99.5 C36 100 46 99 54 96.8 C57 96 57 92.5 54 92.5 C44 94 34 94 27 90 C23.5 88 22 84.5 21 80 Z" fill="#c08a55" stroke="#e3d5b6" stroke-width="1.6" paint-order="stroke"/><path d="M45 94.6 C49 94.4 51.5 93.8 54 92.5 C57 92.5 57 96 54 96.8 C51 97.6 48 98.2 45 98.5 C43.5 97 43.5 95.6 45 94.6 Z" fill="#3b3350"/><circle cx="70.5" cy="31" r="2.3" fill="#2b2541"/></g></svg>
 <text class="eyebrow" x="164" y="62">OLLUPI · ARCHITECTURE</text>
 <text class="title" x="164" y="104">One process hosts every session</text>
-<text class="sub" x="72" y="152">Sessions, subagents and scheduled tasks share one agent's scheduler, and all state lives in SQLite</text>
+<text class="sub" x="72" y="152">Sessions, subagents and scheduled jobs share one scheduler, and each conversation is an append-only log in SQLite</text>
 <line x1="72" y1="900" x2="1528" y2="900" stroke="#e6e4de" stroke-width="2"/>
-<text class="foot" x="72" y="932">Every step is written to the database before it runs</text>
+<text class="foot" x="72" y="932">Every step is appended to the log before it runs</text>
 <text class="foot" x="1528" y="932" text-anchor="end" style="font-family: ui-monospace, 'SF Mono', Menlo, monospace">github.com/0xfakeSpike/ollupi</text>
 <rect x="560" y="196" width="480" height="60" rx="14" fill="#eef3ec" stroke="#c3d3bd" stroke-width="2"/>
 <text class="hs" x="800.0" y="233.0" text-anchor="middle">ollupi-desktop · other clients</text>
@@ -16,32 +16,32 @@
 <text class="s" x="816.0" y="284.0" text-anchor="start">JSON-RPC 2.0 · WebSocket</text>
 <rect x="360" y="302" width="880" height="64" rx="14" fill="#ffffff" stroke="#c3d3bd" stroke-width="2"/>
 <text class="h code" x="392.0" y="342.0" text-anchor="start">gateway</text>
-<text class="b" x="510.0" y="341.0" text-anchor="start">Request dispatch · event push · contract and method table from one source</text>
+<text class="b" x="510.0" y="341.0" text-anchor="start">Request dispatch · pushes the store's feed · contract and method table from one source</text>
 <path d="M800,368 V404" fill="none" stroke="#8e928f" stroke-width="2" marker-end="url(#arrow)"/>
 <rect x="330" y="406" width="940" height="236" rx="18" fill="#eef3ec" stroke="#2f5d47" stroke-width="2"/>
-<text class="h code" x="360.0" y="444.0" text-anchor="start">agent</text>
+<text class="h code" x="360.0" y="444.0" text-anchor="start">app · run</text>
 <rect x="360" y="466" width="280" height="156" rx="14" fill="#ffffff" stroke="#c3d3bd" stroke-width="2"/>
-<text class="hs" x="382.0" y="504.0" text-anchor="start">Scheduler</text>
+<text class="hs code" x="382.0" y="504.0" text-anchor="start">schedule</text>
 <text class="b" x="382.0" y="540.0" text-anchor="start">Shared pool, 32 slots by default</text>
 <text class="b" x="382.0" y="566.0" text-anchor="start">Slots released while waiting</text>
 <text class="b" x="382.0" y="592.0" text-anchor="start">Sessions before subagents</text>
 <rect x="660" y="466" width="280" height="156" rx="14" fill="#ffffff" stroke="#c3d3bd" stroke-width="2"/>
-<text class="hs code" x="682.0" y="504.0" text-anchor="start">runtime</text>
-<text class="b" x="682.0" y="540.0" text-anchor="start">Re-reads DB before model calls</text>
+<text class="hs code" x="682.0" y="504.0" text-anchor="start">agent.Next</text>
+<text class="b" x="682.0" y="540.0" text-anchor="start">Reads the log at every step</text>
 <text class="b" x="682.0" y="566.0" text-anchor="start">Model call → tool execution</text>
-<text class="b" x="682.0" y="592.0" text-anchor="start">Steps written before they run</text>
+<text class="b" x="682.0" y="592.0" text-anchor="start">Appended before it runs</text>
 <rect x="960" y="466" width="280" height="156" rx="14" fill="#ffffff" stroke="#c3d3bd" stroke-width="2"/>
 <text class="hs" x="982.0" y="504.0" text-anchor="start">Permissions · redaction</text>
-<text class="b" x="982.0" y="540.0" text-anchor="start">Three layers of permission rules</text>
-<text class="b" x="982.0" y="566.0" text-anchor="start">Seatbelt sandbox</text>
+<text class="b" x="982.0" y="540.0" text-anchor="start">Four layers of permission rules</text>
+<text class="b" x="982.0" y="566.0" text-anchor="start">Seatbelt or a cloud sandbox</text>
 <text class="b" x="982.0" y="592.0" text-anchor="start">Secrets replaced before sending</text>
 <rect x="72" y="420" width="228" height="100" rx="14" fill="#ffffff" stroke="#c3d3bd" stroke-width="2"/>
 <text class="hs" x="94.0" y="456.0" text-anchor="start">Memory</text>
-<text class="s" x="94.0" y="484.0" text-anchor="start">Distilled from ended turns</text>
+<text class="s" x="94.0" y="484.0" text-anchor="start">Learned from ended turns</text>
 <text class="s" x="94.0" y="508.0" text-anchor="start">Global · general · workspace</text>
 <path d="M300,470 H326" fill="none" stroke="#8e928f" stroke-width="2" marker-end="url(#arrow)"/>
 <rect x="72" y="536" width="228" height="100" rx="14" fill="#ffffff" stroke="#c3d3bd" stroke-width="2"/>
-<text class="hs" x="94.0" y="572.0" text-anchor="start">Scheduled tasks</text>
+<text class="hs" x="94.0" y="572.0" text-anchor="start">Scheduled jobs</text>
 <text class="s" x="94.0" y="600.0" text-anchor="start">Sends a message when due</text>
 <text class="s" x="94.0" y="624.0" text-anchor="start">Queues with other turns</text>
 <path d="M300,586 H326" fill="none" stroke="#8e928f" stroke-width="2" marker-end="url(#arrow)"/>
@@ -55,25 +55,25 @@
 <text class="s" x="1322.0" y="618.0" text-anchor="start">Receive placeholders only</text>
 <path d="M1414,522 V548" fill="none" stroke="#8e928f" stroke-width="2" marker-end="url(#arrow)"/>
 <path d="M800,644 V680" fill="none" stroke="#8e928f" stroke-width="2" marker-end="url(#arrow)"/>
-<text class="s" x="816.0" y="668.0" text-anchor="start">Called after permission checks</text>
+<text class="s" x="816.0" y="668.0" text-anchor="start">Decided as each call is written</text>
 <rect x="360" y="682" width="206" height="82" rx="14" fill="#ffffff" stroke="#c3d3bd" stroke-width="2"/>
 <text class="hs" x="463.0" y="716.0" text-anchor="middle">Built-in tools</text>
-<text class="s" x="463.0" y="744.0" text-anchor="middle">Subagent · plan · ask</text>
+<text class="s" x="463.0" y="744.0" text-anchor="middle">Subagent · plan · ask · web</text>
 <rect x="586" y="682" width="206" height="82" rx="14" fill="#ffffff" stroke="#c3d3bd" stroke-width="2"/>
 <text class="hs code" x="689.0" y="716.0" text-anchor="middle">run_command</text>
 <text class="s" x="689.0" y="744.0" text-anchor="middle">Runs in the sandbox</text>
 <rect x="812" y="682" width="206" height="82" rx="14" fill="#ffffff" stroke="#c3d3bd" stroke-width="2"/>
 <text class="hs" x="915.0" y="716.0" text-anchor="middle">MCP servers</text>
-<text class="s" x="915.0" y="744.0" text-anchor="middle">stdio · HTTP</text>
+<text class="s" x="915.0" y="744.0" text-anchor="middle">Each user's own</text>
 <rect x="1038" y="682" width="206" height="82" rx="14" fill="#ffffff" stroke="#c3d3bd" stroke-width="2"/>
 <text class="hs" x="1141.0" y="716.0" text-anchor="middle">App tools</text>
-<text class="s" x="1141.0" y="744.0" text-anchor="middle">tools.Provider</text>
+<text class="s" x="1141.0" y="744.0" text-anchor="middle">kit.Provider</text>
 <rect x="72" y="796" width="1456" height="92" rx="16" fill="#f8f7f4" stroke="#cfccc3" stroke-width="2"/>
 <g transform="translate(100,816)" fill="none" stroke="#2f5d47" stroke-width="3"><ellipse cx="22" cy="10" rx="22" ry="8"/><path d="M0,10 V44 A22,8 0 0 0 44,44 V10"/><path d="M0,27 A22,8 0 0 0 44,27"/></g>
 <text class="h" x="166.0" y="836.0" text-anchor="start">SQLite</text>
-<text class="b" x="166.0" y="866.0" text-anchor="start">thread · turn · item · memory · scheduled tasks · permission rules · message full-text index</text>
-<text class="hs" x="1500.0" y="836.0" text-anchor="end">Write first, then run</text>
-<text class="b" x="1500.0" y="866.0" text-anchor="end">The queue and in-progress turns recover after a restart</text>
+<text class="b" x="166.0" y="866.0" text-anchor="start">conversation log → turns · items · memory · scheduled jobs · permission settings · full-text index</text>
+<text class="hs" x="1500.0" y="836.0" text-anchor="end">Append first, then run</text>
+<text class="b" x="1500.0" y="866.0" text-anchor="end">Queued and in-progress turns continue after a restart</text>
 <path d="M186,638 V792" fill="none" stroke="#8e928f" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 6"/>
 <path d="M800,766 V792" fill="none" stroke="#8e928f" stroke-width="2" marker-end="url(#arrow)"/>
 </svg>
