@@ -105,18 +105,15 @@ func New(ctx context.Context, cfg Config) (*Host, error) {
 		return nil, err
 	}
 	files := blob.Dir(filepath.Join(cfg.Home, "attachments"))
-	location := cmp.Or(cfg.Location, time.Local)
-	h := &Host{Store: st, cal: cron.NewCalendar(location)}
+	h := &Host{Store: st, cal: cron.NewCalendar(cmp.Or(cfg.Location, time.Local))}
 	builtins := append(slices.Clone(cfg.Tools), plan.Provider{}, ask.Provider{}, loader.Provider{}, subagent.Provider{},
 		outputs.New(st), memorytool.New(st))
 	if cfg.SkillsDir != "" {
 		builtins = append(builtins, skills.New(cfg.SkillsDir))
 	}
-	jobs := &jobs{}
-	builtins = append(builtins, tasks.New(jobs, location))
+	builtins = append(builtins, tasks.New(st, h.cal))
 	h.Users = mcp.NewUsers(ctx, mcp.Client{Name: cfg.Name, Version: version()}, st, cfg.Boxes, builtins...)
-	h.App = app.New(st, ms, h.Users.Tools, cfg.Boxes, files, h.cal, cfg.Permissions)
-	jobs.App = h.App
+	h.App = app.New(st, ms, h.Users.Tools, h.Users.Statuses, cfg.Boxes, files, h.cal, cfg.Permissions)
 	h.runner = run.New(st, ms, h.Users.Tools, files, skillsOf(cfg.SkillsDir), cfg.Name, cfg.Prompt, cfg.Permissions, cfg.Allowlist)
 	slots := cmp.Or(cfg.Slots, defaultSlots)
 	h.scheduler = schedule.New(st, h.runner, slots, cmp.Or(cfg.UserSlots, slots), cmp.Or(cfg.RunLimit, defaultRunLimit))
@@ -134,15 +131,13 @@ func New(ctx context.Context, cfg Config) (*Host, error) {
 		}
 	}
 	if cfg.Gateway != nil {
-		if h.Gateway, err = gateway.NewServer(h.App, st.Feed(), h.Users, *cfg.Gateway); err != nil {
+		if h.Gateway, err = gateway.NewServer(h.App, st.Feed(), *cfg.Gateway); err != nil {
 			h.Close()
 			return nil, err
 		}
 	}
 	return h, nil
 }
-
-type jobs struct{ *app.App }
 
 func skillsOf(dir string) run.Skills {
 	return func(role agent.Name) ([]prompt.Skill, error) {

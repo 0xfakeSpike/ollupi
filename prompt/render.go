@@ -1,4 +1,4 @@
-package render
+package prompt
 
 import (
 	"encoding/json"
@@ -7,17 +7,14 @@ import (
 	"unicode"
 )
 
-func Output(output any, err error) string {
-	if err != nil {
-		return strings.TrimSpace(err.Error())
-	}
-	v := compactStructured(output)
+func OutputText(raw json.RawMessage) string {
+	v := compactStructured(decoded(raw))
 	if s, ok := v.(string); ok {
 		return strings.TrimSpace(s)
 	}
 	b, merr := json.MarshalIndent(v, "", "  ")
 	if merr != nil {
-		panic(fmt.Sprintf("render: an output that is no JSON value: %v", merr))
+		panic(fmt.Sprintf("prompt: an output that is no JSON value: %v", merr))
 	}
 	return strings.TrimSpace(string(b))
 }

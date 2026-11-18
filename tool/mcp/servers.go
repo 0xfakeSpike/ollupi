@@ -26,14 +26,6 @@ type Client struct {
 	Version string
 }
 
-type ServerStatus struct {
-	Name         string   `json:"name"`
-	Connected    bool     `json:"connected"`
-	Tools        int      `json:"tools"`
-	SkippedTools []string `json:"skippedTools,omitempty"`
-	Error        string   `json:"error,omitempty"`
-}
-
 var toolName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 const (
@@ -111,19 +103,19 @@ func (u *Users) Tools(ctx context.Context, name string) (tool.Set, error) {
 	return c.set, nil
 }
 
-func (u *Users) Statuses(name string) ([]ServerStatus, error) {
+func (u *Users) Statuses(name string) ([]user.MCPStatus, error) {
 	c, err := u.of(name)
 	if err != nil {
 		return nil, err
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	out := make([]ServerStatus, len(c.servers))
+	out := make([]user.MCPStatus, len(c.servers))
 	for i, server := range c.servers {
-		st := ServerStatus{Name: server.Name}
+		st := user.MCPStatus{Name: server.Name}
 		err := c.failures[i]
 		if sess := c.sessions[i]; sess != nil {
-			st.Tools, st.SkippedTools = len(sess.specs), sess.skipped
+			st.Tools, st.Skipped = len(sess.specs), sess.skipped
 			sess.mu.Lock()
 			err = sess.down
 			sess.mu.Unlock()

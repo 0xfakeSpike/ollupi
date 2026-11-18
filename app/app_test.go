@@ -96,7 +96,7 @@ func setup(t *testing.T) *fixture {
 	t.Cleanup(func() { st.Close() })
 	b := &blobs{files: map[string][]byte{}}
 	f := &fixture{t: t, ctx: context.Background(), st: st, blobs: b,
-		a: New(st, models{}, tools, here, b, cron.NewCalendar(time.UTC), policy.Settings{ApprovalPolicy: string(policy.OnRequest)})}
+		a: New(st, models{}, tools, noStatuses, here, b, cron.NewCalendar(time.UTC), policy.Settings{ApprovalPolicy: string(policy.OnRequest)})}
 	if err := f.a.EnsureUser(f.ctx, "u"); err != nil {
 		t.Fatal(err)
 	}
@@ -328,3 +328,5 @@ func TestTheUserCorrectsTheirNotes(t *testing.T) {
 		t.Errorf("a workspace place with no workspace: %v", err)
 	}
 }
+
+func noStatuses(string) ([]user.MCPStatus, error) { return nil, nil }

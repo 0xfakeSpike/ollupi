@@ -20,20 +20,13 @@ const (
 	ListTool   = "list_scheduled_jobs"
 )
 
-type Jobs interface {
-	CronJobs(ctx context.Context, u, thread string) ([]store.Task, error)
-	CreateCronJob(ctx context.Context, u, thread, name, spec, prompt string, times *int) (store.Task, error)
-	PauseCronJob(ctx context.Context, u, thread, name string, paused bool) (store.Task, error)
-	DeleteCronJob(ctx context.Context, u, thread, name string) error
-}
-
 type Provider struct {
-	jobs     Jobs
-	location *time.Location
+	st  store.Store
+	cal cron.Calendar
 }
 
-func New(jobs Jobs, location *time.Location) Provider {
-	return Provider{jobs: jobs, location: location}
+func New(st store.Store, cal cron.Calendar) Provider {
+	return Provider{st: st, cal: cal}
 }
 
 func (Provider) Name() (string, string) {
@@ -71,7 +64,7 @@ func (p Provider) Tools(context.Context) ([]kit.Spec, error) {
 				"prompt is sent here as a new message and you work on it with this conversation's history, project, and settings. "+
 				"If a turn is still running then, the message waits as the next turn. "+
 				"With times, the task ends after that many runs; a spec has no year, so a one-time task must name a date still ahead.",
-				p.location),
+				p.cal.Location),
 			InputSchema: kit.InputSchema[createArgs](),
 		},
 		{
@@ -111,21 +104,29 @@ func shown(j store.Task) job {
 }
 
 func (p Provider) Invoke(ctx context.Context, c tool.Call) (kit.Result, error) {
+	var task store.Task
 	switch c.Tool {
 	case CreateTool:
 		args, _ := kit.DecodeArguments[createArgs](c.Arguments)
-		j, err := p.jobs.CreateCronJob(ctx, c.User, c.Thread, args.Name, args.Spec, args.Prompt, args.Times)
-		return kit.Result{Output: shown(j)}, err
+		err := p.update(ctx, c, func(tx store.Tx, th store.Thread) (err error) {
+			task, err = cron.Create(tx, p.cal, th, args.Name, args.Spec, args.Prompt, args.Times, time.Now().UTC())
+			return err
+		})
+		return kit.Result{Output: shown(task)}, err
 	case PauseTool:
 		args, _ := kit.DecodeArguments[pauseArgs](c.Arguments)
-		j, err := p.jobs.PauseCronJob(ctx, c.User, c.Thread, args.Name, args.Paused)
-		return kit.Result{Output: shown(j)}, err
+		err := p.update(ctx, c, func(tx store.Tx, th store.Thread) (err error) {
+			task, err = cron.Pause(tx, p.cal, th, args.Name, args.Paused, time.Now().UTC())
+			return err
+		})
+		return kit.Result{Output: shown(task)}, err
 	case DeleteTool:
 		args, _ := kit.DecodeArguments[nameArgs](c.Arguments)
-		err := p.jobs.DeleteCronJob(ctx, c.User, c.Thread, args.Name)
+		err := p.update(ctx, c, func(tx store.Tx, th store.Thread) error { return cron.Delete(tx, th, args.Name) })
 		return kit.Result{Output: map[string]string{"deleted": args.Name}}, err
 	case ListTool:
-		jobs, err := p.jobs.CronJobs(ctx, c.User, c.Thread)
+		var jobs []store.Task
+		err := p.st.Read(ctx, func(r store.Reader) (err error) { jobs, err = r.CronJobs(c.User, c.Thread); return err })
 		out := []job{}
 		for _, j := range jobs {
 			out = append(out, shown(j))
@@ -133,4 +134,14 @@ func (p Provider) Invoke(ctx context.Context, c tool.Call) (kit.Result, error) {
 		return kit.Result{Output: map[string]any{"jobs": out}}, err
 	}
 	return kit.Result{}, fmt.Errorf("tasks: unknown tool %q", c.Tool)
+}
+
+func (p Provider) update(ctx context.Context, c tool.Call, change func(tx store.Tx, th store.Thread) error) error {
+	return p.st.Update(ctx, func(tx store.Tx) error {
+		th, err := tx.Thread(c.Thread)
+		if err != nil {
+			return err
+		}
+		return change(tx, th)
+	})
 }

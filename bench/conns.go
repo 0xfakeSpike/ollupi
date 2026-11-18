@@ -21,6 +21,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/auth"
 	"github.com/0xfakeSpike/ollupi/catalog"
 	"github.com/0xfakeSpike/ollupi/gateway"
 	"github.com/0xfakeSpike/ollupi/host"
@@ -356,7 +357,7 @@ func answerStats() {
 
 func benchUser(_ context.Context, token string) (string, error) {
 	if !strings.HasPrefix(token, "user") {
-		return "", gateway.ErrUnknownToken
+		return "", auth.ErrUnknownToken
 	}
 	return token, nil
 }
