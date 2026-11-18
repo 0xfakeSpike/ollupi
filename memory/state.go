@@ -53,7 +53,7 @@ func (s State) Read(c Cursor, now time.Time) State {
 }
 
 func (s State) Failed(c Cursor, f Failure, now time.Time) State {
-	f.Error = clip(f.Error, 1000)
+	f.Error = clip(f.Error, maxReasonRunes)
 	if s.Attempts+1 >= MaxAttempts {
 		s.Cursor, s.Attempts, s.NextAttempt, s.LastFailure = c, 0, nil, nil
 		s.Skipped++

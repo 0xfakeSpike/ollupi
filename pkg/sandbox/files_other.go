@@ -11,7 +11,7 @@ import (
 )
 
 func (s *Sandbox) open(path string) (*os.File, error) {
-	path, err := CanonicalPath(path, "")
+	path, err := canonicalPath(path, "")
 	if err != nil {
 		return nil, err
 	}

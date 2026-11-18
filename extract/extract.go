@@ -298,16 +298,16 @@ func (x *Extractor) commit(ctx context.Context, u string, l learned, state memor
 			taken := map[memory.Place]map[string]bool{}
 			for _, m := range now {
 				byID[m.ID] = m
-				if taken[m.Place()] == nil {
-					taken[m.Place()] = map[string]bool{}
+				if taken[m.Place] == nil {
+					taken[m.Place] = map[string]bool{}
 				}
-				taken[m.Place()][m.Topic] = true
+				taken[m.Place][m.Topic] = true
 			}
 			for _, m := range l.changes {
 				before, wasRead := l.read[m.ID]
 				stored, kept := byID[m.ID]
 				changedMeanwhile := wasRead && (!kept || !stored.Updated.Equal(before))
-				topicTaken := !wasRead && taken[m.Place()][m.Topic]
+				topicTaken := !wasRead && taken[m.Place][m.Topic]
 				if changedMeanwhile || topicTaken {
 					continue
 				}

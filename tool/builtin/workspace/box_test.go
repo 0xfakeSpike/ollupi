@@ -120,12 +120,12 @@ func TestToolsRunOnTheUsersMachine(t *testing.T) {
 	}
 	act := func(user, name string, args map[string]any) (kit.Result, error) {
 		t.Helper()
-		ctx, caller := context.Background(), as(user)
-		p, err := r.locals()[name].prepare(ctx, caller, args)
+		ctx, call := context.Background(), tool.Call{Caller: as(user), Tool: name, Arguments: args}
+		p, err := r.locals()[name].prepare(ctx, call)
 		if err != nil {
 			return kit.Result{}, err
 		}
-		return r.locals()[name].run(ctx, caller, args, p)
+		return r.locals()[name].run(ctx, call, p)
 	}
 
 	if out := read("a", ToolReadFile, map[string]any{"path": "src/a.go"}).(ReadFileOutput); !strings.Contains(out.Text, "needle") {
@@ -253,7 +253,7 @@ func TestACommandPreparedOnAMachineIsConfined(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer r.Close()
-	p, err := r.prepareCommand(context.Background(), tool.Caller{}, map[string]any{"program": "ls"})
+	p, err := r.prepareCommand(context.Background(), tool.Call{Tool: ToolRunCommand, Arguments: map[string]any{"program": "ls"}})
 	if err != nil {
 		t.Fatal(err)
 	}

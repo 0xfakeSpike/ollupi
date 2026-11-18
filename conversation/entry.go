@@ -82,10 +82,11 @@ type Reasoning struct {
 }
 
 type ModelResponded struct {
-	Response string
-	Usage    Usage
-	Stats    ContextStats
-	Native   []byte
+	Response   string
+	Usage      Usage
+	Stats      ContextStats
+	Native     []byte
+	Compaction bool
 }
 
 type ModelFailed struct {

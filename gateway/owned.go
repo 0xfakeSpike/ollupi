@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 
+	"github.com/0xfakeSpike/ollupi/cron"
 	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
 	"github.com/0xfakeSpike/ollupi/user"
@@ -101,7 +102,7 @@ func (c *conn) cronList(ctx context.Context, p CronListParams) (CronListResult, 
 }
 
 func (c *conn) cronCreate(ctx context.Context, p CronCreateParams) (CronResult, error) {
-	j, err := c.s.app.CreateCronJob(ctx, c.user, p.ThreadID, p.Name, p.Spec, p.Prompt, p.Times)
+	j, err := c.s.app.CreateCronJob(ctx, c.user, p.ThreadID, cron.Draft{Name: p.Name, Spec: p.Spec, Prompt: p.Prompt, Times: p.Times})
 	return CronResult{Job: cronJobRow(j)}, err
 }
 

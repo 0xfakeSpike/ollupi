@@ -130,9 +130,6 @@ type cappedBuffer struct {
 }
 
 func newCappedBuffer(max int) *cappedBuffer {
-	if max <= 0 {
-		max = defaultMaxOutputBytes
-	}
 	return &cappedBuffer{max: max}
 }
 

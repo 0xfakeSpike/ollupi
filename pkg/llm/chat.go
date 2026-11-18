@@ -65,7 +65,7 @@ type ContentPart struct {
 	Data     []byte   `json:"-"`
 }
 
-func emit(onDelta func(Delta), d Delta) {
+func Emit(onDelta func(Delta), d Delta) {
 	if onDelta != nil && (d.Content != "" || d.Reasoning != "") {
 		onDelta(d)
 	}

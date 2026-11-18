@@ -56,7 +56,7 @@ func (Provider) Tools(context.Context) ([]kit.Spec, error) {
 			Name:        string(name),
 			Description: k.description + " " + launching,
 			InputSchema: kit.InputSchema[Call](),
-			Annotations: tool.Annotations{Title: k.title, ReadOnlyHint: true, OpenWorldHint: kit.Hint(false)},
+			Annotations: tool.Annotations{Title: k.title, ReadOnlyHint: true, OpenWorldHint: new(false)},
 		})
 	}
 	return specs, nil

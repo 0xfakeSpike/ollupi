@@ -76,7 +76,7 @@ func (Provider) Tools(context.Context) ([]kit.Spec, error) {
 		Description: "Updates the task plan the user sees. For non-trivial work with several distinct steps, call it with a short plan and keep it current: " +
 			"exactly one step in_progress while you work on it, and mark steps completed as soon as they are done. Skip it for simple requests. Each call replaces the whole plan.",
 		InputSchema: kit.InputSchema[Plan](),
-		Annotations: tool.Annotations{Title: "Plan", ReadOnlyHint: true, OpenWorldHint: kit.Hint(false)},
+		Annotations: tool.Annotations{Title: "Plan", ReadOnlyHint: true, OpenWorldHint: new(false)},
 	}}, nil
 }
 

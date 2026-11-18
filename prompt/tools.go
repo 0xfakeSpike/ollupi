@@ -44,30 +44,27 @@ func (w Window) split(visible []Tool, core []string) (sent, deferred []Tool) {
 	if !slices.ContainsFunc(visible, loader) || w.toolsFit(all) {
 		return all, nil
 	}
-	keeps := []func(Tool) bool{
-		func(t Tool) bool { return !external(t) },
-		func(t Tool) bool { return !external(t) && slices.Contains(core, t.Name) },
-	}
-	if len(core) == 0 {
-		keeps = keeps[:1]
-	}
-	for _, keep := range keeps {
-		sent, deferred = nil, nil
-		for _, t := range visible {
-			if loader(t) || keep(t) {
-				sent = append(sent, t)
-			} else {
-				deferred = append(deferred, t)
-			}
-		}
-		if w.toolsFit(sent) {
-			break
-		}
+	builtin := func(t Tool) bool { return loader(t) || !external(t) }
+	sent, deferred = partition(visible, builtin)
+	if !w.toolsFit(sent) && len(core) > 0 {
+		builtinCore := func(t Tool) bool { return loader(t) || !external(t) && slices.Contains(core, t.Name) }
+		sent, deferred = partition(visible, builtinCore)
 	}
 	if len(deferred) == 0 {
 		return all, nil
 	}
 	return sent, deferred
+}
+
+func partition(tools []Tool, keep func(Tool) bool) (kept, rest []Tool) {
+	for _, t := range tools {
+		if keep(t) {
+			kept = append(kept, t)
+		} else {
+			rest = append(rest, t)
+		}
+	}
+	return kept, rest
 }
 
 func (w Window) toolsFit(tools []Tool) bool {

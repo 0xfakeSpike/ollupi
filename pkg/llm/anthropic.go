@@ -55,7 +55,7 @@ func (c *Anthropic) Chat(ctx context.Context, req ChatRequest, onDelta func(Delt
 			started = true
 		case "content_block_delta":
 			d := Delta{Content: event.Delta.Text, Reasoning: event.Delta.Thinking}
-			emit(onDelta, d)
+			Emit(onDelta, d)
 		}
 	}
 	if err := stream.Err(); err != nil {

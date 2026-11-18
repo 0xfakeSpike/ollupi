@@ -121,7 +121,7 @@ type GrepLine struct {
 
 func (r *Provider) readTools() []kit.Spec {
 	annotations := func(title string) tool.Annotations {
-		return tool.Annotations{Title: title, ReadOnlyHint: true, DestructiveHint: kit.Hint(false), OpenWorldHint: kit.Hint(false)}
+		return tool.Annotations{Title: title, ReadOnlyHint: true, DestructiveHint: new(false), OpenWorldHint: new(false)}
 	}
 	closed := " Credential files and the agent's own data are never read, even with the sandbox off."
 	return []kit.Spec{{

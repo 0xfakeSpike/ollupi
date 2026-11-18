@@ -288,8 +288,8 @@ func TestAWorkspaceMovesOnlyWhenItsConversationsAreIdle(t *testing.T) {
 func TestTasksAreNamedOncePerConversation(t *testing.T) {
 	f := setup(t)
 	th := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", "", "", ""))
-	must[store.Task](t)(f.a.CreateCronJob(f.ctx, "u", th.ID, "news", "@daily", "read the news", nil))
-	if _, err := f.a.CreateCronJob(f.ctx, "u", th.ID, "news", "@hourly", "again", nil); !errors.Is(err, cron.ErrInvalidJob) {
+	must[store.Task](t)(f.a.CreateCronJob(f.ctx, "u", th.ID, cron.Draft{Name: "news", Spec: "@daily", Prompt: "read the news"}))
+	if _, err := f.a.CreateCronJob(f.ctx, "u", th.ID, cron.Draft{Name: "news", Spec: "@hourly", Prompt: "again"}); !errors.Is(err, cron.ErrInvalidJob) {
 		t.Errorf("a name twice: %v", err)
 	}
 	if j := must[store.Task](t)(f.a.PauseCronJob(f.ctx, "u", th.ID, "news", true)); !j.Paused {
@@ -306,7 +306,7 @@ func TestTasksAreNamedOncePerConversation(t *testing.T) {
 func TestTheUserCorrectsTheirNotes(t *testing.T) {
 	f := setup(t)
 	now := time.Now().UTC()
-	note := memory.Memory{ID: "n", User: "u", Scope: memory.General, Topic: "editor", Kind: memory.Preference, Text: "Uses vim.",
+	note := memory.Memory{ID: "n", User: "u", Place: memory.Place{Scope: memory.General}, Topic: "editor", Kind: memory.Preference, Text: "Uses vim.",
 		Status: memory.Active, Sources: []memory.Source{}, Created: now, Updated: now}
 	f.st.Update(f.ctx, func(tx store.Tx) error { return tx.PutMemory(note) })
 	if m := must[memory.Memory](t)(f.a.EditMemory(f.ctx, "u", "n", "Uses helix.")); !m.UserEdited || m.Text != "Uses helix." {

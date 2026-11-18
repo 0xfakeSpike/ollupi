@@ -46,7 +46,7 @@ func (Provider) Tools(context.Context) ([]kit.Spec, error) {
 		Description: "Reads characters of a tool output that the conversation shows shortened. " +
 			"A shortened output names its output_id and the offset of the omitted characters; read only the part you need.",
 		InputSchema: kit.InputSchema[readArgs](),
-		Annotations: tool.Annotations{Title: "Read tool output", ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: kit.Hint(false)},
+		Annotations: tool.Annotations{Title: "Read tool output", ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: new(false)},
 	}}, nil
 }
 

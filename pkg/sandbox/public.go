@@ -12,7 +12,7 @@ import (
 
 var sharedAddressSpace = netip.MustParsePrefix("100.64.0.0/10")
 
-func SensitiveAddr(a netip.Addr) bool {
+func sensitiveAddr(a netip.Addr) bool {
 	a = a.Unmap()
 	return a.IsLoopback() || a.IsUnspecified() || a.IsPrivate() || sharedAddressSpace.Contains(a) ||
 		a.IsLinkLocalUnicast() || a.IsLinkLocalMulticast() || a.IsInterfaceLocalMulticast() || a.IsMulticast()
@@ -43,7 +43,7 @@ func dialPublic(ctx context.Context, dialer *net.Dialer, network, addr string) (
 	}
 	var lastErr error = fmt.Errorf("sandbox: %s has no address", host)
 	for _, a := range addrs {
-		if SensitiveAddr(a) {
+		if sensitiveAddr(a) {
 			lastErr = fmt.Errorf("sandbox: %s %w", host, ErrLocalAddress)
 			continue
 		}

@@ -21,7 +21,7 @@ func (Provider) Tools(context.Context) ([]kit.Spec, error) {
 			"Not for permission to make a tool call: the runtime asks for approvals itself. " +
 			"Make it the only call of its response: other calls in the same response run before the user answers.",
 		InputSchema: kit.InputSchema[ask.Request](),
-		Annotations: tool.Annotations{Title: "Question", ReadOnlyHint: true, OpenWorldHint: kit.Hint(false)},
+		Annotations: tool.Annotations{Title: "Question", ReadOnlyHint: true, OpenWorldHint: new(false)},
 	}}, nil
 }
 

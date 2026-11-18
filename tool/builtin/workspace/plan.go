@@ -33,12 +33,12 @@ type FileChange struct {
 }
 
 type local struct {
-	prepare func(ctx context.Context, caller tool.Caller, args map[string]any) (*Prepared, error)
-	run     func(ctx context.Context, caller tool.Caller, args map[string]any, p *Prepared) (kit.Result, error)
+	prepare func(ctx context.Context, call tool.Call) (*Prepared, error)
+	run     func(ctx context.Context, call tool.Call, p *Prepared) (kit.Result, error)
 }
 
 func (l local) plan(ctx context.Context, c tool.Call) (tool.Plan, error) {
-	p, err := l.prepare(ctx, c.Caller, c.Arguments)
+	p, err := l.prepare(ctx, c)
 	if err != nil {
 		return tool.Plan{}, err
 	}
@@ -54,7 +54,7 @@ func (l local) invoke(ctx context.Context, c tool.Call) (kit.Result, error) {
 	if err := json.Unmarshal(c.Prepared, &p); err != nil {
 		return kit.Result{}, fmt.Errorf("workspace: the call's plan: %w", err)
 	}
-	return l.run(ctx, c.Caller, c.Arguments, p)
+	return l.run(ctx, c, p)
 }
 
 func (r *Provider) locals() map[string]local {

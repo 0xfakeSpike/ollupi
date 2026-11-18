@@ -25,16 +25,17 @@ Write concise self-contained text in the user's language. Each note covers one r
 {"action":"add|update|retire","scope":"global, only for an add that belongs in global memory","id":"existing ID for update/retire","topic":"stable short descriptive topic for add/update","kind":"preference|decision|fact|procedure","text":"memory text for add/update","sources":[{"thread":"thread ID","item":"evidence item ID"}]}
 For update/retire copy the current ID. Add omits ID. Every operation must cite at least one fact supplied in this slice by its source. Existing source references may additionally be retained. Never invent IDs or evidence. Use newer explicit evidence to revise automatic notes when they conflict; a slice can be older than the existing notes and is not itself proof of recency.`
 
+const maxReasonRunes = 1000
+
 type Batch struct {
-	User      string           `json:"-"`
-	Scope     Scope            `json:"scope"`
-	Workspace string           `json:"workspaceId,omitempty"`
-	Thread    string           `json:"threadId"`
-	Turn      string           `json:"turnId"`
-	Status    conversation.End `json:"turnStatus"`
-	Error     string           `json:"turnError,omitempty"`
-	Evidence  []Evidence       `json:"facts"`
-	Existing  []Memory         `json:"existing"`
+	User string `json:"-"`
+	Place
+	Thread   string           `json:"threadId"`
+	Turn     string           `json:"turnId"`
+	Status   conversation.End `json:"turnStatus"`
+	Error    string           `json:"turnError,omitempty"`
+	Evidence []Evidence       `json:"facts"`
+	Existing []Memory         `json:"existing"`
 }
 
 type Evidence struct {
@@ -48,9 +49,9 @@ var evidenceKinds = []conversation.ItemKind{conversation.ItemUserMessage, conver
 func Gather(user, thread, workspace string, v conversation.View, turn string, existing []Memory) Batch {
 	place := Local(workspace)
 	t, _ := v.TurnOf(turn)
-	b := Batch{User: user, Scope: place.Scope, Workspace: place.Workspace, Thread: thread, Turn: turn, Evidence: []Evidence{}, Existing: existing}
+	b := Batch{User: user, Place: place, Thread: thread, Turn: turn, Evidence: []Evidence{}, Existing: existing}
 	if t.Ended != nil {
-		b.Status, b.Error = t.Ended.Status, clip(t.Ended.Reason, 1000)
+		b.Status, b.Error = t.Ended.Status, clip(t.Ended.Reason, maxReasonRunes)
 	}
 	blocked := forgottenSources(existing)
 	for _, it := range v.ItemsOf(turn) {
@@ -225,24 +226,9 @@ const (
 var ErrInvalidResponse = errors.New("memory extraction returned an invalid response")
 
 func Parse(content string, b Batch, restore func(string) string) ([]Operation, error) {
-	content = strings.TrimSpace(content)
-	if strings.HasPrefix(content, "```json\n") && strings.HasSuffix(content, "```") {
-		content = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(content, "```json\n"), "```"))
-	}
-	if len(content) > 128000 {
-		return nil, fmt.Errorf("%w: it is too large", ErrInvalidResponse)
-	}
-	var result struct {
-		Operations []Operation `json:"operations"`
-	}
-	decoder := json.NewDecoder(strings.NewReader(content))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&result); err != nil {
-		return nil, fmt.Errorf("%w: not JSON operations", ErrInvalidResponse)
-	}
-	var trailing any
-	if decoder.Decode(&trailing) != io.EOF || result.Operations == nil || len(result.Operations) > maxOperations {
-		return nil, fmt.Errorf("%w: not a list of at most %d operations", ErrInvalidResponse, maxOperations)
+	operations, err := decodeOperations(content)
+	if err != nil {
+		return nil, err
 	}
 	existing := map[string]Memory{}
 	known, fresh := map[Source]bool{}, map[Source]bool{}
@@ -256,8 +242,8 @@ func Parse(content string, b Batch, restore func(string) string) ([]Operation, e
 		known[f.Source], fresh[f.Source] = true, true
 	}
 	touched := map[string]bool{}
-	accepted := make([]Operation, 0, len(result.Operations))
-	for _, op := range result.Operations {
+	accepted := make([]Operation, 0, len(operations))
+	for _, op := range operations {
 		op.Topic, op.Text = strings.TrimSpace(restore(op.Topic)), strings.TrimSpace(restore(op.Text))
 		switch op.Action {
 		case Add:
@@ -291,7 +277,7 @@ func Parse(content string, b Batch, restore func(string) string) ([]Operation, e
 			if op.Topic == "" || utf8.RuneCountInString(op.Topic) > maxTopicRunes || op.Text == "" || utf8.RuneCountInString(op.Text) > maxTextRunes {
 				return nil, fmt.Errorf("%w: a topic or text of the wrong length", ErrInvalidResponse)
 			}
-			if op.Kind != Preference && op.Kind != Decision && op.Kind != Fact && op.Kind != Procedure {
+			if !slices.Contains(Kinds, op.Kind) {
 				return nil, fmt.Errorf("%w: an unsupported kind of note", ErrInvalidResponse)
 			}
 			if op.Scope == string(Global) && op.Kind != Preference && op.Kind != Fact {
@@ -327,6 +313,29 @@ func Parse(content string, b Batch, restore func(string) string) ([]Operation, e
 	return accepted, nil
 }
 
+func decodeOperations(content string) ([]Operation, error) {
+	content = strings.TrimSpace(content)
+	if strings.HasPrefix(content, "```json\n") && strings.HasSuffix(content, "```") {
+		content = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(content, "```json\n"), "```"))
+	}
+	if len(content) > 128000 {
+		return nil, fmt.Errorf("%w: it is too large", ErrInvalidResponse)
+	}
+	var result struct {
+		Operations []Operation `json:"operations"`
+	}
+	decoder := json.NewDecoder(strings.NewReader(content))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&result); err != nil {
+		return nil, fmt.Errorf("%w: not JSON operations", ErrInvalidResponse)
+	}
+	var trailing any
+	if decoder.Decode(&trailing) != io.EOF || result.Operations == nil || len(result.Operations) > maxOperations {
+		return nil, fmt.Errorf("%w: not a list of at most %d operations", ErrInvalidResponse, maxOperations)
+	}
+	return result.Operations, nil
+}
+
 func normalizeTopic(topic string) string {
 	return strings.ToLower(strings.Join(strings.Fields(topic), " "))
 }
@@ -341,7 +350,7 @@ func Apply(b Batch, ops []Operation, now time.Time, id func() string) []Memory {
 	byTopic := map[topicKey]string{}
 	for _, m := range b.Existing {
 		byID[m.ID] = m
-		byTopic[topicKey{m.Place(), m.Topic}] = m.ID
+		byTopic[topicKey{m.Place, m.Topic}] = m.ID
 	}
 	blocked := forgottenSources(b.Existing)
 	var order []string
@@ -360,7 +369,7 @@ func Apply(b Batch, ops []Operation, now time.Time, id func() string) []Memory {
 			order = append(order, m.ID)
 		}
 		byID[m.ID] = m
-		byTopic[topicKey{m.Place(), m.Topic}] = m.ID
+		byTopic[topicKey{m.Place, m.Topic}] = m.ID
 	}
 	changed := make([]Memory, len(order))
 	for i, id := range order {
@@ -374,14 +383,14 @@ func target(b Batch, op Operation, byID map[string]Memory, byTopic map[topicKey]
 		m, ok := byID[op.ID]
 		return m, ok
 	}
-	place := Place{Scope: b.Scope, Workspace: b.Workspace}
+	place := b.Place
 	if op.Scope == string(Global) {
 		place = GlobalPlace
 	}
 	if kept, ok := byTopic[topicKey{place, op.Topic}]; ok {
 		return byID[kept], true
 	}
-	m := Memory{ID: id(), User: b.User, Scope: place.Scope, Workspace: place.Workspace, Topic: op.Topic, Created: now}
+	m := Memory{ID: id(), User: b.User, Place: place, Topic: op.Topic, Created: now}
 	if place == GlobalPlace {
 		m.Origin = b.Workspace
 	}

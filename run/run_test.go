@@ -93,7 +93,7 @@ func setup(t *testing.T, invoke func(tool.Call) tool.Result) *fixture {
 	t.Cleanup(func() { st.Close() })
 	m := &model{}
 	tools := func(context.Context, string) (tool.Set, error) { return set{invoke: invoke}, nil }
-	r := New(st, models{m}, tools, noFiles{}, noSkills, "Ollupi", "", policy.Settings{ApprovalPolicy: string(policy.OnRequest)}, nil)
+	r := New(st, models{m}, tools, noFiles{}, noSkills, Deployment{Name: "Ollupi", Permissions: policy.Settings{ApprovalPolicy: string(policy.OnRequest)}})
 	return &fixture{t: t, st: st, r: r, m: m}
 }
 

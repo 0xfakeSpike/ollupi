@@ -36,7 +36,7 @@ func (a *App) AddWorkspace(ctx context.Context, u, path, name string) (user.Work
 	if name == "" {
 		name = filepath.Base(root)
 	}
-	if name, err = user.WorkspaceName(name); err != nil {
+	if name, err = user.Name("a workspace name", name); err != nil {
 		return user.Workspace{}, err
 	}
 	existing, err := a.Workspaces(ctx, u)
@@ -57,7 +57,7 @@ func (a *App) AddWorkspace(ctx context.Context, u, path, name string) (user.Work
 }
 
 func (a *App) RenameWorkspace(ctx context.Context, u, id, name string) (user.Workspace, error) {
-	name, err := user.WorkspaceName(name)
+	name, err := user.Name("a workspace name", name)
 	if err != nil {
 		return user.Workspace{}, err
 	}
@@ -183,7 +183,7 @@ func (a *App) Environments(ctx context.Context, u string) ([]user.Environment, e
 }
 
 func (a *App) AddEnvironment(ctx context.Context, u, name string, kind user.EnvironmentKind) (user.Environment, error) {
-	name, err := user.EnvironmentName(name)
+	name, err := user.Name("an environment name", name)
 	if err != nil {
 		return user.Environment{}, err
 	}
@@ -197,7 +197,7 @@ func (a *App) AddEnvironment(ctx context.Context, u, name string, kind user.Envi
 }
 
 func (a *App) RenameEnvironment(ctx context.Context, u, id, name string) (user.Environment, error) {
-	name, err := user.EnvironmentName(name)
+	name, err := user.Name("an environment name", name)
 	if err != nil {
 		return user.Environment{}, err
 	}
