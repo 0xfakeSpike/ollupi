@@ -17,6 +17,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.4.1
 	github.com/openai/openai-go v1.12.0
 	github.com/robfig/cron/v3 v3.0.1
+	github.com/things-go/go-socks5 v0.1.4
 	golang.org/x/crypto/x509roots/fallback v0.0.0-20250710172143-459a9db11b9c
 	golang.org/x/net v0.62.0
 	golang.org/x/sync v0.24.0
