@@ -26,19 +26,19 @@ func htmlText(r io.Reader, page *url.URL) (title, text string, err error) {
 	if err != nil {
 		return "", "", err
 	}
-	if t := find(doc, atom.Title); t != nil && t.FirstChild != nil {
+	if t := findElement(doc, atom.Title); t != nil && t.FirstChild != nil {
 		title = strings.TrimSpace(t.FirstChild.Data)
 	}
 	out, err := markdown.ConvertNode(doc, converter.WithDomain(page.String()))
 	return title, strings.TrimSpace(string(out)), err
 }
 
-func find(n *html.Node, a atom.Atom) *html.Node {
+func findElement(n *html.Node, a atom.Atom) *html.Node {
 	if n.Type == html.ElementNode && n.DataAtom == a {
 		return n
 	}
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		if found := find(c, a); found != nil {
+		if found := findElement(c, a); found != nil {
 			return found
 		}
 	}

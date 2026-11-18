@@ -114,7 +114,7 @@ func TestTheBudgetStopsToolUse(t *testing.T) {
 }
 
 func TestTheMainAgentFitsTheWindow(t *testing.T) {
-	if Main(8_000) != CompactMain || Main(200_000) != FullMain {
+	if MainRole(8_000) != CompactMain || MainRole(200_000) != FullMain {
 		t.Error("the main agent does not follow the window")
 	}
 	for _, name := range Names {

@@ -27,13 +27,13 @@ import (
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/0xfakeSpike/ollupi/store/sqlite"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/ask"
+	"github.com/0xfakeSpike/ollupi/tool/builtin/cronjobs"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/loader"
 	memorytool "github.com/0xfakeSpike/ollupi/tool/builtin/memory"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/outputs"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/plan"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/skills"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/subagent"
-	"github.com/0xfakeSpike/ollupi/tool/builtin/tasks"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
 	"github.com/0xfakeSpike/ollupi/tool/mcp"
 	"golang.org/x/sync/errgroup"
@@ -86,7 +86,7 @@ func New(ctx context.Context, cfg Config) (*Host, error) {
 	if err := cfg.Permissions.Check(); err != nil {
 		return nil, fmt.Errorf("host: the permissions: %w", err)
 	}
-	ms, err := newModels(cfg.Models, cfg.Connections, cfg.ClientFor)
+	modelSet, err := newModels(cfg.Models, cfg.Connections, cfg.ClientFor)
 	if err != nil {
 		return nil, err
 	}
@@ -110,21 +110,21 @@ func New(ctx context.Context, cfg Config) (*Host, error) {
 	if cfg.SkillsDir != "" {
 		builtins = append(builtins, skills.New(cfg.SkillsDir))
 	}
-	builtins = append(builtins, tasks.New(st, h.cal))
+	builtins = append(builtins, cronjobs.New(st, h.cal))
 	h.Users = mcp.NewUsers(ctx, mcp.Client{Name: cfg.Name, Version: version()}, st, cfg.Boxes, builtins...)
-	h.App = app.New(st, ms, h.Users.Tools, h.Users.Statuses, cfg.Boxes, files, h.cal, cfg.Permissions)
-	runner := run.New(st, ms, h.Users.Tools, files, skillsOf(cfg.SkillsDir),
+	h.App = app.New(st, modelSet, h.Users.Tools, h.Users.Statuses, cfg.Boxes, files, h.cal, cfg.Permissions)
+	runner := run.New(st, modelSet, h.Users.Tools, files, skillsOf(cfg.SkillsDir),
 		run.Deployment{Name: cfg.Name, Prompt: cfg.Prompt, Permissions: cfg.Permissions, Allowlist: cfg.Allowlist})
 	slots := cmp.Or(cfg.Slots, defaultSlots)
 	h.scheduler = schedule.New(st, runner, slots, cmp.Or(cfg.UserSlots, slots), cmp.Or(cfg.RunLimit, defaultRunLimit))
 	if cfg.Memory != nil {
-		limits, err := ms.Limits(*cfg.Memory)
+		limits, err := modelSet.Limits(*cfg.Memory)
 		if err != nil {
 			h.Close()
 			return nil, fmt.Errorf("host: the memory model: %w", err)
 		}
 		model := *cfg.Memory
-		client := func(u string) (llm.Client, error) { return ms.Client(u, model) }
+		client := func(u string) (llm.Client, error) { return modelSet.Client(u, model) }
 		if h.extractor, err = extract.New(st, model, limits, client); err != nil {
 			h.Close()
 			return nil, err

@@ -14,11 +14,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/0xfakeSpike/ollupi/store/sqlite"
 	"github.com/0xfakeSpike/ollupi/tool"
-	"github.com/0xfakeSpike/ollupi/user"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -56,7 +56,7 @@ func testServer() *mcp.Server {
 	return s
 }
 
-func newUsers(t *testing.T, ctx context.Context, configs map[string][]user.MCPServer, boxes func(string) (sandbox.Box, error)) (*Users, store.Store) {
+func newUsers(t *testing.T, ctx context.Context, configs map[string][]account.MCPServer, boxes func(string) (sandbox.Box, error)) (*Users, store.Store) {
 	t.Helper()
 	st, err := sqlite.Open(t.TempDir())
 	if err != nil {
@@ -91,13 +91,13 @@ func invoke(set tool.Set, name string, caller tool.Caller) (string, string) {
 	return text, r.Error
 }
 
-func statuses(t *testing.T, users *Users, name string) map[string]user.MCPStatus {
+func statuses(t *testing.T, users *Users, name string) map[string]account.MCPStatus {
 	t.Helper()
 	list, err := users.Statuses(name)
 	if err != nil {
 		t.Fatal(err)
 	}
-	out := map[string]user.MCPStatus{}
+	out := map[string]account.MCPStatus{}
 	for _, st := range list {
 		out[st.Name] = st
 	}
@@ -134,7 +134,7 @@ func TestConnect(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer box.Close()
-	users, _ := newUsers(t, ctx, map[string][]user.MCPServer{"someone": {
+	users, _ := newUsers(t, ctx, map[string][]account.MCPServer{"someone": {
 		{Name: "local", Command: self, Env: map[string]string{"OLLUPI_MCP_TEST_SERVER": "serve", "GREETING": "from config"}},
 		{Name: "web", URL: web.URL, Headers: map[string]string{"Authorization": "Bearer secret"}},
 		{Name: "no-header", URL: web.URL},
@@ -198,7 +198,7 @@ func TestACallThatGetsNoAnswerEnds(t *testing.T) {
 	defer web.Close()
 	defer close(release)
 	client := mcp.NewClient(&mcp.Implementation{Name: "ollupi", Version: "test"}, nil)
-	sess, err := connect(ctx, ctx, client, sandbox.Here(), user.MCPServer{Name: "slow", URL: web.URL})
+	sess, err := connect(ctx, ctx, client, sandbox.Here(), account.MCPServer{Name: "slow", URL: web.URL})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +235,7 @@ func TestHeadersStayWithTheirServer(t *testing.T) {
 		http.Redirect(w, r, other.URL, http.StatusTemporaryRedirect)
 	}))
 	defer front.Close()
-	users, _ := newUsers(t, context.Background(), map[string][]user.MCPServer{"someone": {
+	users, _ := newUsers(t, context.Background(), map[string][]account.MCPServer{"someone": {
 		{Name: "moved", URL: front.URL, Headers: map[string]string{"Authorization": "Bearer secret"}},
 	}}, func(string) (sandbox.Box, error) { return sandbox.Here(), nil })
 	defer users.Close()
@@ -252,7 +252,7 @@ func TestHeadersStayWithTheirServer(t *testing.T) {
 func TestARemoteUserCannotReachThisNetwork(t *testing.T) {
 	web := httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return testServer() }, nil))
 	defer web.Close()
-	users, _ := newUsers(t, context.Background(), map[string][]user.MCPServer{"someone": {{Name: "internal", URL: web.URL}}},
+	users, _ := newUsers(t, context.Background(), map[string][]account.MCPServer{"someone": {{Name: "internal", URL: web.URL}}},
 		func(string) (sandbox.Box, error) { return sandbox.Remote(nil, []string{"/cloud"}, "cloud"), nil })
 	defer users.Close()
 	if st := statuses(t, users, "someone")["internal"]; st.Connected || !strings.Contains(st.Error, sandbox.ErrLocalAddress.Error()) {

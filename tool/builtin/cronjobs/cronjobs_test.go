@@ -1,18 +1,18 @@
-package tasks
+package cronjobs
 
 import (
 	"context"
 	"testing"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/cron"
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/0xfakeSpike/ollupi/store/sqlite"
 	"github.com/0xfakeSpike/ollupi/tool"
-	"github.com/0xfakeSpike/ollupi/user"
 )
 
-func TestATaskMadeInAConversationIsListedPausedAndDeleted(t *testing.T) {
+func TestACronJobMadeInAConversationIsListedPausedAndDeleted(t *testing.T) {
 	ctx := context.Background()
 	st, err := sqlite.Open(t.TempDir())
 	if err != nil {
@@ -24,7 +24,7 @@ func TestATaskMadeInAConversationIsListedPausedAndDeleted(t *testing.T) {
 		if err := tx.EnsureUser("u"); err != nil {
 			return err
 		}
-		return tx.CreateThread(store.Thread{User: "u", Thread: user.Thread{ID: "th", Title: "news", Created: now, Updated: now}})
+		return tx.CreateThread(store.Thread{User: "u", Thread: account.Thread{ID: "th", Title: "news", Created: now, Updated: now}})
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -40,16 +40,16 @@ func TestATaskMadeInAConversationIsListedPausedAndDeleted(t *testing.T) {
 	if _, err := call(createTool, map[string]any{"name": "daily", "spec": "@hourly", "prompt": "again"}); err == nil {
 		t.Error("a second task of the same name")
 	}
-	if out, err := call(pauseTool, map[string]any{"name": "daily", "paused": true}); err != nil || !out.(job).Paused {
+	if out, err := call(pauseTool, map[string]any{"name": "daily", "paused": true}); err != nil || !out.(listedJob).Paused {
 		t.Errorf("paused %+v, %v", out, err)
 	}
-	if out, _ := call(listTool, map[string]any{}); len(out.(map[string]any)["jobs"].([]job)) != 1 {
+	if out, _ := call(listTool, map[string]any{}); len(out.(map[string]any)["jobs"].([]listedJob)) != 1 {
 		t.Errorf("listed %+v", out)
 	}
 	if _, err := call(deleteTool, map[string]any{"name": "daily"}); err != nil {
 		t.Fatal(err)
 	}
-	if out, _ := call(listTool, map[string]any{}); len(out.(map[string]any)["jobs"].([]job)) != 0 {
+	if out, _ := call(listTool, map[string]any{}); len(out.(map[string]any)["jobs"].([]listedJob)) != 0 {
 		t.Errorf("left %+v", out)
 	}
 }

@@ -157,20 +157,20 @@ func recalledSinceCompaction(items []conversation.Item) bool {
 	return false
 }
 
-func (r *Runner) input(s *step) (prompt.Input, error) {
+func (r *Runner) input(s *step) (prompt.Context, error) {
 	skills, err := r.skills(s.role.Name)
 	if err != nil {
-		return prompt.Input{}, fmt.Errorf("run: the skills of %s: %w", s.role.Name, err)
+		return prompt.Context{}, fmt.Errorf("run: the skills of %s: %w", s.role.Name, err)
 	}
 	system := prompt.System{Role: s.role, Agent: r.name, Prompt: r.prompt, Skills: skills}
 	inProject := slices.ContainsFunc(slices.Concat(s.sent, s.deferred), func(t prompt.Tool) bool { return t.Provider == agent.WorkspaceProvider })
 	if inProject && s.workspace != nil {
 		system.Project = s.workspace.Root
 	}
-	return prompt.Input{Items: s.items, Responses: s.v.Responses, System: s.window.System(system, s.deferred), Tools: prompt.Specs(s.sent)}, nil
+	return prompt.Context{Items: s.items, Responses: s.v.Responses, System: s.window.System(system, s.deferred), Tools: prompt.Specs(s.sent)}, nil
 }
 
-func (r *Runner) compact(ctx context.Context, s *step, in prompt.Input) error {
+func (r *Runner) compact(ctx context.Context, s *step, in prompt.Context) error {
 	req, err := s.window.Compaction(in)
 	if err != nil {
 		return fmt.Errorf("run: %w", err)

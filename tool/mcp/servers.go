@@ -8,11 +8,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/0xfakeSpike/ollupi/tool"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
-	"github.com/0xfakeSpike/ollupi/user"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -48,7 +48,7 @@ type connected struct {
 }
 
 type link struct {
-	server user.MCPServer
+	server account.MCPServer
 	sess   *Session
 	err    error
 }
@@ -102,16 +102,16 @@ func (u *Users) Tools(ctx context.Context, name string) (tool.Set, error) {
 	return c.set, nil
 }
 
-func (u *Users) Statuses(name string) ([]user.MCPStatus, error) {
+func (u *Users) Statuses(name string) ([]account.MCPStatus, error) {
 	c, err := u.of(name)
 	if err != nil {
 		return nil, err
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	out := make([]user.MCPStatus, len(c.links))
+	out := make([]account.MCPStatus, len(c.links))
 	for i, l := range c.links {
-		st := user.MCPStatus{Name: l.server.Name}
+		st := account.MCPStatus{Name: l.server.Name}
 		err := l.err
 		if sess := l.sess; sess != nil {
 			st.Tools, st.Skipped = len(sess.specs), sess.skipped
@@ -140,7 +140,7 @@ func (u *Users) Close() error {
 }
 
 func (u *Users) connect(c *connected, name string) error {
-	var stored []user.MCPServer
+	var stored []account.MCPServer
 	if err := u.st.Read(u.ctx, func(r store.Reader) (err error) { stored, err = r.MCPServers(name); return err }); err != nil {
 		return fmt.Errorf("mcp: the servers of the user: %w", err)
 	}

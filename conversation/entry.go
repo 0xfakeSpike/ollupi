@@ -15,33 +15,33 @@ type Entry struct {
 	Body Body
 }
 
-type Body interface{ kind() Kind }
+type Body interface{ kind() EntryKind }
 
-type Kind string
+type EntryKind string
 
 const (
-	KindTurnQueued     Kind = "turnQueued"
-	KindTurnEnded      Kind = "turnEnded"
-	KindUserMessage    Kind = "userMessage"
-	KindAgentMessage   Kind = "agentMessage"
-	KindReasoning      Kind = "reasoning"
-	KindModelResponded Kind = "modelResponded"
-	KindModelFailed    Kind = "modelFailed"
-	KindToolCall       Kind = "toolCall"
-	KindApprovalAsked  Kind = "approvalAsked"
-	KindDecided        Kind = "decided"
-	KindToolStarted    Kind = "toolStarted"
-	KindInputAsked     Kind = "inputAsked"
-	KindAnswered       Kind = "answered"
-	KindToolResult     Kind = "toolResult"
-	KindChildLaunched  Kind = "childLaunched"
-	KindChildReported  Kind = "childReported"
-	KindCompacted      Kind = "compacted"
-	KindRecalled       Kind = "recalled"
-	KindNotice         Kind = "notice"
+	KindTurnQueued     EntryKind = "turnQueued"
+	KindTurnEnded      EntryKind = "turnEnded"
+	KindUserMessage    EntryKind = "userMessage"
+	KindAgentMessage   EntryKind = "agentMessage"
+	KindReasoning      EntryKind = "reasoning"
+	KindModelResponded EntryKind = "modelResponded"
+	KindModelFailed    EntryKind = "modelFailed"
+	KindToolCall       EntryKind = "toolCall"
+	KindApprovalAsked  EntryKind = "approvalAsked"
+	KindDecided        EntryKind = "decided"
+	KindToolStarted    EntryKind = "toolStarted"
+	KindInputAsked     EntryKind = "inputAsked"
+	KindAnswered       EntryKind = "answered"
+	KindToolResult     EntryKind = "toolResult"
+	KindChildLaunched  EntryKind = "childLaunched"
+	KindChildReported  EntryKind = "childReported"
+	KindCompacted      EntryKind = "compacted"
+	KindRecalled       EntryKind = "recalled"
+	KindNotice         EntryKind = "notice"
 )
 
-func KindOf(b Body) Kind { return b.kind() }
+func KindOf(b Body) EntryKind { return b.kind() }
 
 type TurnQueued struct {
 	Model   llm.Model
@@ -162,25 +162,25 @@ type Notice struct {
 	Text string
 }
 
-func (TurnQueued) kind() Kind     { return KindTurnQueued }
-func (TurnEnded) kind() Kind      { return KindTurnEnded }
-func (UserMessage) kind() Kind    { return KindUserMessage }
-func (AgentMessage) kind() Kind   { return KindAgentMessage }
-func (Reasoning) kind() Kind      { return KindReasoning }
-func (ModelResponded) kind() Kind { return KindModelResponded }
-func (ModelFailed) kind() Kind    { return KindModelFailed }
-func (ToolCall) kind() Kind       { return KindToolCall }
-func (ApprovalAsked) kind() Kind  { return KindApprovalAsked }
-func (Decided) kind() Kind        { return KindDecided }
-func (ToolStarted) kind() Kind    { return KindToolStarted }
-func (InputAsked) kind() Kind     { return KindInputAsked }
-func (Answered) kind() Kind       { return KindAnswered }
-func (ToolResult) kind() Kind     { return KindToolResult }
-func (ChildLaunched) kind() Kind  { return KindChildLaunched }
-func (ChildReported) kind() Kind  { return KindChildReported }
-func (Compacted) kind() Kind      { return KindCompacted }
-func (Recalled) kind() Kind       { return KindRecalled }
-func (Notice) kind() Kind         { return KindNotice }
+func (TurnQueued) kind() EntryKind     { return KindTurnQueued }
+func (TurnEnded) kind() EntryKind      { return KindTurnEnded }
+func (UserMessage) kind() EntryKind    { return KindUserMessage }
+func (AgentMessage) kind() EntryKind   { return KindAgentMessage }
+func (Reasoning) kind() EntryKind      { return KindReasoning }
+func (ModelResponded) kind() EntryKind { return KindModelResponded }
+func (ModelFailed) kind() EntryKind    { return KindModelFailed }
+func (ToolCall) kind() EntryKind       { return KindToolCall }
+func (ApprovalAsked) kind() EntryKind  { return KindApprovalAsked }
+func (Decided) kind() EntryKind        { return KindDecided }
+func (ToolStarted) kind() EntryKind    { return KindToolStarted }
+func (InputAsked) kind() EntryKind     { return KindInputAsked }
+func (Answered) kind() EntryKind       { return KindAnswered }
+func (ToolResult) kind() EntryKind     { return KindToolResult }
+func (ChildLaunched) kind() EntryKind  { return KindChildLaunched }
+func (ChildReported) kind() EntryKind  { return KindChildReported }
+func (Compacted) kind() EntryKind      { return KindCompacted }
+func (Recalled) kind() EntryKind       { return KindRecalled }
+func (Notice) kind() EntryKind         { return KindNotice }
 
 type Decision string
 

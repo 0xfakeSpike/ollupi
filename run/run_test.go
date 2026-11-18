@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
@@ -17,7 +18,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/0xfakeSpike/ollupi/store/sqlite"
 	"github.com/0xfakeSpike/ollupi/tool"
-	"github.com/0xfakeSpike/ollupi/user"
 )
 
 type model struct {
@@ -104,7 +104,7 @@ func (f *fixture) ask(thread, text string) {
 		if err := tx.EnsureUser("u"); err != nil {
 			return err
 		}
-		if err := tx.CreateThread(store.Thread{User: "u", Thread: user.Thread{ID: thread, Created: now, Updated: now}}); err != nil {
+		if err := tx.CreateThread(store.Thread{User: "u", Thread: account.Thread{ID: thread, Created: now, Updated: now}}); err != nil {
 			return err
 		}
 		_, err := tx.Append(thread,
