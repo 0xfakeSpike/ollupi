@@ -3,6 +3,7 @@ package run
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -102,6 +103,9 @@ func (r *Runner) skip(ctx context.Context, s *step, a agent.SkipTools) error {
 const maxParallelCalls = 8
 
 func (r *Runner) runTools(ctx context.Context, s *step, calls []conversation.Item) error {
+	if background(s, calls[0]) {
+		return r.launchTask(ctx, s, calls[0])
+	}
 	n := 1
 	for parallel(s, calls[0]) && n < min(len(calls), maxParallelCalls) && parallel(s, calls[n]) {
 		n++
@@ -139,7 +143,81 @@ func (r *Runner) runTools(ctx context.Context, s *step, calls []conversation.Ite
 
 func parallel(s *step, it conversation.Item) bool {
 	spec := s.specs[it.Call.Tool]
-	return spec.Annotations.ReadOnlyHint && !spec.Serial
+	return spec.Annotations.ReadOnlyHint && !spec.Serial && !background(s, it)
+}
+
+func background(s *step, it conversation.Item) bool {
+	args, _ := parseArguments(it.Call.Arguments)
+	return s.specs[it.Call.Tool].InBackground(args)
+}
+
+type Started struct {
+	Task string `json:"task"`
+	Note string `json:"note"`
+}
+
+const startedNote = "It runs in the background; its result comes back to this conversation as a report when it ends. " +
+	"Go on with other work, or end your reply to wait for it."
+
+func (r *Runner) launchTask(ctx context.Context, s *step, it conversation.Item) error {
+	args, _ := parseArguments(it.Call.Arguments)
+	call, _ := json.Marshal(tool.Call{Caller: s.caller(it.ID), Tool: it.Call.Tool, Arguments: args, Prepared: it.Call.Prepared})
+	task := store.Task{ID: uuid.NewString(), User: s.th.User, Thread: s.th.ID, Turn: s.turn.ID, Item: it.ID, Call: call, Created: time.Now().UTC()}
+	output, _ := json.Marshal(Started{Task: task.ID, Note: startedNote})
+	return r.st.Update(ctx, func(tx store.Tx) error {
+		if err := tx.CreateTask(task); err != nil {
+			return err
+		}
+		_, err := tx.Append(s.th.ID,
+			conversation.Entry{Turn: s.turn.ID, Item: it.ID, Body: conversation.ToolStarted{}},
+			conversation.Entry{Turn: s.turn.ID, Item: it.ID, Body: conversation.TaskLaunched{Task: task.ID}},
+			conversation.Entry{Turn: s.turn.ID, Item: it.ID, Body: conversation.ToolResult{Output: output}})
+		return err
+	})
+}
+
+const strandedTask = "the task was cut off when the process running it stopped; it may have taken effect in part or in full, so check before trying it again"
+
+func (r *Runner) Task(ctx context.Context, id string) error {
+	var t store.Task
+	if err := r.st.Read(ctx, func(rd store.Reader) (err error) { t, err = rd.Task(id); return err }); err != nil {
+		return err
+	}
+	if t.Started != nil {
+		return r.st.Update(ctx, func(tx store.Tx) error { return ReportTask(tx, id, tool.Result{Error: strandedTask}) })
+	}
+	if err := r.st.Update(ctx, func(tx store.Tx) error { return tx.StartTask(id, time.Now().UTC()) }); err != nil {
+		return err
+	}
+	var c tool.Call
+	if err := json.Unmarshal(t.Call, &c); err != nil {
+		return fmt.Errorf("run: the call of task %s: %w", id, err)
+	}
+	set, err := r.tools(ctx, t.User)
+	if err != nil {
+		return fmt.Errorf("run: the tools of the user: %w", err)
+	}
+	res := set.Invoke(ctx, c)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return r.st.Update(ctx, func(tx store.Tx) error { return ReportTask(tx, id, res) })
+}
+
+func ReportTask(tx store.Tx, id string, res tool.Result) error {
+	t, err := tx.Task(id)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := tx.DeleteTask(id); err != nil {
+		return err
+	}
+	_, err = tx.Append(t.Thread, conversation.Entry{Turn: t.Turn, Item: uuid.NewString(),
+		Body: conversation.TaskReported{Launch: t.Item, Task: id, Output: res.Output, Error: res.Error}})
+	return err
 }
 
 func (r *Runner) recordResult(tx store.Tx, s *step, it conversation.Item, res tool.Result) error {

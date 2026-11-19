@@ -34,6 +34,21 @@ type Spec struct {
 	Annotations Annotations
 	Content     bool
 	Serial      bool
+	Background  Background
+}
+
+type Background string
+
+const (
+	BackgroundNever    Background = ""
+	BackgroundOptional Background = "optional"
+	BackgroundAlways   Background = "always"
+)
+
+const BackgroundArgument = "background"
+
+func (s Spec) InBackground(args map[string]any) bool {
+	return s.Background == BackgroundAlways || s.Background == BackgroundOptional && args[BackgroundArgument] == true
 }
 
 type Annotations struct {

@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"slices"
 
+	"github.com/0xfakeSpike/ollupi/tool"
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
@@ -35,6 +36,22 @@ func schemas(schema any) (*jsonschema.Resolved, map[string]any, error) {
 		return nil, nil, fmt.Errorf("parse input schema: %w", err)
 	}
 	return resolved, listed, nil
+}
+
+const backgroundDescription = "Run this call in the background: the reply comes back at once with a task id, and the result arrives later as a report. " +
+	"Use it for long work when there is something else to do meanwhile."
+
+func withBackground(schema any) any {
+	raw, _ := json.Marshal(schema)
+	var out map[string]any
+	json.Unmarshal(raw, &out)
+	properties, _ := out["properties"].(map[string]any)
+	if properties == nil {
+		properties = map[string]any{}
+	}
+	properties[tool.BackgroundArgument] = map[string]any{"type": "boolean", "description": backgroundDescription}
+	out["properties"] = properties
+	return out
 }
 
 func validate(schema *jsonschema.Resolved, args map[string]any) error {

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -47,6 +48,8 @@ type Reader interface {
 	View(thread string) (conversation.View, error)
 	Page(thread string, before int64, limit int) (page Page, more bool, err error)
 	Runnable(limit int, except []string) ([]Runnable, error)
+	Tasks(limit int, except []string) ([]Runnable, error)
+	Task(id string) (Task, error)
 	Seq() (int64, error)
 
 	Memories(user string, places ...memory.Place) ([]memory.Memory, error)
@@ -73,6 +76,9 @@ type Tx interface {
 	CreateThread(t Thread) error
 	UpdateThread(t Thread) error
 	Append(thread string, entries ...conversation.Entry) (conversation.View, error)
+	CreateTask(t Task) error
+	StartTask(id string, at time.Time) error
+	DeleteTask(id string) error
 }
 
 type Thread struct {
@@ -89,8 +95,20 @@ type Page struct {
 }
 
 type Runnable struct {
-	Thread string
+	ID     string
 	User   string
+	Thread string
+}
+
+type Task struct {
+	ID      string
+	User    string
+	Thread  string
+	Turn    string
+	Item    string
+	Call    json.RawMessage
+	Created time.Time
+	Started *time.Time
 }
 
 type Event struct {

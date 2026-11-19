@@ -68,6 +68,9 @@ func (w Window) report(obs *observations, items []conversation.Item, it conversa
 		kind, call = items[launch].Call.Tool, items[launch].Call.Call
 	}
 	header := fmt.Sprintf("[report of the %s launched by call %s, %q: %s]\n", kind, call, it.Text, it.Status)
+	if it.Task != "" {
+		header = fmt.Sprintf("[result of the %s call %s, run in the background: %s]\n", kind, call, it.Status)
+	}
 	return llm.ChatMessage{Role: llm.RoleUser, Content: header + obs.callResult(it, w.observationBudget(1, maxObservationTokens))}
 }
 
