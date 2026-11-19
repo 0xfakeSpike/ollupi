@@ -36,6 +36,8 @@ const (
 	KindToolResult     EntryKind = "toolResult"
 	KindChildLaunched  EntryKind = "childLaunched"
 	KindChildReported  EntryKind = "childReported"
+	KindTaskLaunched   EntryKind = "taskLaunched"
+	KindTaskReported   EntryKind = "taskReported"
 	KindCompacted      EntryKind = "compacted"
 	KindRecalled       EntryKind = "recalled"
 	KindNotice         EntryKind = "notice"
@@ -146,6 +148,17 @@ type ChildReported struct {
 	Error  string
 }
 
+type TaskLaunched struct {
+	Task string
+}
+
+type TaskReported struct {
+	Launch string
+	Task   string
+	Output json.RawMessage
+	Error  string
+}
+
 type Compacted struct {
 	Summary  string
 	Through  int64
@@ -178,6 +191,8 @@ func (Answered) kind() EntryKind       { return KindAnswered }
 func (ToolResult) kind() EntryKind     { return KindToolResult }
 func (ChildLaunched) kind() EntryKind  { return KindChildLaunched }
 func (ChildReported) kind() EntryKind  { return KindChildReported }
+func (TaskLaunched) kind() EntryKind   { return KindTaskLaunched }
+func (TaskReported) kind() EntryKind   { return KindTaskReported }
 func (Compacted) kind() EntryKind      { return KindCompacted }
 func (Recalled) kind() EntryKind       { return KindRecalled }
 func (Notice) kind() EntryKind         { return KindNotice }

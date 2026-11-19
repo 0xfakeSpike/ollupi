@@ -1153,6 +1153,9 @@
         "childThreadId": {
           "type": "string"
         },
+        "taskId": {
+          "type": "string"
+        },
         "launchItemId": {
           "type": "string"
         },

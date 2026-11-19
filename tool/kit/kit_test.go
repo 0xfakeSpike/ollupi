@@ -66,3 +66,35 @@ func TestTheRegistryTurnsEveryFailureIntoAResult(t *testing.T) {
 		t.Errorf("specs %+v", specs)
 	}
 }
+
+type slow struct{}
+
+func (slow) Name() (string, string) { return "slow", "Runs long." }
+
+func (slow) Tools(context.Context) ([]Spec, error) {
+	schema := map[string]any{"type": "object", "properties": map[string]any{"n": map[string]any{"type": "integer"}}, "additionalProperties": false}
+	return []Spec{{Name: "build", InputSchema: schema, Background: tool.BackgroundOptional}, {Name: "count", InputSchema: schema}}, nil
+}
+
+func (slow) Invoke(_ context.Context, c tool.Call) (Result, error) { return Result{Output: c.Tool}, nil }
+
+func TestAToolThatMayRunInTheBackgroundTakesTheArgument(t *testing.T) {
+	r, err := New(context.Background(), nil, slow{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if res := r.Invoke(ctx, call("build", map[string]any{"n": 1, tool.BackgroundArgument: true})); res.Error != "" {
+		t.Errorf("a background build: %s", res.Error)
+	}
+	if res := r.Invoke(ctx, call("count", map[string]any{tool.BackgroundArgument: true})); res.Error == "" {
+		t.Error("a tool that runs only in the foreground took the background argument")
+	}
+	for _, s := range r.Specs() {
+		properties, _ := s.Schema["properties"].(map[string]any)
+		_, listed := properties[tool.BackgroundArgument]
+		if want := s.Name == "build"; listed != want || s.InBackground(map[string]any{tool.BackgroundArgument: true}) != want {
+			t.Errorf("%s lists the argument %v", s.Name, listed)
+		}
+	}
+}

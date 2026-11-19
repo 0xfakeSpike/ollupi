@@ -29,6 +29,7 @@ type Spec struct {
 	Content     func(ctx context.Context, c tool.Call) (policy.Content, error)
 	Prepare     func(ctx context.Context, c tool.Call) (tool.Plan, error)
 	Serial      bool
+	Background  tool.Background
 }
 
 type Result struct {
@@ -83,13 +84,17 @@ func New(ctx context.Context, unavailable []string, providers ...Provider) (*Reg
 			if prev, ok := r.tools[s.Name]; ok {
 				return nil, fmt.Errorf("tool registry: tool %q twice (providers %q and %q)", s.Name, prev.owner, id)
 			}
-			resolved, schema, err := schemas(s.InputSchema)
+			input := s.InputSchema
+			if s.Background == tool.BackgroundOptional {
+				input = withBackground(input)
+			}
+			resolved, schema, err := schemas(input)
 			if err != nil {
 				return nil, fmt.Errorf("tool registry: tool %q: %w", s.Name, err)
 			}
 			r.tools[s.Name] = entry{owner: id, provider: r.providers[id], spec: s, schema: resolved}
 			r.listed = append(r.listed, tool.Spec{Name: s.Name, Provider: id, Description: s.Description, Schema: schema,
-				Annotations: s.Annotations, Content: s.Content != nil, Serial: s.Serial})
+				Annotations: s.Annotations, Content: s.Content != nil, Serial: s.Serial, Background: s.Background})
 		}
 	}
 	sort.Slice(r.listed, func(i, j int) bool {

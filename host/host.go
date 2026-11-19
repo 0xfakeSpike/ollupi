@@ -40,28 +40,34 @@ import (
 )
 
 const (
-	defaultSlots    = 32
-	defaultRunLimit = 4 * time.Hour
+	defaultSlots         = 32
+	defaultRunLimit      = 4 * time.Hour
+	defaultTaskSlots     = 32
+	defaultUserTaskSlots = 4
+	defaultTaskLimit     = time.Hour
 )
 
 type Config struct {
-	Home        string
-	Name        string
-	Prompt      string
-	Models      []llm.Model
-	Connections map[string]llm.Client
-	ClientFor   func(user, connection string) (llm.Client, error)
-	Memory      *llm.Model
-	Tools       []kit.Provider
-	Allowlist   []string
-	Permissions policy.Settings
-	Boxes       func(user string) (sandbox.Box, error)
-	SkillsDir   string
-	Slots       int
-	UserSlots   int
-	RunLimit    time.Duration
-	Location    *time.Location
-	Gateway     *gateway.Options
+	Home          string
+	Name          string
+	Prompt        string
+	Models        []llm.Model
+	Connections   map[string]llm.Client
+	ClientFor     func(user, connection string) (llm.Client, error)
+	Memory        *llm.Model
+	Tools         []kit.Provider
+	Allowlist     []string
+	Permissions   policy.Settings
+	Boxes         func(user string) (sandbox.Box, error)
+	SkillsDir     string
+	Slots         int
+	UserSlots     int
+	RunLimit      time.Duration
+	TaskSlots     int
+	UserTaskSlots int
+	TaskLimit     time.Duration
+	Location      *time.Location
+	Gateway       *gateway.Options
 }
 
 type Host struct {
@@ -70,6 +76,7 @@ type Host struct {
 	Users *mcp.Users
 
 	scheduler *schedule.Scheduler
+	tasks     *schedule.Scheduler
 	extractor *extract.Extractor
 	cal       cron.Calendar
 	Gateway   *gateway.Server
@@ -116,7 +123,9 @@ func New(ctx context.Context, cfg Config) (*Host, error) {
 	runner := run.New(st, modelSet, h.Users.Tools, files, skillsOf(cfg.SkillsDir),
 		run.Deployment{Name: cfg.Name, Prompt: cfg.Prompt, Permissions: cfg.Permissions, Allowlist: cfg.Allowlist})
 	slots := cmp.Or(cfg.Slots, defaultSlots)
-	h.scheduler = schedule.New(st, runner, slots, cmp.Or(cfg.UserSlots, slots), cmp.Or(cfg.RunLimit, defaultRunLimit))
+	h.scheduler = schedule.New(st, schedule.Threads(runner.Run), slots, cmp.Or(cfg.UserSlots, slots), cmp.Or(cfg.RunLimit, defaultRunLimit))
+	h.tasks = schedule.New(st, schedule.Tasks(runner.Task), cmp.Or(cfg.TaskSlots, defaultTaskSlots),
+		cmp.Or(cfg.UserTaskSlots, defaultUserTaskSlots), cmp.Or(cfg.TaskLimit, defaultTaskLimit))
 	if cfg.Memory != nil {
 		limits, err := modelSet.Limits(*cfg.Memory)
 		if err != nil {
@@ -156,6 +165,7 @@ func skillsOf(dir string) run.Skills {
 func (h *Host) Run(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return h.scheduler.Run(ctx) })
+	g.Go(func() error { return h.tasks.Run(ctx) })
 	g.Go(func() error { return cron.Run(ctx, h.Store, h.cal, h.App.Scheduled) })
 	if h.extractor != nil {
 		g.Go(func() error { return h.extractor.Run(ctx) })
