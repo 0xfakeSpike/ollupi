@@ -11,15 +11,91 @@ import (
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/run"
 	"github.com/0xfakeSpike/ollupi/store"
+	"github.com/0xfakeSpike/ollupi/tool"
 )
 
-type Runner interface {
-	Run(ctx context.Context, thread string) error
+type Work struct {
+	Noun  string
+	Queue func(r store.Reader, limit int, full []string) ([]store.Runnable, error)
+	Run   func(ctx context.Context, id string) error
+	Fail  func(tx store.Tx, id, reason string) error
+	Heard func(e store.Event) (wake bool, stop func(store.Runnable) bool)
+}
+
+func Threads(runThread func(ctx context.Context, thread string) error) Work {
+	return Work{
+		Noun:  "turn",
+		Queue: store.Reader.Runnable,
+		Run:   runThread,
+		Fail:  failTurn,
+		Heard: threadHeard,
+	}
+}
+
+func failTurn(tx store.Tx, thread, reason string) error {
+	return run.End(tx, thread, conversation.Failed, reason)
+}
+
+func threadHeard(e store.Event) (bool, func(store.Runnable) bool) {
+	if e.Change == nil {
+		return false, nil
+	}
+	runnable := e.Change.Header != nil && e.Change.Header.Runnable
+	ended := slices.ContainsFunc(e.Change.Entries, endsTurn)
+	if !ended && !e.Change.Deleted {
+		return runnable, nil
+	}
+	return runnable, func(rn store.Runnable) bool { return rn.ID == e.Thread }
+}
+
+func endsTurn(entry conversation.Entry) bool {
+	_, ok := entry.Body.(conversation.TurnEnded)
+	return ok
+}
+
+func Tasks(runTask func(ctx context.Context, task string) error) Work {
+	return Work{
+		Noun:  "task",
+		Queue: store.Reader.Tasks,
+		Run:   runTask,
+		Fail:  failTask,
+		Heard: taskHeard,
+	}
+}
+
+func failTask(tx store.Tx, task, reason string) error {
+	return run.ReportTask(tx, task, tool.Result{Error: reason})
+}
+
+func taskHeard(e store.Event) (bool, func(store.Runnable) bool) {
+	if e.Change == nil {
+		return false, nil
+	}
+	launched := slices.ContainsFunc(e.Change.Entries, launchesTask)
+	var reported []string
+	for _, entry := range e.Change.Entries {
+		if r, ok := entry.Body.(conversation.TaskReported); ok {
+			reported = append(reported, r.Task)
+		}
+	}
+	deleted := e.Change.Deleted
+	if len(reported) == 0 && !deleted {
+		return launched, nil
+	}
+	return launched, func(rn store.Runnable) bool {
+		gone := deleted && rn.Thread == e.Thread
+		return gone || slices.Contains(reported, rn.ID)
+	}
+}
+
+func launchesTask(entry conversation.Entry) bool {
+	_, ok := entry.Body.(conversation.TaskLaunched)
+	return ok
 }
 
 type Scheduler struct {
 	st        store.Store
-	runner    Runner
+	work      Work
 	slots     int
 	userSlots int
 	limit     time.Duration
@@ -33,12 +109,13 @@ type Scheduler struct {
 }
 
 type worker struct {
+	job     store.Runnable
 	cancel  context.CancelFunc
 	stopped bool
 }
 
-func New(st store.Store, runner Runner, slots, userSlots int, limit time.Duration) *Scheduler {
-	return &Scheduler{st: st, runner: runner, slots: slots, userSlots: userSlots, limit: limit,
+func New(st store.Store, work Work, slots, userSlots int, limit time.Duration) *Scheduler {
+	return &Scheduler{st: st, work: work, slots: slots, userSlots: userSlots, limit: limit,
 		wake: make(chan struct{}, 1), failed: make(chan error, 1), runs: map[string]*worker{}, ofUser: map[string]int{}}
 }
 
@@ -73,25 +150,20 @@ func (s *Scheduler) signal() {
 }
 
 func (s *Scheduler) hear(e store.Event) {
-	if e.Change == nil {
-		return
-	}
-	runnable := e.Change.Header != nil && e.Change.Header.Runnable
-	if runnable {
+	wake, stop := s.work.Heard(e)
+	if wake {
 		s.signal()
 	}
-	ended := slices.ContainsFunc(e.Change.Entries, func(entry conversation.Entry) bool {
-		_, ok := entry.Body.(conversation.TurnEnded)
-		return ok
-	})
-	if !ended && !e.Change.Deleted {
+	if stop == nil {
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if w, running := s.runs[e.Thread]; running {
-		w.stopped = true
-		w.cancel()
+	for _, w := range s.runs {
+		if stop(w.job) {
+			w.stopped = true
+			w.cancel()
+		}
 	}
 }
 
@@ -109,37 +181,37 @@ func (s *Scheduler) admit(ctx context.Context) error {
 	if free <= 0 {
 		return nil
 	}
-	var runnable []store.Runnable
+	var queued []store.Runnable
 	err := s.st.Read(ctx, func(r store.Reader) (err error) {
-		runnable, err = r.Runnable(free+running, full)
+		queued, err = s.work.Queue(r, free+running, full)
 		return err
 	})
 	if err != nil {
-		return fmt.Errorf("schedule: the runnable conversations: %w", err)
+		return fmt.Errorf("schedule: the queued %ss: %w", s.work.Noun, err)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, rn := range runnable {
-		_, busy := s.runs[rn.Thread]
-		if busy || len(s.runs) >= s.slots || s.ofUser[rn.User] >= s.userSlots {
+	for _, job := range queued {
+		_, busy := s.runs[job.ID]
+		if busy || len(s.runs) >= s.slots || s.ofUser[job.User] >= s.userSlots {
 			continue
 		}
-		s.start(ctx, rn)
+		s.start(ctx, job)
 	}
 	return nil
 }
 
-var errLimit = errors.New("the turn reached its time limit")
+var errLimit = errors.New("the time limit")
 
-func (s *Scheduler) start(ctx context.Context, rn store.Runnable) {
+func (s *Scheduler) start(ctx context.Context, job store.Runnable) {
 	wctx, cancel := context.WithTimeoutCause(ctx, s.limit, errLimit)
-	w := &worker{cancel: cancel}
-	s.runs[rn.Thread] = w
-	s.ofUser[rn.User]++
+	w := &worker{job: job, cancel: cancel}
+	s.runs[job.ID] = w
+	s.ofUser[job.User]++
 	s.done.Add(1)
 	go func() {
 		defer s.done.Done()
-		err := s.runner.Run(wctx, rn.Thread)
+		err := s.work.Run(wctx, job.ID)
 		timedOut := context.Cause(wctx) == errLimit
 		cancel()
 		s.mu.Lock()
@@ -148,16 +220,16 @@ func (s *Scheduler) start(ctx context.Context, rn store.Runnable) {
 		if err != nil && ctx.Err() == nil && !stopped {
 			reason := err.Error()
 			if timedOut {
-				reason = fmt.Sprintf("%v of %s", errLimit, s.limit)
+				reason = fmt.Sprintf("the %s reached its time limit of %s", s.work.Noun, s.limit)
 			}
-			if err := s.st.Update(ctx, func(tx store.Tx) error { return run.End(tx, rn.Thread, conversation.Failed, reason) }); err != nil {
-				s.fail(fmt.Errorf("schedule: end the failed turn of thread %s: %w", rn.Thread, err))
+			if err := s.st.Update(ctx, func(tx store.Tx) error { return s.work.Fail(tx, job.ID, reason) }); err != nil {
+				s.fail(fmt.Errorf("schedule: end the failed %s %s: %w", s.work.Noun, job.ID, err))
 			}
 		}
 		s.mu.Lock()
-		delete(s.runs, rn.Thread)
-		if s.ofUser[rn.User]--; s.ofUser[rn.User] == 0 {
-			delete(s.ofUser, rn.User)
+		delete(s.runs, job.ID)
+		if s.ofUser[job.User]--; s.ofUser[job.User] == 0 {
+			delete(s.ofUser, job.User)
 		}
 		s.mu.Unlock()
 		s.signal()

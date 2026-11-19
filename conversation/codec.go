@@ -41,6 +41,10 @@ func Decode(kind EntryKind, raw []byte) (Body, error) {
 		b, err = decode[ChildLaunched](raw)
 	case KindChildReported:
 		b, err = decode[ChildReported](raw)
+	case KindTaskLaunched:
+		b, err = decode[TaskLaunched](raw)
+	case KindTaskReported:
+		b, err = decode[TaskReported](raw)
 	case KindCompacted:
 		b, err = decode[Compacted](raw)
 	case KindRecalled:

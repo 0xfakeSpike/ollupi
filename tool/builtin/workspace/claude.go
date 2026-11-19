@@ -34,6 +34,7 @@ func (r *Provider) claudeTool() kit.Spec {
 			"timeout_sec defaults to " + fmt.Sprint(r.maxTimeoutSec) + ", the most allowed",
 		InputSchema: r.claudeSchema(),
 		Annotations: tool.Annotations{Title: "Claude Code", DestructiveHint: new(true), OpenWorldHint: new(true)},
+		Background:  tool.BackgroundOptional,
 		Content:     claudePermissionContent,
 		Prepare:     r.locals()[ToolClaude].plan,
 	}

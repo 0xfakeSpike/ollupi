@@ -64,7 +64,8 @@ var schema = map[string]any{"type": "object"}
 
 func (set) Specs() []tool.Spec {
 	return []tool.Spec{
-		{Name: agent.ReadFileTool, Provider: agent.WorkspaceProvider, Schema: schema, Annotations: tool.Annotations{ReadOnlyHint: true}},
+		{Name: agent.ReadFileTool, Provider: agent.WorkspaceProvider, Schema: schema, Annotations: tool.Annotations{ReadOnlyHint: true},
+			Background: tool.BackgroundOptional},
 		{Name: agent.RunCommandTool, Provider: agent.WorkspaceProvider, Schema: schema, Content: true},
 		{Name: string(agent.GeneralSub), Provider: agent.SubagentsProvider, Schema: schema, Annotations: tool.Annotations{ReadOnlyHint: true}},
 	}
@@ -249,7 +250,7 @@ func TestASubagentReportsToTheTurnThatLaunchedIt(t *testing.T) {
 	f.run("th")
 	v := f.view("th")
 	child := v.Items[1].Child
-	if child == "" || v.Waiting() != conversation.WaitChildren {
+	if child == "" || v.Waiting() != conversation.WaitReports {
 		t.Fatalf("launched %q, waiting %q, items %s", child, v.Waiting(), kinds(v))
 	}
 	f.run(child)
@@ -290,5 +291,93 @@ func TestEndingATurnStopsItsSubagentsAndClosesItsCalls(t *testing.T) {
 	}
 	if c := f.view(child); c.Turns[0].Ended == nil || c.Turns[0].Ended.Reason != stoppedWithParent {
 		t.Errorf("the subagent's turn %+v", c.Turns[0])
+	}
+}
+
+func (f *fixture) tasks() []store.Runnable {
+	f.t.Helper()
+	var out []store.Runnable
+	err := f.st.Read(context.Background(), func(r store.Reader) (err error) { out, err = r.Tasks(10, nil); return err })
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return out
+}
+
+func (f *fixture) background() string {
+	f.t.Helper()
+	f.ask("th", "what does a.txt say?")
+	f.run("th")
+	v := f.view("th")
+	task := v.Items[1].Task
+	queued := f.tasks()
+	if task == "" || v.Items[1].Status != conversation.Done || len(queued) != 1 || queued[0].ID != task || queued[0].Thread != "th" {
+		f.t.Fatalf("launched %q, queued %+v, items %s", task, queued, kinds(v))
+	}
+	return task
+}
+
+func backgroundRead(req llm.ChatRequest) llm.ChatResponse {
+	last := req.Messages[len(req.Messages)-1]
+	switch {
+	case strings.Contains(last.Content, "run in the background: completed"):
+		return answer("it says hello")
+	case last.Role == llm.RoleTool:
+		return answer("reading it in the background")
+	}
+	return reply("", llm.ToolCall{ID: "call_1", Name: agent.ReadFileTool, Arguments: `{"path":"a.txt","background":true}`})
+}
+
+func TestABackgroundCallReportsToTheTurnThatLaunchedIt(t *testing.T) {
+	var got tool.Call
+	f := setup(t, func(c tool.Call) tool.Result { got = c; return tool.Result{Output: json.RawMessage(`"hello"`)} })
+	f.m.answer = backgroundRead
+	task := f.background()
+	if v := f.view("th"); v.Waiting() != conversation.WaitReports || got.Tool != "" {
+		t.Fatalf("waiting %q, ran %+v", v.Waiting(), got)
+	}
+	if err := f.r.Task(context.Background(), task); err != nil {
+		t.Fatal(err)
+	}
+	v := f.view("th")
+	report := v.Items[len(v.Items)-1]
+	if report.Kind != conversation.ItemReport || report.Task != task || string(report.Result.Output) != `"hello"` || !v.Runnable() || len(f.tasks()) != 0 {
+		t.Fatalf("the report %+v, items %s", report, kinds(v))
+	}
+	if got.Tool != agent.ReadFileTool || got.Thread != "th" || got.Item != v.Items[1].ID || got.Arguments["path"] != "a.txt" {
+		t.Errorf("the call %+v", got)
+	}
+	f.run("th")
+	if v := f.view("th"); v.Status() != conversation.ThreadIdle || v.Items[len(v.Items)-1].Text != "it says hello" {
+		t.Errorf("after the report: %s %s", v.Status(), kinds(v))
+	}
+}
+
+func TestATaskAnEarlierProcessStartedIsReportedCutOff(t *testing.T) {
+	ran := false
+	f := setup(t, func(c tool.Call) tool.Result { ran = true; return tool.Result{} })
+	f.m.answer = backgroundRead
+	task := f.background()
+	f.update(func(tx store.Tx) error { return tx.StartTask(task, time.Now().UTC()) })
+	if err := f.r.Task(context.Background(), task); err != nil {
+		t.Fatal(err)
+	}
+	v := f.view("th")
+	if report := v.Items[len(v.Items)-1]; ran || report.Kind != conversation.ItemReport || report.Error != strandedTask {
+		t.Errorf("ran %v, the report %+v", ran, report)
+	}
+}
+
+func TestEndingATurnReportsItsTasks(t *testing.T) {
+	f := setup(t, func(c tool.Call) tool.Result { return tool.Result{} })
+	f.m.answer = backgroundRead
+	task := f.background()
+	f.update(func(tx store.Tx) error { return End(tx, "th", conversation.Interrupted, "interrupted by the user") })
+	v := f.view("th")
+	if got := kinds(v); got != "userMessage:completed,toolCall:completed,agentMessage:completed,agentReport:failed" || len(f.tasks()) != 0 {
+		t.Fatalf("items %s, tasks %+v", got, f.tasks())
+	}
+	if report := v.Items[3]; report.Task != task || report.Error != stoppedWithParent || v.Turns[0].Ended == nil {
+		t.Errorf("the report %+v, the turn %+v", report, v.Turns[0])
 	}
 }
