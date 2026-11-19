@@ -6,6 +6,7 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/store"
+	"github.com/0xfakeSpike/ollupi/tool"
 	"github.com/google/uuid"
 )
 
@@ -30,10 +31,16 @@ func End(tx store.Tx, thread string, status conversation.End, reason string) err
 	}
 	items := v.ItemsOf(turn.ID)
 	for _, it := range items {
-		if it.AwaitsReport() {
-			if err := End(tx, it.Child, conversation.Interrupted, stoppedWithParent); err != nil {
-				return err
-			}
+		if !it.AwaitsReport() {
+			continue
+		}
+		if it.Child != "" {
+			err = End(tx, it.Child, conversation.Interrupted, stoppedWithParent)
+		} else {
+			err = ReportTask(tx, it.Task, tool.Result{Error: stoppedWithParent})
+		}
+		if err != nil {
+			return err
 		}
 	}
 	why := reason

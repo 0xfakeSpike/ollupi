@@ -54,6 +54,15 @@ func Check(v View, e Entry) error {
 			return refuse("call %s launched no subagent %s that has not reported", b.Launch, b.Child)
 		}
 		return nil
+	case TaskReported:
+		if err := newItem(v, e); err != nil {
+			return err
+		}
+		launch, ok := v.ItemOf(b.Launch)
+		if !ok || launch.Task != b.Task || launch.Reported {
+			return refuse("call %s launched no task %s that has not reported", b.Launch, b.Task)
+		}
+		return nil
 	}
 	it, ok := v.ItemOf(e.Item)
 	if !ok || it.Turn != turn.ID || it.Kind != ItemToolCall {
@@ -85,8 +94,12 @@ func Check(v View, e Entry) error {
 			return refuse("call %s cannot end now", it.ID)
 		}
 	case ChildLaunched:
-		if it.Status != InProgress || it.Child != "" || b.Child == "" {
+		if it.Status != InProgress || it.Child != "" || it.Task != "" || b.Child == "" {
 			return refuse("call %s cannot launch a subagent now", it.ID)
+		}
+	case TaskLaunched:
+		if it.Status != InProgress || it.Child != "" || it.Task != "" || b.Task == "" {
+			return refuse("call %s cannot launch a task now", it.ID)
 		}
 	}
 	return nil

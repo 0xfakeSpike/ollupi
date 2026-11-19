@@ -97,6 +97,7 @@ type Item struct {
 	Result      *Result
 	Error       string
 	Child       string
+	Task        string
 	Reported    bool
 	Launch      string
 	Through     int64
@@ -211,6 +212,15 @@ func (v *View) Apply(e Entry) {
 		}
 		v.add(e, report)
 		v.Items[v.item[b.Launch]].Reported = true
+	case TaskLaunched:
+		v.update(e, func(it *Item) { it.Task = b.Task })
+	case TaskReported:
+		report := Item{Kind: ItemReport, Status: Done, Task: b.Task, Launch: b.Launch, Result: &Result{Output: b.Output}}
+		if b.Error != "" {
+			report.Status, report.Error, report.Result = Errored, b.Error, nil
+		}
+		v.add(e, report)
+		v.Items[v.item[b.Launch]].Reported = true
 	case Compacted:
 		stats := b.Stats
 		v.add(e, Item{Kind: ItemCompaction, Status: Done, Text: b.Summary, Through: b.Through, Response: b.Response, Stats: &stats})
@@ -299,7 +309,7 @@ const (
 	WaitNone     Wait = ""
 	WaitApproval Wait = "approval"
 	WaitInput    Wait = "input"
-	WaitChildren Wait = "children"
+	WaitReports  Wait = "reports"
 )
 
 func (v View) Waiting() Wait {
@@ -314,7 +324,7 @@ func (v View) Waiting() Wait {
 	case slices.ContainsFunc(items, Item.WaitsForInput):
 		return WaitInput
 	case v.Answered(active.ID) && slices.ContainsFunc(items, Item.AwaitsReport):
-		return WaitChildren
+		return WaitReports
 	}
 	return WaitNone
 }
@@ -410,5 +420,6 @@ func (it Item) WaitsForInput() bool {
 }
 
 func (it Item) AwaitsReport() bool {
-	return it.Kind == ItemToolCall && it.Child != "" && !it.Reported
+	launched := it.Child != "" || it.Task != ""
+	return it.Kind == ItemToolCall && launched && !it.Reported
 }

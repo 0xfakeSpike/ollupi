@@ -15,10 +15,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/store/sqlite"
 )
 
-type runner func(ctx context.Context, thread string) error
-
-func (r runner) Run(ctx context.Context, thread string) error { return r(ctx, thread) }
-
 func open(t *testing.T) store.Store {
 	t.Helper()
 	st, err := sqlite.Open(t.TempDir())
@@ -88,7 +84,7 @@ func TestConversationsRunInTheSlotsThereAre(t *testing.T) {
 	release := make(chan struct{})
 	var mu sync.Mutex
 	running, most := 0, 0
-	s := New(st, runner(func(ctx context.Context, thread string) error {
+	s := New(st, Threads(func(ctx context.Context, thread string) error {
 		mu.Lock()
 		running++
 		most = max(most, running)
@@ -124,7 +120,7 @@ func TestConversationsRunInTheSlotsThereAre(t *testing.T) {
 func TestATurnEndedElsewhereStopsItsRun(t *testing.T) {
 	st := open(t)
 	started, stopped := make(chan struct{}, 1), make(chan error, 1)
-	s := New(st, runner(func(ctx context.Context, thread string) error {
+	s := New(st, Threads(func(ctx context.Context, thread string) error {
 		started <- struct{}{}
 		<-ctx.Done()
 		stopped <- ctx.Err()
@@ -148,7 +144,7 @@ func TestATurnEndedElsewhereStopsItsRun(t *testing.T) {
 func TestARunThatFailsOrOverrunsEndsItsTurn(t *testing.T) {
 	st := open(t)
 	finished := make(chan string, 2)
-	s := New(st, runner(func(ctx context.Context, thread string) error {
+	s := New(st, Threads(func(ctx context.Context, thread string) error {
 		defer func() { finished <- thread }()
 		if thread == "slow" {
 			<-ctx.Done()
@@ -172,5 +168,84 @@ func TestARunThatFailsOrOverrunsEndsItsTurn(t *testing.T) {
 	}
 	if e := ended(t, st, "slow"); e.Status != conversation.Failed || e.Reason != "the turn reached its time limit of 200ms" {
 		t.Errorf("the slow turn %+v", e)
+	}
+}
+
+func launch(t *testing.T, st store.Store, thread, task string) {
+	t.Helper()
+	err := st.Update(context.Background(), func(tx store.Tx) error {
+		if err := tx.CreateTask(store.Task{ID: task, User: "u", Thread: thread, Turn: "t1", Item: "c1", Call: []byte(`{}`), Created: time.Now().UTC()}); err != nil {
+			return err
+		}
+		_, err := tx.Append(thread,
+			conversation.Entry{Turn: "t1", Body: conversation.ModelResponded{Response: "r1"}},
+			conversation.Entry{Turn: "t1", Item: "c1", Body: conversation.ToolCall{Call: "call_1", Tool: "run_command", Response: "r1"}},
+			conversation.Entry{Turn: "t1", Item: "c1", Body: conversation.ToolStarted{}},
+			conversation.Entry{Turn: "t1", Item: "c1", Body: conversation.TaskLaunched{Task: task}},
+			conversation.Entry{Turn: "t1", Item: "c1", Body: conversation.ToolResult{}})
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestATaskRunsInItsOwnQueueUntilItsTurnEnds(t *testing.T) {
+	st := open(t)
+	started, stopped := make(chan string, 1), make(chan error, 1)
+	s := New(st, Tasks(func(ctx context.Context, task string) error {
+		started <- task
+		<-ctx.Done()
+		stopped <- ctx.Err()
+		return ctx.Err()
+	}), 4, 4, time.Minute)
+	stop := start(t, s)
+	defer stop()
+	ask(t, st, "th")
+	launch(t, st, "th", "task")
+	if task := receive(t, started); task != "task" {
+		t.Fatalf("ran %s", task)
+	}
+	if err := end(st, "th", conversation.Interrupted, "interrupted by the user"); err != nil {
+		t.Fatal(err)
+	}
+	if err := receive(t, stopped); !errors.Is(err, context.Canceled) {
+		t.Errorf("the task stopped with %v", err)
+	}
+	var v conversation.View
+	if err := st.Read(context.Background(), func(r store.Reader) (err error) { v, err = r.View("th"); return err }); err != nil {
+		t.Fatal(err)
+	}
+	if report := v.Items[len(v.Items)-1]; report.Task != "task" || report.Status != conversation.Errored {
+		t.Errorf("the report %+v", report)
+	}
+}
+
+func TestATaskThatOverrunsReportsItsLimit(t *testing.T) {
+	st := open(t)
+	s := New(st, Tasks(func(ctx context.Context, task string) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}), 4, 4, 100*time.Millisecond)
+	stop := start(t, s)
+	defer stop()
+	ask(t, st, "th")
+	launch(t, st, "th", "task")
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var v conversation.View
+		if err := st.Read(context.Background(), func(r store.Reader) (err error) { v, err = r.View("th"); return err }); err != nil {
+			t.Fatal(err)
+		}
+		if last := v.Items[len(v.Items)-1]; last.Kind == conversation.ItemReport {
+			if last.Error != "the task reached its time limit of 100ms" {
+				t.Errorf("the report %+v", last)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the task was not reported")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

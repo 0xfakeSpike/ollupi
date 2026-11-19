@@ -201,6 +201,7 @@ func (r *Provider) commandTool() kit.Spec {
 		Description: desc,
 		InputSchema: r.inputSchema(),
 		Annotations: tool.Annotations{DestructiveHint: new(true), OpenWorldHint: new(true)},
+		Background:  tool.BackgroundOptional,
 
 		Content: permissionContent,
 		Prepare: r.locals()[ToolRunCommand].plan,

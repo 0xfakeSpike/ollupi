@@ -108,7 +108,7 @@ func TestATurnWaitsOnItsSubagentsOnlyOnceItHasAnswered(t *testing.T) {
 	}
 	l.append("t1", "", ModelResponded{Response: "r2"})
 	l.append("t1", "a1", AgentMessage{Text: "a subagent is on it", Response: "r2"})
-	if l.v.Waiting() != WaitChildren || l.v.Runnable() || l.v.Status() != ThreadActive {
+	if l.v.Waiting() != WaitReports || l.v.Runnable() || l.v.Status() != ThreadActive {
 		t.Fatalf("after the answer: %s, runnable %v, status %s", l.v.Waiting(), l.v.Runnable(), l.v.Status())
 	}
 	l.refused("t1", "rep", ChildReported{Launch: "c1", Child: "someone else"})
@@ -118,6 +118,37 @@ func TestATurnWaitsOnItsSubagentsOnlyOnceItHasAnswered(t *testing.T) {
 		t.Errorf("after the report: %s, runnable %v, answered %v", l.v.Waiting(), l.v.Runnable(), l.v.Answered("t1"))
 	}
 	if rep := l.item("rep"); rep.Kind != ItemReport || rep.Launch != "c1" || string(rep.Result.Output) != `"found it"` {
+		t.Errorf("the report: %+v", rep)
+	}
+}
+
+func TestABackgroundCallReportsItsResultLater(t *testing.T) {
+	l := &log{t: t}
+	l.append("t1", "", TurnQueued{})
+	l.append("t1", "m1", UserMessage{Text: "build it"})
+	l.append("t1", "", ModelResponded{Response: "r1"})
+	l.append("t1", "c1", ToolCall{Call: "call_1", Tool: "run_command", Response: "r1"})
+	l.refused("t1", "c1", TaskLaunched{Task: "task"})
+	l.append("t1", "c1", ToolStarted{})
+	l.refused("t1", "c1", TaskLaunched{})
+	l.append("t1", "c1", TaskLaunched{Task: "task"})
+	l.refused("t1", "c1", ChildLaunched{Child: "child"})
+	l.append("t1", "c1", ToolResult{Output: json.RawMessage(`{"task":"task"}`)})
+	if c := l.item("c1"); c.Status != Done || !c.AwaitsReport() || l.v.Waiting() != WaitNone {
+		t.Fatalf("the launched call %+v, waiting %s", c, l.v.Waiting())
+	}
+	l.append("t1", "", ModelResponded{Response: "r2"})
+	l.append("t1", "a1", AgentMessage{Text: "building", Response: "r2"})
+	if l.v.Waiting() != WaitReports || l.v.Runnable() {
+		t.Fatalf("after the answer: %s", l.v.Waiting())
+	}
+	l.refused("t1", "rep", TaskReported{Launch: "c1", Task: "another"})
+	l.append("t1", "rep", TaskReported{Launch: "c1", Task: "task", Output: json.RawMessage(`"ok"`)})
+	l.refused("t1", "rep2", TaskReported{Launch: "c1", Task: "task"})
+	if !l.v.Runnable() || l.v.Answered("t1") {
+		t.Errorf("after the report: %s, answered %v", l.v.Waiting(), l.v.Answered("t1"))
+	}
+	if rep := l.item("rep"); rep.Kind != ItemReport || rep.Task != "task" || rep.Launch != "c1" || string(rep.Result.Output) != `"ok"` {
 		t.Errorf("the report: %+v", rep)
 	}
 }

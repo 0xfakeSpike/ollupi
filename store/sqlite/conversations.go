@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/account"
@@ -137,15 +138,46 @@ func (r reader) Page(thread string, before int64, limit int) (store.Page, bool, 
 }
 
 func (r reader) Runnable(limit int, except []string) ([]store.Runnable, error) {
-	query := "SELECT id AS thread, user_id AS user FROM threads WHERE runnable_since IS NOT NULL"
+	return r.queue("SELECT id, user_id AS user, id AS thread FROM threads", []string{"runnable_since IS NOT NULL"},
+		"parent_id IS NOT NULL, runnable_since, id", limit, except)
+}
+
+func (r reader) Tasks(limit int, except []string) ([]store.Runnable, error) {
+	return r.queue("SELECT id, user_id AS user, thread_id AS thread FROM tasks", nil, "created_at, id", limit, except)
+}
+
+func (r reader) queue(query string, where []string, order string, limit int, except []string) ([]store.Runnable, error) {
 	args := []any{}
 	if len(except) > 0 {
-		query += " AND user_id NOT IN ?"
+		where = append(where, "user_id NOT IN ?")
 		args = append(args, except)
 	}
+	if len(where) > 0 {
+		query += " WHERE " + strings.Join(where, " AND ")
+	}
 	var out []store.Runnable
-	err := r.g.Raw(query+" ORDER BY parent_id IS NOT NULL, runnable_since, id LIMIT ?", append(args, limit)...).Scan(&out).Error
+	err := r.g.Raw(query+" ORDER BY "+order+" LIMIT ?", append(args, limit)...).Scan(&out).Error
 	return out, err
+}
+
+type taskRow struct {
+	ID        string
+	UserID    string
+	ThreadID  string
+	TurnID    string
+	ItemID    string
+	Call      string
+	CreatedAt time.Time
+	StartedAt *time.Time
+}
+
+func (r reader) Task(id string) (store.Task, error) {
+	var row taskRow
+	if err := notFound(r.g.Raw("SELECT * FROM tasks WHERE id = ?", id).Take(&row).Error); err != nil {
+		return store.Task{}, fmt.Errorf("store: task %s: %w", id, err)
+	}
+	return store.Task{ID: row.ID, User: row.UserID, Thread: row.ThreadID, Turn: row.TurnID, Item: row.ItemID,
+		Call: json.RawMessage(row.Call), Created: row.CreatedAt, Started: row.StartedAt}, nil
 }
 
 func (r reader) Seq() (int64, error) {
@@ -212,6 +244,34 @@ func (t *tx) UpdateThread(th store.Thread) error {
 		return fmt.Errorf("store: thread %s: %w", th.ID, store.ErrNotFound)
 	}
 	t.pendingFor(th.ID, th.User)
+	return nil
+}
+
+func (t *tx) CreateTask(task store.Task) error {
+	err := t.g.Exec("INSERT INTO tasks(id, user_id, thread_id, turn_id, item_id, call, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		task.ID, task.User, task.Thread, task.Turn, task.Item, string(task.Call), task.Created).Error
+	if err != nil {
+		return fmt.Errorf("store: create task %s: %w", task.ID, err)
+	}
+	return nil
+}
+
+func (t *tx) StartTask(id string, at time.Time) error {
+	return t.taskExec("start", id, "UPDATE tasks SET started_at = ? WHERE id = ?", at, id)
+}
+
+func (t *tx) DeleteTask(id string) error {
+	return t.taskExec("delete", id, "DELETE FROM tasks WHERE id = ?", id)
+}
+
+func (t *tx) taskExec(what, id, query string, args ...any) error {
+	res := t.g.Exec(query, args...)
+	if res.Error != nil {
+		return fmt.Errorf("store: %s task %s: %w", what, id, res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return fmt.Errorf("store: task %s: %w", id, store.ErrNotFound)
+	}
 	return nil
 }
 
@@ -287,7 +347,10 @@ func touched(e conversation.Entry) []string {
 	if e.Item != "" {
 		ids = append(ids, e.Item)
 	}
-	if r, ok := e.Body.(conversation.ChildReported); ok {
+	switch r := e.Body.(type) {
+	case conversation.ChildReported:
+		ids = append(ids, r.Launch)
+	case conversation.TaskReported:
 		ids = append(ids, r.Launch)
 	}
 	return ids
