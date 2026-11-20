@@ -99,5 +99,4 @@ type Launch struct {
 	Title     string
 	Task      string
 	Workspace string
-	Detached  bool
 }

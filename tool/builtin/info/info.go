@@ -35,7 +35,7 @@ func (Provider) Tools(context.Context) ([]kit.Spec, error) {
 		Name: agent.InfoTool,
 		Description: "Tells the id of this conversation and of the workspace it works in (none when it has no workspace), " +
 			"and lists the user's workspaces with their ids, names and folders. " +
-			"Pass a workspace id to " + string(agent.GeneralSub) + " to have the subagent work in that workspace.",
+			"Pass a workspace id to " + string(agent.GeneralSub) + " or " + string(agent.DelegateSub) + " to have it work in that workspace.",
 		InputSchema: kit.InputSchema[struct{}](),
 		Annotations: tool.Annotations{Title: "Conversation info", ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: new(false)},
 	}}, nil

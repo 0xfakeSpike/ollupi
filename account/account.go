@@ -93,6 +93,7 @@ type Thread struct {
 	Environment string
 	Parent      string
 	ParentItem  string
+	Role        string
 	Created     time.Time
 	Updated     time.Time
 	Archived    *time.Time

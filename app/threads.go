@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/account"
+	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/google/uuid"
@@ -117,6 +118,7 @@ func (a *App) changeThread(ctx context.Context, user, id string, change func(sto
 }
 
 func (a *App) DeleteThread(ctx context.Context, user, id string) error {
+	gone := []string{id}
 	err := a.st.Update(ctx, func(tx store.Tx) error {
 		th, err := thread(tx, user, id)
 		if err != nil {
@@ -125,6 +127,16 @@ func (a *App) DeleteThread(ctx context.Context, user, id string) error {
 		if th.Status != conversation.ThreadIdle {
 			return ErrThreadBusy
 		}
+		children, err := tx.Children(id)
+		if err != nil {
+			return err
+		}
+		for _, c := range children {
+			if c.Role == string(agent.DelegateSub) {
+				return ErrHasDelegates
+			}
+			gone = append(gone, c.ID)
+		}
 		return tx.DeleteThread(id)
 	})
 	if err != nil {
@@ -132,8 +144,10 @@ func (a *App) DeleteThread(ctx context.Context, user, id string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), attachmentTimeout)
 	defer cancel()
-	if err := a.attachments.DeletePrefix(ctx, id+"/"); err != nil {
-		return fmt.Errorf("the conversation is deleted, but not its attachments: %w", err)
+	for _, thread := range gone {
+		if err := a.attachments.DeletePrefix(ctx, thread+"/"); err != nil {
+			return fmt.Errorf("the conversation is deleted, but not its attachments: %w", err)
+		}
 	}
 	return nil
 }
