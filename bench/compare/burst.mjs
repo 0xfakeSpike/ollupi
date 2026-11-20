@@ -1,10 +1,11 @@
 import { args, cpuSeconds, freshDir, pct, peakSampler, report, secs, startProvider } from "./common.mjs";
 import { openHarness, pool } from "./harnesses.mjs";
 
-const a = args({ harness: "pi-sdk", n: 3000, limit: 256, latency: "5s", jitter: "2s", tool: 1000, retries: -1 });
+const a = args({ harness: "pi-sdk", n: 3000, limit: 256, latency: "5s", jitter: "2s", tool: 1000, retries: -1, slots: 512 });
 const provider = await startProvider({ latency: a.latency, jitter: a.jitter, rounds: 2, limit: a.limit });
 const dir = freshDir(`burst-${a.harness}-${a.n}`);
 const settings = a.retries >= 0 ? { retry: { maxRetries: a.retries } } : {};
+settings.ollupi = { calls: a.limit, slots: a.slots };
 const h = await openHarness(a.harness, { dir, url: provider.url, toolMs: a.tool, settings });
 const sessions = await pool(Array.from({ length: a.n }), 64, () => h.newSession());
 

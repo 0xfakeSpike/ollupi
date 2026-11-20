@@ -5,8 +5,8 @@ results=$root/bench/results
 locks=$root/bench/compare/.locks
 
 all="parked isolated steady-512 steady-1024 steady-1536 steady-2048 steady-3072 steady-4096 steady-faults
-steady-lognormal steady-workspace-write steady-full-access burst resume crash crash-lease mix fanout soak users
-users-slots users-limit conns conns-router"
+steady-lognormal steady-workspace-write steady-full-access burst resume crash crash-lease background background-foreground
+mix fanout soak soak-history users users-slots users-limit conns conns-router"
 
 args() {
 	case $1 in
@@ -21,9 +21,12 @@ args() {
 	resume) echo "resume" ;;
 	crash) echo "crash -n 500 -kills 30" ;;
 	crash-lease) echo "crash -n 400 -kills 8 -lease 1500ms" ;;
+	background) echo "background -mode background" ;;
+	background-foreground) echo "background -mode foreground" ;;
 	mix) echo "mix" ;;
 	fanout) echo "fanout" ;;
-	soak) echo "soak -c 256 -d 8m -every 30s -latency 1s -jitter 200ms -tool 200ms -csv $results/soak.csv" ;;
+	soak) echo "soak -c 256 -d 8m -every 30s -history 10 -latency 1s -jitter 200ms -tool 200ms -csv $results/soak.csv" ;;
+	soak-history) echo "soak -c 256 -d 8m -every 30s -latency 1s -jitter 200ms -tool 200ms -csv $results/soak-history.csv" ;;
 	users) echo "users" ;;
 	users-slots) echo "users -user-slots 64" ;;
 	users-limit) echo "users -user-slots 64 -heavy-calls 64 -heavy-limit 32" ;;

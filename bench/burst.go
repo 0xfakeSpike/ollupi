@@ -78,7 +78,7 @@ func (p *provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for i := len(body.Messages) - 1; i >= 0; i-- {
 		var content string
 		_ = json.Unmarshal(body.Messages[i].Content, &content)
-		if body.Messages[i].Role == "user" && !strings.HasPrefix(content, "[report of ") {
+		if body.Messages[i].Role == "user" && !reported(content) {
 			ask = content[strings.LastIndex(content, "\n")+1:]
 			break
 		}
@@ -125,6 +125,10 @@ func (p *provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "data: [DONE]\n\n")
 }
 
+func reported(content string) bool {
+	return strings.HasPrefix(content, "[report of ") || strings.HasPrefix(content, "[result of the ") || strings.Contains(content, "background job ")
+}
+
 type quota struct {
 	limit                   int64
 	inFlight, peak, refused atomic.Int64
@@ -143,19 +147,28 @@ type work struct {
 func (work) Name() (string, string) { return "bench", "Bench tools." }
 
 func (work) Tools(context.Context) ([]kit.Spec, error) {
-	schema := map[string]any{"type": "object", "properties": map[string]any{"token": map[string]any{"type": "string"}}, "additionalProperties": false}
+	schema := map[string]any{"type": "object", "properties": map[string]any{"token": map[string]any{"type": "string"},
+		"seconds": map[string]any{"type": "number"}}, "additionalProperties": false}
 	return []kit.Spec{{Name: "bench__work", Description: "Does one unit of work.", InputSchema: schema,
-		Annotations: tool.Annotations{ReadOnlyHint: true}}}, nil
+		Annotations: tool.Annotations{ReadOnlyHint: true}, Background: tool.BackgroundOptional}}, nil
 }
 
 func (w work) Invoke(ctx context.Context, c tool.Call) (kit.Result, error) {
 	if w.log != nil {
-		if _, err := fmt.Fprintln(w.log, c.Arguments["token"]); err != nil {
+		token, ok := c.Arguments["token"].(string)
+		if !ok {
+			token = c.Thread + "/" + c.Item
+		}
+		if _, err := fmt.Fprintln(w.log, token); err != nil {
 			return kit.Result{}, err
 		}
 	}
+	d := w.latency
+	if s, ok := c.Arguments["seconds"].(float64); ok {
+		d = time.Duration(s * float64(time.Second))
+	}
 	select {
-	case <-time.After(w.latency):
+	case <-time.After(d):
 		return kit.Result{Output: "ok"}, nil
 	case <-ctx.Done():
 		return kit.Result{}, ctx.Err()

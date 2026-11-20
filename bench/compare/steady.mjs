@@ -5,7 +5,7 @@ const a = args({ harness: "pi-sdk", c: 64, turns: 3, latency: "5s", jitter: "2s"
 const limit = a.limit || a.c;
 const provider = await startProvider({ latency: a.latency, jitter: a.jitter, rounds: 2, limit });
 const dir = freshDir(`steady-${a.harness}-${a.c}`);
-const h = await openHarness(a.harness, { dir, url: provider.url, toolMs: a.tool });
+const h = await openHarness(a.harness, { dir, url: provider.url, toolMs: a.tool, settings: { ollupi: { calls: limit, slots: a.c } } });
 
 const sessions = await pool(Array.from({ length: a.c }), 64, () => h.newSession());
 const base = await h.memory();
