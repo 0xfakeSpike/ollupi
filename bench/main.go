@@ -263,11 +263,11 @@ func pct(d []time.Duration, p float64) time.Duration {
 	return d[min(len(d)-1, int(float64(len(d))*p))]
 }
 
-var experiments = map[string]func([]string){"parked": parked, "burst": burst, "steady": steady, "crash": crash, "crashchild": crashChild, "provider": providerMain, "isolated": isolated, "lone": lone, "resume": resume, "mix": mix, "fanout": fanout, "soak": soak, "users": users, "background": background, "serve": serve, "conns": conns, "connsshard": connsShard, "connsrouter": connsRouter}
+var experiments = map[string]func([]string){"parked": parked, "burst": burst, "steady": steady, "crash": crash, "crashchild": crashChild, "provider": providerMain, "isolated": isolated, "lone": lone, "resume": resume, "mix": mix, "fanout": fanout, "soak": soak, "users": users, "background": background, "serve": serve, "shards": shards, "conns": conns, "connsshard": connsShard, "connsrouter": connsRouter}
 
 func main() {
 	if len(os.Args) < 2 || experiments[os.Args[1]] == nil {
-		log.Fatal("usage: bench parked|burst|steady|crash|isolated|resume|mix|fanout|soak|users|background|serve|conns [flags]")
+		log.Fatal("usage: bench parked|burst|steady|crash|isolated|resume|mix|fanout|soak|users|background|serve|shards|conns [flags]")
 	}
 	experiments[os.Args[1]](os.Args[2:])
 }
