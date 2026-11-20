@@ -72,6 +72,16 @@ func (c *conn) workspaceArchive(ctx context.Context, p WorkspaceArchiveParams) (
 	return WorkspaceResult{Workspace: workspaceRow(w)}, err
 }
 
+func (c *conn) workspaceInstructions(ctx context.Context, p WorkspaceInstructionsParams) (WorkspaceResult, error) {
+	w, err := c.s.app.UpdateWorkspaceInstructions(ctx, c.user, p.WorkspaceID, p.Instructions)
+	return WorkspaceResult{Workspace: workspaceRow(w)}, err
+}
+
+func (c *conn) workspaceProviders(ctx context.Context, p WorkspaceProvidersParams) (WorkspaceResult, error) {
+	w, err := c.s.app.UpdateWorkspaceProviders(ctx, c.user, p.WorkspaceID, p.Providers)
+	return WorkspaceResult{Workspace: workspaceRow(w)}, err
+}
+
 func (c *conn) workspacePermissions(ctx context.Context, p WorkspacePermissionsParams) (WorkspaceResult, error) {
 	w, err := c.s.app.UpdateWorkspacePermissions(ctx, c.user, p.WorkspaceID, p.Settings)
 	return WorkspaceResult{Workspace: workspaceRow(w)}, err

@@ -2217,11 +2217,6 @@
           "description": "The complete task for the subagent, self-contained.",
           "minLength": 1,
           "maxLength": 20000
-        },
-        "workspace": {
-          "type": "string",
-          "description": "Id of the workspace the subagent works in; leave it out for this conversation's workspace.",
-          "minLength": 1
         }
       },
       "required": [
@@ -3029,6 +3024,22 @@
       ],
       "additionalProperties": false
     },
+    "WorkspaceInstructionsParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "instructions": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "instructions"
+      ],
+      "additionalProperties": false
+    },
     "WorkspaceListResult": {
       "type": "object",
       "properties": {
@@ -3079,6 +3090,60 @@
       ],
       "additionalProperties": false
     },
+    "WorkspaceProviders": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "disabled": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "WorkspaceProvidersParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "disabled": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "workspaceId"
+      ],
+      "additionalProperties": false
+    },
     "WorkspaceRenameParams": {
       "type": "object",
       "properties": {
@@ -3119,6 +3184,12 @@
         "rootPath": {
           "type": "string"
         },
+        "instructions": {
+          "type": "string"
+        },
+        "providers": {
+          "$ref": "#/$defs/WorkspaceProviders"
+        },
         "settings": {
           "$ref": "#/$defs/PermissionSettings"
         },
@@ -3142,6 +3213,7 @@
         "id",
         "name",
         "rootPath",
+        "providers",
         "settings",
         "createdAt",
         "updatedAt"
@@ -3478,9 +3550,25 @@
         "$ref": "#/$defs/WorkspaceResult"
       }
     },
+    "workspace/updateInstructions": {
+      "params": {
+        "$ref": "#/$defs/WorkspaceInstructionsParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WorkspaceResult"
+      }
+    },
     "workspace/updatePermissions": {
       "params": {
         "$ref": "#/$defs/WorkspacePermissionsParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WorkspaceResult"
+      }
+    },
+    "workspace/updateProviders": {
+      "params": {
+        "$ref": "#/$defs/WorkspaceProvidersParams"
       },
       "result": {
         "$ref": "#/$defs/WorkspaceResult"

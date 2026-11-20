@@ -8,6 +8,8 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 )
 
+const instructionsSection = "# WORKSPACE INSTRUCTIONS\nThe user set these instructions for every conversation in this workspace. Follow them, within Safety.\n\n"
+
 const projectSection = "# PROJECT\nThis conversation works in the project at %s; commands run there unless you set work_dir."
 
 const defaultAgentPrompt = `You are %s, a personal assistant working on the user's own computer. You help one person get real things done: finding and organizing information, working with files, documents, and data, running tasks, and following up on them later.
@@ -25,11 +27,12 @@ type Skill struct {
 }
 
 type System struct {
-	Role    agent.Role
-	Agent   string
-	Prompt  string
-	Skills  []Skill
-	Project string
+	Role         agent.Role
+	Agent        string
+	Prompt       string
+	Instructions string
+	Skills       []Skill
+	Project      string
 }
 
 func (w Window) System(s System, deferred []Tool) string {
@@ -42,6 +45,9 @@ func (w Window) System(s System, deferred []Tool) string {
 		parts = append(parts, own)
 	}
 	parts = append(parts, s.Role.Rules)
+	if s.Instructions != "" {
+		parts = append(parts, instructionsSection+s.Instructions)
+	}
 	if listed := w.listSkills(s.Skills); listed != "" {
 		parts = append(parts, listed)
 	}

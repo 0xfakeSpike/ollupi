@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -397,6 +398,26 @@ func TestAWorkspaceMovesOnlyWhenItsConversationsAreIdle(t *testing.T) {
 	must[account.Workspace](t)(f.a.ArchiveWorkspace(f.ctx, "u", w.ID, true))
 	if _, _, err := f.a.Send(f.ctx, "u", th.ID, Input{Text: "more"}); !errors.Is(err, account.ErrWorkspaceArchived) {
 		t.Errorf("a message in an archived workspace: %v", err)
+	}
+}
+
+func TestAWorkspaceKeepsItsInstructionsAndProviders(t *testing.T) {
+	f := setup(t)
+	w := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", t.TempDir(), "plans"))
+	got := must[account.Workspace](t)(f.a.UpdateWorkspaceInstructions(f.ctx, "u", w.ID, "  Plan, do not build.  "))
+	if got.Instructions != "Plan, do not build." {
+		t.Errorf("the instructions %q", got.Instructions)
+	}
+	got = must[account.Workspace](t)(f.a.UpdateWorkspaceProviders(f.ctx, "u", w.ID, account.Providers{Disabled: []string{agent.WorkspaceProvider}}))
+	if !slices.Equal(got.Providers.Disabled, []string{agent.WorkspaceProvider}) {
+		t.Errorf("the providers %+v", got.Providers)
+	}
+	if _, err := f.a.UpdateWorkspaceProviders(f.ctx, "u", w.ID, account.Providers{Enabled: []string{"nowhere"}}); !errors.Is(err, policy.ErrInvalidSettings) {
+		t.Errorf("an unknown provider: %v", err)
+	}
+	stored := must[[]account.Workspace](t)(f.a.Workspaces(f.ctx, "u"))
+	if stored[0].Instructions != "Plan, do not build." || len(stored[0].Providers.Disabled) != 1 {
+		t.Errorf("stored %+v", stored[0])
 	}
 }
 

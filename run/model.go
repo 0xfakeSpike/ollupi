@@ -163,6 +163,9 @@ func (r *Runner) input(s *step) (prompt.Context, error) {
 		return prompt.Context{}, fmt.Errorf("run: the skills of %s: %w", s.role.Name, err)
 	}
 	system := prompt.System{Role: s.role, Agent: r.name, Prompt: r.prompt, Skills: skills}
+	if s.workspace != nil {
+		system.Instructions = s.workspace.Instructions
+	}
 	inProject := slices.ContainsFunc(slices.Concat(s.sent, s.deferred), func(t prompt.Tool) bool { return t.Provider == agent.WorkspaceProvider })
 	if inProject && s.workspace != nil {
 		system.Project = s.workspace.Root
