@@ -26,7 +26,7 @@ func start(t *testing.T, h *Hub) (string, <-chan struct{}) {
 			t.Error(err)
 			return
 		}
-		h.Serve(r.Context(), "k", ws, func(ctx context.Context) error {
+		h.Serve(r.Context(), "k", ws, func(time.Time) bool { return true }, func(ctx context.Context) error {
 			for {
 				if _, _, err := ws.Read(ctx); err != nil {
 					return err

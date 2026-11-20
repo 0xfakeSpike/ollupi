@@ -55,7 +55,7 @@ func (h *Hub) Refuse(w http.ResponseWriter, why string) {
 	http.Error(w, why, http.StatusServiceUnavailable)
 }
 
-func (h *Hub) Serve(ctx context.Context, key string, ws *websocket.Conn, serve func(context.Context) error) {
+func (h *Hub) Serve(ctx context.Context, key string, ws *websocket.Conn, silent func(since time.Time) bool, serve func(context.Context) error) {
 	h.add(key, ws)
 	defer h.remove(key, ws)
 
@@ -68,7 +68,7 @@ func (h *Hub) Serve(ctx context.Context, key string, ws *websocket.Conn, serve f
 	ctx, cancel := context.WithCancel(ctx)
 	stop := context.AfterFunc(ctx, func() { ws.Close(websocket.StatusGoingAway, "server shutting down") })
 	var alive sync.WaitGroup
-	alive.Go(func() { h.keepAlive(ctx, key, ws) })
+	alive.Go(func() { h.keepAlive(ctx, ws, silent) })
 
 	err := serve(ctx)
 	stopping := ctx.Err() != nil
@@ -118,7 +118,7 @@ func (h *Hub) remove(key string, ws *websocket.Conn) {
 	h.held[key] = held
 }
 
-func (h *Hub) keepAlive(ctx context.Context, key string, ws *websocket.Conn) {
+func (h *Hub) keepAlive(ctx context.Context, ws *websocket.Conn, silent func(since time.Time) bool) {
 	tick := time.NewTicker(h.opts.PingEvery)
 	defer tick.Stop()
 	for {
@@ -127,13 +127,16 @@ func (h *Hub) keepAlive(ctx context.Context, key string, ws *websocket.Conn) {
 			return
 		case <-tick.C:
 		}
+		sent := time.Now()
 		pingCtx, cancel := context.WithTimeout(ctx, h.opts.PongWithin)
 		err := ws.Ping(pingCtx)
 		cancel()
-		if err != nil {
-			if ctx.Err() == nil {
-				ws.CloseNow()
-			}
+		if ctx.Err() != nil {
+			return
+		}
+		gone := err != nil && silent(sent)
+		if gone {
+			ws.CloseNow()
 			return
 		}
 	}
