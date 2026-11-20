@@ -15,7 +15,6 @@ var (
 	ErrInvalidName       = errors.New("invalid name")
 	ErrWorkspaceArchived = errors.New("the workspace is archived; restore it before starting new work")
 	ErrInvalidMCPServer  = errors.New("invalid MCP server")
-	ErrSubagentThread    = errors.New("a subagent thread takes no input; send it to its parent conversation")
 )
 
 const MemoryProvider = "memory"
@@ -103,10 +102,6 @@ type Thread struct {
 
 func (t Thread) Layer() policy.Layer {
 	return policy.Layer{Of: "this conversation's permission settings", Settings: t.Settings}
-}
-
-func (t Thread) ParentLayer() policy.Layer {
-	return policy.Layer{Of: "the parent conversation's permission settings", Settings: t.Settings}
 }
 
 func Deployment(s policy.Settings) policy.Layer {

@@ -129,6 +129,7 @@ type ItemRow struct {
 	Input             *Input                     `json:"input,omitempty"`
 	Result            *Result                    `json:"result,omitempty"`
 	ChildThreadID     string                     `json:"childThreadId,omitempty"`
+	Detached          bool                       `json:"detached,omitempty"`
 	TaskID            string                     `json:"taskId,omitempty"`
 	LaunchItemID      string                     `json:"launchItemId,omitempty"`
 	Attachments       []conversation.Attachment  `json:"attachments,omitempty"`
@@ -141,7 +142,7 @@ type ItemRow struct {
 func itemRow(it conversation.Item) ItemRow {
 	row := ItemRow{
 		ID: it.ID, TurnID: it.Turn, Seq: it.Seq, Updated: it.Updated, Type: it.Kind, Status: it.Status, Text: it.Text, Error: it.Error,
-		Response: it.Response, ChildThreadID: it.Child, TaskID: it.Task, LaunchItemID: it.Launch, Attachments: it.Attachments, ContextStats: it.Stats,
+		Response: it.Response, ChildThreadID: it.Child, Detached: it.Detached, TaskID: it.Task, LaunchItemID: it.Launch, Attachments: it.Attachments, ContextStats: it.Stats,
 		Memory: it.Memories, StartedAt: it.StartedAt, CompletedAt: it.CompletedAt,
 	}
 	if c := it.Call; c != nil {

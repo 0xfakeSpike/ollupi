@@ -28,6 +28,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/store/sqlite"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/ask"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/cronjobs"
+	"github.com/0xfakeSpike/ollupi/tool/builtin/info"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/loader"
 	memorytool "github.com/0xfakeSpike/ollupi/tool/builtin/memory"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/outputs"
@@ -112,8 +113,8 @@ func New(ctx context.Context, cfg Config) (*Host, error) {
 	}
 	files := blob.Dir(filepath.Join(cfg.Home, "attachments"))
 	h := &Host{Store: st, cal: cron.NewCalendar(cmp.Or(cfg.Location, time.Local))}
-	builtins := append(slices.Clone(cfg.Tools), plan.Provider{}, ask.Provider{}, loader.Provider{}, subagent.Provider{},
-		outputs.New(st), memorytool.New(st))
+	builtins := append(slices.Clone(cfg.Tools), plan.Provider{}, ask.Provider{}, loader.Provider{}, subagent.New(st),
+		info.New(st), outputs.New(st), memorytool.New(st))
 	if cfg.SkillsDir != "" {
 		builtins = append(builtins, skills.New(cfg.SkillsDir))
 	}
