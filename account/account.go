@@ -36,17 +36,34 @@ func (s Settings) Layer() policy.Layer {
 }
 
 type Workspace struct {
-	ID       string
-	Name     string
-	Root     string
-	Settings policy.Settings
-	Created  time.Time
-	Updated  time.Time
-	Archived *time.Time
+	ID           string
+	Name         string
+	Root         string
+	Instructions string
+	Providers    Providers
+	Settings     policy.Settings
+	Created      time.Time
+	Updated      time.Time
+	Archived     *time.Time
 }
 
 func (w Workspace) Layer() policy.Layer {
 	return policy.Layer{Of: fmt.Sprintf("the permission settings of workspace %q", w.Name), Settings: w.Settings}
+}
+
+type Providers struct {
+	Enabled  []string `json:"enabled,omitempty"`
+	Disabled []string `json:"disabled,omitempty"`
+}
+
+const maxInstructionsRunes = 20_000
+
+func Instructions(text string) (string, error) {
+	text = strings.TrimSpace(text)
+	if len([]rune(text)) > maxInstructionsRunes {
+		return "", fmt.Errorf("%w: instructions must be at most %d characters", ErrInvalidName, maxInstructionsRunes)
+	}
+	return text, nil
 }
 
 func (w Workspace) Usable() error {
@@ -109,11 +126,15 @@ func Deployment(s policy.Settings) policy.Layer {
 	return policy.Layer{Of: "the default permission settings", Settings: s, Shared: true}
 }
 
-func Layers(deployment policy.Layer, s Settings, w *Workspace, conversation policy.Layer) []policy.Layer {
+func Layers(deployment policy.Layer, optIn []string, s Settings, w *Workspace, conversation policy.Layer) []policy.Layer {
+	off := optIn
 	out := []policy.Layer{deployment, s.Layer()}
 	if w != nil {
 		out = append(out, w.Layer())
+		off = slices.DeleteFunc(slices.Clone(optIn), func(p string) bool { return slices.Contains(w.Providers.Enabled, p) })
+		off = append(off, w.Providers.Disabled...)
 	}
+	out = append(out, policy.Layer{Of: "the providers of this workspace", Without: off})
 	return append(out, conversation)
 }
 

@@ -95,8 +95,7 @@ type Result struct {
 }
 
 type Launch struct {
-	Role      string
-	Title     string
-	Task      string
-	Workspace string
+	Role  string
+	Title string
+	Task  string
 }

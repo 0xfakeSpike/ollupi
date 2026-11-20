@@ -36,6 +36,7 @@ type Runner struct {
 	name        string
 	prompt      string
 	deployment  policy.Settings
+	optIn       []string
 	allowlist   []string
 }
 
@@ -44,11 +45,12 @@ type Deployment struct {
 	Prompt      string
 	Permissions policy.Settings
 	Allowlist   []string
+	OptIn       []string
 }
 
 func New(st store.Store, models Models, tools tool.Tools, attachments Attachments, skills Skills, d Deployment) *Runner {
 	return &Runner{st: st, models: models, tools: tools, attachments: attachments, skills: skills,
-		name: d.Name, prompt: d.Prompt, deployment: d.Permissions, allowlist: d.Allowlist}
+		name: d.Name, prompt: d.Prompt, deployment: d.Permissions, allowlist: d.Allowlist, optIn: d.OptIn}
 }
 
 func (r *Runner) Run(ctx context.Context, thread string) error {
@@ -177,7 +179,7 @@ func (r *Runner) load(ctx context.Context, thread string) (*step, error) {
 }
 
 func (s *step) permit(r *Runner, set tool.Set) error {
-	layers := slices.Concat(s.role.Own, account.Layers(account.Deployment(r.deployment),
+	layers := slices.Concat(s.role.Own, account.Layers(account.Deployment(r.deployment), r.optIn,
 		s.settings, s.workspace, s.th.Layer()))
 	box := tool.Toolbox(set)
 	s.specs = map[string]tool.Spec{}
