@@ -1,0 +1,7 @@
+# bench conns -n 1000,2000,4000,8000 -storm
+# 5c60ee4 with uncommitted changes, 2026-11-19 21:52:28, Apple M1, 8 cores, 8 GB
+step n=1000 via=shard connected=1000 connect_s=5.1 refused=592 failed=0 shard_rss_mb=76.7 shard_heap_mb=32.3 shard_kb_per_conn=52.1 shard_heap_kb_per_conn=29.9 shard_goroutines=4008 shard_goroutines_per_conn=4.00 shard_fds=1009 shard_fds_per_conn=1.00 shard_idle_cpu_ms_per_s=6.7
+step n=2000 via=shard connected=2000 connect_s=5.1 refused=590 failed=0 shard_rss_mb=118.9 shard_heap_mb=62.9 shard_kb_per_conn=47.7 shard_heap_kb_per_conn=30.6 shard_goroutines=8008 shard_goroutines_per_conn=4.00 shard_fds=2009 shard_fds_per_conn=1.00 shard_idle_cpu_ms_per_s=16.0
+step n=4000 via=shard connected=4000 connect_s=10.1 refused=2452 failed=0 shard_rss_mb=221.0 shard_heap_mb=123.4 shard_kb_per_conn=50.0 shard_heap_kb_per_conn=30.8 shard_goroutines=16008 shard_goroutines_per_conn=4.00 shard_fds=4009 shard_fds_per_conn=1.00 shard_idle_cpu_ms_per_s=33.5
+step n=8000 via=shard connected=8000 connect_s=36.4 refused=10966 failed=3198 shard_rss_mb=420.9 shard_heap_mb=245.2 shard_kb_per_conn=50.6 shard_heap_kb_per_conn=31.0 shard_goroutines=32008 shard_goroutines_per_conn=4.00 shard_fds=8009 shard_fds_per_conn=1.00 shard_idle_cpu_ms_per_s=65.6
+storm n=8000 via=shard restart_ms=196 back=8001 all_back=true all_back_s=83.4 p50_s=43.2 p99_s=80.4 refused=38701 failed=17251

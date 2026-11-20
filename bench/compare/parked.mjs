@@ -1,10 +1,11 @@
 import { args, freshDir, pct, report, startProvider } from "./common.mjs";
 import { openHarness, pool } from "./harnesses.mjs";
 
-const a = args({ harness: "pi-sdk", n: 1000, conc: 64, reload: 50, retention: "default" });
+const a = args({ harness: "pi-sdk", n: 1000, conc: 64, reload: 50, retention: "default", perUser: 64 });
 const provider = await startProvider({ latency: "20ms", jitter: "5ms", rounds: 2, limit: 100000 });
 const dir = freshDir(`parked-${a.harness}`);
 const settings = a.retention === "default" ? {} : { contextRetentionMs: Number(a.retention), documentRetentionMs: Number(a.retention) };
+if (a.harness === "ollupi") settings.perUser = a.perUser;
 let h = await openHarness(a.harness, { dir, url: provider.url, toolMs: 10, settings });
 
 const warm = await h.newSession();
@@ -56,6 +57,7 @@ warmMs.sort((x, y) => x - y);
 report(`parked harness=${a.harness}`, {
 	n: a.n,
 	retention: a.retention,
+	...(a.harness === "ollupi" ? { sessions_per_user: a.perUser } : {}),
 	setup_s: setupS,
 	rss_base_mb: base.rss_mb,
 	rss_parked_mb: parked.rss_mb,

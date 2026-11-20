@@ -8,8 +8,9 @@ export const here = path.dirname(fileURLToPath(import.meta.url));
 export const runDir = path.join(here, "run");
 export const benchBin = process.env.OLLUPI_BENCH ?? path.join(runDir, "bench");
 
-export async function startProvider({ latency = "5s", jitter = "2s", rounds = 2, limit = 1024 } = {}) {
-	const proc = spawn(benchBin, ["provider", "-latency", latency, "-jitter", jitter, "-rounds", String(rounds), "-limit", String(limit)], {
+export async function startProvider({ latency = "5s", jitter = "2s", rounds = 2, limit = 1024, call, callArgs } = {}) {
+	const extra = call ? ["-call", call, "-call-args", callArgs ?? "{}"] : [];
+	const proc = spawn(benchBin, ["provider", "-latency", latency, "-jitter", jitter, "-rounds", String(rounds), "-limit", String(limit), ...extra], {
 		stdio: ["ignore", "pipe", "inherit"],
 	});
 	const url = await new Promise((resolve, reject) => {

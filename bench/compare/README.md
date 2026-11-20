@@ -1,42 +1,64 @@
 # Comparison with other harnesses
 
-Measures two Node.js agent harnesses under the same load as ollupi's `bench`, so the results can sit next to the numbers in [bench](../README.md):
+Measures Ollupi beside two Node.js agent harnesses that host many sessions in one process, under the same load, through the same driver, so the four can sit in one table:
 
-- **pi**: `@earendil-works/pi-coding-agent` 1.4.0 (`pi-sdk`, the SDK's `AgentSession`, one JSONL file per session), and the experimental `@earendil-works/pi-durable` 1.4.0 (`pi-durable`, one `Harness` hosting many sessions in a single SQLite file).
-- **dsh**: `@deepseek-ai/dsh` 0.2.1-rc.5 (DeepSeek Harness, built on the Cordis plugin framework). Uses the `sdk-minimal` profile: one process hosts many sessions over stdio JSON-RPC, with sessions stored as JSONL in `$DSH_HOME/sessions`.
+- **ollupi**: this repository at the commit each result names. `bench serve` runs a shard (the host with its gateway) as a process of its own on the simulated provider; the driver reaches it as clients do, over the WebSocket protocol (`thread/start`, `turn/start`, `turn/changed`): in `parked`, `steady` and `burst` every 64 sessions belong to one user, and each user has a connection of their own; `crash` (50 sessions) and `background` (200) use one user and one connection. The gateway paces each connection at 50 messages a second, as it does any client's, so a single connection cannot carry thousands of sessions.
+- **pi**: `@earendil-works/pi-coding-agent` 1.5.2 (`pi-sdk`, the SDK's `AgentSession`, one JSONL file per session), and the experimental `@earendil-works/pi-durable` 1.5.2 (`pi-durable`, one `Harness` hosting many sessions in a single SQLite file). Both run inside the driver's process.
+- **dsh**: `@deepseek-ai/dsh` 0.2.2-rc.5 (DeepSeek Harness, built on the Cordis plugin framework), with the `sdk-minimal` profile: one process hosts many sessions over stdio JSON-RPC, with sessions stored as JSONL in `$DSH_HOME/sessions`.
 
-The model is always ollupi's own simulated provider (`bench provider`, a separate process serving OpenAI-compatible streaming chat completions and returning 429 when in-flight requests exceed the quota). Each turn calls the tool `bench__work` twice (1 s each, returns "ok") and then answers with text, about 17 s when run alone. No real API key is used; `PI_OFFLINE=1` is set; `~/.pi` and `~/.dsh` are neither read nor written (all configuration lives under `run/`).
+The model is always ollupi's own simulated provider (`bench provider`, a separate process serving OpenAI-compatible streaming chat completions and returning 429 when in-flight requests exceed the quota). Unless an experiment says otherwise, each turn calls the tool `bench__work` twice (1 s each, returns "ok") and then answers with text, about 17 s when run alone. No real API key is used; `PI_OFFLINE=1` is set; `~/.pi` and `~/.dsh` are neither read nor written (all configuration lives under `run/`).
+
+Memory is always phys_footprint (macOS `footprint`) of the process that hosts the sessions: ollupi's and dsh's own processes, and the driver's for the two pi harnesses, read after a forced GC. When the test machine is short on memory, macOS compresses pages and the RSS from `ps` reads low; phys_footprint counts compressed pages.
+
+## What is compared, and against what
+
+| Experiment | What it asks | Who takes part |
+|---|---|---|
+| `parked` | What an idle session costs in memory and disk, and how fast it comes back | All four |
+| `steady` | How turn time grows with the number of sessions running at once | All four |
+| `burst` | What happens to 3000 turns submitted at once against a quota of 256 | All four |
+| `crash` | What happens to turns in progress when the process is killed with `kill -9`, again and again | All four; pi-sdk has no restart to resume from, so it is killed once |
+| `background` | A turn starts a 20 s command in the background and answers; does its result come back to the conversation, and after a `kill -9` while the commands run? | ollupi and dsh. pi has no background calls; the control for what running in the background buys is ollupi's own foreground mode, in `bench background` ([bench](../README.md)) |
+| `isolated-dsh` | One dsh process per session, the per-agent isolation baseline | dsh; ollupi's is `bench isolated` |
+
+What the other harnesses have no counterpart of — users with their own keys on one shard, a standby that takes over a shard, a router in front of shards, client connections and their reconnect storm — is measured against ollupi with that part turned off, in [bench](../README.md) (`users`, `crash -lease`, `conns -router`).
+
+Each harness runs as it ships, except that ollupi is given the settings a deployment would choose for the load: in `steady` its slots and model calls equal the sessions, in `burst` it has 512 slots and 256 model calls (the quota), and in `background` its background queue holds every command at once, as dsh's does. Neither pi nor dsh limits model call concurrency, so their 429s are handled by each harness's retry policy.
 
 ## Setup
 
 ```bash
 cd bench/compare
 npm install --ignore-scripts
-(cd ../.. && go build -tags sqlite_fts5 -o bench/compare/run/bench ./bench)   # simulated provider
+(cd ../.. && go build -tags sqlite_fts5 -o bench/compare/run/bench ./bench)   # simulated provider and bench serve
 ```
 
 Requires Node 22.19 or later (tested on v22.23).
 
 ## Reproducing
 
-All experiments (about an hour, results appended to `results/results.txt`):
+All experiments (results appended to `results/results.txt`):
 
 ```bash
 ./run-all.sh
 ```
 
-One at a time (`--harness` is `pi-sdk`, `pi-durable` or `dsh`):
+One at a time (`--harness` is `ollupi`, `pi-sdk`, `pi-durable` or `dsh`):
 
 ```bash
-node --expose-gc parked.mjs  --harness pi-durable --n 1000                 # 1. memory and disk of parked sessions, time to restore from disk after dropping them
-node --expose-gc parked.mjs  --harness pi-durable --n 1000 --retention 0   #    pi-durable keeps no idle sessions in memory
-node --expose-gc steady.mjs  --harness pi-sdk --c 1024                     # 2. c sessions, 3 consecutive turns each, provider quota = c
-node --expose-gc burst.mjs   --harness dsh --n 3000 --limit 256            # 3. 3000 turns submitted at once, provider quota 256
-node crash.mjs     --n 50 --turns 20 --kills 30                            # 4. pi-durable: restart and resume after random kill -9
-node crash-sdk.mjs --n 200 --turns 5 --at 1500                             #    pi-sdk: session file state after one kill -9
-node crash-dsh.mjs --mode closed --n 50 --turns 20 --kills 30              #    dsh: random kill -9, session/resume after restart
-node crash-dsh.mjs --mode queued --n 50 --turns 20 --kills 30              #    dsh: what happens to pre-queued prompts after a crash
-node isolated-dsh.mjs --k 10                                               # 5. memory baseline for one dsh process per session
+node --expose-gc parked.mjs  --harness pi-durable --n 1000                 # memory and disk of parked sessions, restore after dropping them
+node --expose-gc parked.mjs  --harness pi-durable --n 1000 --retention 0   # pi-durable keeps no idle sessions in memory
+node --expose-gc parked.mjs  --harness ollupi --n 2000 --perUser 2000     # ollupi: all sessions under one user (default 64 per user)
+node --expose-gc steady.mjs  --harness ollupi --c 1024                     # c sessions, 3 consecutive turns each, provider quota = c
+node --expose-gc burst.mjs   --harness dsh --n 3000 --limit 256            # 3000 turns submitted at once, provider quota 256
+node crash-ollupi.mjs --n 50 --turns 20 --kills 30                         # ollupi: random kill -9, restart, the client reconnects
+node crash.mjs     --n 50 --turns 20 --kills 30                            # pi-durable: restart and resume after random kill -9
+node crash-sdk.mjs --n 200 --turns 5 --at 1500                             # pi-sdk: session file state after one kill -9
+node crash-dsh.mjs --mode closed --n 50 --turns 20 --kills 30              # dsh: random kill -9, session/resume after restart
+node crash-dsh.mjs --mode queued --n 50 --turns 20 --kills 30              # dsh: what happens to pre-queued prompts after a crash
+node background.mjs --harness ollupi --n 200 --seconds 20                  # 200 background commands of 20 s; does each report come back
+node background.mjs --harness dsh --n 200 --seconds 20 --kill 8            # the same, with kill -9 8 s in
+node isolated-dsh.mjs --k 10                                               # memory baseline for one dsh process per session
 ```
 
 `locked.sh` keeps runs from overlapping with ollupi's own bench: it waits while `.locks/gobench.lock` exists and holds `.locks/compare.lock` while running.
@@ -46,65 +68,73 @@ node isolated-dsh.mjs --k 10                                               # 5. 
 | File | Contents |
 |---|---|
 | `common.mjs` | Starting the simulated provider, memory (RSS and macOS phys_footprint), percentiles, result recording |
-| `harnesses.mjs` | One interface over the three harnesses |
+| `harnesses.mjs` | One interface over the four harnesses |
+| `ollupi/client.mjs` | ollupi: starting `bench serve` and the WebSocket JSON-RPC client |
 | `pi-sdk.mjs` | pi-coding-agent: an openai-completions provider in `models.json`, the `bench__work` tool, a persistent `SessionManager` |
 | `pi-durable.mjs` | pi-durable: `createProvider` pointed at the simulated provider, a `bench__work` extension, `openNodeSqliteStorage` |
-| `dsh/patch.yml`, `dsh/bench-tool.mjs`, `dsh/client.mjs` | dsh: a profile overlay (pi-ai adapter pointed at the simulated provider, shell tool off, `bench__work` plugin added) and the JSON-RPC client |
-| `parked.mjs`, `steady.mjs`, `burst.mjs`, `crash*.mjs`, `isolated-dsh.mjs` | The experiments |
+| `dsh/patch.yml`, `dsh/background.yml`, `dsh/bench-tool.mjs`, `dsh/client.mjs` | dsh: a profile overlay (pi-ai adapter pointed at the simulated provider, shell tool off, `bench__work` plugin added), the overlay that adds the one-shot `bash` tool and the job tools for `background`, and the JSON-RPC client |
+| `parked.mjs`, `steady.mjs`, `burst.mjs`, `crash*.mjs`, `background.mjs`, `isolated-dsh.mjs` | The experiments |
 | `results/results.txt` | Raw output |
 
-## Notes
+## Background calls
 
-- Both pi harnesses run inside the test process, and memory is read after a forced GC; dsh is a separate process, read with `ps` and `footprint`.
-- When the test machine is short on memory, macOS compresses pages and the RSS from `ps` reads low; `footprint` (phys_footprint) counts compressed pages, so it is the number to trust.
-- Neither pi nor dsh limits model call concurrency, so 429s in the burst test are handled by each harness's retry policy.
+In `background` each of 200 sessions gets one turn. The model's first answer runs `sleep 20` in the background — ollupi's `run_command` with `background: true`, dsh's `bash` with `run_in_background: true` — and its second answers with text; when the command ends, its result comes back to the conversation, and the model answers a third time. A session finishes when that third answer ends a turn: in ollupi the turn that launched the command stays open until then, in dsh the job's completion notice wakes the idle session with a turn of its own. Both run a real `sleep` process per command. `over_seconds` is how long after the 20 s the third answer ended. With `--kill`, the process is killed with `kill -9` while the commands run and started again: ollupi's client reconnects and reads its threads again, as the protocol says; dsh's driver resumes each session with `session/resume`. Each is then given 60 s past the 20 s to finish.
 
-## Results (2026-11-02, Apple M1, 8 cores, 8 GB, one run each)
+## Results
 
-Raw output is in `results/results.txt`. The first dsh burst result in `results/run-all.log` (`failed_turns=0`) is wrong: the client then treated the return of `session/wait` as success, but dsh returns however the turn ends. After fixing the client to read the `reason` from `turn/end`, the rerun is in `results/extra.log`. The dsh closed-loop runs each made exactly 3 times as many requests as turns with no 429s, so they are unaffected. Memory is always phys_footprint.
+2026-11-19, Ollupi v0.18.0, Apple M1 (8 cores, 8 GB), one run each. Raw output is in `results/results.txt`.
 
-**1. Parked sessions** (each session runs one turn, then sits idle)
+**Parked sessions.** Each session runs one turn, then sits idle.
 
-| | Sessions | Memory/session | Disk/session | Can idle sessions leave memory | Restore from disk |
-|---|---|---|---|---|---|
-| pi-sdk | 10000 | 91 KB (JS heap 25 KB) | 3.2 KB (JSONL) | Yes, reopen from the file after `dispose()` | 0.8 ms |
-| pi-durable | 10000 | 23 KB (JS heap 12.5 KB, kept in memory for 10 minutes by default) | 8.5 KB (SQLite) | Handles are stateless and released after the retention period | 0.4 ms (reopening the Harness: 6 ms) |
-| dsh | 5000 | 181 KB | 8.3 KB (JSONL) | The SDK protocol has no method to close a session; only a process restart does | Process restart 0.9 s, `session/resume` 9.6 ms |
-| ollupi | 50000 | ≈0.3 KB | 2.3 KB | Not held in memory | — |
-
-pi-durable took 551 s to create 10,000 sessions but only 14 s for 1000; throughput drops as the session count grows.
-
-**2. Closed-loop load** (3 consecutive turns per session, quota = c; the table shows the increase in turn p50 over the 17 s of running alone)
-
-| c | pi-sdk | pi-durable | dsh | ollupi |
+| | Sessions | Memory per session | Disk per session | Reopen a session |
 |---|---|---|---|---|
-| 64 | +1% | −1% | +2% | |
-| 256 | +1% | +1% | +2% | |
-| 1024 | +1% | +19% | +15% | |
-| 1536 | | | | +2% |
-| 2048 | +2% (p99 22 s) | +314% (p50 70 s) | +77% (p50 30 s) | +2% |
+| Ollupi | 10,000 | 14 KB | 13.2 KB | 5.5 ms |
+| pi (SDK) | 10,000 | 90 KB | 3.2 KB | 1.1 ms |
+| pi-durable | 10,000 | 64 KB | 8.6 KB | 0.4 ms |
+| DeepSeek Harness | 5,000 | 147 KB | 8.3 KB | 10.3 ms, after a 1.1 s restart |
 
-Peak memory at c = 2048: pi-sdk 604 MB (230 KB/session), pi-durable 733 MB (318 KB/session), dsh 1414 MB (659 KB/session); an active ollupi session takes about 160 KB. CPU: pi-sdk 0.46 cores, pi-durable 1.00 cores, dsh 0.86 cores (Node is single-threaded, so close to 1 core means saturated). Disk per turn: pi-sdk 2.6 KB, pi-durable 6.2 KB (after closing; the WAL is larger while running), dsh 6.8 KB.
+Ollupi's 14 KB is mostly its users, not its sessions: here every 64 sessions belong to one user, and each connected user holds about 0.56 MB of heap. The same 2000 sessions take 6.1 KB each when they all belong to one user, and 22 KB each at 64 per user (`parked --perUser`); after a restart, with no user connected, the process holds 9.5 MB in all. Ollupi's disk per session is the largest, since every step of the turn is kept in its log.
 
-**3. Burst** (3000 turns submitted at once, quota 256, theoretical floor 176 s)
+**Sessions running at once.** Each session runs 3 turns back to back; the quota equals the sessions. Turn p50 over the 17 s of running alone, and memory at peak:
 
-| | Completed | Failed | 429s | Duration |
+| Sessions | Ollupi | pi (SDK) | pi-durable | DeepSeek Harness |
 |---|---|---|---|---|
-| pi-sdk | 466 | 2534 | 10953 | 39 s |
-| pi-durable | 819 | 2181 | 10680 | 98 s |
-| dsh | 810 | 2190 | 19537 | 93 s |
-| ollupi | 3000 | 0 | 0 | 1.03 times the floor |
+| 64 | +0%, 36 MB | +0%, 135 MB | −1%, 111 MB | +1%, 228 MB |
+| 256 | +1%, 79 MB | +2%, 164 MB | +7%, 245 MB | +9%, 295 MB |
+| 1024 | +15%, 250 MB | +1%, 307 MB | +11%, 490 MB | +38%, 980 MB |
+| 2048 | +76%, 398 MB | +28%, 777 MB | +58%, 925 MB | +330%, 1371 MB |
 
-None of the three limits model call concurrency; they only retry (both pi harnesses default to 3 attempts with exponential backoff from 2 s; dsh defaults to 5 attempts from 500 ms to 10 s), and turns that run out of retries end with an error.
+No turn failed. Ollupi takes the least memory at every size, and from 1024 sessions its turns slow down more than pi's: every step is written before it runs, on the store's one SQLite connection, and the turns wait for it (see [bench](../README.md#capacity)). Disk per turn: Ollupi 13.1 KB, pi (SDK) 2.6 KB, pi-durable 6.3 KB, DeepSeek Harness 6.8 KB.
 
-**4. Crash** (200 ms model, 300 ms tools, `kill -9` after a random 0.3–2 s)
+**3000 turns submitted at once, quota 256.**
 
-| | Load | Kills | Turn outcome | Tools run twice | Restart |
+| | Completed | Failed | 429s | Duration | Memory at peak |
 |---|---|---|---|---|---|
-| pi-durable | 50 sessions × 20 queued turns | 27 | All 1000 complete; 683 interrupted tool calls go to the model as interrupted errors and are not rerun | 0 | 212 ms (p50) |
-| pi-sdk | 200 sessions × 5 turns | 1 | The 200 in-progress turns stop halfway and don't continue after reopening; new prompts run normally | 0 (not rerun) | — |
-| dsh (sent one by one) | 50 sessions × 20 turns | 18 | 874 end as interrupted, 113 complete; interrupted turns don't continue on resume | 0 by call ID, but 228 of 1247 tool executions have no matching call in the session log | 1.0 s (including 50 `session/resume`) |
-| dsh (pre-queued) | 50 sessions × 20 turns | 1 | 900 queued prompts are cancelled on resume | Same as above | 0.9 s |
-| ollupi | 960 turns | 90 | All complete; interrupted calls are marked as possibly applied | 0 | 448 ms (10,000 parked + 500 running) |
+| Ollupi | 3000 | 0 | 0 | 181 s | 138 MB |
+| pi (SDK) | 483 | 2517 | 11,130 | 44 s | 1199 MB |
+| pi-durable | 527 | 2473 | 11,256 | 47 s | 875 MB |
+| DeepSeek Harness | 1764 | 1236 | 16,749 | 197 s | 1453 MB |
 
-**5. One dsh process per session**: 10 processes average 107 MB per process (ollupi: 20 MB per process).
+The quota allows 176 s for all 3000. Ollupi holds the requests beyond it in its own queue; the others send them all and retry (both pi harnesses 3 times with exponential backoff from 2 s, DeepSeek Harness 5 times from 500 ms to 10 s), and a turn whose retries run out ends with an error.
+
+**`kill -9` mid-run.** Model calls 200 ms, tool calls 300 ms, killed after a random 0.3–2 s.
+
+| | Load | Kills | Turns | Tool calls run twice | Restart |
+|---|---|---|---|---|---|
+| Ollupi | 50 sessions × 20 turns | 30 | All 1000 complete | 0 | 32 ms |
+| pi-durable | 50 sessions × 20 turns | 30 | All 1000 complete; 357 interrupted tool calls go back to the model as errors | 0 | 184 ms |
+| pi (SDK) | 200 sessions × 5 turns | 1 | The 200 turns in progress stop and do not go on when reopened; new prompts run | 0 | — |
+| DeepSeek Harness | 50 sessions × 20 turns, sent one by one | 20 | 980 end interrupted and 11 complete; 19 prompts it acknowledged are lost | 0 | 1.2 s |
+| DeepSeek Harness | 50 sessions × 20 turns, queued at once | 1 | The 915 queued prompts are cancelled on resume | 0 | 1.3 s |
+
+**Background calls.** 200 sessions each run `sleep 20` in the background.
+
+| | Results back | With `kill -9` while the commands run | Memory at peak |
+|---|---|---|---|
+| Ollupi | 200 of 200, 3.9 s after the command at p50 | 200 of 200, each reporting that it was cut off | 82 MB |
+| DeepSeek Harness | 200 of 200, 4.8 s after the command at p50 | 0 of 200 | 281 MB |
+| pi (SDK), pi-durable | No background calls | — | — |
+
+`reports_cut_off=199` in the raw output undercounts: it was read back through the protocol, and the run's database holds 200 cut-off reports, one in each session.
+
+**One process per session.** 10 DeepSeek Harness processes take 129 MB each; one Ollupi process per session takes 17.7 MB (`bench isolated`).

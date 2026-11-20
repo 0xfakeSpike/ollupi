@@ -1,0 +1,5 @@
+# bench users -user-slots 64
+# 5c60ee4 with uncommitted changes, 2026-11-19 21:30:53, Apple M1, 8 cores, 8 GB
+users=32 c=8 heavy=1024 calls=16 heavy_calls=32 heavy_limit=32 slots=512 user_slots=64 run_s=655 alone_s=17.0 jain_others=1.000 heavy_peak_in_flight=32 heavy_refused_429=0 heavy_failed_turns=0 others_refused_429=0 others_failed_turns=0
+class=others turns=2828 wait_p50_ms=8 wait_p99_ms=702 took_p50_s=17.1 took_p99_s=21.5 took_max_s=22.6
+class=heavy turns=1379 wait_p50_ms=308135 wait_p99_ms=463042 took_p50_s=334.8 took_p99_s=489.2 took_max_s=494.8

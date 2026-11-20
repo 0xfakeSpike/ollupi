@@ -1,0 +1,4 @@
+# bench crash -n 400 -kills 8 -lease 1500ms
+# 5c60ee4 with uncommitted changes, 2026-11-19 20:52:52, Apple M1, 8 cores, 8 GB
+n=400 kills=8 turns=[completed:480] open_turns=0 open_items=0 cut_off_calls=25 background_calls=80 background_reported=80 background_cut_off=21 tasks_left=0 cut_off_messages=64 tool_runs=560 calls_run_twice=0 completed_calls_never_run=0 restart_p50_ms=1277 restart_max_ms=1751 requests=1402
+recoveries: start_ms=3049 answered=0 | start_ms=2014 answered=2 | start_ms=2011 answered=1 | start_ms=2512 answered=2 | start_ms=3014 answered=1 | start_ms=2511 answered=2 | start_ms=3013 answered=1 | start_ms=1508 answered=0
