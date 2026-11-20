@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -58,7 +59,8 @@ const (
 )
 
 type Conn struct {
-	ws *websocket.Conn
+	ws        *websocket.Conn
+	listening atomic.Pointer[time.Time]
 
 	mu      sync.Mutex
 	nextID  int
@@ -115,7 +117,10 @@ func (c *Conn) read(ctx context.Context, room *semaphore.Weighted, inbox chan<- 
 		if err := pace.Wait(ctx); err != nil {
 			return err
 		}
+		now := time.Now()
+		c.listening.Store(&now)
 		kind, data, err := c.ws.Read(ctx)
+		c.listening.Store(nil)
 		if err != nil {
 			return err
 		}
@@ -132,6 +137,11 @@ func (c *Conn) read(ctx context.Context, room *semaphore.Weighted, inbox chan<- 
 			return ctx.Err()
 		}
 	}
+}
+
+func (c *Conn) Silent(since time.Time) bool {
+	from := c.listening.Load()
+	return from != nil && !from.After(since)
 }
 
 func inboxWeight(data []byte) int64 {

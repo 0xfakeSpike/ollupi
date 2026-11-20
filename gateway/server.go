@@ -69,7 +69,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	ws.SetReadLimit(maxMessageBytes)
 	c := &conn{s: s, user: user, ws: ws, rpc: jsonrpc.NewConn(ws), asked: make(map[string]bool)}
-	s.hub.Serve(r.Context(), user, ws, func(ctx context.Context) error { return c.rpc.Serve(ctx, c.Call) })
+	s.hub.Serve(r.Context(), user, ws, c.rpc.Silent, func(ctx context.Context) error { return c.rpc.Serve(ctx, c.Call) })
 	c.mu.Lock()
 	sub := c.sub
 	c.mu.Unlock()

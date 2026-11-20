@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/pkg/wshub"
 	"github.com/coder/websocket"
 )
 
@@ -142,4 +143,63 @@ func TestAFloodingClientIsReadAtItsPace(t *testing.T) {
 	if elapsed := time.Since(started); elapsed < 800*time.Millisecond {
 		t.Errorf("%d calls were answered in %s, past the pace of %d a second after %d", sent, elapsed, messagesPerSecond, messageBurst)
 	}
+}
+
+func served(ctx context.Context, t *testing.T, h Handler) *websocket.Conn {
+	t.Helper()
+	hub, err := wshub.New(wshub.Options{PerKey: 1, Rate: 1000, Burst: 100, RetryWithin: time.Second, PingEvery: 50 * time.Millisecond, PongWithin: 100 * time.Millisecond, MaxAge: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ws, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		c := NewConn(ws)
+		hub.Serve(r.Context(), "k", ws, c.Silent, func(ctx context.Context) error { return c.Serve(ctx, h) })
+	}))
+	t.Cleanup(srv.Close)
+	client, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { client.CloseNow() })
+	return client
+}
+
+func flood(ctx context.Context, t *testing.T, client *websocket.Conn, sent int) {
+	t.Helper()
+	go func() {
+		for i := range sent {
+			if client.Write(ctx, websocket.MessageText, []byte(fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"m"}`, i))) != nil {
+				return
+			}
+		}
+	}()
+	for i := range sent {
+		if _, _, err := client.Read(ctx); err != nil {
+			t.Fatalf("the connection was dropped after %d of %d replies: %v", i, sent, err)
+		}
+	}
+}
+
+func TestAClientOverThePaceIsNotTakenForGone(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	client := served(ctx, t, func(context.Context, string, json.RawMessage) (any, func(), *Error) { return "ok", nil, nil })
+	flood(ctx, t, client, messageBurst+2*messagesPerSecond)
+}
+
+func TestAClientWaitingOnAFullInboxIsNotTakenForGone(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	release := make(chan struct{})
+	time.AfterFunc(time.Second, func() { close(release) })
+	client := served(ctx, t, func(context.Context, string, json.RawMessage) (any, func(), *Error) {
+		<-release
+		return "ok", nil, nil
+	})
+	flood(ctx, t, client, 2*maxInboxMessages)
 }
