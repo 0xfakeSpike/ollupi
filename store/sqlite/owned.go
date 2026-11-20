@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/0xfakeSpike/ollupi/account"
+	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/google/uuid"
@@ -206,7 +207,7 @@ func (r reader) Due(now time.Time) ([]account.CronJob, error) {
 }
 
 func (r reader) Threads(owner string, f store.ThreadFilter) ([]store.Thread, bool, error) {
-	query := "SELECT * FROM threads WHERE user_id = ? AND parent_id IS NULL"
+	query := "SELECT * FROM threads WHERE user_id = ? AND " + listed
 	args := []any{owner}
 	if c := f.After; c != nil {
 		query += " AND (updated_at < ? OR (updated_at = ? AND (created_at < ? OR (created_at = ? AND id < ?))))"
@@ -237,6 +238,11 @@ func (r reader) Waiting(owner string) ([]string, error) {
 	err := r.g.Raw("SELECT id FROM threads WHERE user_id = ? AND own_status IN ?", owner, waitsOnUser).Scan(&ids).Error
 	return ids, err
 }
+
+const (
+	listed  = "(parent_id IS NULL OR role = '" + string(agent.DelegateSub) + "')"
+	listedT = "(t.parent_id IS NULL OR t.role = '" + string(agent.DelegateSub) + "')"
+)
 
 func (r reader) Children(thread string) ([]store.Thread, error) {
 	return threads(r.g, "SELECT * FROM threads WHERE parent_id = ? ORDER BY created_at, id", thread)
@@ -273,14 +279,14 @@ func (r reader) Search(owner string, terms []string, workspace string, limit int
 		return query + " AND " + column + " = ?", append(args, workspace)
 	}
 	like, likeArgs := likeAll("title", terms)
-	query, args := inWorkspace("SELECT * FROM threads WHERE user_id = ? AND parent_id IS NULL"+like, append([]any{owner}, likeArgs...), "workspace_id")
+	query, args := inWorkspace("SELECT * FROM threads WHERE user_id = ? AND "+listed+like, append([]any{owner}, likeArgs...), "workspace_id")
 	var err error
 	if found.Threads, err = threads(r.g, query+" ORDER BY updated_at DESC, id LIMIT ?", append(args, limit)...); err != nil {
 		return store.Found{}, err
 	}
 
 	query = `SELECT i.thread_id, t.title, i.id, i.turn_id, i.seq, i.kind, i.text, i.at FROM items i JOIN threads t ON t.id = i.thread_id
-		WHERE t.user_id = ? AND t.parent_id IS NULL AND i.text <> ''`
+		WHERE t.user_id = ? AND ` + listedT + ` AND i.text <> ''`
 	args = []any{owner}
 	for _, t := range terms {
 		query += ` AND i.text LIKE ? ESCAPE '\'`
@@ -508,8 +514,10 @@ func (t *tx) DeleteThread(id string) error {
 	if err != nil {
 		return err
 	}
-	var jobs []string
-	if err := t.g.Raw("SELECT id FROM cron_jobs WHERE thread_id = ?", id).Scan(&jobs).Error; err != nil {
+	var jobs []struct{ ID, ThreadID string }
+	err = t.g.Raw("SELECT id, thread_id FROM cron_jobs WHERE thread_id = ? OR thread_id IN (SELECT id FROM threads WHERE parent_id = ?)", id, id).
+		Scan(&jobs).Error
+	if err != nil {
 		return err
 	}
 	if err := t.g.Exec("DELETE FROM threads WHERE id = ?", id).Error; err != nil {
@@ -517,7 +525,7 @@ func (t *tx) DeleteThread(id string) error {
 	}
 	t.pendingFor(id, th.User).change.Deleted = true
 	for _, j := range jobs {
-		t.owned = append(t.owned, store.Event{User: th.User, Thread: id, Owned: &store.Owned{CronJobDeleted: j}})
+		t.owned = append(t.owned, store.Event{User: th.User, Thread: j.ThreadID, Owned: &store.Owned{CronJobDeleted: j.ID}})
 	}
 	return nil
 }

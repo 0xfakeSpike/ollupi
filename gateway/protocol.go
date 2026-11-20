@@ -40,6 +40,7 @@ const (
 	errThreadBusy        = -32016
 	errSearchTimedOut    = -32017
 	errRefused           = -32018
+	errHasDelegates      = -32019
 )
 
 const (
@@ -173,6 +174,7 @@ var protocol = struct {
 		errThreadBusy:              "threadBusy",
 		errSearchTimedOut:          "searchTimedOut",
 		errRefused:                 "refused",
+		errHasDelegates:            "hasDelegates",
 	},
 	closes: map[int]Ending{
 		int(websocket.StatusGoingAway):       {"goingAway", ReconnectSoon},
@@ -624,6 +626,7 @@ var errorCodes = []struct {
 	{app.ErrNoSuchRequest, errNoSuchRequest},
 	{account.ErrWorkspaceArchived, errWorkspaceArchived},
 	{app.ErrThreadBusy, errThreadBusy},
+	{app.ErrHasDelegates, errHasDelegates},
 	{app.ErrThreadArchived, errThreadArchived},
 	{app.ErrWorkspaceBusy, errThreadBusy},
 	{app.ErrQueueFull, errThreadBusy},

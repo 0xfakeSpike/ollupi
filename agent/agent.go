@@ -15,9 +15,10 @@ const (
 	CompactMain Name = "compact-main-agent"
 	GeneralSub  Name = "general-sub-agent"
 	BrowserSub  Name = "browser-sub-agent"
+	DelegateSub Name = "delegate-sub-agent"
 )
 
-var Names = []Name{FullMain, CompactMain, GeneralSub, BrowserSub}
+var Names = []Name{FullMain, CompactMain, GeneralSub, BrowserSub, DelegateSub}
 
 const (
 	ReadFileTool       = "read_file"
@@ -62,6 +63,8 @@ var roles = map[Name]Role{
 		Own: []policy.Layer{{Of: "the general subagent's role", Without: []string{SubagentsProvider, CronProvider}}}, Limits: standard},
 	BrowserSub: {Name: BrowserSub, Rules: browserSubRules,
 		Own: []policy.Layer{{Of: "the browser subagent's role", Providers: []string{BrowserProvider, OutputsProvider, SkillsProvider, PlanProvider}}}, Limits: standard},
+	DelegateSub: {Name: DelegateSub, Rules: delegateSubRules, AnswersUser: true, Recalls: true,
+		Own: []policy.Layer{{Of: "the delegate subagent's role", Without: []string{SubagentsProvider, CronProvider}}}, Limits: standard},
 }
 
 func RoleOf(name Name) (Role, bool) {
@@ -200,7 +203,7 @@ func responses(v conversation.View, turn string) int {
 
 func Launchable(visible []policy.Tool) []policy.Tool {
 	out := slices.Clone(visible)
-	for _, name := range []Name{GeneralSub, BrowserSub} {
+	for _, name := range []Name{GeneralSub, BrowserSub, DelegateSub} {
 		own := roles[name].Own
 		workable := slices.ContainsFunc(visible, func(t policy.Tool) bool {
 			return t.Provider != OutputsProvider && policy.Kept(own, t)
