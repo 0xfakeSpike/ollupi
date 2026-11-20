@@ -34,9 +34,10 @@ import (
 )
 
 const (
-	kindWork     = "work"
-	kindAsk      = "ask"
-	kindDelegate = "delegate"
+	kindWork       = "work"
+	kindAsk        = "ask"
+	kindDelegate   = "delegate"
+	kindBackground = "background"
 )
 
 func crash(args []string) {
@@ -49,6 +50,7 @@ func crash(args []string) {
 	calls := fs.Int("calls", 8, "model calls the connection allows in flight")
 	latency := fs.Duration("latency", 200*time.Millisecond, "model latency")
 	toolLatency := fs.Duration("tool", 300*time.Millisecond, "tool latency")
+	backgroundLatency := fs.Duration("background", 800*time.Millisecond, "how long a call run in the background takes")
 	lease := fs.Duration("lease", 0, "with a lease, a standby process already waits on the shard when one is killed")
 	fs.Parse(args)
 
@@ -61,6 +63,8 @@ func crash(args []string) {
 			return string(agent.GeneralSub), `{"description":"Do the work","prompt":"work"}`
 		case asked == kindWork && answered < 2:
 			return "bench__work", fmt.Sprintf(`{"token":"t%d"}`, token.Add(1))
+		case asked == kindBackground && answered == 0:
+			return "bench__work", fmt.Sprintf(`{"token":"b%d","seconds":%g,"background":true}`, token.Add(1), backgroundLatency.Seconds())
 		}
 		return "", ""
 	}}
@@ -167,7 +171,7 @@ func crash(args []string) {
 		byStatus = append(byStatus, fmt.Sprintf("%s:%d", s.Status, s.N))
 	}
 	var completedTokens []string
-	if err := g.Raw("SELECT json_extract(json_extract(body, '$.Call.Arguments'), '$.token') FROM items WHERE json_extract(body, '$.Call.Tool') = 'bench__work' AND status = 'completed'").Scan(&completedTokens).Error; err != nil {
+	if err := g.Raw("SELECT json_extract(json_extract(body, '$.Call.Arguments'), '$.token') FROM items WHERE json_extract(body, '$.Call.Tool') = 'bench__work' AND status = 'completed' AND json_extract(json_extract(body, '$.Call.Arguments'), '$.background') IS NOT 1").Scan(&completedTokens).Error; err != nil {
 		log.Fatal(err)
 	}
 	raw, err := os.ReadFile(filepath.Join(dir, "tools.log"))
@@ -189,19 +193,35 @@ func crash(args []string) {
 			unrun++
 		}
 	}
+	var reportedTokens []string
+	if err := g.Raw(reportsOf + "AND json_extract(r.body, '$.Error') = ''").Scan(&reportedTokens).Error; err != nil {
+		log.Fatal(err)
+	}
+	for _, t := range reportedTokens {
+		if ran[t] == 0 {
+			unrun++
+		}
+	}
 	slices.Sort(restarts)
-	fmt.Printf("n=%d kills=%d turns=[%s] open_turns=%d open_items=%d cut_off_calls=%d cut_off_messages=%d tool_runs=%d "+
+	fmt.Printf("n=%d kills=%d turns=[%s] open_turns=%d open_items=%d cut_off_calls=%d background_calls=%d background_reported=%d background_cut_off=%d tasks_left=%d cut_off_messages=%d tool_runs=%d "+
 		"calls_run_twice=%d completed_calls_never_run=%d restart_p50_ms=%d restart_max_ms=%d requests=%d\n",
 		*n, killed, strings.Join(byStatus, " "),
 		count(openTurns),
 		count("SELECT count(*) FROM items WHERE status = 'pending' OR status = 'inProgress'"),
 		count("SELECT count(*) FROM items WHERE json_extract(body, '$.Error') LIKE 'the call was cut off%'"),
+		count("SELECT count(*) FROM items WHERE json_extract(json_extract(body, '$.Call.Arguments'), '$.background') = 1"),
+		count("SELECT count(*) FROM items WHERE kind = ? AND json_extract(body, '$.Task') != ''", string(conversation.ItemReport)),
+		count("SELECT count(*) FROM items WHERE kind = ? AND json_extract(body, '$.Task') != '' AND json_extract(body, '$.Error') LIKE 'the task was cut off%'", string(conversation.ItemReport)),
+		count("SELECT count(*) FROM tasks"),
 		p.requests.Load()-p.refused.Load()-count("SELECT count(*) FROM entries WHERE kind = ?", string(conversation.KindModelResponded)),
 		len(ran), twice, unrun, pct(restarts, .5).Milliseconds(), pct(restarts, 1).Milliseconds(), p.requests.Load())
 	fmt.Printf("recoveries: %s\n", strings.Join(recoveries, " | "))
 }
 
 const openTurns = "SELECT count(*) FROM turns WHERE ended_seq IS NULL"
+
+const reportsOf = "SELECT json_extract(json_extract(l.body, '$.Call.Arguments'), '$.token') FROM items r JOIN items l " +
+	"ON l.thread_id = r.thread_id AND l.id = json_extract(r.body, '$.Launch') WHERE r.kind = 'agentReport' AND json_extract(r.body, '$.Task') != '' "
 
 func crashChild(args []string) {
 	fs := flag.NewFlagSet("crashchild", flag.ExitOnError)
@@ -224,7 +244,7 @@ func crashChild(args []string) {
 		Connections: map[string]llm.Client{"fake": fakeConnection(*url, *calls)},
 		Tools:       []kit.Provider{work{latency: *toolLatency, log: toolLog}},
 		Permissions: policy.Settings{ApprovalPolicy: string(policy.Never)},
-		Boxes:       here, Slots: *slots,
+		Boxes:       here, Slots: *slots, TaskSlots: *slots, UserTaskSlots: *slots,
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -282,7 +302,7 @@ func crashServe(ctx context.Context, cancel context.CancelFunc, ran <-chan error
 	for _, r := range pending {
 		answer(r.Thread.ID, r.Item.ID)
 	}
-	kinds := []string{kindWork, kindWork, kindWork, kindAsk, kindDelegate}
+	kinds := []string{kindWork, kindWork, kindBackground, kindAsk, kindDelegate}
 	for i := range submit {
 		th, err := h.App.StartThread(ctx, defaultUser, "", "", "bench")
 		if err != nil {

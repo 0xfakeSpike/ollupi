@@ -1,0 +1,9 @@
+- insert:
+    - id: bash-local
+      name: '@deepseek-ai/dsh-bash-local'
+    - id: shell-env
+      name: '@deepseek-ai/dsh-shell-env'
+    - id: tool-bash
+      name: '@deepseek-ai/dsh-tool-bash'
+    - id: tool-jobs
+      name: '@deepseek-ai/dsh-tool-jobs'

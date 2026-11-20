@@ -1,0 +1,6 @@
+# bench resume
+# 5c60ee4 with uncommitted changes, 2026-11-19 20:49:59, Apple M1, 8 cores, 8 GB
+history_turns=10 first_request_p50_ms=3.7 first_request_p95_ms=4.1
+history_turns=100 first_request_p50_ms=8.6 first_request_p95_ms=9.4
+history_turns=1000 first_request_p50_ms=88.8 first_request_p95_ms=91.6
+restart waiting=10000 running=500 start_ms=8 resent_ms=346

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -131,7 +132,27 @@ func TestCrash(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			out := bench(t, append([]string{"crash", "-n", "20", "-kills", "2", "-min", "300ms", "-max", "600ms",
 				"-latency", "50ms", "-tool", "50ms"}, extra...)...)
-			want(t, out[0], "open_turns", "0", "open_items", "0", "calls_run_twice", "0", "completed_calls_never_run", "0")
+			want(t, out[0], "open_turns", "0", "open_items", "0", "tasks_left", "0", "calls_run_twice", "0", "completed_calls_never_run", "0")
+			if out[0]["background_calls"] == "0" || out[0]["background_calls"] != out[0]["background_reported"] {
+				t.Errorf("background calls without a report: %s", out[0][""])
+			}
+		})
+	}
+}
+
+func TestBackground(t *testing.T) {
+	for _, mode := range []string{"background", "foreground"} {
+		t.Run(mode, func(t *testing.T) {
+			out := bench(t, append([]string{"background", "-mode", mode, "-long", "16", "-seconds", "2s", "-users", "4", "-slots", "4",
+				"-task-slots", "4", "-probe", "200ms"}, fast...)...)
+			want(t, out[0], "long", "16", "failed_turns", "0")
+			waited, err := strconv.Atoi(out[0]["probe_wait_max_ms"])
+			if err != nil {
+				t.Fatalf("probe_wait_max_ms: %v in %s", err, out[0][""])
+			}
+			if mode == "background" && waited >= 2000 {
+				t.Errorf("a probe waited %d ms behind calls run in the background: %s", waited, out[0][""])
+			}
 		})
 	}
 }
@@ -153,7 +174,7 @@ func TestFanout(t *testing.T) {
 
 func TestSoak(t *testing.T) {
 	samples := filepath.Join(t.TempDir(), "soak.csv")
-	bench(t, append([]string{"soak", "-c", "8", "-d", "3s", "-every", "1s", "-csv", samples}, fast...)...)
+	bench(t, append([]string{"soak", "-c", "8", "-d", "3s", "-every", "1s", "-history", "3", "-csv", samples}, fast...)...)
 	body, err := os.ReadFile(samples)
 	if err != nil {
 		t.Fatal(err)

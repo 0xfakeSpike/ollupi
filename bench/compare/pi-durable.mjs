@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { createModels, createProvider } from "@earendil-works/pi-ai/models";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { createRegistry, defineExtension, defineTool, Harness, section } from "@earendil-works/pi-durable";

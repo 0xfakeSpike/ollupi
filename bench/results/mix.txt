@@ -1,10 +1,12 @@
-c=256 delegate=0.20 peak=1000 slots=512 calls=256 run_s=269 peak_drained_s=59.4 failed_turns=0 jain_user=0.978
-wait kind=user n=2607 p50_ms=7 p99_ms=57144 max_ms=58617
-wait kind=user_outside_peak n=2346 p50_ms=7 p99_ms=274 max_ms=5305
-wait kind=user_during_peak n=261 p50_ms=44107 p99_ms=58608 max_ms=58617
-wait kind=sub n=557 p50_ms=5 p99_ms=4571 max_ms=4812
-wait kind=cron n=1000 p50_ms=29637 p99_ms=58276 max_ms=58650
-took kind=work n=2050 p50_s=17.5 p99_s=79.5 max_s=84.6
-took kind=delegate n=557 p50_s=28.2 p99_s=89.6 max_s=93.2
-took kind=sub n=557 p50_s=17.7 p99_s=32.2 max_s=35.1
-took kind=cron n=1000 p50_s=54.6 p99_s=81.3 max_s=82.8
+# bench mix
+# 5c60ee4 with uncommitted changes, 2026-11-19 21:02:54, Apple M1, 8 cores, 8 GB
+c=256 delegate=0.20 peak=1000 slots=512 calls=256 run_s=269 peak_drained_s=56.9 failed_turns=0 jain_user=0.975
+wait kind=user n=2595 p50_ms=9 p99_ms=55192 max_ms=56333
+wait kind=user_outside_peak n=2391 p50_ms=8 p99_ms=3206 max_ms=4054
+wait kind=user_during_peak n=204 p50_ms=49307 p99_ms=56301 max_ms=56333
+wait kind=sub n=510 p50_ms=5 p99_ms=62327 max_ms=65085
+wait kind=cron n=1000 p50_ms=27633 p99_ms=55396 max_ms=56069
+took kind=work n=2085 p50_s=17.6 p99_s=77.2 max_s=81.7
+took kind=delegate n=510 p50_s=27.8 p99_s=93.2 max_s=95.7
+took kind=sub n=510 p50_s=17.5 p99_s=82.3 max_s=85.4
+took kind=cron n=1000 p50_s=52.8 p99_s=80.1 max_s=81.6
