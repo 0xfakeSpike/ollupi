@@ -19,6 +19,10 @@ const (
 	HubMain     Name = "hub-main-agent"
 )
 
+// PlanFile is the Markdown file at the root of the hub workspace's folder where the hub keeps the user's plan
+// with its file tools. The desktop app reads the same file to show the plan.
+const PlanFile = "TODO.md"
+
 var Names = []Name{FullMain, CompactMain, GeneralSub, BrowserSub, DelegateSub, HubMain}
 
 const (
@@ -32,9 +36,6 @@ const (
 	SendMessageTool       = "send_message"
 	ListConversationsTool = "list_conversations"
 	ReadConversationTool  = "read_conversation"
-	AddTodoTool           = "add_todo"
-	UpdateTodoTool        = "update_todo"
-	ListTodosTool         = "list_todos"
 	BrowserProvider       = "browser"
 	OutputsProvider       = "context"
 	SkillsProvider        = "skills"
@@ -71,7 +72,7 @@ var roles = map[Name]Role{
 		Own: []policy.Layer{{Of: "the main agent's role", Without: []string{HubProvider}}}, Limits: standard},
 	HubMain: {Name: HubMain, Rules: hubMainRules, AnswersUser: true, Recalls: true,
 		Own: []policy.Layer{{Of: "the hub's role", Without: []string{SubagentsProvider, BrowserProvider},
-			Settings: policy.Settings{Rules: policy.Rules{Allow: []string{StartConversationTool, SendMessageTool, AddTodoTool, UpdateTodoTool}}}}}, Limits: standard},
+			Settings: policy.Settings{Rules: policy.Rules{Allow: []string{StartConversationTool, SendMessageTool}}}}}, Limits: standard},
 	GeneralSub: {Name: GeneralSub, Rules: generalSubRules, Recalls: true,
 		Own: []policy.Layer{{Of: "the general subagent's role", Without: []string{SubagentsProvider, CronProvider, HubProvider}}}, Limits: standard},
 	BrowserSub: {Name: BrowserSub, Rules: browserSubRules,

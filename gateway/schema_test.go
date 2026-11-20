@@ -70,9 +70,6 @@ var builtinTools = map[string]struct{ arguments, output reflect.Type }{
 	agent.SendMessageTool:       {arguments: reflect.TypeFor[hub.SendArgs](), output: reflect.TypeFor[hub.Started]()},
 	agent.ListConversationsTool: {arguments: reflect.TypeFor[hub.ListArgs](), output: reflect.TypeFor[hub.Conversations]()},
 	agent.ReadConversationTool:  {arguments: reflect.TypeFor[hub.ReadArgs](), output: reflect.TypeFor[hub.Turns]()},
-	agent.AddTodoTool:           {arguments: reflect.TypeFor[hub.AddTodoArgs](), output: reflect.TypeFor[hub.Todo]()},
-	agent.UpdateTodoTool:        {arguments: reflect.TypeFor[hub.UpdateTodoArgs](), output: reflect.TypeFor[hub.Todo]()},
-	agent.ListTodosTool:         {arguments: reflect.TypeFor[hub.ListTodosArgs](), output: reflect.TypeFor[hub.Todos]()},
 	workspace.ToolRunCommand:    {output: reflect.TypeFor[workspace.CommandOutput]()},
 	workspace.ToolEditFile:      {output: reflect.TypeFor[workspace.FileOutput]()},
 	workspace.ToolWriteFile:     {output: reflect.TypeFor[workspace.FileOutput]()},
@@ -88,7 +85,7 @@ var providers = []string{agent.CronProvider, agent.SkillsProvider, account.Memor
 var enums = []any{
 	conversation.ItemKinds, conversation.ItemStatuses, conversation.ThreadStatuses, conversation.Ends, conversation.Decisions,
 	TurnStatuses, memory.Scopes, memory.Kinds, memory.Statuses, memory.FailureCodes, policy.PolicyValues, agent.Names,
-	plan.StatusValues, account.EnvironmentKinds, account.WorkspaceKinds, account.TodoStatuses,
+	plan.StatusValues, account.EnvironmentKinds, account.WorkspaceKinds,
 }
 
 var plainStrings = []reflect.Type{}
@@ -114,7 +111,6 @@ var arrays = []field{
 	{reflect.TypeFor[EnvironmentListResult](), "Data"},
 	{reflect.TypeFor[CronListResult](), "Data"},
 	{reflect.TypeFor[MemoryListResult](), "Data"},
-	{reflect.TypeFor[TodoListResult](), "Data"},
 	{reflect.TypeFor[Found](), "Threads"},
 	{reflect.TypeFor[Found](), "Messages"},
 	{reflect.TypeFor[Found](), "CronJobs"},
@@ -124,7 +120,6 @@ var arrays = []field{
 	{reflect.TypeFor[hub.Conversations](), "Conversations"},
 	{reflect.TypeFor[hub.Turns](), "Turns"},
 	{reflect.TypeFor[hub.Turn](), "Messages"},
-	{reflect.TypeFor[hub.Todos](), "Todos"},
 	{reflect.TypeFor[ask.Request](), "Questions"},
 	{reflect.TypeFor[ask.Question](), "Options"},
 	{reflect.TypeFor[Approval](), "AvailableDecisions"},
@@ -154,11 +149,6 @@ var defNames = map[reflect.Type]string{
 	reflect.TypeFor[hub.Turn]():               "HubTurn",
 	reflect.TypeFor[hub.Message]():            "HubMessage",
 	reflect.TypeFor[hub.Ended]():              "HubTurnEnded",
-	reflect.TypeFor[hub.Todo]():               "HubTodo",
-	reflect.TypeFor[hub.Todos]():              "HubTodos",
-	reflect.TypeFor[hub.AddTodoArgs]():        "HubAddTodo",
-	reflect.TypeFor[hub.UpdateTodoArgs]():     "HubUpdateTodo",
-	reflect.TypeFor[hub.ListTodosArgs]():      "HubListTodos",
 	reflect.TypeFor[run.Launched]():           "SubagentLaunched",
 	reflect.TypeFor[ask.Request]():            "UserInputRequest",
 	reflect.TypeFor[ask.Question]():           "UserInputQuestion",

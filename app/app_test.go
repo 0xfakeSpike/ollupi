@@ -518,57 +518,6 @@ func TestTheUserCorrectsTheirNotes(t *testing.T) {
 
 func noStatuses(string) ([]account.MCPStatus, error) { return nil, nil }
 
-func TestTodosKeepWhenTheyWereDoneAndFollowTheirConversation(t *testing.T) {
-	f := setup(t)
-	dir := filepath.Join(t.TempDir(), "docs")
-	os.Mkdir(dir, 0o755)
-	docs := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", dir, ""))
-	notes := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", docs.ID, "", "release notes"))
-	if _, err := f.a.AddTodo(f.ctx, "u", "  ", ""); !errors.Is(err, ErrInvalidTodo) {
-		t.Errorf("a todo with no title: %v", err)
-	}
-	todo := must[account.Todo](t)(f.a.AddTodo(f.ctx, "u", "  write the release notes ", "for 1.0"))
-	if todo.ID != 1 || todo.Title != "write the release notes" || todo.Status != account.TodoOpen || todo.Done != nil {
-		t.Fatalf("added %+v", todo)
-	}
-	if _, err := f.a.UpdateTodo(f.ctx, "u", todo.ID, TodoChange{Status: "later"}); !errors.Is(err, ErrInvalidTodo) {
-		t.Errorf("an unknown status: %v", err)
-	}
-	if _, err := f.a.UpdateTodo(f.ctx, "u", 99, TodoChange{Status: account.TodoDone}); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("a todo that is not there: %v", err)
-	}
-	if _, err := f.a.UpdateTodo(f.ctx, "u", todo.ID, TodoChange{Thread: "nowhere"}); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("a conversation that is not there: %v", err)
-	}
-	linked := must[account.Todo](t)(f.a.UpdateTodo(f.ctx, "u", todo.ID, TodoChange{Thread: notes.ID, Status: account.TodoHanded}))
-	if linked.Thread != notes.ID || linked.Workspace != docs.ID || linked.Status != account.TodoHanded || linked.Notes != "for 1.0" {
-		t.Errorf("linked %+v", linked)
-	}
-	done := must[account.Todo](t)(f.a.UpdateTodo(f.ctx, "u", todo.ID, TodoChange{Status: account.TodoDone, Result: "published"}))
-	if done.Done == nil || !done.Done.Equal(done.Updated) || done.Result != "published" {
-		t.Fatalf("done %+v", done)
-	}
-	again := must[account.Todo](t)(f.a.UpdateTodo(f.ctx, "u", todo.ID, TodoChange{Notes: "and the changelog"}))
-	if again.Done == nil || !again.Done.Equal(*done.Done) || again.Updated.Before(done.Updated) {
-		t.Errorf("a done todo changed again %+v", again)
-	}
-	reopened := must[account.Todo](t)(f.a.UpdateTodo(f.ctx, "u", todo.ID, TodoChange{Status: account.TodoOpen}))
-	if reopened.Done != nil || reopened.Thread != notes.ID {
-		t.Errorf("reopened %+v", reopened)
-	}
-	must[account.Todo](t)(f.a.AddTodo(f.ctx, "u", "review the docs", ""))
-	must[account.Todo](t)(f.a.UpdateTodo(f.ctx, "u", 2, TodoChange{Status: account.TodoDropped}))
-	if all := must[[]account.Todo](t)(f.a.Todos(f.ctx, "u", nil)); len(all) != 2 {
-		t.Errorf("all the todos %+v", all)
-	}
-	if open := must[[]account.Todo](t)(f.a.Todos(f.ctx, "u", []account.TodoStatus{account.TodoOpen})); len(open) != 1 || open[0].ID != 1 {
-		t.Errorf("the open todos %+v", open)
-	}
-	if _, err := f.a.Todos(f.ctx, "u", []account.TodoStatus{"later"}); !errors.Is(err, ErrInvalidTodo) {
-		t.Errorf("listed by an unknown status: %v", err)
-	}
-}
-
 func TestAMessageKeepsTheHubConversationThatSentIt(t *testing.T) {
 	f := setup(t)
 	plan := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", "", "", "plan"))

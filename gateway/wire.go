@@ -247,24 +247,6 @@ func memoryRow(m memory.Memory) MemoryRow {
 		Text: m.Text, Status: m.Status, UserEdited: m.UserEdited, Sources: nonNil(m.Sources), CreatedAt: m.Created, UpdatedAt: m.Updated}
 }
 
-type TodoRow struct {
-	ID          int64              `json:"id"`
-	Title       string             `json:"title"`
-	WorkspaceID string             `json:"workspaceId,omitempty"`
-	ThreadID    string             `json:"threadId,omitempty"`
-	Status      account.TodoStatus `json:"status"`
-	Notes       string             `json:"notes,omitempty"`
-	Result      string             `json:"result,omitempty"`
-	CreatedAt   time.Time          `json:"createdAt"`
-	UpdatedAt   time.Time          `json:"updatedAt"`
-	DoneAt      *time.Time         `json:"doneAt,omitempty"`
-}
-
-func todoRow(t account.Todo) TodoRow {
-	return TodoRow{ID: t.ID, Title: t.Title, WorkspaceID: t.Workspace, ThreadID: t.Thread, Status: t.Status, Notes: t.Notes, Result: t.Result,
-		CreatedAt: t.Created, UpdatedAt: t.Updated, DoneAt: t.Done}
-}
-
 type MemoryStatus struct {
 	Enabled     bool            `json:"enabled"`
 	Unread      int64           `json:"unread"`

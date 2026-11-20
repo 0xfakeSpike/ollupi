@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/app"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/cron"
@@ -107,15 +106,6 @@ func (c *client) call(method string, params any, result any) {
 		c.t.Fatalf("%s: %+v", method, m.Error)
 	}
 	json.Unmarshal(m.Result, result)
-}
-
-func (c *client) fail(method string, params any) *jsonrpc.Error {
-	c.t.Helper()
-	m := c.reply(method, params)
-	if m.Error == nil {
-		c.t.Fatalf("%s succeeded: %s", method, m.Result)
-	}
-	return m.Error
 }
 
 func (c *client) until(method string) message {
@@ -222,51 +212,6 @@ func TestAClientHearsWhatChangesAndAnswersWhatWaitsOnIt(t *testing.T) {
 	}
 	if status.Thread == nil || status.Thread.Status != conversation.ThreadActive || status.Seq <= page.Seq {
 		t.Errorf("after the decision: %+v", status)
-	}
-}
-
-func TestAClientKeepsTheTodosAndHearsThemChange(t *testing.T) {
-	_, c := connect(t)
-	var added TodoResult
-	c.call("todo/add", TodoAddParams{Title: " write the release notes ", Notes: "for 1.0"}, &added)
-	if added.Todo.ID != 1 || added.Todo.Title != "write the release notes" || added.Todo.Status != account.TodoOpen {
-		t.Fatalf("added %+v", added.Todo)
-	}
-	var heard TodoResult
-	json.Unmarshal(c.until(notifyTodoChanged).Params, &heard)
-	if heard.Todo.ID != added.Todo.ID || heard.Todo.Title != added.Todo.Title {
-		t.Errorf("heard %+v", heard.Todo)
-	}
-	var thread ThreadResult
-	c.call("thread/start", ThreadStartParams{Title: "notes"}, &thread)
-	var done TodoResult
-	c.call("todo/update", TodoUpdateParams{ID: added.Todo.ID, Status: account.TodoDone, Result: "published", ThreadID: thread.Thread.ID}, &done)
-	if done.Todo.DoneAt == nil || done.Todo.ThreadID != thread.Thread.ID || done.Todo.Notes != "for 1.0" {
-		t.Errorf("done %+v", done.Todo)
-	}
-	json.Unmarshal(c.until(notifyTodoChanged).Params, &heard)
-	if heard.Todo.Status != account.TodoDone || heard.Todo.DoneAt == nil {
-		t.Errorf("heard %+v", heard.Todo)
-	}
-	var listed TodoListResult
-	c.call("todo/list", TodoListParams{}, &listed)
-	if len(listed.Data) != 1 || listed.Data[0].Status != account.TodoDone {
-		t.Errorf("listed %+v", listed.Data)
-	}
-	c.call("todo/list", TodoListParams{Statuses: []account.TodoStatus{account.TodoOpen}}, &listed)
-	if len(listed.Data) != 0 {
-		t.Errorf("listed the open ones %+v", listed.Data)
-	}
-	for _, failed := range []struct {
-		params TodoUpdateParams
-		code   int
-	}{
-		{TodoUpdateParams{ID: 99, Status: account.TodoDone}, errNotFound},
-		{TodoUpdateParams{ID: added.Todo.ID, Status: "later"}, jsonrpc.CodeInvalidParams},
-	} {
-		if err := c.fail("todo/update", failed.params); err.Code != failed.code {
-			t.Errorf("updated with %+v: %+v", failed.params, err)
-		}
 	}
 }
 
