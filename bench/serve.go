@@ -27,6 +27,7 @@ func serve(args []string) {
 	userTaskSlots := fs.Int("user-task-slots", 4, "the most background slots one user may hold")
 	toolLatency := fs.Duration("tool", time.Second, "latency of bench__work")
 	toolLog := fs.String("tool-log", "", "append each bench__work call to this file as it starts")
+	addr := fs.String("addr", "127.0.0.1:0", "address to listen on")
 	fs.Parse(args)
 
 	tool := work{latency: *toolLatency}
@@ -57,7 +58,7 @@ func serve(args []string) {
 	})
 	defer e.stop()
 	e.run()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := net.Listen("tcp", *addr)
 	if err != nil {
 		log.Fatal(err)
 	}

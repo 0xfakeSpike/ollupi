@@ -14,6 +14,7 @@ Every number below was measured on Ollupi v0.18.0 on 2026-11-19, one run each, o
 | 3000 turns submitted at once, quota 256? | All complete, no 429, 1.04 times the time the quota allows | `burst.txt`, `burst.csv` |
 | Does a long command hold up other sessions? | Not in the background: new sessions wait 10 ms, against 144 s with the command in its turn | `background*.txt` |
 | What survives `kill -9`? | Every turn; no tool call runs twice; a standby takes over in 1.3 s | `crash*.txt`, `resume.txt` |
+| Do more shards add capacity? | Yes, as far as one machine goes: the same 4096 sessions run 1.7 times as many turns a second on 4 shards as on 1; the router costs nothing measurable | `shards.txt` |
 | Does one heavy user hold up the others? | Not with a per-user slot limit: the others wait 8 ms, against 206 s without | `users*.txt` |
 | Do failures and slow model calls fail turns? | No: 5% of requests failing, or a long tail, fail no turn | `steady-faults.txt`, `steady-lognormal.txt` |
 | Does it slow down over a long run? | No: 8 minutes, 33,000 turns, turn time and memory hold | `soak.txt`, `soak.csv` |
@@ -81,6 +82,22 @@ A restart with 10,000 sessions waiting and 500 running is ready in 8 ms and has 
 
 One shard with 512 slots; 32 users keep 8 sessions busy each, and one user keeps 1024 busy, each user on a key of their own. With no per-user limit, the heavy user takes every slot and the others' turns wait 206 s at p50. With `UserSlots` at 64, the others wait 8 ms and their turns take 17.1 s, as alone. When the heavy user's key is over its quota at the provider, its 7,389 429s and 148 failed turns stay its own: the others get no 429.
 
+### Shards
+
+The same 4096 sessions, 64 to a user, spread over 1, 2 and 4 shards. Each shard is a `bench serve` process with a database of its own; clients reach them over the protocol through a router (`connsrouter`), which sends user N to shard N modulo their number. One more step reaches a single shard straight, without the router. Every process runs on the one test machine.
+
+| | 1 shard, straight | 1 shard | 2 shards | 4 shards |
+|---|---|---|---|---|
+| Turns per second | 89.0 | 84.9 | 116.3 | 144.4 |
+| Turn p50 | 37.2 s | 37.1 s | 28.1 s | 22.9 s |
+| Turn p99 | 58.9 s | 61.7 s | 39.3 s | 29.6 s |
+| CPU, shards | 2.13 | 1.94 | 3.42 | 4.81 |
+| CPU, all processes | 2.31 | 2.15 | 3.80 | 5.34 |
+
+No turn fails. More shards run more turns: 1.37 times as many on 2 shards and 1.70 times on 4, against 241 a second if every turn took its 17 s alone. Each shard has its own SQLite connection, so the wait that slows one shard (see [Capacity](#capacity)) is split among them. Past 2 shards the gain falls off because the machine runs out: at 4 shards all processes together use 5.3 cores, and the M1 has 4 performance cores beside 4 efficiency cores. Whether throughput grows in proportion on shards of their own machines is not measured. The router adds no measurable time (p50 37.1 s against 37.2 s straight) and uses 0.04–0.11 cores and 18 MB.
+
+An earlier run of the same experiment (`shards-previous.txt`, without the CPU totals) gave 87.3, 87.8, 127.4 and 128.2 turns a second: the steps at 2 and 4 shards differ from this run by up to 12%.
+
 ### Faults and long tail
 
 1024 sessions, with 5% of model requests answered 500 and other clients of the account holding up to 256 of the quota: no turn fails, and p99 is 25.0 s against 24.6 s without. 1536 sessions with log-normal model latency (median 5 s, σ = 0.6): no turn fails, p50 20.2 s, p99 43.1 s.
@@ -133,6 +150,7 @@ go test -tags sqlite_fts5 ./bench # each experiment at a size that ends in secon
 | `soak` | `soak -c 256 -d 8m -every 30s -history 10 -latency 1s -jitter 200ms -tool 200ms -csv results/soak.csv` | A long run, each turn's work the same |
 | `soak-history` | `soak -c 256 -d 8m -every 30s -latency 1s -jitter 200ms -tool 200ms -csv results/soak-history.csv` | A long run, each session's history growing |
 | `users`, `users-slots`, `users-limit` | `users`; `users -user-slots 64`; `users -user-slots 64 -heavy-calls 64 -heavy-limit 32` | Users with their own keys beside a heavy one; a per-user slot limit; the heavy key over its quota |
+| `shards` | `shards -c 4096 -n 1,2,4 -direct` | The same sessions on 1, 2 and 4 shards behind a router, and on one shard straight |
 | `conns`, `conns-router` | `conns -n 1000,2000,4000,8000 -storm`; `conns -n 1000,2000,4000 -router -storm` | Idle connections on a shard, straight or through a router, and their return after a restart |
 
 Building needs SQLite's FTS5, hence `-tags sqlite_fts5`.
