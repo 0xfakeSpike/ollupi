@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/0xfakeSpike/ollupi/account"
-	"github.com/0xfakeSpike/ollupi/app"
 	"github.com/0xfakeSpike/ollupi/cron"
 	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
@@ -161,21 +160,6 @@ func (c *conn) memoryMove(ctx context.Context, p MemoryMoveParams) (MemoryResult
 
 func (c *conn) memoryForget(ctx context.Context, p MemoryForgetParams) (Empty, error) {
 	return Empty{}, c.s.app.ForgetMemory(ctx, c.user, p.ID)
-}
-
-func (c *conn) todoList(ctx context.Context, p TodoListParams) (TodoListResult, error) {
-	todos, err := c.s.app.Todos(ctx, c.user, p.Statuses)
-	return TodoListResult{Data: each(todos, todoRow)}, err
-}
-
-func (c *conn) todoAdd(ctx context.Context, p TodoAddParams) (TodoResult, error) {
-	t, err := c.s.app.AddTodo(ctx, c.user, p.Title, p.Notes)
-	return TodoResult{Todo: todoRow(t)}, err
-}
-
-func (c *conn) todoUpdate(ctx context.Context, p TodoUpdateParams) (TodoResult, error) {
-	t, err := c.s.app.UpdateTodo(ctx, c.user, p.ID, app.TodoChange{Title: p.Title, Status: p.Status, Notes: p.Notes, Result: p.Result, Thread: p.ThreadID})
-	return TodoResult{Todo: todoRow(t)}, err
 }
 
 func (c *conn) search(ctx context.Context, p SearchParams) (SearchResult, error) {

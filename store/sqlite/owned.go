@@ -251,61 +251,6 @@ const (
 	listedT = "(t.parent_id IS NULL OR t.role = '" + string(agent.DelegateSub) + "')"
 )
 
-type todoRow struct {
-	ID          int64
-	Title       string
-	WorkspaceID string
-	ThreadID    string
-	Status      string
-	Notes       string
-	Result      string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	DoneAt      *time.Time
-}
-
-func (row todoRow) todo() (account.Todo, error) {
-	return account.Todo{ID: row.ID, Title: row.Title, Workspace: row.WorkspaceID, Thread: row.ThreadID, Status: account.TodoStatus(row.Status),
-		Notes: row.Notes, Result: row.Result, Created: row.CreatedAt, Updated: row.UpdatedAt, Done: row.DoneAt}, nil
-}
-
-func (r reader) Todos(owner string, statuses []account.TodoStatus) ([]account.Todo, error) {
-	return each(r.g.Raw("SELECT * FROM todos WHERE user_id = ? AND status IN ? ORDER BY id", owner, statuses), todoRow.todo)
-}
-
-func (r reader) Todo(owner string, id int64) (account.Todo, error) {
-	var row todoRow
-	if err := notFound(r.g.Raw("SELECT * FROM todos WHERE user_id = ? AND id = ?", owner, id).Take(&row).Error); err != nil {
-		return account.Todo{}, fmt.Errorf("store: todo %d: %w", id, err)
-	}
-	return row.todo()
-}
-
-func (t *tx) AddTodo(owner string, todo account.Todo) (account.Todo, error) {
-	if err := t.g.Raw("SELECT coalesce(max(id), 0) + 1 FROM todos WHERE user_id = ?", owner).Scan(&todo.ID).Error; err != nil {
-		return account.Todo{}, err
-	}
-	err := t.g.Exec(`INSERT INTO todos(user_id, id, title, workspace_id, thread_id, status, notes, result, created_at, updated_at, done_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, owner, todo.ID, todo.Title, todo.Workspace, todo.Thread, string(todo.Status), todo.Notes, todo.Result,
-		todo.Created, todo.Updated, todo.Done).Error
-	if err != nil {
-		return account.Todo{}, fmt.Errorf("store: add todo: %w", err)
-	}
-	t.owned = append(t.owned, store.Event{User: owner, Owned: &store.Owned{Todo: &todo}})
-	return todo, nil
-}
-
-func (t *tx) PutTodo(owner string, todo account.Todo) error {
-	res := t.g.Exec(`UPDATE todos SET title = ?, workspace_id = ?, thread_id = ?, status = ?, notes = ?, result = ?, updated_at = ?, done_at = ?
-		WHERE user_id = ? AND id = ?`, todo.Title, todo.Workspace, todo.Thread, string(todo.Status), todo.Notes, todo.Result, todo.Updated, todo.Done,
-		owner, todo.ID)
-	if err := one(res, fmt.Sprintf("todo %d", todo.ID)); err != nil {
-		return err
-	}
-	t.owned = append(t.owned, store.Event{User: owner, Owned: &store.Owned{Todo: &todo}})
-	return nil
-}
-
 func (r reader) Calls(owner, workspace, tool string) ([]conversation.Item, error) {
 	return decodeRows[conversation.Item](r.g, `SELECT i.body FROM items i JOIN threads t ON t.id = i.thread_id
 		WHERE t.user_id = ? AND t.workspace_id = ? AND i.kind = 'toolCall' AND json_extract(i.body, '$.Call.Tool') = ?
