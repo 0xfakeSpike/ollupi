@@ -25,6 +25,7 @@ const (
 	PlanTool           = "update_plan"
 	ReadOutputTool     = "read_tool_output"
 	LoadToolsTool      = "load_tools"
+	InfoTool           = "conversation_info"
 	BrowserProvider    = "browser"
 	OutputsProvider    = "context"
 	SkillsProvider     = "skills"
@@ -32,6 +33,7 @@ const (
 	SubagentsProvider  = "subagents"
 	CronProvider       = "cron"
 	WorkspaceProvider  = "workspace"
+	InfoProvider       = "info"
 	compactBelowTokens = 16_384
 )
 

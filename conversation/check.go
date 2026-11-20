@@ -50,8 +50,8 @@ func Check(v View, e Entry) error {
 			return err
 		}
 		launch, ok := v.ItemOf(b.Launch)
-		if !ok || launch.Child != b.Child || launch.Reported {
-			return refuse("call %s launched no subagent %s that has not reported", b.Launch, b.Child)
+		if !ok || launch.Child != b.Child || !launch.AwaitsReport() {
+			return refuse("call %s launched no subagent %s that awaits a report", b.Launch, b.Child)
 		}
 		return nil
 	case TaskReported:

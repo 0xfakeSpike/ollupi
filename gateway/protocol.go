@@ -35,7 +35,6 @@ const (
 	errNoActiveTurn      = -32010
 	errTurnMismatch      = -32011
 	errNoSuchRequest     = -32012
-	errSubagentThread    = -32013
 	errWorkspaceArchived = -32014
 	errThreadArchived    = -32015
 	errThreadBusy        = -32016
@@ -169,7 +168,6 @@ var protocol = struct {
 		errNoActiveTurn:            "noActiveTurn",
 		errTurnMismatch:            "turnMismatch",
 		errNoSuchRequest:           "noSuchRequest",
-		errSubagentThread:          "subagentThread",
 		errWorkspaceArchived:       "workspaceArchived",
 		errThreadArchived:          "threadArchived",
 		errThreadBusy:              "threadBusy",
@@ -624,7 +622,6 @@ var errorCodes = []struct {
 	{app.ErrNoActiveTurn, errNoActiveTurn},
 	{app.ErrTurnMismatch, errTurnMismatch},
 	{app.ErrNoSuchRequest, errNoSuchRequest},
-	{account.ErrSubagentThread, errSubagentThread},
 	{account.ErrWorkspaceArchived, errWorkspaceArchived},
 	{app.ErrThreadBusy, errThreadBusy},
 	{app.ErrThreadArchived, errThreadArchived},

@@ -72,6 +72,9 @@ func report(tx store.Tx, th store.Thread, v conversation.View, turn conversation
 		return err
 	}
 	launch, _ := parent.ItemOf(th.ParentItem)
+	if !launch.AwaitsReport() {
+		return nil
+	}
 	body := conversation.ChildReported{Launch: th.ParentItem, Child: th.ID}
 	var answer string
 	for _, it := range v.ItemsOf(turn.ID) {

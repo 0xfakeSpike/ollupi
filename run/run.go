@@ -119,7 +119,6 @@ func (r *Runner) closeStranded(ctx context.Context, thread string) error {
 
 type step struct {
 	th        store.Thread
-	parent    *store.Thread
 	workspace *account.Workspace
 	settings  account.Settings
 	v         conversation.View
@@ -160,13 +159,6 @@ func (r *Runner) load(ctx context.Context, thread string) (*step, error) {
 			}
 			s.workspace = &w
 		}
-		if s.th.Parent != "" {
-			p, err := rd.Thread(s.th.Parent)
-			if err != nil {
-				return err
-			}
-			s.parent = &p
-		}
 		return nil
 	})
 	if err != nil || !active {
@@ -185,12 +177,8 @@ func (r *Runner) load(ctx context.Context, thread string) (*step, error) {
 }
 
 func (s *step) permit(r *Runner, set tool.Set) error {
-	conversationLayer := s.th.Layer()
-	if s.parent != nil {
-		conversationLayer = s.parent.ParentLayer()
-	}
 	layers := slices.Concat(s.role.Own, account.Layers(account.Deployment(r.deployment),
-		s.settings, s.workspace, conversationLayer))
+		s.settings, s.workspace, s.th.Layer()))
 	box := tool.Toolbox(set)
 	s.specs = map[string]tool.Spec{}
 	var allowlist []string
@@ -219,7 +207,7 @@ func (s *step) permit(r *Runner, set tool.Set) error {
 
 func (s *step) caller(item string) tool.Caller {
 	c := tool.Caller{User: s.th.User, Thread: s.th.ID, Workspace: s.th.Workspace, Environment: s.th.Environment,
-		Subagent: s.parent != nil, Role: string(s.role.Name), Item: item}
+		Subagent: s.th.Parent != "", Role: string(s.role.Name), Item: item}
 	if s.workspace != nil {
 		c.Root = s.workspace.Root
 	}

@@ -108,7 +108,7 @@ func (a *App) ArchiveThread(ctx context.Context, user, id string, archived bool)
 
 func (a *App) changeThread(ctx context.Context, user, id string, change func(store.Tx, *store.Thread) error) (store.Thread, error) {
 	return edit(ctx, a.st,
-		func(tx store.Tx) (store.Thread, error) { return topThread(tx, user, id) },
+		func(tx store.Tx) (store.Thread, error) { return thread(tx, user, id) },
 		func(tx store.Tx, th *store.Thread) error {
 			th.Updated = time.Now().UTC()
 			return change(tx, th)
@@ -118,7 +118,7 @@ func (a *App) changeThread(ctx context.Context, user, id string, change func(sto
 
 func (a *App) DeleteThread(ctx context.Context, user, id string) error {
 	err := a.st.Update(ctx, func(tx store.Tx) error {
-		th, err := topThread(tx, user, id)
+		th, err := thread(tx, user, id)
 		if err != nil {
 			return err
 		}
