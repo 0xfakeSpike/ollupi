@@ -1,0 +1,6 @@
+# bench shards -c 4096 -n 1,2,4 -direct
+# cb7f93a with uncommitted changes, 2026-11-20 10:35:55, Apple M1, 8 cores, 8 GB
+step shards=1 via=shard sessions=4096 users=64 turns=12288 total_s=140.8 alone_s=17.0 p50_s=38.2 p95_s=51.5 p99_s=59.0 turns_per_s=87.3 model_calls_per_s=262 failed_turns=0 shard_cpu_cores=[1.99] shards_cpu_cores=1.99 shard_rss_mb=[213] client_cpu_cores=0.07
+step shards=1 via=router sessions=4096 users=64 turns=12288 total_s=139.9 alone_s=17.0 p50_s=36.5 p95_s=54.1 p99_s=59.0 turns_per_s=87.8 model_calls_per_s=263 failed_turns=0 shard_cpu_cores=[2.06] shards_cpu_cores=2.06 shard_rss_mb=[306] router_cpu_cores=0.05 router_rss_mb=18 client_cpu_cores=0.07
+step shards=2 via=router sessions=4096 users=64 turns=12288 total_s=96.4 alone_s=17.0 p50_s=25.9 p95_s=32.5 p99_s=35.3 turns_per_s=127.4 model_calls_per_s=382 failed_turns=0 shard_cpu_cores=[1.87 1.87] shards_cpu_cores=3.75 shard_rss_mb=[130 126] router_cpu_cores=0.10 router_rss_mb=18 client_cpu_cores=0.14
+step shards=4 via=router sessions=4096 users=64 turns=12288 total_s=95.8 alone_s=17.0 p50_s=23.6 p95_s=38.0 p99_s=40.9 turns_per_s=128.2 model_calls_per_s=385 failed_turns=0 shard_cpu_cores=[1.09 1.08 1.09 1.08] shards_cpu_cores=4.34 shard_rss_mb=[81 77 78 79] router_cpu_cores=0.10 router_rss_mb=17 client_cpu_cores=0.15

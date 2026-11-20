@@ -198,6 +198,17 @@ func TestUsers(t *testing.T) {
 	}
 }
 
+func TestShards(t *testing.T) {
+	out := bench(t, append([]string{"shards", "-n", "1,2", "-direct", "-c", "64", "-per-user", "16", "-turns", "2"}, fast...)...)
+	if len(out) != 3 {
+		t.Fatalf("%d steps, want 3", len(out))
+	}
+	for _, step := range out {
+		want(t, step, "turns", "128", "failed_turns", "0")
+	}
+	want(t, out[2], "shards", "2", "via", "router")
+}
+
 func TestConns(t *testing.T) {
 	for name, extra := range map[string][]string{"shard": nil, "router": {"-router"}} {
 		t.Run(name, func(t *testing.T) {

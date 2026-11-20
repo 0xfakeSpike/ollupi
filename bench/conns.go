@@ -387,20 +387,27 @@ func connsShard(args []string) {
 	answerStats()
 }
 
-type oneShard struct {
+type shardsByUser struct {
 	catalog.Catalog
-	address string
+	addresses []string
 }
 
-func (s oneShard) Locate(context.Context, string) (string, string, error) { return "s", s.address, nil }
+func (s shardsByUser) Locate(_ context.Context, user string) (string, string, error) {
+	n, err := strconv.Atoi(strings.TrimPrefix(user, "user"))
+	if err != nil {
+		return "", "", err
+	}
+	i := n % len(s.addresses)
+	return fmt.Sprintf("s%d", i), s.addresses[i], nil
+}
 
 func connsRouter(args []string) {
 	fs := flag.NewFlagSet("connsrouter", flag.ExitOnError)
 	addr := fs.String("addr", "", "address to listen on")
-	shard := fs.String("shard", "", "the shard's URL")
+	shards := fs.String("shard", "", "the shards' URLs, separated by commas; user N goes to shard N modulo their number")
 	fs.Parse(args)
 	quiet()
-	locator, err := router.NewLocator(benchUser, oneShard{address: *shard})
+	locator, err := router.NewLocator(benchUser, shardsByUser{addresses: strings.Split(*shards, ",")})
 	if err != nil {
 		log.Fatal(err)
 	}
