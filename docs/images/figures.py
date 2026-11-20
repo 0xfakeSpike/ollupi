@@ -1,16 +1,18 @@
 """Ollupi figures: every README image in one visual system.
 
-Each figure is 1600 wide on white. A header carries the emblem (the little wolf by the moon), an eyebrow, a title
-that states the point and a line of context; a footer carries the conditions or the source. The colours are the
-desktop app's stone and moss: moss is Ollupi, rose is the per-agent isolation it replaces, the wolf's tan is tool
-execution, warm grey is neutral; waiting is hatched. Text never takes a series color.
+Each figure is 1600 wide and drawn in the desktop app's dusk theme (packages/ui/src/theme.css, [data-theme='dusk'],
+light): paper with the evening's light seeping in at the corners — lavender, peach, mist blue — and a fine grain. A
+header carries the dusk emblem (the little wolf in the evening sky), an eyebrow, a title that states the point and a
+line of context; a footer carries the conditions or the source. Dusk indigo is Ollupi, sunset is the per-agent
+isolation it replaces or the control that loses, the wolf's coat is tool execution, lavender grey is neutral; waiting is
+hatched. Text never takes a series color.
 
-The emblem in each header is the brand's, read from the desktop app's repository (assets/brand/mark.svg), checked
-out beside this one or wherever OLLUPI_DESKTOP points; the figures written here carry their own copy of it.
+The emblem is the brand's, read from the desktop app's repository (assets/brand/mark-dusk.svg), checked out beside this
+one or wherever OLLUPI_DESKTOP points; the figures written here carry their own copy of it.
 
-Run from anywhere: python3 docs/images/figures.py. The charts' numbers are the bench's output, written in below; the
-burst timeline and the soak are read from bench/results, where the raw output is kept. After a new measurement, update
-both and run this again.
+Run from anywhere: python3 docs/images/figures.py. The charts' numbers are the bench's output (bench/results and
+bench/compare/results), written in below; the soak is read from bench/results/soak.csv. After a new measurement,
+update both and run this again.
 """
 import csv
 import math
@@ -19,23 +21,23 @@ import re
 
 OUT = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(OUT))
-BURST_CSV = f"{ROOT}/bench/results/burst.csv"
 SOAK_CSV = f"{ROOT}/bench/results/soak.csv"
 W, PAD = 1600, 72
 
-INDIGO, INDIGO_2, INDIGO_DEEP = "#2f5d47", "#94b59f", "#22252a"
-TINT, TINT_2, LINE = "#eef3ec", "#dfe9db", "#c3d3bd"
-ROSE, ROSE_TINT, ROSE_LINE = "#f43f5e", "#fff1f2", "#fecdd3"
-PINK = "#c08a55"
-INK2, MUTED, FAINT = "#3d4148", "#5b5f66", "#8e928f"
-GRID, RULE, BASE, PAPER = "#f1f0ec", "#e6e4de", "#cfccc3", "#f8f7f4"
+INDIGO, INDIGO_2, INDIGO_DEEP = "#3d3768", "#a69dd4", "#26222f"
+TINT, TINT_2, LINE = "#efeaf7", "#dcd2ee", "#c9bfe2"
+ROSE, ROSE_TINT, ROSE_LINE = "#e0714a", "#f8e0d6", "#efc0ab"
+PINK = "#d4925a"
+INK2, MUTED, FAINT = "#514b5c", "#696373", "#9a93a6"
+GRID, RULE, BASE, PAPER = "#ece7ee", "#e2dce6", "#cdc6d8", "#f6f2f3"
+SHEET = "#fbf9f6"
 FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
 MONO = "ui-monospace, 'SF Mono', Menlo, monospace"
-ENV = "Apple M1 · 8 cores · 8 GB · one SQLite database · simulated model and tools"
+ENV = "Ollupi v0.18.0 · Apple M1 · 8 cores · 8 GB · one SQLite database · simulated model and tools"
 SOURCE = "github.com/0xfakeSpike/ollupi"
 
 DESKTOP = os.environ.get("OLLUPI_DESKTOP", os.path.join(os.path.dirname(ROOT), "ollupi-desktop"))
-WOLF = re.search(r"<svg[^>]*>(.*)</svg>", open(f"{DESKTOP}/assets/brand/mark.svg").read(), re.S).group(1)
+WOLF = re.search(r"<svg[^>]*>(.*)</svg>", open(f"{DESKTOP}/assets/brand/mark-dusk.svg").read(), re.S).group(1)
 
 
 def esc(s):
@@ -50,6 +52,11 @@ class Figure:
             '<defs>'
             f'<pattern id="hatch" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">'
             f'<rect width="10" height="10" fill="{PAPER}"/><line x1="0" y1="0" x2="0" y2="10" stroke="{BASE}" stroke-width="4"/></pattern>'
+            '<radialGradient id="glow-lavender"><stop offset="0" stop-color="#c4b2ec" stop-opacity=".55"/><stop offset="1" stop-color="#c4b2ec" stop-opacity="0"/></radialGradient>'
+            '<radialGradient id="glow-peach"><stop offset="0" stop-color="#f7cdba" stop-opacity=".6"/><stop offset="1" stop-color="#f7cdba" stop-opacity="0"/></radialGradient>'
+            '<radialGradient id="glow-mist"><stop offset="0" stop-color="#bed0ee" stop-opacity=".5"/><stop offset="1" stop-color="#bed0ee" stop-opacity="0"/></radialGradient>'
+            '<filter id="grain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency=".95" numOctaves="3" stitchTiles="stitch"/>'
+            '<feColorMatrix values="0 0 0 0 .2 0 0 0 0 .16 0 0 0 0 .28 0 0 0 1.1 -.35"/></filter>'
             f'<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse">'
             f'<path d="M0,1 L9,5 L0,9 z" fill="{FAINT}"/></marker>'
             '</defs>',
@@ -70,7 +77,11 @@ class Figure:
             f' .val {{ font-size: 17px; font-weight: 600; }}'
             f' .chip {{ font-size: 15px; font-weight: 600; }}'
             f' .foot {{ font-size: 15px; fill: {FAINT}; }}</style>',
-            f'<rect width="{W}" height="{h}" fill="#ffffff"/>',
+            f'<rect width="{W}" height="{h}" fill="{SHEET}"/>',
+            f'<ellipse cx="0" cy="{h}" rx="{W * 0.55}" ry="{h * 0.7}" fill="url(#glow-lavender)"/>',
+            f'<ellipse cx="{W}" cy="0" rx="{W * 0.5}" ry="{h * 0.6}" fill="url(#glow-peach)"/>',
+            f'<ellipse cx="{W}" cy="{h}" rx="{W * 0.4}" ry="{h * 0.55}" fill="url(#glow-mist)"/>',
+            f'<rect width="{W}" height="{h}" filter="url(#grain)" opacity=".28"/>',
             f'<svg x="{PAD}" y="40" width="68" height="68" viewBox="0 0 100 100">{WOLF}</svg>',
             f'<text class="eyebrow" x="{PAD + 92}" y="62">{esc(eyebrow)}</text>',
             f'<text class="title" x="{PAD + 92}" y="104">{esc(title)}</text>',
@@ -241,68 +252,96 @@ def comparison():
 
 
 def pool():
-    f = Figure(940, "OLLUPI · EXECUTION POOL", "Every turn shares one execution pool",
-                "Waiting turns release their slots, and model concurrency goes only to turns calling the model", "An agent spends most of its time waiting on the model; the pool keeps as many model calls in flight as it can", SOURCE)
-    for i, (h, s) in enumerate([("User messages", "Any session"), ("Subagents", "Plain sessions and turns"), ("Scheduled tasks", "Sends a message when due")]):
-        y = 236 + i * 118
-        f.card(72, y, 228, 90)
-        f.text(96, y + 38, h, "hs")
-        f.text(96, y + 66, s, "s")
-        f.arrow(f"M300,{y + 45} C340,{y + 45} 340,{392} 372,{392}")
-    f.card(376, 212, 300, 380, TINT, LINE, r=18)
-    f.text(400, 252, "Queue", "h")
-    f.text(400, 280, "Runnable turns in the database", "s")
-    for i, t in enumerate(["Session A · turn 3", "Session B · turn 1", "Subagent A-1", "Subagent A-2", "Scheduled · daily digest"]):
-        f.card(400, 300 + i * 54, 252, 42, "#ffffff", LINE, r=10)
-        f.text(418, 327 + i * 54, t, "b")
-    f.text(376, 618, "When slots are full, sessions run", "s")
-    f.text(376, 642, "before subagents; within each kind,", "s")
-    f.text(376, 666, "turns run in ready order", "s")
-    f.arrow("M678,402 H716")
-    f.card(720, 212, 420, 380, "#ffffff", INDIGO, r=18)
-    f.text(744, 252, "Slots", "h")
-    f.text(744, 280, "32 by default; one per turn, released when waiting", "s")
+    f = Figure(980, "OLLUPI · TWO POOLS", "Turns share the session pool, background calls the tool pool",
+               "Each pool has its own scheduler and limits; model calls are limited per connection, apart from both",
+               "A waiting turn holds no slot; a long tool call need not hold one either", SOURCE)
+    # Where turns come from.
+    for i, (h, s) in enumerate([("User messages", "Any session"), ("Subagents", "Plain sessions and turns"),
+                                ("Scheduled jobs", "Sends a message when due")]):
+        y = 212 + i * 100
+        f.card(72, y, 228, 84)
+        f.text(96, y + 36, h, "hs")
+        f.text(96, y + 62, s, "s")
+        f.arrow(f"M300,{y + 42} C338,{y + 42} 338,{360} 372,{360}")
+    # The session pool: queue, slots, and the model calls they make.
+    f.card(376, 200, 280, 320, TINT, LINE, r=18)
+    f.text(400, 240, "Session queue", "h")
+    f.text(400, 266, "Runnable turns in the database", "s")
+    for i, t in enumerate(["Session A · turn 3", "Session B · turn 1", "Subagent A-1", "Scheduled · daily digest"]):
+        f.card(400, 288 + i * 50, 232, 40, "#ffffff", LINE, r=10)
+        f.text(416, 314 + i * 50, t, "b")
+    f.arrow("M658,360 H696")
+    f.card(700, 200, 420, 320, "#ffffff", INDIGO, r=18)
+    f.text(724, 240, "Session pool", "h")
+    f.text(724, 266, "32 slots by default, a cap per user; one per running turn", "s")
     import random
     random.seed(7)
-    states = ["model"] * 13 + ["tool"] * 7 + ["idle"] * 12
+    states = ["model"] * 13 + ["tool"] * 5 + ["idle"] * 14
     random.shuffle(states)
     for i, st in enumerate(states):
         r, c = divmod(i, 8)
-        x, y = 744 + c * 46, 304 + r * 46
+        x, y = 724 + c * 46, 286 + r * 46
         if st == "idle":
             f.add(f'<rect x="{x}" y="{y}" width="38" height="38" rx="8" fill="{PAPER}" stroke="{RULE}" stroke-width="2"/>')
         else:
             f.add(f'<rect x="{x}" y="{y}" width="38" height="38" rx="8" fill="{INDIGO if st == "model" else PINK}"/>')
-    for i, (c, t) in enumerate([(INDIGO, "Model call"), (PINK, "Tool call"), (None, "Idle")]):
-        x = 744 + i * 128
+    for i, (c, t) in enumerate([(INDIGO, "Calling the model"), (PINK, "Short tool call"), (None, "Free")]):
+        x = 724 + i * 150
         if c:
-            f.add(f'<rect x="{x}" y="{514}" width="16" height="16" rx="4" fill="{c}"/>')
+            f.add(f'<rect x="{x}" y="{482}" width="16" height="16" rx="4" fill="{c}"/>')
         else:
-            f.add(f'<rect x="{x}" y="{514}" width="16" height="16" rx="4" fill="{PAPER}" stroke="{RULE}" stroke-width="2"/>')
-        f.text(x + 24, 528, t, "s")
-    f.text(744, 566, "Tool calls hold a slot but no model concurrency", "s")
-    f.arrow("M1142,402 H1180")
-    f.card(1184, 212, 344, 380, "#ffffff", LINE, r=18)
-    f.text(1208, 252, "Model concurrency", "h")
-    f.text(1208, 280, "Per connection, 4 by default", "s")
+            f.add(f'<rect x="{x}" y="{482}" width="16" height="16" rx="4" fill="{PAPER}" stroke="{RULE}" stroke-width="2"/>')
+        f.text(x + 24, 496, t, "s")
+    f.arrow("M1122,360 H1160")
+    f.card(1164, 200, 364, 320, "#ffffff", LINE, r=18)
+    f.text(1188, 240, "Model calls", "h")
+    f.text(1188, 266, "Per provider connection, 4 by default", "s")
     for j, conn in enumerate(["Connection A", "Connection B"]):
-        y = 318 + j * 120
-        f.text(1208, y, conn, "lab")
+        y = 306 + j * 92
+        f.text(1188, y, conn, "lab")
         for k in range(4):
-            f.add(f'<rect x="{1208 + k * 76}" y="{y + 16}" width="66" height="40" rx="8" fill="{INDIGO}"/>')
-    f.text(1208, 566, "When full, calls queue within quota", "s")
-    f.arrow("M930,594 V676")
-    f.text(946, 640, "Needs an approval, an answer or a subagent", "s")
-    f.add(f'<rect x="720" y="680" width="420" height="156" rx="18" fill="url(#hatch)" stroke="{BASE}" stroke-width="2"/>')
-    f.add(f'<rect x="740" y="696" width="380" height="124" rx="12" fill="#ffffff"/>')
-    f.text(762, 732, "Waiting", "h")
-    f.text(762, 760, "Holds no slot, goroutine or model concurrency", "s")
-    for i, t in enumerate(["approval", "answer", "subagent"]):
-        f.add(f'<rect x="{762 + i * 116}" y="778" width="104" height="28" rx="14" fill="{TINT}"/>')
-        f.text(762 + i * 116 + 52, 797, t, "chip", "middle", f"fill:{INDIGO}")
-    f.arrow("M718,758 H652 V596")
-    f.text(636, 700, "Ready again once the answer, approval", "s", "end")
-    f.text(636, 722, "or subagent result arrives", "s", "end")
+            f.add(f'<rect x="{1188 + k * 78}" y="{y + 14}" width="68" height="38" rx="8" fill="{INDIGO}"/>')
+    f.text(1188, 496, "Tool execution takes none of these", "s")
+    # A long call moves to the tool pool; the turn goes on.
+    f.arrow("M780,522 C780,560 560,552 520,586")
+    f.text(796, 556, "Long call, background: true", "s")
+    f.card(376, 590, 280, 270, TINT, LINE, r=18)
+    f.text(400, 630, "Tool queue", "h")
+    f.text(400, 656, "Background calls, oldest first", "s")
+    for i, t in enumerate(["Download · session A", "Build · session C", "claude · subagent A-1"]):
+        f.card(400, 678 + i * 50, 232, 40, "#ffffff", LINE, r=10)
+        f.text(416, 704 + i * 50, t, "b")
+    f.arrow("M658,724 H696")
+    f.card(700, 590, 420, 270, "#ffffff", PINK, r=18)
+    f.text(724, 630, "Tool pool", "h")
+    f.text(724, 656, "32 slots, 4 per user, up to an hour each", "s")
+    tools = ["tool"] * 6 + ["idle"] * 10
+    random.shuffle(tools)
+    for i, st in enumerate(tools):
+        r, c = divmod(i, 8)
+        x, y = 724 + c * 46, 680 + r * 46
+        if st == "idle":
+            f.add(f'<rect x="{x}" y="{y}" width="38" height="38" rx="8" fill="{PAPER}" stroke="{RULE}" stroke-width="2"/>')
+        else:
+            f.add(f'<rect x="{x}" y="{y}" width="38" height="38" rx="8" fill="{PINK}"/>')
+    f.text(724, 806, "The turn has the call's \"started\" and goes on;", "s")
+    f.text(724, 830, "the result comes back as a report", "s")
+    # Waiting holds nothing.
+    f.arrow("M1080,522 C1080,560 1260,550 1300,586")
+    f.text(1318, 548, "Waits on an approval,", "s")
+    f.text(1318, 570, "an answer or a report", "s")
+    f.arrow("M1122,724 H1160")
+    f.add(f'<rect x="1164" y="590" width="364" height="270" rx="18" fill="url(#hatch)" stroke="{BASE}" stroke-width="2"/>')
+    f.add(f'<rect x="1182" y="606" width="328" height="238" rx="12" fill="#ffffff"/>')
+    f.text(1204, 644, "Waiting", "h")
+    f.text(1204, 670, "Holds no slot and no model concurrency", "s")
+    for i, t in enumerate(["approval", "answer", "report"]):
+        f.add(f'<rect x="{1204 + i * 100}" y="690" width="90" height="28" rx="14" fill="{TINT}"/>')
+        f.text(1204 + i * 100 + 45, 709, t, "chip", "middle", f"fill:{INDIGO}")
+    f.text(1204, 756, "A report comes from a subagent", "s")
+    f.text(1204, 780, "or a background call", "s")
+    f.arrow("M1346,846 V888 H340 V430 H372")
+    f.text(860, 880, "Ready again once the approval, answer or report arrives: back to the session queue", "s", "middle")
     f.save("execution-pool.svg")
 
 
@@ -355,97 +394,121 @@ class Plot:
                    f'H{x1 - 5:.1f} Q{x1:.1f},{top:.1f} {x1:.1f},{top + 5:.1f} V{base:.1f} Z" fill="{color}"/>')
 
 
-def size(mb):
-    if mb >= 1024 * 1024:
-        return f"{mb / 1024 / 1024:g} TB"
-    if mb >= 1024:
-        return f"{mb / 1024:g} GB"
-    return f"{mb:g} MB"
-
-
 CHART_H = 1000
+BARS_H = 800
 
 
-def memory():
-    f = Figure(CHART_H, "OLLUPI BENCH · MEMORY", "A parked session lives in the database, not in process memory",
-               "Resident memory (RSS) by session count, log-log. The control is one Ollupi process per session, not counting container overhead",
-               ENV, "go run ./bench parked | steady | isolated")
-    f.kpis([("< 0.3", "KB", "per parked session (measured at 50,000 parked)"),
-            ("≈ 160", "KB", "per active session, including its HTTP connection"),
-            ("20.0", "MB", "control: one process per session")])
-    p = Plot(f, 190, 470, 1250, 360, (100, 100_000), (10, 2 * 1024 * 1024), xlog=True, ylog=True)
-    p.frame("Process memory", "RSS, log scale", [(v, size(v)) for v in (10, 100, 1024, 10 * 1024, 100 * 1024, 1024 * 1024)],
-            [(v, f"{v:,}") for v in (100, 1000, 10_000, 100_000)], "Sessions, log scale")
-    p.line([(100, 2000), (100_000, 2_000_000)], ROSE)
-    p.label(30_000, 600_000, "One process per session", "lab", "end", dx=-14, dy=-14)
-    active = [(512, 132), (1024, 223), (1536, 315), (2048, 407), (3072, 570), (4096, 692)]
-    p.line(active, INDIGO)
-    p.dots(active, INDIGO)
-    p.label(4096, 692, "Ollupi · active sessions", "lab", "start", dx=18, dy=6)
-    waiting = [(1000, 28.4), (10_000, 38.6), (50_000, 36.8)]
-    p.line(waiting, INDIGO_2)
-    p.dots(waiting, INDIGO_2)
-    p.label(50_000, 36.8, "Ollupi · parked sessions", "lab", "end", dy=-20)
-    f.legend(W - PAD, 422, [(INDIGO, "Ollupi · active sessions", False), (INDIGO_2, "Ollupi · parked sessions", False), (ROSE, "One process per session", False)])
-    f.save("bench-memory.svg")
+def hbars(f, x, y, w, title, unit, rows, top):
+    """A small panel of horizontal bars: (name, value, label, color), the longest bar standing for top."""
+    f.text(x, y, title, "hs")
+    f.text(x, y + 28, unit, "tick")
+    bx, bw = x + 230, w - 230 - 130
+    for i, (name, v, label, color) in enumerate(rows):
+        yy = y + 58 + i * 62
+        width = max(bw * v / top, 6)
+        f.text(x, yy + 27, name, "lab")
+        f.block(bx, yy, width, 40, color, r=6)
+        f.text(bx + width + 14, yy + 27, label, "val")
+
+
+COMPARE = {
+    "names": ["Ollupi", "pi (SDK)", "pi-durable", "DeepSeek Harness"],
+    "parked_kb": [14, 90, 64, 147],
+    "memory_2048": [398, 777, 925, 1371],
+    "slower_2048": [76, 28, 58, 330],
+    "burst_done": [3000, 483, 527, 1764],
+    "crash": [("Every turn completes", True), ("Turns in progress stop", False),
+              ("Every turn completes", True), ("980 of 1000 interrupted", False)],
+    "background": [("200 of 200 report back", True), ("No background calls", False),
+                   ("No background calls", False), ("0 of 200 report back", False)],
+}
+
+
+def compare():
+    c = COMPARE
+    f = Figure(1320, "OLLUPI BENCH · COMPARISON", "Same load, four harnesses: what each one costs and what survives",
+               "Same simulated provider and driver, one run each. Memory is phys_footprint of the process that hosts the sessions",
+               "pi-coding-agent 1.5.2 · pi-durable 1.5.2 · DeepSeek Harness 0.2.2-rc.5 · " + ENV, "bench/compare")
+
+    def rows(values, fmt):
+        return [(n, v, fmt(v), INDIGO if i == 0 else BASE) for i, (n, v) in enumerate(zip(c["names"], values))]
+
+    def outcomes(x, y, title, sub, labels):
+        f.text(x, y, title, "hs")
+        f.text(x, y + 28, sub, "tick")
+        for i, (name, (label, kept)) in enumerate(zip(c["names"], labels)):
+            yy = y + 58 + i * 62
+            f.text(x, yy + 27, name, "lab")
+            f.block(x + 230, yy, 460, 40, TINT_2 if kept else GRID, label, INDIGO_DEEP if kept else INK2, r=6)
+
+    hbars(f, PAD, 196, 690, "Memory per parked session", "KB, lower is better", rows(c["parked_kb"], lambda v: f"{v:g}"), max(c["parked_kb"]))
+    hbars(f, 838, 196, 690, "Memory with 2048 sessions running", "MB at peak, lower is better",
+          rows(c["memory_2048"], lambda v: f"{v:,}"), max(c["memory_2048"]))
+    hbars(f, PAD, 540, 690, "Turn time with 2048 sessions running", "p50 over running alone, lower is better",
+          rows(c["slower_2048"], lambda v: f"+{v:g}%"), max(c["slower_2048"]))
+    hbars(f, 838, 540, 690, "3000 turns submitted at once, quota 256", "Turns completed; the rest failed after their retries",
+          rows(c["burst_done"], lambda v: f"{v:,}"), 3000)
+    outcomes(PAD, 884, "After kill -9 mid-run", "Turns in progress, repeated kills", c["crash"])
+    outcomes(838, 884, "Background commands, kill -9 while they run", "Their results, back in the conversation", c["background"])
+    f.save("bench-compare.svg")
 
 
 def capacity():
-    pts = [(512, 17.1, 20.4, 72), (1024, 17.2, 20.5, 147), (1536, 17.3, 20.7, 219), (2048, 17.3, 20.8, 296), (3072, 18.0, 22.5, 416), (4096, 20.9, 26.1, 477)]
-    f = Figure(CHART_H, "OLLUPI BENCH · CAPACITY", "Up to about 3000 active sessions, turns run about as fast as alone",
-               "Closed loop: each session starts a turn as soon as the last ends. A turn is 3 model calls (5 s ± 2 s) and 2 tool calls (1 s), about 17 s alone",
-               ENV, "go run ./bench steady -c 3072")
-    f.kpis([("+6%", "", "increase in turn p50 at 3072 active sessions"), ("477", "calls/s", "model call throughput at 4096 active sessions"), ("11.6", "KB", "disk per turn")])
-    left = Plot(f, 160, 470, 600, 360, (0, 4400), (0, 30))
-    left.frame("Turn duration", "seconds", [(v, f"{v}") for v in (0, 10, 20, 30)], [(v, f"{v:,}") for v in (1024, 2048, 3072, 4096)], "Concurrent active sessions")
-    left.line([(0, 17), (4400, 17)], FAINT, width=2, dashed=True)
-    left.label(4400, 17, "Alone: 17 s", "cap", "end", dy=30)
+    pts = [(512, 17.4, 21.6, 0.23), (1024, 18.4, 24.6, 1.39), (1536, 17.8, 22.4, 0.78), (2048, 21.5, 27.1, 4.21),
+           (3072, 32.0, 43.8, 14.25), (4096, 48.2, 69.8, 29.83)]
+    alone = 17.0
+    f = Figure(CHART_H, "OLLUPI BENCH · CAPACITY", "Up to 1536 sessions a turn runs as fast as alone; past that, it waits for SQLite",
+               "Closed loop: each session starts a turn as soon as the last ends. A turn is 3 model calls (5 s ± 2 s) and 2 tool calls (1 s), 17 s alone",
+               ENV, "go run ./bench steady -c N")
+    f.kpis([("+5%", "", "turn p50 over alone at 1536 sessions"), ("241", "calls/s", "highest model call throughput (3072 sessions)"),
+            ("126 / 44", "", "SQLite reads / writes per turn")])
+    xt = [(v, f"{v:,}") for v in (1024, 2048, 3072, 4096)]
+    left = Plot(f, 160, 470, 600, 360, (0, 4400), (0, 80))
+    left.frame("Turn duration", "seconds", [(v, f"{v}") for v in (0, 20, 40, 60, 80)], xt, "Sessions running at once")
+    left.line([(0, alone), (4400, alone)], FAINT, width=2, dashed=True)
+    left.label(4400, alone, "Alone: 17 s", "cap", "end", dy=30)
     left.line([(x[0], x[2]) for x in pts], INDIGO_2)
     left.dots([(x[0], x[2]) for x in pts], INDIGO_2)
     left.line([(x[0], x[1]) for x in pts], INDIGO)
     left.dots([(x[0], x[1]) for x in pts], INDIGO)
-    left.label(4096, 26.1, "p95", "val", "start", dx=16, dy=6)
-    left.label(4096, 20.9, "p50", "val", "start", dx=16, dy=6)
-    f.legend(760, 422, [(INDIGO, "p50", False), (INDIGO_2, "p95", False)])
-    right = Plot(f, 940, 470, 600, 360, (0, 4400), (0, 500))
-    right.frame("Model call throughput", "calls/s", [(v, f"{v}") for v in (0, 100, 200, 300, 400, 500)], [(v, f"{v:,}") for v in (1024, 2048, 3072, 4096)], "Concurrent active sessions")
-    right.line([(x[0], x[3]) for x in pts], INDIGO)
-    right.dots([(x[0], x[3]) for x in pts], INDIGO)
-    for x in pts:
-        if x[0] in (1024, 2048, 4096):
-            right.label(x[0], x[3], f"{x[3]}", "val", "middle", dy=-20)
+    left.label(4096, 69.8, "p99", "val", "start", dx=16, dy=6)
+    left.label(4096, 48.2, "p50", "val", "start", dx=16, dy=6)
+    right = Plot(f, 940, 470, 600, 360, (0, 4400), (0, 35))
+    right.frame("Where the extra time goes", "seconds per turn", [(v, f"{v}") for v in (0, 10, 20, 30)], xt, "Sessions running at once")
+    right.line([(x[0], x[1] - alone) for x in pts], INDIGO)
+    right.dots([(x[0], x[1] - alone) for x in pts], INDIGO)
+    right.line([(x[0], x[3]) for x in pts], ROSE, dashed=True)
+    right.dots([(x[0], x[3]) for x in pts], ROSE)
+    right.label(4096, 31.2, "31.2 s", "val", "end", dx=-18, dy=-10)
+    f.legend(W - PAD, 372, [(INDIGO, "p50 over alone", False), (ROSE, "Waiting for a SQLite connection", True)])
     f.save("bench-capacity.svg")
 
 
-def burst():
-    rows = [(float(r["seconds"]), int(r["in_flight"]), int(r["turns_ended"])) for r in csv.DictReader(open(BURST_CSV))]
-    end = max(t for t, _, _ in rows)
-    f = Figure(CHART_H, "OLLUPI BENCH · BURST AND QUOTA", "Bursts queue at the quota: in-flight requests stay within it, no 429s",
-               "3000 turns submitted at once; connection and provider both capped at 256 concurrent. A turn is 3 model calls (5 s ± 2 s) and 2 tool calls (1 s)",
-               ENV, "go run ./bench burst -n 3000 -slots 512 -calls 256 -latency 5s")
-    f.kpis([("256", "/ 256", "peak in-flight requests / quota"), ("0", "", "429s from the provider"), ("181.5", "s", "to finish all; theoretical floor 175.8 s")])
-    xt = [(v, f"{v}") for v in range(0, int(end) + 1, 30)]
-    left = Plot(f, 160, 470, 600, 360, (0, end), (0, 300))
-    left.frame("In-flight model requests", "requests", [(v, f"{v}") for v in (0, 100, 200, 300)], xt, "seconds")
-    left.line([(0, 256), (end, 256)], FAINT, width=2, dashed=True)
-    left.label(end, 256, "Quota 256", "cap", "end", dy=-12)
-    left.line([(0, 0)] + [(t, x) for t, x, _ in rows], INDIGO)
-    right = Plot(f, 940, 470, 600, 360, (0, end), (0, 3000))
-    right.frame("Turns completed", "turns", [(v, f"{v:,}") for v in (0, 1000, 2000, 3000)], xt, "seconds")
-    right.line([(0, 0), (175.8, 3000)], FAINT, width=2, dashed=True)
-    right.line([(0, 0)] + [(t, e) for t, _, e in rows], INDIGO)
-    f.legend(W - PAD, 422, [(INDIGO, "Measured", False), (FAINT, "Theoretical floor", True)])
-    f.save("bench-burst.svg")
+def background():
+    f = Figure(BARS_H, "OLLUPI BENCH · BACKGROUND CALLS", "A long command in the background leaves its slot to other turns",
+               "256 turns each run a 30 s command on 32 slots, 32 commands at a time, while a new session sends a 5 s turn every second",
+               ENV, "go run ./bench background -mode background | foreground")
+    f.kpis([("10", "ms", "new session's wait, p50, commands in the background"), ("144", "s", "the same, commands in their turns"),
+            ("243 / 257", "s", "all 256 commands done; 32 at a time allow 240 s")])
+    hbars(f, PAD, 380, 690, "Wait for the first model request", "New sessions, p50, seconds",
+          [("In the background", 0.01, "0.01", INDIGO), ("In the turn", 144.1, "144.1", ROSE)], 144.1)
+    hbars(f, 838, 380, 690, "New session's turn", "p50, seconds; 5.0 s alone",
+          [("In the background", 5.1, "5.1", INDIGO), ("In the turn", 149.0, "149.0", ROSE)], 149.0)
+    f.text(PAD, 600, "In the turn, a command holds its slot for 30 s, so new turns queue behind the long ones.", "b")
+    f.text(PAD, 630, "In the background, the turn launches the command, answers, and gives the slot back until the result arrives.", "b")
+    f.save("bench-background.svg")
 
 
 def recovery():
-    f = Figure(CHART_H, "OLLUPI BENCH · RECOVERY", "Process restarts and session wake-ups take milliseconds",
-               "Wake-up: from messaging a session idle in the database to its model request going out. Crash: 90 random kill -9s under mixed load",
-               ENV, "go run ./bench resume | crash")
-    f.kpis([("0", "/ 960", "turns lost to kill -9"), ("0", "", "tool calls run twice"), ("448", "ms", "restart: 10,000 parked + 500 running turns")])
-    data = [("10 turns", 5.2, 6.6), ("100 turns", 18.8, 22.5), ("1000 turns", 73.2, 150.4)]
-    p = Plot(f, 160, 470, 1368, 360, (0, 3), (0, 160))
-    p.frame("Session wake-up time", "ms", [(v, f"{v}") for v in (0, 40, 80, 120, 160)], [(i + 0.5, d[0]) for i, d in enumerate(data)], "Session history length")
+    f = Figure(CHART_H, "OLLUPI BENCH · RECOVERY", "After kill -9 every turn finishes and no tool call runs twice",
+               "Crash: 500 sessions under mixed load (tool calls, questions, subagents, background calls), killed 30 times. Wake-up: an idle session's next model request",
+               ENV, "go run ./bench crash | crash -lease | resume")
+    f.kpis([("600", "/ 600", "turns completed after 30 kills"), ("0", "", "tool calls run twice"),
+            ("29", "ms", "restart, p50"), ("1.3", "s", "standby takes over, p50 (1.5 s lease)")])
+    data = [("10 turns", 3.7, 4.1), ("100 turns", 8.6, 9.4), ("1000 turns", 88.8, 91.6)]
+    p = Plot(f, 160, 470, 1368, 360, (0, 3), (0, 100))
+    p.frame("Waking an idle session", "ms until its model request goes out", [(v, f"{v}") for v in (0, 25, 50, 75, 100)],
+            [(i + 0.5, d[0]) for i, d in enumerate(data)], "Session history")
     for i, (_, p50, p95) in enumerate(data):
         cx = p.px(i + 0.5)
         p.bar(cx - 52, p50, 92, INDIGO)
@@ -456,108 +519,56 @@ def recovery():
     f.save("bench-recovery.svg")
 
 
-def hbars(f, x, y, w, title, unit, rows, top):
-    """A small panel of horizontal bars: (name, value, label, color), the longest bar standing for top."""
-    f.text(x, y, title, "hs")
-    f.text(x, y + 28, unit, "tick")
-    bx, bw = x + 190, w - 190 - 130
-    for i, (name, v, label, color) in enumerate(rows):
-        yy = y + 58 + i * 62
-        width = max(bw * v / top, 6)
-        f.text(x, yy + 27, name, "lab")
-        f.block(bx, yy, width, 40, color, r=6)
-        f.text(bx + width + 14, yy + 27, label, "val")
-
-
-def compare():
-    f = Figure(CHART_H, "OLLUPI BENCH · COMPARISON", "Lowest parked memory, bursts complete, turns resume after kill -9",
-               "Same simulated provider and load, one run each. Memory: resident memory for Ollupi, phys_footprint for the others",
-               "pi-coding-agent 1.4.0 · pi-durable 1.4.0 (experimental) · DeepSeek Harness 0.2.1-rc.5 · " + ENV, "bench/compare")
-    names = ["Ollupi", "pi (SDK)", "pi-durable", "DeepSeek Harness"]
-
-    def rows(values, labels):
-        return [(n, v, l, INDIGO if i == 0 else BASE) for i, (n, v, l) in enumerate(zip(names, values, labels))]
-
-    hbars(f, PAD, 210, 690, "Memory per parked session", "KB, lower is better", rows([0.3, 91, 23, 181], ["0.3", "91", "23", "181"]), 181)
-    hbars(f, 838, 210, 690, "Increase in turn p50 at 2048 active sessions", "Lower is better", rows([2, 2, 314, 77], ["2%", "2%", "314%", "77%"]), 314)
-    hbars(f, PAD, 570, 690, "Turns completed, 3000 submitted at once with quota 256", "Turns, higher is better",
-          rows([3000, 466, 819, 810], ["3000", "466", "819", "810"]), 3000)
-    f.text(838, 570, "After kill -9 mid-run", "hs")
-    f.text(838, 598, "Mixed load, repeated restarts", "tick")
-    outcomes = [("All resume, no tool runs twice", True), ("In-progress turns lost", False), ("All resume, no tool runs twice", True), ("Turns marked interrupted", False)]
-    for i, (name, (outcome, kept)) in enumerate(zip(names, outcomes)):
-        yy = 628 + i * 62
-        f.text(838, yy + 27, name, "lab")
-        f.block(838 + 190, yy, 500, 40, TINT_2 if kept else GRID, outcome, INDIGO_DEEP if kept else INK2, r=6)
-    f.save("bench-compare.svg")
-
-
-def mix():
-    f = Figure(CHART_H, "OLLUPI BENCH · MIXED LOAD", "Scheduled peaks queue at the model quota; off-peak turns barely wait",
-               "256 sessions send turns (20% to subagents) while 1000 scheduled tasks come due at once; quota 256. Fan-out: 64 turns × 8 subagents, 32 slots",
-               ENV, "go run ./bench mix | fanout")
-    f.kpis([("274", "ms", "off-peak wait p99"), ("59.4", "s", "to drain 1000 scheduled tasks"), ("0.978", "", "Jain fairness index across sessions"), ("1.11", "×", "fan-out time / theoretical floor")])
-    data = [("User turns · off-peak", 7, 274), ("Subagents", 5, 4571), ("User turns · during peak", 44107, 58608), ("Scheduled tasks", 29637, 58276)]
-    p = Plot(f, 160, 470, 1368, 360, (0, 4), (1, 100_000), ylog=True)
-    ticks = [(1, "1 ms"), (10, "10 ms"), (100, "100 ms"), (1000, "1 s"), (10_000, "10 s"), (100_000, "100 s")]
-    p.frame("Wait for the first model request", "Log scale", ticks, [(i + 0.5, d[0]) for i, d in enumerate(data)], "Turn type")
-    for i, (_, p50, p99) in enumerate(data):
-        cx = p.px(i + 0.5)
-        for dx, v, color in ((-52, p50, INDIGO), (52, p99, INDIGO_2)):
-            p.bar(cx + dx, v, 92, color)
-            f.text(cx + dx, p.py(v) - 14, f"{v} ms" if v < 1000 else f"{v / 1000:.1f} s", "val", "middle")
-    f.legend(W - PAD, 422, [(INDIGO, "p50", False), (INDIGO_2, "p99", False)], bars=True)
-    f.save("bench-mix.svg")
-
-
-def faults():
-    f = Figure(CHART_H, "OLLUPI BENCH · FAULTS AND LONG TAIL", "When model requests fail or slow down, turns slow but don't fail",
-               "Faults: 5% of requests return 500, other clients on the account take up to 256 of the quota. Long tail: log-normal model latency, median 5 s, σ = 0.6",
-               ENV, "go run ./bench steady -fail 0.05 -others 256 | -sigma 0.6")
-    f.kpis([("0", "/ 3072", "turns failed under faults"), ("326 → 0", "", "failed turns before and after backoff retries"), ("0", "/ 4608", "turns failed under the long tail")])
-    data = [("No faults · 1024 sessions", 17.2, 20.5, 21.6), ("Faults · 1024 sessions", 17.8, 23.3, 28.5), ("Long tail · 1536 sessions", 19.0, 33.0, 42.4)]
-    p = Plot(f, 160, 470, 1368, 360, (0, 3), (0, 50))
-    p.frame("Turn duration", "seconds", [(v, f"{v}") for v in (0, 10, 20, 30, 40, 50)], [(i + 0.5, d[0]) for i, d in enumerate(data)], "Load")
-    for i, (_, *values) in enumerate(data):
-        cx = p.px(i + 0.5)
-        for dx, v, color in zip((-104, 0, 104), values, (INDIGO, INDIGO_2, LINE)):
-            p.bar(cx + dx, v, 92, color)
-            f.text(cx + dx, p.py(v) - 14, f"{v:.1f}", "val", "middle")
-    f.legend(W - PAD, 422, [(INDIGO, "p50", False), (INDIGO_2, "p95", False), (LINE, "p99", False)], bars=True)
-    f.save("bench-faults.svg")
+def users():
+    f = Figure(BARS_H, "OLLUPI BENCH · USERS", "With a per-user slot limit, one heavy user no longer holds up the rest",
+               "One shard, 512 slots: 32 users keep 8 sessions busy each, beside one user who keeps 1024 busy. Each user has a key of their own",
+               ENV, "go run ./bench users | users -user-slots 64")
+    f.kpis([("8", "ms", "others' wait p50, at most 64 slots per user"), ("17.1", "s", "others' turn p50; 17 s alone"),
+            ("0", "", "429s for others when the heavy user's key runs out")])
+    hbars(f, PAD, 380, 690, "Others' wait for the first model request", "p50, seconds",
+          [("No limit", 205.7, "205.7", ROSE), ("64 slots per user", 0.008, "0.008", INDIGO)], 205.7)
+    hbars(f, 838, 380, 690, "Others' turn", "p50, seconds",
+          [("No limit", 223.7, "223.7", ROSE), ("64 slots per user", 17.1, "17.1", INDIGO)], 223.7)
+    f.text(PAD, 600, "Without a limit, the heavy user's 1024 sessions take every slot and the others queue behind them.", "b")
+    f.text(PAD, 630, "When the heavy user's key is over its provider quota, its 7,389 429s and 148 failed turns stay its own.", "b")
+    f.save("bench-users.svg")
 
 
 def soak():
     rows = list(csv.DictReader(open(SOAK_CSV)))
-    history = [int(r["history_turns"]) for r in rows]
-    f = Figure(CHART_H, "OLLUPI BENCH · LONG RUN", "Goroutines and WAL stay flat; CPU and memory grow with session history",
-               "256 sessions run for 8 minutes, 35,000 turns in all, each lengthening its session's history. Model calls 1 s ± 0.2 s, tool calls 0.2 s",
-               ENV, "go run ./bench soak -c 256 -d 8m -every 30s -latency 1s -jitter 200ms -tool 200ms")
-    f.kpis([("≈ 1000", "", "goroutines, steady throughout"), ("6.1", "MB", "WAL, steady throughout"), ("0.23", "ms", "highest GC pause p99")])
-    xt = [(v, f"{v}") for v in (0, 40, 80, 120)]
-    left = Plot(f, 160, 470, 600, 360, (0, 145), (0, 40))
-    left.frame("CPU per turn", "ms", [(v, f"{v}") for v in (0, 10, 20, 30, 40)], xt, "Session history, turns")
-    cpu = list(zip(history, (float(r["cpu_ms_per_turn"]) for r in rows)))
-    left.line(cpu, INDIGO)
-    left.label(*cpu[0], f"{cpu[0][1]:g}", "val", "start", dy=-16)
-    left.label(*cpu[-1], f"{cpu[-1][1]:g}", "val", "end", dy=-16)
-    right = Plot(f, 940, 470, 600, 360, (0, 145), (0, 400))
-    right.frame("Resident memory", "MB", [(v, f"{v}") for v in (0, 100, 200, 300, 400)], xt, "Session history, turns")
-    rss = list(zip(history, (float(r["rss_mb"]) for r in rows)))
+    turns = sum(int(r["turns_ended"]) for r in rows)
+    minutes = [float(r["minutes"]) for r in rows]
+    alone = 3.4
+    f = Figure(CHART_H, "OLLUPI BENCH · LONG RUN", f"8 minutes, {turns:,} turns: turn time holds, memory stays between 100 and 124 MB",
+               "256 sessions send turns back to back; after 10 turns a session is replaced by a new one, so each turn's work stays the same. Model calls 1 s, tool calls 0.2 s",
+               ENV, "go run ./bench soak -c 256 -d 8m -history 10 -latency 1s -jitter 200ms -tool 200ms")
+    goroutines = [int(r["goroutines"]) for r in rows]
+    f.kpis([(f"{min(goroutines)} – {max(goroutines)}", "", "goroutines"), ("4.1", "MB", "WAL, throughout"),
+            (f"{max(float(r['gc_pause_p99_ms']) for r in rows):.2f}", "ms", "highest GC pause p99")])
+    xt = [(v, f"{v}") for v in (0, 2, 4, 6, 8)]
+    left = Plot(f, 160, 470, 600, 360, (0, 8.5), (0, 8))
+    left.frame("Turn duration", "seconds", [(v, f"{v}") for v in (0, 2, 4, 6, 8)], xt, "Minutes")
+    left.line([(0, alone), (8.5, alone)], FAINT, width=2, dashed=True)
+    left.label(8.5, alone, "Alone: 3.4 s", "cap", "end", dy=30)
+    left.line(list(zip(minutes, (float(r["p99_s"]) for r in rows))), INDIGO_2)
+    left.line(list(zip(minutes, (float(r["p50_s"]) for r in rows))), INDIGO)
+    left.label(minutes[-1], float(rows[-1]["p99_s"]), "p99", "val", "start", dx=12, dy=6)
+    left.label(minutes[-1], float(rows[-1]["p50_s"]), "p50", "val", "start", dx=12, dy=-6)
+    right = Plot(f, 940, 470, 600, 360, (0, 8.5), (0, 200))
+    right.frame("Resident memory", "MB", [(v, f"{v}") for v in (0, 50, 100, 150, 200)], xt, "Minutes")
+    rss = list(zip(minutes, (float(r["rss_mb"]) for r in rows)))
     right.line(rss, INDIGO)
-    right.label(*rss[0], f"{rss[0][1]:g}", "val", "start", dy=-16)
-    right.label(*rss[-1], f"{rss[-1][1]:g}", "val", "end", dx=-14, dy=6)
+    right.label(*rss[0], f"{rss[0][1]:g} MB", "val", "start", dy=-16)
+    right.label(*rss[-1], f"{rss[-1][1]:g} MB", "val", "end", dy=-16)
     f.save("bench-soak.svg")
 
 
 architecture()
 comparison()
 pool()
-memory()
 capacity()
-burst()
+background()
 recovery()
-compare()
-mix()
-faults()
+users()
 soak()
+compare()
