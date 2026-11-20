@@ -18,6 +18,8 @@ import (
 )
 
 var (
+	ErrNoHub            = errors.New("this deployment offers no hub")
+	ErrSecondHub        = errors.New("the user has a hub workspace already; make it a project workspace first")
 	ErrWorkspaceBusy    = errors.New("a conversation in the workspace has a turn in progress or queued; interrupt it first")
 	ErrThreadBusy       = errors.New("the conversation has a turn in progress or queued; interrupt it first")
 	ErrHasDelegates     = errors.New("the conversation handed work to delegates; delete their conversations first")

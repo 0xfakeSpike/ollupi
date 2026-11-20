@@ -35,10 +35,20 @@ func (s Settings) Layer() policy.Layer {
 	return l
 }
 
+type WorkspaceKind string
+
+const (
+	ProjectWorkspace WorkspaceKind = "project"
+	HubWorkspace     WorkspaceKind = "hub"
+)
+
+var WorkspaceKinds = []WorkspaceKind{ProjectWorkspace, HubWorkspace}
+
 type Workspace struct {
 	ID           string
 	Name         string
 	Root         string
+	Kind         WorkspaceKind
 	Instructions string
 	Providers    Providers
 	Settings     policy.Settings
@@ -71,6 +81,30 @@ func (w Workspace) Usable() error {
 		return fmt.Errorf("workspace %s: %w", w.Name, ErrWorkspaceArchived)
 	}
 	return nil
+}
+
+type TodoStatus string
+
+const (
+	TodoOpen    TodoStatus = "open"
+	TodoHanded  TodoStatus = "handed"
+	TodoDone    TodoStatus = "done"
+	TodoDropped TodoStatus = "dropped"
+)
+
+var TodoStatuses = []TodoStatus{TodoOpen, TodoHanded, TodoDone, TodoDropped}
+
+type Todo struct {
+	ID        int64
+	Title     string
+	Workspace string
+	Thread    string
+	Status    TodoStatus
+	Notes     string
+	Result    string
+	Created   time.Time
+	Updated   time.Time
+	Done      *time.Time
 }
 
 type EnvironmentKind string

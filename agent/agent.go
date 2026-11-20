@@ -16,24 +16,34 @@ const (
 	GeneralSub  Name = "general-sub-agent"
 	BrowserSub  Name = "browser-sub-agent"
 	DelegateSub Name = "delegate-sub-agent"
+	HubMain     Name = "hub-main-agent"
 )
 
-var Names = []Name{FullMain, CompactMain, GeneralSub, BrowserSub, DelegateSub}
+var Names = []Name{FullMain, CompactMain, GeneralSub, BrowserSub, DelegateSub, HubMain}
 
 const (
-	ReadFileTool       = "read_file"
-	RunCommandTool     = "run_command"
-	PlanTool           = "update_plan"
-	ReadOutputTool     = "read_tool_output"
-	LoadToolsTool      = "load_tools"
-	BrowserProvider    = "browser"
-	OutputsProvider    = "context"
-	SkillsProvider     = "skills"
-	PlanProvider       = "plan"
-	SubagentsProvider  = "subagents"
-	CronProvider       = "cron"
-	WorkspaceProvider  = "workspace"
-	compactBelowTokens = 16_384
+	ReadFileTool          = "read_file"
+	RunCommandTool        = "run_command"
+	PlanTool              = "update_plan"
+	ReadOutputTool        = "read_tool_output"
+	LoadToolsTool         = "load_tools"
+	ListWorkspacesTool    = "list_workspaces"
+	StartConversationTool = "start_conversation"
+	SendMessageTool       = "send_message"
+	ListConversationsTool = "list_conversations"
+	ReadConversationTool  = "read_conversation"
+	AddTodoTool           = "add_todo"
+	UpdateTodoTool        = "update_todo"
+	ListTodosTool         = "list_todos"
+	BrowserProvider       = "browser"
+	OutputsProvider       = "context"
+	SkillsProvider        = "skills"
+	PlanProvider          = "plan"
+	SubagentsProvider     = "subagents"
+	CronProvider          = "cron"
+	WorkspaceProvider     = "workspace"
+	HubProvider           = "hub"
+	compactBelowTokens    = 16_384
 )
 
 type Role struct {
@@ -55,14 +65,19 @@ type Limits struct {
 var standard = Limits{MaxModelCalls: 200, MaxToolCalls: 400, MaxConsecutiveFailures: 10}
 
 var roles = map[Name]Role{
-	FullMain:    {Name: FullMain, Rules: fullMainRules, AnswersUser: true, Recalls: true, Limits: standard},
-	CompactMain: {Name: CompactMain, Rules: compactMainRules, AnswersUser: true, Recalls: true, Core: []string{ReadFileTool, RunCommandTool}, Limits: standard},
+	FullMain: {Name: FullMain, Rules: fullMainRules, AnswersUser: true, Recalls: true,
+		Own: []policy.Layer{{Of: "the main agent's role", Without: []string{HubProvider}}}, Limits: standard},
+	CompactMain: {Name: CompactMain, Rules: compactMainRules, AnswersUser: true, Recalls: true, Core: []string{ReadFileTool, RunCommandTool},
+		Own: []policy.Layer{{Of: "the main agent's role", Without: []string{HubProvider}}}, Limits: standard},
+	HubMain: {Name: HubMain, Rules: hubMainRules, AnswersUser: true, Recalls: true,
+		Own: []policy.Layer{{Of: "the hub's role", Without: []string{SubagentsProvider, BrowserProvider},
+			Settings: policy.Settings{Rules: policy.Rules{Allow: []string{StartConversationTool, SendMessageTool, AddTodoTool, UpdateTodoTool}}}}}, Limits: standard},
 	GeneralSub: {Name: GeneralSub, Rules: generalSubRules, Recalls: true,
-		Own: []policy.Layer{{Of: "the general subagent's role", Without: []string{SubagentsProvider, CronProvider}}}, Limits: standard},
+		Own: []policy.Layer{{Of: "the general subagent's role", Without: []string{SubagentsProvider, CronProvider, HubProvider}}}, Limits: standard},
 	BrowserSub: {Name: BrowserSub, Rules: browserSubRules,
 		Own: []policy.Layer{{Of: "the browser subagent's role", Providers: []string{BrowserProvider, OutputsProvider, SkillsProvider, PlanProvider}}}, Limits: standard},
 	DelegateSub: {Name: DelegateSub, Rules: delegateSubRules, AnswersUser: true, Recalls: true,
-		Own: []policy.Layer{{Of: "the delegate subagent's role", Without: []string{SubagentsProvider, CronProvider}}}, Limits: standard},
+		Own: []policy.Layer{{Of: "the delegate subagent's role", Without: []string{SubagentsProvider, CronProvider, HubProvider}}}, Limits: standard},
 }
 
 func RoleOf(name Name) (Role, bool) {

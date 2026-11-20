@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/account"
+	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/policy"
 	"github.com/0xfakeSpike/ollupi/store"
@@ -46,7 +47,7 @@ func (a *App) AddWorkspace(ctx context.Context, user, path, name string) (accoun
 	}
 	i := slices.IndexFunc(existing, func(w account.Workspace) bool { return box.Same(ctx, w.Root, root) })
 	now := time.Now().UTC()
-	w := account.Workspace{ID: uuid.NewString(), Name: name, Root: root, Created: now, Updated: now}
+	w := account.Workspace{ID: uuid.NewString(), Name: name, Root: root, Kind: account.ProjectWorkspace, Created: now, Updated: now}
 	if i >= 0 {
 		if w = existing[i]; w.Archived == nil {
 			return w, nil
@@ -92,6 +93,34 @@ func (a *App) UpdateWorkspaceProviders(ctx context.Context, user, id string, p a
 	}
 	return a.changeWorkspace(ctx, user, id, func(_ store.Tx, w *account.Workspace) error {
 		w.Providers = p
+		return nil
+	})
+}
+
+func (a *App) SetWorkspaceKind(ctx context.Context, user, id string, kind account.WorkspaceKind) (account.Workspace, error) {
+	if !slices.Contains(account.WorkspaceKinds, kind) {
+		return account.Workspace{}, fmt.Errorf("%w: a workspace is one of %q, not %q", account.ErrInvalidName, account.WorkspaceKinds, kind)
+	}
+	if kind == account.HubWorkspace {
+		box, err := a.toolbox(ctx, user)
+		if err != nil {
+			return account.Workspace{}, err
+		}
+		offered := slices.ContainsFunc(box.Tools, func(t policy.Tool) bool { return t.Provider == agent.HubProvider })
+		if !offered {
+			return account.Workspace{}, ErrNoHub
+		}
+	}
+	return a.changeWorkspace(ctx, user, id, func(tx store.Tx, w *account.Workspace) error {
+		all, err := tx.Workspaces(user)
+		if err != nil {
+			return err
+		}
+		otherHub := slices.ContainsFunc(all, func(o account.Workspace) bool { return o.ID != w.ID && o.Kind == account.HubWorkspace })
+		if kind == account.HubWorkspace && otherHub {
+			return ErrSecondHub
+		}
+		w.Kind = kind
 		return nil
 	})
 }

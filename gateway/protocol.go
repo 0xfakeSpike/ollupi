@@ -41,6 +41,8 @@ const (
 	errSearchTimedOut    = -32017
 	errRefused           = -32018
 	errHasDelegates      = -32019
+	errSecondHub         = -32020
+	errNoHub             = -32021
 )
 
 const (
@@ -117,6 +119,7 @@ var protocol = struct {
 		"workspace/rename":             handle((*conn).workspaceRename),
 		"workspace/move":               handle((*conn).workspaceMove),
 		"workspace/archive":            handle((*conn).workspaceArchive),
+		"workspace/setKind":            handle((*conn).workspaceSetKind),
 		"workspace/updatePermissions":  handle((*conn).workspacePermissions),
 		"workspace/updateInstructions": handle((*conn).workspaceInstructions),
 		"workspace/updateProviders":    handle((*conn).workspaceProviders),
@@ -177,6 +180,8 @@ var protocol = struct {
 		errSearchTimedOut:          "searchTimedOut",
 		errRefused:                 "refused",
 		errHasDelegates:            "hasDelegates",
+		errSecondHub:               "secondHub",
+		errNoHub:                   "noHub",
 	},
 	closes: map[int]Ending{
 		int(websocket.StatusGoingAway):       {"goingAway", ReconnectSoon},
@@ -477,6 +482,11 @@ type WorkspaceProvidersParams struct {
 	account.Providers
 }
 
+type WorkspaceSetKindParams struct {
+	WorkspaceID string                `json:"workspaceId"`
+	Kind        account.WorkspaceKind `json:"kind"`
+}
+
 type WorkspacePermissionsParams struct {
 	WorkspaceID string `json:"workspaceId"`
 	policy.Settings
@@ -639,6 +649,8 @@ var errorCodes = []struct {
 	{account.ErrWorkspaceArchived, errWorkspaceArchived},
 	{app.ErrThreadBusy, errThreadBusy},
 	{app.ErrHasDelegates, errHasDelegates},
+	{app.ErrSecondHub, errSecondHub},
+	{app.ErrNoHub, errNoHub},
 	{app.ErrThreadArchived, errThreadArchived},
 	{app.ErrWorkspaceBusy, errThreadBusy},
 	{app.ErrQueueFull, errThreadBusy},

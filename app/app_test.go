@@ -39,14 +39,22 @@ func (models) Limits(m llm.Model) (llm.Limits, error) {
 type set struct{}
 
 func (set) Specs() []tool.Spec {
-	return []tool.Spec{{Name: agent.RunCommandTool, Provider: agent.WorkspaceProvider, Content: true}}
+	return []tool.Spec{{Name: agent.RunCommandTool, Provider: agent.WorkspaceProvider, Content: true},
+		{Name: agent.StartConversationTool, Provider: agent.HubProvider}}
 }
 func (set) Unavailable() []string                                      { return nil }
 func (set) Content(context.Context, tool.Call) (policy.Content, error) { return policy.Content{}, nil }
 func (set) Prepare(context.Context, tool.Call) (tool.Plan, error)      { return tool.Plan{}, nil }
 func (set) Invoke(context.Context, tool.Call) tool.Result              { return tool.Result{} }
-func tools(context.Context, string) (tool.Set, error)                  { return set{}, nil }
-func here(string) (sandbox.Box, error)                                 { return sandbox.Here() }
+
+type plainSet struct{ set }
+
+func (plainSet) Specs() []tool.Spec {
+	return []tool.Spec{{Name: agent.RunCommandTool, Provider: agent.WorkspaceProvider, Content: true}}
+}
+
+func tools(context.Context, string) (tool.Set, error) { return set{}, nil }
+func here(string) (sandbox.Box, error)                { return sandbox.Here() }
 
 type blobs struct {
 	mu    sync.Mutex
@@ -418,6 +426,46 @@ func TestAWorkspaceKeepsItsInstructionsAndProviders(t *testing.T) {
 	stored := must[[]account.Workspace](t)(f.a.Workspaces(f.ctx, "u"))
 	if stored[0].Instructions != "Plan, do not build." || len(stored[0].Providers.Disabled) != 1 {
 		t.Errorf("stored %+v", stored[0])
+	}
+}
+
+func TestAUserHasOneHubWhoseConversationsRunAsTheHub(t *testing.T) {
+	f := setup(t)
+	dir := t.TempDir()
+	for _, name := range []string{"home", "work", "docs"} {
+		os.Mkdir(filepath.Join(dir, name), 0o755)
+	}
+	home := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", filepath.Join(dir, "home"), ""))
+	work := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", filepath.Join(dir, "work"), ""))
+	docs := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", filepath.Join(dir, "docs"), ""))
+	if home.Kind != account.ProjectWorkspace {
+		t.Errorf("a new workspace is %q", home.Kind)
+	}
+	noHub := New(f.st, models{}, func(context.Context, string) (tool.Set, error) { return plainSet{}, nil }, noStatuses, here, f.blobs,
+		cron.NewCalendar(time.UTC), policy.Settings{})
+	if _, err := noHub.SetWorkspaceKind(f.ctx, "u", home.ID, account.HubWorkspace); !errors.Is(err, ErrNoHub) {
+		t.Errorf("a hub where the deployment offers none: %v", err)
+	}
+	if _, err := f.a.SetWorkspaceKind(f.ctx, "u", home.ID, "inbox"); !errors.Is(err, account.ErrInvalidName) {
+		t.Errorf("an unknown kind: %v", err)
+	}
+	must[account.Workspace](t)(f.a.SetWorkspaceKind(f.ctx, "u", home.ID, account.HubWorkspace))
+	if _, err := f.a.SetWorkspaceKind(f.ctx, "u", work.ID, account.HubWorkspace); !errors.Is(err, ErrSecondHub) {
+		t.Errorf("a second hub: %v", err)
+	}
+	must[account.Workspace](t)(f.a.SetWorkspaceKind(f.ctx, "u", home.ID, account.HubWorkspace))
+	plan := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", home.ID, "", ""))
+	notes := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", docs.ID, "", ""))
+	if turn := sent(t)(f.a.Send(f.ctx, "u", plan.ID, Input{Text: "plan the week"})); turn.Role != string(agent.HubMain) {
+		t.Errorf("a turn in the hub runs as %s", turn.Role)
+	}
+	if turn := sent(t)(f.a.Send(f.ctx, "u", notes.ID, Input{Text: "write notes"})); turn.Role != string(agent.FullMain) {
+		t.Errorf("a turn in a project runs as %s", turn.Role)
+	}
+	must[account.Workspace](t)(f.a.SetWorkspaceKind(f.ctx, "u", home.ID, account.ProjectWorkspace))
+	must[account.Workspace](t)(f.a.SetWorkspaceKind(f.ctx, "u", work.ID, account.HubWorkspace))
+	if turn := sent(t)(f.a.Send(f.ctx, "u", plan.ID, Input{Text: "and next week"})); turn.Role != string(agent.FullMain) {
+		t.Errorf("after the hub moved, a turn in the old one runs as %s", turn.Role)
 	}
 }
 

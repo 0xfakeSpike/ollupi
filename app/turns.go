@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/ask"
 	"github.com/0xfakeSpike/ollupi/conversation"
@@ -66,7 +67,8 @@ func (a *App) queue(tx store.Tx, th store.Thread, text string, atts []conversati
 	if th.Archived != nil {
 		return conversation.Turn{}, false, ErrThreadArchived
 	}
-	if err := a.usableWorkspace(tx, th); err != nil {
+	w, err := a.usableWorkspace(tx, th)
+	if err != nil {
 		return conversation.Turn{}, false, err
 	}
 	v, err := tx.View(th.ID)
@@ -89,8 +91,12 @@ func (a *App) queue(tx store.Tx, th store.Thread, text string, atts []conversati
 		return conversation.Turn{}, false, err
 	}
 	role := string(agent.MainRole(limits.Input()))
-	if th.Role != "" {
+	inHub := w.Kind == account.HubWorkspace
+	switch {
+	case th.Role != "":
 		role = th.Role
+	case inHub:
+		role = string(agent.HubMain)
 	}
 	id := uuid.NewString()
 	v, err = tx.Append(th.ID,
@@ -204,23 +210,23 @@ func (a *App) fits(model llm.Model, v conversation.View, text string, atts []con
 
 func isImage(att conversation.Attachment) bool { return att.Kind == imageKind }
 
-func (a *App) usableWorkspace(tx store.Tx, th store.Thread) error {
+func (a *App) usableWorkspace(tx store.Tx, th store.Thread) (account.Workspace, error) {
 	if th.Workspace == "" {
-		return nil
+		return account.Workspace{}, nil
 	}
 	w, err := tx.Workspace(th.User, th.Workspace)
 	if err != nil {
-		return err
+		return account.Workspace{}, err
 	}
 	if err := w.Usable(); err != nil {
-		return err
+		return account.Workspace{}, err
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.moving[w.ID] {
-		return fmt.Errorf("workspace %s is moving: %w", w.Name, ErrWorkspaceBusy)
+		return account.Workspace{}, fmt.Errorf("workspace %s is moving: %w", w.Name, ErrWorkspaceBusy)
 	}
-	return nil
+	return w, nil
 }
 
 type Request struct {
