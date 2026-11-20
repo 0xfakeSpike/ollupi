@@ -1,63 +1,144 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" width="1600" height="1000">
-<defs><pattern id="hatch" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="10" height="10" fill="#f8f7f4"/><line x1="0" y1="0" x2="0" y2="10" stroke="#cfccc3" stroke-width="4"/></pattern><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="#8e928f"/></marker></defs>
-<style>text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; fill: #22252a; } .eyebrow { font-size: 16px; font-weight: 600; letter-spacing: 3px; fill: #2f5d47; } .title { font-size: 36px; font-weight: 700; } .sub { font-size: 19px; fill: #5b5f66; } .kpi { font-size: 44px; font-weight: 700; letter-spacing: -0.5px; } .unit { font-size: 21px; font-weight: 600; fill: #3d4148; } .cap { font-size: 17px; fill: #5b5f66; } .h { font-size: 22px; font-weight: 700; } .hs { font-size: 19px; font-weight: 600; } .b { font-size: 17px; fill: #3d4148; } .s { font-size: 15px; fill: #5b5f66; } .code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-weight: 700; fill: #2f5d47; } .tick { font-size: 16px; fill: #5b5f66; } .lab { font-size: 17px; fill: #3d4148; } .val { font-size: 17px; font-weight: 600; } .chip { font-size: 15px; font-weight: 600; } .foot { font-size: 15px; fill: #8e928f; }</style>
-<rect width="1600" height="1000" fill="#ffffff"/>
-<svg x="72" y="40" width="68" height="68" viewBox="0 0 100 100"><defs><linearGradient id="ollupi-ground" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f4ecda"/><stop offset="1" stop-color="#e3d5b6"/></linearGradient></defs><circle cx="50" cy="50" r="50" fill="url(#ollupi-ground)"/><circle cx="54" cy="44" r="31" fill="#fffaf0" stroke="#e6d8bb" stroke-width="1"/><g transform="translate(14 12) scale(.8)"><clipPath id="ollupi-body"><path d="M30 95 C18 95 13 83 19 73 C23 65 31 59 39 55 C43 47 45 39 46 31 L44.5 7 C44.5 4.5 47.5 4 48.5 6.5 L54.5 19.5 L58 5.5 C58.5 3 61.5 3 62 5.5 L63.5 22 C68 23.5 71.5 26 74 29 L86 34.5 C89 35.8 88.6 40 85.5 40.2 L74 41.5 C70.5 44 68.5 48 67.5 54 C66.5 62 68 72 69 82 L70 92 C70.2 94 69 95.3 67 95.3 L63.5 95.3 C61.5 95.3 61 93.8 61 92.5 L60 82 L58.5 92.5 C58.3 94.3 57 95.3 55 95.3 L50 95.3 Z"/></clipPath><path d="M30 95 C18 95 13 83 19 73 C23 65 31 59 39 55 C43 47 45 39 46 31 L44.5 7 C44.5 4.5 47.5 4 48.5 6.5 L54.5 19.5 L58 5.5 C58.5 3 61.5 3 62 5.5 L63.5 22 C68 23.5 71.5 26 74 29 L86 34.5 C89 35.8 88.6 40 85.5 40.2 L74 41.5 C70.5 44 68.5 48 67.5 54 C66.5 62 68 72 69 82 L70 92 C70.2 94 69 95.3 67 95.3 L63.5 95.3 C61.5 95.3 61 93.8 61 92.5 L60 82 L58.5 92.5 C58.3 94.3 57 95.3 55 95.3 L50 95.3 Z" fill="#c08a55"/><g clip-path="url(#ollupi-body)"><path d="M92 44 L72.5 44.5 C69.2 47.5 66.8 51.5 65.7 56.5 C64.8 61.5 65.6 68 69.2 76 L92 76 Z" fill="#ead2ab"/><path d="M8 92 L8 40 L30 40 L46.8 33 C48.4 44 44.5 52.5 37 59.5 C30 65.5 24.5 72 21.8 82 Z" fill="#3b3350"/></g><path d="M47.4 11.5 L51.4 19.8 L48.6 20.4 Z M59.9 10.2 L61 20.4 L58.6 19.4 Z" fill="#ead2ab"/><path d="M21 80 C8 84 8 99 24 99.5 C36 100 46 99 54 96.8 C57 96 57 92.5 54 92.5 C44 94 34 94 27 90 C23.5 88 22 84.5 21 80 Z" fill="#c08a55" stroke="#e3d5b6" stroke-width="1.6" paint-order="stroke"/><path d="M45 94.6 C49 94.4 51.5 93.8 54 92.5 C57 92.5 57 96 54 96.8 C51 97.6 48 98.2 45 98.5 C43.5 97 43.5 95.6 45 94.6 Z" fill="#3b3350"/><circle cx="70.5" cy="31" r="2.3" fill="#2b2541"/></g></svg>
+<defs><pattern id="hatch" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="10" height="10" fill="#f6f2f3"/><line x1="0" y1="0" x2="0" y2="10" stroke="#cdc6d8" stroke-width="4"/></pattern><radialGradient id="glow-lavender"><stop offset="0" stop-color="#c4b2ec" stop-opacity=".55"/><stop offset="1" stop-color="#c4b2ec" stop-opacity="0"/></radialGradient><radialGradient id="glow-peach"><stop offset="0" stop-color="#f7cdba" stop-opacity=".6"/><stop offset="1" stop-color="#f7cdba" stop-opacity="0"/></radialGradient><radialGradient id="glow-mist"><stop offset="0" stop-color="#bed0ee" stop-opacity=".5"/><stop offset="1" stop-color="#bed0ee" stop-opacity="0"/></radialGradient><filter id="grain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency=".95" numOctaves="3" stitchTiles="stitch"/><feColorMatrix values="0 0 0 0 .2 0 0 0 0 .16 0 0 0 0 .28 0 0 0 1.1 -.35"/></filter><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="#9a93a6"/></marker></defs>
+<style>text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; fill: #26222f; } .eyebrow { font-size: 16px; font-weight: 600; letter-spacing: 3px; fill: #3d3768; } .title { font-size: 36px; font-weight: 700; } .sub { font-size: 19px; fill: #696373; } .kpi { font-size: 44px; font-weight: 700; letter-spacing: -0.5px; } .unit { font-size: 21px; font-weight: 600; fill: #514b5c; } .cap { font-size: 17px; fill: #696373; } .h { font-size: 22px; font-weight: 700; } .hs { font-size: 19px; font-weight: 600; } .b { font-size: 17px; fill: #514b5c; } .s { font-size: 15px; fill: #696373; } .code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-weight: 700; fill: #3d3768; } .tick { font-size: 16px; fill: #696373; } .lab { font-size: 17px; fill: #514b5c; } .val { font-size: 17px; font-weight: 600; } .chip { font-size: 15px; font-weight: 600; } .foot { font-size: 15px; fill: #9a93a6; }</style>
+<rect width="1600" height="1000" fill="#fbf9f6"/>
+<ellipse cx="0" cy="1000" rx="880.0000000000001" ry="700.0" fill="url(#glow-lavender)"/>
+<ellipse cx="1600" cy="0" rx="800.0" ry="600.0" fill="url(#glow-peach)"/>
+<ellipse cx="1600" cy="1000" rx="640.0" ry="550.0" fill="url(#glow-mist)"/>
+<rect width="1600" height="1000" filter="url(#grain)" opacity=".28"/>
+<svg x="72" y="40" width="68" height="68" viewBox="0 0 100 100"><defs><linearGradient id="oed-coat" x1=".85" y1=".1" x2=".15" y2=".95"><stop offset="0" stop-color="#f8c994"/><stop offset=".45" stop-color="#df9c5f"/><stop offset=".78" stop-color="#bf7458"/><stop offset="1" stop-color="#9b5b74"/></linearGradient><radialGradient id="oed-moon" cx=".45" cy=".4" r=".7"><stop offset="0" stop-color="#ffffff"/><stop offset=".65" stop-color="#fff7ec"/><stop offset="1" stop-color="#fbe1d6"/></radialGradient><linearGradient id="oed-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2f3f7a"/><stop offset=".42" stop-color="#7b6fb8"/><stop offset=".72" stop-color="#d996b4"/><stop offset="1" stop-color="#f4bb98"/></linearGradient><filter id="oed-bloom" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="70"/></filter><filter id="oed-halo" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="38"/></filter><filter id="oed-grain" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB"><feTurbulence type="fractalNoise" baseFrequency="1.05" numOctaves="3" seed="11" result="n"/><feColorMatrix in="n" type="saturate" values="0" result="g"/><feComponentTransfer in="g" result="gc"><feFuncR type="linear" slope="1.4" intercept="-.2"/><feFuncG type="linear" slope="1.4" intercept="-.2"/><feFuncB type="linear" slope="1.4" intercept="-.2"/><feFuncA type="linear" slope="0" intercept="1"/></feComponentTransfer><feBlend in="SourceGraphic" in2="gc" mode="soft-light" result="b"/><feComposite in="b" in2="SourceGraphic" operator="arithmetic" k2=".38" k3=".62" result="m"/><feComposite in="m" in2="SourceAlpha" operator="in"/></filter><filter id="oed-wolf" x="-15%" y="-15%" width="130%" height="130%" color-interpolation-filters="sRGB">
+<feGaussianBlur in="SourceGraphic" stdDeviation="1.2" result="air"/>
+<feGaussianBlur in="SourceAlpha" stdDeviation="5" result="soft"/>
+<feTurbulence type="fractalNoise" baseFrequency="1.9" numOctaves="2" seed="4" result="noise"/>
+<feColorMatrix in="noise" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  1 0 0 0 0" result="na"/>
+<feComposite in="soft" in2="na" operator="arithmetic" k2="1" k3="2.1" k4="-1.05" result="mix"/>
+<feComponentTransfer in="mix" result="edge"><feFuncA type="discrete" tableValues="0 1"/></feComponentTransfer>
+<feTurbulence type="fractalNoise" baseFrequency="1.6" numOctaves="2" seed="9" result="g"/>
+<feColorMatrix in="g" type="saturate" values="0" result="gg"/>
+<feBlend in="air" in2="gg" mode="soft-light" result="tex0"/>
+<feComposite in="tex0" in2="air" operator="arithmetic" k2="0.3" k3="0.7" result="tex"/>
+<feComposite in="tex" in2="edge" operator="in"/>
+</filter><filter id="oed-moonedge" x="-15%" y="-15%" width="130%" height="130%" color-interpolation-filters="sRGB">
+<feGaussianBlur in="SourceGraphic" stdDeviation="2" result="air"/>
+<feGaussianBlur in="SourceAlpha" stdDeviation="10" result="soft"/>
+<feTurbulence type="fractalNoise" baseFrequency="1.4" numOctaves="2" seed="9" result="noise"/>
+<feColorMatrix in="noise" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  1 0 0 0 0" result="na"/>
+<feComposite in="soft" in2="na" operator="arithmetic" k2="1" k3="1.7" k4="-0.85" result="mix"/>
+<feComponentTransfer in="mix" result="edge"><feFuncA type="discrete" tableValues="0 1"/></feComponentTransfer>
+<feTurbulence type="fractalNoise" baseFrequency="1.6" numOctaves="2" seed="14" result="g"/>
+<feColorMatrix in="g" type="saturate" values="0" result="gg"/>
+<feBlend in="air" in2="gg" mode="soft-light" result="tex0"/>
+<feComposite in="tex0" in2="air" operator="arithmetic" k2="0.15" k3="0.85" result="tex"/>
+<feComposite in="tex" in2="edge" operator="in"/>
+</filter><filter id="oed-tuft1" x="-15%" y="-15%" width="130%" height="130%" color-interpolation-filters="sRGB">
+<feGaussianBlur in="SourceGraphic" stdDeviation="1.2" result="air"/>
+<feGaussianBlur in="SourceAlpha" stdDeviation="3.0" result="soft"/>
+<feTurbulence type="fractalNoise" baseFrequency="1.7" numOctaves="2" seed="21" result="noise"/>
+<feColorMatrix in="noise" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  1 0 0 0 0" result="na"/>
+<feComposite in="soft" in2="na" operator="arithmetic" k2="1" k3="2.0" k4="-1.0" result="mix"/>
+<feComponentTransfer in="mix" result="edge"><feFuncA type="discrete" tableValues="0 1"/></feComponentTransfer>
+<feTurbulence type="fractalNoise" baseFrequency="1.6" numOctaves="2" seed="26" result="g"/>
+<feColorMatrix in="g" type="saturate" values="0" result="gg"/>
+<feBlend in="air" in2="gg" mode="soft-light" result="tex0"/>
+<feComposite in="tex0" in2="air" operator="arithmetic" k2="0.3" k3="0.7" result="tex"/>
+<feComposite in="tex" in2="edge" operator="in"/>
+</filter><filter id="oed-tuft2" x="-15%" y="-15%" width="130%" height="130%" color-interpolation-filters="sRGB">
+<feGaussianBlur in="SourceGraphic" stdDeviation="1.2" result="air"/>
+<feGaussianBlur in="SourceAlpha" stdDeviation="3.0" result="soft"/>
+<feTurbulence type="fractalNoise" baseFrequency="1.7" numOctaves="2" seed="33" result="noise"/>
+<feColorMatrix in="noise" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  1 0 0 0 0" result="na"/>
+<feComposite in="soft" in2="na" operator="arithmetic" k2="1" k3="2.0" k4="-1.0" result="mix"/>
+<feComponentTransfer in="mix" result="edge"><feFuncA type="discrete" tableValues="0 1"/></feComponentTransfer>
+<feTurbulence type="fractalNoise" baseFrequency="1.6" numOctaves="2" seed="38" result="g"/>
+<feColorMatrix in="g" type="saturate" values="0" result="gg"/>
+<feBlend in="air" in2="gg" mode="soft-light" result="tex0"/>
+<feComposite in="tex0" in2="air" operator="arithmetic" k2="0.3" k3="0.7" result="tex"/>
+<feComposite in="tex" in2="edge" operator="in"/>
+</filter><filter id="oed-tree" x="-15%" y="-15%" width="130%" height="130%" color-interpolation-filters="sRGB">
+<feGaussianBlur in="SourceGraphic" stdDeviation="0.6" result="air"/>
+<feGaussianBlur in="SourceAlpha" stdDeviation="2.2" result="soft"/>
+<feTurbulence type="fractalNoise" baseFrequency="1.8" numOctaves="2" seed="41" result="noise"/>
+<feColorMatrix in="noise" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  1 0 0 0 0" result="na"/>
+<feComposite in="soft" in2="na" operator="arithmetic" k2="1" k3="1.8" k4="-0.9" result="mix"/>
+<feComponentTransfer in="mix" result="edge"><feFuncA type="discrete" tableValues="0 1"/></feComponentTransfer>
+<feTurbulence type="fractalNoise" baseFrequency="1.6" numOctaves="2" seed="46" result="g"/>
+<feColorMatrix in="g" type="saturate" values="0" result="gg"/>
+<feBlend in="air" in2="gg" mode="soft-light" result="tex0"/>
+<feComposite in="tex0" in2="air" operator="arithmetic" k2="0.2" k3="0.8" result="tex"/>
+<feComposite in="tex" in2="edge" operator="in"/>
+</filter><filter id="oed-fly" x="-15%" y="-15%" width="130%" height="130%" color-interpolation-filters="sRGB">
+<feGaussianBlur in="SourceGraphic" stdDeviation="0.5" result="air"/>
+<feGaussianBlur in="SourceAlpha" stdDeviation="1.6" result="soft"/>
+<feTurbulence type="fractalNoise" baseFrequency="2.2" numOctaves="2" seed="51" result="noise"/>
+<feColorMatrix in="noise" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  1 0 0 0 0" result="na"/>
+<feComposite in="soft" in2="na" operator="arithmetic" k2="1" k3="1.6" k4="-0.8" result="mix"/>
+<feComponentTransfer in="mix" result="edge"><feFuncA type="discrete" tableValues="0 1"/></feComponentTransfer>
+<feTurbulence type="fractalNoise" baseFrequency="1.6" numOctaves="2" seed="56" result="g"/>
+<feColorMatrix in="g" type="saturate" values="0" result="gg"/>
+<feBlend in="air" in2="gg" mode="soft-light" result="tex0"/>
+<feComposite in="tex0" in2="air" operator="arithmetic" k2="0.2" k3="0.8" result="tex"/>
+<feComposite in="tex" in2="edge" operator="in"/>
+</filter><filter id="oed-glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="6.00"/></filter><linearGradient id="oed-wing" x1="0" x2="1"><stop offset="0" stop-color="#a99af0"/><stop offset="1" stop-color="#f4a6b8"/></linearGradient><linearGradient id="oed-wing2" x1="0" x2="1"><stop offset="0" stop-color="#f6b693"/><stop offset="1" stop-color="#9fb8f0"/></linearGradient><clipPath id="oed-disc"><circle cx="512" cy="512" r="412"/></clipPath></defs><g transform="scale(0.121359) translate(-100 -100)"><g clip-path="url(#oed-disc)"><g filter="url(#oed-grain)"><rect x="100" y="100" width="824" height="824" fill="url(#oed-sky)"/><circle cx="160" cy="980" r="300" fill="#f7a7c0" opacity=".55" filter="url(#oed-bloom)"/><circle cx="960" cy="900" r="260" fill="#ffc9a0" opacity=".6" filter="url(#oed-bloom)"/><circle cx="545" cy="463" r="330" fill="#ffe6cf" opacity=".75" filter="url(#oed-halo)"/><g filter="url(#oed-tree)" transform="translate(845 872) scale(1.05)" fill="#3a3a6e"><path d="M-2 0 L-1.5 -34 L-14 -50 L-12 -51 L-0.5 -38 L1 -52 L3 -52 L1.6 -38 L13 -50 L15 -49 L2 -33 L2 0 Z"/><path d="M-46 -52 C-40 -60 -20 -66 -2 -64 C14 -70 40 -64 48 -55 C40 -50 22 -51 4 -50 C-16 -49 -36 -47 -46 -52 Z"/></g><path transform="translate(790 250) scale(1.6)" d="M-10 0 C-6 -4 -2 -4 0 0 C2 -4 6 -4 10 0 C6 -2 2 -1 0 2 C-2 -1 -6 -2 -10 0 Z" fill="#2c2f5e" opacity=".8"/><path transform="translate(828 272) scale(1.1)" d="M-10 0 C-6 -4 -2 -4 0 0 C2 -4 6 -4 10 0 C6 -2 2 -1 0 2 C-2 -1 -6 -2 -10 0 Z" fill="#2c2f5e" opacity=".8"/><g filter="url(#oed-moonedge)"><circle cx="545" cy="462.6" r="255.4" fill="url(#oed-moon)"/></g><circle cx="520" cy="430" r="150" fill="#ffffff" opacity=".55" filter="url(#oed-halo)"/><g filter="url(#oed-wolf)"><g transform="translate(100 100) scale(8.24) translate(14 12) scale(.8)"><clipPath id="oed-body"><path d="M30 95 C18 95 13 83 19 73 C23 65 31 59 39 55 C43 47 45 39 46 31 L44.5 7 C44.5 4.5 47.5 4 48.5 6.5 L54.5 19.5 L58 5.5 C58.5 3 61.5 3 62 5.5 L63.5 22 C68 23.5 71.5 26 74 29 L86 34.5 C89 35.8 88.6 40 85.5 40.2 L74 41.5 C70.5 44 68.5 48 67.5 54 C66.5 62 68 72 69 82 L70 92 C70.2 94 69 95.3 67 95.3 L63.5 95.3 C61.5 95.3 61 93.8 61 92.5 L60 82 L58.5 92.5 C58.3 94.3 57 95.3 55 95.3 L50 95.3 Z"/></clipPath><path d="M30 95 C18 95 13 83 19 73 C23 65 31 59 39 55 C43 47 45 39 46 31 L44.5 7 C44.5 4.5 47.5 4 48.5 6.5 L54.5 19.5 L58 5.5 C58.5 3 61.5 3 62 5.5 L63.5 22 C68 23.5 71.5 26 74 29 L86 34.5 C89 35.8 88.6 40 85.5 40.2 L74 41.5 C70.5 44 68.5 48 67.5 54 C66.5 62 68 72 69 82 L70 92 C70.2 94 69 95.3 67 95.3 L63.5 95.3 C61.5 95.3 61 93.8 61 92.5 L60 82 L58.5 92.5 C58.3 94.3 57 95.3 55 95.3 L50 95.3 Z" fill="url(#oed-coat)"/><g clip-path="url(#oed-body)"><path d="M92 44 L72.5 44.5 C69.2 47.5 66.8 51.5 65.7 56.5 C64.8 61.5 65.6 68 69.2 76 L92 76 Z" fill="#ead2ab"/><path d="M8 92 L8 40 L30 40 L46.8 33 C48.4 44 44.5 52.5 37 59.5 C30 65.5 24.5 72 21.8 82 Z" fill="#3b3350"/></g><path d="M47.4 11.5 L51.4 19.8 L48.6 20.4 Z M59.9 10.2 L61 20.4 L58.6 19.4 Z" fill="#ead2ab"/><path d="M21 80 C8 84 8 99 24 99.5 C36 100 46 99 54 96.8 C57 96 57 92.5 54 92.5 C44 94 34 94 27 90 C23.5 88 22 84.5 21 80 Z" fill="url(#oed-coat)" stroke="#e9a9a8" stroke-width="1.6" paint-order="stroke"/><path d="M45 94.6 C49 94.4 51.5 93.8 54 92.5 C57 92.5 57 96 54 96.8 C51 97.6 48 98.2 45 98.5 C43.5 97 43.5 95.6 45 94.6 Z" fill="#3b3350"/><circle cx="70.5" cy="31" r="2.3" fill="#2b2541"/></g></g><g filter="url(#oed-tuft1)"><path d="M227.6 914 C224.4 860.0 206.7 824.0 201.2 794.0 C203.0 830.0 236.9 866.0 248.4 914 Z" fill="#2c335f"/><path d="M239.6 914 C242.5 842.0 244.0 794.0 242.8 754.0 C243.2 802.0 255.9 850.0 262.0 914 Z" fill="#4b3a78"/><path d="M254.0 914 C264.2 863.6 290.8 830.0 295.6 802.0 C294.0 835.6 275.8 869.2 273.2 914 Z" fill="#d07a9c"/><path d="M214.8 914 C208.1 874.4 180.1 848.0 172.4 826.0 C175.0 852.4 218.6 878.8 232.4 914 Z" fill="#ee9f78"/><path d="M263.6 914 C277.0 852.8 314.0 812.0 321.2 778.0 C318.8 818.8 288.6 859.6 282.8 914 Z" fill="#9a83d8"/><path d="M235.6 914 C242.3 881.6 258.0 860.0 260.4 842.0 C259.6 863.6 252.9 885.2 253.2 914 Z" fill="#7a4f86"/></g><g filter="url(#oed-tuft2)"><path d="M763.8 921 C772.0 881.2 792.8 854.7 796.5 832.6 C795.3 859.1 781.8 885.6 780.2 921 Z" fill="#4b3a78"/><path d="M752.3 921 C751.7 869.0 743.8 834.3 740.7 805.4 C741.7 840.1 762.3 874.8 770.0 921 Z" fill="#d07a9c"/><path d="M776.8 921 C787.4 890.4 816.6 870.0 822.3 853.0 C820.4 873.4 796.3 893.8 791.7 921 Z" fill="#2c335f"/><path d="M744.1 921 C739.0 893.5 716.9 875.1 710.8 859.8 C712.8 878.2 747.9 896.5 759.1 921 Z" fill="#9a83d8"/><path d="M782.9 921 C788.0 875.1 799.1 844.5 800.6 819.0 C800.1 849.6 797.8 880.2 799.2 921 Z" fill="#ee9f78"/></g><circle cx="290" cy="610" r="20" fill="#ffd27a" opacity=".7" filter="url(#oed-glow)"/><circle cx="290" cy="610" r="5" fill="#fffbe8"/><circle cx="805" cy="720" r="16.8" fill="#ffd27a" opacity=".7" filter="url(#oed-glow)"/><circle cx="805" cy="720" r="4.2" fill="#fffbe8"/><circle cx="875" cy="585" r="14.4" fill="#ffd27a" opacity=".7" filter="url(#oed-glow)"/><circle cx="875" cy="585" r="3.6" fill="#fffbe8"/><circle cx="205" cy="735" r="12.8" fill="#ffd27a" opacity=".7" filter="url(#oed-glow)"/><circle cx="205" cy="735" r="3.2" fill="#fffbe8"/></g></g></g></svg>
 <text class="eyebrow" x="164" y="62">OLLUPI BENCH · LONG RUN</text>
-<text class="title" x="164" y="104">Goroutines and WAL stay flat; CPU and memory grow with session history</text>
-<text class="sub" x="72" y="152">256 sessions run for 8 minutes, 35,000 turns in all, each lengthening its session's history. Model calls 1 s ± 0.2 s, tool calls 0.2 s</text>
-<line x1="72" y1="940" x2="1528" y2="940" stroke="#e6e4de" stroke-width="2"/>
-<text class="foot" x="72" y="972">Apple M1 · 8 cores · 8 GB · one SQLite database · simulated model and tools</text>
-<text class="foot" x="1528" y="972" text-anchor="end" style="font-family: ui-monospace, 'SF Mono', Menlo, monospace">go run ./bench soak -c 256 -d 8m -every 30s -latency 1s -jitter 200ms -tool 200ms</text>
-<rect x="72" y="196" width="1456" height="124" rx="16" fill="#eef3ec"/>
-<text x="104.0" y="262"><tspan class="kpi">≈ 1000</tspan><tspan class="unit" dx="8"></tspan></text>
-<text class="cap" x="104.0" y="296.0" text-anchor="start">goroutines, steady throughout</text>
-<line x1="557.3333333333333" y1="222" x2="557.3333333333333" y2="294" stroke="#c3d3bd" stroke-width="2"/>
-<text x="589.3333333333333" y="262"><tspan class="kpi">6.1</tspan><tspan class="unit" dx="8">MB</tspan></text>
-<text class="cap" x="589.3" y="296.0" text-anchor="start">WAL, steady throughout</text>
-<line x1="1042.6666666666665" y1="222" x2="1042.6666666666665" y2="294" stroke="#c3d3bd" stroke-width="2"/>
-<text x="1074.6666666666665" y="262"><tspan class="kpi">0.23</tspan><tspan class="unit" dx="8">ms</tspan></text>
+<text class="title" x="164" y="104">8 minutes, 32,982 turns: turn time holds, memory stays between 100 and 124 MB</text>
+<text class="sub" x="72" y="152">256 sessions send turns back to back; after 10 turns a session is replaced by a new one, so each turn's work stays the same. Model calls 1 s, tool calls 0.2 s</text>
+<line x1="72" y1="940" x2="1528" y2="940" stroke="#e2dce6" stroke-width="2"/>
+<text class="foot" x="72" y="972">Ollupi v0.18.0 · Apple M1 · 8 cores · 8 GB · one SQLite database · simulated model and tools</text>
+<text class="foot" x="1528" y="972" text-anchor="end" style="font-family: ui-monospace, 'SF Mono', Menlo, monospace">go run ./bench soak -c 256 -d 8m -history 10 -latency 1s -jitter 200ms -tool 200ms</text>
+<rect x="72" y="196" width="1456" height="124" rx="16" fill="#efeaf7"/>
+<text x="104.0" y="262"><tspan class="kpi">854 – 1060</tspan><tspan class="unit" dx="8"></tspan></text>
+<text class="cap" x="104.0" y="296.0" text-anchor="start">goroutines</text>
+<line x1="557.3333333333333" y1="222" x2="557.3333333333333" y2="294" stroke="#c9bfe2" stroke-width="2"/>
+<text x="589.3333333333333" y="262"><tspan class="kpi">4.1</tspan><tspan class="unit" dx="8">MB</tspan></text>
+<text class="cap" x="589.3" y="296.0" text-anchor="start">WAL, throughout</text>
+<line x1="1042.6666666666665" y1="222" x2="1042.6666666666665" y2="294" stroke="#c9bfe2" stroke-width="2"/>
+<text x="1074.6666666666665" y="262"><tspan class="kpi">0.16</tspan><tspan class="unit" dx="8">ms</tspan></text>
 <text class="cap" x="1074.7" y="296.0" text-anchor="start">highest GC pause p99</text>
-<text class="hs" x="160.0" y="422.0" text-anchor="start">CPU per turn</text>
-<text class="tick" x="160.0" y="450.0" text-anchor="start">ms</text>
-<line x1="160" y1="830.0" x2="760" y2="830.0" stroke="#f1f0ec" stroke-width="2"/>
+<text class="hs" x="160.0" y="422.0" text-anchor="start">Turn duration</text>
+<text class="tick" x="160.0" y="450.0" text-anchor="start">seconds</text>
+<line x1="160" y1="830.0" x2="760" y2="830.0" stroke="#ece7ee" stroke-width="2"/>
 <text class="tick" x="146.0" y="836.0" text-anchor="end">0</text>
-<line x1="160" y1="740.0" x2="760" y2="740.0" stroke="#f1f0ec" stroke-width="2"/>
-<text class="tick" x="146.0" y="746.0" text-anchor="end">10</text>
-<line x1="160" y1="650.0" x2="760" y2="650.0" stroke="#f1f0ec" stroke-width="2"/>
-<text class="tick" x="146.0" y="656.0" text-anchor="end">20</text>
-<line x1="160" y1="560.0" x2="760" y2="560.0" stroke="#f1f0ec" stroke-width="2"/>
-<text class="tick" x="146.0" y="566.0" text-anchor="end">30</text>
-<line x1="160" y1="470.0" x2="760" y2="470.0" stroke="#f1f0ec" stroke-width="2"/>
-<text class="tick" x="146.0" y="476.0" text-anchor="end">40</text>
-<line x1="160" y1="830" x2="760" y2="830" stroke="#cfccc3" stroke-width="2"/>
+<line x1="160" y1="740.0" x2="760" y2="740.0" stroke="#ece7ee" stroke-width="2"/>
+<text class="tick" x="146.0" y="746.0" text-anchor="end">2</text>
+<line x1="160" y1="650.0" x2="760" y2="650.0" stroke="#ece7ee" stroke-width="2"/>
+<text class="tick" x="146.0" y="656.0" text-anchor="end">4</text>
+<line x1="160" y1="560.0" x2="760" y2="560.0" stroke="#ece7ee" stroke-width="2"/>
+<text class="tick" x="146.0" y="566.0" text-anchor="end">6</text>
+<line x1="160" y1="470.0" x2="760" y2="470.0" stroke="#ece7ee" stroke-width="2"/>
+<text class="tick" x="146.0" y="476.0" text-anchor="end">8</text>
+<line x1="160" y1="830" x2="760" y2="830" stroke="#cdc6d8" stroke-width="2"/>
 <text class="tick" x="160.0" y="860.0" text-anchor="middle">0</text>
-<text class="tick" x="325.5" y="860.0" text-anchor="middle">40</text>
-<text class="tick" x="491.0" y="860.0" text-anchor="middle">80</text>
-<text class="tick" x="656.6" y="860.0" text-anchor="middle">120</text>
-<text class="cap" x="460.0" y="894.0" text-anchor="middle">Session history, turns</text>
-<polyline points="193.1,721.1 226.2,723.8 263.4,712.1 300.7,700.4 337.9,690.5 371.0,677.9 408.3,659.9 445.5,656.3 482.8,647.3 515.9,635.6 553.1,621.2 590.3,605.0 623.4,585.2 660.7,558.2 693.8,533.0 731.0,516.8" fill="none" stroke="#2f5d47" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
-<text class="val" x="193.1" y="705.1" text-anchor="start">12.1</text>
-<text class="val" x="731.0" y="500.8" text-anchor="end">34.8</text>
+<text class="tick" x="301.2" y="860.0" text-anchor="middle">2</text>
+<text class="tick" x="442.4" y="860.0" text-anchor="middle">4</text>
+<text class="tick" x="583.5" y="860.0" text-anchor="middle">6</text>
+<text class="tick" x="724.7" y="860.0" text-anchor="middle">8</text>
+<text class="cap" x="460.0" y="894.0" text-anchor="middle">Minutes</text>
+<polyline points="160.0,677.0 760.0,677.0" fill="none" stroke="#9a93a6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="10 8"/>
+<text class="cap" x="760.0" y="707.0" text-anchor="end">Alone: 3.4 s</text>
+<polyline points="195.3,645.0 230.6,644.1 265.9,614.0 301.2,610.0 336.5,553.2 371.8,619.0 407.1,614.5 442.4,604.5 477.6,560.0 512.9,578.5 548.2,605.5 583.5,624.8 618.8,630.6 654.1,623.5 689.4,632.5 724.7,599.1" fill="none" stroke="#a69dd4" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="195.3,670.7 230.6,670.7 265.9,666.2 301.2,660.8 336.5,657.6 371.8,669.8 407.1,668.5 442.4,664.4 477.6,664.0 512.9,667.1 548.2,667.1 583.5,664.4 618.8,668.0 654.1,667.1 689.4,665.8 724.7,666.2" fill="none" stroke="#3d3768" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+<text class="val" x="736.7" y="605.1" text-anchor="start">p99</text>
+<text class="val" x="736.7" y="660.2" text-anchor="start">p50</text>
 <text class="hs" x="940.0" y="422.0" text-anchor="start">Resident memory</text>
 <text class="tick" x="940.0" y="450.0" text-anchor="start">MB</text>
-<line x1="940" y1="830.0" x2="1540" y2="830.0" stroke="#f1f0ec" stroke-width="2"/>
+<line x1="940" y1="830.0" x2="1540" y2="830.0" stroke="#ece7ee" stroke-width="2"/>
 <text class="tick" x="926.0" y="836.0" text-anchor="end">0</text>
-<line x1="940" y1="740.0" x2="1540" y2="740.0" stroke="#f1f0ec" stroke-width="2"/>
-<text class="tick" x="926.0" y="746.0" text-anchor="end">100</text>
-<line x1="940" y1="650.0" x2="1540" y2="650.0" stroke="#f1f0ec" stroke-width="2"/>
-<text class="tick" x="926.0" y="656.0" text-anchor="end">200</text>
-<line x1="940" y1="560.0" x2="1540" y2="560.0" stroke="#f1f0ec" stroke-width="2"/>
-<text class="tick" x="926.0" y="566.0" text-anchor="end">300</text>
-<line x1="940" y1="470.0" x2="1540" y2="470.0" stroke="#f1f0ec" stroke-width="2"/>
-<text class="tick" x="926.0" y="476.0" text-anchor="end">400</text>
-<line x1="940" y1="830" x2="1540" y2="830" stroke="#cfccc3" stroke-width="2"/>
+<line x1="940" y1="740.0" x2="1540" y2="740.0" stroke="#ece7ee" stroke-width="2"/>
+<text class="tick" x="926.0" y="746.0" text-anchor="end">50</text>
+<line x1="940" y1="650.0" x2="1540" y2="650.0" stroke="#ece7ee" stroke-width="2"/>
+<text class="tick" x="926.0" y="656.0" text-anchor="end">100</text>
+<line x1="940" y1="560.0" x2="1540" y2="560.0" stroke="#ece7ee" stroke-width="2"/>
+<text class="tick" x="926.0" y="566.0" text-anchor="end">150</text>
+<line x1="940" y1="470.0" x2="1540" y2="470.0" stroke="#ece7ee" stroke-width="2"/>
+<text class="tick" x="926.0" y="476.0" text-anchor="end">200</text>
+<line x1="940" y1="830" x2="1540" y2="830" stroke="#cdc6d8" stroke-width="2"/>
 <text class="tick" x="940.0" y="860.0" text-anchor="middle">0</text>
-<text class="tick" x="1105.5" y="860.0" text-anchor="middle">40</text>
-<text class="tick" x="1271.0" y="860.0" text-anchor="middle">80</text>
-<text class="tick" x="1436.6" y="860.0" text-anchor="middle">120</text>
-<text class="cap" x="1240.0" y="894.0" text-anchor="middle">Session history, turns</text>
-<polyline points="973.1,740.9 1006.2,718.4 1043.4,708.5 1080.7,676.1 1117.9,666.2 1151.0,657.2 1188.3,650.9 1225.5,598.7 1262.8,588.8 1295.9,578.0 1333.1,569.0 1370.3,557.3 1403.4,548.3 1440.7,534.8 1473.8,531.2 1511.0,473.6" fill="none" stroke="#2f5d47" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
-<text class="val" x="973.1" y="724.9" text-anchor="start">99</text>
-<text class="val" x="1497.0" y="479.6" text-anchor="end">396</text>
+<text class="tick" x="1081.2" y="860.0" text-anchor="middle">2</text>
+<text class="tick" x="1222.4" y="860.0" text-anchor="middle">4</text>
+<text class="tick" x="1363.5" y="860.0" text-anchor="middle">6</text>
+<text class="tick" x="1504.7" y="860.0" text-anchor="middle">8</text>
+<text class="cap" x="1240.0" y="894.0" text-anchor="middle">Minutes</text>
+<polyline points="975.3,633.8 1010.6,635.6 1045.9,650.0 1081.2,648.2 1116.5,630.2 1151.8,635.6 1187.1,632.0 1222.4,635.6 1257.6,644.6 1292.9,641.0 1328.2,621.2 1363.5,626.6 1398.8,630.2 1434.1,628.4 1469.4,621.2 1504.7,606.8" fill="none" stroke="#3d3768" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+<text class="val" x="975.3" y="617.8" text-anchor="start">109 MB</text>
+<text class="val" x="1504.7" y="590.8" text-anchor="end">124 MB</text>
 </svg>

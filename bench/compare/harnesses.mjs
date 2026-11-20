@@ -39,6 +39,47 @@ export async function openHarness(name, { dir, url, toolMs = 1000, log, settings
 			close: () => d.close(),
 		};
 	}
+	if (name === "ollupi") {
+		const { startServe, connect } = await import("./ollupi/client.mjs");
+		const home = path.join(dir, "ollupi-home");
+		const serve = await startServe({ dir: home, url, toolMs, log, settings: settings.ollupi });
+		const clients = new Map();
+		const client = (user) => {
+			if (!clients.has(user)) clients.set(user, connect(serve.url, user));
+			return clients.get(user);
+		};
+		const perUser = settings.perUser ?? 64;
+		let made = 0;
+		return {
+			name,
+			serve,
+			newSession: async () => {
+				const user = `user${String(Math.floor(made++ / perUser)).padStart(6, "0")}`;
+				const c = await client(user);
+				return { user, c, id: await c.newThread() };
+			},
+			turn: (s, text) => s.c.turn(s.id, text),
+			idOf: (s) => ({ user: s.user, id: s.id }),
+			drop: () => {},
+			reopen: async ({ user, id }) => {
+				const c = await client(user);
+				await c.call("thread/resume", { threadId: id });
+				return { user, c, id };
+			},
+			diskBytes: () => dirBytes(path.join(home, "data")),
+			memory: async () => {
+				await sleep(1000);
+				const s = await serve.stats();
+				return { rss_mb: rssMB(serve.proc.pid), footprint_mb: footprintMB(serve.proc.pid), heap_mb: s.heap_mb };
+			},
+			cpu: () => cpuSecondsOf(serve.proc.pid),
+			pid: serve.proc.pid,
+			close: async () => {
+				for (const c of clients.values()) (await c).close();
+				await serve.stop();
+			},
+		};
+	}
 	if (name === "dsh") {
 		const { startDsh } = await import("./dsh/client.mjs");
 		const home = path.join(dir, "dsh-home");

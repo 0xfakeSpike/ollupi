@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/host"
@@ -32,6 +33,7 @@ func soak(args []string) {
 	jitter := fs.Duration("jitter", 2*time.Second, "model latency varies by up to this much either way")
 	toolLatency := fs.Duration("tool", time.Second, "tool latency")
 	rounds := fs.Int("rounds", 2, "tool calls in each turn, each followed by a model call")
+	history := fs.Int("history", 0, "after this many turns a conversation is replaced by a new one, so each turn's work stays the same (default: never)")
 	out := fs.String("csv", "", "write each sample to this CSV file")
 	pprofAddr := fs.String("pprof", "", "serve net/http/pprof on this address, to profile the run while it goes")
 	fs.Parse(args)
@@ -73,12 +75,22 @@ func soak(args []string) {
 	deadline := startAt.Add(*d)
 	var mu sync.Mutex
 	var ids []string
+	var held atomic.Int64
 	var wg sync.WaitGroup
 	for _, id := range threads {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for time.Now().Before(deadline) {
+			for turns := 0; time.Now().Before(deadline); turns++ {
+				if *history > 0 && turns == *history {
+					held.Add(int64(-turns))
+					turns = 0
+					id = e.newThread(defaultUser)
+					tr.mu.Lock()
+					tr.done[id] = make(chan struct{}, 1)
+					tr.mu.Unlock()
+				}
+				held.Add(1)
 				turnID := tr.start(e, defaultUser, id, "work")
 				mu.Lock()
 				ids = append(ids, turnID)
@@ -135,7 +147,7 @@ func soak(args []string) {
 		dbs.mu.Unlock()
 		per := func(d time.Duration) float64 { return float64(d) / float64(time.Millisecond) / float64(max(n-seen, 1)) }
 		rows = append(rows, fmt.Sprintf("%.1f,%d,%d,%.2f,%.2f,%.0f,%.0f,%d,%.2f,%.2f,%.1f,%.1f,%.1f,%.2f,%.2f,%.2f",
-			time.Since(startAt).Minutes(), n-seen, n / *c, pct(ended, .5).Seconds(), pct(ended, .99).Seconds(),
+			time.Since(startAt).Minutes(), n-seen, held.Load()/int64(*c), pct(ended, .5).Seconds(), pct(ended, .99).Seconds(),
 			rssMB(), float64(m.HeapInuse)/(1<<20), runtime.NumGoroutine(), p99*1000, worst*1000,
 			size("store.sqlite"), size("store.sqlite-wal"),
 			per(used-lastCPU), per(read-lastRead), per(write-lastWrite), per(pool.WaitDuration-lastPool.WaitDuration)))
