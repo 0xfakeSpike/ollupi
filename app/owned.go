@@ -10,6 +10,7 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
+	"github.com/0xfakeSpike/ollupi/policy"
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/google/uuid"
 )
@@ -63,6 +64,34 @@ func (a *App) RenameWorkspace(ctx context.Context, user, id, name string) (accou
 	}
 	return a.changeWorkspace(ctx, user, id, func(_ store.Tx, w *account.Workspace) error {
 		w.Name = name
+		return nil
+	})
+}
+
+func (a *App) UpdateWorkspaceInstructions(ctx context.Context, user, id, text string) (account.Workspace, error) {
+	text, err := account.Instructions(text)
+	if err != nil {
+		return account.Workspace{}, err
+	}
+	return a.changeWorkspace(ctx, user, id, func(_ store.Tx, w *account.Workspace) error {
+		w.Instructions = text
+		return nil
+	})
+}
+
+func (a *App) UpdateWorkspaceProviders(ctx context.Context, user, id string, p account.Providers) (account.Workspace, error) {
+	box, err := a.toolbox(ctx, user)
+	if err != nil {
+		return account.Workspace{}, err
+	}
+	for _, name := range slices.Concat(p.Enabled, p.Disabled) {
+		known := slices.ContainsFunc(box.Tools, func(t policy.Tool) bool { return t.Provider == name })
+		if !known {
+			return account.Workspace{}, fmt.Errorf("%w: no tools come from a provider named %q", policy.ErrInvalidSettings, name)
+		}
+	}
+	return a.changeWorkspace(ctx, user, id, func(_ store.Tx, w *account.Workspace) error {
+		w.Providers = p
 		return nil
 	})
 }

@@ -247,7 +247,7 @@ type Launched struct {
 
 func launch(tx store.Tx, s *step, it conversation.Item, l tool.Launch) error {
 	now := time.Now().UTC()
-	child := store.Thread{User: s.th.User, Thread: account.Thread{ID: uuid.NewString(), Title: l.Title, Workspace: l.Workspace,
+	child := store.Thread{User: s.th.User, Thread: account.Thread{ID: uuid.NewString(), Title: l.Title, Workspace: s.th.Workspace,
 		Environment: s.th.Environment, Parent: s.th.ID, ParentItem: it.ID, Role: l.Role, Created: now, Updated: now}}
 	if err := tx.CreateThread(child); err != nil {
 		return err

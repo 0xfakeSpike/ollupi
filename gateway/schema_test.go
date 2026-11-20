@@ -124,6 +124,7 @@ var defNames = map[reflect.Type]string{
 	reflect.TypeFor[agent.Name]():             "AgentRole",
 	reflect.TypeFor[plan.Step]():              "PlanStep",
 	reflect.TypeFor[plan.Status]():            "PlanStepStatus",
+	reflect.TypeFor[account.Providers]():      "WorkspaceProviders",
 	reflect.TypeFor[subagent.Call]():          "SubagentCall",
 	reflect.TypeFor[run.Launched]():           "SubagentLaunched",
 	reflect.TypeFor[ask.Request]():            "UserInputRequest",

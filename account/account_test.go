@@ -3,6 +3,7 @@ package account
 import (
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/0xfakeSpike/ollupi/policy"
@@ -11,16 +12,17 @@ import (
 func TestTheLayersStackFromTheDeploymentToTheConversation(t *testing.T) {
 	deployment := policy.Layer{Of: "the default permission settings", Shared: true}
 	w := &Workspace{Name: "app"}
-	layers := Layers(deployment, Settings{Memory: true}, w, Thread{}.Layer())
+	layers := Layers(deployment, nil, Settings{Memory: true}, w, Thread{}.Layer())
 	var of []string
 	for _, l := range layers {
 		of = append(of, l.Of)
 	}
-	want := []string{"the default permission settings", "your permission settings", `the permission settings of workspace "app"`, "this conversation's permission settings"}
+	want := []string{"the default permission settings", "your permission settings", `the permission settings of workspace "app"`,
+		"the providers of this workspace", "this conversation's permission settings"}
 	if !slices.Equal(of, want) {
 		t.Errorf("layers %q", of)
 	}
-	if len(Layers(deployment, Settings{Memory: true}, nil, Thread{}.Layer())) != 3 {
+	if len(Layers(deployment, nil, Settings{Memory: true}, nil, Thread{}.Layer())) != 4 {
 		t.Error("a conversation outside any workspace has a workspace's layer")
 	}
 }
@@ -67,5 +69,30 @@ func TestNamesAndKinds(t *testing.T) {
 	}
 	if _, err := NewEnvironmentKind(Local); !errors.Is(err, ErrInvalidName) {
 		t.Errorf("a second local environment: %v", err)
+	}
+}
+
+func TestAWorkspaceTurnsProvidersOnAndOff(t *testing.T) {
+	optIn := []string{"hub"}
+	kept := func(w *Workspace, provider string) bool {
+		layers := Layers(Deployment(policy.Settings{}), optIn, Settings{}, w, policy.Layer{})
+		return policy.Kept(layers, policy.Tool{Name: "x", Provider: provider})
+	}
+	plain := &Workspace{}
+	hub := &Workspace{Providers: Providers{Enabled: []string{"hub"}, Disabled: []string{"browser"}}}
+	for _, c := range []struct {
+		w        *Workspace
+		provider string
+		want     bool
+	}{
+		{nil, "hub", false}, {plain, "hub", false}, {hub, "hub", true},
+		{plain, "browser", true}, {hub, "browser", false}, {hub, "workspace", true},
+	} {
+		if got := kept(c.w, c.provider); got != c.want {
+			t.Errorf("%+v keeps %s: %v", c.w, c.provider, got)
+		}
+	}
+	if _, err := Instructions(strings.Repeat("x", maxInstructionsRunes+1)); !errors.Is(err, ErrInvalidName) {
+		t.Errorf("instructions too long: %v", err)
 	}
 }
