@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
@@ -84,7 +83,7 @@ func (w Window) compactedHistory(before []conversation.Item, summary string) str
 	var b strings.Builder
 	for i := len(before) - 1; i >= 0; i-- {
 		if it := before[i]; it.Kind == conversation.ItemUserMessage {
-			b.WriteString("Latest user message before this summary: [sent " + it.StartedAt.In(time.Local).Format(sentLayout) + "]\n\n")
+			b.WriteString("Latest user message before this summary: " + sentLine(it) + "\n\n")
 			break
 		}
 	}
@@ -113,12 +112,16 @@ func recentUserMessages(items []conversation.Item, budget int) []string {
 		if items[i].Kind != conversation.ItemUserMessage {
 			continue
 		}
-		cost := llm.EstimateTokens(items[i].Text) + 4
+		text := items[i].Text
+		if from := items[i].From; from != nil {
+			text = "(sent" + onBehalf(from) + ") " + text
+		}
+		cost := llm.EstimateTokens(text) + 4
 		if used+cost > budget {
 			break
 		}
 		used += cost
-		out = append([]string{items[i].Text}, out...)
+		out = append([]string{text}, out...)
 	}
 	return out
 }

@@ -90,6 +90,7 @@ type Item struct {
 	CompletedAt *time.Time
 	Text        string
 	Attachments []Attachment
+	From        *Sender
 	Response    string
 	Call        *ToolCall
 	Approval    *Approval
@@ -147,7 +148,7 @@ func (v *View) Apply(e Entry) {
 	case TurnEnded:
 		v.Turns[v.turn[e.Turn]].Ended = &Ending{Status: b.Status, Reason: b.Reason, At: e.At}
 	case UserMessage:
-		v.add(e, Item{Kind: ItemUserMessage, Status: Done, Text: b.Text, Attachments: b.Attachments})
+		v.add(e, Item{Kind: ItemUserMessage, Status: Done, Text: b.Text, Attachments: b.Attachments, From: b.From})
 	case AgentMessage:
 		v.add(e, Item{Kind: ItemAgentMessage, Status: Done, Text: b.Text, Response: b.Response})
 	case Reasoning:

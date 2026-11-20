@@ -114,6 +114,7 @@ var arrays = []field{
 	{reflect.TypeFor[EnvironmentListResult](), "Data"},
 	{reflect.TypeFor[CronListResult](), "Data"},
 	{reflect.TypeFor[MemoryListResult](), "Data"},
+	{reflect.TypeFor[TodoListResult](), "Data"},
 	{reflect.TypeFor[Found](), "Threads"},
 	{reflect.TypeFor[Found](), "Messages"},
 	{reflect.TypeFor[Found](), "CronJobs"},
