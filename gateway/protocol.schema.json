@@ -8,7 +8,8 @@
         "compact-main-agent",
         "general-sub-agent",
         "browser-sub-agent",
-        "delegate-sub-agent"
+        "delegate-sub-agent",
+        "hub-main-agent"
       ]
     },
     "Annotations": {
@@ -624,6 +625,14 @@
       "type": "object",
       "additionalProperties": false
     },
+    "End": {
+      "type": "string",
+      "enum": [
+        "completed",
+        "failed",
+        "interrupted"
+      ]
+    },
     "EnvironmentAddParams": {
       "type": "object",
       "properties": {
@@ -993,6 +1002,450 @@
         "path",
         "files",
         "matches"
+      ],
+      "additionalProperties": false
+    },
+    "HubAddTodo": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "What is to be done, in a line.",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "notes": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "additionalProperties": false
+    },
+    "HubConversation": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspace": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ThreadStatus"
+        },
+        "queuedTurns": {
+          "type": "integer"
+        },
+        "updated": {
+          "type": "string"
+        },
+        "unread": {
+          "type": "boolean"
+        },
+        "archived": {
+          "type": "boolean"
+        },
+        "lastTurnEnded": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/HubTurnEnded"
+            }
+          ]
+        },
+        "lastAnswer": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "status",
+        "queuedTurns",
+        "updated",
+        "unread"
+      ],
+      "additionalProperties": false
+    },
+    "HubConversations": {
+      "type": "object",
+      "properties": {
+        "conversations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HubConversation"
+          }
+        }
+      },
+      "required": [
+        "conversations"
+      ],
+      "additionalProperties": false
+    },
+    "HubListConversations": {
+      "type": "object",
+      "properties": {
+        "conversations": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "Ids of the conversations to look up."
+        },
+        "workspace": {
+          "type": "string",
+          "description": "Id of a workspace whose conversations to list, most recently updated first."
+        }
+      },
+      "additionalProperties": false
+    },
+    "HubListTodos": {
+      "type": "object",
+      "properties": {
+        "statuses": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "$ref": "#/$defs/TodoStatus",
+            "enum": [
+              "open",
+              "handed",
+              "done",
+              "dropped"
+            ]
+          },
+          "description": "The statuses to list; open and handed when left out."
+        }
+      },
+      "additionalProperties": false
+    },
+    "HubMessage": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/ItemKind"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "HubMessageSent": {
+      "type": "object",
+      "properties": {
+        "conversation": {
+          "type": "string"
+        },
+        "turn": {
+          "type": "string"
+        },
+        "queued": {
+          "type": "boolean"
+        },
+        "todo": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/HubTodo"
+            }
+          ]
+        }
+      },
+      "required": [
+        "conversation",
+        "turn",
+        "queued"
+      ],
+      "additionalProperties": false
+    },
+    "HubReadConversation": {
+      "type": "object",
+      "properties": {
+        "conversation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "turns": {
+          "type": "integer",
+          "description": "How many of the latest turns to show; default 3.",
+          "minimum": 1,
+          "maximum": 20
+        }
+      },
+      "required": [
+        "conversation"
+      ],
+      "additionalProperties": false
+    },
+    "HubSendMessage": {
+      "type": "object",
+      "properties": {
+        "conversation": {
+          "type": "string",
+          "description": "Id of the conversation to write to.",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "conversation",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "HubStartConversation": {
+      "type": "object",
+      "properties": {
+        "workspace": {
+          "type": "string",
+          "description": "Id of the project workspace the conversation works in.",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "description": "A short title for the conversation, shown to the user.",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "message": {
+          "type": "string",
+          "description": "The first message, complete on its own: the conversation knows nothing of this one.",
+          "minLength": 1
+        },
+        "todo": {
+          "type": "integer",
+          "description": "Id of the todo this conversation works on: it is linked to the conversation and marked handed.",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "workspace",
+        "title",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "HubTodo": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspace": {
+          "type": "string"
+        },
+        "conversation": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/TodoStatus"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "result": {
+          "type": "string"
+        },
+        "created": {
+          "type": "string"
+        },
+        "updated": {
+          "type": "string"
+        },
+        "done": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "status",
+        "created",
+        "updated"
+      ],
+      "additionalProperties": false
+    },
+    "HubTodos": {
+      "type": "object",
+      "properties": {
+        "todos": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HubTodo"
+          }
+        }
+      },
+      "required": [
+        "todos"
+      ],
+      "additionalProperties": false
+    },
+    "HubTurn": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "queued": {
+          "type": "string"
+        },
+        "ended": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/HubTurnEnded"
+            }
+          ]
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HubMessage"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "queued",
+        "messages"
+      ],
+      "additionalProperties": false
+    },
+    "HubTurnEnded": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/End"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "at"
+      ],
+      "additionalProperties": false
+    },
+    "HubTurns": {
+      "type": "object",
+      "properties": {
+        "turns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HubTurn"
+          }
+        }
+      },
+      "required": [
+        "turns"
+      ],
+      "additionalProperties": false
+    },
+    "HubUpdateTodo": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "status": {
+          "$ref": "#/$defs/TodoStatus",
+          "enum": [
+            "open",
+            "handed",
+            "done",
+            "dropped"
+          ]
+        },
+        "notes": {
+          "type": "string",
+          "description": "Replaces the notes."
+        },
+        "result": {
+          "type": "string",
+          "description": "What came of it, in a sentence."
+        },
+        "conversation": {
+          "type": "string",
+          "description": "Id of a conversation that works on it, such as one the user started; it and its workspace are linked to the todo."
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "HubWorkspace": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "root": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/WorkspaceKind"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "root",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "HubWorkspaces": {
+      "type": "object",
+      "properties": {
+        "workspaces": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HubWorkspace"
+          }
+        }
+      },
+      "required": [
+        "workspaces"
       ],
       "additionalProperties": false
     },
@@ -2577,6 +3030,15 @@
         "waitingOnUserInput"
       ]
     },
+    "TodoStatus": {
+      "type": "string",
+      "enum": [
+        "open",
+        "handed",
+        "done",
+        "dropped"
+      ]
+    },
     "ToolDescriptor": {
       "type": "object",
       "properties": {
@@ -3040,6 +3502,13 @@
       ],
       "additionalProperties": false
     },
+    "WorkspaceKind": {
+      "type": "string",
+      "enum": [
+        "project",
+        "hub"
+      ]
+    },
     "WorkspaceListResult": {
       "type": "object",
       "properties": {
@@ -3184,6 +3653,9 @@
         "rootPath": {
           "type": "string"
         },
+        "kind": {
+          "$ref": "#/$defs/WorkspaceKind"
+        },
         "instructions": {
           "type": "string"
         },
@@ -3213,10 +3685,27 @@
         "id",
         "name",
         "rootPath",
+        "kind",
         "providers",
         "settings",
         "createdAt",
         "updatedAt"
+      ],
+      "additionalProperties": false
+    },
+    "WorkspaceSetKindParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/WorkspaceKind"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "kind"
       ],
       "additionalProperties": false
     }
@@ -3550,6 +4039,14 @@
         "$ref": "#/$defs/WorkspaceResult"
       }
     },
+    "workspace/setKind": {
+      "params": {
+        "$ref": "#/$defs/WorkspaceSetKindParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WorkspaceResult"
+      }
+    },
     "workspace/updateInstructions": {
       "params": {
         "$ref": "#/$defs/WorkspaceInstructionsParams"
@@ -3649,6 +4146,8 @@
     "-32017": "searchTimedOut",
     "-32018": "refused",
     "-32019": "hasDelegates",
+    "-32020": "secondHub",
+    "-32021": "noHub",
     "-32600": "invalidRequest",
     "-32601": "methodNotFound",
     "-32602": "invalidParams",
@@ -3704,6 +4203,14 @@
     "searchTerms": 8
   },
   "builtinTools": {
+    "add_todo": {
+      "arguments": {
+        "$ref": "#/$defs/HubAddTodo"
+      },
+      "output": {
+        "$ref": "#/$defs/HubTodo"
+      }
+    },
     "browser-sub-agent": {
       "arguments": {
         "$ref": "#/$defs/SubagentCall"
@@ -3749,6 +4256,35 @@
         "$ref": "#/$defs/GrepOutput"
       }
     },
+    "list_conversations": {
+      "arguments": {
+        "$ref": "#/$defs/HubListConversations"
+      },
+      "output": {
+        "$ref": "#/$defs/HubConversations"
+      }
+    },
+    "list_todos": {
+      "arguments": {
+        "$ref": "#/$defs/HubListTodos"
+      },
+      "output": {
+        "$ref": "#/$defs/HubTodos"
+      }
+    },
+    "list_workspaces": {
+      "output": {
+        "$ref": "#/$defs/HubWorkspaces"
+      }
+    },
+    "read_conversation": {
+      "arguments": {
+        "$ref": "#/$defs/HubReadConversation"
+      },
+      "output": {
+        "$ref": "#/$defs/HubTurns"
+      }
+    },
     "read_file": {
       "arguments": {
         "$ref": "#/$defs/ReadFile"
@@ -3770,9 +4306,33 @@
         "$ref": "#/$defs/CommandOutput"
       }
     },
+    "send_message": {
+      "arguments": {
+        "$ref": "#/$defs/HubSendMessage"
+      },
+      "output": {
+        "$ref": "#/$defs/HubMessageSent"
+      }
+    },
+    "start_conversation": {
+      "arguments": {
+        "$ref": "#/$defs/HubStartConversation"
+      },
+      "output": {
+        "$ref": "#/$defs/HubMessageSent"
+      }
+    },
     "update_plan": {
       "arguments": {
         "$ref": "#/$defs/Plan"
+      }
+    },
+    "update_todo": {
+      "arguments": {
+        "$ref": "#/$defs/HubUpdateTodo"
+      },
+      "output": {
+        "$ref": "#/$defs/HubTodo"
       }
     },
     "write_file": {

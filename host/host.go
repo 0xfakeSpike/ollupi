@@ -28,6 +28,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/store/sqlite"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/ask"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/cronjobs"
+	"github.com/0xfakeSpike/ollupi/tool/builtin/hub"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/loader"
 	memorytool "github.com/0xfakeSpike/ollupi/tool/builtin/memory"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/outputs"
@@ -56,6 +57,7 @@ type Config struct {
 	ClientFor     func(user, connection string) (llm.Client, error)
 	Memory        *llm.Model
 	Tools         []kit.Provider
+	Hub           bool
 	OptIn         []string
 	Allowlist     []string
 	Permissions   policy.Settings
@@ -113,14 +115,19 @@ func New(ctx context.Context, cfg Config) (*Host, error) {
 	}
 	files := blob.Dir(filepath.Join(cfg.Home, "attachments"))
 	h := &Host{Store: st, cal: cron.NewCalendar(cmp.Or(cfg.Location, time.Local))}
+	hubTools := &hub.Provider{St: st}
 	builtins := append(slices.Clone(cfg.Tools), plan.Provider{}, ask.Provider{}, loader.Provider{}, subagent.Provider{},
 		outputs.New(st), memorytool.New(st))
+	if cfg.Hub {
+		builtins = append(builtins, hubTools)
+	}
 	if cfg.SkillsDir != "" {
 		builtins = append(builtins, skills.New(cfg.SkillsDir))
 	}
 	builtins = append(builtins, cronjobs.New(st, h.cal))
 	h.Users = mcp.NewUsers(ctx, mcp.Client{Name: cfg.Name, Version: version()}, st, cfg.Boxes, builtins...)
 	h.App = app.New(st, modelSet, h.Users.Tools, h.Users.Statuses, cfg.Boxes, files, h.cal, cfg.Permissions)
+	hubTools.App = h.App
 	runner := run.New(st, modelSet, h.Users.Tools, files, skillsOf(cfg.SkillsDir),
 		run.Deployment{Name: cfg.Name, Prompt: cfg.Prompt, Permissions: cfg.Permissions, Allowlist: cfg.Allowlist, OptIn: cfg.OptIn})
 	slots := cmp.Or(cfg.Slots, defaultSlots)

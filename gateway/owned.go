@@ -82,6 +82,11 @@ func (c *conn) workspaceProviders(ctx context.Context, p WorkspaceProvidersParam
 	return WorkspaceResult{Workspace: workspaceRow(w)}, err
 }
 
+func (c *conn) workspaceSetKind(ctx context.Context, p WorkspaceSetKindParams) (WorkspaceResult, error) {
+	w, err := c.s.app.SetWorkspaceKind(ctx, c.user, p.WorkspaceID, p.Kind)
+	return WorkspaceResult{Workspace: workspaceRow(w)}, err
+}
+
 func (c *conn) workspacePermissions(ctx context.Context, p WorkspacePermissionsParams) (WorkspaceResult, error) {
 	w, err := c.s.app.UpdateWorkspacePermissions(ctx, c.user, p.WorkspaceID, p.Settings)
 	return WorkspaceResult{Workspace: workspaceRow(w)}, err

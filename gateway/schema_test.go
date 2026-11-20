@@ -24,6 +24,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/policy"
 	"github.com/0xfakeSpike/ollupi/run"
+	"github.com/0xfakeSpike/ollupi/tool/builtin/hub"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/plan"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/subagent"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/workspace"
@@ -59,17 +60,25 @@ type toolSchemas struct {
 }
 
 var builtinTools = map[string]struct{ arguments, output reflect.Type }{
-	agent.PlanTool:            {arguments: reflect.TypeFor[plan.Plan]()},
-	string(agent.GeneralSub):  {arguments: reflect.TypeFor[subagent.Call](), output: reflect.TypeFor[run.Launched]()},
-	string(agent.BrowserSub):  {arguments: reflect.TypeFor[subagent.Call](), output: reflect.TypeFor[run.Launched]()},
-	string(agent.DelegateSub): {arguments: reflect.TypeFor[subagent.Call](), output: reflect.TypeFor[run.Launched]()},
-	ask.Tool:                  {arguments: reflect.TypeFor[ask.Request](), output: reflect.TypeFor[ask.Answers]()},
-	workspace.ToolRunCommand:  {output: reflect.TypeFor[workspace.CommandOutput]()},
-	workspace.ToolEditFile:    {output: reflect.TypeFor[workspace.FileOutput]()},
-	workspace.ToolWriteFile:   {output: reflect.TypeFor[workspace.FileOutput]()},
-	workspace.ToolReadFile:    {arguments: reflect.TypeFor[workspace.ReadFile](), output: reflect.TypeFor[workspace.ReadFileOutput]()},
-	workspace.ToolGlob:        {arguments: reflect.TypeFor[workspace.Glob](), output: reflect.TypeFor[workspace.GlobOutput]()},
-	workspace.ToolGrep:        {arguments: reflect.TypeFor[workspace.Grep](), output: reflect.TypeFor[workspace.GrepOutput]()},
+	agent.PlanTool:              {arguments: reflect.TypeFor[plan.Plan]()},
+	string(agent.GeneralSub):    {arguments: reflect.TypeFor[subagent.Call](), output: reflect.TypeFor[run.Launched]()},
+	string(agent.BrowserSub):    {arguments: reflect.TypeFor[subagent.Call](), output: reflect.TypeFor[run.Launched]()},
+	string(agent.DelegateSub):   {arguments: reflect.TypeFor[subagent.Call](), output: reflect.TypeFor[run.Launched]()},
+	ask.Tool:                    {arguments: reflect.TypeFor[ask.Request](), output: reflect.TypeFor[ask.Answers]()},
+	agent.ListWorkspacesTool:    {output: reflect.TypeFor[hub.Workspaces]()},
+	agent.StartConversationTool: {arguments: reflect.TypeFor[hub.StartArgs](), output: reflect.TypeFor[hub.Started]()},
+	agent.SendMessageTool:       {arguments: reflect.TypeFor[hub.SendArgs](), output: reflect.TypeFor[hub.Started]()},
+	agent.ListConversationsTool: {arguments: reflect.TypeFor[hub.ListArgs](), output: reflect.TypeFor[hub.Conversations]()},
+	agent.ReadConversationTool:  {arguments: reflect.TypeFor[hub.ReadArgs](), output: reflect.TypeFor[hub.Turns]()},
+	agent.AddTodoTool:           {arguments: reflect.TypeFor[hub.AddTodoArgs](), output: reflect.TypeFor[hub.Todo]()},
+	agent.UpdateTodoTool:        {arguments: reflect.TypeFor[hub.UpdateTodoArgs](), output: reflect.TypeFor[hub.Todo]()},
+	agent.ListTodosTool:         {arguments: reflect.TypeFor[hub.ListTodosArgs](), output: reflect.TypeFor[hub.Todos]()},
+	workspace.ToolRunCommand:    {output: reflect.TypeFor[workspace.CommandOutput]()},
+	workspace.ToolEditFile:      {output: reflect.TypeFor[workspace.FileOutput]()},
+	workspace.ToolWriteFile:     {output: reflect.TypeFor[workspace.FileOutput]()},
+	workspace.ToolReadFile:      {arguments: reflect.TypeFor[workspace.ReadFile](), output: reflect.TypeFor[workspace.ReadFileOutput]()},
+	workspace.ToolGlob:          {arguments: reflect.TypeFor[workspace.Glob](), output: reflect.TypeFor[workspace.GlobOutput]()},
+	workspace.ToolGrep:          {arguments: reflect.TypeFor[workspace.Grep](), output: reflect.TypeFor[workspace.GrepOutput]()},
 }
 
 var preparedExecution = reflect.TypeFor[workspace.Prepared]()
@@ -79,7 +88,7 @@ var providers = []string{agent.CronProvider, agent.SkillsProvider, account.Memor
 var enums = []any{
 	conversation.ItemKinds, conversation.ItemStatuses, conversation.ThreadStatuses, conversation.Ends, conversation.Decisions,
 	TurnStatuses, memory.Scopes, memory.Kinds, memory.Statuses, memory.FailureCodes, policy.PolicyValues, agent.Names,
-	plan.StatusValues, account.EnvironmentKinds,
+	plan.StatusValues, account.EnvironmentKinds, account.WorkspaceKinds, account.TodoStatuses,
 }
 
 var plainStrings = []reflect.Type{}
@@ -110,6 +119,11 @@ var arrays = []field{
 	{reflect.TypeFor[Found](), "CronJobs"},
 	{reflect.TypeFor[conversation.MemoryStats](), "IDs"},
 	{reflect.TypeFor[plan.Plan](), "Steps"},
+	{reflect.TypeFor[hub.Workspaces](), "Workspaces"},
+	{reflect.TypeFor[hub.Conversations](), "Conversations"},
+	{reflect.TypeFor[hub.Turns](), "Turns"},
+	{reflect.TypeFor[hub.Turn](), "Messages"},
+	{reflect.TypeFor[hub.Todos](), "Todos"},
 	{reflect.TypeFor[ask.Request](), "Questions"},
 	{reflect.TypeFor[ask.Question](), "Options"},
 	{reflect.TypeFor[Approval](), "AvailableDecisions"},
@@ -126,6 +140,24 @@ var defNames = map[reflect.Type]string{
 	reflect.TypeFor[plan.Status]():            "PlanStepStatus",
 	reflect.TypeFor[account.Providers]():      "WorkspaceProviders",
 	reflect.TypeFor[subagent.Call]():          "SubagentCall",
+	reflect.TypeFor[hub.Workspace]():          "HubWorkspace",
+	reflect.TypeFor[hub.Workspaces]():         "HubWorkspaces",
+	reflect.TypeFor[hub.StartArgs]():          "HubStartConversation",
+	reflect.TypeFor[hub.SendArgs]():           "HubSendMessage",
+	reflect.TypeFor[hub.Started]():            "HubMessageSent",
+	reflect.TypeFor[hub.ListArgs]():           "HubListConversations",
+	reflect.TypeFor[hub.Conversations]():      "HubConversations",
+	reflect.TypeFor[hub.Status]():             "HubConversation",
+	reflect.TypeFor[hub.ReadArgs]():           "HubReadConversation",
+	reflect.TypeFor[hub.Turns]():              "HubTurns",
+	reflect.TypeFor[hub.Turn]():               "HubTurn",
+	reflect.TypeFor[hub.Message]():            "HubMessage",
+	reflect.TypeFor[hub.Ended]():              "HubTurnEnded",
+	reflect.TypeFor[hub.Todo]():               "HubTodo",
+	reflect.TypeFor[hub.Todos]():              "HubTodos",
+	reflect.TypeFor[hub.AddTodoArgs]():        "HubAddTodo",
+	reflect.TypeFor[hub.UpdateTodoArgs]():     "HubUpdateTodo",
+	reflect.TypeFor[hub.ListTodosArgs]():      "HubListTodos",
 	reflect.TypeFor[run.Launched]():           "SubagentLaunched",
 	reflect.TypeFor[ask.Request]():            "UserInputRequest",
 	reflect.TypeFor[ask.Question]():           "UserInputQuestion",
