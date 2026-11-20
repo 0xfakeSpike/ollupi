@@ -93,48 +93,50 @@ var protocol = struct {
 	limits              Limits
 }{
 	methods: map[string]method{
-		methodInitialize:              handleThen((*conn).initialize),
-		"thread/start":                handle((*conn).threadStart),
-		"thread/resume":               handleThen(threadPage(true)),
-		"thread/read":                 handleThen(threadPage(false)),
-		"thread/list":                 handle((*conn).threadList),
-		"thread/updatePermissions":    handle((*conn).threadPermissions),
-		"thread/rename":               handle((*conn).threadRename),
-		"thread/archive":              handle((*conn).threadArchive),
-		"thread/markRead":             handle((*conn).threadMarkRead),
-		"thread/delete":               handle((*conn).threadDelete),
-		"turn/start":                  handle((*conn).turnStart),
-		"turn/steer":                  handle((*conn).turnSteer),
-		"turn/interrupt":              handle((*conn).turnInterrupt),
-		"attachment/read":             handle((*conn).attachmentRead),
-		"model/list":                  handle((*conn).modelList),
-		"tool/list":                   handle((*conn).toolList),
-		"mcpServer/list":              handle((*conn).mcpServerList),
-		"mcpServer/set":               handle((*conn).mcpServerSet),
-		"mcpServer/delete":            handle((*conn).mcpServerDelete),
-		"workspace/list":              handle((*conn).workspaceList),
-		"workspace/add":               handle((*conn).workspaceAdd),
-		"workspace/rename":            handle((*conn).workspaceRename),
-		"workspace/move":              handle((*conn).workspaceMove),
-		"workspace/archive":           handle((*conn).workspaceArchive),
-		"workspace/updatePermissions": handle((*conn).workspacePermissions),
-		"environment/list":            handle((*conn).environmentList),
-		"environment/add":             handle((*conn).environmentAdd),
-		"environment/rename":          handle((*conn).environmentRename),
-		"environment/delete":          handle((*conn).environmentDelete),
-		"cron/list":                   handle((*conn).cronList),
-		"cron/create":                 handle((*conn).cronCreate),
-		"cron/pause":                  handle((*conn).cronPause),
-		"cron/delete":                 handle((*conn).cronDelete),
-		"memory/list":                 handle((*conn).memoryList),
-		"memory/status":               handle((*conn).memoryStatus),
-		"memory/update":               handle((*conn).memoryUpdate),
-		"memory/move":                 handle((*conn).memoryMove),
-		"memory/forget":               handle((*conn).memoryForget),
-		"search":                      handle((*conn).search),
-		"settings/read":               handle((*conn).settingsRead),
-		"settings/update":             handle((*conn).settingsUpdate),
-		"settings/updatePermissions":  handle((*conn).settingsPermissions),
+		methodInitialize:               handleThen((*conn).initialize),
+		"thread/start":                 handle((*conn).threadStart),
+		"thread/resume":                handleThen(threadPage(true)),
+		"thread/read":                  handleThen(threadPage(false)),
+		"thread/list":                  handle((*conn).threadList),
+		"thread/updatePermissions":     handle((*conn).threadPermissions),
+		"thread/rename":                handle((*conn).threadRename),
+		"thread/archive":               handle((*conn).threadArchive),
+		"thread/markRead":              handle((*conn).threadMarkRead),
+		"thread/delete":                handle((*conn).threadDelete),
+		"turn/start":                   handle((*conn).turnStart),
+		"turn/steer":                   handle((*conn).turnSteer),
+		"turn/interrupt":               handle((*conn).turnInterrupt),
+		"attachment/read":              handle((*conn).attachmentRead),
+		"model/list":                   handle((*conn).modelList),
+		"tool/list":                    handle((*conn).toolList),
+		"mcpServer/list":               handle((*conn).mcpServerList),
+		"mcpServer/set":                handle((*conn).mcpServerSet),
+		"mcpServer/delete":             handle((*conn).mcpServerDelete),
+		"workspace/list":               handle((*conn).workspaceList),
+		"workspace/add":                handle((*conn).workspaceAdd),
+		"workspace/rename":             handle((*conn).workspaceRename),
+		"workspace/move":               handle((*conn).workspaceMove),
+		"workspace/archive":            handle((*conn).workspaceArchive),
+		"workspace/updatePermissions":  handle((*conn).workspacePermissions),
+		"workspace/updateInstructions": handle((*conn).workspaceInstructions),
+		"workspace/updateProviders":    handle((*conn).workspaceProviders),
+		"environment/list":             handle((*conn).environmentList),
+		"environment/add":              handle((*conn).environmentAdd),
+		"environment/rename":           handle((*conn).environmentRename),
+		"environment/delete":           handle((*conn).environmentDelete),
+		"cron/list":                    handle((*conn).cronList),
+		"cron/create":                  handle((*conn).cronCreate),
+		"cron/pause":                   handle((*conn).cronPause),
+		"cron/delete":                  handle((*conn).cronDelete),
+		"memory/list":                  handle((*conn).memoryList),
+		"memory/status":                handle((*conn).memoryStatus),
+		"memory/update":                handle((*conn).memoryUpdate),
+		"memory/move":                  handle((*conn).memoryMove),
+		"memory/forget":                handle((*conn).memoryForget),
+		"search":                       handle((*conn).search),
+		"settings/read":                handle((*conn).settingsRead),
+		"settings/update":              handle((*conn).settingsUpdate),
+		"settings/updatePermissions":   handle((*conn).settingsPermissions),
 	},
 	notifications: map[string]reflect.Type{
 		notifyThreadChanged:      reflect.TypeFor[ThreadChangedNotification](),
@@ -463,6 +465,16 @@ type WorkspaceMoveParams struct {
 type WorkspaceArchiveParams struct {
 	WorkspaceID string `json:"workspaceId"`
 	Archived    *bool  `json:"archived"`
+}
+
+type WorkspaceInstructionsParams struct {
+	WorkspaceID  string `json:"workspaceId"`
+	Instructions string `json:"instructions"`
+}
+
+type WorkspaceProvidersParams struct {
+	WorkspaceID string `json:"workspaceId"`
+	account.Providers
 }
 
 type WorkspacePermissionsParams struct {

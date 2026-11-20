@@ -170,17 +170,19 @@ type ThreadView struct {
 }
 
 type WorkspaceRow struct {
-	ID         string          `json:"id"`
-	Name       string          `json:"name"`
-	RootPath   string          `json:"rootPath"`
-	Settings   policy.Settings `json:"settings"`
-	CreatedAt  time.Time       `json:"createdAt"`
-	UpdatedAt  time.Time       `json:"updatedAt"`
-	ArchivedAt *time.Time      `json:"archivedAt,omitempty"`
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	RootPath     string            `json:"rootPath"`
+	Instructions string            `json:"instructions,omitempty"`
+	Providers    account.Providers `json:"providers"`
+	Settings     policy.Settings   `json:"settings"`
+	CreatedAt    time.Time         `json:"createdAt"`
+	UpdatedAt    time.Time         `json:"updatedAt"`
+	ArchivedAt   *time.Time        `json:"archivedAt,omitempty"`
 }
 
 func workspaceRow(w account.Workspace) WorkspaceRow {
-	return WorkspaceRow{ID: w.ID, Name: w.Name, RootPath: w.Root, Settings: w.Settings, CreatedAt: w.Created, UpdatedAt: w.Updated, ArchivedAt: w.Archived}
+	return WorkspaceRow{ID: w.ID, Name: w.Name, RootPath: w.Root, Instructions: w.Instructions, Providers: w.Providers, Settings: w.Settings, CreatedAt: w.Created, UpdatedAt: w.Updated, ArchivedAt: w.Archived}
 }
 
 type EnvironmentRow struct {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -450,5 +451,43 @@ func TestEndingATurnReportsItsTasks(t *testing.T) {
 	}
 	if report := v.Items[3]; report.Task != task || report.Error != stoppedWithParent || v.Turns[0].Ended == nil {
 		t.Errorf("the report %+v, the turn %+v", report, v.Turns[0])
+	}
+}
+
+func TestAWorkspaceGivesItsInstructionsAndHidesTheProvidersItTurnsOff(t *testing.T) {
+	f := setup(t, nil)
+	var system string
+	var offered []string
+	f.m.answer = func(req llm.ChatRequest) llm.ChatResponse {
+		system = req.Messages[0].Content
+		for _, tl := range req.Tools {
+			offered = append(offered, tl.Name)
+		}
+		return answer("noted")
+	}
+	now := time.Now().UTC()
+	f.update(func(tx store.Tx) error {
+		if err := tx.EnsureUser("u"); err != nil {
+			return err
+		}
+		w := account.Workspace{ID: "w", Name: "plans", Root: t.TempDir(), Instructions: "Answer in haiku.",
+			Providers: account.Providers{Disabled: []string{agent.SubagentsProvider}}, Created: now, Updated: now}
+		if err := tx.PutWorkspace("u", w); err != nil {
+			return err
+		}
+		if err := tx.CreateThread(store.Thread{User: "u", Thread: account.Thread{ID: "th", Workspace: "w", Created: now, Updated: now}}); err != nil {
+			return err
+		}
+		_, err := tx.Append("th",
+			conversation.Entry{Turn: "t1", Body: conversation.TurnQueued{Model: llm.Model{Name: "m"}, Role: string(agent.FullMain)}},
+			conversation.Entry{Turn: "t1", Item: "m1", Body: conversation.UserMessage{Text: "plan my week"}})
+		return err
+	})
+	f.run("th")
+	if !strings.Contains(system, "# WORKSPACE INSTRUCTIONS") || !strings.Contains(system, "Answer in haiku.") {
+		t.Errorf("the system prompt %q", system)
+	}
+	if slices.Contains(offered, string(agent.GeneralSub)) || !slices.Contains(offered, agent.ReadFileTool) {
+		t.Errorf("offered %q", offered)
 	}
 }
