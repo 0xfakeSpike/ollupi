@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -23,6 +24,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/store/sqlite"
 	"github.com/0xfakeSpike/ollupi/tool"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
+	"github.com/google/jsonschema-go/jsonschema"
 )
 
 type models struct{}
@@ -176,71 +178,26 @@ func TestTheHubHandsOutWorkAndFollowsIt(t *testing.T) {
 	}
 }
 
-func TestTodosHoldThePlanAndFollowTheirConversations(t *testing.T) {
+func TestTheHubKeepsNoTodosOfItsOwn(t *testing.T) {
 	f := setup(t)
-	home, docs := f.workspace("home"), f.workspace("docs")
-	if _, err := f.a.SetWorkspaceKind(f.ctx, "u", home.ID, account.HubWorkspace); err != nil {
-		t.Fatal(err)
-	}
-	hub, err := f.a.StartThread(f.ctx, "u", home.ID, "", "plan")
+	specs, err := f.p.Tools(f.ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	todo := func(name string, args map[string]any) (Todo, error) {
-		t.Helper()
-		out, err := f.call(hub.ID, name, args)
-		var got Todo
-		json.Unmarshal(out, &got)
-		return got, err
-	}
-	notes, err := todo(agent.AddTodoTool, map[string]any{"title": "write the release notes"})
-	if err != nil || notes.ID != 1 || notes.Status != account.TodoOpen {
-		t.Fatalf("the first todo %+v, %v", notes, err)
-	}
-	review, _ := todo(agent.AddTodoTool, map[string]any{"title": "review the docs"})
-	if _, err := f.call(hub.ID, agent.StartConversationTool, map[string]any{"workspace": docs.ID, "title": "x", "message": "x", "todo": 99}); err == nil {
-		t.Error("a conversation started for a todo that is not there")
-	}
-	out, err := f.call(hub.ID, agent.StartConversationTool, map[string]any{"workspace": docs.ID, "title": "release notes", "message": "write them", "todo": notes.ID})
-	var started Started
-	json.Unmarshal(out, &started)
-	if err != nil || started.Todo == nil || started.Todo.Status != account.TodoHanded || started.Todo.Conversation != started.Conversation || started.Todo.Workspace != docs.ID {
-		t.Fatalf("started %s, %v", out, err)
-	}
-	if threads, _, _ := f.a.Threads(f.ctx, "u", store.ThreadFilter{Workspace: &docs.ID, Limit: 10}); len(threads) != 1 {
-		t.Errorf("docs has %d conversations", len(threads))
-	}
-	done, err := todo(agent.UpdateTodoTool, map[string]any{"id": notes.ID, "status": "done", "result": "published"})
-	if err != nil || done.Status != account.TodoDone || done.Done == "" || done.Result != "published" || done.Conversation != started.Conversation {
-		t.Errorf("done %+v, %v", done, err)
-	}
-	linked, err := todo(agent.UpdateTodoTool, map[string]any{"id": review.ID, "conversation": started.Conversation})
-	if err != nil || linked.Workspace != docs.ID || linked.Status != account.TodoOpen {
-		t.Errorf("linked %+v, %v", linked, err)
-	}
-	for _, c := range []struct {
-		args map[string]any
-		ids  []int64
-	}{{map[string]any{}, []int64{review.ID}}, {map[string]any{"statuses": []any{"done"}}, []int64{notes.ID}}} {
-		out, err := f.call(hub.ID, agent.ListTodosTool, c.args)
-		var got Todos
-		json.Unmarshal(out, &got)
-		var ids []int64
-		for _, td := range got.Todos {
-			ids = append(ids, td.ID)
+	var names []string
+	for _, s := range specs {
+		names = append(names, s.Name)
+		if strings.Contains(strings.ToLower(s.Name), "todo") {
+			t.Errorf("the hub offers %s", s.Name)
 		}
-		if err != nil || len(ids) != len(c.ids) || ids[0] != c.ids[0] {
-			t.Errorf("listed with %v: %s, %v", c.args, out, err)
+		if s.Name == agent.StartConversationTool {
+			if args := s.InputSchema.(*jsonschema.Schema); args.Properties["todo"] != nil {
+				t.Errorf("%s takes a todo: %v", s.Name, args.Properties)
+			}
 		}
 	}
-	reopened, _ := todo(agent.UpdateTodoTool, map[string]any{"id": notes.ID, "status": "handed"})
-	if reopened.Done != "" {
-		t.Errorf("reopened %+v", reopened)
-	}
-	if _, err := todo(agent.UpdateTodoTool, map[string]any{"id": 99, "status": "done"}); err == nil {
-		t.Error("a todo that is not there was updated")
-	}
-	if _, err := todo(agent.UpdateTodoTool, map[string]any{"id": notes.ID, "status": "later"}); err == nil {
-		t.Error("a todo took an unknown status")
+	want := []string{agent.ListWorkspacesTool, agent.StartConversationTool, agent.SendMessageTool, agent.ListConversationsTool, agent.ReadConversationTool}
+	if !slices.Equal(names, want) {
+		t.Errorf("the hub's tools %q", names)
 	}
 }

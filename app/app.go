@@ -34,7 +34,6 @@ var (
 	ErrInvalidPath      = errors.New("invalid path")
 	ErrEnvironmentInUse = errors.New("a conversation runs in the environment")
 	ErrInvalidQuery     = errors.New("invalid query")
-	ErrInvalidTodo      = errors.New("invalid todo")
 	ErrSearchTimedOut   = errors.New("the search took too long; try longer or fewer words")
 )
 
