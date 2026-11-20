@@ -59,16 +59,17 @@ type toolSchemas struct {
 }
 
 var builtinTools = map[string]struct{ arguments, output reflect.Type }{
-	agent.PlanTool:           {arguments: reflect.TypeFor[plan.Plan]()},
-	string(agent.GeneralSub): {arguments: reflect.TypeFor[subagent.Call](), output: reflect.TypeFor[run.Launched]()},
-	string(agent.BrowserSub): {arguments: reflect.TypeFor[subagent.Call](), output: reflect.TypeFor[run.Launched]()},
-	ask.Tool:                 {arguments: reflect.TypeFor[ask.Request](), output: reflect.TypeFor[ask.Answers]()},
-	workspace.ToolRunCommand: {output: reflect.TypeFor[workspace.CommandOutput]()},
-	workspace.ToolEditFile:   {output: reflect.TypeFor[workspace.FileOutput]()},
-	workspace.ToolWriteFile:  {output: reflect.TypeFor[workspace.FileOutput]()},
-	workspace.ToolReadFile:   {arguments: reflect.TypeFor[workspace.ReadFile](), output: reflect.TypeFor[workspace.ReadFileOutput]()},
-	workspace.ToolGlob:       {arguments: reflect.TypeFor[workspace.Glob](), output: reflect.TypeFor[workspace.GlobOutput]()},
-	workspace.ToolGrep:       {arguments: reflect.TypeFor[workspace.Grep](), output: reflect.TypeFor[workspace.GrepOutput]()},
+	agent.PlanTool:            {arguments: reflect.TypeFor[plan.Plan]()},
+	string(agent.GeneralSub):  {arguments: reflect.TypeFor[subagent.Call](), output: reflect.TypeFor[run.Launched]()},
+	string(agent.BrowserSub):  {arguments: reflect.TypeFor[subagent.Call](), output: reflect.TypeFor[run.Launched]()},
+	string(agent.DelegateSub): {arguments: reflect.TypeFor[subagent.Call](), output: reflect.TypeFor[run.Launched]()},
+	ask.Tool:                  {arguments: reflect.TypeFor[ask.Request](), output: reflect.TypeFor[ask.Answers]()},
+	workspace.ToolRunCommand:  {output: reflect.TypeFor[workspace.CommandOutput]()},
+	workspace.ToolEditFile:    {output: reflect.TypeFor[workspace.FileOutput]()},
+	workspace.ToolWriteFile:   {output: reflect.TypeFor[workspace.FileOutput]()},
+	workspace.ToolReadFile:    {arguments: reflect.TypeFor[workspace.ReadFile](), output: reflect.TypeFor[workspace.ReadFileOutput]()},
+	workspace.ToolGlob:        {arguments: reflect.TypeFor[workspace.Glob](), output: reflect.TypeFor[workspace.GlobOutput]()},
+	workspace.ToolGrep:        {arguments: reflect.TypeFor[workspace.Grep](), output: reflect.TypeFor[workspace.GrepOutput]()},
 }
 
 var preparedExecution = reflect.TypeFor[workspace.Prepared]()

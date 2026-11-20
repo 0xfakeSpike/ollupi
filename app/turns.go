@@ -89,8 +89,8 @@ func (a *App) queue(tx store.Tx, th store.Thread, text string, atts []conversati
 		return conversation.Turn{}, false, err
 	}
 	role := string(agent.MainRole(limits.Input()))
-	if th.Parent != "" {
-		role = v.Turns[0].Role
+	if th.Role != "" {
+		role = th.Role
 	}
 	id := uuid.NewString()
 	v, err = tx.Append(th.ID,

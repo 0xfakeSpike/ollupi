@@ -26,7 +26,7 @@ flowchart LR
 ## 一条路写，一条路读，一条路通知
 
 - **写**：一切变化都是向日志追加记录（`conversation.Entry`），在 `store.Update` 的一个事务里完成。`Tx.Append` 先用 `conversation.Check` 判断每条记录能不能接在当前日志后面，不能就整个事务失败（`conversation.ErrRefused`）；能就用 `conversation.View.Apply` 折叠进视图，再把变了的轮次、条目和会话的状态列一起写下。
-- **读**：视图（`conversation.View`）由同一组纯函数从日志折叠出来；`turns`、`items` 表和 `threads` 的 `head`、`own_status`、`runnable_since` 列只是它的物化，为了查询。`status` 是会话的状态加上子会话对用户的等待：子会话在等审批或回答时，父会话也显示在等，审批排在回答前面（`conversation.RollUp`）；子会话的记录写入时，store 在同一事务里重算祖先会话的这一列。
+- **读**：视图（`conversation.View`）由同一组纯函数从日志折叠出来；`turns`、`items` 表和 `threads` 的 `head`、`own_status`、`runnable_since` 列只是它的物化，为了查询。`status` 是会话的状态加上子会话对用户的等待：子会话在等审批或回答时，父会话也显示在等，审批排在回答前面（`conversation.RollUp`），委派会话不算在内；子会话的记录写入时，store 在同一事务里重算祖先会话的这一列。
 - **通知**：事务提交之后，它改变的东西作为一个事件发到 store 的 feed 上（`store.Event`），同一次提交的事件共用一个序号 `seq`。gateway、调度器、记忆抽取都只从 feed 得知变化；写的一方不通知任何人。
 
 代码：[conversation/](../conversation/)、[store/store.go](../store/store.go)、[store/sqlite/](../store/sqlite/)。
@@ -56,8 +56,8 @@ stateDiagram-v2
 会话是一段对话。它运行在一个执行环境里（不指定时是这台机器），可选地挂在一个工作区上，带一层自己的权限设置。
 
 - **顶层会话**：用户通过 `app.StartThread` 创建，出现在会话列表里。
-- **子会话**：子 agent 的会话。父会话里启动它的调用结束时，runner 在同一事务里创建子会话、给它排上第一个轮次和任务消息（`run.launch`）。它记着 `parent_id` 和 `parent_item`，继承父会话的环境；工作区默认是父会话的，启动时可以指定用户的另一个工作区（`conversation_info` 工具列出它们的 id）。它按自己的会话设置运行，没设过时就是所在工作区的权限，"总是允许"也记进它自己的工作区。用户可以像对顶层会话一样给它发消息、插话、中断，这些轮次沿用它第一个轮次的角色；它随父会话一起删除。
-- **等不等**：启动时模型决定父轮次等不等它的报告（`wait`，默认等）。等的子会话只汇报启动它的那一轮，报告写进启动它的轮次；不等的（`ChildLaunched.Detached`）从不汇报，父轮次也不因它停下或结束，用户在它自己的会话里看它。
+- **子会话**：子 agent 的会话。父会话里启动它的调用结束时，runner 在同一事务里创建子会话、给它排上第一个轮次和任务消息（`run.launch`）。它记着 `parent_id`、`parent_item` 和它的角色（`role`，即启动它的工具；顶层会话的角色每一轮按模型选，这一列为空），继承父会话的环境；工作区默认是父会话的，启动时可以指定用户的另一个工作区（`conversation_info` 工具列出它们的 id）。它按自己的会话设置运行，没设过时就是所在工作区的权限，"总是允许"也记进它自己的工作区。用户可以像对顶层会话一样给它发消息、插话、中断，这些轮次沿用它的角色。
+- **两种子会话**：`general-sub-agent` 和 `browser-sub-agent` 汇报：父轮次等它，它只汇报启动它的那一轮，报告写进启动它的轮次；它不出现在会话列表和搜索里，随父会话一起删除。`delegate-sub-agent` 是委派：不汇报（`ChildLaunched.Detached`），父轮次不等它、也不因它停下或结束；它的回复给用户看，出现在会话列表和搜索里，有未读标记，等待状态不汇总到父会话；父会话还有委派会话时不能删除（`app.ErrHasDelegates`）。
 
 ```mermaid
 stateDiagram-v2
@@ -74,8 +74,8 @@ stateDiagram-v2
 - **当前轮次**：日志里第一个还没结束的轮次（`View.Active`）。其余没结束的排在它后面（`View.Behind`）。同一会话任何时刻只运行当前轮次。
 - **会话状态**从视图算出（`View.Status`）：没有当前轮次是 `idle`；当前轮次在等审批或回答是 `waitingOnApproval` / `waitingOnUserInput`；否则是 `active`。
 - **可运行**：有当前轮次且它不在等任何东西（`View.Runnable`）。store 记下它变成可运行的时刻，调度器按这个时刻先后取会话。
-- **未读**：顶层会话的轮次结束时写 `replied_at`；标记已读时写 `read_at`。
-- **归档、删除**：要求会话空闲。已归档的会话不能发新消息（`app.ErrThreadArchived`）。删除连同日志、子会话、定时任务和附件一起删掉。
+- **未读**：顶层会话和委派会话的轮次结束时写 `replied_at`；标记已读时写 `read_at`。
+- **归档、删除**：要求会话空闲。已归档的会话不能发新消息（`app.ErrThreadArchived`）。删除连同日志、汇报型子会话、它们的定时任务和附件一起删掉；还有委派会话时拒绝删除。
 
 代码：[app/threads.go](../app/threads.go)、[store/sqlite/conversations.go](../store/sqlite/conversations.go)。
 
@@ -200,6 +200,6 @@ stateDiagram-v2
 | 归档工作区 | 无 | 不能新建会话，名下会话不能发新消息 |
 | 移动工作区 | 名下会话都空闲 | 只改 `root`，其余都按 id 引用 |
 | 归档会话 | 空闲 | 不能发新消息 |
-| 删除会话 | 空闲 | 日志、子会话、定时任务、附件一起删除 |
+| 删除会话 | 空闲，且没有委派会话 | 日志、汇报型子会话、定时任务、附件一起删除 |
 | 结束轮次 | 有当前轮次 | 还没结束的调用先关掉；它在等的子 agent 被停掉并汇报，不等的照常运行；还没汇报的后台调用记为随轮次停止并被取消；子会话被启动的那一轮向在等它的父轮次汇报；排在后面的轮次成为当前轮次 |
 | 追加记录 | 通过 `conversation.Check` | 可能让会话变得可运行，调度器从 feed 得知 |
