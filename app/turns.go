@@ -29,6 +29,8 @@ type Input struct {
 	Text        string
 	Attachments []AttachmentInput
 	Connection  string
+	// From is the id of the user's hub conversation that sends the message on the user's behalf; empty when the user writes it.
+	From string
 }
 
 func (a *App) Send(ctx context.Context, user, id string, in Input) (turn conversation.Turn, inProgress bool, err error) {
@@ -41,7 +43,11 @@ func (a *App) Send(ctx context.Context, user, id string, in Input) (turn convers
 		if err != nil {
 			return err
 		}
-		turn, inProgress, err = a.queue(tx, th, in.Text, atts, in.Connection, "")
+		from, err := sender(tx, user, in.From)
+		if err != nil {
+			return err
+		}
+		turn, inProgress, err = a.queue(tx, th, conversation.UserMessage{Text: in.Text, Attachments: atts, From: from}, in.Connection, "")
 		return err
 	})
 	if err != nil {
@@ -55,12 +61,23 @@ func (a *App) Scheduled(tx store.Tx, id, prompt, job string) error {
 	if err != nil {
 		return err
 	}
-	_, _, err = a.queue(tx, th, prompt, nil, "", job)
+	_, _, err = a.queue(tx, th, conversation.UserMessage{Text: prompt}, "", job)
 	return err
 }
 
-func (a *App) queue(tx store.Tx, th store.Thread, text string, atts []conversation.Attachment, connection, job string) (conversation.Turn, bool, error) {
-	text, err := message(text, len(atts))
+func sender(r store.Reader, user, id string) (*conversation.Sender, error) {
+	if id == "" {
+		return nil, nil
+	}
+	th, err := thread(r, user, id)
+	if err != nil {
+		return nil, fmt.Errorf("the conversation sending the message: %w", err)
+	}
+	return &conversation.Sender{Thread: th.ID, Title: th.Title}, nil
+}
+
+func (a *App) queue(tx store.Tx, th store.Thread, msg conversation.UserMessage, connection, job string) (conversation.Turn, bool, error) {
+	text, err := message(msg.Text, len(msg.Attachments))
 	if err != nil {
 		return conversation.Turn{}, false, err
 	}
@@ -86,7 +103,7 @@ func (a *App) queue(tx store.Tx, th store.Thread, text string, atts []conversati
 	if err != nil {
 		return conversation.Turn{}, false, err
 	}
-	limits, err := a.fits(model, v, text, atts)
+	limits, err := a.fits(model, v, text, msg.Attachments)
 	if err != nil {
 		return conversation.Turn{}, false, err
 	}
@@ -99,9 +116,10 @@ func (a *App) queue(tx store.Tx, th store.Thread, text string, atts []conversati
 		role = string(agent.HubMain)
 	}
 	id := uuid.NewString()
+	msg.Text = text
 	v, err = tx.Append(th.ID,
 		conversation.Entry{Turn: id, Body: conversation.TurnQueued{Model: model, Role: role, CronJob: job}},
-		conversation.Entry{Turn: id, Item: uuid.NewString(), Body: conversation.UserMessage{Text: text, Attachments: atts}})
+		conversation.Entry{Turn: id, Item: uuid.NewString(), Body: msg})
 	if err != nil {
 		return conversation.Turn{}, false, err
 	}
@@ -128,6 +146,10 @@ func (a *App) Steer(ctx context.Context, user, id, expected string, in Input) (c
 		if turn, err = activeTurn(v, expected); err != nil {
 			return err
 		}
+		from, err := sender(tx, user, in.From)
+		if err != nil {
+			return err
+		}
 		text, err := message(in.Text, len(atts))
 		if err != nil {
 			return err
@@ -143,7 +165,7 @@ func (a *App) Steer(ctx context.Context, user, id, expected string, in Input) (c
 			}
 			entries = append(entries, conversation.Entry{Turn: turn.ID, Item: it.ID, Body: body})
 		}
-		entries = append(entries, conversation.Entry{Turn: turn.ID, Item: uuid.NewString(), Body: conversation.UserMessage{Text: text, Attachments: atts}})
+		entries = append(entries, conversation.Entry{Turn: turn.ID, Item: uuid.NewString(), Body: conversation.UserMessage{Text: text, Attachments: atts, From: from}})
 		_, err = tx.Append(th.ID, entries...)
 		return err
 	})

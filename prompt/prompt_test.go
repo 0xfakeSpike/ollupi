@@ -73,6 +73,21 @@ func TestATurnReadsAsMessagesCallsAndResults(t *testing.T) {
 	}
 }
 
+func TestAMessageTheHubSentNamesTheHubConversation(t *testing.T) {
+	l := &log{t: t}
+	l.add("t", "", conversation.TurnQueued{})
+	l.add("t", "m", conversation.UserMessage{Text: "write the release notes", From: &conversation.Sender{Thread: "h", Title: "plan"}})
+	l.add("t", "s", conversation.UserMessage{Text: "and the changelog"})
+	r := build(t, wide, l.v)
+	hub, user := r.Messages[0].Content, r.Messages[1].Content
+	if !strings.HasPrefix(hub, "[sent ") || !strings.HasSuffix(hub, ` by the hub conversation "plan" on the user's behalf]`+"\nwrite the release notes") {
+		t.Errorf("the hub's message: %q", hub)
+	}
+	if strings.Contains(user, "hub") {
+		t.Errorf("the user's message: %q", user)
+	}
+}
+
 func TestATurnFromBehindReadsAfterTheOneBeforeIt(t *testing.T) {
 	l := &log{t: t}
 	l.add("t1", "", conversation.TurnQueued{})
