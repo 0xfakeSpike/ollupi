@@ -248,7 +248,7 @@ type Launched struct {
 func launch(tx store.Tx, s *step, it conversation.Item, l tool.Launch) error {
 	now := time.Now().UTC()
 	child := store.Thread{User: s.th.User, Thread: account.Thread{ID: uuid.NewString(), Title: l.Title, Workspace: l.Workspace,
-		Environment: s.th.Environment, Parent: s.th.ID, ParentItem: it.ID, Created: now, Updated: now}}
+		Environment: s.th.Environment, Parent: s.th.ID, ParentItem: it.ID, Role: l.Role, Created: now, Updated: now}}
 	if err := tx.CreateThread(child); err != nil {
 		return err
 	}
@@ -259,13 +259,14 @@ func launch(tx store.Tx, s *step, it conversation.Item, l tool.Launch) error {
 	if err != nil {
 		return err
 	}
+	detached := l.Role == string(agent.DelegateSub)
 	note := "It works on its own; its report comes back to this conversation when it ends."
-	if l.Detached {
+	if detached {
 		note = "It works on its own and does not report back; the user follows it in its own conversation."
 	}
 	output, _ := json.Marshal(Launched{Subagent: child.ID, Description: l.Title, Note: note})
 	_, err = tx.Append(s.th.ID,
-		conversation.Entry{Turn: s.turn.ID, Item: it.ID, Body: conversation.ChildLaunched{Child: child.ID, Detached: l.Detached}},
+		conversation.Entry{Turn: s.turn.ID, Item: it.ID, Body: conversation.ChildLaunched{Child: child.ID, Detached: detached}},
 		conversation.Entry{Turn: s.turn.ID, Item: it.ID, Body: conversation.ToolResult{Output: output}})
 	return err
 }

@@ -21,6 +21,7 @@ type ThreadRow struct {
 	Settings       policy.Settings           `json:"settings"`
 	ParentThreadID string                    `json:"parentThreadId,omitempty"`
 	ParentItemID   string                    `json:"parentItemId,omitempty"`
+	Role           agent.Name                `json:"role,omitempty"`
 	Status         conversation.ThreadStatus `json:"status"`
 	CreatedAt      time.Time                 `json:"createdAt"`
 	UpdatedAt      time.Time                 `json:"updatedAt"`
@@ -32,7 +33,7 @@ type ThreadRow struct {
 func threadRow(t store.Thread) ThreadRow {
 	return ThreadRow{
 		ID: t.ID, WorkspaceID: t.Workspace, EnvironmentID: t.Environment, Title: t.Title, Settings: t.Settings,
-		ParentThreadID: t.Parent, ParentItemID: t.ParentItem, Status: t.Status, CreatedAt: t.Created, UpdatedAt: t.Updated,
+		ParentThreadID: t.Parent, ParentItemID: t.ParentItem, Role: agent.Name(t.Role), Status: t.Status, CreatedAt: t.Created, UpdatedAt: t.Updated,
 		ArchivedAt: t.Archived, RepliedAt: t.Replied, ReadAt: t.Read,
 	}
 }

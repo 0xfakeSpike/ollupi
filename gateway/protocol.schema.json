@@ -7,7 +7,8 @@
         "full-main-agent",
         "compact-main-agent",
         "general-sub-agent",
-        "browser-sub-agent"
+        "browser-sub-agent",
+        "delegate-sub-agent"
       ]
     },
     "Annotations": {
@@ -2221,11 +2222,6 @@
           "type": "string",
           "description": "Id of the workspace the subagent works in; leave it out for this conversation's workspace.",
           "minLength": 1
-        },
-        "wait": {
-          "type": "boolean",
-          "description": "Whether this turn waits for the subagent's report. With false the subagent works on its own and never reports back.",
-          "default": true
         }
       },
       "required": [
@@ -2515,6 +2511,9 @@
         },
         "parentItemId": {
           "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/AgentRole"
         },
         "status": {
           "$ref": "#/$defs/ThreadStatus"
@@ -3561,6 +3560,7 @@
     "-32016": "threadBusy",
     "-32017": "searchTimedOut",
     "-32018": "refused",
+    "-32019": "hasDelegates",
     "-32600": "invalidRequest",
     "-32601": "methodNotFound",
     "-32602": "invalidParams",
@@ -3617,6 +3617,14 @@
   },
   "builtinTools": {
     "browser-sub-agent": {
+      "arguments": {
+        "$ref": "#/$defs/SubagentCall"
+      },
+      "output": {
+        "$ref": "#/$defs/SubagentLaunched"
+      }
+    },
+    "delegate-sub-agent": {
       "arguments": {
         "$ref": "#/$defs/SubagentCall"
       },

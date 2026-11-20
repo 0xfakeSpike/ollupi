@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/account"
+	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/policy"
 	"github.com/0xfakeSpike/ollupi/store"
@@ -27,6 +28,7 @@ type threadRow struct {
 	EnvironmentID *string
 	ParentID      *string
 	ParentItem    string
+	Role          string
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 	ArchivedAt    *time.Time
@@ -44,7 +46,7 @@ func (r threadRow) thread() (store.Thread, error) {
 	}
 	t := store.Thread{
 		Thread: account.Thread{ID: r.ID, Title: r.Title, Settings: settings, Workspace: deref(r.WorkspaceID), Environment: deref(r.EnvironmentID),
-			Parent: deref(r.ParentID), ParentItem: r.ParentItem, Created: r.CreatedAt, Updated: r.UpdatedAt, Archived: r.ArchivedAt, Replied: r.RepliedAt, Read: r.ReadAt},
+			Parent: deref(r.ParentID), ParentItem: r.ParentItem, Role: r.Role, Created: r.CreatedAt, Updated: r.UpdatedAt, Archived: r.ArchivedAt, Replied: r.RepliedAt, Read: r.ReadAt},
 		User: r.UserID, Head: r.Head, Status: conversation.ThreadStatus(r.Status), Runnable: r.RunnableSince != nil,
 	}
 	return t, nil
@@ -223,9 +225,9 @@ func (t *tx) pendingFor(thread, owner string) *pending {
 
 func (t *tx) CreateThread(th store.Thread) error {
 	settings, _ := json.Marshal(th.Settings)
-	err := t.g.Exec(`INSERT INTO threads(id, user_id, title, settings, workspace_id, environment_id, parent_id, parent_item, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, th.ID, th.User, th.Title, string(settings), orNull(th.Workspace), orNull(th.Environment), orNull(th.Parent),
-		th.ParentItem, th.Created, th.Updated).Error
+	err := t.g.Exec(`INSERT INTO threads(id, user_id, title, settings, workspace_id, environment_id, parent_id, parent_item, role, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, th.ID, th.User, th.Title, string(settings), orNull(th.Workspace), orNull(th.Environment), orNull(th.Parent),
+		th.ParentItem, th.Role, th.Created, th.Updated).Error
 	if err != nil {
 		return fmt.Errorf("store: create thread %s: %w", th.ID, err)
 	}
@@ -328,7 +330,9 @@ func (t *tx) Append(thread string, entries ...conversation.Entry) (conversation.
 		if !slices.Contains(pend.turns, e.Turn) {
 			pend.turns = append(pend.turns, e.Turn)
 		}
-		if _, ended := e.Body.(conversation.TurnEnded); ended && th.Parent == "" {
+		_, ended := e.Body.(conversation.TurnEnded)
+		answersUser := th.Parent == "" || th.Role == string(agent.DelegateSub)
+		if ended && answersUser {
 			th.Replied = &e.At
 		}
 	}
@@ -444,7 +448,9 @@ func (t *tx) rollUp(id string) error {
 			return err
 		}
 		var subagents []conversation.ThreadStatus
-		if err := t.g.Raw("SELECT status FROM threads WHERE parent_id = ? AND status IN ?", id, waitsOnUser).Scan(&subagents).Error; err != nil {
+		err := t.g.Raw("SELECT status FROM threads WHERE parent_id = ? AND role <> ? AND status IN ?", id, string(agent.DelegateSub), waitsOnUser).
+			Scan(&subagents).Error
+		if err != nil {
 			return err
 		}
 		status := conversation.RollUp(conversation.ThreadStatus(row.OwnStatus), subagents)
