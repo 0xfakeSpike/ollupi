@@ -48,6 +48,7 @@ type workspaceRow struct {
 	ID           string
 	Name         string
 	Root         string
+	Kind         string
 	Instructions string
 	Providers    string
 	Settings     string
@@ -57,7 +58,7 @@ type workspaceRow struct {
 }
 
 func (row workspaceRow) workspace() (account.Workspace, error) {
-	w := account.Workspace{ID: row.ID, Name: row.Name, Root: row.Root, Instructions: row.Instructions,
+	w := account.Workspace{ID: row.ID, Name: row.Name, Root: row.Root, Kind: account.WorkspaceKind(row.Kind), Instructions: row.Instructions,
 		Created: row.CreatedAt, Updated: row.UpdatedAt, Archived: row.ArchivedAt}
 	if err := json.Unmarshal([]byte(row.Settings), &w.Settings); err != nil {
 		return account.Workspace{}, fmt.Errorf("store: the settings of workspace %s: %w", row.ID, err)
@@ -250,6 +251,62 @@ const (
 	listedT = "(t.parent_id IS NULL OR t.role = '" + string(agent.DelegateSub) + "')"
 )
 
+type todoRow struct {
+	ID          int64
+	Title       string
+	WorkspaceID string
+	ThreadID    string
+	Status      string
+	Notes       string
+	Result      string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	DoneAt      *time.Time
+}
+
+func (row todoRow) todo() (account.Todo, error) {
+	return account.Todo{ID: row.ID, Title: row.Title, Workspace: row.WorkspaceID, Thread: row.ThreadID, Status: account.TodoStatus(row.Status),
+		Notes: row.Notes, Result: row.Result, Created: row.CreatedAt, Updated: row.UpdatedAt, Done: row.DoneAt}, nil
+}
+
+func (r reader) Todos(owner string, statuses []account.TodoStatus) ([]account.Todo, error) {
+	return each(r.g.Raw("SELECT * FROM todos WHERE user_id = ? AND status IN ? ORDER BY id", owner, statuses), todoRow.todo)
+}
+
+func (r reader) Todo(owner string, id int64) (account.Todo, error) {
+	var row todoRow
+	if err := notFound(r.g.Raw("SELECT * FROM todos WHERE user_id = ? AND id = ?", owner, id).Take(&row).Error); err != nil {
+		return account.Todo{}, fmt.Errorf("store: todo %d: %w", id, err)
+	}
+	return row.todo()
+}
+
+func (t *tx) AddTodo(owner string, todo account.Todo) (account.Todo, error) {
+	if err := t.g.Raw("SELECT coalesce(max(id), 0) + 1 FROM todos WHERE user_id = ?", owner).Scan(&todo.ID).Error; err != nil {
+		return account.Todo{}, err
+	}
+	err := t.g.Exec(`INSERT INTO todos(user_id, id, title, workspace_id, thread_id, status, notes, result, created_at, updated_at, done_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, owner, todo.ID, todo.Title, todo.Workspace, todo.Thread, string(todo.Status), todo.Notes, todo.Result,
+		todo.Created, todo.Updated, todo.Done).Error
+	if err != nil {
+		return account.Todo{}, fmt.Errorf("store: add todo: %w", err)
+	}
+	return todo, nil
+}
+
+func (t *tx) PutTodo(owner string, todo account.Todo) error {
+	res := t.g.Exec(`UPDATE todos SET title = ?, workspace_id = ?, thread_id = ?, status = ?, notes = ?, result = ?, updated_at = ?, done_at = ?
+		WHERE user_id = ? AND id = ?`, todo.Title, todo.Workspace, todo.Thread, string(todo.Status), todo.Notes, todo.Result, todo.Updated, todo.Done,
+		owner, todo.ID)
+	return one(res, fmt.Sprintf("todo %d", todo.ID))
+}
+
+func (r reader) Calls(owner, workspace, tool string) ([]conversation.Item, error) {
+	return decodeRows[conversation.Item](r.g, `SELECT i.body FROM items i JOIN threads t ON t.id = i.thread_id
+		WHERE t.user_id = ? AND t.workspace_id = ? AND i.kind = 'toolCall' AND json_extract(i.body, '$.Call.Tool') = ?
+		ORDER BY i.at, i.thread_id, i.seq`, owner, workspace, tool)
+}
+
 func (r reader) Children(thread string) ([]store.Thread, error) {
 	return threads(r.g, "SELECT * FROM threads WHERE parent_id = ? ORDER BY created_at, id", thread)
 }
@@ -413,11 +470,11 @@ func (t *tx) SetSettings(owner string, s account.Settings) error {
 func (t *tx) PutWorkspace(owner string, w account.Workspace) error {
 	settings, _ := json.Marshal(w.Settings)
 	providers, _ := json.Marshal(w.Providers)
-	err := t.g.Exec(`INSERT INTO workspaces(id, user_id, name, root, instructions, providers, settings, created_at, updated_at, archived_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET name = excluded.name, root = excluded.root, instructions = excluded.instructions, providers = excluded.providers,
-			settings = excluded.settings, updated_at = excluded.updated_at, archived_at = excluded.archived_at`,
-		w.ID, owner, w.Name, w.Root, w.Instructions, string(providers), string(settings), w.Created, w.Updated, w.Archived).Error
+	err := t.g.Exec(`INSERT INTO workspaces(id, user_id, name, root, kind, instructions, providers, settings, created_at, updated_at, archived_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET name = excluded.name, root = excluded.root, kind = excluded.kind, instructions = excluded.instructions,
+			providers = excluded.providers, settings = excluded.settings, updated_at = excluded.updated_at, archived_at = excluded.archived_at`,
+		w.ID, owner, w.Name, w.Root, string(w.Kind), w.Instructions, string(providers), string(settings), w.Created, w.Updated, w.Archived).Error
 	if err != nil {
 		return fmt.Errorf("store: workspace %s: %w", w.Name, err)
 	}
