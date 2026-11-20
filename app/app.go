@@ -132,17 +132,6 @@ func view(r store.Reader, user, id string) (conversation.View, error) {
 	return r.View(id)
 }
 
-func topThread(r store.Reader, user, id string) (store.Thread, error) {
-	th, err := thread(r, user, id)
-	if err != nil {
-		return store.Thread{}, err
-	}
-	if th.Parent != "" {
-		return store.Thread{}, account.ErrSubagentThread
-	}
-	return th, nil
-}
-
 func (a *App) toolbox(ctx context.Context, user string) (policy.Toolbox, error) {
 	set, err := a.tools(ctx, user)
 	if err != nil {

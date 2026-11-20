@@ -2,7 +2,7 @@
 
 引擎里用户看得见的状态由四个概念组成：工作区（workspace）装着会话（thread），会话由一个个轮次（turn）组成，轮次里的每一步都是条目（item）。会话的轮次和条目不单独保存，它们是会话**日志**的投影：日志只追加、不修改，状态都从日志算出来。这一页讲每个概念是什么、怎样诞生、经过哪些状态、怎样结束，以及它们之间的约束。
 
-本页按当前代码写，面向贡献者。对外的完整文档在 [ollupi-docs](https://github.com/0xfakeSpike/ollupi-docs) 的 `docs/engine/`，那里描述的是 `engine.json` 记的引擎版本。
+本页按当前代码写，面向贡献者。对外的完整文档在 [ollupi-docs](https://github.com/0xfakeSpike/ollupi-docs) 的 `docs/zh/engine/`（中文）和 `docs/en/engine/`（英文），那里描述的是 `engine.json` 记的引擎版本。
 
 ```mermaid
 flowchart LR
@@ -56,7 +56,8 @@ stateDiagram-v2
 会话是一段对话。它运行在一个执行环境里（不指定时是这台机器），可选地挂在一个工作区上，带一层自己的权限设置。
 
 - **顶层会话**：用户通过 `app.StartThread` 创建，出现在会话列表里。
-- **子会话**：子 agent 的会话。父会话里启动它的调用结束时，runner 在同一事务里创建子会话、给它排上第一个轮次和任务消息（`run.launch`）。它记着 `parent_id` 和 `parent_item`，继承父会话的工作区和环境，按父会话的权限运行；它不接受用户的消息（`account.ErrSubagentThread`），随父会话一起删除。
+- **子会话**：子 agent 的会话。父会话里启动它的调用结束时，runner 在同一事务里创建子会话、给它排上第一个轮次和任务消息（`run.launch`）。它记着 `parent_id` 和 `parent_item`，继承父会话的环境；工作区默认是父会话的，启动时可以指定用户的另一个工作区（`conversation_info` 工具列出它们的 id）。它按自己的会话设置运行，没设过时就是所在工作区的权限，"总是允许"也记进它自己的工作区。用户可以像对顶层会话一样给它发消息、插话、中断，这些轮次沿用它第一个轮次的角色；它随父会话一起删除。
+- **等不等**：启动时模型决定父轮次等不等它的报告（`wait`，默认等）。等的子会话只汇报启动它的那一轮，报告写进启动它的轮次；不等的（`ChildLaunched.Detached`）从不汇报，父轮次也不因它停下或结束，用户在它自己的会话里看它。
 
 ```mermaid
 stateDiagram-v2
@@ -98,13 +99,13 @@ stateDiagram-v2
 |---|---|---|
 | 不在等任何东西 | 可运行 | 有空槽位就运行它 |
 | 有调用在等审批 / 等回答 | 等用户 | 不运行；用户决定或回答后又可运行 |
-| 已经回答，它启动的子 agent 还没全部汇报 | 等子 agent | 不运行；每个报告到达时又可运行 |
+| 已经回答，它在等的子 agent 或后台调用还没全部汇报 | 等报告（`WaitReports`，值 `reports`） | 不运行；每个报告到达时又可运行 |
 
 ```mermaid
 stateDiagram-v2
   [*] --> queued: TurnQueued
   queued --> current: 前面的轮次结束
-  current --> waiting: 调用要审批 / 提问<br/>或回答后等子 agent
+  current --> waiting: 调用要审批 / 提问<br/>或回答后等子 agent / 后台调用的报告
   waiting --> current: 决定 / 回答 / 报告 / 插话
   current --> ended: TurnEnded
   waiting --> ended: 中断
@@ -119,17 +120,17 @@ stateDiagram-v2
 
 谁让轮次前进：
 
-- **调度**：`schedule.Scheduler` 订阅 feed。有会话变得可运行，它从 `Reader.Runnable` 取出等得最久的（用户自己的会话排在子会话前面），在总槽位和每用户槽位以内交给 runner。槽位只在内存里，重启后从 store 重新取。
+- **调度**：`schedule.Scheduler` 订阅 feed。有会话变得可运行，它从 `Reader.Runnable` 取出等得最久的（用户自己的会话排在子会话前面），在总槽位和每用户槽位以内交给 runner（`schedule.Threads(runner.Run)`；`host.Config` 的 `Slots` 默认 32，`UserSlots` 默认等于 `Slots`，`RunLimit` 默认四小时）。后台调用由另一个调度器运行（`schedule.Tasks(runner.Task)`）：它从 `tasks` 表按创建先后取，限额另算，`TaskSlots` 默认 32，`UserTaskSlots` 默认 4，`TaskLimit` 默认一小时。在轮次里执行的调用占着轮次的槽位；后台调用不占。槽位只在内存里，重启后从 store 重新取。
 - **运行**：`run.Runner.Run` 每一步重新读日志，问 `agent.Next` 下一步做什么，做完把结果追加回日志，直到轮次要等或结束：
   - `CallModel`：先在需要时追加记忆（`Recalled`）或压缩（`Compacted`），再请求模型；流式文字作为增量发到 feed（不落库），回复、它的消息和它的每个调用在一次提交里写下。每个调用写下时已经过权限判定：直接可运行、要问用户（`ApprovalAsked`），或被拒绝（`ToolResult` 带错误）。
-  - `RunTools`：只读的调用一起执行，其余一次一个；先追加 `ToolStarted`，执行完追加结果。工具的结果也可以是一个问题（`InputAsked`）或要启动的子 agent。
+  - `RunTools`：只读的调用一起执行，其余一次一个；先追加 `ToolStarted`，执行完追加结果。工具的结果也可以是一个问题（`InputAsked`）或要启动的子 agent。工具声明 `Background`（`never` / `optional` / `always`）；`run_command` 和 `claude` 是 `optional`，模型传 `background: true` 时这次调用就成为后台调用。后台调用从不和只读调用并行成组；一个事务里追加 `ToolStarted`、`TaskLaunched` 和一条说明它已开始的 `ToolResult`，并在 `tasks` 表里记一行，轮次接着往下走（`run.launchTask`）。后台调用跑完，结果作为 `TaskReported` 写回启动它的轮次，同一事务删掉那一行（`run.ReportTask`）。
   - `SkipTools`：用户拒绝了某个调用、或预算用完后，剩下的调用不执行，记为跳过。
-  - `Finish`：轮次已经回答，追加 `TurnEnded{completed}`；子会话的轮次还在同一事务里把回答作为报告写进父轮次（`ChildReported`）。
+  - `Finish`：轮次已经回答，追加 `TurnEnded{completed}`；父轮次在等的子会话，它被启动的那一轮还在同一事务里把回答作为报告写进父轮次（`ChildReported`）。
   - `Wait`：让出槽位。
-- **结束**：`run.End` 结束一个轮次：先关掉它还没结束的调用（等回答的记为跳过，其余记为被拒绝），再停掉它启动的、还没汇报的子 agent，最后追加 `TurnEnded`。子会话的轮次结束时向父轮次汇报。
+- **结束**：`run.End` 结束一个轮次：先关掉它还没结束的调用（等回答的记为跳过，其余记为被拒绝），再停掉它在等、还没汇报的子 agent（不等的照常运行），把还没汇报的后台调用记为随轮次停止并汇报（调度器随之取消它们的运行），最后追加 `TurnEnded`。子会话被启动的那一轮结束时，如果父轮次在等它，就向父轮次汇报；之后的轮次不汇报。
 - **中断**：`app.Interrupt` 就是 `run.End(interrupted)`。调度器在 feed 上看到正在运行的会话的轮次结束了，取消对应的运行。
 - **失败**：运行出错或超过时限（默认四小时），调度器在让出槽位之前用 `run.End(failed)` 结束轮次。
-- **重启恢复**：没有单独的恢复流程。runner 接手一个会话时，先把上一次运行留下的、已开始未结束的调用（`ToolStarted` 之后没有结果）记为被切断：它可能已经生效，agent 被提示先核实再重试，绝不会自动执行两次。
+- **重启恢复**：没有单独的恢复流程。runner 接手一个会话时，先把上一次运行留下的、已开始未结束的调用（`ToolStarted` 之后没有结果）记为被切断：它可能已经生效，agent 被提示先核实再重试，绝不会自动执行两次。后台调用也一样：调度器再取到一个上一个进程已经开始的后台调用（`tasks` 行有 `started_at`），不再执行，直接汇报它被切断（`run/tools.go` 的 `strandedTask`）。
 
 定时任务的轮次和用户的轮次一样排队。上一次运行还排在别的轮次后面时，这一次跳过且不计数（`cron.send`）。
 
@@ -137,7 +138,7 @@ stateDiagram-v2
 
 ## 条目
 
-条目是轮次里的一步，由一条或几条日志记录折叠而成：一次工具调用从 `ToolCall` 开始，依次可能有 `ApprovalAsked`、`Decided`、`ToolStarted`、`InputAsked`、`Answered`、`ChildLaunched`，到 `ToolResult` 结束。
+条目是轮次里的一步，由一条或几条日志记录折叠而成：一次工具调用从 `ToolCall` 开始，依次可能有 `ApprovalAsked`、`Decided`、`ToolStarted`、`InputAsked`、`Answered`、`ChildLaunched` 或 `TaskLaunched`，到 `ToolResult` 结束。
 
 ### 类型
 
@@ -151,7 +152,7 @@ stateDiagram-v2
 | `memoryContext` | `Recalled` | 这一轮召回的记忆 |
 | `notice` | `Notice` | 运行时告诉模型的话，比如工具为什么停了 |
 | `error` | `ModelFailed` | 模型调用失败 |
-| `agentReport` | `ChildReported` | 一个子 agent 的报告，送回启动它的轮次 |
+| `agentReport` | `ChildReported` / `TaskReported` | 一个子 agent 或一个后台调用的报告，送回启动它的轮次；后台调用的报告带 `taskId` |
 
 ### 状态
 
@@ -163,7 +164,7 @@ stateDiagram-v2
 | `failed` | 失败，`error` 写原因 |
 | `declined` | 用户拒绝了这次调用、跳过了提问，或轮次结束时它还没执行 |
 
-消息、思考、报告等写下时就已结束。工具调用：
+消息、思考、报告等写下时就已结束；报告带着结果是 `completed`，带着错误（比如随轮次停止、被切断、超过时限）是 `failed`。后台调用的调用条目在开始时就是 `completed`，它的 `ToolResult` 只说明已开始；真正的结果是之后单独的一条报告，可能失败。工具调用：
 
 ```mermaid
 stateDiagram-v2
@@ -200,5 +201,5 @@ stateDiagram-v2
 | 移动工作区 | 名下会话都空闲 | 只改 `root`，其余都按 id 引用 |
 | 归档会话 | 空闲 | 不能发新消息 |
 | 删除会话 | 空闲 | 日志、子会话、定时任务、附件一起删除 |
-| 结束轮次 | 有当前轮次 | 还没结束的调用先关掉；它启动的子 agent 被停掉并汇报；子会话的轮次向父轮次汇报；排在后面的轮次成为当前轮次 |
+| 结束轮次 | 有当前轮次 | 还没结束的调用先关掉；它在等的子 agent 被停掉并汇报，不等的照常运行；还没汇报的后台调用记为随轮次停止并被取消；子会话被启动的那一轮向在等它的父轮次汇报；排在后面的轮次成为当前轮次 |
 | 追加记录 | 通过 `conversation.Check` | 可能让会话变得可运行，调度器从 feed 得知 |

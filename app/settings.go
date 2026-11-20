@@ -112,11 +112,6 @@ func (a *App) allowAlways(tx store.Tx, box policy.Toolbox, id string, rules []st
 	if err != nil {
 		return err
 	}
-	if th.Parent != "" {
-		if th, err = tx.Thread(th.Parent); err != nil {
-			return err
-		}
-	}
 	allowed := policy.Settings{Rules: policy.Rules{Allow: rules}}
 	now := time.Now().UTC()
 	if th.Workspace == "" {

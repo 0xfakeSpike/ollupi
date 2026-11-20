@@ -212,6 +212,48 @@ func TestAcceptingAlwaysKeepsTheRuleWithTheConversation(t *testing.T) {
 	}
 }
 
+func TestASubagentTakesMessagesInItsRoleAndKeepsRulesInItsWorkspace(t *testing.T) {
+	f := setup(t)
+	dir := t.TempDir()
+	os.Mkdir(filepath.Join(dir, "home"), 0o755)
+	os.Mkdir(filepath.Join(dir, "docs"), 0o755)
+	home := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", filepath.Join(dir, "home"), ""))
+	docs := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", filepath.Join(dir, "docs"), ""))
+	parent := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", home.ID, "", ""))
+	now := time.Now().UTC()
+	err := f.st.Update(f.ctx, func(tx store.Tx) error {
+		child := store.Thread{User: "u", Thread: account.Thread{ID: "child", Workspace: docs.ID, Environment: parent.Environment,
+			Parent: parent.ID, ParentItem: "launch", Created: now, Updated: now}}
+		if err := tx.CreateThread(child); err != nil {
+			return err
+		}
+		_, err := tx.Append("child",
+			conversation.Entry{Turn: "t1", Body: conversation.TurnQueued{Model: llm.Model{Name: "big", Connection: "main"}, Role: string(agent.GeneralSub)}},
+			conversation.Entry{Turn: "t1", Item: "m1", Body: conversation.UserMessage{Text: "write the page"}})
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, _ := f.view("child").Active()
+	f.waitOnApproval("child", first)
+	if err := f.a.Decide(f.ctx, "u", "child", "a1", conversation.AcceptAlways); err != nil {
+		t.Fatal(err)
+	}
+	ws := must[[]account.Workspace](t)(f.a.Workspaces(f.ctx, "u"))
+	for _, w := range ws {
+		allowed := w.Settings.Rules.Allow
+		if kept := len(allowed) == 1 && allowed[0] == "run_command(make)"; kept != (w.ID == docs.ID) {
+			t.Errorf("workspace %s keeps %+v", w.Name, w.Settings)
+		}
+	}
+	next := sent(t)(f.a.Send(f.ctx, "u", "child", Input{Text: "and the index"}))
+	if next.Role != string(agent.GeneralSub) {
+		t.Errorf("a message to the subagent runs as %s", next.Role)
+	}
+	must[conversation.Turn](t)(f.a.Steer(f.ctx, "u", "child", first.ID, Input{Text: "keep it short"}))
+}
+
 func TestAnswersMustAnswerEveryQuestionAsked(t *testing.T) {
 	f := setup(t)
 	th := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", "", "", ""))
