@@ -69,6 +69,14 @@ var Ends = []End{Completed, Failed, Interrupted}
 type UserMessage struct {
 	Text        string
 	Attachments []Attachment
+	// From is the hub conversation that sent the message on the user's behalf; nil when the user wrote it.
+	From *Sender
+}
+
+// Sender is a hub conversation that sent a message on the user's behalf, with its title when it sent it.
+type Sender struct {
+	Thread string
+	Title  string
 }
 
 type AgentMessage struct {

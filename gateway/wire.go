@@ -134,6 +134,7 @@ type ItemRow struct {
 	TaskID            string                     `json:"taskId,omitempty"`
 	LaunchItemID      string                     `json:"launchItemId,omitempty"`
 	Attachments       []conversation.Attachment  `json:"attachments,omitempty"`
+	SentByThreadID    string                     `json:"sentByThreadId,omitempty"`
 	ContextStats      *conversation.ContextStats `json:"contextStats,omitempty"`
 	Memory            []conversation.MemoryRef   `json:"memory,omitempty"`
 	StartedAt         time.Time                  `json:"startedAt"`
@@ -148,6 +149,9 @@ func itemRow(it conversation.Item) ItemRow {
 	}
 	if c := it.Call; c != nil {
 		row.CallID, row.Tool, row.Server, row.Arguments, row.Annotations, row.PreparedExecution = c.Call, c.Tool, c.Server, c.Arguments, c.Annotations, c.Prepared
+	}
+	if it.From != nil {
+		row.SentByThreadID = it.From.Thread
 	}
 	if a := it.Approval; a != nil {
 		row.Approval = &Approval{ApprovalID: a.Approval, Reason: a.Reason, Rule: a.Rule, Content: a.Content, SuggestedRules: a.Suggested,
@@ -241,6 +245,24 @@ type MemoryRow struct {
 func memoryRow(m memory.Memory) MemoryRow {
 	return MemoryRow{ID: m.ID, Scope: m.Scope, WorkspaceID: m.Workspace, OriginWorkspaceID: m.Origin, Topic: m.Topic, Kind: m.Kind,
 		Text: m.Text, Status: m.Status, UserEdited: m.UserEdited, Sources: nonNil(m.Sources), CreatedAt: m.Created, UpdatedAt: m.Updated}
+}
+
+type TodoRow struct {
+	ID          int64              `json:"id"`
+	Title       string             `json:"title"`
+	WorkspaceID string             `json:"workspaceId,omitempty"`
+	ThreadID    string             `json:"threadId,omitempty"`
+	Status      account.TodoStatus `json:"status"`
+	Notes       string             `json:"notes,omitempty"`
+	Result      string             `json:"result,omitempty"`
+	CreatedAt   time.Time          `json:"createdAt"`
+	UpdatedAt   time.Time          `json:"updatedAt"`
+	DoneAt      *time.Time         `json:"doneAt,omitempty"`
+}
+
+func todoRow(t account.Todo) TodoRow {
+	return TodoRow{ID: t.ID, Title: t.Title, WorkspaceID: t.Workspace, ThreadID: t.Thread, Status: t.Status, Notes: t.Notes, Result: t.Result,
+		CreatedAt: t.Created, UpdatedAt: t.Updated, DoneAt: t.Done}
 }
 
 type MemoryStatus struct {

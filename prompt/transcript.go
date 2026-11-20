@@ -30,7 +30,7 @@ func (w Window) transcript(obs *observations, natives map[string][]byte, items [
 		case conversation.ItemError, conversation.ItemMemory, conversation.ItemCompaction:
 			i++
 		case conversation.ItemUserMessage:
-			content := "[sent " + it.StartedAt.In(time.Local).Format(sentLayout) + "]\n" + it.Text
+			content := sentLine(it) + "\n" + it.Text
 			out = append(out, llm.ChatMessage{Role: llm.RoleUser, Content: content, Parts: attachmentParts(it.Attachments)})
 			i++
 		case conversation.ItemNotice:
@@ -111,6 +111,18 @@ func inResponse(it conversation.Item, response string) bool {
 
 func (w Window) observationBudget(calls, limit int) int {
 	return min(limit, max(minPooledTokens, min(w.inputTokens/8, percentOf(w.inputTokens, responsePercent)/max(1, calls))))
+}
+
+// sentLine heads a user message with the local time it was sent and, for one a hub conversation sent, who sent it.
+func sentLine(it conversation.Item) string {
+	return "[sent " + it.StartedAt.In(time.Local).Format(sentLayout) + onBehalf(it.From) + "]"
+}
+
+func onBehalf(from *conversation.Sender) string {
+	if from == nil {
+		return ""
+	}
+	return fmt.Sprintf(" by the hub conversation %q on the user's behalf", from.Title)
 }
 
 func attachmentParts(atts []conversation.Attachment) []llm.ContentPart {

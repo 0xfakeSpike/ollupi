@@ -18,6 +18,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/policy"
+	"github.com/0xfakeSpike/ollupi/prompt"
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/0xfakeSpike/ollupi/store/sqlite"
 	"github.com/0xfakeSpike/ollupi/tool"
@@ -133,9 +134,16 @@ func TestTheHubHandsOutWorkAndFollowsIt(t *testing.T) {
 		v, err = r.View(th.ID)
 		return err
 	})
-	first := v.Items[0].Text
-	if th.Workspace != docs.ID || th.Parent != "" || v.Turns[0].Role != string(agent.FullMain) || !strings.HasPrefix(first, `[Sent by the hub conversation "plan"`) {
-		t.Fatalf("the conversation %+v, role %s, first message %q", th.Thread, v.Turns[0].Role, first)
+	first := v.Items[0]
+	if th.Workspace != docs.ID || th.Parent != "" || v.Turns[0].Role != string(agent.FullMain) || first.Text != "write the release notes" {
+		t.Fatalf("the conversation %+v, role %s, first message %q", th.Thread, v.Turns[0].Role, first.Text)
+	}
+	if first.From == nil || first.From.Thread != hub.ID || first.From.Title != "plan" {
+		t.Errorf("the first message came from %+v", first.From)
+	}
+	r, err := prompt.NewWindow("big", llm.Limits{Context: 200_000, Output: 8_000}).Build(prompt.Context{Items: prompt.Transcript(v), System: "sys"})
+	if err != nil || !strings.Contains(r.Messages[0].Content, `by the hub conversation "plan" on the user's behalf]`+"\nwrite the release notes") {
+		t.Errorf("the model reads %q, %v", r.Messages[0].Content, err)
 	}
 	f.recordStart(hub.ID, out)
 	if _, err := f.call(hub.ID, agent.SendMessageTool, map[string]any{"conversation": hub.ID, "message": "x"}); err == nil {
@@ -163,7 +171,7 @@ func TestTheHubHandsOutWorkAndFollowsIt(t *testing.T) {
 		t.Errorf("another hub conversation lists %s, %v", out, err)
 	}
 	out, err = f.call(hub.ID, agent.ReadConversationTool, map[string]any{"conversation": th.ID})
-	if err != nil || !strings.Contains(string(out), "and the changelog") || !strings.Contains(string(out), "write the release notes") {
+	if err != nil || !strings.Contains(string(out), `"text":"and the changelog","from":"`+hub.ID+`"`) || !strings.Contains(string(out), "write the release notes") {
 		t.Errorf("read %s, %v", out, err)
 	}
 }
