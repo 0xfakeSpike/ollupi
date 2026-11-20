@@ -36,7 +36,7 @@ func (a *App) Send(ctx context.Context, user, id string, in Input) (turn convers
 		return conversation.Turn{}, false, err
 	}
 	err = a.st.Update(ctx, func(tx store.Tx) error {
-		th, err := topThread(tx, user, id)
+		th, err := thread(tx, user, id)
 		if err != nil {
 			return err
 		}
@@ -88,9 +88,13 @@ func (a *App) queue(tx store.Tx, th store.Thread, text string, atts []conversati
 	if err != nil {
 		return conversation.Turn{}, false, err
 	}
+	role := string(agent.MainRole(limits.Input()))
+	if th.Parent != "" {
+		role = v.Turns[0].Role
+	}
 	id := uuid.NewString()
 	v, err = tx.Append(th.ID,
-		conversation.Entry{Turn: id, Body: conversation.TurnQueued{Model: model, Role: string(agent.MainRole(limits.Input())), CronJob: job}},
+		conversation.Entry{Turn: id, Body: conversation.TurnQueued{Model: model, Role: role, CronJob: job}},
 		conversation.Entry{Turn: id, Item: uuid.NewString(), Body: conversation.UserMessage{Text: text, Attachments: atts}})
 	if err != nil {
 		return conversation.Turn{}, false, err
@@ -107,7 +111,7 @@ func (a *App) Steer(ctx context.Context, user, id, expected string, in Input) (c
 	}
 	var turn conversation.Turn
 	err = a.st.Update(ctx, func(tx store.Tx) error {
-		th, err := topThread(tx, user, id)
+		th, err := thread(tx, user, id)
 		if err != nil {
 			return err
 		}

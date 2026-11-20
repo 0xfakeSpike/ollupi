@@ -1153,6 +1153,9 @@
         "childThreadId": {
           "type": "string"
         },
+        "detached": {
+          "type": "boolean"
+        },
         "taskId": {
           "type": "string"
         },
@@ -2213,6 +2216,16 @@
           "description": "The complete task for the subagent, self-contained.",
           "minLength": 1,
           "maxLength": 20000
+        },
+        "workspace": {
+          "type": "string",
+          "description": "Id of the workspace the subagent works in; leave it out for this conversation's workspace.",
+          "minLength": 1
+        },
+        "wait": {
+          "type": "boolean",
+          "description": "Whether this turn waits for the subagent's report. With false the subagent works on its own and never reports back.",
+          "default": true
         }
       },
       "required": [
@@ -3543,7 +3556,6 @@
     "-32010": "noActiveTurn",
     "-32011": "turnMismatch",
     "-32012": "noSuchRequest",
-    "-32013": "subagentThread",
     "-32014": "workspaceArchived",
     "-32015": "threadArchived",
     "-32016": "threadBusy",

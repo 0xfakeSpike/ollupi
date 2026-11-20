@@ -294,6 +294,74 @@ func TestEndingATurnStopsItsSubagentsAndClosesItsCalls(t *testing.T) {
 	}
 }
 
+func TestADetachedSubagentNeitherHoldsTheTurnNorReports(t *testing.T) {
+	f := setup(t, func(c tool.Call) tool.Result {
+		return tool.Result{Launch: &tool.Launch{Role: string(agent.GeneralSub), Title: "tidy", Task: "tidy the notes", Detached: true}}
+	})
+	f.m.answer = func(req llm.ChatRequest) llm.ChatResponse {
+		switch {
+		case !strings.Contains(req.Messages[0].Content, "You are Ollupi"):
+			return answer("tidied")
+		case req.Messages[len(req.Messages)-1].Role == llm.RoleTool:
+			return answer("a subagent tidies them")
+		}
+		return reply("", llm.ToolCall{ID: "call_1", Name: string(agent.GeneralSub), Arguments: `{}`})
+	}
+	f.ask("th", "tidy my notes")
+	f.run("th")
+	v := f.view("th")
+	child := v.Items[1].Child
+	if child == "" || v.Status() != conversation.ThreadIdle || v.Turns[0].Ended.Status != conversation.Completed {
+		t.Fatalf("launched %q, status %s, items %s", child, v.Status(), kinds(v))
+	}
+	if c := f.view(child); c.Status() != conversation.ThreadActive {
+		t.Fatalf("the subagent ended with the turn: %s", c.Status())
+	}
+	f.run(child)
+	if c := f.view(child); c.Turns[0].Ended == nil || c.Turns[0].Ended.Status != conversation.Completed {
+		t.Fatalf("the subagent's turn %+v", c.Turns[0])
+	}
+	if got := kinds(f.view("th")); got != "userMessage:completed,toolCall:completed,agentMessage:completed" {
+		t.Errorf("the parent got a report: %s", got)
+	}
+}
+
+func TestASubagentReportsOnlyTheTurnItWasLaunchedFor(t *testing.T) {
+	f := setup(t, func(c tool.Call) tool.Result {
+		return tool.Result{Launch: &tool.Launch{Role: string(agent.GeneralSub), Title: "count", Task: "count the files"}}
+	})
+	launched := false
+	f.m.answer = func(req llm.ChatRequest) llm.ChatResponse {
+		switch {
+		case !strings.Contains(req.Messages[0].Content, "You are Ollupi"):
+			return answer("counted")
+		case !launched:
+			launched = true
+			return reply("", llm.ToolCall{ID: "call_1", Name: string(agent.GeneralSub), Arguments: `{}`})
+		}
+		return answer("done")
+	}
+	f.ask("th", "how many files?")
+	f.run("th")
+	child := f.view("th").Items[1].Child
+	f.run(child)
+	f.run("th")
+	before := kinds(f.view("th"))
+	f.update(func(tx store.Tx) error {
+		_, err := tx.Append(child,
+			conversation.Entry{Turn: "t2", Body: conversation.TurnQueued{Model: llm.Model{Name: "m"}, Role: string(agent.GeneralSub)}},
+			conversation.Entry{Turn: "t2", Item: "m2", Body: conversation.UserMessage{Text: "count again"}})
+		return err
+	})
+	f.run(child)
+	if c := f.view(child); len(c.Turns) != 2 || c.Turns[1].Ended == nil || c.Turns[1].Ended.Status != conversation.Completed {
+		t.Fatalf("the subagent's second turn %+v", c.Turns)
+	}
+	if after := kinds(f.view("th")); after != before {
+		t.Errorf("the parent heard of the second turn: %s, was %s", after, before)
+	}
+}
+
 func (f *fixture) tasks() []store.Runnable {
 	f.t.Helper()
 	var out []store.Runnable
