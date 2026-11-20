@@ -50,15 +50,18 @@ stateDiagram-v2
 - **归档**：已归档的工作区不能新建会话，名下的会话也不能发新消息（`account.ErrWorkspaceArchived`）。
 - **指令**：`app.UpdateWorkspaceInstructions` 给工作区一段指令（最多两万字）。这个工作区里每个会话、每个角色的系统提示词都带上它，放在角色规则之后（`# WORKSPACE INSTRUCTIONS`）。
 - **工具来源**：`app.UpdateWorkspaceProviders` 给工作区开（`enabled`）或关（`disabled`）某些 provider 的工具，名字要是用户工具里有的 provider。部署可以把一些 provider 设成默认关闭（`host.Config.OptIn`）：它们只在 `enabled` 里写了它们的工作区出现，没挂工作区的会话里也没有。这一层排在工作区权限之后（`account.Layers`），对所有角色都生效；`disabled` 优先于 `enabled`。
+- **类型**：工作区是项目（`project`，新建时的类型）或中枢（`hub`），用 `app.SetWorkspaceKind` 改。中枢默认关闭：部署打开 `host.Config.Hub` 才注册中枢工具，没有中枢工具时设成中枢会被拒绝（`app.ErrNoHub`）。一个用户最多一个中枢（`app.ErrSecondHub`）；会话不记这个类型，它在哪种工作区里，每一轮就按哪种选角色（见"轮次"）。
+- **中枢**：中枢工作区里的会话以 `hub-main-agent` 运行。它不做项目里的活，用中枢专有的工具（`tool/builtin/hub`）把工作交给项目：`list_workspaces` 列出工作区；`start_conversation` 在一个项目工作区里新建会话并发出第一条消息，`send_message` 给一个项目工作区里的会话发消息，二者都走用户自己用的 `app.StartThread` / `app.Send`，消息开头注明是中枢代用户发的，会话按它所在工作区的权限运行，中枢角色自带的规则放行这两个调用；`list_conversations` 默认列出中枢工作区里任何一个会话开过的会话（按 `items_calls` 索引从这些会话日志里的 `start_conversation` 调用找，`Reader.Calls`），也能按 id 或工作区查用户的任何会话，给出状态、排队的轮次、最后一轮怎样结束、是否已读和最后回答的开头；`read_conversation` 给出一个会话最近几轮的消息。中枢不能把工作交给中枢工作区，也不能启动子 agent 或用浏览器；其他角色都没有这些工具。
+- **中枢的计划**：用户的待办存在引擎库的 `todos` 表里（`account.Todo`），归用户，不归中枢工作区，所以中枢换到别的工作区，待办跟着走。每条有按用户递增的编号、标题、交给的工作区和会话、状态（`open` / `handed` / `done` / `dropped`）、备注、结果、创建、更新和完成时间；改成 `done` 时记下完成时间，改离 `done` 时清掉。中枢用 `add_todo`、`update_todo`、`list_todos`（默认列出 `open` 和 `handed` 的）读写它；`start_conversation` 带上 `todo` 时，开出会话、发出第一条消息之后，再把这条待办关联到这个会话和它的工作区并改成 `handed`（不在同一事务里，关联失败时报错说明会话已经开了）。中枢角色自带的规则放行 `add_todo` 和 `update_todo`。会话进展只从 `list_conversations` 来，不存进待办。
 
-代码：[account/account.go](../account/account.go)、[app/owned.go](../app/owned.go)。
+代码：[account/account.go](../account/account.go)、[app/owned.go](../app/owned.go)、[tool/builtin/hub/](../tool/builtin/hub/)、[store/sqlite/owned.go](../store/sqlite/owned.go)。
 
 ## 会话
 
 会话是一段对话。它运行在一个执行环境里（不指定时是这台机器），可选地挂在一个工作区上，带一层自己的权限设置。
 
 - **顶层会话**：用户通过 `app.StartThread` 创建，出现在会话列表里。
-- **子会话**：子 agent 的会话。父会话里启动它的调用结束时，runner 在同一事务里创建子会话、给它排上第一个轮次和任务消息（`run.launch`）。它记着 `parent_id`、`parent_item` 和它的角色（`role`，即启动它的工具；顶层会话的角色每一轮按模型选，这一列为空），继承父会话的工作区和环境。它按自己的会话设置运行，没设过时就是所在工作区的权限，"总是允许"也记进它自己的工作区。用户可以像对顶层会话一样给它发消息、插话、中断，这些轮次沿用它的角色。
+- **子会话**：子 agent 的会话。父会话里启动它的调用结束时，runner 在同一事务里创建子会话、给它排上第一个轮次和任务消息（`run.launch`）。它记着 `parent_id`、`parent_item` 和它的角色（`role`，即启动它的工具；顶层会话的角色每一轮现选，这一列为空），继承父会话的工作区和环境。它按自己的会话设置运行，没设过时就是所在工作区的权限，"总是允许"也记进它自己的工作区。用户可以像对顶层会话一样给它发消息、插话、中断，这些轮次沿用它的角色。
 - **两种子会话**：`general-sub-agent` 和 `browser-sub-agent` 汇报：父轮次等它，它只汇报启动它的那一轮，报告写进启动它的轮次；它不出现在会话列表和搜索里，随父会话一起删除。`delegate-sub-agent` 是委派：不汇报（`ChildLaunched.Detached`），父轮次不等它、也不因它停下或结束；它的回复给用户看，出现在会话列表和搜索里，有未读标记，等待状态不汇总到父会话；父会话还有委派会话时不能删除（`app.ErrHasDelegates`）。
 
 ```mermaid
@@ -90,6 +93,8 @@ stateDiagram-v2
 | 用户发消息 | `app.Send`，每条消息一个轮次 |
 | 定时任务到点 | `cron.Run` 调 `app.Scheduled`，`TurnQueued.CronJob` 记着任务 |
 | 子 agent 被启动 | `run.launch`，和父会话里结束启动调用的记录在同一个事务里 |
+
+`TurnQueued.Role` 是这一轮的角色：子会话沿用它的 `role`；中枢工作区里的会话用 `hub-main-agent`；其余按这一轮的模型选 `full-main-agent` 或 `compact-main-agent`（`app.queue`）。
 
 会话空闲时，新轮次就是当前轮次；会话忙时它排在后面，等前面的轮次结束。排队上限是 20 个轮次（`maxQueued`）。用户想把话说给正在运行的轮次，用 `app.Steer`：消息追加进当前轮次，agent 在下一步读到它。
 

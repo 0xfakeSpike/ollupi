@@ -40,6 +40,9 @@ type Reader interface {
 	Threads(user string, f ThreadFilter) (threads []Thread, more bool, err error)
 	Waiting(user string) ([]string, error)
 	Children(thread string) ([]Thread, error)
+	Calls(user, workspace, tool string) ([]conversation.Item, error)
+	Todos(user string, statuses []account.TodoStatus) ([]account.Todo, error)
+	Todo(user string, id int64) (account.Todo, error)
 	Search(user string, terms []string, workspace string, limit int) (Found, error)
 	Busy() (int64, error)
 	Active(since time.Time) (int64, error)
@@ -64,6 +67,8 @@ type Tx interface {
 	EnsureUser(id string) error
 	SetSettings(user string, s account.Settings) error
 	PutWorkspace(user string, w account.Workspace) error
+	AddTodo(user string, t account.Todo) (account.Todo, error)
+	PutTodo(user string, t account.Todo) error
 	PutEnvironment(user string, e account.Environment) error
 	DeleteEnvironment(user, id string) error
 	PutMCPServer(user string, s account.MCPServer) error

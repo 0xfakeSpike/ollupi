@@ -2,11 +2,13 @@ package agent
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/conversation"
+	"github.com/0xfakeSpike/ollupi/policy"
 )
 
 type log struct {
@@ -120,6 +122,42 @@ func TestTheMainAgentFitsTheWindow(t *testing.T) {
 	for _, name := range Names {
 		if r, ok := RoleOf(name); !ok || r.Name != name || r.Rules == "" {
 			t.Errorf("role %s: %+v", name, r)
+		}
+	}
+}
+
+func TestOnlyTheHubHandsOutWork(t *testing.T) {
+	box := policy.Toolbox{Tools: []policy.Tool{
+		{Name: StartConversationTool, Provider: HubProvider},
+		{Name: SendMessageTool, Provider: HubProvider},
+		{Name: AddTodoTool, Provider: HubProvider},
+		{Name: UpdateTodoTool, Provider: HubProvider},
+		{Name: string(GeneralSub), Provider: SubagentsProvider},
+		{Name: RunCommandTool, Provider: WorkspaceProvider, Content: true},
+	}}
+	for _, name := range Names {
+		role, _ := RoleOf(name)
+		checker, err := policy.New(slices.Concat(role.Own, []policy.Layer{{Of: "deployment", Settings: policy.Settings{ApprovalPolicy: string(policy.OnRequest)}}}), nil, box)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		var visible []string
+		for _, tl := range checker.Tools() {
+			visible = append(visible, tl.Name)
+		}
+		hands := slices.Contains(visible, StartConversationTool)
+		if hands != (name == HubMain) {
+			t.Errorf("%s sees %q", name, visible)
+		}
+		if name == HubMain {
+			for _, free := range []string{SendMessageTool, UpdateTodoTool} {
+				if d := checker.Decide(policy.Call{Tool: free}, conversation.View{}); d.Verdict != policy.Run {
+					t.Errorf("the hub's %s: %+v", free, d)
+				}
+			}
+			if slices.Contains(visible, string(GeneralSub)) {
+				t.Errorf("the hub sees %q", visible)
+			}
 		}
 	}
 }
