@@ -135,6 +135,7 @@ type Owned struct {
 	CronJob            *CronJobView
 	CronJobDeleted     string
 	Memory             *memory.Memory
+	Todo               *account.Todo
 }
 
 type Change struct {

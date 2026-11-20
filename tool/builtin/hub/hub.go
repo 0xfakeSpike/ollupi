@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
-	"time"
 
 	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/agent"
@@ -111,7 +109,7 @@ type AddTodoArgs struct {
 }
 
 func (AddTodoArgs) Constrain(s *jsonschema.Schema) {
-	s.Properties["title"].MinLength, s.Properties["title"].MaxLength = jsonschema.Ptr(1), jsonschema.Ptr(200)
+	s.Properties["title"].MinLength, s.Properties["title"].MaxLength = jsonschema.Ptr(1), jsonschema.Ptr(app.MaxTodoTitleRunes)
 }
 
 type UpdateTodoArgs struct {
@@ -125,7 +123,7 @@ type UpdateTodoArgs struct {
 
 func (UpdateTodoArgs) Constrain(s *jsonschema.Schema) {
 	s.Properties["id"].Minimum = jsonschema.Ptr(1.0)
-	s.Properties["title"].MaxLength = jsonschema.Ptr(200)
+	s.Properties["title"].MaxLength = jsonschema.Ptr(app.MaxTodoTitleRunes)
 	s.Properties["status"].Enum = todoStatuses()
 }
 
@@ -207,6 +205,7 @@ func ended(e *conversation.Ending) *Ended {
 type Message struct {
 	Kind conversation.ItemKind `json:"kind"`
 	Text string                `json:"text"`
+	From string                `json:"from,omitempty" jsonschema:"Id of the hub conversation that sent this message on the user's behalf; left out when the user wrote it."`
 }
 
 func (*Provider) Tools(context.Context) ([]kit.Spec, error) {
@@ -309,14 +308,7 @@ func (p *Provider) start(ctx context.Context, c tool.Call) (kit.Result, error) {
 		return kit.Result{}, err
 	}
 	var w account.Workspace
-	var from store.Thread
-	err = p.St.Read(ctx, func(r store.Reader) (err error) {
-		if from, err = r.Thread(c.Thread); err != nil {
-			return err
-		}
-		w, err = r.Workspace(c.User, args.Workspace)
-		return err
-	})
+	err = p.St.Read(ctx, func(r store.Reader) (err error) { w, err = r.Workspace(c.User, args.Workspace); return err })
 	if errors.Is(err, store.ErrNotFound) {
 		return kit.Result{}, fmt.Errorf("the user has no workspace %q; %s lists them", args.Workspace, agent.ListWorkspacesTool)
 	}
@@ -335,7 +327,7 @@ func (p *Provider) start(ctx context.Context, c tool.Call) (kit.Result, error) {
 	if err != nil {
 		return kit.Result{}, err
 	}
-	turn, inProgress, err := p.App.Send(ctx, c.User, th.ID, app.Input{Text: marked(from, args.Message)})
+	turn, inProgress, err := p.App.Send(ctx, c.User, th.ID, app.Input{Text: args.Message, From: c.Thread})
 	if err != nil {
 		return kit.Result{}, fmt.Errorf("conversation %s was started, but its first message was not sent: %w", th.ID, err)
 	}
@@ -343,14 +335,12 @@ func (p *Provider) start(ctx context.Context, c tool.Call) (kit.Result, error) {
 	if args.Todo == 0 {
 		return kit.Result{Output: out}, nil
 	}
-	todo, err := p.changeTodo(ctx, c.User, args.Todo, func(_ store.Reader, t *account.Todo) error {
-		t.Workspace, t.Thread, t.Status = w.ID, th.ID, account.TodoHanded
-		return nil
-	})
+	todo, err := p.App.UpdateTodo(ctx, c.User, args.Todo, app.TodoChange{Status: account.TodoHanded, Thread: th.ID})
 	if err != nil {
 		return kit.Result{}, fmt.Errorf("conversation %s was started, but todo %d was not linked to it: %w", th.ID, args.Todo, err)
 	}
-	out.Todo = &todo
+	linked := todoOf(todo)
+	out.Todo = &linked
 	return kit.Result{Output: out}, nil
 }
 
@@ -359,13 +349,7 @@ func (p *Provider) addTodo(ctx context.Context, c tool.Call) (kit.Result, error)
 	if err != nil {
 		return kit.Result{}, err
 	}
-	now := time.Now().UTC()
-	var added account.Todo
-	err = p.St.Update(ctx, func(tx store.Tx) (err error) {
-		added, err = tx.AddTodo(c.User, account.Todo{Title: strings.TrimSpace(args.Title), Status: account.TodoOpen, Notes: args.Notes,
-			Created: now, Updated: now})
-		return err
-	})
+	added, err := p.App.AddTodo(ctx, c.User, args.Title, args.Notes)
 	if err != nil {
 		return kit.Result{}, err
 	}
@@ -377,60 +361,12 @@ func (p *Provider) updateTodo(ctx context.Context, c tool.Call) (kit.Result, err
 	if err != nil {
 		return kit.Result{}, err
 	}
-	if args.Status != "" && !slices.Contains(account.TodoStatuses, args.Status) {
-		return kit.Result{}, fmt.Errorf("a todo is one of %q, not %q", account.TodoStatuses, args.Status)
-	}
-	todo, err := p.changeTodo(ctx, c.User, args.ID, func(r store.Reader, t *account.Todo) error {
-		if args.Conversation != "" {
-			th, err := owned(r, c.User, args.Conversation)
-			if err != nil {
-				return err
-			}
-			t.Workspace, t.Thread = th.Workspace, th.ID
-		}
-		if title := strings.TrimSpace(args.Title); title != "" {
-			t.Title = title
-		}
-		if args.Status != "" {
-			t.Status = args.Status
-		}
-		if args.Notes != "" {
-			t.Notes = args.Notes
-		}
-		if args.Result != "" {
-			t.Result = args.Result
-		}
-		return nil
-	})
+	todo, err := p.App.UpdateTodo(ctx, c.User, args.ID, app.TodoChange{Title: args.Title, Status: args.Status, Notes: args.Notes,
+		Result: args.Result, Thread: args.Conversation})
 	if err != nil {
 		return kit.Result{}, err
 	}
-	return kit.Result{Output: todo}, nil
-}
-
-func (p *Provider) changeTodo(ctx context.Context, user string, id int64, change func(store.Reader, *account.Todo) error) (Todo, error) {
-	var t account.Todo
-	err := p.St.Update(ctx, func(tx store.Tx) (err error) {
-		if t, err = tx.Todo(user, id); errors.Is(err, store.ErrNotFound) {
-			return fmt.Errorf("the user has no todo %d", id)
-		}
-		if err != nil {
-			return err
-		}
-		wasDone := t.Status == account.TodoDone
-		if err := change(tx, &t); err != nil {
-			return err
-		}
-		t.Updated = time.Now().UTC()
-		switch done := t.Status == account.TodoDone; {
-		case done && !wasDone:
-			t.Done = &t.Updated
-		case !done:
-			t.Done = nil
-		}
-		return tx.PutTodo(user, t)
-	})
-	return todoOf(t), err
+	return kit.Result{Output: todoOf(todo)}, nil
 }
 
 func (p *Provider) listTodos(ctx context.Context, c tool.Call) (kit.Result, error) {
@@ -442,8 +378,8 @@ func (p *Provider) listTodos(ctx context.Context, c tool.Call) (kit.Result, erro
 	if len(statuses) == 0 {
 		statuses = []account.TodoStatus{account.TodoOpen, account.TodoHanded}
 	}
-	var all []account.Todo
-	if err := p.St.Read(ctx, func(r store.Reader) (err error) { all, err = r.Todos(c.User, statuses); return err }); err != nil {
+	all, err := p.App.Todos(ctx, c.User, statuses)
+	if err != nil {
 		return kit.Result{}, err
 	}
 	out := Todos{Todos: []Todo{}}
@@ -458,12 +394,9 @@ func (p *Provider) send(ctx context.Context, c tool.Call) (kit.Result, error) {
 	if err != nil {
 		return kit.Result{}, err
 	}
-	var from, to store.Thread
+	var to store.Thread
 	var w account.Workspace
 	err = p.St.Read(ctx, func(r store.Reader) (err error) {
-		if from, err = r.Thread(c.Thread); err != nil {
-			return err
-		}
 		if to, err = owned(r, c.User, args.Conversation); err != nil {
 			return err
 		}
@@ -479,15 +412,11 @@ func (p *Provider) send(ctx context.Context, c tool.Call) (kit.Result, error) {
 	if w.Kind == account.HubWorkspace {
 		return kit.Result{}, fmt.Errorf("conversation %s is in the hub workspace %s; write only to conversations in project workspaces", to.ID, w.Name)
 	}
-	turn, inProgress, err := p.App.Send(ctx, c.User, to.ID, app.Input{Text: marked(from, args.Message)})
+	turn, inProgress, err := p.App.Send(ctx, c.User, to.ID, app.Input{Text: args.Message, From: c.Thread})
 	if err != nil {
 		return kit.Result{}, err
 	}
 	return kit.Result{Output: Started{Conversation: to.ID, Turn: turn.ID, Queued: !inProgress}}, nil
-}
-
-func marked(from store.Thread, message string) string {
-	return fmt.Sprintf("[Sent by the hub conversation %q (%s) on the user's behalf]\n\n%s", from.Title, from.ID, message)
 }
 
 func (p *Provider) list(ctx context.Context, c tool.Call) (kit.Result, error) {
@@ -599,7 +528,11 @@ func (p *Provider) read(ctx context.Context, c tool.Call) (kit.Result, error) {
 			case it.Kind != conversation.ItemUserMessage && it.Kind != conversation.ItemAgentMessage:
 				continue
 			}
-			turn.Messages = append(turn.Messages, Message{Kind: it.Kind, Text: clip(text, messageRunes)})
+			msg := Message{Kind: it.Kind, Text: clip(text, messageRunes)}
+			if it.From != nil {
+				msg.From = it.From.Thread
+			}
+			turn.Messages = append(turn.Messages, msg)
 		}
 		out.Turns = append(out.Turns, turn)
 	}

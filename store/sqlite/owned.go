@@ -291,6 +291,7 @@ func (t *tx) AddTodo(owner string, todo account.Todo) (account.Todo, error) {
 	if err != nil {
 		return account.Todo{}, fmt.Errorf("store: add todo: %w", err)
 	}
+	t.owned = append(t.owned, store.Event{User: owner, Owned: &store.Owned{Todo: &todo}})
 	return todo, nil
 }
 
@@ -298,7 +299,11 @@ func (t *tx) PutTodo(owner string, todo account.Todo) error {
 	res := t.g.Exec(`UPDATE todos SET title = ?, workspace_id = ?, thread_id = ?, status = ?, notes = ?, result = ?, updated_at = ?, done_at = ?
 		WHERE user_id = ? AND id = ?`, todo.Title, todo.Workspace, todo.Thread, string(todo.Status), todo.Notes, todo.Result, todo.Updated, todo.Done,
 		owner, todo.ID)
-	return one(res, fmt.Sprintf("todo %d", todo.ID))
+	if err := one(res, fmt.Sprintf("todo %d", todo.ID)); err != nil {
+		return err
+	}
+	t.owned = append(t.owned, store.Event{User: owner, Owned: &store.Owned{Todo: &todo}})
+	return nil
 }
 
 func (r reader) Calls(owner, workspace, tool string) ([]conversation.Item, error) {

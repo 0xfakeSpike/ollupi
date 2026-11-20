@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/app"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/cron"
@@ -85,7 +86,7 @@ func (c *client) read() message {
 	return m
 }
 
-func (c *client) call(method string, params any, result any) {
+func (c *client) reply(method string, params any) message {
 	c.t.Helper()
 	c.next++
 	c.send(map[string]any{"jsonrpc": "2.0", "id": c.next, "method": method, "params": params})
@@ -95,12 +96,26 @@ func (c *client) call(method string, params any, result any) {
 			c.kept = append(c.kept, m)
 			continue
 		}
-		if m.Error != nil {
-			c.t.Fatalf("%s: %+v", method, m.Error)
-		}
-		json.Unmarshal(m.Result, result)
-		return
+		return m
 	}
+}
+
+func (c *client) call(method string, params any, result any) {
+	c.t.Helper()
+	m := c.reply(method, params)
+	if m.Error != nil {
+		c.t.Fatalf("%s: %+v", method, m.Error)
+	}
+	json.Unmarshal(m.Result, result)
+}
+
+func (c *client) fail(method string, params any) *jsonrpc.Error {
+	c.t.Helper()
+	m := c.reply(method, params)
+	if m.Error == nil {
+		c.t.Fatalf("%s succeeded: %s", method, m.Result)
+	}
+	return m.Error
 }
 
 func (c *client) until(method string) message {
@@ -119,37 +134,43 @@ func (c *client) until(method string) message {
 	}
 }
 
-func TestAClientHearsWhatChangesAndAnswersWhatWaitsOnIt(t *testing.T) {
+func connect(t *testing.T) (store.Store, *client) {
+	t.Helper()
 	ctx := context.Background()
 	st, err := sqlite.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	t.Cleanup(func() { st.Close() })
 	boxes := func(string) (sandbox.Box, error) { return sandbox.Here() }
 	users := mcp.NewUsers(ctx, mcp.Client{Name: "ollupi", Version: "test"}, st, boxes)
-	defer users.Close()
+	t.Cleanup(func() { users.Close() })
 	a := app.New(st, models{}, users.Tools, users.Statuses, boxes, noFiles{}, cron.NewCalendar(time.UTC), policy.Settings{ApprovalPolicy: string(policy.OnRequest)})
 	server, err := NewServer(a, st.Feed(), Options{Token: "secret"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	web := httptest.NewServer(server)
-	defer web.Close()
+	t.Cleanup(web.Close)
 	ws, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(web.URL, "http"), &websocket.DialOptions{
 		HTTPHeader: http.Header{"Authorization": {"Bearer secret"}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ws.CloseNow()
+	t.Cleanup(func() { ws.CloseNow() })
 	c := &client{t: t, ws: ws}
-
 	var init InitializeResult
 	c.call(methodInitialize, InitializeParams{}, &init)
 	if init.ProtocolSHA256 != protocolSHA256 {
 		t.Errorf("initialize %+v", init)
 	}
+	return st, c
+}
+
+func TestAClientHearsWhatChangesAndAnswersWhatWaitsOnIt(t *testing.T) {
+	ctx := context.Background()
+	st, c := connect(t)
 	var started ThreadResult
 	c.call("thread/start", ThreadStartParams{Title: "chat"}, &started)
 	var turn TurnResult
@@ -169,7 +190,7 @@ func TestAClientHearsWhatChangesAndAnswersWhatWaitsOnIt(t *testing.T) {
 		t.Errorf("the page at %d: %+v", page.Seq, page)
 	}
 
-	err = st.Update(ctx, func(tx store.Tx) error {
+	err := st.Update(ctx, func(tx store.Tx) error {
 		_, err := tx.Append(started.Thread.ID,
 			conversation.Entry{Turn: turn.Turn.ID, Body: conversation.ModelResponded{Response: "r"}},
 			conversation.Entry{Turn: turn.Turn.ID, Item: "c1", Body: conversation.ToolCall{Call: "x", Tool: "run_command", Arguments: `{"command":"make"}`, Response: "r"}},
@@ -201,5 +222,78 @@ func TestAClientHearsWhatChangesAndAnswersWhatWaitsOnIt(t *testing.T) {
 	}
 	if status.Thread == nil || status.Thread.Status != conversation.ThreadActive || status.Seq <= page.Seq {
 		t.Errorf("after the decision: %+v", status)
+	}
+}
+
+func TestAClientKeepsTheTodosAndHearsThemChange(t *testing.T) {
+	_, c := connect(t)
+	var added TodoResult
+	c.call("todo/add", TodoAddParams{Title: " write the release notes ", Notes: "for 1.0"}, &added)
+	if added.Todo.ID != 1 || added.Todo.Title != "write the release notes" || added.Todo.Status != account.TodoOpen {
+		t.Fatalf("added %+v", added.Todo)
+	}
+	var heard TodoResult
+	json.Unmarshal(c.until(notifyTodoChanged).Params, &heard)
+	if heard.Todo.ID != added.Todo.ID || heard.Todo.Title != added.Todo.Title {
+		t.Errorf("heard %+v", heard.Todo)
+	}
+	var thread ThreadResult
+	c.call("thread/start", ThreadStartParams{Title: "notes"}, &thread)
+	var done TodoResult
+	c.call("todo/update", TodoUpdateParams{ID: added.Todo.ID, Status: account.TodoDone, Result: "published", ThreadID: thread.Thread.ID}, &done)
+	if done.Todo.DoneAt == nil || done.Todo.ThreadID != thread.Thread.ID || done.Todo.Notes != "for 1.0" {
+		t.Errorf("done %+v", done.Todo)
+	}
+	json.Unmarshal(c.until(notifyTodoChanged).Params, &heard)
+	if heard.Todo.Status != account.TodoDone || heard.Todo.DoneAt == nil {
+		t.Errorf("heard %+v", heard.Todo)
+	}
+	var listed TodoListResult
+	c.call("todo/list", TodoListParams{}, &listed)
+	if len(listed.Data) != 1 || listed.Data[0].Status != account.TodoDone {
+		t.Errorf("listed %+v", listed.Data)
+	}
+	c.call("todo/list", TodoListParams{Statuses: []account.TodoStatus{account.TodoOpen}}, &listed)
+	if len(listed.Data) != 0 {
+		t.Errorf("listed the open ones %+v", listed.Data)
+	}
+	for _, failed := range []struct {
+		params TodoUpdateParams
+		code   int
+	}{
+		{TodoUpdateParams{ID: 99, Status: account.TodoDone}, errNotFound},
+		{TodoUpdateParams{ID: added.Todo.ID, Status: "later"}, jsonrpc.CodeInvalidParams},
+	} {
+		if err := c.fail("todo/update", failed.params); err.Code != failed.code {
+			t.Errorf("updated with %+v: %+v", failed.params, err)
+		}
+	}
+}
+
+func TestAClientSeesWhichHubConversationSentAMessage(t *testing.T) {
+	ctx := context.Background()
+	st, c := connect(t)
+	var plan, notes ThreadResult
+	c.call("thread/start", ThreadStartParams{Title: "plan"}, &plan)
+	c.call("thread/start", ThreadStartParams{Title: "notes"}, &notes)
+	err := st.Update(ctx, func(tx store.Tx) error {
+		_, err := tx.Append(notes.Thread.ID,
+			conversation.Entry{Turn: "t", Body: conversation.TurnQueued{Model: llm.Model{Name: "m", Connection: "main"}}},
+			conversation.Entry{Turn: "t", Item: "m", Body: conversation.UserMessage{Text: "write notes",
+				From: &conversation.Sender{Thread: plan.Thread.ID, Title: "plan"}}})
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var item ItemChangedNotification
+	json.Unmarshal(c.until(notifyItemChanged).Params, &item)
+	if item.Item.Text != "write notes" || item.Item.SentByThreadID != plan.Thread.ID {
+		t.Errorf("the message %+v", item.Item)
+	}
+	var page ThreadPageResult
+	c.call("thread/read", ThreadPageParams{ThreadID: notes.Thread.ID}, &page)
+	if len(page.Items) != 1 || page.Items[0].SentByThreadID != plan.Thread.ID {
+		t.Errorf("the page %+v", page.Items)
 	}
 }

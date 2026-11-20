@@ -175,6 +175,8 @@ func (c *conn) owned(thread string, o store.Owned) {
 		c.rpc.Notify(notifyCronChanged, CronChangedNotification{ID: o.CronJobDeleted, ThreadID: thread})
 	case o.Memory != nil:
 		c.rpc.Notify(notifyMemoryChanged, MemoryResult{Memory: memoryRow(*o.Memory)})
+	case o.Todo != nil:
+		c.rpc.Notify(notifyTodoChanged, TodoResult{Todo: todoRow(*o.Todo)})
 	}
 }
 
