@@ -62,7 +62,6 @@ const (
 	notifySettingsChanged    = "settings/changed"
 	notifyMCPServerChanged   = "mcpServer/changed"
 	notifyMemoryChanged      = "memory/changed"
-	notifyTodoChanged        = "todo/changed"
 	notifyError              = "error"
 )
 
@@ -137,9 +136,6 @@ var protocol = struct {
 		"memory/update":                handle((*conn).memoryUpdate),
 		"memory/move":                  handle((*conn).memoryMove),
 		"memory/forget":                handle((*conn).memoryForget),
-		"todo/list":                    handle((*conn).todoList),
-		"todo/add":                     handle((*conn).todoAdd),
-		"todo/update":                  handle((*conn).todoUpdate),
 		"search":                       handle((*conn).search),
 		"settings/read":                handle((*conn).settingsRead),
 		"settings/update":              handle((*conn).settingsUpdate),
@@ -157,7 +153,6 @@ var protocol = struct {
 		notifySettingsChanged:    reflect.TypeFor[SettingsRow](),
 		notifyMCPServerChanged:   reflect.TypeFor[MCPServerChangedNotification](),
 		notifyMemoryChanged:      reflect.TypeFor[MemoryResult](),
-		notifyTodoChanged:        reflect.TypeFor[TodoResult](),
 		notifyError:              reflect.TypeFor[ErrorNotification](),
 	},
 	serverRequests: map[string]serverRequest{
@@ -591,35 +586,6 @@ type MemoryResult struct {
 	Memory MemoryRow `json:"memory"`
 }
 
-// TodoListParams picks the todos to list by status; with none given, all of them, done and dropped too.
-type TodoListParams struct {
-	Statuses []account.TodoStatus `json:"statuses,omitempty"`
-}
-
-type TodoListResult struct {
-	Data []TodoRow `json:"data"`
-}
-
-type TodoAddParams struct {
-	Title string `json:"title"`
-	Notes string `json:"notes,omitempty"`
-}
-
-// TodoUpdateParams changes a todo the way the hub's update_todo does: a field left out stays as it is,
-// marking it done records when, and threadId links it to that conversation and its workspace.
-type TodoUpdateParams struct {
-	ID       int64              `json:"id"`
-	Title    string             `json:"title,omitempty"`
-	Status   account.TodoStatus `json:"status,omitempty"`
-	Notes    string             `json:"notes,omitempty"`
-	Result   string             `json:"result,omitempty"`
-	ThreadID string             `json:"threadId,omitempty"`
-}
-
-type TodoResult struct {
-	Todo TodoRow `json:"todo"`
-}
-
 type SearchParams struct {
 	Query       string `json:"query"`
 	WorkspaceID string `json:"workspaceId,omitempty"`
@@ -695,7 +661,6 @@ var errorCodes = []struct {
 	{app.ErrInvalidDecision, jsonrpc.CodeInvalidParams},
 	{app.ErrInvalidPath, jsonrpc.CodeInvalidParams},
 	{app.ErrInvalidQuery, jsonrpc.CodeInvalidParams},
-	{app.ErrInvalidTodo, jsonrpc.CodeInvalidParams},
 	{app.ErrSearchTimedOut, errSearchTimedOut},
 	{account.ErrInvalidName, jsonrpc.CodeInvalidParams},
 	{account.ErrInvalidMCPServer, jsonrpc.CodeInvalidParams},

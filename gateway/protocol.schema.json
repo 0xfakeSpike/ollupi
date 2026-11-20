@@ -1005,24 +1005,6 @@
       ],
       "additionalProperties": false
     },
-    "HubAddTodo": {
-      "type": "object",
-      "properties": {
-        "title": {
-          "type": "string",
-          "description": "What is to be done, in a line.",
-          "minLength": 1,
-          "maxLength": 200
-        },
-        "notes": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "title"
-      ],
-      "additionalProperties": false
-    },
     "HubConversation": {
       "type": "object",
       "properties": {
@@ -1109,28 +1091,6 @@
       },
       "additionalProperties": false
     },
-    "HubListTodos": {
-      "type": "object",
-      "properties": {
-        "statuses": {
-          "type": [
-            "null",
-            "array"
-          ],
-          "items": {
-            "$ref": "#/$defs/TodoStatus",
-            "enum": [
-              "open",
-              "handed",
-              "done",
-              "dropped"
-            ]
-          },
-          "description": "The statuses to list; open and handed when left out."
-        }
-      },
-      "additionalProperties": false
-    },
     "HubMessage": {
       "type": "object",
       "properties": {
@@ -1162,16 +1122,6 @@
         },
         "queued": {
           "type": "boolean"
-        },
-        "todo": {
-          "anyOf": [
-            {
-              "type": "null"
-            },
-            {
-              "$ref": "#/$defs/HubTodo"
-            }
-          ]
         }
       },
       "required": [
@@ -1237,75 +1187,12 @@
           "type": "string",
           "description": "The first message, complete on its own: the conversation knows nothing of this one.",
           "minLength": 1
-        },
-        "todo": {
-          "type": "integer",
-          "description": "Id of the todo this conversation works on: it is linked to the conversation and marked handed.",
-          "minimum": 1
         }
       },
       "required": [
         "workspace",
         "title",
         "message"
-      ],
-      "additionalProperties": false
-    },
-    "HubTodo": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "integer"
-        },
-        "title": {
-          "type": "string"
-        },
-        "workspace": {
-          "type": "string"
-        },
-        "conversation": {
-          "type": "string"
-        },
-        "status": {
-          "$ref": "#/$defs/TodoStatus"
-        },
-        "notes": {
-          "type": "string"
-        },
-        "result": {
-          "type": "string"
-        },
-        "created": {
-          "type": "string"
-        },
-        "updated": {
-          "type": "string"
-        },
-        "done": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "title",
-        "status",
-        "created",
-        "updated"
-      ],
-      "additionalProperties": false
-    },
-    "HubTodos": {
-      "type": "object",
-      "properties": {
-        "todos": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/HubTodo"
-          }
-        }
-      },
-      "required": [
-        "todos"
       ],
       "additionalProperties": false
     },
@@ -1373,44 +1260,6 @@
       },
       "required": [
         "turns"
-      ],
-      "additionalProperties": false
-    },
-    "HubUpdateTodo": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "title": {
-          "type": "string",
-          "maxLength": 200
-        },
-        "status": {
-          "$ref": "#/$defs/TodoStatus",
-          "enum": [
-            "open",
-            "handed",
-            "done",
-            "dropped"
-          ]
-        },
-        "notes": {
-          "type": "string",
-          "description": "Replaces the notes."
-        },
-        "result": {
-          "type": "string",
-          "description": "What came of it, in a sentence."
-        },
-        "conversation": {
-          "type": "string",
-          "description": "Id of a conversation that works on it, such as one the user started; it and its workspace are linked to the todo."
-        }
-      },
-      "required": [
-        "id"
       ],
       "additionalProperties": false
     },
@@ -3037,148 +2886,6 @@
         "waitingOnUserInput"
       ]
     },
-    "TodoAddParams": {
-      "type": "object",
-      "properties": {
-        "title": {
-          "type": "string"
-        },
-        "notes": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "title"
-      ],
-      "additionalProperties": false
-    },
-    "TodoListParams": {
-      "type": "object",
-      "properties": {
-        "statuses": {
-          "type": [
-            "null",
-            "array"
-          ],
-          "items": {
-            "$ref": "#/$defs/TodoStatus"
-          }
-        }
-      },
-      "additionalProperties": false
-    },
-    "TodoListResult": {
-      "type": "object",
-      "properties": {
-        "data": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/TodoRow"
-          }
-        }
-      },
-      "required": [
-        "data"
-      ],
-      "additionalProperties": false
-    },
-    "TodoResult": {
-      "type": "object",
-      "properties": {
-        "todo": {
-          "$ref": "#/$defs/TodoRow"
-        }
-      },
-      "required": [
-        "todo"
-      ],
-      "additionalProperties": false
-    },
-    "TodoRow": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "integer"
-        },
-        "title": {
-          "type": "string"
-        },
-        "workspaceId": {
-          "type": "string"
-        },
-        "threadId": {
-          "type": "string"
-        },
-        "status": {
-          "$ref": "#/$defs/TodoStatus"
-        },
-        "notes": {
-          "type": "string"
-        },
-        "result": {
-          "type": "string"
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "updatedAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "doneAt": {
-          "type": [
-            "null",
-            "string"
-          ],
-          "format": "date-time"
-        }
-      },
-      "required": [
-        "id",
-        "title",
-        "status",
-        "createdAt",
-        "updatedAt"
-      ],
-      "additionalProperties": false
-    },
-    "TodoStatus": {
-      "type": "string",
-      "enum": [
-        "open",
-        "handed",
-        "done",
-        "dropped"
-      ]
-    },
-    "TodoUpdateParams": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "integer"
-        },
-        "title": {
-          "type": "string"
-        },
-        "status": {
-          "$ref": "#/$defs/TodoStatus"
-        },
-        "notes": {
-          "type": "string"
-        },
-        "result": {
-          "type": "string"
-        },
-        "threadId": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "id"
-      ],
-      "additionalProperties": false
-    },
     "ToolDescriptor": {
       "type": "object",
       "properties": {
@@ -4107,30 +3814,6 @@
         "$ref": "#/$defs/ThreadResult"
       }
     },
-    "todo/add": {
-      "params": {
-        "$ref": "#/$defs/TodoAddParams"
-      },
-      "result": {
-        "$ref": "#/$defs/TodoResult"
-      }
-    },
-    "todo/list": {
-      "params": {
-        "$ref": "#/$defs/TodoListParams"
-      },
-      "result": {
-        "$ref": "#/$defs/TodoListResult"
-      }
-    },
-    "todo/update": {
-      "params": {
-        "$ref": "#/$defs/TodoUpdateParams"
-      },
-      "result": {
-        "$ref": "#/$defs/TodoResult"
-      }
-    },
     "tool/list": {
       "params": {
         "$ref": "#/$defs/Empty"
@@ -4267,9 +3950,6 @@
     "thread/changed": {
       "$ref": "#/$defs/ThreadChangedNotification"
     },
-    "todo/changed": {
-      "$ref": "#/$defs/TodoResult"
-    },
     "turn/changed": {
       "$ref": "#/$defs/TurnChangedNotification"
     },
@@ -4370,14 +4050,6 @@
     "searchTerms": 8
   },
   "builtinTools": {
-    "add_todo": {
-      "arguments": {
-        "$ref": "#/$defs/HubAddTodo"
-      },
-      "output": {
-        "$ref": "#/$defs/HubTodo"
-      }
-    },
     "browser-sub-agent": {
       "arguments": {
         "$ref": "#/$defs/SubagentCall"
@@ -4429,14 +4101,6 @@
       },
       "output": {
         "$ref": "#/$defs/HubConversations"
-      }
-    },
-    "list_todos": {
-      "arguments": {
-        "$ref": "#/$defs/HubListTodos"
-      },
-      "output": {
-        "$ref": "#/$defs/HubTodos"
       }
     },
     "list_workspaces": {
@@ -4492,14 +4156,6 @@
     "update_plan": {
       "arguments": {
         "$ref": "#/$defs/Plan"
-      }
-    },
-    "update_todo": {
-      "arguments": {
-        "$ref": "#/$defs/HubUpdateTodo"
-      },
-      "output": {
-        "$ref": "#/$defs/HubTodo"
       }
     },
     "write_file": {
