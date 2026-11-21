@@ -56,3 +56,19 @@ func TestADenialBeforeANoisyOneIsStillReported(t *testing.T) {
 		t.Errorf("reported %q", got)
 	}
 }
+
+func TestTheProfileLetsBuildsUpdateTheGoBuildCache(t *testing.T) {
+	profile, params, err := seatbeltProfile(policy{Mode: ModeWorkspaceWrite, WritableRoots: []string{"/p"}, ExtraWritable: defaultWritableCaches("/h")}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writable := false
+	for _, kv := range params {
+		if kv[1] == "/h/Library/Caches/go-build" && strings.Contains(profile, `(subpath (param "`+kv[0]+`"))`) {
+			writable = true
+		}
+	}
+	if !writable {
+		t.Errorf("the Go build cache is not writable: %v", params)
+	}
+}
