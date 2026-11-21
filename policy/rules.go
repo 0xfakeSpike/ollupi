@@ -165,6 +165,19 @@ func (s ruleSet) decide(tool string, content Content, hasContent bool) (ruleVerd
 
 var subcommand = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 
+var (
+	sensitivePrograms = []string{"rm", "rmdir", "mv", "dd", "chmod", "chown", "sudo", "kill", "pkill", "killall", "launchctl", "crontab",
+		"python", "python3", "node", "ruby", "perl", "osascript", "expect"}
+	sensitiveGit = []string{"push", "reset", "clean", "checkout", "restore", "rebase"}
+)
+
+func sensitive(words []string) bool {
+	if slices.Contains(sensitivePrograms, words[0]) {
+		return true
+	}
+	return words[0] == "git" && len(words) > 1 && slices.Contains(sensitiveGit, words[1])
+}
+
 func suggest(call Call) []string {
 	if call.Escalated {
 		return nil
@@ -182,8 +195,12 @@ func suggest(call Call) []string {
 			return nil
 		}
 		spec := part
-		if len(words) > 1 && subcommand.MatchString(words[1]) {
+		switch {
+		case len(words) == 1 || sensitive(words):
+		case subcommand.MatchString(words[1]):
 			spec = words[0] + " " + words[1] + ":*"
+		default:
+			spec = words[0] + ":*"
 		}
 		text := call.Tool + "(" + spec + ")"
 		if r, err := parseRule(text); err != nil || !r.matches(call.Tool, part, true, call.Content.Folded) {
