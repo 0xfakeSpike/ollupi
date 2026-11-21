@@ -838,6 +838,9 @@
         },
         "removed": {
           "type": "integer"
+        },
+        "diff": {
+          "type": "string"
         }
       },
       "required": [
