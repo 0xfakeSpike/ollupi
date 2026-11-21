@@ -69,7 +69,20 @@ func (r *Runner) callModel(ctx context.Context, s *step, a agent.CallModel) erro
 	for _, call := range resp.Message.ToolCalls {
 		entries = append(entries, r.decide(ctx, s, ans.response, call, cutOff)...)
 	}
-	return r.append(ctx, s.th.ID, entries...)
+	return r.st.Update(ctx, func(tx store.Tx) error {
+		v, err := tx.View(s.th.ID)
+		if err != nil {
+			return err
+		}
+		heardSince := slices.ContainsFunc(v.ItemsOf(s.turn.ID), func(it conversation.Item) bool {
+			return it.Kind == conversation.ItemUserMessage && it.Seq > s.v.Head
+		})
+		if heardSince {
+			return nil
+		}
+		_, err = tx.Append(s.th.ID, entries...)
+		return err
+	})
 }
 
 type modelAnswer struct {
