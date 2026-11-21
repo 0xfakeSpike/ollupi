@@ -101,7 +101,7 @@ func defaultDenyRead(home string) []string {
 }
 
 func defaultWritableCaches(home string) []string {
-	names := []string{".npm/_cacache", ".npm/_logs"}
+	names := []string{".npm/_cacache", ".npm/_logs", "Library/Caches/go-build"}
 	out := make([]string, len(names))
 	for i, name := range names {
 		out[i] = filepath.Join(home, name)
