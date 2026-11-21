@@ -275,3 +275,38 @@ func TestRulesFoldTheCaseOfFoldedContent(t *testing.T) {
 		}
 	}
 }
+
+func TestAllowingForTheConversationCoversWhatTheSuggestionCovers(t *testing.T) {
+	checker, err := New([]Layer{defaults}, nil, box)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := func(url, host string) Call {
+		return Call{Tool: "click", Content: Content{Text: url, Match: host, Folded: true}, HasContent: true}
+	}
+	first := page("http://www.pbc.gov.cn/a/index.html", "www.pbc.gov.cn")
+	d := checker.Decide(first, conversation.View{})
+	accepted := conversation.Approval{ApprovalAsked: d.Asked("a", first), Decision: conversation.AcceptForSession}
+	history := conversation.View{Items: []conversation.Item{{Kind: conversation.ItemToolCall, Call: &conversation.ToolCall{Tool: "click"}, Approval: &accepted}}}
+	escalated := command("make install")
+	escalated.Sandboxed, escalated.Escalated = true, true
+	for what, tc := range map[string]struct {
+		call Call
+		want Verdict
+	}{
+		"another page of the host": {page("https://www.pbc.gov.cn/b/index.html", "www.pbc.gov.cn"), Run},
+		"a page of another host":   {page("https://www.gov.cn/c.htm", "www.gov.cn"), Ask},
+	} {
+		if v := checker.Decide(tc.call, history).Verdict; v != tc.want {
+			t.Errorf("%s: verdict %v, want %v", what, v, tc.want)
+		}
+	}
+	ran := conversation.Approval{ApprovalAsked: conversation.ApprovalAsked{Suggested: []string{"exec(make:*)"}}, Decision: conversation.AcceptForSession}
+	history = conversation.View{Items: []conversation.Item{{Kind: conversation.ItemToolCall, Call: &conversation.ToolCall{Tool: "exec"}, Approval: &ran}}}
+	if v := checker.Decide(command("make test"), history).Verdict; v != Run {
+		t.Errorf("a command the accepted suggestion covers: verdict %v", v)
+	}
+	if v := checker.Decide(escalated, history).Verdict; v != Ask {
+		t.Errorf("an escalated command covered by a suggestion accepted for a confined one: verdict %v", v)
+	}
+}
