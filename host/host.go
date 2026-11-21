@@ -38,6 +38,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/tool/builtin/web"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
 	"github.com/0xfakeSpike/ollupi/tool/mcp"
+	"github.com/0xfakeSpike/ollupi/usage"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -82,6 +83,7 @@ type Host struct {
 	scheduler *schedule.Scheduler
 	tasks     *schedule.Scheduler
 	extractor *extract.Extractor
+	usage     *usage.Recorder
 	cal       cron.Calendar
 	Gateway   *gateway.Server
 }
@@ -128,6 +130,7 @@ func New(ctx context.Context, cfg Config) (*Host, error) {
 	builtins = append(builtins, cronjobs.New(st, h.cal))
 	h.Users = mcp.NewUsers(ctx, mcp.Client{Name: cfg.Name, Version: version()}, st, cfg.Boxes, builtins...)
 	h.App = app.New(st, modelSet, h.Users.Tools, h.Users.Statuses, cfg.Boxes, files, h.cal, cfg.Permissions)
+	h.usage = usage.New(st)
 	hubTools.App = h.App
 	runner := run.New(st, modelSet, h.Users.Tools, files, skillsOf(cfg.SkillsDir),
 		run.Deployment{Name: cfg.Name, Prompt: cfg.Prompt, Permissions: cfg.Permissions, Allowlist: cfg.Allowlist, OptIn: cfg.OptIn})
@@ -176,6 +179,7 @@ func (h *Host) Run(ctx context.Context) error {
 	g.Go(func() error { return h.scheduler.Run(ctx) })
 	g.Go(func() error { return h.tasks.Run(ctx) })
 	g.Go(func() error { return cron.Run(ctx, h.Store, h.cal, h.App.Scheduled) })
+	g.Go(func() error { return h.usage.Run(ctx) })
 	if h.extractor != nil {
 		g.Go(func() error { return h.extractor.Run(ctx) })
 	}

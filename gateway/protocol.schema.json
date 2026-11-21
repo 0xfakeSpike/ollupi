@@ -3153,6 +3153,82 @@
       ],
       "additionalProperties": false
     },
+    "UsageGroup": {
+      "type": "string",
+      "enum": [
+        "day",
+        "workspace",
+        "model"
+      ]
+    },
+    "UsageQueryParams": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "to": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "groupBy": {
+          "$ref": "#/$defs/UsageGroup"
+        },
+        "offsetMinutes": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "groupBy"
+      ],
+      "additionalProperties": false
+    },
+    "UsageQueryResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/UsageRow"
+          }
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "UsageRow": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "inputTokens": {
+          "type": "integer"
+        },
+        "cachedInputTokens": {
+          "type": "integer"
+        },
+        "cacheWriteInputTokens": {
+          "type": "integer"
+        },
+        "outputTokens": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "key",
+        "inputTokens",
+        "cachedInputTokens",
+        "cacheWriteInputTokens",
+        "outputTokens"
+      ],
+      "additionalProperties": false
+    },
     "UserInput": {
       "type": "object",
       "properties": {
@@ -3862,6 +3938,14 @@
       },
       "result": {
         "$ref": "#/$defs/TurnSteerResult"
+      }
+    },
+    "usage/query": {
+      "params": {
+        "$ref": "#/$defs/UsageQueryParams"
+      },
+      "result": {
+        "$ref": "#/$defs/UsageQueryResult"
       }
     },
     "workspace/add": {

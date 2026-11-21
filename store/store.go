@@ -58,6 +58,13 @@ type Reader interface {
 	MemoryState(user string) (memory.State, error)
 	EndedTurns(user string, after memory.Cursor, limit int) ([]memory.Cursor, error)
 	Unread(user string, after memory.Cursor) (int64, error)
+
+	// MissingUsage returns the modelResponded entries that have no usage row
+	// yet, in (thread, seq) order after the given key. A thread of "" reads
+	// every thread. The body is raw so the caller can skip an entry it cannot
+	// read instead of failing the whole batch.
+	MissingUsage(thread string, after UsageKey, limit int) (entries []UsageEntry, more bool, err error)
+	UsageBuckets(user string, q UsageQuery) ([]UsageBucket, error)
 }
 
 type Tx interface {
@@ -73,6 +80,7 @@ type Tx interface {
 	DeleteCronJob(id string) error
 	PutMemory(m memory.Memory) error
 	SetMemoryState(user string, s memory.State) error
+	PutUsage(u Usage) error
 	DeleteThread(id string) error
 	CreateThread(t Thread) error
 	UpdateThread(t Thread) error
@@ -110,6 +118,71 @@ type Task struct {
 	Call    json.RawMessage
 	Created time.Time
 	Started *time.Time
+}
+
+// Usage is one model response: a normal answer or a context compaction. It is
+// derived from the modelResponded entries by a background consumer, never
+// written on the path that appends them.
+type Usage struct {
+	ID        string
+	Thread    string
+	Seq       int64
+	User      string
+	Workspace string
+	Turn      string
+	Item      string
+	At        time.Time
+	Source    UsageSource
+	Model     string
+	Tokens    conversation.Usage
+}
+
+type UsageSource string
+
+const (
+	UsageResponse   UsageSource = "response"
+	UsageCompaction UsageSource = "compaction"
+)
+
+// UsageEntry is a modelResponded entry that has no usage row yet.
+type UsageEntry struct {
+	Thread    string
+	Seq       int64
+	User      string
+	Workspace string
+	Turn      string
+	Item      string
+	At        time.Time
+	Body      []byte
+}
+
+// UsageKey is a position in the (thread, seq) order of entries.
+type UsageKey struct {
+	Thread string
+	Seq    int64
+}
+
+type UsageGroup string
+
+const (
+	UsageByDay       UsageGroup = "day"
+	UsageByWorkspace UsageGroup = "workspace"
+	UsageByModel     UsageGroup = "model"
+)
+
+var UsageGroups = []UsageGroup{UsageByDay, UsageByWorkspace, UsageByModel}
+
+type UsageQuery struct {
+	From, To time.Time
+	Group    UsageGroup
+	// OffsetMinutes is how many minutes east of UTC the days of a day grouping
+	// start, so a client shows the days of its own time zone.
+	OffsetMinutes int
+}
+
+type UsageBucket struct {
+	Key    string
+	Tokens conversation.Usage
 }
 
 type Event struct {

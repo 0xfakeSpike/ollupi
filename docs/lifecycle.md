@@ -200,6 +200,17 @@ stateDiagram-v2
 
 代码：[conversation/check.go](../conversation/check.go)、[conversation/view.go](../conversation/view.go)。
 
+## token 用量
+
+每次模型响应（普通回答和上下文压缩）的 token 数记在 `usage` 表里。它不是日志的一部分：`usage` 是 `entries` 里 `modelResponded` 的索引化派生视图，由 `usage.Recorder` 在后台消费；`Tx.Append` 和 `run` 的模型调用路径不写它，记录失败也只影响用量数字，不会让轮次失败。
+
+- feed 只当唤醒信号，真相在 `entries`。进程停机或漏掉一个事件，重启后的全量扫描会补上；条目和行的对应是 `(thread_id, seq)`，重复写入按主键跳过。
+- 记忆抽取的调用不计入：它的消费不是完整的事件驱动实现，计入会让“事件唤醒 + 扫描补齐”的假设不成立。
+- `app.Usage` 按天（可带客户端时区偏移）、工作区、模型聚合半开区间 `[from, to)`，对外是 `usage/query`。
+- `usage` 行目前**没有保留期和清理**：删掉会话不会删掉它的行，仍会计入聚合。保留期清理是后续单独做的改动。
+
+代码：[usage/usage.go](../usage/usage.go)、[store/sqlite/usage.go](../store/sqlite/usage.go)、[store/sqlite/migrations/0011_usage.sql](../store/sqlite/migrations/0011_usage.sql)。
+
 ## 四者之间的约束
 
 | 操作 | 要求 | 对下层的影响 |

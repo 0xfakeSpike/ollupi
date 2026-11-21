@@ -7,6 +7,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/cron"
 	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
+	"github.com/0xfakeSpike/ollupi/store"
 )
 
 func (c *conn) modelList(ctx context.Context, _ Empty) (ModelListResult, error) {
@@ -168,6 +169,16 @@ func (c *conn) search(ctx context.Context, p SearchParams) (SearchResult, error)
 	}
 	f, notes, err := c.s.app.Search(ctx, c.user, p.Query, p.WorkspaceID, p.Limit)
 	return SearchResult{Found: found(f), Memories: each(notes, memoryRow)}, err
+}
+
+func (c *conn) usageQuery(ctx context.Context, p UsageQueryParams) (UsageQueryResult, error) {
+	buckets, err := c.s.app.Usage(ctx, c.user, store.UsageQuery{From: p.From, To: p.To, Group: p.GroupBy,
+		OffsetMinutes: p.OffsetMinutes})
+	out := make([]UsageRow, len(buckets))
+	for i, b := range buckets {
+		out[i] = UsageRow{Key: b.Key, Usage: b.Tokens}
+	}
+	return UsageQueryResult{Data: out}, err
 }
 
 func (c *conn) settingsRead(ctx context.Context, _ Empty) (SettingsRow, error) {

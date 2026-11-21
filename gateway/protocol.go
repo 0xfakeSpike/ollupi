@@ -136,6 +136,7 @@ var protocol = struct {
 		"memory/update":                handle((*conn).memoryUpdate),
 		"memory/move":                  handle((*conn).memoryMove),
 		"memory/forget":                handle((*conn).memoryForget),
+		"usage/query":                  handle((*conn).usageQuery),
 		"search":                       handle((*conn).search),
 		"settings/read":                handle((*conn).settingsRead),
 		"settings/update":              handle((*conn).settingsUpdate),
@@ -584,6 +585,24 @@ type MemoryForgetParams struct {
 
 type MemoryResult struct {
 	Memory MemoryRow `json:"memory"`
+}
+
+type UsageQueryParams struct {
+	From          time.Time        `json:"from"`
+	To            time.Time        `json:"to"`
+	GroupBy       store.UsageGroup `json:"groupBy"`
+	OffsetMinutes int              `json:"offsetMinutes,omitempty"`
+}
+
+type UsageQueryResult struct {
+	Data []UsageRow `json:"data"`
+}
+
+// UsageRow is one bucket of the aggregation: a day (YYYY-MM-DD in the caller's
+// time zone), a workspace ID or a model name, and the tokens it used.
+type UsageRow struct {
+	Key string `json:"key"`
+	conversation.Usage
 }
 
 type SearchParams struct {

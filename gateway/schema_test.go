@@ -24,6 +24,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/policy"
 	"github.com/0xfakeSpike/ollupi/run"
+	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/hub"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/plan"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/subagent"
@@ -85,7 +86,7 @@ var providers = []string{agent.CronProvider, agent.SkillsProvider, account.Memor
 var enums = []any{
 	conversation.ItemKinds, conversation.ItemStatuses, conversation.ThreadStatuses, conversation.Ends, conversation.Decisions,
 	TurnStatuses, memory.Scopes, memory.Kinds, memory.Statuses, memory.FailureCodes, policy.PolicyValues, agent.Names,
-	plan.StatusValues, account.EnvironmentKinds, account.WorkspaceKinds,
+	plan.StatusValues, account.EnvironmentKinds, account.WorkspaceKinds, store.UsageGroups,
 }
 
 var plainStrings = []reflect.Type{}
@@ -111,6 +112,7 @@ var arrays = []field{
 	{reflect.TypeFor[EnvironmentListResult](), "Data"},
 	{reflect.TypeFor[CronListResult](), "Data"},
 	{reflect.TypeFor[MemoryListResult](), "Data"},
+	{reflect.TypeFor[UsageQueryResult](), "Data"},
 	{reflect.TypeFor[Found](), "Threads"},
 	{reflect.TypeFor[Found](), "Messages"},
 	{reflect.TypeFor[Found](), "CronJobs"},
