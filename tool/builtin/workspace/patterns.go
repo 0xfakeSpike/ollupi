@@ -21,6 +21,43 @@ func checkPattern(p string) (string, error) {
 	return p, nil
 }
 
+func reaches(root, pattern string) func(abs string) bool {
+	if slashInBraces(pattern) {
+		return nil
+	}
+	segments := strings.Split(pattern, "/")
+	return func(abs string) bool {
+		rel, _ := filepath.Rel(root, abs)
+		for i, name := range strings.Split(filepath.ToSlash(rel), "/") {
+			if strings.Contains(segments[i], "**") {
+				return true
+			}
+			if i == len(segments)-1 {
+				return false
+			}
+			if ok, _ := doublestar.Match(segments[i], name); !ok {
+				return false
+			}
+		}
+		return true
+	}
+}
+
+func slashInBraces(pattern string) bool {
+	depth := 0
+	for _, r := range pattern {
+		switch {
+		case r == '{':
+			depth++
+		case r == '}' && depth > 0:
+			depth--
+		case r == '/' && depth > 0:
+			return true
+		}
+	}
+	return false
+}
+
 func parseIgnore(base, text string) []gitignore.Pattern {
 	var domain []string
 	if base != "" {

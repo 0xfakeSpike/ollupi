@@ -121,6 +121,14 @@ func TestALongOutputIsClippedWithHowToReadTheRest(t *testing.T) {
 	}
 }
 
+func TestAnOutputKeepsItsSeparatorLines(t *testing.T) {
+	file := "---\ntitle: a\n---\n| a | b |\n|---|---|\n| 1 | 2 |\n***"
+	raw, _ := json.Marshal(map[string]any{"content": file})
+	if got := OutputText(raw); !strings.Contains(got, `"---\ntitle: a\n---\n| a | b |\n|---|---|\n| 1 | 2 |\n***"`) {
+		t.Errorf("the output: %s", got)
+	}
+}
+
 func TestALongHistoryAsksForCompaction(t *testing.T) {
 	w := NewWindow("m", llm.Limits{Context: 6_000, Output: 1_000})
 	l := &log{t: t}

@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
@@ -56,6 +58,7 @@ type FileOutput struct {
 	Created bool   `json:"created,omitempty"`
 	Added   int    `json:"added"`
 	Removed int    `json:"removed"`
+	Diff    string `json:"diff,omitempty"`
 }
 
 func (r *Provider) fileTools() []kit.Spec {
@@ -142,14 +145,18 @@ func newContent(c fileChange, call tool.Call) (string, error) {
 	if !c.exists {
 		return "", fmt.Errorf("workspace: %s does not exist; create it with %s", c.rel, ToolWriteFile)
 	}
+	unapplied := ""
+	if len(e.Edits) > 1 {
+		unapplied = fmt.Sprintf("; none of the %d edits were applied", len(e.Edits))
+	}
 	text := c.before
 	for i, edit := range e.Edits {
 		n := strings.Count(text, edit.OldText)
 		switch {
 		case n == 0:
-			return "", fmt.Errorf("workspace: edit %d: old_text was not found in %s; read the file again and copy the text exactly", i+1, c.rel)
+			return "", fmt.Errorf("workspace: edit %d: old_text was not found in %s%s; read the file again and copy the text exactly%s", i+1, c.rel, closest(text, edit.OldText), unapplied)
 		case n > 1 && !edit.ReplaceAll:
-			return "", fmt.Errorf("workspace: edit %d: old_text appears %d times in %s; add surrounding lines to make it unique, or set replace_all", i+1, n, c.rel)
+			return "", fmt.Errorf("workspace: edit %d: old_text appears %d times in %s, at lines %s; add surrounding lines to make it unique, or set replace_all%s", i+1, n, c.rel, lineNumbers(text, edit.OldText), unapplied)
 		}
 		text = strings.ReplaceAll(text, edit.OldText, edit.NewText)
 	}
@@ -157,6 +164,137 @@ func newContent(c fileChange, call tool.Call) (string, error) {
 		return "", fmt.Errorf("workspace: the edits leave %s unchanged", c.rel)
 	}
 	return text, nil
+}
+
+const (
+	minClosestRunes = 8
+	maxShownLines   = 5
+	maxShownRunes   = 200
+)
+
+func closest(text, old string) string {
+	if at, want, got, ok := looseMatch(text, old); ok {
+		return fmt.Sprintf("; it matches at line %d except for spaces, full-width forms or quotes: old_text has %s where the file has %s; that line in the file: %q",
+			strings.Count(text[:at], "\n")+1, showUnit(want), showUnit(got), lineText(text, at))
+	}
+	ends := []int{}
+	for i := range old {
+		ends = append(ends, i)
+	}
+	k := sort.Search(len(ends), func(i int) bool { return !strings.Contains(text, old[:ends[i]]) }) - 1
+	matched := old[:ends[k]]
+	if utf8.RuneCountInString(matched) < minClosestRunes {
+		return ""
+	}
+	at := strings.Index(text, matched) + len(matched)
+	want, _ := utf8.DecodeRuneInString(old[len(matched):])
+	if at == len(text) {
+		return fmt.Sprintf("; its first %d characters match up to the end of the file, at line %d, where old_text goes on with %s",
+			utf8.RuneCountInString(matched), strings.Count(text[:at], "\n")+1, showUnit(string(want)))
+	}
+	got, _ := utf8.DecodeRuneInString(text[at:])
+	return fmt.Sprintf("; its first %d characters match, up to line %d, where old_text has %s but the file has %s; that line in the file: %q",
+		utf8.RuneCountInString(matched), strings.Count(text[:at], "\n")+1, showUnit(string(want)), showUnit(string(got)), lineText(text, at))
+}
+
+type unit struct {
+	at  int
+	raw string
+	key rune
+}
+
+func units(s string) []unit {
+	var out []unit
+	for i := 0; i < len(s); {
+		r, n := utf8.DecodeRuneInString(s[i:])
+		if r == '\n' || !unicode.IsSpace(r) {
+			out = append(out, unit{i, s[i : i+n], fold(r)})
+			i += n
+			continue
+		}
+		j := i + n
+		for j < len(s) {
+			r, n := utf8.DecodeRuneInString(s[j:])
+			if r == '\n' || !unicode.IsSpace(r) {
+				break
+			}
+			j += n
+		}
+		out = append(out, unit{i, s[i:j], ' '})
+		i = j
+	}
+	return out
+}
+
+func fold(r rune) rune {
+	switch {
+	case r >= 0xFF01 && r <= 0xFF5E:
+		return r - 0xFEE0
+	case strings.ContainsRune("“”„‟″", r):
+		return '"'
+	case strings.ContainsRune("‘’‚‛′", r):
+		return '\''
+	}
+	return r
+}
+
+func keys(us []unit) string {
+	k := make([]rune, len(us))
+	for i, u := range us {
+		k[i] = u.key
+	}
+	return string(k)
+}
+
+func looseMatch(text, old string) (at int, want, got string, ok bool) {
+	t, o := units(text), units(old)
+	tk := keys(t)
+	i := strings.Index(tk, keys(o))
+	if i < 0 {
+		return 0, "", "", false
+	}
+	first := utf8.RuneCountInString(tk[:i])
+	for j, u := range o {
+		v := t[first+j]
+		if u.raw != v.raw {
+			return v.at, u.raw, v.raw, true
+		}
+	}
+	return 0, "", "", false
+}
+
+func showUnit(s string) string {
+	r, n := utf8.DecodeRuneInString(s)
+	if n == len(s) {
+		return fmt.Sprintf("%U %q", r, s)
+	}
+	return fmt.Sprintf("%q", s)
+}
+
+func lineText(text string, at int) string {
+	start := strings.LastIndexByte(text[:at], '\n') + 1
+	end := len(text)
+	if i := strings.IndexByte(text[at:], '\n'); i >= 0 {
+		end = at + i
+	}
+	shown := []rune(text[start:end])
+	if len(shown) > maxShownRunes {
+		shown = append(shown[:maxShownRunes], '…')
+	}
+	return string(shown)
+}
+
+func lineNumbers(text, old string) string {
+	var lines []string
+	for from := 0; len(lines) < maxShownLines; {
+		i := strings.Index(text[from:], old)
+		if i < 0 {
+			break
+		}
+		lines = append(lines, fmt.Sprint(strings.Count(text[:from+i], "\n")+1))
+		from += i + len(old)
+	}
+	return strings.Join(lines, ", ")
 }
 
 func (c fileChange) frozen() (FileChange, error) {
@@ -221,5 +359,9 @@ func (r *Provider) runFile(ctx context.Context, call tool.Call, p *Prepared) (ki
 	if err := d.box.WriteFile(ctx, c.abs, []byte(c.after), c.mode); err != nil {
 		return kit.Result{}, err
 	}
-	return kit.Result{Output: FileOutput{Path: want.Path, Created: !c.exists, Added: want.Added, Removed: want.Removed}}, nil
+	out := FileOutput{Path: want.Path, Created: !c.exists, Added: want.Added, Removed: want.Removed}
+	if call.Tool == ToolEditFile {
+		out.Diff = want.Diff
+	}
+	return kit.Result{Output: out}, nil
 }

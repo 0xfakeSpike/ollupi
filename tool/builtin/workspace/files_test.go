@@ -11,6 +11,7 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/tool"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
+	"github.com/google/jsonschema-go/jsonschema"
 )
 
 func TestUnifiedDiff(t *testing.T) {
@@ -111,8 +112,8 @@ func TestFileTools(t *testing.T) {
 	if _, err := r.locals()[ToolEditFile].run(ctx, tool.Call{Caller: caller, Tool: ToolEditFile, Arguments: args}, p); err == nil || !strings.Contains(err.Error(), "changed after") {
 		t.Errorf("edit of a changed file: %v", err)
 	}
-	if res, _, err := run(ToolEditFile, args); err != nil || res.Output.(FileOutput).Added != 1 {
-		t.Fatalf("edit: %v %+v", err, res)
+	if res, _, err := run(ToolEditFile, args); err != nil || res.Output.(FileOutput).Added != 1 || !strings.Contains(res.Output.(FileOutput).Diff, "+package b") {
+		t.Fatalf("edit, with its diff: %v %+v", err, res)
 	}
 	if body, _ := os.ReadFile(filepath.Join(root, "src/a.go")); string(body) != "package b\n// changed\n" {
 		t.Errorf("file holds %q", body)
@@ -129,6 +130,39 @@ func TestFileTools(t *testing.T) {
 		if _, _, err := run(tool, bad); err == nil {
 			t.Errorf("%s %v succeeded", tool, bad)
 		}
+	}
+}
+
+func TestAFailedEditSaysWhereTheTextDiffers(t *testing.T) {
+	c := fileChange{rel: "tasks.md", exists: true, before: "# Tasks\n| 编号\u3000| 标题 |\n| a | b |\n| a | b |\n\tx := “1”\n"}
+	edits := func(e ...map[string]any) tool.Call {
+		list := make([]any, len(e))
+		for i := range e {
+			list[i] = e[i]
+		}
+		return tool.Call{Tool: ToolEditFile, Arguments: map[string]any{"path": "tasks.md", "edits": list}}
+	}
+	ok := map[string]any{"old_text": "# Tasks", "new_text": "# Todo"}
+	_, err := newContent(c, edits(ok, map[string]any{"old_text": "| 编号 | 标题 |", "new_text": "x"}))
+	if err == nil || !strings.Contains(err.Error(), `at line 2 except`) || !strings.Contains(err.Error(), "old_text has U+0020 \" \" where the file has U+3000 \"\\u3000\"") ||
+		!strings.Contains(err.Error(), "none of the 2 edits were applied") {
+		t.Errorf("a full-width space: %v", err)
+	}
+	_, err = newContent(c, edits(map[string]any{"old_text": "    x := \"1\"", "new_text": "x"}))
+	if err == nil || !strings.Contains(err.Error(), `at line 5 except`) || !strings.Contains(err.Error(), `old_text has "    " where the file has U+0009 "\t"`) {
+		t.Errorf("spaces for a tab: %v", err)
+	}
+	_, err = newContent(c, edits(map[string]any{"old_text": "| a | b |\n| c | d |", "new_text": "x"}))
+	if err == nil || !strings.Contains(err.Error(), `first 12 characters match, up to line 4, where old_text has U+0063 "c" but the file has U+0061 "a"`) {
+		t.Errorf("text that changed since it was read: %v", err)
+	}
+	_, err = newContent(c, edits(map[string]any{"old_text": "| a | b |", "new_text": "x"}))
+	if err == nil || !strings.Contains(err.Error(), "at lines 3, 4") || strings.Contains(err.Error(), "none of") {
+		t.Errorf("text that appears twice: %v", err)
+	}
+	_, err = newContent(c, edits(map[string]any{"old_text": "nothing like it", "new_text": "x"}))
+	if err == nil || strings.Contains(err.Error(), "characters match") {
+		t.Errorf("text with no close match: %v", err)
 	}
 }
 
@@ -166,5 +200,48 @@ func TestAChangeIsShownRelativeToItsWorkspaceAndWholeWithoutOne(t *testing.T) {
 	// Without one the client has no root to join a relative path to.
 	if got, want := write(tool.Caller{}), filepath.Join(scratch, "notes/report.md"); got != want {
 		t.Errorf("without a workspace the change names %q, want %q", got, want)
+	}
+}
+
+func TestValuesOverTheirLimitRunWithTheMostAllowed(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(root, "a.txt"), []byte("1\n2\nneedle\n4\n"), 0o644)
+	r, err := New(Options{Config: Config{WorkspaceDirs: []string{root}, SandboxMode: "full-access"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	ctx := context.Background()
+	specs, _ := r.Tools(ctx)
+	schemas := map[string]*jsonschema.Resolved{}
+	for _, s := range specs {
+		resolved, err := s.InputSchema.(*jsonschema.Schema).Resolve(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		schemas[s.Name] = resolved
+	}
+	run := map[string]any{"program": "true", "timeout_sec": 100000}
+	grep := map[string]any{"pattern": "needle", "context": 50}
+	for name, args := range map[string]map[string]any{ToolRunCommand: run, ToolGrep: grep} {
+		if err := schemas[name].Validate(args); err != nil {
+			t.Errorf("%s %v does not pass its schema: %v", name, args, err)
+		}
+	}
+	call := tool.Call{Caller: tool.Caller{Root: root}, Tool: ToolRunCommand, Arguments: run}
+	p, err := r.locals()[ToolRunCommand].prepare(ctx, call)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := r.locals()[ToolRunCommand].run(ctx, call, p)
+	if out, _ := res.Output.(CommandOutput); err != nil || p.TimeoutSec != 600 || !strings.Contains(out.Notice, "ran with 600") {
+		t.Errorf("an over-long timeout: %v %d %+v", err, p.TimeoutSec, res.Output)
+	}
+	res, err = r.Invoke(ctx, tool.Call{Caller: tool.Caller{Root: root}, Tool: ToolGrep, Arguments: grep})
+	if out, _ := res.Output.(GrepOutput); err != nil || len(out.Files) != 1 || len(out.Files[0].Lines) != 4 || !strings.Contains(out.Notice, "shows 10 lines") {
+		t.Errorf("a context over its limit: %v %+v", err, res.Output)
 	}
 }

@@ -176,6 +176,37 @@ func TestATurnReadsAFileAndAnswers(t *testing.T) {
 	}
 }
 
+func TestAnAnswerToAMessageThatWasOvertakenIsDropped(t *testing.T) {
+	f := setup(t, nil)
+	var asked [][]llm.ChatMessage
+	f.m.answer = func(req llm.ChatRequest) llm.ChatResponse {
+		asked = append(asked, req.Messages)
+		if len(asked) == 1 {
+			f.update(func(tx store.Tx) error {
+				_, err := tx.Append("th", conversation.Entry{Turn: "t1", Item: "m2", Body: conversation.UserMessage{Text: "it is the one at github.com/a/b"}})
+				return err
+			})
+			return answer("I could not tell which project you meant")
+		}
+		return answer("github.com/a/b is a desktop agent")
+	}
+	f.ask("th", "which project is agent-desktop?")
+	f.run("th")
+	v := f.view("th")
+	var said []string
+	for _, it := range v.Items {
+		if it.Kind == conversation.ItemAgentMessage {
+			said = append(said, it.Text)
+		}
+	}
+	if len(asked) != 2 || !strings.Contains(asked[1][len(asked[1])-1].Content, "github.com/a/b") {
+		t.Fatalf("the second call did not see the new message: %d calls", len(asked))
+	}
+	if strings.Join(said, " | ") != "github.com/a/b is a desktop agent" || len(v.Turns[0].Responses) != 1 {
+		t.Errorf("the answers kept %q, responses %d", said, len(v.Turns[0].Responses))
+	}
+}
+
 func TestAResponseKeepsWhatItUsedAndHowLongItThought(t *testing.T) {
 	f := setup(t, nil)
 	f.m.answer = func(llm.ChatRequest) llm.ChatResponse {
