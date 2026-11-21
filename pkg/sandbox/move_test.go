@@ -96,7 +96,7 @@ func TestARemoteMoveStopsWhenItCannotSeeTheTarget(t *testing.T) {
 	}
 }
 
-func TestHereIsThisMachineUnsandboxed(t *testing.T) {
+func TestHereIsThisMachineWithFullAccess(t *testing.T) {
 	box, err := Here()
 	if err != nil {
 		t.Fatal(err)
@@ -112,7 +112,7 @@ func TestHereIsThisMachineUnsandboxed(t *testing.T) {
 	if roots := box.Roots(); len(roots) != 1 || roots[0] != home {
 		t.Errorf("roots %v, want [%s]", roots, home)
 	}
-	if box.Enforced() || box.CanEscalate() || !strings.HasPrefix(box.Summary(), "No sandbox") {
+	if box.Enforced() || box.CanEscalate() || !strings.HasPrefix(box.Summary(), "No limits on commands") {
 		t.Errorf("enforced %v, can escalate %v, summary %q", box.Enforced(), box.CanEscalate(), box.Summary())
 	}
 }

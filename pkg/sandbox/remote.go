@@ -36,15 +36,15 @@ func Remote(m Machine, roots []string, summary string) Box {
 func (r *remote) Transport() http.RoundTripper { return r.transport }
 
 func (r *remote) Run(ctx context.Context, c Command) (Result, error) {
-	if c.Unsandboxed {
-		return Result{}, errors.New("sandbox: a command cannot leave this sandbox")
+	if c.FullAccess {
+		return Result{}, errors.New("sandbox: this sandbox cannot give a command full access")
 	}
 	return r.Machine.Run(ctx, c)
 }
 
 func (r *remote) Start(ctx context.Context, c Command, stderr io.Writer) (Process, error) {
-	if c.Unsandboxed {
-		return nil, errors.New("sandbox: a command cannot leave this sandbox")
+	if c.FullAccess {
+		return nil, errors.New("sandbox: this sandbox cannot give a command full access")
 	}
 	return r.Machine.Start(ctx, c, stderr)
 }
