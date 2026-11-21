@@ -112,12 +112,22 @@ func allowedForConversation(call Call, history conversation.View) bool {
 		if it.Kind != conversation.ItemToolCall || it.Call.Tool != call.Tool || it.Approval == nil || it.Approval.Decision != conversation.AcceptForSession {
 			continue
 		}
-		if !bytes.Equal(it.Call.Prepared, call.Prepared) {
-			continue
-		}
-		if !call.HasContent || it.Approval.Content == call.Content.Text {
+		same := bytes.Equal(it.Call.Prepared, call.Prepared) && (!call.HasContent || it.Approval.Content == call.Content.Text)
+		if same || coveredBySuggestion(call, it.Approval.Suggested) {
 			return true
 		}
 	}
 	return false
+}
+
+func coveredBySuggestion(call Call, suggested []string) bool {
+	if call.Escalated || len(suggested) == 0 {
+		return false
+	}
+	set, err := parseRules(Rules{Allow: suggested})
+	if err != nil {
+		return false
+	}
+	verdict, _ := set.decide(call.Tool, call.Content, call.HasContent)
+	return verdict == ruleAllow
 }
