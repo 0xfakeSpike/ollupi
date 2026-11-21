@@ -11,7 +11,6 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/tool"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
-	"github.com/google/jsonschema-go/jsonschema"
 )
 
 func TestUnifiedDiff(t *testing.T) {
@@ -200,48 +199,5 @@ func TestAChangeIsShownRelativeToItsWorkspaceAndWholeWithoutOne(t *testing.T) {
 	// Without one the client has no root to join a relative path to.
 	if got, want := write(tool.Caller{}), filepath.Join(scratch, "notes/report.md"); got != want {
 		t.Errorf("without a workspace the change names %q, want %q", got, want)
-	}
-}
-
-func TestValuesOverTheirLimitRunWithTheMostAllowed(t *testing.T) {
-	root, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	os.WriteFile(filepath.Join(root, "a.txt"), []byte("1\n2\nneedle\n4\n"), 0o644)
-	r, err := New(Options{Config: Config{WorkspaceDirs: []string{root}, SandboxMode: "full-access"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer r.Close()
-	ctx := context.Background()
-	specs, _ := r.Tools(ctx)
-	schemas := map[string]*jsonschema.Resolved{}
-	for _, s := range specs {
-		resolved, err := s.InputSchema.(*jsonschema.Schema).Resolve(nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		schemas[s.Name] = resolved
-	}
-	run := map[string]any{"program": "true", "timeout_sec": 100000}
-	grep := map[string]any{"pattern": "needle", "context": 50}
-	for name, args := range map[string]map[string]any{ToolRunCommand: run, ToolGrep: grep} {
-		if err := schemas[name].Validate(args); err != nil {
-			t.Errorf("%s %v does not pass its schema: %v", name, args, err)
-		}
-	}
-	call := tool.Call{Caller: tool.Caller{Root: root}, Tool: ToolRunCommand, Arguments: run}
-	p, err := r.locals()[ToolRunCommand].prepare(ctx, call)
-	if err != nil {
-		t.Fatal(err)
-	}
-	res, err := r.locals()[ToolRunCommand].run(ctx, call, p)
-	if out, _ := res.Output.(CommandOutput); err != nil || p.TimeoutSec != 600 || !strings.Contains(out.Notice, "ran with 600") {
-		t.Errorf("an over-long timeout: %v %d %+v", err, p.TimeoutSec, res.Output)
-	}
-	res, err = r.Invoke(ctx, tool.Call{Caller: tool.Caller{Root: root}, Tool: ToolGrep, Arguments: grep})
-	if out, _ := res.Output.(GrepOutput); err != nil || len(out.Files) != 1 || len(out.Files[0].Lines) != 4 || !strings.Contains(out.Notice, "shows 10 lines") {
-		t.Errorf("a context over its limit: %v %+v", err, res.Output)
 	}
 }

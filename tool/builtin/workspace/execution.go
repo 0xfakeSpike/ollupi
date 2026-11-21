@@ -35,8 +35,7 @@ func constrainRun(s *jsonschema.Schema) {
 
 func (r *Provider) inputSchema() *jsonschema.Schema {
 	s := kit.InputSchema[commandArgs]()
-	s.Properties["timeout_sec"].Description = fmt.Sprintf("Timeout in seconds: default %d, at most %d; a larger value runs with %d. Run longer work in the background.",
-		r.timeoutSec, r.maxTimeoutSec, r.maxTimeoutSec)
+	s.Properties["timeout_sec"].Maximum = jsonschema.Ptr(float64(r.maxTimeoutSec))
 	if !r.box.CanEscalate() {
 		delete(s.Properties, "sandbox_permissions")
 		delete(s.Properties, "justification")
@@ -89,7 +88,7 @@ func (r *Provider) prepareCommand(ctx context.Context, call tool.Call) (*Prepare
 	}
 	p := &Prepared{
 		Cwd: cwd, SettingsDigest: r.settingsDigest(d), ArgumentsDigest: digest(call.Arguments),
-		Program: program, Args: a.Args, Env: a.Env, TimeoutSec: min(cmp.Or(a.TimeoutSec, r.timeoutSec), r.maxTimeoutSec),
+		Program: program, Args: a.Args, Env: a.Env, TimeoutSec: cmp.Or(a.TimeoutSec, r.timeoutSec),
 		Sandboxed: d.box.Enforced() && !escalated, Escalated: escalated,
 	}
 	if escalated {
@@ -123,7 +122,6 @@ type CommandOutput struct {
 	Truncated      bool     `json:"truncated,omitempty"`
 	SandboxDenials []string `json:"sandbox_denials,omitempty"`
 	Sandbox        string   `json:"sandbox,omitempty"`
-	Notice         string   `json:"notice,omitempty"`
 }
 
 func commandOutput(res sandbox.Result, cwd string) CommandOutput {
@@ -167,9 +165,6 @@ func (r *Provider) runCommand(ctx context.Context, call tool.Call, p *Prepared) 
 	out := commandOutput(res, p.Cwd)
 	if p.Escalated {
 		out.Sandbox = "escalated: ran on the host without the sandbox"
-	}
-	if a.TimeoutSec > p.TimeoutSec {
-		out.Notice = fmt.Sprintf("timeout_sec %d is over the most allowed; the command ran with %d", a.TimeoutSec, p.TimeoutSec)
 	}
 	return kit.Result{Output: out}, nil
 }

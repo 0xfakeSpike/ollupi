@@ -31,8 +31,8 @@ func (r *Provider) claudeTool() kit.Spec {
 		Description: "Hand a self-contained task to Claude Code, which works in the project on its own and returns its final answer. " +
 			"It may edit files and run go test, nothing else, and stops after spending $2. " +
 			"Write the prompt as a full brief: it does not see this conversation. work_dir defaults to the project root; " +
-			"timeout_sec defaults to " + fmt.Sprint(r.maxTimeoutSec) + ", the most allowed; a larger value runs with that",
-		InputSchema: kit.InputSchema[claudeTask](),
+			"timeout_sec defaults to " + fmt.Sprint(r.maxTimeoutSec) + ", the most allowed",
+		InputSchema: r.claudeSchema(),
 		Annotations: tool.Annotations{Title: "Claude Code", DestructiveHint: new(true), OpenWorldHint: new(true)},
 		Background:  tool.BackgroundOptional,
 		Content:     claudePermissionContent,
@@ -49,6 +49,12 @@ type claudeTask struct {
 func (claudeTask) Constrain(s *jsonschema.Schema) {
 	s.Properties["prompt"].MinLength = jsonschema.Ptr(1)
 	constrainRun(s)
+}
+
+func (r *Provider) claudeSchema() *jsonschema.Schema {
+	s := kit.InputSchema[claudeTask]()
+	s.Properties["timeout_sec"].Maximum = jsonschema.Ptr(float64(r.maxTimeoutSec))
+	return s
 }
 
 func claudeArgs(prompt string) []string {
@@ -95,7 +101,7 @@ func (r *Provider) prepareClaude(ctx context.Context, call tool.Call) (*Prepared
 	escalated := d.box.Enforced() && d.box.CanEscalate()
 	p := &Prepared{
 		Cwd: cwd, SettingsDigest: r.settingsDigest(d), ArgumentsDigest: digest(call.Arguments),
-		Program: program, Args: claudeArgs(t.Prompt), TimeoutSec: min(cmp.Or(t.TimeoutSec, r.maxTimeoutSec), r.maxTimeoutSec),
+		Program: program, Args: claudeArgs(t.Prompt), TimeoutSec: cmp.Or(t.TimeoutSec, r.maxTimeoutSec),
 		Sandboxed: d.box.Enforced() && !escalated, Escalated: escalated,
 	}
 	if escalated {
