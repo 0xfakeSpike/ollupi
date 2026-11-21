@@ -91,3 +91,23 @@ func TestARemoteBoxKeepsOffThisNetwork(t *testing.T) {
 		t.Errorf("reached %s: %v, %v", local.URL, res, err)
 	}
 }
+
+func TestTheMachinesRequestsTakeItsProxy(t *testing.T) {
+	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:15236")
+	box, err := Here()
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := box.Transport().(*http.Transport).Proxy
+	for raw, want := range map[string]string{"https://github.com/": "http://127.0.0.1:15236", "https://localhost:8443/": ""} {
+		req, _ := http.NewRequest(http.MethodGet, raw, nil)
+		u, err := proxy(req)
+		got := ""
+		if u != nil {
+			got = u.String()
+		}
+		if err != nil || got != want {
+			t.Errorf("%s goes through %q (%v), want %q", raw, got, err, want)
+		}
+	}
+}
