@@ -127,6 +127,18 @@ func TestGlob(t *testing.T) {
 	if got := out.(GlobOutput); len(got.Files) != 2 || got.Path != "docs" {
 		t.Errorf("a folder: %+v", got)
 	}
+	out, _ = call(ToolGlob, map[string]any{"pattern": "*"})
+	if got := out.(GlobOutput); strings.Contains(strings.Join(got.Files, " "), "/") || got.Skipped != 0 {
+		t.Errorf("* reads only the top folder, so the closed link in src is never reached: %+v", got)
+	}
+	out, _ = call(ToolGlob, map[string]any{"pattern": "docs/*.md"})
+	if got := out.(GlobOutput); strings.Join(got.Files, " ") != "docs/notes.md" {
+		t.Errorf("docs/*.md stays in docs: %+v", got)
+	}
+	out, _ = call(ToolGlob, map[string]any{"pattern": "{docs/deep,src}/*.{md,tsx}"})
+	if got := out.(GlobOutput); strings.Join(got.Files, " ") != "src/view.tsx docs/deep/readme.md" && strings.Join(got.Files, " ") != "docs/deep/readme.md src/view.tsx" {
+		t.Errorf("a folder path inside braces: %+v", got)
+	}
 	out, _ = call(ToolGlob, map[string]any{"pattern": "*", "path": "src"})
 	if got := out.(GlobOutput); strings.Contains(strings.Join(got.Files, " "), "key.txt") || got.Skipped != 1 {
 		t.Errorf("a link into a closed folder is skipped and counted: %+v", got)
