@@ -323,6 +323,7 @@ func glob(ctx context.Context, d dirs, args map[string]any) (GlobOutput, error) 
 	}
 	var all []found
 	w := newWalker(ctx, d.box, dir)
+	w.reaches = reaches(dir, pattern)
 	err = w.walk(ctx, func(abs string, info fs.FileInfo) error {
 		rel, _ := filepath.Rel(dir, abs)
 		if matched, _ := doublestar.Match(pattern, filepath.ToSlash(rel)); matched {
@@ -330,7 +331,7 @@ func glob(ctx context.Context, d dirs, args map[string]any) (GlobOutput, error) 
 		}
 		return nil
 	})
-	if err != nil {
+	if err != nil && !errors.Is(err, errStopWalk) {
 		return GlobOutput{}, err
 	}
 	slices.SortStableFunc(all, func(a, b found) int { return b.mod.Compare(a.mod) })
