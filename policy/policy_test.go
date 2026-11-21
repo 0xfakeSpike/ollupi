@@ -98,13 +98,13 @@ func TestEachPolicyDecidesWhatRunsWithoutAsking(t *testing.T) {
 	}{
 		{Untrusted, "a read", read, Run},
 		{Untrusted, "a confined command", confined, Ask},
-		{Untrusted, "a command outside the sandbox", escalated, Ask},
+		{Untrusted, "a command with full access", escalated, Ask},
 		{OnRequest, "a read", read, Run},
 		{OnRequest, "a confined command", confined, Run},
-		{OnRequest, "a command outside the sandbox", escalated, Ask},
+		{OnRequest, "a command with full access", escalated, Ask},
 		{OnRequest, "a command the rules cannot check", opaque, Ask},
 		{Never, "a confined command", confined, Run},
-		{Never, "a command outside the sandbox", escalated, Run},
+		{Never, "a command with full access", escalated, Run},
 		{Never, "a command the rules cannot check", opaque, Run},
 	} {
 		checker, err := New([]Layer{{Of: "the defaults", Settings: Settings{ApprovalPolicy: string(tc.policy)}}}, nil, box)

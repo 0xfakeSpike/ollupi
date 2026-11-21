@@ -28,13 +28,15 @@ type Config struct {
 }
 
 type Command struct {
-	Program     string
-	Args        []string
-	Cwd         string
-	Env         map[string]string
-	Timeout     time.Duration
-	Roots       []string
-	Unsandboxed bool
+	Program string
+	Args    []string
+	Cwd     string
+	Env     map[string]string
+	Timeout time.Duration
+	Roots   []string
+	// FullAccess runs the command with full access, without the limits the
+	// Box puts on commands. A Box that cannot give full access refuses it.
+	FullAccess bool
 }
 
 type Result struct {
@@ -49,7 +51,7 @@ var seatbeltSupported = defaultSeatbeltSupported
 
 func defaultSeatbeltSupported() error {
 	if runtime.GOOS != "darwin" {
-		return fmt.Errorf("the sandbox needs macOS (this host is %s)", runtime.GOOS)
+		return fmt.Errorf("limiting commands needs macOS (this machine runs %s)", runtime.GOOS)
 	}
 	return nil
 }
@@ -64,7 +66,7 @@ func resolveMode(mode string) (Mode, error) {
 	}
 	if m != ModeFullAccess {
 		if err := seatbeltSupported(); err != nil {
-			return "", fmt.Errorf("sandbox: mode %q: %w; set the mode to %q to run commands without a sandbox", m, err, ModeFullAccess)
+			return "", fmt.Errorf("sandbox: mode %q: %w; set the mode to %q to run commands with full access", m, err, ModeFullAccess)
 		}
 	}
 	return m, nil
@@ -222,7 +224,7 @@ func (s *Sandbox) Fingerprint() any {
 
 func (s *Sandbox) Summary() string {
 	if !s.Enforced() {
-		return "No sandbox: commands run with the user's full access to files and network"
+		return "No limits on commands: they run with the user's full access to files and network"
 	}
 	var fs string
 	switch s.policy.Mode {
@@ -316,7 +318,7 @@ func (s *Sandbox) Run(ctx context.Context, c Command) (Result, error) {
 }
 
 func (s *Sandbox) command(ctx context.Context, c Command) (*exec.Cmd, *proxy, string, error) {
-	if !s.Enforced() || c.Unsandboxed {
+	if !s.Enforced() || c.FullAccess {
 		cmd := exec.CommandContext(ctx, c.Program, c.Args...)
 		cmd.Dir = c.Cwd
 		cmd.Env = environ(os.Environ(), s.envPassthrough, c.Env)

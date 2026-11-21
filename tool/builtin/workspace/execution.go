@@ -19,8 +19,8 @@ type commandArgs struct {
 	WorkDir            string            `json:"work_dir,omitempty" jsonschema:"Optional command directory, relative to the current project/default command directory; must stay within this turn's allowed directories"`
 	TimeoutSec         int               `json:"timeout_sec,omitempty" jsonschema:"Optional timeout in seconds"`
 	Env                map[string]string `json:"env,omitempty" jsonschema:"Optional environment variables"`
-	SandboxPermissions string            `json:"sandbox_permissions,omitempty" jsonschema:"use_default (the default) runs in the sandbox; require_escalated runs this command outside the sandbox, and its justification is shown to the user"`
-	Justification      string            `json:"justification,omitempty" jsonschema:"Required with require_escalated: one sentence telling the user what the command needs that the sandbox does not allow, such as writing /usr/local or reaching a host"`
+	SandboxPermissions string            `json:"sandbox_permissions,omitempty" jsonschema:"use_default (the default) runs within the limits the sandbox puts on commands; require_escalated runs this command with full access, without those limits, and its justification is shown to the user"`
+	Justification      string            `json:"justification,omitempty" jsonschema:"Required with require_escalated: one sentence telling the user what the command needs that the sandbox's limits do not allow, such as writing /usr/local or reaching a host"`
 }
 
 func (commandArgs) Constrain(s *jsonschema.Schema) {
@@ -102,10 +102,10 @@ func escalation(box sandbox.Box, a commandArgs) (bool, error) {
 		return false, nil
 	}
 	if !box.Enforced() {
-		return false, fmt.Errorf("workspace: commands already run without a sandbox here; omit sandbox_permissions")
+		return false, fmt.Errorf("workspace: this sandbox puts no limits on commands, so they already have full access; omit sandbox_permissions")
 	}
 	if !box.CanEscalate() {
-		return false, fmt.Errorf("workspace: commands cannot leave this sandbox; omit sandbox_permissions")
+		return false, fmt.Errorf("workspace: this sandbox cannot give a command full access; omit sandbox_permissions")
 	}
 	if strings.TrimSpace(a.Justification) == "" {
 		return false, fmt.Errorf("workspace: sandbox_permissions %q needs a justification for the user", sandboxRequireEscalated)
@@ -148,8 +148,8 @@ func (r *Provider) execute(ctx context.Context, call tool.Call, p *Prepared, pro
 		Program: p.Program, Args: p.Args, Cwd: p.Cwd, Env: p.Env,
 		Timeout: time.Duration(p.TimeoutSec) * time.Second,
 
-		Roots:       d.roots,
-		Unsandboxed: p.Escalated,
+		Roots:      d.roots,
+		FullAccess: p.Escalated,
 	})
 }
 
@@ -164,7 +164,7 @@ func (r *Provider) runCommand(ctx context.Context, call tool.Call, p *Prepared) 
 	}
 	out := commandOutput(res, p.Cwd)
 	if p.Escalated {
-		out.Sandbox = "escalated: ran on the host without the sandbox"
+		out.Sandbox = "escalated: ran with full access, without the sandbox's limits"
 	}
 	return kit.Result{Output: out}, nil
 }
@@ -182,15 +182,15 @@ func (r *Provider) commandTool() kit.Spec {
 		". A non-zero exit_code is returned with the output, not as an error. To read, find or search files use " +
 		ToolReadFile + ", " + ToolGlob + " and " + ToolGrep + ", not cat, find or grep"
 	if r.box.Enforced() {
-		desc += ". Commands run in the sandbox without asking the user"
+		desc += ". Commands run within the sandbox's limits without asking the user"
 	}
 	if r.box.CanEscalate() {
-		desc += ". A result's sandbox_denials lists what the sandbox stopped. " +
-			"When a command fails because of the sandbox (a write outside the command directories or to a protected file, " +
+		desc += ". A result's sandbox_denials lists what the sandbox's limits stopped. " +
+			"When a command fails because of the sandbox's limits (a write outside the command directories or to a protected file, " +
 			"a host outside the allowed domains, the network, a local socket), " +
 			"retry it with sandbox_permissions \"require_escalated\" and a one-sentence justification: " +
-			"the command then runs on the host without the sandbox, and the user is asked first unless the approval policy never asks. " +
-			"Do not escalate to get around a denied path on purpose, and do not escalate commands that work in the sandbox"
+			"the command then runs with full access, without those limits, and the user is asked first unless the approval policy never asks. " +
+			"Do not escalate to get around a denied path on purpose, and do not escalate commands that work within the limits"
 	}
 	if r.boxIn != nil {
 		desc += ". A conversation runs in the environment it was started in, whose folders need not be this machine's"
