@@ -221,6 +221,30 @@ func TestAcceptingAlwaysKeepsTheRuleWithTheConversation(t *testing.T) {
 	}
 }
 
+func TestAcceptingAnEscalatedCallAlwaysKeepsItsRuleAsAnEscalateRule(t *testing.T) {
+	f := setup(t)
+	th := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", "", "", ""))
+	turn := sent(t)(f.a.Send(f.ctx, "u", th.ID, Input{Text: "check the vm"}))
+	err := f.st.Update(f.ctx, func(tx store.Tx) error {
+		_, err := tx.Append(th.ID,
+			conversation.Entry{Turn: turn.ID, Body: conversation.ModelResponded{Response: "r"}},
+			conversation.Entry{Turn: turn.ID, Item: "c1", Body: conversation.ToolCall{Tool: agent.RunCommandTool, Response: "r"}},
+			conversation.Entry{Turn: turn.ID, Item: "c1", Body: conversation.ApprovalAsked{Approval: "a1", Content: "ssh vm uptime", Suggested: []string{"run_command(ssh:*)"}, Escalated: true}})
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.a.Decide(f.ctx, "u", th.ID, "a1", conversation.AcceptAlways); err != nil {
+		t.Fatal(err)
+	}
+	var stored store.Thread
+	f.st.Read(f.ctx, func(r store.Reader) (err error) { stored, err = r.Thread(th.ID); return err })
+	if rules := stored.Settings.Rules; !slices.Equal(rules.Escalate, []string{"run_command(ssh:*)"}) || len(rules.Allow) != 0 {
+		t.Errorf("the rules kept: %+v", rules)
+	}
+}
+
 func TestASubagentTakesMessagesInItsRoleAndKeepsRulesInItsWorkspace(t *testing.T) {
 	f := setup(t)
 	dir := t.TempDir()
