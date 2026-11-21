@@ -313,6 +313,9 @@
         },
         "sandbox": {
           "type": "string"
+        },
+        "notice": {
+          "type": "string"
         }
       },
       "required": [
@@ -838,6 +841,9 @@
         },
         "removed": {
           "type": "integer"
+        },
+        "diff": {
+          "type": "string"
         }
       },
       "required": [
@@ -919,9 +925,8 @@
         },
         "context": {
           "type": "integer",
-          "description": "Lines to show before and after each matching line, at most 10.",
-          "minimum": 0,
-          "maximum": 10
+          "description": "Lines to show before and after each matching line, at most 10; a larger value shows 10.",
+          "minimum": 0
         }
       },
       "required": [
@@ -996,6 +1001,9 @@
         },
         "skipped": {
           "type": "integer"
+        },
+        "notice": {
+          "type": "string"
         }
       },
       "required": [

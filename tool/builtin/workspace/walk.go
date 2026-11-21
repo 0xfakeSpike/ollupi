@@ -19,6 +19,7 @@ type walker struct {
 	entries   int
 	skipped   int
 	truncated bool
+	reaches   func(abs string) bool
 }
 
 func newWalker(ctx context.Context, box sandbox.Box, root string) *walker {
@@ -63,6 +64,10 @@ func (w *walker) dir(ctx context.Context, dir string, visit func(string, fs.File
 		}
 		var err error
 		if info.IsDir() {
+			unreachable := w.reaches != nil && !w.reaches(abs)
+			if unreachable {
+				continue
+			}
 			err = w.dir(ctx, abs, visit)
 		} else if info.Mode().IsRegular() {
 			err = visit(abs, info)

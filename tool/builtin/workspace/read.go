@@ -91,13 +91,12 @@ type Grep struct {
 	Include    string `json:"include,omitempty" jsonschema:"Only files whose path relative to path matches this pattern, e.g. **/*.go or *.{ts,tsx}."`
 	IgnoreCase bool   `json:"ignore_case,omitempty" jsonschema:"Match letters in either case."`
 	FilesOnly  bool   `json:"files_only,omitempty" jsonschema:"Return only the files that match, not their lines."`
-	Context    int    `json:"context,omitempty" jsonschema:"Lines to show before and after each matching line, at most 10."`
+	Context    int    `json:"context,omitempty" jsonschema:"Lines to show before and after each matching line, at most 10; a larger value shows 10."`
 }
 
 func (Grep) Constrain(s *jsonschema.Schema) {
 	s.Properties["pattern"].MinLength = jsonschema.Ptr(1)
 	s.Properties["context"].Minimum = jsonschema.Ptr(0.0)
-	s.Properties["context"].Maximum = jsonschema.Ptr(float64(maxGrepContext))
 }
 
 type GrepOutput struct {
@@ -106,6 +105,7 @@ type GrepOutput struct {
 	Matches   int        `json:"matches"`
 	Truncated bool       `json:"truncated,omitempty"`
 	Skipped   int        `json:"skipped,omitempty"`
+	Notice    string     `json:"notice,omitempty"`
 }
 
 type GrepFile struct {
@@ -323,6 +323,7 @@ func glob(ctx context.Context, d dirs, args map[string]any) (GlobOutput, error) 
 	}
 	var all []found
 	w := newWalker(ctx, d.box, dir)
+	w.reaches = reaches(dir, pattern)
 	err = w.walk(ctx, func(abs string, info fs.FileInfo) error {
 		rel, _ := filepath.Rel(dir, abs)
 		if matched, _ := doublestar.Match(pattern, filepath.ToSlash(rel)); matched {
@@ -330,7 +331,7 @@ func glob(ctx context.Context, d dirs, args map[string]any) (GlobOutput, error) 
 		}
 		return nil
 	})
-	if err != nil {
+	if err != nil && !errors.Is(err, errStopWalk) {
 		return GlobOutput{}, err
 	}
 	slices.SortStableFunc(all, func(a, b found) int { return b.mod.Compare(a.mod) })
@@ -362,7 +363,10 @@ func grep(ctx context.Context, d dirs, args map[string]any) (GrepOutput, error) 
 		return GrepOutput{}, err
 	}
 	out := GrepOutput{Path: d.display(path), Files: []GrepFile{}}
-	around := in.Context
+	around := min(in.Context, maxGrepContext)
+	if in.Context > around {
+		out.Notice = fmt.Sprintf("context %d is over the most allowed; each match shows %d lines before and after it", in.Context, around)
+	}
 	shown, unreadable := 0, 0
 	var readErr error
 	search := func(abs string, info fs.FileInfo) error {
