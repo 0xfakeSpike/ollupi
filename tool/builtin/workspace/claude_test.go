@@ -50,7 +50,7 @@ func TestClaudeRunsWithItsFlagsInTheUsersMachine(t *testing.T) {
 	if !ok || out.Result != "done" || out.NumTurns != 3 || out.SessionID != "s1" || out.WorkDir != machineRoot {
 		t.Errorf("output %#v", res.Output)
 	}
-	if len(m.ran) != 1 || m.ran[0].Program != ToolClaude || m.ran[0].Unsandboxed {
+	if len(m.ran) != 1 || m.ran[0].Program != ToolClaude || m.ran[0].FullAccess {
 		t.Errorf("ran %+v", m.ran)
 	}
 }

@@ -66,7 +66,7 @@ func (c *Checker) decide(call Call, history conversation.View) Decision {
 	case ruleEscalate:
 		return Decision{Verdict: Run, Rule: rule}
 	case ruleAllow:
-		if !c.leavesTheSandbox(call) {
+		if !c.needsFullAccess(call) {
 			return Decision{Verdict: Run, Rule: rule}
 		}
 	case ruleOpaque:
@@ -75,7 +75,7 @@ func (c *Checker) decide(call Call, history conversation.View) Decision {
 			return Decision{Verdict: Run, Reason: "allowed for this conversation earlier"}
 		case c.policy == Never && rule != "":
 			return Decision{Verdict: Deny, Rule: rule, Reason: fmt.Sprintf("refused: this command cannot be checked against the permission rule %s, and no one is asked under this approval policy; write the command plainly so the rules can read it, or tell the user", rule)}
-		case c.leavesTheSandbox(call):
+		case c.needsFullAccess(call):
 			return Decision{Verdict: Ask}
 		}
 		return Decision{Verdict: Ask, Reason: "This command cannot be fully checked against your permission rules for " + call.Tool + ", so it needs your approval."}
@@ -86,13 +86,13 @@ func (c *Checker) decide(call Call, history conversation.View) Decision {
 	if allowedForConversation(call, history) {
 		return Decision{Verdict: Run, Reason: "allowed for this conversation earlier"}
 	}
-	if c.leavesTheSandbox(call) || c.requiresApproval(call) {
+	if c.needsFullAccess(call) || c.requiresApproval(call) {
 		return Decision{Verdict: Ask}
 	}
 	return Decision{Verdict: Run}
 }
 
-func (c *Checker) leavesTheSandbox(call Call) bool {
+func (c *Checker) needsFullAccess(call Call) bool {
 	return c.policy != Never && call.Escalated
 }
 
