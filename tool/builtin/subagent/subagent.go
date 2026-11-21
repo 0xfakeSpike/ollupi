@@ -21,6 +21,8 @@ var kinds = map[agent.Name]kind{
 		title: "Subagent",
 		description: "Launch a general-purpose subagent: another run of you, with your tools, that does one task on its own and reports back. " +
 			"For a task in the built-in browser, launch " + string(agent.BrowserSub) + " instead. " +
+			"To make a picture (illustration, diagram, chart, icon, UI mockup), launch " + string(agent.DesignSub) + "; " +
+			"to have a whole codebase read and explained, launch " + string(agent.CodebaseSub) + ". " +
 			"To work on independent tasks at the same time, call " + string(agent.GeneralSub) + " several times in the same response; the subagents run in parallel.",
 		reports: true,
 	},
@@ -36,6 +38,22 @@ var kinds = map[agent.Name]kind{
 		description: "Launch a browser subagent: an agent that does one task in the built-in browser (opening pages, reading them, clicking and typing) and reports back. " +
 			"It has only the browser's tools. Use it for browser work of many steps, so the pages it reads stay out of this conversation. " +
 			"Browser subagents share the one browser, so launch one at a time.",
+		reports: true,
+	},
+	agent.DesignSub: {
+		title: "Design subagent",
+		description: "Launch a design subagent to make a picture: an illustration, diagram, chart, icon, or UI mockup. " +
+			"It draws from a source it leaves beside the result (SVG, HTML/CSS, or a plotting script), renders it, looks at the render and fixes it, then reports back " +
+			"the paths, the size, and what it shows. Give it the content, the format or place it is for, and any style to follow; " +
+			"use " + string(agent.GeneralSub) + " for work whose result is not a picture.",
+		reports: true,
+	},
+	agent.CodebaseSub: {
+		title: "Codebase subagent",
+		description: "Launch a codebase subagent to read a whole project and explain it: what it is for, its modules and layers, " +
+			"how a request or a piece of data flows through them, where state lives, its dependencies and constraints, and what a change would touch. " +
+			"It reads the code itself, cites files and symbols, changes nothing, and reports back. " +
+			"Use it for research in a project too big to read in this conversation.",
 		reports: true,
 	},
 }

@@ -126,6 +126,36 @@ func TestTheMainAgentFitsTheWindow(t *testing.T) {
 	}
 }
 
+func TestSpecialistSubagentsAppearOnlyWhenTheyHaveTools(t *testing.T) {
+	full := []policy.Tool{
+		{Name: ReadFileTool, Provider: WorkspaceProvider},
+		{Name: RunCommandTool, Provider: WorkspaceProvider, Content: true},
+		{Name: "browser_click", Provider: BrowserProvider},
+		{Name: string(GeneralSub), Provider: SubagentsProvider},
+		{Name: string(BrowserSub), Provider: SubagentsProvider},
+		{Name: string(DesignSub), Provider: SubagentsProvider},
+		{Name: string(CodebaseSub), Provider: SubagentsProvider},
+	}
+	for _, name := range []Name{GeneralSub, BrowserSub, DesignSub, CodebaseSub} {
+		if !offers(Launchable(full), string(name)) {
+			t.Errorf("%s is not offered with a full toolbox", name)
+		}
+	}
+	browserOnly := []policy.Tool{
+		{Name: "browser_click", Provider: BrowserProvider},
+		{Name: string(DesignSub), Provider: SubagentsProvider},
+		{Name: string(CodebaseSub), Provider: SubagentsProvider},
+	}
+	got := Launchable(browserOnly)
+	if !offers(got, string(DesignSub)) || offers(got, string(CodebaseSub)) {
+		t.Errorf("with only browser tools: %+v", got)
+	}
+}
+
+func offers(tools []policy.Tool, name string) bool {
+	return slices.ContainsFunc(tools, func(t policy.Tool) bool { return t.Name == name })
+}
+
 func TestOnlyTheHubHandsOutWork(t *testing.T) {
 	box := policy.Toolbox{Tools: []policy.Tool{
 		{Name: StartConversationTool, Provider: HubProvider},

@@ -8,6 +8,8 @@
         "compact-main-agent",
         "general-sub-agent",
         "browser-sub-agent",
+        "design-sub-agent",
+        "codebase-sub-agent",
         "delegate-sub-agent",
         "hub-main-agent"
       ]
@@ -4160,7 +4162,23 @@
         "$ref": "#/$defs/SubagentLaunched"
       }
     },
+    "codebase-sub-agent": {
+      "arguments": {
+        "$ref": "#/$defs/SubagentCall"
+      },
+      "output": {
+        "$ref": "#/$defs/SubagentLaunched"
+      }
+    },
     "delegate-sub-agent": {
+      "arguments": {
+        "$ref": "#/$defs/SubagentCall"
+      },
+      "output": {
+        "$ref": "#/$defs/SubagentLaunched"
+      }
+    },
+    "design-sub-agent": {
       "arguments": {
         "$ref": "#/$defs/SubagentCall"
       },

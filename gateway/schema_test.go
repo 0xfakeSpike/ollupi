@@ -64,6 +64,8 @@ var builtinTools = map[string]struct{ arguments, output reflect.Type }{
 	agent.PlanTool:              {arguments: reflect.TypeFor[plan.Plan]()},
 	string(agent.GeneralSub):    {arguments: reflect.TypeFor[subagent.Call](), output: reflect.TypeFor[run.Launched]()},
 	string(agent.BrowserSub):    {arguments: reflect.TypeFor[subagent.Call](), output: reflect.TypeFor[run.Launched]()},
+	string(agent.DesignSub):     {arguments: reflect.TypeFor[subagent.Call](), output: reflect.TypeFor[run.Launched]()},
+	string(agent.CodebaseSub):   {arguments: reflect.TypeFor[subagent.Call](), output: reflect.TypeFor[run.Launched]()},
 	string(agent.DelegateSub):   {arguments: reflect.TypeFor[subagent.Call](), output: reflect.TypeFor[run.Launched]()},
 	ask.Tool:                    {arguments: reflect.TypeFor[ask.Request](), output: reflect.TypeFor[ask.Answers]()},
 	agent.ListWorkspacesTool:    {output: reflect.TypeFor[hub.Workspaces]()},

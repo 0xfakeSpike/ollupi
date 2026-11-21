@@ -15,6 +15,8 @@ const (
 	CompactMain Name = "compact-main-agent"
 	GeneralSub  Name = "general-sub-agent"
 	BrowserSub  Name = "browser-sub-agent"
+	DesignSub   Name = "design-sub-agent"
+	CodebaseSub Name = "codebase-sub-agent"
 	DelegateSub Name = "delegate-sub-agent"
 	HubMain     Name = "hub-main-agent"
 )
@@ -31,7 +33,7 @@ const (
 	PlanItem = "- [ ] <task> · <project> · [<conversation title>](#thread-<conversation id>)"
 )
 
-var Names = []Name{FullMain, CompactMain, GeneralSub, BrowserSub, DelegateSub, HubMain}
+var Names = []Name{FullMain, CompactMain, GeneralSub, BrowserSub, DesignSub, CodebaseSub, DelegateSub, HubMain}
 
 const (
 	ReadFileTool          = "read_file"
@@ -73,6 +75,9 @@ type Limits struct {
 
 var standard = Limits{MaxModelCalls: 200, MaxToolCalls: 400, MaxConsecutiveFailures: 10}
 
+// deep suits a subagent that reads a whole project: more reading than writing, many small reads.
+var deep = Limits{MaxModelCalls: 400, MaxToolCalls: 1_200, MaxConsecutiveFailures: 10}
+
 var roles = map[Name]Role{
 	FullMain: {Name: FullMain, Rules: fullMainRules, AnswersUser: true, Recalls: true,
 		Own: []policy.Layer{{Of: "the main agent's role", Without: []string{HubProvider}}}, Limits: standard},
@@ -85,6 +90,10 @@ var roles = map[Name]Role{
 		Own: []policy.Layer{{Of: "the general subagent's role", Without: []string{SubagentsProvider, CronProvider, HubProvider}}}, Limits: standard},
 	BrowserSub: {Name: BrowserSub, Rules: browserSubRules,
 		Own: []policy.Layer{{Of: "the browser subagent's role", Providers: []string{BrowserProvider, OutputsProvider, SkillsProvider, PlanProvider}}}, Limits: standard},
+	DesignSub: {Name: DesignSub, Rules: designSubRules, Recalls: true,
+		Own: []policy.Layer{{Of: "the design subagent's role", Providers: []string{WorkspaceProvider, BrowserProvider, OutputsProvider, SkillsProvider, PlanProvider}}}, Limits: standard},
+	CodebaseSub: {Name: CodebaseSub, Rules: codebaseSubRules, Recalls: true,
+		Own: []policy.Layer{{Of: "the codebase subagent's role", Providers: []string{WorkspaceProvider, OutputsProvider, SkillsProvider, PlanProvider}}}, Limits: deep},
 	DelegateSub: {Name: DelegateSub, Rules: delegateSubRules, AnswersUser: true, Recalls: true,
 		Own: []policy.Layer{{Of: "the delegate subagent's role", Without: []string{SubagentsProvider, CronProvider, HubProvider}}}, Limits: standard},
 }
@@ -225,7 +234,7 @@ func responses(v conversation.View, turn string) int {
 
 func Launchable(visible []policy.Tool) []policy.Tool {
 	out := slices.Clone(visible)
-	for _, name := range []Name{GeneralSub, BrowserSub, DelegateSub} {
+	for _, name := range []Name{GeneralSub, BrowserSub, DesignSub, CodebaseSub, DelegateSub} {
 		own := roles[name].Own
 		workable := slices.ContainsFunc(visible, func(t policy.Tool) bool {
 			return t.Provider != OutputsProvider && policy.Kept(own, t)

@@ -62,7 +62,7 @@ stateDiagram-v2
 
 - **顶层会话**：用户通过 `app.StartThread` 创建，出现在会话列表里。
 - **子会话**：子 agent 的会话。父会话里启动它的调用结束时，runner 在同一事务里创建子会话、给它排上第一个轮次和任务消息（`run.launch`）。它记着 `parent_id`、`parent_item` 和它的角色（`role`，即启动它的工具；顶层会话的角色每一轮现选，这一列为空），继承父会话的工作区和环境。它按自己的会话设置运行，没设过时就是所在工作区的权限，"总是允许"也记进它自己的工作区。用户可以像对顶层会话一样给它发消息、插话、中断，这些轮次沿用它的角色。
-- **两种子会话**：`general-sub-agent` 和 `browser-sub-agent` 汇报：父轮次等它，它只汇报启动它的那一轮，报告写进启动它的轮次；它不出现在会话列表和搜索里，随父会话一起删除。`delegate-sub-agent` 是委派：不汇报（`ChildLaunched.Detached`），父轮次不等它、也不因它停下或结束；它的回复给用户看，出现在会话列表和搜索里，有未读标记，等待状态不汇总到父会话；父会话还有委派会话时不能删除（`app.ErrHasDelegates`）。
+- **子会话**：`general-sub-agent`、`browser-sub-agent`、`design-sub-agent`（画图/视觉：插图、图表、示意图、界面稿）、`codebase-sub-agent`（通读项目、分析架构）汇报：父轮次等它，它只汇报启动它的那一轮，报告写进启动它的轮次；它不出现在会话列表和搜索里，随父会话一起删除。`delegate-sub-agent` 是委派：不汇报（`ChildLaunched.Detached`），父轮次不等它、也不因它停下或结束；它的回复给用户看，出现在会话列表和搜索里，有未读标记，等待状态不汇总到父会话；父会话还有委派会话时不能删除（`app.ErrHasDelegates`）。
 
 ```mermaid
 stateDiagram-v2
