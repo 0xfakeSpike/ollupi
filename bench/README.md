@@ -104,7 +104,7 @@ An earlier run of the same experiment (`shards-previous.txt`, without the CPU to
 
 ### Commands in a sandbox
 
-1024 sessions whose tool calls each run `sleep 1` through `run_command`, up to 1024 processes at a time on 8 cores. Without a sandbox (full access), turn p50 is 34.1 s; in the macOS sandbox (workspace write), 104.1 s, with 563 ms of CPU per turn spent starting sandboxed processes. The fake tool takes 18.4 s.
+1024 sessions whose tool calls each run `sleep 1` through `run_command`, up to 1024 processes at a time on 8 cores. With full access (no limits on commands), turn p50 is 34.1 s; within the macOS sandbox's limits (workspace write), 104.1 s, with 563 ms of CPU per turn spent starting sandboxed processes. The fake tool takes 18.4 s.
 
 ### Mixed load and subagents
 
@@ -140,7 +140,7 @@ go test -tags sqlite_fts5 ./bench # each experiment at a size that ends in secon
 | `steady-N` | `steady -c N` | Closed loop at N sessions |
 | `steady-faults` | `steady -c 1024 -fail 0.05 -others 256` | Failing requests and a shared quota |
 | `steady-lognormal` | `steady -c 1536 -sigma 0.6` | Long-tailed model latency |
-| `steady-workspace-write`, `steady-full-access` | `steady -c 1024 -command workspace-write` (or `full-access`) | Tool calls as real commands through `run_command`, in a sandbox or not |
+| `steady-workspace-write`, `steady-full-access` | `steady -c 1024 -command workspace-write` (or `full-access`) | Tool calls as real commands through `run_command`, within the sandbox's limits or with full access |
 | `burst` | `burst -n 3000 -slots 512 -calls 256 -latency 5s -jitter 2s -tool 1s -timeline results/burst.csv` | Many turns at once against a quota |
 | `resume` | `resume` | Waking idle sessions; restarting with sessions waiting and running |
 | `crash`, `crash-lease` | `crash -n 500 -kills 30`; `crash -n 400 -kills 8 -lease 1500ms` | Random `kill -9`; with a lease, a standby takes over |

@@ -173,13 +173,13 @@ func TestToolsRunOnTheUsersMachine(t *testing.T) {
 	}
 
 	if _, err := act("a", ToolRunCommand, map[string]any{"program": "make", "sandbox_permissions": sandboxRequireEscalated, "justification": "x"}); err == nil {
-		t.Error("a command left the machine")
+		t.Error("a command got full access on a remote sandbox")
 	}
 	if _, ok := spec[ToolRunCommand].InputSchema.(*jsonschema.Schema).Properties["sandbox_permissions"]; ok {
-		t.Error("the tool offers to leave a sandbox that has no way out")
+		t.Error("the tool offers full access a remote sandbox cannot give")
 	}
 	if strings.Contains(spec[ToolRunCommand].Description, "require_escalated") {
-		t.Error("the tool describes leaving the sandbox")
+		t.Error("the tool describes full access")
 	}
 	if !strings.Contains(spec[ToolRunCommand].Description, "A cloud sandbox of your own") {
 		t.Errorf("the tool does not describe its sandbox: %s", spec[ToolRunCommand].Description)
