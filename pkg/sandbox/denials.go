@@ -6,6 +6,7 @@ import (
 	"io"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -160,6 +161,8 @@ func (l *denialLog) record(id, detail string) {
 	set.last = time.Now()
 }
 
+var harmlessDenials = []string{"/dev/dtracehelper", "/dev/tty"}
+
 var denialLine = regexp.MustCompile(`Sandbox: (.+?)\(\d+\) deny\(\d+\) (\S+)\s*(.*)$`)
 
 func denialDetail(line string) (detail string, ok bool) {
@@ -173,12 +176,15 @@ func denialDetail(line string) (detail string, ok bool) {
 	default:
 		return "", true
 	}
-	if strings.Contains(target, "mDNSResponder") {
-		return "", true
-	}
-
 	if i := strings.Index(target, "OSBX"); i >= 0 {
 		target = target[:i]
 	}
-	return strings.TrimSpace(m[1] + ": " + op + " " + strings.TrimSpace(target)), true
+	target = strings.TrimSpace(target)
+	if strings.Contains(target, "mDNSResponder") {
+		return "", true
+	}
+	if slices.Contains(harmlessDenials, target) {
+		return "", false
+	}
+	return strings.TrimSpace(m[1] + ": " + op + " " + target), true
 }
