@@ -58,7 +58,7 @@ func ReadFile(ctx context.Context, b Box, path string, limit int64) ([]byte, err
 	return body, nil
 }
 
-func (s *Sandbox) Transport() http.RoundTripper { return http.DefaultTransport }
+func (s *Sandbox) Transport() http.RoundTripper { return machineTransport }
 
 func (s *Sandbox) Stat(_ context.Context, path string) (fs.FileInfo, error) { return os.Stat(path) }
 
