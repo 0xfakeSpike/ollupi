@@ -92,6 +92,7 @@ type Approval struct {
 	Rule               string                  `json:"rule,omitempty"`
 	Content            string                  `json:"content,omitempty"`
 	SuggestedRules     []string                `json:"suggestedRules,omitempty"`
+	Escalated          bool                    `json:"escalated,omitempty"`
 	AvailableDecisions []conversation.Decision `json:"availableDecisions"`
 	AskedAt            time.Time               `json:"askedAt"`
 	Decision           conversation.Decision   `json:"decision,omitempty"`
@@ -155,7 +156,7 @@ func itemRow(it conversation.Item) ItemRow {
 	}
 	if a := it.Approval; a != nil {
 		row.Approval = &Approval{ApprovalID: a.Approval, Reason: a.Reason, Rule: a.Rule, Content: a.Content, SuggestedRules: a.Suggested,
-			AvailableDecisions: a.Decisions(), AskedAt: a.AskedAt, Decision: a.Decision, DecidedBy: a.By, DecidedAt: a.DecidedAt}
+			Escalated: a.Escalated, AvailableDecisions: a.Decisions(), AskedAt: a.AskedAt, Decision: a.Decision, DecidedBy: a.By, DecidedAt: a.DecidedAt}
 	}
 	if in := it.Input; in != nil {
 		row.Input = &Input{Request: in.Request, AskedAt: in.AskedAt, Answered: in.Answered}

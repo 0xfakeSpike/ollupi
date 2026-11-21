@@ -226,7 +226,7 @@ func (c *conn) request(thread string, it conversation.Item) {
 	c.rpc.Request(requestApproval, ApprovalRequestParams{
 		ThreadID: thread, TurnID: it.Turn, ItemID: it.ID, ApprovalID: a.Approval, Server: it.Call.Server, Tool: it.Call.Tool,
 		Arguments: args, PreparedExecution: it.Call.Prepared, Reason: a.Reason, Content: a.Content, SuggestedRules: a.Suggested,
-		AvailableDecisions: a.Decisions(),
+		Escalated: a.Escalated, AvailableDecisions: a.Decisions(),
 	}, answered)
 }
 

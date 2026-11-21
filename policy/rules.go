@@ -14,6 +14,7 @@ const (
 	ruleDeny
 	ruleAsk
 	ruleAllow
+	ruleEscalate
 	ruleOpaque
 )
 
@@ -85,7 +86,7 @@ func (r rule) matches(tool, content string, hasContent, folded bool) bool {
 }
 
 type ruleSet struct {
-	allow, ask, deny []rule
+	allow, escalate, ask, deny []rule
 }
 
 func parseRules(p Rules) (ruleSet, error) {
@@ -101,7 +102,11 @@ func parseRules(p Rules) (ruleSet, error) {
 	if err != nil {
 		return ruleSet{}, err
 	}
-	return ruleSet{deny: deny, ask: ask, allow: allow}, nil
+	escalate, err := parseList("escalate", p.Escalate)
+	if err != nil {
+		return ruleSet{}, err
+	}
+	return ruleSet{deny: deny, ask: ask, allow: allow, escalate: escalate}, nil
 }
 
 func parseList(name string, texts []string) ([]rule, error) {
@@ -142,25 +147,35 @@ func (s ruleSet) decide(tool string, content Content, hasContent bool) (ruleVerd
 			return ruleOpaque, ""
 		}
 	}
-	for _, r := range s.allow {
+	if text, ok := allows(s.escalate, tool, content, hasContent); ok {
+		return ruleEscalate, text
+	}
+	if text, ok := allows(slices.Concat(s.allow, s.escalate), tool, content, hasContent); ok {
+		return ruleAllow, text
+	}
+	return ruleNone, ""
+}
+
+func allows(rules []rule, tool string, content Content, hasContent bool) (string, bool) {
+	for _, r := range rules {
 		if r.tool == tool && r.pattern == nil {
-			return ruleAllow, r.text
+			return r.text, true
 		}
 	}
 	if !hasContent || content.Opaque {
-		return ruleNone, ""
+		return "", false
 	}
 	var used []string
 	for _, part := range content.parts() {
-		i := slices.IndexFunc(s.allow, func(r rule) bool { return r.matches(tool, part, true, content.Folded) })
+		i := slices.IndexFunc(rules, func(r rule) bool { return r.matches(tool, part, true, content.Folded) })
 		if i < 0 {
-			return ruleNone, ""
+			return "", false
 		}
-		if !slices.Contains(used, s.allow[i].text) {
-			used = append(used, s.allow[i].text)
+		if !slices.Contains(used, rules[i].text) {
+			used = append(used, rules[i].text)
 		}
 	}
-	return ruleAllow, strings.Join(used, ", ")
+	return strings.Join(used, ", "), true
 }
 
 var subcommand = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
@@ -169,6 +184,7 @@ var (
 	sensitivePrograms = []string{"rm", "rmdir", "mv", "dd", "chmod", "chown", "sudo", "kill", "pkill", "killall", "launchctl", "crontab",
 		"python", "python3", "node", "ruby", "perl", "osascript", "expect"}
 	sensitiveGit = []string{"push", "reset", "clean", "checkout", "restore", "rebase"}
+	codeReaders  = []string{"sh", "bash", "zsh", "dash", "python", "python3", "node", "ruby", "perl", "osascript", "expect"}
 )
 
 func sensitive(words []string) bool {
@@ -179,9 +195,6 @@ func sensitive(words []string) bool {
 }
 
 func suggest(call Call) []string {
-	if call.Escalated {
-		return nil
-	}
 	if !call.HasContent {
 		return []string{call.Tool}
 	}
@@ -192,6 +205,10 @@ func suggest(call Call) []string {
 	for _, part := range call.Content.parts() {
 		words := strings.Fields(part)
 		if len(words) == 0 || strings.Contains(part, "*") {
+			return nil
+		}
+		readsCode := call.Escalated && slices.Contains(codeReaders, words[0])
+		if readsCode {
 			return nil
 		}
 		spec := part

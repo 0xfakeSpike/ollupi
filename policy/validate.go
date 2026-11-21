@@ -23,11 +23,11 @@ func checkLayer(l Layer, previous *Settings, box Toolbox) error {
 	set, _ := parseRules(l.Settings.Rules)
 	var kept []string
 	if previous != nil {
-		for _, text := range slices.Concat(previous.Rules.Allow, previous.Rules.Ask, previous.Rules.Deny) {
+		for _, text := range slices.Concat(previous.Rules.Allow, previous.Rules.Escalate, previous.Rules.Ask, previous.Rules.Deny) {
 			kept = append(kept, strings.TrimSpace(text))
 		}
 	}
-	for _, r := range slices.Concat(set.deny, set.ask, set.allow) {
+	for _, r := range slices.Concat(set.deny, set.ask, set.allow, set.escalate) {
 		switch {
 		case box.unavailable(r.tool):
 			if previous != nil && !slices.Contains(kept, r.text) {
