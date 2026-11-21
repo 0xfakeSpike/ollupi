@@ -35,6 +35,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/tool/builtin/plan"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/skills"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/subagent"
+	"github.com/0xfakeSpike/ollupi/tool/builtin/web"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
 	"github.com/0xfakeSpike/ollupi/tool/mcp"
 	"golang.org/x/sync/errgroup"
@@ -117,7 +118,7 @@ func New(ctx context.Context, cfg Config) (*Host, error) {
 	h := &Host{Store: st, cal: cron.NewCalendar(cmp.Or(cfg.Location, time.Local))}
 	hubTools := &hub.Provider{St: st}
 	builtins := append(slices.Clone(cfg.Tools), plan.Provider{}, ask.Provider{}, loader.Provider{}, subagent.Provider{},
-		outputs.New(st), memorytool.New(st))
+		outputs.New(st), memorytool.New(st), web.New(cfg.Boxes))
 	if cfg.Hub {
 		builtins = append(builtins, hubTools)
 	}

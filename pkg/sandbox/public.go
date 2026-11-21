@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"slices"
 	"time"
 )
 
@@ -54,4 +55,15 @@ func dialPublic(ctx context.Context, dialer *net.Dialer, network, addr string) (
 		lastErr = err
 	}
 	return nil, lastErr
+}
+
+func CheckPublic(ctx context.Context, host string) error {
+	addrs, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+	if err != nil {
+		return nil
+	}
+	if slices.ContainsFunc(addrs, sensitiveAddr) {
+		return fmt.Errorf("sandbox: %s %w", host, ErrLocalAddress)
+	}
+	return nil
 }
