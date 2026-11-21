@@ -49,11 +49,11 @@ type fetchOutput struct {
 }
 
 type Provider struct {
-	client *http.Client
+	boxes func(user string) (sandbox.Box, error)
 }
 
-func New() *Provider {
-	return &Provider{client: &http.Client{Transport: sandbox.PublicTransport(), Timeout: fetchTimeout, CheckRedirect: sameHost}}
+func New(boxes func(user string) (sandbox.Box, error)) *Provider {
+	return &Provider{boxes: boxes}
 }
 
 func sameHost(req *http.Request, via []*http.Request) error {
@@ -136,17 +136,24 @@ func parseURL(raw string) (*url.URL, error) {
 
 func (p *Provider) Invoke(ctx context.Context, c tool.Call) (kit.Result, error) {
 	f, _ := kit.DecodeArguments[fetchArgs](c.Arguments)
-	out, err := p.fetch(ctx, f.URL)
+	box, err := p.boxes(c.Caller.User)
+	if err != nil {
+		return kit.Result{}, fmt.Errorf("web: the sandbox of the user: %w", err)
+	}
+	out, err := fetch(ctx, box.Transport(), f.URL)
 	if err != nil {
 		return kit.Result{}, err
 	}
 	return kit.Result{Output: out}, nil
 }
 
-func (p *Provider) fetch(ctx context.Context, raw string) (fetchOutput, error) {
+func fetch(ctx context.Context, transport http.RoundTripper, raw string) (fetchOutput, error) {
 	u, err := parseURL(raw)
 	if err != nil {
 		return fetchOutput{}, err
+	}
+	if err := sandbox.CheckPublic(ctx, u.Hostname()); err != nil {
+		return fetchOutput{}, fmt.Errorf("web: fetch %s: %w; use run_command to reach it", u.Redacted(), err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
@@ -154,7 +161,8 @@ func (p *Provider) fetch(ctx context.Context, raw string) (fetchOutput, error) {
 	}
 	req.Header.Set("User-Agent", "ollupi")
 	req.Header.Set("Accept", fetchAccepted)
-	resp, err := p.client.Do(req)
+	client := &http.Client{Transport: transport, Timeout: fetchTimeout, CheckRedirect: sameHost}
+	resp, err := client.Do(req)
 	if err != nil {
 		var urlErr *url.Error
 		if errors.As(err, &urlErr) {

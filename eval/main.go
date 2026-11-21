@@ -24,7 +24,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/policy"
 	"github.com/0xfakeSpike/ollupi/store"
-	"github.com/0xfakeSpike/ollupi/tool/builtin/web"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/workspace"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
 	_ "golang.org/x/crypto/x509roots/fallback"
@@ -87,7 +86,7 @@ func main() {
 		Home: home, Name: "ollupi",
 		Models:      []llm.Model{{Name: model, Connection: "model"}},
 		Connections: map[string]llm.Client{"model": client},
-		Tools:       []kit.Provider{files, web.New()},
+		Tools:       []kit.Provider{files},
 		Permissions: policy.Settings{ApprovalPolicy: string(policy.Never)},
 		Boxes:       func(string) (sandbox.Box, error) { return sandbox.Here() },
 	})
