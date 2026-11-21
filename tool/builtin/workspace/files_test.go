@@ -111,8 +111,8 @@ func TestFileTools(t *testing.T) {
 	if _, err := r.locals()[ToolEditFile].run(ctx, tool.Call{Caller: caller, Tool: ToolEditFile, Arguments: args}, p); err == nil || !strings.Contains(err.Error(), "changed after") {
 		t.Errorf("edit of a changed file: %v", err)
 	}
-	if res, _, err := run(ToolEditFile, args); err != nil || res.Output.(FileOutput).Added != 1 {
-		t.Fatalf("edit: %v %+v", err, res)
+	if res, _, err := run(ToolEditFile, args); err != nil || res.Output.(FileOutput).Added != 1 || !strings.Contains(res.Output.(FileOutput).Diff, "+package b") {
+		t.Fatalf("edit, with its diff: %v %+v", err, res)
 	}
 	if body, _ := os.ReadFile(filepath.Join(root, "src/a.go")); string(body) != "package b\n// changed\n" {
 		t.Errorf("file holds %q", body)
@@ -129,6 +129,39 @@ func TestFileTools(t *testing.T) {
 		if _, _, err := run(tool, bad); err == nil {
 			t.Errorf("%s %v succeeded", tool, bad)
 		}
+	}
+}
+
+func TestAFailedEditSaysWhereTheTextDiffers(t *testing.T) {
+	c := fileChange{rel: "tasks.md", exists: true, before: "# Tasks\n| 编号\u3000| 标题 |\n| a | b |\n| a | b |\n\tx := “1”\n"}
+	edits := func(e ...map[string]any) tool.Call {
+		list := make([]any, len(e))
+		for i := range e {
+			list[i] = e[i]
+		}
+		return tool.Call{Tool: ToolEditFile, Arguments: map[string]any{"path": "tasks.md", "edits": list}}
+	}
+	ok := map[string]any{"old_text": "# Tasks", "new_text": "# Todo"}
+	_, err := newContent(c, edits(ok, map[string]any{"old_text": "| 编号 | 标题 |", "new_text": "x"}))
+	if err == nil || !strings.Contains(err.Error(), `at line 2 except`) || !strings.Contains(err.Error(), "old_text has U+0020 \" \" where the file has U+3000 \"\\u3000\"") ||
+		!strings.Contains(err.Error(), "none of the 2 edits were applied") {
+		t.Errorf("a full-width space: %v", err)
+	}
+	_, err = newContent(c, edits(map[string]any{"old_text": "    x := \"1\"", "new_text": "x"}))
+	if err == nil || !strings.Contains(err.Error(), `at line 5 except`) || !strings.Contains(err.Error(), `old_text has "    " where the file has U+0009 "\t"`) {
+		t.Errorf("spaces for a tab: %v", err)
+	}
+	_, err = newContent(c, edits(map[string]any{"old_text": "| a | b |\n| c | d |", "new_text": "x"}))
+	if err == nil || !strings.Contains(err.Error(), `first 12 characters match, up to line 4, where old_text has U+0063 "c" but the file has U+0061 "a"`) {
+		t.Errorf("text that changed since it was read: %v", err)
+	}
+	_, err = newContent(c, edits(map[string]any{"old_text": "| a | b |", "new_text": "x"}))
+	if err == nil || !strings.Contains(err.Error(), "at lines 3, 4") || strings.Contains(err.Error(), "none of") {
+		t.Errorf("text that appears twice: %v", err)
+	}
+	_, err = newContent(c, edits(map[string]any{"old_text": "nothing like it", "new_text": "x"}))
+	if err == nil || strings.Contains(err.Error(), "characters match") {
+		t.Errorf("text with no close match: %v", err)
 	}
 }
 
