@@ -16,9 +16,10 @@ type Settings struct {
 }
 
 type Rules struct {
-	Allow []string `json:"allow,omitempty"`
-	Ask   []string `json:"ask,omitempty"`
-	Deny  []string `json:"deny,omitempty"`
+	Allow    []string `json:"allow,omitempty"`
+	Escalate []string `json:"escalate,omitempty"`
+	Ask      []string `json:"ask,omitempty"`
+	Deny     []string `json:"deny,omitempty"`
 }
 
 type Policy string
@@ -96,6 +97,7 @@ func Resolve(layers ...Settings) Settings {
 			out.ApprovalPolicy = l.ApprovalPolicy
 		}
 		out.Rules.Allow = appendNew(out.Rules.Allow, l.Rules.Allow)
+		out.Rules.Escalate = appendNew(out.Rules.Escalate, l.Rules.Escalate)
 		out.Rules.Ask = appendNew(out.Rules.Ask, l.Rules.Ask)
 		out.Rules.Deny = appendNew(out.Rules.Deny, l.Rules.Deny)
 	}
@@ -153,7 +155,7 @@ type Decision struct {
 }
 
 func (d Decision) Asked(id string, call Call) conversation.ApprovalAsked {
-	a := conversation.ApprovalAsked{Approval: id, Reason: d.Reason, Rule: d.Rule, Suggested: d.Suggested}
+	a := conversation.ApprovalAsked{Approval: id, Reason: d.Reason, Rule: d.Rule, Suggested: d.Suggested, Escalated: call.Escalated}
 	if call.HasContent {
 		a.Content = call.Content.Text
 	}

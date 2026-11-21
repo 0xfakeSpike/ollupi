@@ -2119,6 +2119,15 @@
             "type": "string"
           }
         },
+        "escalate": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
         "ask": {
           "type": [
             "null",
