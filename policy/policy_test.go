@@ -182,6 +182,11 @@ func TestSuggestedRulesAllowTheCallNextTime(t *testing.T) {
 		{command("git status --short"), []string{"exec(git status:*)"}},
 		{command("rm -rf build"), []string{"exec(rm -rf build)"}},
 		{command("pwd"), []string{"exec(pwd)"}},
+		{command("tail -8"), []string{"exec(tail:*)"}},
+		{command("ssh -6 root@vm uptime"), []string{"exec(ssh:*)"}},
+		{command("git push origin main"), []string{"exec(git push origin main)"}},
+		{command("python3 -c print(1)"), []string{"exec(python3 -c print(1))"}},
+		{command("echo --- stat", "sudo rm -r /tmp/x"), []string{"exec(echo:*)", "exec(sudo rm -r /tmp/x)"}},
 		{Call{Tool: "click", Content: Content{Text: "click Learn more — example.com", Match: "example.com"}, HasContent: true}, []string{"click(example.com)"}},
 		{command("git add .", "go test ./...", "git add -A"), []string{"exec(git add:*)", "exec(go test:*)"}},
 	} {
