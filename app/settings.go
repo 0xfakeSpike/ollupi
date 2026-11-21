@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/account"
+	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/policy"
 	"github.com/0xfakeSpike/ollupi/store"
 )
@@ -107,12 +108,15 @@ func (a *App) permitThread(tx store.Tx, box policy.Toolbox, th *store.Thread, ne
 	return nil
 }
 
-func (a *App) allowAlways(tx store.Tx, box policy.Toolbox, id string, rules []string) error {
+func (a *App) allowAlways(tx store.Tx, box policy.Toolbox, id string, asked conversation.ApprovalAsked) error {
 	th, err := tx.Thread(id)
 	if err != nil {
 		return err
 	}
-	allowed := policy.Settings{Rules: policy.Rules{Allow: rules}}
+	allowed := policy.Settings{Rules: policy.Rules{Allow: asked.Suggested}}
+	if asked.Escalated {
+		allowed.Rules = policy.Rules{Escalate: asked.Suggested}
+	}
 	now := time.Now().UTC()
 	if th.Workspace == "" {
 		if err := a.permitThread(tx, box, &th, policy.Resolve(th.Settings, allowed)); err != nil {

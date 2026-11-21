@@ -63,6 +63,8 @@ func (c *Checker) decide(call Call, history conversation.View) Decision {
 		return Decision{Verdict: Deny, Rule: rule, Reason: fmt.Sprintf("denied by the permission rule %s; do not try it again, find another way or tell the user", rule)}
 	case ruleAsk:
 		return Decision{Verdict: Ask, Rule: rule, Reason: fmt.Sprintf("Your permission rule %s asks before this call.", rule)}
+	case ruleEscalate:
+		return Decision{Verdict: Run, Rule: rule}
 	case ruleAllow:
 		if !c.leavesTheSandbox(call) {
 			return Decision{Verdict: Run, Rule: rule}
@@ -113,21 +115,22 @@ func allowedForConversation(call Call, history conversation.View) bool {
 			continue
 		}
 		same := bytes.Equal(it.Call.Prepared, call.Prepared) && (!call.HasContent || it.Approval.Content == call.Content.Text)
-		if same || coveredBySuggestion(call, it.Approval.Suggested) {
+		if same || coveredBySuggestion(call, it.Approval.ApprovalAsked) {
 			return true
 		}
 	}
 	return false
 }
 
-func coveredBySuggestion(call Call, suggested []string) bool {
-	if call.Escalated || len(suggested) == 0 {
-		return false
+func coveredBySuggestion(call Call, asked conversation.ApprovalAsked) bool {
+	rules := Rules{Allow: asked.Suggested}
+	if asked.Escalated {
+		rules = Rules{Escalate: asked.Suggested}
 	}
-	set, err := parseRules(Rules{Allow: suggested})
+	set, err := parseRules(rules)
 	if err != nil {
 		return false
 	}
 	verdict, _ := set.decide(call.Tool, call.Content, call.HasContent)
-	return verdict == ruleAllow
+	return verdict == ruleEscalate || verdict == ruleAllow && !call.Escalated
 }

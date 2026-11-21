@@ -119,6 +119,7 @@ type ApprovalAsked struct {
 	Rule      string
 	Content   string
 	Suggested []string
+	Escalated bool
 }
 
 type Decided struct {

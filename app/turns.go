@@ -331,7 +331,7 @@ func (a *App) Decide(ctx context.Context, user, id, approval string, decision co
 		if decision != conversation.AcceptAlways {
 			return nil
 		}
-		return a.allowAlways(tx, box, id, it.Approval.Suggested)
+		return a.allowAlways(tx, box, id, it.Approval.ApprovalAsked)
 	})
 }
 

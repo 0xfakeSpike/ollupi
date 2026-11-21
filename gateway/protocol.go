@@ -619,6 +619,7 @@ type ApprovalRequestParams struct {
 	Reason             string                  `json:"reason,omitempty"`
 	Content            string                  `json:"content,omitempty"`
 	SuggestedRules     []string                `json:"suggestedRules,omitempty"`
+	Escalated          bool                    `json:"escalated,omitempty"`
 	AvailableDecisions []conversation.Decision `json:"availableDecisions"`
 }
 
