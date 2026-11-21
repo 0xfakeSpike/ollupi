@@ -63,6 +63,9 @@
             "type": "string"
           }
         },
+        "escalated": {
+          "type": "boolean"
+        },
         "availableDecisions": {
           "type": "array",
           "items": {
@@ -139,6 +142,9 @@
           "items": {
             "type": "string"
           }
+        },
+        "escalated": {
+          "type": "boolean"
         },
         "availableDecisions": {
           "type": "array",
