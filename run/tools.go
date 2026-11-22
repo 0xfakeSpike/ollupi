@@ -260,7 +260,7 @@ func launch(tx store.Tx, s *step, it conversation.Item, l tool.Launch) error {
 	if err != nil {
 		return err
 	}
-	detached := l.Role == string(agent.DelegateSub)
+	detached := agent.Detached(l.Role)
 	note := "It works on its own; its report comes back to this conversation when it ends."
 	if detached {
 		note = "It works on its own and does not report back; the user follows it in its own conversation."

@@ -37,7 +37,7 @@ type System struct {
 
 func (w Window) System(s System, deferred []Tool) string {
 	var parts []string
-	if s.Role.AnswersUser {
+	if s.Role.AnswersUser() {
 		own := strings.TrimSpace(s.Prompt)
 		if own == "" {
 			own = fmt.Sprintf(defaultAgentPrompt, s.Agent)

@@ -132,7 +132,7 @@ func (a *App) DeleteThread(ctx context.Context, user, id string) error {
 			return err
 		}
 		for _, c := range children {
-			if c.Role == string(agent.DelegateSub) {
+			if agent.Detached(c.Role) {
 				return ErrHasDelegates
 			}
 			gone = append(gone, c.ID)

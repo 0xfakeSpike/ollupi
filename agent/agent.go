@@ -17,11 +17,29 @@ const (
 	BrowserSub  Name = "browser-sub-agent"
 	DesignSub   Name = "design-sub-agent"
 	CodebaseSub Name = "codebase-sub-agent"
+	FrontendSub Name = "frontend-sub-agent"
+	BackendSub  Name = "backend-sub-agent"
+	WritingSub  Name = "writing-sub-agent"
+	ResearchSub Name = "research-sub-agent"
 	DelegateSub Name = "delegate-sub-agent"
 	HubMain     Name = "hub-main-agent"
 )
 
-var Names = []Name{FullMain, CompactMain, GeneralSub, BrowserSub, DesignSub, CodebaseSub, DelegateSub, HubMain}
+var Names = []Name{FullMain, CompactMain, GeneralSub, BrowserSub, DesignSub, CodebaseSub, FrontendSub, BackendSub, WritingSub, ResearchSub, DelegateSub, HubMain}
+
+// Kind says where a role's reply goes: that is what makes a subagent report back, work in a
+// conversation of its own, or speak to the user. Every place that used to compare a role's name
+// with delegate-sub-agent asks this table instead.
+type Kind string
+
+const (
+	// Main answers the user in the conversation it runs.
+	MainKind Kind = "main"
+	// Reporting answers the agent that launched it, which is the only one that reads the reply.
+	ReportingKind Kind = "reporting"
+	// Detached answers the user in a conversation of its own, handed to it by another agent.
+	DetachedKind Kind = "detached"
+)
 
 const (
 	ReadFileTool          = "read_file"
@@ -38,6 +56,7 @@ const (
 	UpdateTodoTool        = "update_todo"
 	ListTodosTool         = "list_todos"
 	BrowserProvider       = "browser"
+	WebProvider           = "web"
 	OutputsProvider       = "context"
 	SkillsProvider        = "skills"
 	PlanProvider          = "plan"
@@ -49,14 +68,23 @@ const (
 )
 
 type Role struct {
-	Name        Name
-	Rules       string
-	AnswersUser bool
-	Own         []policy.Layer
-	Core        []string
-	Recalls     bool
+	Name    Name
+	Kind    Kind
+	Rules   string
+	Own     []policy.Layer
+	Core    []string
+	Recalls bool
 	Limits
 }
+
+// AnswersUser says whether the role's reply is shown to the user, rather than to the agent that launched it.
+func (r Role) AnswersUser() bool { return r.Kind != ReportingKind }
+
+// Reporting says whether a role's reply goes back to the agent that launched it.
+func Reporting(name string) bool { return roles[Name(name)].Kind == ReportingKind }
+
+// Detached says whether a role works in a conversation of its own, which the user follows.
+func Detached(name string) bool { return roles[Name(name)].Kind == DetachedKind }
 
 type Limits struct {
 	MaxModelCalls          int
@@ -70,22 +98,30 @@ var standard = Limits{MaxModelCalls: 200, MaxToolCalls: 400, MaxConsecutiveFailu
 var deep = Limits{MaxModelCalls: 400, MaxToolCalls: 1_200, MaxConsecutiveFailures: 10}
 
 var roles = map[Name]Role{
-	FullMain: {Name: FullMain, Rules: fullMainRules, AnswersUser: true, Recalls: true,
+	FullMain: {Name: FullMain, Kind: MainKind, Rules: fullMainRules, Recalls: true,
 		Own: []policy.Layer{{Of: "the main agent's role", Without: []string{HubProvider}}}, Limits: standard},
-	CompactMain: {Name: CompactMain, Rules: compactMainRules, AnswersUser: true, Recalls: true, Core: []string{ReadFileTool, RunCommandTool},
+	CompactMain: {Name: CompactMain, Kind: MainKind, Rules: compactMainRules, Recalls: true, Core: []string{ReadFileTool, RunCommandTool},
 		Own: []policy.Layer{{Of: "the main agent's role", Without: []string{HubProvider}}}, Limits: standard},
-	HubMain: {Name: HubMain, Rules: hubMainRules, AnswersUser: true, Recalls: true,
+	HubMain: {Name: HubMain, Kind: MainKind, Rules: hubMainRules, Recalls: true,
 		Own: []policy.Layer{{Of: "the hub's role", Without: []string{SubagentsProvider, BrowserProvider},
 			Settings: policy.Settings{Rules: policy.Rules{Allow: []string{StartConversationTool, SendMessageTool}}}}}, Limits: standard},
-	GeneralSub: {Name: GeneralSub, Rules: generalSubRules, Recalls: true,
+	GeneralSub: {Name: GeneralSub, Kind: ReportingKind, Rules: generalSubRules, Recalls: true,
 		Own: []policy.Layer{{Of: "the general subagent's role", Without: []string{SubagentsProvider, CronProvider, HubProvider}}}, Limits: standard},
-	BrowserSub: {Name: BrowserSub, Rules: browserSubRules,
+	BrowserSub: {Name: BrowserSub, Kind: ReportingKind, Rules: browserSubRules,
 		Own: []policy.Layer{{Of: "the browser subagent's role", Providers: []string{BrowserProvider, OutputsProvider, SkillsProvider, PlanProvider}}}, Limits: standard},
-	DesignSub: {Name: DesignSub, Rules: designSubRules, Recalls: true,
+	DesignSub: {Name: DesignSub, Kind: ReportingKind, Rules: designSubRules, Recalls: true,
 		Own: []policy.Layer{{Of: "the design subagent's role", Providers: []string{WorkspaceProvider, BrowserProvider, OutputsProvider, SkillsProvider, PlanProvider}}}, Limits: standard},
-	CodebaseSub: {Name: CodebaseSub, Rules: codebaseSubRules, Recalls: true,
+	CodebaseSub: {Name: CodebaseSub, Kind: ReportingKind, Rules: codebaseSubRules, Recalls: true,
 		Own: []policy.Layer{{Of: "the codebase subagent's role", Providers: []string{WorkspaceProvider, OutputsProvider, SkillsProvider, PlanProvider}}}, Limits: deep},
-	DelegateSub: {Name: DelegateSub, Rules: delegateSubRules, AnswersUser: true, Recalls: true,
+	FrontendSub: {Name: FrontendSub, Kind: ReportingKind, Rules: frontendSubRules, Recalls: true,
+		Own: []policy.Layer{{Of: "the frontend subagent's role", Providers: []string{WorkspaceProvider, BrowserProvider, OutputsProvider, SkillsProvider, PlanProvider}}}, Limits: standard},
+	BackendSub: {Name: BackendSub, Kind: ReportingKind, Rules: backendSubRules, Recalls: true,
+		Own: []policy.Layer{{Of: "the backend subagent's role", Providers: []string{WorkspaceProvider, OutputsProvider, SkillsProvider, PlanProvider}}}, Limits: deep},
+	WritingSub: {Name: WritingSub, Kind: ReportingKind, Rules: writingSubRules, Recalls: true,
+		Own: []policy.Layer{{Of: "the writing subagent's role", Providers: []string{WorkspaceProvider, OutputsProvider, SkillsProvider, PlanProvider}}}, Limits: standard},
+	ResearchSub: {Name: ResearchSub, Kind: ReportingKind, Rules: researchSubRules, Recalls: true,
+		Own: []policy.Layer{{Of: "the research subagent's role", Providers: []string{WorkspaceProvider, WebProvider, BrowserProvider, OutputsProvider, SkillsProvider, PlanProvider}}}, Limits: deep},
+	DelegateSub: {Name: DelegateSub, Kind: DetachedKind, Rules: delegateSubRules, Recalls: true,
 		Own: []policy.Layer{{Of: "the delegate subagent's role", Without: []string{SubagentsProvider, CronProvider, HubProvider}}}, Limits: standard},
 }
 
@@ -223,15 +259,20 @@ func responses(v conversation.View, turn string) int {
 	return n
 }
 
+// Launchable drops the subagent tools whose role could not work here at all: a subagent is offered
+// only when the tools it would keep are still visible, since the rest it could only fail with.
+// Which roles there are comes from the table, not from a list repeated here.
 func Launchable(visible []policy.Tool) []policy.Tool {
 	out := slices.Clone(visible)
-	for _, name := range []Name{GeneralSub, BrowserSub, DesignSub, CodebaseSub, DelegateSub} {
-		own := roles[name].Own
+	for _, role := range roles {
+		if role.Kind == MainKind {
+			continue
+		}
 		workable := slices.ContainsFunc(visible, func(t policy.Tool) bool {
-			return t.Provider != OutputsProvider && policy.Kept(own, t)
+			return t.Provider != OutputsProvider && policy.Kept(role.Own, t)
 		})
 		if !workable {
-			out = slices.DeleteFunc(out, func(t policy.Tool) bool { return t.Name == string(name) })
+			out = slices.DeleteFunc(out, func(t policy.Tool) bool { return t.Name == string(role.Name) })
 		}
 	}
 	return out

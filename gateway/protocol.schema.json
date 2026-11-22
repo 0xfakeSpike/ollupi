@@ -10,6 +10,10 @@
         "browser-sub-agent",
         "design-sub-agent",
         "codebase-sub-agent",
+        "frontend-sub-agent",
+        "backend-sub-agent",
+        "writing-sub-agent",
+        "research-sub-agent",
         "delegate-sub-agent",
         "hub-main-agent"
       ]
@@ -4418,6 +4422,14 @@
     "searchTerms": 8
   },
   "builtinTools": {
+    "backend-sub-agent": {
+      "arguments": {
+        "$ref": "#/$defs/SubagentCall"
+      },
+      "output": {
+        "$ref": "#/$defs/SubagentLaunched"
+      }
+    },
     "browser-sub-agent": {
       "arguments": {
         "$ref": "#/$defs/SubagentCall"
@@ -4453,6 +4465,14 @@
     "edit_file": {
       "output": {
         "$ref": "#/$defs/FileOutput"
+      }
+    },
+    "frontend-sub-agent": {
+      "arguments": {
+        "$ref": "#/$defs/SubagentCall"
+      },
+      "output": {
+        "$ref": "#/$defs/SubagentLaunched"
       }
     },
     "general-sub-agent": {
@@ -4516,6 +4536,14 @@
         "$ref": "#/$defs/UserInputAnswers"
       }
     },
+    "research-sub-agent": {
+      "arguments": {
+        "$ref": "#/$defs/SubagentCall"
+      },
+      "output": {
+        "$ref": "#/$defs/SubagentLaunched"
+      }
+    },
     "run_command": {
       "output": {
         "$ref": "#/$defs/CommandOutput"
@@ -4545,6 +4573,14 @@
     "write_file": {
       "output": {
         "$ref": "#/$defs/FileOutput"
+      }
+    },
+    "writing-sub-agent": {
+      "arguments": {
+        "$ref": "#/$defs/SubagentCall"
+      },
+      "output": {
+        "$ref": "#/$defs/SubagentLaunched"
       }
     }
   },

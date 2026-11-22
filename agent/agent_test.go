@@ -135,8 +135,12 @@ func TestSpecialistSubagentsAppearOnlyWhenTheyHaveTools(t *testing.T) {
 		{Name: string(BrowserSub), Provider: SubagentsProvider},
 		{Name: string(DesignSub), Provider: SubagentsProvider},
 		{Name: string(CodebaseSub), Provider: SubagentsProvider},
+		{Name: string(FrontendSub), Provider: SubagentsProvider},
+		{Name: string(BackendSub), Provider: SubagentsProvider},
+		{Name: string(WritingSub), Provider: SubagentsProvider},
+		{Name: string(ResearchSub), Provider: SubagentsProvider},
 	}
-	for _, name := range []Name{GeneralSub, BrowserSub, DesignSub, CodebaseSub} {
+	for _, name := range []Name{GeneralSub, BrowserSub, DesignSub, CodebaseSub, FrontendSub, BackendSub, WritingSub, ResearchSub} {
 		if !offers(Launchable(full), string(name)) {
 			t.Errorf("%s is not offered with a full toolbox", name)
 		}
@@ -145,10 +149,37 @@ func TestSpecialistSubagentsAppearOnlyWhenTheyHaveTools(t *testing.T) {
 		{Name: "browser_click", Provider: BrowserProvider},
 		{Name: string(DesignSub), Provider: SubagentsProvider},
 		{Name: string(CodebaseSub), Provider: SubagentsProvider},
+		{Name: string(FrontendSub), Provider: SubagentsProvider},
+		{Name: string(BackendSub), Provider: SubagentsProvider},
+		{Name: string(WritingSub), Provider: SubagentsProvider},
+		{Name: string(ResearchSub), Provider: SubagentsProvider},
 	}
 	got := Launchable(browserOnly)
-	if !offers(got, string(DesignSub)) || offers(got, string(CodebaseSub)) {
-		t.Errorf("with only browser tools: %+v", got)
+	if !offers(got, string(DesignSub)) || !offers(got, string(FrontendSub)) || !offers(got, string(ResearchSub)) {
+		t.Errorf("with only browser tools, the roles that can browse should stay: %+v", got)
+	}
+	if offers(got, string(CodebaseSub)) || offers(got, string(BackendSub)) || offers(got, string(WritingSub)) {
+		t.Errorf("with only browser tools, roles with nothing to work with should go: %+v", got)
+	}
+}
+
+func TestARolesKindSaysWhereItsReplyGoes(t *testing.T) {
+	if !Reporting(string(GeneralSub)) || Detached(string(GeneralSub)) {
+		t.Errorf("the general subagent should report back")
+	}
+	if !Detached(string(DelegateSub)) || Reporting(string(DelegateSub)) {
+		t.Errorf("the delegate should work in a conversation of its own")
+	}
+	for _, name := range []Name{FullMain, CompactMain, HubMain} {
+		r, ok := RoleOf(name)
+		if !ok || !r.AnswersUser() || Reporting(string(name)) || Detached(string(name)) {
+			t.Errorf("%s should answer the user in its own conversation: %+v", name, r)
+		}
+	}
+	for _, name := range []Name{BrowserSub, DesignSub, CodebaseSub, FrontendSub, BackendSub, WritingSub, ResearchSub} {
+		if !Reporting(string(name)) || Detached(string(name)) {
+			t.Errorf("%s should report back to the agent that launched it", name)
+		}
 	}
 }
 
