@@ -27,13 +27,6 @@ var kinds = map[agent.Name]kind{
 			string(agent.WritingSub) + " to write or rewrite a text; " + string(agent.ResearchSub) + " to gather information and check what is true. " +
 			"To work on independent tasks at the same time, call " + string(agent.GeneralSub) + " several times in the same response; the subagents run in parallel.",
 	},
-	agent.DelegateSub: {
-		title: "Delegate",
-		description: "Hand a task to a delegate: another run of you, with your tools, that works on it in a conversation of its own. " +
-			"It never reports back: the user follows it and talks to it there. Use it for work this conversation does not need back; " +
-			"for work whose result you need, launch " + string(agent.GeneralSub) + " instead. " +
-			"The call returns at once and does not hold this turn. A delegate knows nothing of this conversation: put everything it needs in prompt.",
-	},
 	agent.BrowserSub: {
 		title: "Browser subagent",
 		description: "Launch a browser subagent: an agent that does one task in the built-in browser (opening pages, reading them, clicking and typing) and reports back. " +

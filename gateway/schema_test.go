@@ -70,7 +70,6 @@ var builtinTools = map[string]struct{ arguments, output reflect.Type }{
 	string(agent.BackendSub):    {arguments: reflect.TypeFor[subagent.Call](), output: reflect.TypeFor[run.Launched]()},
 	string(agent.WritingSub):    {arguments: reflect.TypeFor[subagent.Call](), output: reflect.TypeFor[run.Launched]()},
 	string(agent.ResearchSub):   {arguments: reflect.TypeFor[subagent.Call](), output: reflect.TypeFor[run.Launched]()},
-	string(agent.DelegateSub):   {arguments: reflect.TypeFor[subagent.Call](), output: reflect.TypeFor[run.Launched]()},
 	ask.Tool:                    {arguments: reflect.TypeFor[ask.Request](), output: reflect.TypeFor[ask.Answers]()},
 	agent.ListWorkspacesTool:    {output: reflect.TypeFor[hub.Workspaces]()},
 	agent.StartConversationTool: {arguments: reflect.TypeFor[hub.StartArgs](), output: reflect.TypeFor[hub.Started]()},

@@ -306,60 +306,6 @@ func (f *fixture) launch(parent store.Thread, id string, role agent.Name, task s
 	}
 }
 
-func TestADelegateIsListedAndKeepsItsParent(t *testing.T) {
-	f := setup(t)
-	hub := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", "", "", "hub"))
-	f.launch(hub, "delegate", agent.DelegateSub, "draft the release notes")
-	f.launch(hub, "helper", agent.GeneralSub, "draft the changelog")
-	threads, _, err := f.a.Threads(f.ctx, "u", store.ThreadFilter{Limit: 10})
-	if err != nil {
-		t.Fatal(err)
-	}
-	listed := map[string]bool{}
-	for _, th := range threads {
-		listed[th.ID] = true
-	}
-	if !listed[hub.ID] || !listed["delegate"] || listed["helper"] {
-		t.Errorf("listed %v", listed)
-	}
-	found, _, err := f.a.Search(f.ctx, "u", "draft", "", 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(found.Threads) != 1 || found.Threads[0].ID != "delegate" || len(found.Messages) != 1 || found.Messages[0].Thread != "delegate" {
-		t.Errorf("found %+v", found)
-	}
-	f.waitOnApproval("delegate", f.view("delegate").Turns[0])
-	f.waitOnApproval("helper", f.view("helper").Turns[0])
-	var stored store.Thread
-	f.st.Read(f.ctx, func(r store.Reader) (err error) { stored, err = r.Thread(hub.ID); return err })
-	if stored.Status != conversation.ThreadWaitingOnApproval {
-		t.Errorf("the hub with a helper waiting: %s", stored.Status)
-	}
-	f.a.Interrupt(f.ctx, "u", "helper", "helper-t1")
-	f.st.Read(f.ctx, func(r store.Reader) (err error) { stored, err = r.Thread(hub.ID); return err })
-	if stored.Status != conversation.ThreadIdle {
-		t.Errorf("the hub with only a delegate waiting: %s", stored.Status)
-	}
-	f.a.Interrupt(f.ctx, "u", "delegate", "delegate-t1")
-	f.st.Read(f.ctx, func(r store.Reader) (err error) { stored, err = r.Thread("delegate"); return err })
-	if stored.Replied == nil {
-		t.Error("the delegate's ended turn left nothing unread")
-	}
-	if err := f.a.DeleteThread(f.ctx, "u", hub.ID); !errors.Is(err, ErrHasDelegates) {
-		t.Errorf("deleting the hub: %v", err)
-	}
-	if err := f.a.DeleteThread(f.ctx, "u", "delegate"); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.a.DeleteThread(f.ctx, "u", hub.ID); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.st.Read(f.ctx, func(r store.Reader) (err error) { _, err = r.Thread("helper"); return err }); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("the helper outlived the hub: %v", err)
-	}
-}
-
 func TestAnswersMustAnswerEveryQuestionAsked(t *testing.T) {
 	f := setup(t)
 	th := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", "", "", ""))

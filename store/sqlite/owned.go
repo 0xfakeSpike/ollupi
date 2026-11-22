@@ -11,7 +11,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/0xfakeSpike/ollupi/account"
-	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/google/uuid"
@@ -247,8 +246,8 @@ func (r reader) Waiting(owner string) ([]string, error) {
 }
 
 const (
-	listed  = "(parent_id IS NULL OR role = '" + string(agent.DelegateSub) + "')"
-	listedT = "(t.parent_id IS NULL OR t.role = '" + string(agent.DelegateSub) + "')"
+	listed  = "(parent_id IS NULL)"
+	listedT = "(t.parent_id IS NULL)"
 )
 
 type todoRow struct {

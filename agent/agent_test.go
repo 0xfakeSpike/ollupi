@@ -164,20 +164,17 @@ func TestSpecialistSubagentsAppearOnlyWhenTheyHaveTools(t *testing.T) {
 }
 
 func TestARolesKindSaysWhereItsReplyGoes(t *testing.T) {
-	if !Reporting(string(GeneralSub)) || Detached(string(GeneralSub)) {
+	if !Reporting(string(GeneralSub)) {
 		t.Errorf("the general subagent should report back")
-	}
-	if !Detached(string(DelegateSub)) || Reporting(string(DelegateSub)) {
-		t.Errorf("the delegate should work in a conversation of its own")
 	}
 	for _, name := range []Name{FullMain, CompactMain, HubMain} {
 		r, ok := RoleOf(name)
-		if !ok || !r.AnswersUser() || Reporting(string(name)) || Detached(string(name)) {
+		if !ok || !r.AnswersUser() || Reporting(string(name)) {
 			t.Errorf("%s should answer the user in its own conversation: %+v", name, r)
 		}
 	}
 	for _, name := range []Name{BrowserSub, DesignSub, CodebaseSub, FrontendSub, BackendSub, WritingSub, ResearchSub} {
-		if !Reporting(string(name)) || Detached(string(name)) {
+		if !Reporting(string(name)) {
 			t.Errorf("%s should report back to the agent that launched it", name)
 		}
 	}

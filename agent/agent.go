@@ -21,15 +21,12 @@ const (
 	BackendSub  Name = "backend-sub-agent"
 	WritingSub  Name = "writing-sub-agent"
 	ResearchSub Name = "research-sub-agent"
-	DelegateSub Name = "delegate-sub-agent"
 	HubMain     Name = "hub-main-agent"
 )
 
-var Names = []Name{FullMain, CompactMain, GeneralSub, BrowserSub, DesignSub, CodebaseSub, FrontendSub, BackendSub, WritingSub, ResearchSub, DelegateSub, HubMain}
+var Names = []Name{FullMain, CompactMain, GeneralSub, BrowserSub, DesignSub, CodebaseSub, FrontendSub, BackendSub, WritingSub, ResearchSub, HubMain}
 
-// Kind says where a role's reply goes: that is what makes a subagent report back, work in a
-// conversation of its own, or speak to the user. Every place that used to compare a role's name
-// with delegate-sub-agent asks this table instead.
+// Kind says where a role's reply goes: back to the agent that launched it, or to the user.
 type Kind string
 
 const (
@@ -37,8 +34,6 @@ const (
 	MainKind Kind = "main"
 	// Reporting answers the agent that launched it, which is the only one that reads the reply.
 	ReportingKind Kind = "reporting"
-	// Detached answers the user in a conversation of its own, handed to it by another agent.
-	DetachedKind Kind = "detached"
 )
 
 const (
@@ -83,9 +78,6 @@ func (r Role) AnswersUser() bool { return r.Kind != ReportingKind }
 // Reporting says whether a role's reply goes back to the agent that launched it.
 func Reporting(name string) bool { return roles[Name(name)].Kind == ReportingKind }
 
-// Detached says whether a role works in a conversation of its own, which the user follows.
-func Detached(name string) bool { return roles[Name(name)].Kind == DetachedKind }
-
 type Limits struct {
 	MaxModelCalls          int
 	MaxToolCalls           int
@@ -121,8 +113,6 @@ var roles = map[Name]Role{
 		Own: []policy.Layer{{Of: "the writing subagent's role", Providers: []string{WorkspaceProvider, OutputsProvider, SkillsProvider, PlanProvider}}}, Limits: standard},
 	ResearchSub: {Name: ResearchSub, Kind: ReportingKind, Rules: researchSubRules, Recalls: true,
 		Own: []policy.Layer{{Of: "the research subagent's role", Providers: []string{WorkspaceProvider, WebProvider, BrowserProvider, OutputsProvider, SkillsProvider, PlanProvider}}}, Limits: deep},
-	DelegateSub: {Name: DelegateSub, Kind: DetachedKind, Rules: delegateSubRules, Recalls: true,
-		Own: []policy.Layer{{Of: "the delegate subagent's role", Without: []string{SubagentsProvider, CronProvider, HubProvider}}}, Limits: standard},
 }
 
 func RoleOf(name Name) (Role, bool) {

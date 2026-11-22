@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/account"
-	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/google/uuid"
@@ -132,9 +131,6 @@ func (a *App) DeleteThread(ctx context.Context, user, id string) error {
 			return err
 		}
 		for _, c := range children {
-			if agent.Detached(c.Role) {
-				return ErrHasDelegates
-			}
 			gone = append(gone, c.ID)
 		}
 		return tx.DeleteThread(id)

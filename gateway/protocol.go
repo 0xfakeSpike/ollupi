@@ -40,7 +40,6 @@ const (
 	errThreadBusy        = -32016
 	errSearchTimedOut    = -32017
 	errRefused           = -32018
-	errHasDelegates      = -32019
 	errSecondHub         = -32020
 	errNoHub             = -32021
 )
@@ -185,7 +184,6 @@ var protocol = struct {
 		errThreadBusy:              "threadBusy",
 		errSearchTimedOut:          "searchTimedOut",
 		errRefused:                 "refused",
-		errHasDelegates:            "hasDelegates",
 		errSecondHub:               "secondHub",
 		errNoHub:                   "noHub",
 	},
@@ -702,7 +700,6 @@ var errorCodes = []struct {
 	{app.ErrNoSuchRequest, errNoSuchRequest},
 	{account.ErrWorkspaceArchived, errWorkspaceArchived},
 	{app.ErrThreadBusy, errThreadBusy},
-	{app.ErrHasDelegates, errHasDelegates},
 	{app.ErrSecondHub, errSecondHub},
 	{app.ErrNoHub, errNoHub},
 	{app.ErrThreadArchived, errThreadArchived},

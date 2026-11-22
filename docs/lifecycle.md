@@ -62,7 +62,7 @@ stateDiagram-v2
 
 - **顶层会话**：用户通过 `app.StartThread` 创建，出现在会话列表里。
 - **子会话**：子 agent 的会话。父会话里启动它的调用结束时，runner 在同一事务里创建子会话、给它排上第一个轮次和任务消息（`run.launch`）。它记着 `parent_id`、`parent_item` 和它的角色（`role`，即启动它的工具；顶层会话的角色每一轮现选，这一列为空），继承父会话的工作区、环境和权限设置（启动时把父会话的会话级权限复制一份，之后两个会话各改各的，已批准过的"总是允许"仍按所在工作区共享）。用户可以像对顶层会话一样给它发消息、插话、中断，这些轮次沿用它的角色。
-- **子会话**：`general-sub-agent`、`browser-sub-agent`、`design-sub-agent`（画图/视觉：插图、图表、示意图、界面稿，以及 logo、海报、封面、横幅这类成品图）、`codebase-sub-agent`（通读项目、分析架构）、`frontend-sub-agent`（前端编程：界面、组件、样式，动手就打开浏览器看渲染）、`backend-sub-agent`（后端编程：接口、数据、迁移、测试）、`writing-sub-agent`（写文章：草稿、邮件、文档，贴合用户本人的语气）、`research-sub-agent`（搜集信息：读一手来源、核对、每条结论带出处）汇报：父轮次等它，它只汇报启动它的那一轮，报告写进启动它的轮次；它不出现在会话列表和搜索里，随父会话一起删除。`delegate-sub-agent` 是委派：不汇报（`ChildLaunched.Detached`），父轮次不等它、也不因它停下或结束；它的回复给用户看，出现在会话列表和搜索里，有未读标记，等待状态不汇总到父会话；父会话还有委派会话时不能删除（`app.ErrHasDelegates`）。
+- **子会话**：`general-sub-agent`、`browser-sub-agent`、`design-sub-agent`（画图/视觉：插图、图表、示意图、界面稿，以及 logo、海报、封面、横幅这类成品图）、`codebase-sub-agent`（通读项目、分析架构）、`frontend-sub-agent`（前端编程：界面、组件、样式，动手就打开浏览器看渲染）、`backend-sub-agent`（后端编程：接口、数据、迁移、测试）、`writing-sub-agent`（写文章：草稿、邮件、文档，贴合用户本人的语气）、`research-sub-agent`（搜集信息：读一手来源、核对、每条结论带出处）汇报：父轮次等它，它只汇报启动它的那一轮，报告写进启动它的轮次；它不出现在会话列表和搜索里，随父会话一起删除。
 
 ```mermaid
 stateDiagram-v2

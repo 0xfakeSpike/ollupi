@@ -146,8 +146,7 @@ type ToolResult struct {
 }
 
 type ChildLaunched struct {
-	Child    string
-	Detached bool
+	Child string
 }
 
 type ChildReported struct {

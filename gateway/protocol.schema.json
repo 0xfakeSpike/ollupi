@@ -14,7 +14,6 @@
         "backend-sub-agent",
         "writing-sub-agent",
         "research-sub-agent",
-        "delegate-sub-agent",
         "hub-main-agent"
       ]
     },
@@ -1541,9 +1540,6 @@
         },
         "childThreadId": {
           "type": "string"
-        },
-        "detached": {
-          "type": "boolean"
         },
         "taskId": {
           "type": "string"
@@ -4364,7 +4360,6 @@
     "-32016": "threadBusy",
     "-32017": "searchTimedOut",
     "-32018": "refused",
-    "-32019": "hasDelegates",
     "-32020": "secondHub",
     "-32021": "noHub",
     "-32600": "invalidRequest",
@@ -4439,14 +4434,6 @@
       }
     },
     "codebase-sub-agent": {
-      "arguments": {
-        "$ref": "#/$defs/SubagentCall"
-      },
-      "output": {
-        "$ref": "#/$defs/SubagentLaunched"
-      }
-    },
-    "delegate-sub-agent": {
       "arguments": {
         "$ref": "#/$defs/SubagentCall"
       },

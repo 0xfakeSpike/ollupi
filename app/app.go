@@ -22,7 +22,6 @@ var (
 	ErrSecondHub        = errors.New("the user has a hub workspace already; make it a project workspace first")
 	ErrWorkspaceBusy    = errors.New("a conversation in the workspace has a turn in progress or queued; interrupt it first")
 	ErrThreadBusy       = errors.New("the conversation has a turn in progress or queued; interrupt it first")
-	ErrHasDelegates     = errors.New("the conversation handed work to delegates; delete their conversations first")
 	ErrThreadArchived   = errors.New("the conversation is archived; restore it before sending to it")
 	ErrQueueFull        = fmt.Errorf("the conversation has %d messages waiting already; send this one once they start", maxQueued)
 	ErrNoActiveTurn     = errors.New("the conversation has no turn in progress")

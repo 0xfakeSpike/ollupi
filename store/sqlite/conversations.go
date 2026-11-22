@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/account"
-	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/policy"
 	"github.com/0xfakeSpike/ollupi/store"
@@ -331,7 +330,7 @@ func (t *tx) Append(thread string, entries ...conversation.Entry) (conversation.
 			pend.turns = append(pend.turns, e.Turn)
 		}
 		_, ended := e.Body.(conversation.TurnEnded)
-		answersUser := th.Parent == "" || th.Role == string(agent.DelegateSub)
+		answersUser := th.Parent == ""
 		if ended && answersUser {
 			th.Replied = &e.At
 		}
@@ -448,7 +447,7 @@ func (t *tx) rollUp(id string) error {
 			return err
 		}
 		var subagents []conversation.ThreadStatus
-		err := t.g.Raw("SELECT status FROM threads WHERE parent_id = ? AND role <> ? AND status IN ?", id, string(agent.DelegateSub), waitsOnUser).
+		err := t.g.Raw("SELECT status FROM threads WHERE parent_id = ? AND status IN ?", id, waitsOnUser).
 			Scan(&subagents).Error
 		if err != nil {
 			return err

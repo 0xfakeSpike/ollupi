@@ -98,7 +98,6 @@ type Item struct {
 	Result      *Result
 	Error       string
 	Child       string
-	Detached    bool
 	Task        string
 	Reported    bool
 	Launch      string
@@ -206,7 +205,7 @@ func (v *View) Apply(e Entry) {
 			}
 		})
 	case ChildLaunched:
-		v.update(e, func(it *Item) { it.Child, it.Detached = b.Child, b.Detached })
+		v.update(e, func(it *Item) { it.Child = b.Child })
 	case ChildReported:
 		report := Item{Kind: ItemReport, Status: Done, Text: b.Task, Child: b.Child, Launch: b.Launch, Result: &Result{Output: b.Output}}
 		if b.Error != "" {
@@ -423,5 +422,5 @@ func (it Item) WaitsForInput() bool {
 
 func (it Item) AwaitsReport() bool {
 	launched := it.Child != "" || it.Task != ""
-	return it.Kind == ItemToolCall && launched && !it.Reported && !it.Detached
+	return it.Kind == ItemToolCall && launched && !it.Reported
 }

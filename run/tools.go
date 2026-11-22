@@ -260,14 +260,10 @@ func launch(tx store.Tx, s *step, it conversation.Item, l tool.Launch) error {
 	if err != nil {
 		return err
 	}
-	detached := agent.Detached(l.Role)
 	note := "It works on its own; its report comes back to this conversation when it ends."
-	if detached {
-		note = "It works on its own and does not report back; the user follows it in its own conversation."
-	}
 	output, _ := json.Marshal(Launched{Subagent: child.ID, Description: l.Title, Note: note})
 	_, err = tx.Append(s.th.ID,
-		conversation.Entry{Turn: s.turn.ID, Item: it.ID, Body: conversation.ChildLaunched{Child: child.ID, Detached: detached}},
+		conversation.Entry{Turn: s.turn.ID, Item: it.ID, Body: conversation.ChildLaunched{Child: child.ID}},
 		conversation.Entry{Turn: s.turn.ID, Item: it.ID, Body: conversation.ToolResult{Output: output}})
 	return err
 }

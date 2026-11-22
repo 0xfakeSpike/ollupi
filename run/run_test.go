@@ -361,41 +361,6 @@ func TestEndingATurnStopsItsSubagentsAndClosesItsCalls(t *testing.T) {
 	}
 }
 
-func TestADelegateNeitherHoldsTheTurnNorReports(t *testing.T) {
-	f := setup(t, func(c tool.Call) tool.Result {
-		return tool.Result{Launch: &tool.Launch{Role: string(agent.DelegateSub), Title: "tidy", Task: "tidy the notes"}}
-	})
-	f.m.answer = func(req llm.ChatRequest) llm.ChatResponse {
-		last := req.Messages[len(req.Messages)-1]
-		switch {
-		case strings.Contains(last.Content, "tidy the notes"):
-			return answer("tidied")
-		case last.Role == llm.RoleTool:
-			return answer("a subagent tidies them")
-		}
-		return reply("", llm.ToolCall{ID: "call_1", Name: string(agent.GeneralSub), Arguments: `{}`})
-	}
-	f.ask("th", "tidy my notes")
-	f.run("th")
-	v := f.view("th")
-	child := v.Items[1].Child
-	if child == "" || !v.Items[1].Detached || v.Status() != conversation.ThreadIdle || v.Turns[0].Ended.Status != conversation.Completed {
-		t.Fatalf("launched %q, status %s, items %s", child, v.Status(), kinds(v))
-	}
-	var th store.Thread
-	f.st.Read(context.Background(), func(r store.Reader) (err error) { th, err = r.Thread(child); return err })
-	if c := f.view(child); c.Status() != conversation.ThreadActive || th.Role != string(agent.DelegateSub) {
-		t.Fatalf("the delegate: %s, role %q", c.Status(), th.Role)
-	}
-	f.run(child)
-	if c := f.view(child); c.Turns[0].Ended == nil || c.Turns[0].Ended.Status != conversation.Completed {
-		t.Fatalf("the subagent's turn %+v", c.Turns[0])
-	}
-	if got := kinds(f.view("th")); got != "userMessage:completed,toolCall:completed,agentMessage:completed" {
-		t.Errorf("the parent got a report: %s", got)
-	}
-}
-
 func TestASubagentReportsOnlyTheTurnItWasLaunchedFor(t *testing.T) {
 	f := setup(t, func(c tool.Call) tool.Result {
 		return tool.Result{Launch: &tool.Launch{Role: string(agent.GeneralSub), Title: "count", Task: "count the files"}}
