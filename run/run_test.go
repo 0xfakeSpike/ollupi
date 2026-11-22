@@ -296,6 +296,41 @@ func TestASubagentReportsToTheTurnThatLaunchedIt(t *testing.T) {
 	}
 }
 
+func TestASubagentWorksAtThePermissionSettingsOfItsThread(t *testing.T) {
+	f := setup(t, func(c tool.Call) tool.Result {
+		return tool.Result{Launch: &tool.Launch{Role: string(agent.GeneralSub), Title: "count", Task: "count the files"}}
+	})
+	f.m.answer = func(req llm.ChatRequest) llm.ChatResponse {
+		if last := req.Messages[len(req.Messages)-1]; last.Role == llm.RoleTool {
+			return answer("a subagent is counting")
+		}
+		return reply("", llm.ToolCall{ID: "call_1", Name: string(agent.GeneralSub), Arguments: `{"task":"count the files"}`})
+	}
+	loose := policy.Settings{ApprovalPolicy: string(policy.Never), Rules: policy.Rules{Allow: []string{"run_command(make)"}}}
+	f.update(func(tx store.Tx) error {
+		now := time.Now().UTC()
+		if err := tx.EnsureUser("u"); err != nil {
+			return err
+		}
+		if err := tx.CreateThread(store.Thread{User: "u", Thread: account.Thread{ID: "th", Settings: loose, Created: now, Updated: now}}); err != nil {
+			return err
+		}
+		_, err := tx.Append("th",
+			conversation.Entry{Turn: "t1", Body: conversation.TurnQueued{Model: llm.Model{Name: "m"}, Role: string(agent.FullMain)}},
+			conversation.Entry{Turn: "t1", Item: "m1", Body: conversation.UserMessage{Text: "how many files?"}})
+		return err
+	})
+	f.run("th")
+	child := f.view("th").Items[1].Child
+	var th store.Thread
+	if err := f.st.Read(context.Background(), func(r store.Reader) (err error) { th, err = r.Thread(child); return err }); err != nil {
+		t.Fatal(err)
+	}
+	if th.Settings.ApprovalPolicy != loose.ApprovalPolicy || !slices.Equal(th.Settings.Rules.Allow, loose.Rules.Allow) {
+		t.Errorf("the subagent's permission settings: %+v", th.Settings)
+	}
+}
+
 func TestEndingATurnStopsItsSubagentsAndClosesItsCalls(t *testing.T) {
 	f := setup(t, func(c tool.Call) tool.Result {
 		return tool.Result{Launch: &tool.Launch{Role: string(agent.GeneralSub), Task: "wait"}}
