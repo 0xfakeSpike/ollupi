@@ -192,6 +192,24 @@ func workspaceRow(w account.Workspace) WorkspaceRow {
 		Settings: w.Settings, CreatedAt: w.Created, UpdatedAt: w.Updated, ArchivedAt: w.Archived}
 }
 
+type TodoRow struct {
+	ID          int64              `json:"id"`
+	Title       string             `json:"title"`
+	Status      account.TodoStatus `json:"status"`
+	WorkspaceID string             `json:"workspaceId,omitempty"`
+	ThreadID    string             `json:"threadId,omitempty"`
+	Notes       string             `json:"notes,omitempty"`
+	Result      string             `json:"result,omitempty"`
+	CreatedAt   time.Time          `json:"createdAt"`
+	UpdatedAt   time.Time          `json:"updatedAt"`
+	EndedAt     *time.Time         `json:"endedAt,omitempty"`
+}
+
+func todoRow(t account.Todo) TodoRow {
+	return TodoRow{ID: t.ID, Title: t.Title, Status: t.Status, WorkspaceID: t.Workspace, ThreadID: t.Thread,
+		Notes: t.Notes, Result: t.Result, CreatedAt: t.Created, UpdatedAt: t.Updated, EndedAt: t.Ended}
+}
+
 type EnvironmentRow struct {
 	ID        string                  `json:"id"`
 	Name      string                  `json:"name"`

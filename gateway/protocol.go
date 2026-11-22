@@ -62,6 +62,7 @@ const (
 	notifySettingsChanged    = "settings/changed"
 	notifyMCPServerChanged   = "mcpServer/changed"
 	notifyMemoryChanged      = "memory/changed"
+	notifyTodoChanged        = "todo/changed"
 	notifyError              = "error"
 )
 
@@ -138,6 +139,9 @@ var protocol = struct {
 		"memory/forget":                handle((*conn).memoryForget),
 		"usage/query":                  handle((*conn).usageQuery),
 		"search":                       handle((*conn).search),
+		"todo/list":                    handle((*conn).todoList),
+		"todo/add":                     handle((*conn).todoAdd),
+		"todo/update":                  handle((*conn).todoUpdate),
 		"settings/read":                handle((*conn).settingsRead),
 		"settings/update":              handle((*conn).settingsUpdate),
 		"settings/updatePermissions":   handle((*conn).settingsPermissions),
@@ -154,6 +158,7 @@ var protocol = struct {
 		notifySettingsChanged:    reflect.TypeFor[SettingsRow](),
 		notifyMCPServerChanged:   reflect.TypeFor[MCPServerChangedNotification](),
 		notifyMemoryChanged:      reflect.TypeFor[MemoryResult](),
+		notifyTodoChanged:        reflect.TypeFor[TodoResult](),
 		notifyError:              reflect.TypeFor[ErrorNotification](),
 	},
 	serverRequests: map[string]serverRequest{
@@ -658,6 +663,35 @@ type UserInputResponse struct {
 	Skipped bool        `json:"skipped,omitempty"`
 }
 
+type TodoListParams struct {
+	Statuses []account.TodoStatus `json:"statuses,omitempty"`
+	Limit    int                  `json:"limit,omitempty"`
+}
+
+type TodoListResult struct {
+	Data []TodoRow `json:"data"`
+	More bool      `json:"more,omitempty"`
+}
+
+type TodoAddParams struct {
+	Title string `json:"title"`
+	Notes string `json:"notes,omitempty"`
+}
+
+// TodoUpdateParams changes the fields it names of a todo: a field left out stays as it is, and "" clears it.
+type TodoUpdateParams struct {
+	ID       int64               `json:"id"`
+	Title    *string             `json:"title,omitempty"`
+	Status   *account.TodoStatus `json:"status,omitempty"`
+	Notes    *string             `json:"notes,omitempty"`
+	Result   *string             `json:"result,omitempty"`
+	ThreadID *string             `json:"threadId,omitempty"`
+}
+
+type TodoResult struct {
+	Todo TodoRow `json:"todo"`
+}
+
 var errorCodes = []struct {
 	err  error
 	code int
@@ -681,6 +715,7 @@ var errorCodes = []struct {
 	{app.ErrInvalidDecision, jsonrpc.CodeInvalidParams},
 	{app.ErrInvalidPath, jsonrpc.CodeInvalidParams},
 	{app.ErrInvalidQuery, jsonrpc.CodeInvalidParams},
+	{app.ErrInvalidTodo, jsonrpc.CodeInvalidParams},
 	{app.ErrSearchTimedOut, errSearchTimedOut},
 	{account.ErrInvalidName, jsonrpc.CodeInvalidParams},
 	{account.ErrInvalidMCPServer, jsonrpc.CodeInvalidParams},

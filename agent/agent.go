@@ -21,18 +21,6 @@ const (
 	HubMain     Name = "hub-main-agent"
 )
 
-// The hub keeps the user's plan with its file tools in its own workspace's folder: PlanFile, at the root, holds
-// the tasks not finished yet, one line each (PlanItem); a task done or dropped moves to the month's file in
-// DoneFolder (done/2026-11.md), so the plan stays short as the record grows. The desktop app reads these files
-// to show the plan, so their names and the line format are shared with it.
-const (
-	PlanFile   = "TODO.md"
-	DoneFolder = "done"
-	// PlanItem is a task's line: open ([ ]) until done ([x]), or dropped ([x] with the task struck through), its
-	// project, and the conversation working on it, linked as #thread-<conversation id>.
-	PlanItem = "- [ ] <task> · <project> · [<conversation title>](#thread-<conversation id>)"
-)
-
 var Names = []Name{FullMain, CompactMain, GeneralSub, BrowserSub, DesignSub, CodebaseSub, DelegateSub, HubMain}
 
 const (
@@ -46,6 +34,9 @@ const (
 	SendMessageTool       = "send_message"
 	ListConversationsTool = "list_conversations"
 	ReadConversationTool  = "read_conversation"
+	AddTodoTool           = "add_todo"
+	UpdateTodoTool        = "update_todo"
+	ListTodosTool         = "list_todos"
 	BrowserProvider       = "browser"
 	OutputsProvider       = "context"
 	SkillsProvider        = "skills"

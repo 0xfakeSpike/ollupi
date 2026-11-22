@@ -178,7 +178,7 @@ func TestTheHubHandsOutWorkAndFollowsIt(t *testing.T) {
 	}
 }
 
-func TestTheHubKeepsNoTodosOfItsOwn(t *testing.T) {
+func TestTheHubKeepsItsTodosInTheApp(t *testing.T) {
 	f := setup(t)
 	specs, err := f.p.Tools(f.ctx)
 	if err != nil {
@@ -187,17 +187,21 @@ func TestTheHubKeepsNoTodosOfItsOwn(t *testing.T) {
 	var names []string
 	for _, s := range specs {
 		names = append(names, s.Name)
-		if strings.Contains(strings.ToLower(s.Name), "todo") {
-			t.Errorf("the hub offers %s", s.Name)
-		}
 		if s.Name == agent.StartConversationTool {
-			if args := s.InputSchema.(*jsonschema.Schema); args.Properties["todo"] != nil {
-				t.Errorf("%s takes a todo: %v", s.Name, args.Properties)
+			args, ok := s.InputSchema.(*jsonschema.Schema)
+			if !ok || args.Properties["todo"] == nil {
+				t.Errorf("%s does not take a todo: %v", s.Name, s.InputSchema)
 			}
 		}
 	}
-	want := []string{agent.ListWorkspacesTool, agent.StartConversationTool, agent.SendMessageTool, agent.ListConversationsTool, agent.ReadConversationTool}
-	if !slices.Equal(names, want) {
+	want := []string{agent.ListWorkspacesTool, agent.StartConversationTool, agent.SendMessageTool,
+		agent.ListConversationsTool, agent.ReadConversationTool, agent.AddTodoTool, agent.UpdateTodoTool, agent.ListTodosTool}
+	for _, name := range want {
+		if !slices.Contains(names, name) {
+			t.Errorf("the hub offers %q, not %q", names, name)
+		}
+	}
+	if len(names) != len(want) {
 		t.Errorf("the hub's tools %q", names)
 	}
 }

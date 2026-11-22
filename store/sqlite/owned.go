@@ -251,6 +251,78 @@ const (
 	listedT = "(t.parent_id IS NULL OR t.role = '" + string(agent.DelegateSub) + "')"
 )
 
+type todoRow struct {
+	ID          int64
+	Title       string
+	WorkspaceID string
+	ThreadID    string
+	Status      string
+	Notes       string
+	Result      string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	EndedAt     *time.Time
+}
+
+func (row todoRow) todo() (account.Todo, error) {
+	return account.Todo{ID: row.ID, Title: row.Title, Workspace: row.WorkspaceID, Thread: row.ThreadID, Status: account.TodoStatus(row.Status),
+		Notes: row.Notes, Result: row.Result, Created: row.CreatedAt, Updated: row.UpdatedAt, Ended: row.EndedAt}, nil
+}
+
+func (r reader) Todos(owner string, f store.TodoFilter) ([]account.Todo, bool, error) {
+	query := "SELECT * FROM todos WHERE user_id = ?"
+	args := []any{owner}
+	if len(f.Statuses) > 0 {
+		query += " AND status IN (" + strings.TrimSuffix(strings.Repeat("?, ", len(f.Statuses)), ", ") + ")"
+		for _, st := range f.Statuses {
+			args = append(args, string(st))
+		}
+	}
+	query += " ORDER BY ended_at IS NULL DESC, ended_at DESC, id"
+	if f.Limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, f.Limit+1)
+	}
+	out, err := each(r.g.Raw(query, args...), todoRow.todo)
+	if err != nil || f.Limit <= 0 || len(out) <= f.Limit {
+		return out, false, err
+	}
+	return out[:f.Limit], true, nil
+}
+
+func (r reader) Todo(owner string, id int64) (account.Todo, error) {
+	var row todoRow
+	if err := notFound(r.g.Raw("SELECT * FROM todos WHERE user_id = ? AND id = ?", owner, id).Take(&row).Error); err != nil {
+		return account.Todo{}, fmt.Errorf("store: todo %d: %w", id, err)
+	}
+	return row.todo()
+}
+
+func (t *tx) AddTodo(owner string, todo account.Todo) (account.Todo, error) {
+	if err := t.g.Raw("SELECT coalesce(max(id), 0) + 1 FROM todos WHERE user_id = ?", owner).Scan(&todo.ID).Error; err != nil {
+		return account.Todo{}, err
+	}
+	err := t.g.Exec(`INSERT INTO todos(user_id, id, title, workspace_id, thread_id, status, notes, result, created_at, updated_at, ended_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, owner, todo.ID, todo.Title, todo.Workspace, todo.Thread, string(todo.Status), todo.Notes, todo.Result,
+		todo.Created, todo.Updated, todo.Ended).Error
+	if err != nil {
+		return account.Todo{}, fmt.Errorf("store: add todo: %w", err)
+	}
+	t.owned = append(t.owned, store.Event{User: owner, Owned: &store.Owned{Todo: &todo}})
+	return todo, nil
+}
+
+func (t *tx) PutTodo(owner string, todo account.Todo) error {
+	res := t.g.Exec(`UPDATE todos SET title = ?, workspace_id = ?, thread_id = ?, status = ?, notes = ?, result = ?, updated_at = ?, ended_at = ?
+		WHERE user_id = ? AND id = ?`, todo.Title, todo.Workspace, todo.Thread, string(todo.Status), todo.Notes, todo.Result, todo.Updated, todo.Ended,
+		owner, todo.ID)
+	if err := one(res, fmt.Sprintf("todo %d", todo.ID)); err != nil {
+		return err
+	}
+	t.owned = append(t.owned, store.Event{User: owner, Owned: &store.Owned{Todo: &todo}})
+	return nil
+}
+
 func (r reader) Calls(owner, workspace, tool string) ([]conversation.Item, error) {
 	return decodeRows[conversation.Item](r.g, `SELECT i.body FROM items i JOIN threads t ON t.id = i.thread_id
 		WHERE t.user_id = ? AND t.workspace_id = ? AND i.kind = 'toolCall' AND json_extract(i.body, '$.Call.Tool') = ?
@@ -534,6 +606,33 @@ func (t *tx) DeleteThread(id string) error {
 		Scan(&jobs).Error
 	if err != nil {
 		return err
+	}
+	var linked []todoRow
+	err = t.g.Raw(`SELECT * FROM todos WHERE user_id = ? AND (thread_id = ? OR thread_id IN (SELECT id FROM threads WHERE parent_id = ?))`,
+		th.User, id, id).Scan(&linked).Error
+	if err != nil {
+		return err
+	}
+	if len(linked) > 0 {
+		now := time.Now().UTC()
+		res := t.g.Exec(`UPDATE todos SET thread_id = '', workspace_id = '',
+			status = CASE WHEN status = 'handed' THEN 'open' ELSE status END, updated_at = ?
+			WHERE user_id = ? AND (thread_id = ? OR thread_id IN (SELECT id FROM threads WHERE parent_id = ?))`, now, th.User, id, id)
+		if res.Error != nil {
+			return fmt.Errorf("store: clear the todos of thread %s: %w", id, res.Error)
+		}
+		for _, row := range linked {
+			todo, err := row.todo()
+			if err != nil {
+				return err
+			}
+			todo.Thread, todo.Workspace = "", ""
+			if todo.Status == account.TodoHanded {
+				todo.Status = account.TodoOpen
+			}
+			todo.Updated = now
+			t.owned = append(t.owned, store.Event{User: th.User, Owned: &store.Owned{Todo: &todo}})
+		}
 	}
 	if err := t.g.Exec("DELETE FROM threads WHERE id = ?", id).Error; err != nil {
 		return fmt.Errorf("store: delete thread %s: %w", id, err)

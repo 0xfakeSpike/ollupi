@@ -41,6 +41,8 @@ type Reader interface {
 	Waiting(user string) ([]string, error)
 	Children(thread string) ([]Thread, error)
 	Calls(user, workspace, tool string) ([]conversation.Item, error)
+	Todos(user string, f TodoFilter) (todos []account.Todo, more bool, err error)
+	Todo(user string, id int64) (account.Todo, error)
 	Search(user string, terms []string, workspace string, limit int) (Found, error)
 	Busy() (int64, error)
 	Active(since time.Time) (int64, error)
@@ -72,6 +74,8 @@ type Tx interface {
 	EnsureUser(id string) error
 	SetSettings(user string, s account.Settings) error
 	PutWorkspace(user string, w account.Workspace) error
+	AddTodo(user string, t account.Todo) (account.Todo, error)
+	PutTodo(user string, t account.Todo) error
 	PutEnvironment(user string, e account.Environment) error
 	DeleteEnvironment(user, id string) error
 	PutMCPServer(user string, s account.MCPServer) error
@@ -204,6 +208,7 @@ type Owned struct {
 	CronJob            *CronJobView
 	CronJobDeleted     string
 	Memory             *memory.Memory
+	Todo               *account.Todo
 }
 
 type Change struct {
@@ -220,6 +225,13 @@ type Delta struct {
 	Item      string
 	Text      string
 	Reasoning string
+}
+
+// TodoFilter picks the todos to read: the given statuses, or all of them when none are given, and at most
+// Limit of them, or all when Limit is 0.
+type TodoFilter struct {
+	Statuses []account.TodoStatus
+	Limit    int
 }
 
 type ThreadFilter struct {

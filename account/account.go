@@ -83,6 +83,32 @@ func (w Workspace) Usable() error {
 	return nil
 }
 
+type TodoStatus string
+
+const (
+	TodoOpen    TodoStatus = "open"
+	TodoHanded  TodoStatus = "handed"
+	TodoDone    TodoStatus = "done"
+	TodoDropped TodoStatus = "dropped"
+)
+
+var TodoStatuses = []TodoStatus{TodoOpen, TodoHanded, TodoDone, TodoDropped}
+
+// Todo is a task of the user's: something they want done, in which project, and which conversation works on it.
+// Ended is when it entered done or dropped, and nil while it is open or handed.
+type Todo struct {
+	ID        int64
+	Title     string
+	Workspace string
+	Thread    string
+	Status    TodoStatus
+	Notes     string
+	Result    string
+	Created   time.Time
+	Updated   time.Time
+	Ended     *time.Time
+}
+
 type EnvironmentKind string
 
 const (

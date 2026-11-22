@@ -89,6 +89,8 @@ var enums = []any{
 	conversation.ItemKinds, conversation.ItemStatuses, conversation.ThreadStatuses, conversation.Ends, conversation.Decisions,
 	TurnStatuses, memory.Scopes, memory.Kinds, memory.Statuses, memory.FailureCodes, policy.PolicyValues, agent.Names,
 	plan.StatusValues, account.EnvironmentKinds, account.WorkspaceKinds, store.UsageGroups,
+	account.TodoStatuses,
+	hub.TodoStatuses,
 }
 
 var plainStrings = []reflect.Type{}
@@ -141,8 +143,10 @@ var defNames = map[reflect.Type]string{
 	reflect.TypeFor[account.Providers]():      "WorkspaceProviders",
 	reflect.TypeFor[subagent.Call]():          "SubagentCall",
 	reflect.TypeFor[hub.Workspace]():          "HubWorkspace",
+	reflect.TypeFor[hub.TodoStatus]():         "HubTodoStatus",
 	reflect.TypeFor[hub.Workspaces]():         "HubWorkspaces",
 	reflect.TypeFor[hub.StartArgs]():          "HubStartConversation",
+	reflect.TypeFor[hub.Todo]():               "HubTodo",
 	reflect.TypeFor[hub.SendArgs]():           "HubSendMessage",
 	reflect.TypeFor[hub.Started]():            "HubMessageSent",
 	reflect.TypeFor[hub.ListArgs]():           "HubListConversations",

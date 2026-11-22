@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/0xfakeSpike/ollupi/account"
+	"github.com/0xfakeSpike/ollupi/app"
 	"github.com/0xfakeSpike/ollupi/cron"
 	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
@@ -132,6 +133,34 @@ func (c *conn) cronPause(ctx context.Context, p CronPauseParams) (CronResult, er
 
 func (c *conn) cronDelete(ctx context.Context, p CronDeleteParams) (Empty, error) {
 	return Empty{}, c.s.app.DeleteCronJob(ctx, c.user, p.ThreadID, p.Name)
+}
+
+const (
+	todoDefaultLimit = 500
+	todoMaxLimit     = 2000
+)
+
+// todoList lists the todos still open and the ones handed out, unless other statuses are asked for.
+func (c *conn) todoList(ctx context.Context, p TodoListParams) (TodoListResult, error) {
+	if len(p.Statuses) == 0 {
+		p.Statuses = []account.TodoStatus{account.TodoOpen, account.TodoHanded}
+	}
+	if err := limit(&p.Limit, todoDefaultLimit, todoMaxLimit); err != nil {
+		return TodoListResult{}, err
+	}
+	todos, more, err := c.s.app.Todos(ctx, c.user, p.Statuses, p.Limit)
+	return TodoListResult{Data: each(todos, todoRow), More: more}, err
+}
+
+func (c *conn) todoAdd(ctx context.Context, p TodoAddParams) (TodoResult, error) {
+	t, err := c.s.app.AddTodo(ctx, c.user, p.Title, p.Notes)
+	return TodoResult{Todo: todoRow(t)}, err
+}
+
+func (c *conn) todoUpdate(ctx context.Context, p TodoUpdateParams) (TodoResult, error) {
+	t, err := c.s.app.UpdateTodo(ctx, c.user, p.ID, app.TodoChange{
+		Title: p.Title, Status: p.Status, Notes: p.Notes, Result: p.Result, Thread: p.ThreadID})
+	return TodoResult{Todo: todoRow(t)}, err
 }
 
 func (c *conn) memoryList(ctx context.Context, p MemoryListParams) (MemoryListResult, error) {

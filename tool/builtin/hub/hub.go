@@ -48,12 +48,14 @@ type StartArgs struct {
 	Workspace string `json:"workspace" jsonschema:"Id of the project workspace the conversation works in."`
 	Title     string `json:"title" jsonschema:"A short title for the conversation, shown to the user."`
 	Message   string `json:"message" jsonschema:"The first message, complete on its own: the conversation knows nothing of this one."`
+	Todo      int64  `json:"todo,omitempty" jsonschema:"Id of the user's todo this conversation works on; it is linked to the conversation and marked handed."`
 }
 
 func (StartArgs) Constrain(s *jsonschema.Schema) {
 	s.Properties["workspace"].MinLength = jsonschema.Ptr(1)
 	s.Properties["title"].MinLength, s.Properties["title"].MaxLength = jsonschema.Ptr(1), jsonschema.Ptr(120)
 	s.Properties["message"].MinLength = jsonschema.Ptr(1)
+	s.Properties["todo"].Minimum = jsonschema.Ptr(1.0)
 }
 
 type SendArgs struct {
@@ -82,6 +84,57 @@ func (ReadArgs) Constrain(s *jsonschema.Schema) {
 	s.Properties["turns"].Description = fmt.Sprintf("How many of the latest turns to show; default %d.", defaultReadTurns)
 }
 
+// TodoStatus is how a todo stands, as the tools take it.
+type TodoStatus string
+
+const (
+	TodoOpen    TodoStatus = "open"
+	TodoHanded  TodoStatus = "handed"
+	TodoDone    TodoStatus = "done"
+	TodoDropped TodoStatus = "dropped"
+)
+
+// TodoStatuses are the statuses the todo tools take and give, in the order the schema lists them.
+var TodoStatuses = []TodoStatus{TodoOpen, TodoHanded, TodoDone, TodoDropped}
+
+func (TodoStatus) Constrain(s *jsonschema.Schema) {
+	for _, st := range TodoStatuses {
+		s.Enum = append(s.Enum, st)
+	}
+}
+
+type AddTodoArgs struct {
+	Title string `json:"title" jsonschema:"What is to be done, in one line."`
+	Notes string `json:"notes,omitempty" jsonschema:"What is worth remembering about it: how to do it, what it waits for."`
+}
+
+func (AddTodoArgs) Constrain(s *jsonschema.Schema) {
+	s.Properties["title"].MinLength, s.Properties["title"].MaxLength = jsonschema.Ptr(1), jsonschema.Ptr(app.MaxTodoTitleRunes)
+	s.Properties["notes"].MaxLength = jsonschema.Ptr(app.MaxTodoNotesRunes)
+}
+
+type UpdateTodoArgs struct {
+	ID           int64       `json:"id" jsonschema:"Id of the todo."`
+	Title        *string     `json:"title,omitempty" jsonschema:"A new title, one line."`
+	Status       *TodoStatus `json:"status,omitempty" jsonschema:"How the todo stands now."`
+	Notes        *string     `json:"notes,omitempty" jsonschema:"New notes; an empty string clears them."`
+	Result       *string     `json:"result,omitempty" jsonschema:"One line on how it ended; an empty string clears it."`
+	Conversation *string     `json:"conversation,omitempty" jsonschema:"Id of the conversation working on it; an empty string unlinks it. This does not change the status."`
+}
+
+func (UpdateTodoArgs) Constrain(s *jsonschema.Schema) {
+	s.Properties["id"].Minimum = jsonschema.Ptr(1.0)
+	for field, max := range map[string]int{"title": app.MaxTodoTitleRunes, "notes": app.MaxTodoNotesRunes, "result": app.MaxTodoResultRunes} {
+		if p := s.Properties[field]; p != nil {
+			p.MaxLength = jsonschema.Ptr(max)
+		}
+	}
+}
+
+type ListTodosArgs struct {
+	Statuses []TodoStatus `json:"statuses,omitempty" jsonschema:"Which todos to list; default open and handed."`
+}
+
 type Workspaces struct {
 	Workspaces []Workspace `json:"workspaces"`
 }
@@ -98,6 +151,35 @@ type Started struct {
 	Conversation string `json:"conversation"`
 	Turn         string `json:"turn"`
 	Queued       bool   `json:"queued"`
+	Todo         *Todo  `json:"todo,omitempty"`
+}
+
+// Todo is a todo of the user's as the tools show it: what it is, how it stands, and what it waits on.
+type Todo struct {
+	ID           int64      `json:"id"`
+	Title        string     `json:"title"`
+	Status       TodoStatus `json:"status"`
+	Workspace    string     `json:"workspace,omitempty"`
+	Conversation string     `json:"conversation,omitempty"`
+	Notes        string     `json:"notes,omitempty"`
+	Result       string     `json:"result,omitempty"`
+	Created      string     `json:"created"`
+	Updated      string     `json:"updated"`
+	Ended        string     `json:"ended,omitempty"`
+}
+
+func todoOf(t account.Todo) Todo {
+	out := Todo{ID: t.ID, Title: t.Title, Status: TodoStatus(t.Status), Workspace: t.Workspace, Conversation: t.Thread,
+		Notes: t.Notes, Result: t.Result, Created: t.Created.Format(minute), Updated: t.Updated.Format(minute)}
+	if t.Ended != nil {
+		out.Ended = t.Ended.Format(minute)
+	}
+	return out
+}
+
+type Todos struct {
+	Todos []Todo `json:"todos"`
+	More  bool   `json:"more,omitempty" jsonschema:"Whether more todos match than are listed."`
 }
 
 type Status struct {
@@ -175,6 +257,25 @@ func (*Provider) Tools(context.Context) ([]kit.Spec, error) {
 			InputSchema: kit.InputSchema[ReadArgs](),
 			Annotations: tool.Annotations{Title: "Read a conversation", ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: new(false)},
 		},
+		{
+			Name:        agent.AddTodoTool,
+			Description: "Records a todo of the user's, open until it is handed out. Returns it with its id.",
+			InputSchema: kit.InputSchema[AddTodoArgs](),
+			Annotations: tool.Annotations{Title: "Add a todo", OpenWorldHint: new(false)},
+		},
+		{
+			Name: agent.UpdateTodoTool,
+			Description: "Changes one of the user's todos: its title, status, notes, one-line result, or the conversation working on it. Fields left out stay as they are; " +
+				"set done or dropped only when the work has ended, and give a done todo the result it has in one line.",
+			InputSchema: kit.InputSchema[UpdateTodoArgs](),
+			Annotations: tool.Annotations{Title: "Update a todo", OpenWorldHint: new(false)},
+		},
+		{
+			Name:        agent.ListTodosTool,
+			Description: "Lists the user's todos, the open and handed ones by default: the unfinished first, then the finished by when they ended.",
+			InputSchema: kit.InputSchema[ListTodosArgs](),
+			Annotations: tool.Annotations{Title: "List todos", ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: new(false)},
+		},
 	}, nil
 }
 
@@ -190,6 +291,12 @@ func (p *Provider) Invoke(ctx context.Context, c tool.Call) (kit.Result, error) 
 		return p.list(ctx, c)
 	case agent.ReadConversationTool:
 		return p.read(ctx, c)
+	case agent.AddTodoTool:
+		return p.addTodo(ctx, c)
+	case agent.UpdateTodoTool:
+		return p.updateTodo(ctx, c)
+	case agent.ListTodosTool:
+		return p.listTodos(ctx, c)
 	}
 	return kit.Result{}, fmt.Errorf("%w: %s", kit.ErrUnknownTool, c.Tool)
 }
@@ -224,6 +331,11 @@ func (p *Provider) start(ctx context.Context, c tool.Call) (kit.Result, error) {
 	if w.Kind == account.HubWorkspace {
 		return kit.Result{}, fmt.Errorf("workspace %s is a hub; hand work only to a project workspace", w.Name)
 	}
+	if args.Todo != 0 {
+		if _, err := p.App.Todo(ctx, c.User, args.Todo); err != nil {
+			return kit.Result{}, err
+		}
+	}
 	th, err := p.App.StartThread(ctx, c.User, w.ID, "", args.Title)
 	if err != nil {
 		return kit.Result{}, err
@@ -232,7 +344,17 @@ func (p *Provider) start(ctx context.Context, c tool.Call) (kit.Result, error) {
 	if err != nil {
 		return kit.Result{}, fmt.Errorf("conversation %s was started, but its first message was not sent: %w", th.ID, err)
 	}
-	return kit.Result{Output: Started{Conversation: th.ID, Turn: turn.ID, Queued: !inProgress}}, nil
+	out := Started{Conversation: th.ID, Turn: turn.ID, Queued: !inProgress}
+	if args.Todo != 0 {
+		handed, conversation := account.TodoHanded, th.ID
+		t, err := p.App.UpdateTodo(ctx, c.User, args.Todo, app.TodoChange{Status: &handed, Thread: &conversation})
+		if err != nil {
+			return kit.Result{}, fmt.Errorf("conversation %s was started, but todo %d was not linked to it: %w", th.ID, args.Todo, err)
+		}
+		linked := todoOf(t)
+		out.Todo = &linked
+	}
+	return kit.Result{Output: out}, nil
 }
 
 func (p *Provider) send(ctx context.Context, c tool.Call) (kit.Result, error) {
@@ -381,6 +503,58 @@ func (p *Provider) read(ctx context.Context, c tool.Call) (kit.Result, error) {
 			turn.Messages = append(turn.Messages, msg)
 		}
 		out.Turns = append(out.Turns, turn)
+	}
+	return kit.Result{Output: out}, nil
+}
+
+func (p *Provider) addTodo(ctx context.Context, c tool.Call) (kit.Result, error) {
+	args, err := kit.DecodeArguments[AddTodoArgs](c.Arguments)
+	if err != nil {
+		return kit.Result{}, err
+	}
+	t, err := p.App.AddTodo(ctx, c.User, args.Title, args.Notes)
+	if err != nil {
+		return kit.Result{}, err
+	}
+	return kit.Result{Output: todoOf(t)}, nil
+}
+
+func (p *Provider) updateTodo(ctx context.Context, c tool.Call) (kit.Result, error) {
+	args, err := kit.DecodeArguments[UpdateTodoArgs](c.Arguments)
+	if err != nil {
+		return kit.Result{}, err
+	}
+	change := app.TodoChange{Title: args.Title, Notes: args.Notes, Result: args.Result, Thread: args.Conversation}
+	if args.Status != nil {
+		status := account.TodoStatus(*args.Status)
+		change.Status = &status
+	}
+	t, err := p.App.UpdateTodo(ctx, c.User, args.ID, change)
+	if err != nil {
+		return kit.Result{}, err
+	}
+	return kit.Result{Output: todoOf(t)}, nil
+}
+
+func (p *Provider) listTodos(ctx context.Context, c tool.Call) (kit.Result, error) {
+	args, err := kit.DecodeArguments[ListTodosArgs](c.Arguments)
+	if err != nil {
+		return kit.Result{}, err
+	}
+	statuses := make([]account.TodoStatus, 0, len(args.Statuses))
+	for _, st := range args.Statuses {
+		statuses = append(statuses, account.TodoStatus(st))
+	}
+	if len(statuses) == 0 {
+		statuses = []account.TodoStatus{account.TodoOpen, account.TodoHanded}
+	}
+	listed, more, err := p.App.Todos(ctx, c.User, statuses, maxListed)
+	if err != nil {
+		return kit.Result{}, err
+	}
+	out := Todos{Todos: []Todo{}, More: more}
+	for _, t := range listed {
+		out.Todos = append(out.Todos, todoOf(t))
 	}
 	return kit.Result{Output: out}, nil
 }

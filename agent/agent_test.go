@@ -160,6 +160,9 @@ func TestOnlyTheHubHandsOutWork(t *testing.T) {
 	box := policy.Toolbox{Tools: []policy.Tool{
 		{Name: StartConversationTool, Provider: HubProvider},
 		{Name: SendMessageTool, Provider: HubProvider},
+		{Name: AddTodoTool, Provider: HubProvider},
+		{Name: UpdateTodoTool, Provider: HubProvider},
+		{Name: ListTodosTool, Provider: HubProvider},
 		{Name: ReadFileTool, Provider: WorkspaceProvider},
 		{Name: "write_file", Provider: WorkspaceProvider, Content: true},
 		{Name: "edit_file", Provider: WorkspaceProvider, Content: true},
@@ -186,14 +189,10 @@ func TestOnlyTheHubHandsOutWork(t *testing.T) {
 					t.Errorf("the hub's %s: %+v", free, d)
 				}
 			}
-			for _, file := range []string{ReadFileTool, "write_file", "edit_file"} {
-				if !slices.Contains(visible, file) {
-					t.Errorf("the hub cannot keep %s with %s: it sees %q", PlanFile, file, visible)
+			for _, todo := range []string{AddTodoTool, UpdateTodoTool, ListTodosTool} {
+				if !slices.Contains(visible, todo) {
+					t.Errorf("the hub cannot keep its todos with %s: it sees %q", todo, visible)
 				}
-			}
-			plan := policy.Call{Tool: "write_file", Content: policy.Content{Text: "+ - [ ] notes", Match: "todo.md", Folded: true}, HasContent: true, Sandboxed: true}
-			if d := checker.Decide(plan, conversation.View{}); d.Verdict != policy.Run {
-				t.Errorf("the hub writing %s in its sandboxed folder: %+v", PlanFile, d)
 			}
 			if slices.Contains(visible, string(GeneralSub)) {
 				t.Errorf("the hub sees %q", visible)
