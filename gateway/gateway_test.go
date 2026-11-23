@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/app"
+	"github.com/0xfakeSpike/ollupi/auth"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/cron"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
@@ -136,7 +137,15 @@ func connect(t *testing.T) (store.Store, *client) {
 	users := mcp.NewUsers(ctx, mcp.Client{Name: "ollupi", Version: "test"}, st, boxes)
 	t.Cleanup(func() { users.Close() })
 	a := app.New(st, models{}, users.Tools, users.Statuses, boxes, noFiles{}, cron.NewCalendar(time.UTC), policy.Settings{ApprovalPolicy: string(policy.OnRequest)})
-	server, err := NewServer(a, st.Feed(), Options{Token: "secret"})
+	if err := a.EnsureUser(ctx, "u"); err != nil {
+		t.Fatal(err)
+	}
+	server, err := NewServer(a, st.Feed(), Options{Authenticate: func(_ context.Context, token string) (string, error) {
+		if token != "secret" {
+			return "", auth.ErrUnknownToken
+		}
+		return "u", nil
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -57,10 +57,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if !s.admits(w, r, user) {
 			return
 		}
-		if err := s.app.EnsureUser(r.Context(), user); err != nil {
-			http.Error(w, "the user could not be made ready", http.StatusInternalServerError)
-			return
-		}
 		s.ready.Store(user, struct{}{})
 	}
 	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: s.origins, Subprotocols: []string{auth.TokenProtocol}})

@@ -76,7 +76,7 @@ func TestAHostRunsATurnThroughASubagentAndLearnsFromIt(t *testing.T) {
 		Models: []llm.Model{learner}, Connections: map[string]llm.Client{"main": m}, Memory: &learner,
 		Tools:   []kit.Provider{weather{}},
 		Boxes:   func(string) (sandbox.Box, error) { return sandbox.Here() },
-		Gateway: &gateway.Options{Token: "secret"},
+		Gateway: &gateway.Options{Authenticate: func(context.Context, string) (string, error) { return "u", nil }},
 	})
 	if err != nil {
 		t.Fatal(err)

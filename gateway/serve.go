@@ -2,13 +2,11 @@ package gateway
 
 import (
 	"context"
-	"crypto/subtle"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/app"
@@ -20,7 +18,8 @@ import (
 const lookupTimeout = 10 * time.Second
 
 type Options struct {
-	Token          string
+	// Authenticate names the user a connection acts as. It is required: no
+	// connection works without a user, and none is made up for it.
 	Authenticate   auth.Authenticate
 	AllowedOrigins []string
 	AllowedHosts   []string
@@ -28,19 +27,9 @@ type Options struct {
 	Admit          func(ctx context.Context, user string) error
 }
 
-const DefaultUser = "default"
-
 func NewServer(a *app.App, feed *store.Feed, opts Options) (*Server, error) {
 	if opts.Authenticate == nil {
-		if strings.TrimSpace(opts.Token) == "" {
-			return nil, errors.New("gateway: a token is required; clients send it as Authorization: Bearer <token> or, from a browser, as the subprotocol after " + auth.TokenProtocol)
-		}
-		opts.Authenticate = func(_ context.Context, token string) (string, error) {
-			if subtle.ConstantTimeCompare([]byte(token), []byte(opts.Token)) != 1 {
-				return "", auth.ErrUnknownToken
-			}
-			return DefaultUser, nil
-		}
+		return nil, errors.New("gateway: Authenticate is required: every connection names its user; clients send the token as Authorization: Bearer <token> or, from a browser, as the subprotocol after " + auth.TokenProtocol)
 	}
 	if opts.Connections == (wshub.Options{}) {
 		opts.Connections = DefaultConnections
