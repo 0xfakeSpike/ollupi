@@ -5,19 +5,35 @@
   </picture>
 </h1>
 
-Ollupi is a Go runtime that pools and schedules agents. Give it any number of agent sessions — a user's chats, a thousand subagents, scheduled jobs — and it runs them within fixed limits and queues the rest. Sessions, model calls and tool calls each have their own pool and limit. Every step is written to SQLite before it runs, so a waiting session costs a few rows, survives restarts, and resumes in any process. The same engine runs one person's sessions on a laptop and a provider's users across shards.
+[English](README.md) | [简体中文](README.zh-CN.md)
 
-- **Sessions are pooled.** A fixed number of slots, with a cap per user; sessions beyond that queue. A session waiting on a user, an approval, a subagent or a background call gives its slot back.
-- **Tool calls are pooled.** A long call such as `run_command` or `claude` can run in the background, in a tool pool with its own limits; the turn goes on, and the result comes back as a report.
-- **Model calls are rate-limited** per provider connection, apart from tool execution, so long tools never starve model calls.
-- **Commands run in a sandbox; the runtime is shared.** Each user's commands, files and MCP servers are reached through `sandbox.Box`, and a cloud sandbox plugs in by implementing `sandbox.Machine`.
-- **Nothing runs twice.** A tool call is recorded as started before it runs; a call cut off by a crash is marked possibly applied and handed to the model and user, never re-run.
+Ollupi is a Go runtime for durable, multi-tenant agents. It provides crash recovery for agent sessions: conversation state is persisted to SQLite, and runnable turns are reconstructed and resumed after a process restarts. In a sharded deployment, a standby process can also take over a shard through its lease. Tool calls can run asynchronously in a dedicated tool pool with independent concurrency limits, so long-running work does not occupy a conversation slot.
 
-Sessions, subagents and scheduled jobs queue in the session pool, background calls in the tool pool. [ollupi-desktop](https://github.com/0xfakeSpike/ollupi-desktop) is the desktop client built on Ollupi.
+## What you can build
+
+- **A local coding agent.** Give it a project folder, code-editing and command tools, approvals, memory, and specialized subagents.
+- **A multi-user agent backend.** Serve many users from one shard, give each user separate models, sandboxes, connections, quotas, and stored history.
+- **Durable long-running work.** Queue chats, background commands, subagents, and scheduled jobs without tying each task to a process or VM.
+
+The same engine runs a desktop-scale deployment and a sharded server. [ollupi-desktop](https://github.com/0xfakeSpike/ollupi-desktop) is the desktop client built on it.
 
 ![Ollupi architecture](docs/images/architecture.svg)
 
-## How it differs from per-agent isolation
+## Core capabilities
+
+| Area | What Ollupi provides |
+|---|---|
+| Crash recovery | Append-only conversation logs; after a process restart, the scheduler reconstructs and resumes runnable turns |
+| Asynchronous tools | Tools that support background execution run outside the turn in a dedicated pool with global and per-user concurrency limits; their reports return to the originating turn |
+| Scheduling | Session execution is pooled with per-user limits, time limits, and fair ordering; sharded deployments can fail over to a standby process |
+| Models | OpenAI-compatible, Anthropic, and Gemini clients; per-connection concurrency, retries, and per-user model sets |
+| Tools and context | File/read/command tools, MCP servers, skills, memory recall and extraction, compaction, and attachments |
+| Agent workflows | Specialized subagents, a hub for coordinating projects, todos, scheduled jobs, plans, and user questions |
+| Isolation and policy | Per-user sandboxed commands and files, layered permission rules, approvals, and full-access escalation |
+| Serving | Authenticated WebSocket protocol, multiple devices, reconnect guidance, usage and presence queries |
+| Scale-out | SQLite shards, leases, failover epochs, catalogs, load-aware placement, and an Envoy external processor |
+
+## Why pooled agents
 
 | | One VM or container per agent | Ollupi |
 |---|---|---|
@@ -27,47 +43,63 @@ Sessions, subagents and scheduled jobs queue in the session pool, background cal
 | Session state | Process memory | SQLite |
 | After a restart | In-progress work is interrupted | Continues from where it stopped |
 | Long tool call | Holds the process or slot until it returns | Runs in the background tool pool; the session's slot is free |
+| Process failure with a standby | Depends on the surrounding orchestration | A standby acquires the shard lease and takes over |
 | Call cut off by a crash | Redone or lost | Marked possibly applied, never re-run |
 | Subagents | Special mechanism or child process | Ordinary sessions, queued in the session pool |
 | Scheduled jobs | External cron starts a process | A message to the session when due, queued in the session pool |
 
 ![Per-agent isolation compared with Ollupi](docs/images/cli-vs-ollupi.svg)
 
-## Benchmarks
+## Evidence
 
-Measured on v0.18.0 with a simulated model and tools: they measure scheduling and persistence, not model quality. Method, every number and the commands to reproduce them are in [bench](bench/README.md).
+The benchmark suite exercises the real host, SQLite store, scheduler, and gateway with simulated models and tools. It measures scheduling and durability, not model quality. The figures below are from v0.18.0; method, caveats, raw output, and reproduction commands are in [bench](bench/README.md).
+
+| Workload | Result |
+|---|---|
+| 3,000 turns submitted at once with a provider quota of 256 | 3,000 completed, no 429 responses |
+| 50,000 sessions parked on users | 34 MB resident memory overall, about 7 KB of disk per session |
+| Repeated `kill -9` during active turns and tools | Every accepted turn completes; no tool call runs twice |
+| `kill -9` while asynchronous background commands run | 200 of 200 calls report back, each marked cut off where appropriate |
+
+Caveat: above the measured 1,536 sessions, turn latency rises while the store waits on its one SQLite connection; at 4,096 sessions it was 2.8 times the solo latency. Sharding is the scale-out path.
 
 ![Comparison with pi and DeepSeek Harness](docs/images/bench-compare.svg)
 
-![Capacity](docs/images/bench-capacity.svg)
-
-![Background calls](docs/images/bench-background.svg)
-
-![Recovery](docs/images/bench-recovery.svg)
-
-![Users](docs/images/bench-users.svg)
-
 ## Execution model
 
-![Session pool and tool pool](docs/images/execution-pool.svg)
+There are two schedulers. The session pool runs turns from users, subagents, and scheduled jobs on a fixed number of slots. Tools that support asynchronous execution, such as `run_command` and `claude` with `background: true`, run in a separate tool pool with their own global and per-user concurrency limits. When the call finishes, its report returns to the originating turn. Model concurrency is limited per provider connection and is separate from tool execution. A turn waiting for a user, approval, subagent, or background report releases its slot.
 
-There are two pools, each with its own scheduler and limits. The session pool runs turns: every runnable turn in every session, whether it comes from a user, a subagent or a scheduled job, enters its queue and runs on a fixed number of slots (`host.Config` `Slots`, 32 by default; `UserSlots` per user, the same as `Slots` unless set; `RunLimit` per run, 4 hours). The tool pool runs background calls: 32 slots (`TaskSlots`), 4 per user (`UserTaskSlots`), and 1 hour per call (`TaskLimit`), oldest first. A tool that allows it (`run_command`, `claude`) runs in the background when the model passes `background: true`; the turn goes on, and once it has answered it waits on the call's report. A call run inside the turn keeps the turn's slot. A turn waiting on a user, an approval, a subagent or a background call's report releases its slot, holds no goroutine or model concurrency, and becomes ready again when the wait ends. When slots run short, ordinary sessions go before subagents, and turns of the same kind run in the order they became ready. Model concurrency is limited per connection (4 per connection by default), and tool execution uses none of it. Model requests that hit a 429, a 5xx or a dropped connection retry with backoff, up to 8 times, keeping their slot and model concurrency while they wait.
+Each session is an append-only log. Before a tool runs, its intent is written to SQLite; model responses and tool results are appended as they finish. A process restart reconstructs schedulable work from the database. A tool that started but never recorded a result is surfaced as cut off and is never automatically run twice. One change feed drives clients, scheduling, and memory extraction.
 
-Each session is an append-only log: a turn's state, what it waits on and what runs next are read from the log, every step is appended before it runs, and no session state lives in memory; only which session holds which slot, rebuilt from the database. After a process restart the same logic picks up in-progress turns. A tool call appended but not started runs as usual; one started without a result may have taken effect, so it is ended as cut off with a prompt to verify, and is never run twice. Likewise, a background call an earlier process started is reported as cut off, never run twice. Everything a commit changes reaches clients, the scheduler and memory extraction through one change feed, numbered by commit.
+More detail: [workspace, conversation, turn, and item lifecycle](docs/lifecycle.md).
 
-## Multi-user and shards
+## Multi-user deployment and shards
 
-One database is one shard. Users in a shard share tables and are isolated per user. The engine knows nothing of shards: package `shard` runs a process as one. A `shard.Member` holds the shard's lease in the deployment's catalog, which publishes the holder's address with it, so only one process runs a shard at a time; when that process exits, a standby that waits on the lease takes over and continues from where it stopped. Each taking of a shard has an epoch above every one before it, which the shard's database keeps and checks on every write, so a process that stalled past its lease cannot write over the one that took the shard. The member reports the shard's load as it renews the lease, by a measure the deployment chooses (users active of late, turns under way, connections), and runs the engine only while it holds the shard. The number of shards sets capacity. Clients reach one address and never learn which shard they are on: where a load balancer can call out over Envoy's external processing protocol, as Google Cloud's Application Load Balancer does with a route extension, `router/extproc` tells it each handshake's shard in the `x-ollupi-shard` header and the load balancer holds the connections; `router.Router` takes the connections it cannot place, and anywhere without such a load balancer it takes them all. Both find the shard and its holder's address with one catalog lookup, which places a new user on the lighter of two accepting shards drawn at random, by the load each reports. The catalog is kept apart from the shards' data, behind the interface `catalog.Catalog` (`catalog`). It decides each lease by its own clock, and a holder counts its lease from before it asked and gives up a margin early, so that it stops before any other process can start. `catalog.SQL` keeps the catalog in a SQLite database of its own; a deployment that needs it to outlive any one machine implements `catalog.Catalog` over a coordination service, such as etcd, or a database served apart from the shards. A shard only checks that a connection is its user's, through `gateway.Options.Admit` set to `shard.Member.Admit`, and tells one that is not to come back later (503 with `Retry-After`). A process serves, and answers `/healthz`, only while it holds its shard, so a load balancer's health check sends the shard's connections to the process that holds it.
+One SQLite database is one shard. Users share a shard but remain isolated by user, and a shard process holds a renewable lease in a separate catalog. When a process exits, a standby acquires the shard lease and recovers its session work from the database. This is the cross-process failover path that complements agent-level crash recovery. Lease epochs prevent a stalled former holder from writing after a new holder starts. A router places users on accepting shards and publishes the selected shard to an Envoy external processor when one is used.
 
-Everything a user runs stays in their own sandbox: commands, files and MCP servers are reached through `sandbox.Box`, and integrating a cloud sandbox only takes implementing `sandbox.Machine`. A user's environments are the boxes a conversation can be started in — this machine, and cloud sandboxes they add — and a conversation keeps the one it was started in (`environment/list`, `thread/start` with `environmentId`). HTTP MCP requests from cloud sandbox users leave from the shard process and can only reach public addresses. Model calls can go through the user's own client, and attachments are stored as files under the home's `attachments` folder (`blob.Dir`).
+Commands, files, and local MCP servers are accessed through `sandbox.Box`; a cloud sandbox plugs in through `sandbox.Machine`. A conversation keeps the environment it started in. Model traffic may use each user's own connection, and attachments are stored under the host's `attachments` directory.
 
-Two choices of the sandbox trade safety for ordinary work. A repository's `.git` is writable within the sandbox's limits, hooks included, so `git init` and `git clone` work there; a hook a command writes runs later, with full access, for whoever runs git there without those limits: the user in their own terminal, or a command given full access. Under the `never` approval policy, a command that asks for full access gets it without anyone being asked; a server that runs users' commands in a sandbox on its own machine should not offer that policy. `sandbox.Here` puts no limits on commands: every command it runs has full access to this machine under any policy, so it suits only users who may use the machine fully.
+## Security and operating limits
 
-Building and testing need SQLite's FTS5: `go test -tags sqlite_fts5 ./...`, or set `GOFLAGS=-tags=sqlite_fts5`.
+- `sandbox.Here` runs with full access to the machine. Use it only for users who may use the whole machine.
+- Under the `never` approval policy, an escalated command runs without asking. Do not offer that policy to untrusted users.
+- A repository's `.git` is writable inside the sandbox. Hooks written by a command may later run outside those limits when the user invokes Git.
+- SQLite is the measured bottleneck for very large single-shard histories and concurrency. Choose shard count from your own workload and keep one connection per shard in mind.
+- The benchmark numbers date from v0.18.0 and were measured on one Apple M1. Re-run [bench](bench/README.md) for deployment-specific capacity.
 
-Clients authenticate with `Authorization: Bearer <token>`. Browsers can't set this header, so they put the token in the WebSocket subprotocol instead: `new WebSocket(url, ["ollupi.token", token])`. Tokens never go in the URL.
+## Documentation
 
-A user may hold up to four connections at once, one per device, and each hears all of the user's events; a fifth takes the oldest's place, which closes with 4000 and should not reconnect on its own. The gateway pings each connection every 30 seconds and drops one whose peer has not answered within 15, and closes each with 1001 at a random time between 15 and 20 hours after it opened, under the 24 hours Google Cloud's load balancer keeps a WebSocket open, so that connections opened together are not cut together. Connections are admitted at a bounded rate, so after a restart a client may be refused with 503 and a `Retry-After` in seconds. `gateway.Options.Connections` changes these bounds. What a client does after each close code and each refused handshake is part of the protocol, under `closes` and `handshakes` in `protocol.schema.json`: reconnect after a random wait of up to 10 seconds, with backoff, after `Retry-After`, or not on its own; once back, it reads its threads again, since it heard nothing meanwhile.
+- [Benchmarks and reproduction](bench/README.md)
+- [Terminal-Bench evaluation workflow](eval/README.md)
+- [Workspace, conversation, turn, and item lifecycle](docs/lifecycle.md)
+- [WebSocket protocol schema](gateway/protocol.schema.json)
+- [Full user and deployment documentation](https://github.com/0xfakeSpike/ollupi-docs)
+
+Build and test with SQLite FTS5:
+
+```bash
+go test -tags sqlite_fts5 ./...
+```
 
 ## License
 
