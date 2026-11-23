@@ -39,8 +39,8 @@ var (
 )
 
 type Models interface {
-	Models() []llm.Model
-	Limits(m llm.Model) (llm.Limits, error)
+	Models(user string) []llm.Model
+	Limits(user string, m llm.Model) (llm.Limits, error)
 }
 
 type Boxes func(user string) (sandbox.Box, error)
@@ -76,8 +76,11 @@ func (a *App) EnsureUser(ctx context.Context, user string) error {
 	return a.st.Update(ctx, func(tx store.Tx) error { return tx.EnsureUser(user) })
 }
 
-func (a *App) Models() ([]llm.Model, string) {
-	models := a.models.Models()
+func (a *App) Models(user string) ([]llm.Model, string) {
+	models := a.models.Models(user)
+	if len(models) == 0 {
+		return nil, ""
+	}
 	return models, models[0].Connection
 }
 
@@ -89,8 +92,11 @@ func (a *App) Tools(ctx context.Context, user string) ([]tool.Spec, error) {
 	return set.Specs(), nil
 }
 
-func (a *App) pickModel(connection string, last *llm.Model) (llm.Model, error) {
-	models := a.models.Models()
+func (a *App) pickModel(user, connection string, last *llm.Model) (llm.Model, error) {
+	models := a.models.Models(user)
+	if len(models) == 0 {
+		return llm.Model{}, fmt.Errorf("%w: this profile has no models; add one in Settings", ErrInvalidMessage)
+	}
 	if connection == "" && last != nil {
 		connection = last.Connection
 	}

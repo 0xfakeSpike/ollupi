@@ -51,12 +51,16 @@ const (
 )
 
 type Config struct {
-	Home          string
-	Name          string
-	Prompt        string
-	Models        []llm.Model
-	Connections   map[string]llm.Client
-	ClientFor     func(user, connection string) (llm.Client, error)
+	Home        string
+	Name        string
+	Prompt      string
+	Models      []llm.Model
+	Connections map[string]llm.Client
+	ClientFor   func(user, connection string) (llm.Client, error)
+	// Users are the models of users that name their own; a user without a
+	// set runs the Models above. A host that serves several users gives each
+	// a set and leaves Models empty, so no profile borrows another's.
+	Users         []UserModels
 	Memory        *llm.Model
 	Tools         []kit.Provider
 	Hub           bool
@@ -99,7 +103,7 @@ func New(ctx context.Context, cfg Config) (*Host, error) {
 	if err := cfg.Permissions.Check(); err != nil {
 		return nil, fmt.Errorf("host: the permissions: %w", err)
 	}
-	modelSet, err := newModels(cfg.Models, cfg.Connections, cfg.ClientFor)
+	modelSet, err := newModels(cfg.Models, cfg.Connections, cfg.ClientFor, cfg.Users)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +143,7 @@ func New(ctx context.Context, cfg Config) (*Host, error) {
 	h.tasks = schedule.New(st, schedule.Tasks(runner.Task), cmp.Or(cfg.TaskSlots, defaultTaskSlots),
 		cmp.Or(cfg.UserTaskSlots, defaultUserTaskSlots), cmp.Or(cfg.TaskLimit, defaultTaskLimit))
 	if cfg.Memory != nil {
-		limits, err := modelSet.Limits(*cfg.Memory)
+		limits, err := modelSet.limitsOf(*cfg.Memory)
 		if err != nil {
 			h.Close()
 			return nil, fmt.Errorf("host: the memory model: %w", err)

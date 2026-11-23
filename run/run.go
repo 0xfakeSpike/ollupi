@@ -17,7 +17,7 @@ import (
 )
 
 type Models interface {
-	Limits(m llm.Model) (llm.Limits, error)
+	Limits(user string, m llm.Model) (llm.Limits, error)
 	Client(user string, m llm.Model) (llm.Client, error)
 }
 
@@ -170,7 +170,7 @@ func (r *Runner) load(ctx context.Context, thread string) (*step, error) {
 	if !ok {
 		return nil, fmt.Errorf("run: turn %s names role %q, which is none of %q", s.turn.ID, s.turn.Role, agent.Names)
 	}
-	limits, err := r.models.Limits(s.turn.Model)
+	limits, err := r.models.Limits(s.th.User, s.turn.Model)
 	if err != nil {
 		return nil, fmt.Errorf("run: model %s: %w", s.turn.Model.Name, err)
 	}

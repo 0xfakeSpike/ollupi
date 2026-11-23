@@ -9,50 +9,90 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 )
 
-type models struct {
-	list        []llm.Model
-	connections map[string]llm.Client
-	clientFor   func(user, connection string) (llm.Client, error)
+// UserModels are one user's models and the clients that call them: a
+// connection is named by a user, and only that user's models are theirs.
+type UserModels struct {
+	User        string
+	Models      []llm.Model
+	Connections map[string]llm.Client
 }
 
-func newModels(list []llm.Model, connections map[string]llm.Client, clientFor func(user, connection string) (llm.Client, error)) (models, error) {
+// models is the models every user of the host may run. Shared ones (list and
+// connections, as a benchmark or a single-user host gives them) are for users
+// that name none of their own; a host that serves several users passes a set
+// for each and no shared one.
+type models struct {
+	shared    userModels
+	users     map[string]userModels
+	clientFor func(user, connection string) (llm.Client, error)
+}
+
+type userModels struct {
+	list        []llm.Model
+	connections map[string]llm.Client
+}
+
+func newModels(list []llm.Model, connections map[string]llm.Client, clientFor func(user, connection string) (llm.Client, error), users []UserModels) (models, error) {
+	shared, err := newUserModels("the shared models", list, connections)
+	if err != nil {
+		return models{}, err
+	}
+	byUser := make(map[string]userModels, len(users))
+	for _, u := range users {
+		if strings.TrimSpace(u.User) == "" {
+			return models{}, errors.New("host: a user of its own models needs a name")
+		}
+		if _, seen := byUser[u.User]; seen {
+			return models{}, fmt.Errorf("host: user %q is listed twice", u.User)
+		}
+		set, err := newUserModels("the models of user "+u.User, u.Models, u.Connections)
+		if err != nil {
+			return models{}, err
+		}
+		byUser[u.User] = set
+	}
+	return models{shared: shared, users: byUser, clientFor: clientFor}, nil
+}
+
+func newUserModels(what string, list []llm.Model, connections map[string]llm.Client) (userModels, error) {
 	if len(list) == 0 {
-		return models{}, errors.New("host: at least one model is required")
+		return userModels{}, nil
 	}
 	for i, m := range list {
 		if m.Connection == "" || strings.TrimSpace(m.Name) == "" {
-			return models{}, errors.New("host: every model needs a connection and a name")
+			return userModels{}, fmt.Errorf("host: %s: every model needs a connection and a name", what)
 		}
 		if slices.ContainsFunc(list[:i], func(o llm.Model) bool { return o.Connection == m.Connection }) {
-			return models{}, fmt.Errorf("host: connection %q is listed twice", m.Connection)
+			return userModels{}, fmt.Errorf("host: %s: connection %q is listed twice", what, m.Connection)
 		}
 		if connections[m.Connection] == nil {
-			return models{}, fmt.Errorf("host: connection %q has no client", m.Connection)
+			return userModels{}, fmt.Errorf("host: %s: connection %q has no client", what, m.Connection)
 		}
 	}
-	return models{list: list, connections: connections, clientFor: clientFor}, nil
+	return userModels{list: list, connections: connections}, nil
 }
 
-func (ms models) Models() []llm.Model {
-	out := make([]llm.Model, len(ms.list))
-	for i, m := range ms.list {
+func (ms models) of(user string) userModels {
+	if set, ok := ms.users[user]; ok {
+		return set
+	}
+	return ms.shared
+}
+
+func (ms models) Models(user string) []llm.Model {
+	set := ms.of(user)
+	out := make([]llm.Model, len(set.list))
+	for i, m := range set.list {
 		out[i] = m.Clone()
 	}
 	return out
 }
 
-func (ms models) connection(m llm.Model) (llm.Client, error) {
-	c := ms.connections[m.Connection]
+func (ms models) Limits(user string, m llm.Model) (llm.Limits, error) {
+	set := ms.of(user)
+	c := set.connections[m.Connection]
 	if c == nil {
-		return nil, fmt.Errorf("connection %q is unavailable; restore it in Settings or select another model for a new turn", m.Connection)
-	}
-	return c, nil
-}
-
-func (ms models) Limits(m llm.Model) (llm.Limits, error) {
-	c, err := ms.connection(m)
-	if err != nil {
-		return llm.Limits{}, err
+		return llm.Limits{}, fmt.Errorf("connection %q is not this profile's; add it in Settings or select another model for a new turn", m.Connection)
 	}
 	return c.Limits(m.Name)
 }
@@ -61,5 +101,25 @@ func (ms models) Client(user string, m llm.Model) (llm.Client, error) {
 	if ms.clientFor != nil {
 		return ms.clientFor(user, m.Connection)
 	}
-	return ms.connection(m)
+	set := ms.of(user)
+	c := set.connections[m.Connection]
+	if c == nil {
+		return nil, fmt.Errorf("connection %q is not this profile's; add it in Settings or select another model for a new turn", m.Connection)
+	}
+	return c, nil
+}
+
+// limitsOf finds a model's limits for the learning model, which one set of
+// models may carry: the first that has the connection.
+func (ms models) limitsOf(m llm.Model) (llm.Limits, error) {
+	sets := []userModels{ms.shared}
+	for _, set := range ms.users {
+		sets = append(sets, set)
+	}
+	for _, set := range sets {
+		if c := set.connections[m.Connection]; c != nil {
+			return c.Limits(m.Name)
+		}
+	}
+	return llm.Limits{}, fmt.Errorf("connection %q is nowhere among the models", m.Connection)
 }

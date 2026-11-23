@@ -99,11 +99,11 @@ func (a *App) queue(tx store.Tx, th store.Thread, msg conversation.UserMessage, 
 	if n := len(v.Turns); n > 0 {
 		last = &v.Turns[n-1].Model
 	}
-	model, err := a.pickModel(connection, last)
+	model, err := a.pickModel(th.User, connection, last)
 	if err != nil {
 		return conversation.Turn{}, false, err
 	}
-	limits, err := a.fits(model, v, text, msg.Attachments)
+	limits, err := a.fits(th.User, model, v, text, msg.Attachments)
 	if err != nil {
 		return conversation.Turn{}, false, err
 	}
@@ -154,7 +154,7 @@ func (a *App) Steer(ctx context.Context, user, id, expected string, in Input) (c
 		if err != nil {
 			return err
 		}
-		if _, err := a.fits(turn.Model, v, text, atts); err != nil {
+		if _, err := a.fits(th.User, turn.Model, v, text, atts); err != nil {
 			return err
 		}
 		var entries []conversation.Entry
@@ -207,8 +207,8 @@ func message(text string, attachments int) (string, error) {
 	return text, nil
 }
 
-func (a *App) fits(model llm.Model, v conversation.View, text string, atts []conversation.Attachment) (llm.Limits, error) {
-	limits, err := a.models.Limits(model)
+func (a *App) fits(user string, model llm.Model, v conversation.View, text string, atts []conversation.Attachment) (llm.Limits, error) {
+	limits, err := a.models.Limits(user, model)
 	if err != nil {
 		return llm.Limits{}, err
 	}

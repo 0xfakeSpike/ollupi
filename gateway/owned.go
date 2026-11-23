@@ -12,7 +12,7 @@ import (
 )
 
 func (c *conn) modelList(ctx context.Context, _ Empty) (ModelListResult, error) {
-	models, fallback := c.s.app.Models()
+	models, fallback := c.s.app.Models(c.user)
 	return ModelListResult{Data: models, Default: fallback}, nil
 }
 

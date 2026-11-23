@@ -46,7 +46,7 @@ var limits = llm.Limits{Context: 200_000, Output: 8_000}
 
 type models struct{ m *model }
 
-func (ms models) Limits(llm.Model) (llm.Limits, error)         { return limits, nil }
+func (ms models) Limits(string, llm.Model) (llm.Limits, error) { return limits, nil }
 func (ms models) Client(string, llm.Model) (llm.Client, error) { return ms.m, nil }
 func (noFiles) Get(context.Context, string) ([]byte, error)    { return nil, errors.New("no files") }
 func noSkills(agent.Name) ([]prompt.Skill, error)              { return nil, nil }

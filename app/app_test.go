@@ -29,10 +29,10 @@ import (
 
 type models struct{}
 
-func (models) Models() []llm.Model {
+func (models) Models(string) []llm.Model {
 	return []llm.Model{{Name: "big", Connection: "main", Images: true}, {Name: "small", Connection: "text"}}
 }
-func (models) Limits(m llm.Model) (llm.Limits, error) {
+func (models) Limits(string, llm.Model) (llm.Limits, error) {
 	return llm.Limits{Context: 200_000, Output: 8_000}, nil
 }
 

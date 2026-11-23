@@ -29,8 +29,8 @@ import (
 
 type models struct{}
 
-func (models) Models() []llm.Model { return []llm.Model{{Name: "big", Connection: "main"}} }
-func (models) Limits(llm.Model) (llm.Limits, error) {
+func (models) Models(string) []llm.Model { return []llm.Model{{Name: "big", Connection: "main"}} }
+func (models) Limits(string, llm.Model) (llm.Limits, error) {
 	return llm.Limits{Context: 200_000, Output: 8_000}, nil
 }
 func noStatuses(string) ([]account.MCPStatus, error) { return nil, nil }
