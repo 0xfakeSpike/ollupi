@@ -24,22 +24,21 @@ const (
 )
 
 type Extractor struct {
-	st     store.Store
-	model  llm.Model
-	client func(user string) (llm.Client, error)
-	budget int
+	st store.Store
+	// memory names the model that learns for a user; false for a user with
+	// none of its own to learn with.
+	memory func(user string) (llm.Model, bool)
+	client func(user string, m llm.Model) (llm.Client, error)
 
 	wake  chan struct{}
 	mu    sync.Mutex
 	dirty map[string]bool
 }
 
-func New(st store.Store, model llm.Model, limits llm.Limits, client func(user string) (llm.Client, error)) (*Extractor, error) {
-	budget := min(extractionTokens, limits.Input())
-	if budget < minExtractionTokens {
-		return nil, fmt.Errorf("extract: the extraction budget is %d tokens; it must be at least %d so that one piece of evidence always fits", budget, minExtractionTokens)
-	}
-	return &Extractor{st: st, model: model, client: client, budget: budget, wake: make(chan struct{}, 1), dirty: map[string]bool{}}, nil
+// New builds an extractor: each user learns with the model memory names for
+// it, and one it names none for learns nothing.
+func New(st store.Store, memory func(user string) (llm.Model, bool), client func(user string, m llm.Model) (llm.Client, error)) *Extractor {
+	return &Extractor{st: st, memory: memory, client: client, wake: make(chan struct{}, 1), dirty: map[string]bool{}}
 }
 
 func (x *Extractor) Run(ctx context.Context) error {
@@ -206,26 +205,39 @@ func (x *Extractor) learn(ctx context.Context, user string, settings account.Set
 	for _, m := range b.Existing {
 		out.read[m.ID] = m.Updated
 	}
-	parts := memory.Split(b, x.budget)
-	if len(parts) == 0 {
+	model, ok := x.memory(user)
+	if !ok {
+		// The profile names no model to learn with: it learns nothing.
 		return out, nil
 	}
-	client, err := x.client(user)
+	client, err := x.client(user, model)
 	if err != nil {
 		return learned{}, failure{memory.ModelRequest, fmt.Errorf("no model client for the user: %w", err)}
+	}
+	limits, err := client.Limits(model.Name)
+	if err != nil {
+		return learned{}, failure{memory.ModelRequest, fmt.Errorf("the extraction model's limits: %w", err)}
+	}
+	budget := min(extractionTokens, limits.Input())
+	if budget < minExtractionTokens {
+		return learned{}, failure{memory.ModelRequest, fmt.Errorf("the extraction model leaves %d tokens; it must leave at least %d so that one piece of evidence always fits", budget, minExtractionTokens)}
+	}
+	parts := memory.Split(b, budget)
+	if len(parts) == 0 {
+		return out, nil
 	}
 	redactor := redact.New(settings.RedactionKey)
 	current := b.Existing
 	for _, part := range parts {
 		part.Existing = current
-		payload, err := memory.Prompt(part, x.budget)
+		payload, err := memory.Prompt(part, budget)
 		if err != nil {
 			return learned{}, failure{memory.BadEvidence, err}
 		}
 		if settings.Redaction {
 			payload = redactor.Mask(payload)
 		}
-		content, err := x.ask(ctx, client, payload)
+		content, err := x.ask(ctx, client, model, payload)
 		if err != nil {
 			return learned{}, err
 		}
@@ -272,11 +284,11 @@ func replace(memories []memory.Memory, m memory.Memory) []memory.Memory {
 	return append(memories, m)
 }
 
-func (x *Extractor) ask(ctx context.Context, client llm.Client, payload string) (string, error) {
+func (x *Extractor) ask(ctx context.Context, client llm.Client, model llm.Model, payload string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
 	resp, err := client.Chat(ctx, llm.ChatRequest{
-		Model:       x.model,
+		Model:       model,
 		Messages:    []llm.ChatMessage{{Role: llm.RoleSystem, Content: memory.Instructions}, {Role: llm.RoleUser, Content: payload}},
 		ToolChoice:  llm.ToolChoiceNone,
 		InputTokens: llm.EstimateTokens(memory.Instructions) + llm.EstimateTokens(payload),

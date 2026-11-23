@@ -108,18 +108,3 @@ func (ms models) Client(user string, m llm.Model) (llm.Client, error) {
 	}
 	return c, nil
 }
-
-// limitsOf finds a model's limits for the learning model, which one set of
-// models may carry: the first that has the connection.
-func (ms models) limitsOf(m llm.Model) (llm.Limits, error) {
-	sets := []userModels{ms.shared}
-	for _, set := range ms.users {
-		sets = append(sets, set)
-	}
-	for _, set := range sets {
-		if c := set.connections[m.Connection]; c != nil {
-			return c.Limits(m.Name)
-		}
-	}
-	return llm.Limits{}, fmt.Errorf("connection %q is nowhere among the models", m.Connection)
-}

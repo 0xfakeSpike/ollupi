@@ -39,7 +39,7 @@ func setup(t *testing.T, m *model) (*Extractor, store.Store) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	x, err := New(st, llm.Model{Name: "m"}, llm.Limits{Context: 200_000, Output: 8_000}, func(string) (llm.Client, error) { return m, nil })
+	x := New(st, func(string) (llm.Model, bool) { return llm.Model{Name: "m"}, true }, func(string, llm.Model) (llm.Client, error) { return m, nil })
 	if err != nil {
 		t.Fatal(err)
 	}

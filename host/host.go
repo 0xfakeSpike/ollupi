@@ -60,8 +60,11 @@ type Config struct {
 	// Users are the models of users that name their own; a user without a
 	// set runs the Models above. A host that serves several users gives each
 	// a set and leaves Models empty, so no profile borrows another's.
-	Users         []UserModels
-	Memory        *llm.Model
+	Users  []UserModels
+	Memory *llm.Model
+	// MemoryOf is a user's own learning model; Memory is for users that name
+	// none of their own, as a single-user host gives it.
+	MemoryOf      map[string]llm.Model
 	Tools         []kit.Provider
 	Hub           bool
 	OptIn         []string
@@ -142,18 +145,18 @@ func New(ctx context.Context, cfg Config) (*Host, error) {
 	h.scheduler = schedule.New(st, schedule.Threads(runner.Run), slots, cmp.Or(cfg.UserSlots, slots), cmp.Or(cfg.RunLimit, defaultRunLimit))
 	h.tasks = schedule.New(st, schedule.Tasks(runner.Task), cmp.Or(cfg.TaskSlots, defaultTaskSlots),
 		cmp.Or(cfg.UserTaskSlots, defaultUserTaskSlots), cmp.Or(cfg.TaskLimit, defaultTaskLimit))
-	if cfg.Memory != nil {
-		limits, err := modelSet.limitsOf(*cfg.Memory)
-		if err != nil {
-			h.Close()
-			return nil, fmt.Errorf("host: the memory model: %w", err)
-		}
-		model := *cfg.Memory
-		client := func(u string) (llm.Client, error) { return modelSet.Client(u, model) }
-		if h.extractor, err = extract.New(st, model, limits, client); err != nil {
-			h.Close()
-			return nil, err
-		}
+	if cfg.Memory != nil || len(cfg.MemoryOf) > 0 {
+		h.extractor = extract.New(st,
+			func(user string) (llm.Model, bool) {
+				if m, ok := cfg.MemoryOf[user]; ok {
+					return m, true
+				}
+				if cfg.Memory != nil {
+					return *cfg.Memory, true
+				}
+				return llm.Model{}, false
+			},
+			func(user string, m llm.Model) (llm.Client, error) { return modelSet.Client(user, m) })
 	}
 	if cfg.Gateway != nil {
 		if h.Gateway, err = gateway.NewServer(h.App, st.Feed(), *cfg.Gateway); err != nil {
