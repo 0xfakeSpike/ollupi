@@ -48,26 +48,33 @@ func (r reader) MissingUsage(thread string, after store.UsageKey, limit int) ([]
 }
 
 func (r reader) UsageBuckets(user string, q store.UsageQuery) ([]store.UsageBucket, error) {
-	key := ""
+	key, group, provider := "", "", "''"
 	var args []any
 	switch q.Group {
 	case store.UsageByDay:
-		key = "strftime('%Y-%m-%d', at, ?)"
+		key, group = "strftime('%Y-%m-%d', at, ?)", "key"
 		args = append(args, fmt.Sprintf("%+d minutes", q.OffsetMinutes))
 	case store.UsageByWorkspace:
-		key = "workspace_id"
+		key, group = "workspace_id", "key"
+	case store.UsageByProvider:
+		key, group, provider = "provider", "key", "provider"
+	case store.UsageByConnection:
+		// A model served by two APIs is two buckets: the provider tells them apart.
+		key, group, provider = "model", "provider, model", "provider"
 	case store.UsageByModel:
-		key = "model"
+		key, group = "model", "key"
 	default:
 		return nil, fmt.Errorf("store: usage grouped by %q", q.Group)
 	}
-	query := "SELECT " + key + ` AS key,
+	query := "SELECT " + key + " AS key, " + provider + ` AS provider, COUNT(*) AS calls,
 		SUM(input_tokens) AS input_tokens, SUM(cached_input_tokens) AS cached_input_tokens,
 		SUM(cache_write_input_tokens) AS cache_write_input_tokens, SUM(output_tokens) AS output_tokens
-		FROM usage WHERE user_id = ? AND at >= ? AND at < ? GROUP BY key ORDER BY key`
+		FROM usage WHERE user_id = ? AND at >= ? AND at < ? GROUP BY ` + group + ` ORDER BY key`
 	args = append(args, user, q.From.UTC(), q.To.UTC())
 	var rows []struct {
 		Key                   string
+		Provider              string
+		Calls                 int64
 		InputTokens           int64
 		CachedInputTokens     int64
 		CacheWriteInputTokens int64
@@ -78,18 +85,19 @@ func (r reader) UsageBuckets(user string, q store.UsageQuery) ([]store.UsageBuck
 	}
 	out := make([]store.UsageBucket, len(rows))
 	for i, row := range rows {
-		out[i] = store.UsageBucket{Key: row.Key, Tokens: conversation.Usage{InputTokens: row.InputTokens,
-			CachedInputTokens: row.CachedInputTokens, CacheWriteInputTokens: row.CacheWriteInputTokens, OutputTokens: row.OutputTokens}}
+		out[i] = store.UsageBucket{Key: row.Key, Provider: row.Provider, Calls: row.Calls,
+			Tokens: conversation.Usage{InputTokens: row.InputTokens,
+				CachedInputTokens: row.CachedInputTokens, CacheWriteInputTokens: row.CacheWriteInputTokens, OutputTokens: row.OutputTokens}}
 	}
 	return out, nil
 }
 
 func (t *tx) PutUsage(u store.Usage) error {
-	err := t.g.Exec(`INSERT INTO usage(id, thread_id, seq, user_id, workspace_id, turn_id, item_id, at, source, model,
+	err := t.g.Exec(`INSERT INTO usage(id, thread_id, seq, user_id, workspace_id, turn_id, item_id, at, source, provider, model,
 		input_tokens, cached_input_tokens, cache_write_input_tokens, output_tokens)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO NOTHING`,
-		u.ID, u.Thread, u.Seq, u.User, u.Workspace, u.Turn, u.Item, u.At.UTC(), string(u.Source), u.Model,
+		u.ID, u.Thread, u.Seq, u.User, u.Workspace, u.Turn, u.Item, u.At.UTC(), string(u.Source), u.Provider, u.Model,
 		u.Tokens.InputTokens, u.Tokens.CachedInputTokens, u.Tokens.CacheWriteInputTokens, u.Tokens.OutputTokens).Error
 	if err != nil {
 		return fmt.Errorf("store: usage %s: %w", u.ID, err)

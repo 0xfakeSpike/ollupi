@@ -205,7 +205,7 @@ func (c *conn) usageQuery(ctx context.Context, p UsageQueryParams) (UsageQueryRe
 		OffsetMinutes: p.OffsetMinutes})
 	out := make([]UsageRow, len(buckets))
 	for i, b := range buckets {
-		out[i] = UsageRow{Key: b.Key, Usage: b.Tokens}
+		out[i] = UsageRow{Key: b.Key, Provider: b.Provider, Calls: b.Calls, Usage: b.Tokens}
 	}
 	return UsageQueryResult{Data: out}, err
 }

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -176,7 +177,7 @@ func (r *Recorder) fill(ctx context.Context, thread string) error {
 				source = store.UsageCompaction
 			}
 			rows = append(rows, store.Usage{ID: usageID(e.Thread, e.Seq), Thread: e.Thread, Seq: e.Seq, User: e.User,
-				Workspace: e.Workspace, Turn: e.Turn, Item: e.Item, At: e.At.UTC(), Source: source, Model: body.Stats.Model,
+				Workspace: e.Workspace, Turn: e.Turn, Item: e.Item, At: e.At.UTC(), Source: source, Provider: providerOf(body.Stats.Connection), Model: body.Stats.Model,
 				Tokens: body.Usage})
 		}
 		if len(rows) > 0 {
@@ -197,6 +198,15 @@ func (r *Recorder) fill(ctx context.Context, thread string) error {
 			return nil
 		}
 	}
+}
+
+// providerOf is the API's name in a connection, "api/name": the usage page
+// counts a model served by two APIs apart.
+func providerOf(connection string) string {
+	if slash := strings.IndexByte(connection, '/'); slash > 0 {
+		return connection[:slash]
+	}
+	return ""
 }
 
 func usageID(thread string, seq int64) string {

@@ -340,6 +340,9 @@
         "model": {
           "type": "string"
         },
+        "connection": {
+          "type": "string"
+        },
         "budgetTokens": {
           "type": "integer"
         },
@@ -3527,6 +3530,8 @@
       "enum": [
         "day",
         "workspace",
+        "provider",
+        "connection",
         "model"
       ]
     },
@@ -3576,6 +3581,12 @@
         "key": {
           "type": "string"
         },
+        "provider": {
+          "type": "string"
+        },
+        "calls": {
+          "type": "integer"
+        },
         "inputTokens": {
           "type": "integer"
         },
@@ -3591,6 +3602,7 @@
       },
       "required": [
         "key",
+        "calls",
         "inputTokens",
         "cachedInputTokens",
         "cacheWriteInputTokens",

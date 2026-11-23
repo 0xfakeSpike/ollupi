@@ -139,6 +139,7 @@ type Usage struct {
 	Item      string
 	At        time.Time
 	Source    UsageSource
+	Provider  string
 	Model     string
 	Tokens    conversation.Usage
 }
@@ -171,12 +172,14 @@ type UsageKey struct {
 type UsageGroup string
 
 const (
-	UsageByDay       UsageGroup = "day"
-	UsageByWorkspace UsageGroup = "workspace"
-	UsageByModel     UsageGroup = "model"
+	UsageByDay        UsageGroup = "day"
+	UsageByWorkspace  UsageGroup = "workspace"
+	UsageByProvider   UsageGroup = "provider"
+	UsageByConnection UsageGroup = "connection"
+	UsageByModel      UsageGroup = "model"
 )
 
-var UsageGroups = []UsageGroup{UsageByDay, UsageByWorkspace, UsageByModel}
+var UsageGroups = []UsageGroup{UsageByDay, UsageByWorkspace, UsageByProvider, UsageByConnection, UsageByModel}
 
 type UsageQuery struct {
 	From, To time.Time
@@ -186,9 +189,13 @@ type UsageQuery struct {
 	OffsetMinutes int
 }
 
+// UsageBucket is one bucket of the aggregation. Calls is how many model
+// responses it adds up.
 type UsageBucket struct {
-	Key    string
-	Tokens conversation.Usage
+	Key      string
+	Provider string
+	Calls    int64
+	Tokens   conversation.Usage
 }
 
 // Presence is one stretch of time the user spent in the app, as the desktop

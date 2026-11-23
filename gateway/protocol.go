@@ -604,9 +604,13 @@ type UsageQueryResult struct {
 }
 
 // UsageRow is one bucket of the aggregation: a day (YYYY-MM-DD in the caller's
-// time zone), a workspace ID or a model name, and the tokens it used.
+// time zone), a workspace ID, an API's name or a model name, with the API that
+// served the rows and how many model responses it adds up. Provider is the
+// API's name for a model grouping, and empty otherwise.
 type UsageRow struct {
-	Key string `json:"key"`
+	Key      string `json:"key"`
+	Provider string `json:"provider,omitempty"`
+	Calls    int64  `json:"calls"`
 	conversation.Usage
 }
 

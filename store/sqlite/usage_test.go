@@ -181,3 +181,71 @@ func TestUsageBucketsGroupInTheCallersTimeZone(t *testing.T) {
 		t.Error("an unknown grouping was accepted")
 	}
 }
+
+func TestUsageBucketsKeepTheApiApart(t *testing.T) {
+	s := open(t, t.TempDir())
+	usageStart(t, s, "u", "th", "")
+	at := time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
+	rows := []store.Usage{
+		{ID: "a", User: "u", At: at, Model: "m", Provider: "pharos", Source: store.UsageResponse, Tokens: conversation.Usage{InputTokens: 10}},
+		{ID: "b", User: "u", At: at, Model: "m", Provider: "deepseek", Source: store.UsageResponse, Tokens: conversation.Usage{InputTokens: 20, OutputTokens: 2}},
+		{ID: "c", User: "u", At: at, Model: "m", Provider: "pharos", Source: store.UsageResponse, Tokens: conversation.Usage{InputTokens: 5}},
+		{ID: "d", User: "u", At: at, Model: "other", Provider: "pharos", Source: store.UsageResponse, Tokens: conversation.Usage{InputTokens: 7}},
+	}
+	update(t, s, func(tx store.Tx) error {
+		for _, row := range rows {
+			if err := tx.PutUsage(row); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	q := store.UsageQuery{From: at.Add(-time.Hour), To: at.Add(time.Hour)}
+	find := func(got []store.UsageBucket, key, provider string) (store.UsageBucket, bool) {
+		t.Helper()
+		for _, b := range got {
+			if b.Key == key && b.Provider == provider {
+				return b, true
+			}
+		}
+		return store.UsageBucket{}, false
+	}
+
+	byProvider := buckets(t, s, "u", store.UsageQuery{From: q.From, To: q.To, Group: store.UsageByProvider})
+	if len(byProvider) != 2 {
+		t.Fatalf("by API %+v", byProvider)
+	}
+	if b, ok := find(byProvider, "pharos", "pharos"); !ok || b.Tokens.InputTokens != 22 || b.Calls != 3 {
+		t.Errorf("pharos %+v", b)
+	}
+	if b, ok := find(byProvider, "deepseek", "deepseek"); !ok || b.Tokens.InputTokens != 20 || b.Tokens.OutputTokens != 2 || b.Calls != 1 {
+		t.Errorf("deepseek %+v", b)
+	}
+
+	byConnection := buckets(t, s, "u", store.UsageQuery{From: q.From, To: q.To, Group: store.UsageByConnection})
+	if len(byConnection) != 3 {
+		t.Fatalf("by connection %+v", byConnection)
+	}
+	if b, ok := find(byConnection, "m", "pharos"); !ok || b.Tokens.InputTokens != 15 || b.Calls != 2 {
+		t.Errorf("pharos/m %+v", b)
+	}
+	if b, ok := find(byConnection, "m", "deepseek"); !ok || b.Tokens.InputTokens != 20 || b.Calls != 1 {
+		t.Errorf("deepseek/m %+v", b)
+	}
+
+	// The plain model grouping still adds both APIs of one model together.
+	tokens := func(got []store.UsageBucket, key string) conversation.Usage {
+		t.Helper()
+		for _, b := range got {
+			if b.Key == key {
+				return b.Tokens
+			}
+		}
+		t.Fatalf("no bucket %q in %+v", key, got)
+		return conversation.Usage{}
+	}
+	byModel := buckets(t, s, "u", store.UsageQuery{From: q.From, To: q.To, Group: store.UsageByModel})
+	if len(byModel) != 2 || tokens(byModel, "m").InputTokens != 35 || tokens(byModel, "other").InputTokens != 7 {
+		t.Errorf("by model %+v", byModel)
+	}
+}

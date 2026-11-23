@@ -37,6 +37,7 @@ func (r *Runner) callModel(ctx context.Context, s *step, a agent.CallModel) erro
 	if err != nil {
 		return fmt.Errorf("run: %w", err)
 	}
+	req.Stats.Connection = s.turn.Model.Connection
 	if req.NeedsCompaction {
 		return r.compact(ctx, s, in)
 	}
@@ -191,6 +192,7 @@ func (r *Runner) compact(ctx context.Context, s *step, in prompt.Context) error 
 	if err != nil {
 		return fmt.Errorf("run: %w", err)
 	}
+	req.Stats.Connection = s.turn.Model.Connection
 	resp, err := r.send(ctx, s, req, in.Tools, llm.ToolChoiceNone, nil)
 	if err == nil {
 		err = checkResponse(resp, llm.ToolChoiceNone)

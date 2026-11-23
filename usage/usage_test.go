@@ -22,6 +22,7 @@ type usageRow struct {
 	TurnID                string
 	ItemID                string
 	Source                string
+	Provider              string
 	Model                 string
 	InputTokens           int64
 	CachedInputTokens     int64
@@ -123,7 +124,7 @@ func TestTheRecorderWritesWhatTheResponsesSay(t *testing.T) {
 	s := open(t)
 	converse(t, s, "u", "th",
 		conversation.ModelResponded{Response: "r1", Usage: conversation.Usage{InputTokens: 10, CachedInputTokens: 4,
-			CacheWriteInputTokens: 2, OutputTokens: 3}, Stats: conversation.ContextStats{Model: "m1"}},
+			CacheWriteInputTokens: 2, OutputTokens: 3}, Stats: conversation.ContextStats{Model: "m1", Connection: "deepseek/m1"}},
 		conversation.ModelResponded{Response: "summary", Compaction: true,
 			Usage: conversation.Usage{InputTokens: 5, OutputTokens: 1}, Stats: conversation.ContextStats{Model: "m1"}})
 	r := New(s)
@@ -142,6 +143,9 @@ func TestTheRecorderWritesWhatTheResponsesSay(t *testing.T) {
 	}
 	if first.Model != "m1" || first.InputTokens != 10 || first.CachedInputTokens != 4 || first.CacheWriteInputTokens != 2 || first.OutputTokens != 3 {
 		t.Errorf("the first row's tokens %+v", first)
+	}
+	if first.Provider != "deepseek" {
+		t.Errorf("the first row's API %q, from the connection deepseek/m1", first.Provider)
 	}
 	if first.At.IsZero() || second.At.IsZero() {
 		t.Errorf("a row has no time: %+v", got)

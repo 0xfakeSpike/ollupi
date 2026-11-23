@@ -247,8 +247,12 @@ func (u Usage) Plus(v Usage) Usage {
 		u.CacheWriteInputTokens + v.CacheWriteInputTokens, u.OutputTokens + v.OutputTokens}
 }
 
+// ContextStats is the context a model call was built from. Connection is the
+// API and model that answered, "api/name", which a usage row keeps after the
+// API is removed.
 type ContextStats struct {
 	Model            string       `json:"model,omitempty"`
+	Connection       string       `json:"connection,omitempty"`
 	BudgetTokens     int          `json:"budgetTokens"`
 	CompactAtTokens  int          `json:"compactAtTokens"`
 	SystemTokens     int          `json:"systemTokens"`
