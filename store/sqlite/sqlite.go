@@ -21,11 +21,20 @@ type Store struct {
 	g     *gorm.DB
 	feed  *store.Feed
 	epoch atomic.Int64
+	// base is the user's home: workspace roots are kept relative to it, so
+	// the file means the same folders on another machine (paths.go).
+	base string
 }
 
 var _ store.Store = (*Store)(nil)
 
-func Open(home string) (*Store, error) {
+// Open opens the store in home. Workspace roots are kept relative to the
+// user's home, so the file carries them to another machine.
+func Open(home string) (*Store, error) { return openAt(home, userHome()) }
+
+// openAt opens the store in home relative to base, the home its workspace
+// roots are read and written against.
+func openAt(home, base string) (*Store, error) {
 	path := filepath.Join(home, "data", "store.sqlite")
 	g, err := sqlitedb.Open(path)
 	if err != nil {
@@ -35,7 +44,11 @@ func Open(home string) (*Store, error) {
 		sqlitedb.Close(g)
 		return nil, fmt.Errorf("store: %s: %w", path, err)
 	}
-	return &Store{g: g, feed: store.NewFeed()}, nil
+	if err := normalizeRoots(g, base); err != nil {
+		sqlitedb.Close(g)
+		return nil, fmt.Errorf("store: %s: %w", path, err)
+	}
+	return &Store{g: g, feed: store.NewFeed(), base: base}, nil
 }
 
 func (s *Store) Close() error { return sqlitedb.Close(s.g) }
@@ -58,7 +71,7 @@ func (s *Store) Fence(epoch int64) error {
 }
 
 func (s *Store) Read(ctx context.Context, fn func(store.Reader) error) error {
-	return s.g.WithContext(ctx).Transaction(func(g *gorm.DB) error { return fn(reader{g: g}) })
+	return s.g.WithContext(ctx).Transaction(func(g *gorm.DB) error { return fn(reader{g: g, base: s.base}) })
 }
 
 func (s *Store) Update(ctx context.Context, fn func(store.Tx) error) error {
@@ -73,7 +86,7 @@ func (s *Store) Update(ctx context.Context, fn func(store.Tx) error) error {
 				return store.ErrShardLost
 			}
 		}
-		t := &tx{reader: reader{g: g}, views: map[string]conversation.View{}, threads: map[string]*pending{}}
+		t := &tx{reader: reader{g: g, base: s.base}, views: map[string]conversation.View{}, threads: map[string]*pending{}}
 		if err := fn(t); err != nil {
 			return err
 		}

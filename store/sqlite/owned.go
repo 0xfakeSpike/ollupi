@@ -56,8 +56,8 @@ type workspaceRow struct {
 	ArchivedAt   *time.Time
 }
 
-func (row workspaceRow) workspace() (account.Workspace, error) {
-	w := account.Workspace{ID: row.ID, Name: row.Name, Root: row.Root, Kind: account.WorkspaceKind(row.Kind), Instructions: row.Instructions,
+func (row workspaceRow) workspace(base string) (account.Workspace, error) {
+	w := account.Workspace{ID: row.ID, Name: row.Name, Root: readRoot(row.Root, base), Kind: account.WorkspaceKind(row.Kind), Instructions: row.Instructions,
 		Created: row.CreatedAt, Updated: row.UpdatedAt, Archived: row.ArchivedAt}
 	if err := json.Unmarshal([]byte(row.Settings), &w.Settings); err != nil {
 		return account.Workspace{}, fmt.Errorf("store: the settings of workspace %s: %w", row.ID, err)
@@ -69,7 +69,8 @@ func (row workspaceRow) workspace() (account.Workspace, error) {
 }
 
 func (r reader) Workspaces(owner string) ([]account.Workspace, error) {
-	return each(r.g.Raw("SELECT * FROM workspaces WHERE user_id = ? ORDER BY name, id", owner), workspaceRow.workspace)
+	return each(r.g.Raw("SELECT * FROM workspaces WHERE user_id = ? ORDER BY name, id", owner),
+		func(row workspaceRow) (account.Workspace, error) { return row.workspace(r.base) })
 }
 
 func (r reader) Workspace(owner, id string) (account.Workspace, error) {
@@ -77,7 +78,7 @@ func (r reader) Workspace(owner, id string) (account.Workspace, error) {
 	if err := notFound(r.g.Raw("SELECT * FROM workspaces WHERE id = ? AND user_id = ?", id, owner).Take(&row).Error); err != nil {
 		return account.Workspace{}, fmt.Errorf("store: workspace %s: %w", id, err)
 	}
-	return row.workspace()
+	return row.workspace(r.base)
 }
 
 type environmentRow struct {
@@ -495,7 +496,7 @@ func (t *tx) PutWorkspace(owner string, w account.Workspace) error {
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET name = excluded.name, root = excluded.root, kind = excluded.kind, instructions = excluded.instructions,
 			providers = excluded.providers, settings = excluded.settings, updated_at = excluded.updated_at, archived_at = excluded.archived_at`,
-		w.ID, owner, w.Name, w.Root, string(w.Kind), w.Instructions, string(providers), string(settings), w.Created, w.Updated, w.Archived).Error
+		w.ID, owner, w.Name, storeRoot(w.Root, t.base), string(w.Kind), w.Instructions, string(providers), string(settings), w.Created, w.Updated, w.Archived).Error
 	if err != nil {
 		return fmt.Errorf("store: workspace %s: %w", w.Name, err)
 	}

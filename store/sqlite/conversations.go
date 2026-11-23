@@ -16,6 +16,8 @@ import (
 
 type reader struct {
 	g *gorm.DB
+	// base is the user's home: workspace roots are kept relative to it.
+	base string
 }
 
 type threadRow struct {
