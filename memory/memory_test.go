@@ -145,7 +145,7 @@ func TestParseKeepsScopesAndRefusesWhatItCannotTrust(t *testing.T) {
 		{op(`"action":"add","scope":"global","topic":"Build","kind":"decision","text":"Builds with make."`, fresh), "", ""},
 		{op(`"action":"update","id":"g","topic":"language","text":"Answers in Chinese.","kind":"preference"`, fresh), "", "global"},
 		{op(`"action":"update","id":"g","topic":"language","text":"Ships on Fridays.","kind":"procedure"`, fresh), "only preferences and facts", ""},
-		{op(`"action":"update","id":"g","topic":"tongue","text":"Answers in Chinese.","kind":"preference"`, fresh), "immutable", ""},
+		{op(`"action":"update","id":"g","topic":"tongue","text":"Answers in Chinese.","kind":"preference"`, fresh), "", "global"},
 		{op(`"action":"add","topic":"Build","kind":"fact","text":"Builds."`, `{"thread":"th","item":"nope"}`), "unknown evidence", ""},
 		{op(`"action":"update","id":"g","topic":"language","text":"Answers in Chinese.","kind":"preference"`, `{"thread":"old","item":"g"}`), "no current evidence", ""},
 		{op(`"action":"update","id":"missing","text":"x","kind":"fact"`, fresh), "unavailable", ""},
@@ -163,6 +163,14 @@ func TestParseKeepsScopesAndRefusesWhatItCannotTrust(t *testing.T) {
 	ops, err := Parse(op(`"action":"update","id":"e","topic":"style","text":"Long answers.","kind":"preference"`, fresh), b, same)
 	if err != nil || len(ops) != 0 {
 		t.Errorf("an edit of the user's is changed: %+v %v", ops, err)
+	}
+	ops, err = Parse(op(`"action":"update","id":"g","topic":"tongue","text":"Answers in Chinese.","kind":"preference"`, fresh), b, same)
+	if err != nil || len(ops) != 1 || ops[0].Topic != "language" {
+		t.Errorf("a rewritten topic is kept: %+v %v", ops, err)
+	}
+	ops, err = Parse(op(`"action":"retire","id":"g","topic":"tongue"`, fresh), b, same)
+	if err != nil || len(ops) != 1 || ops[0].Topic != "language" {
+		t.Errorf("a rewritten topic on a retire is kept: %+v %v", ops, err)
 	}
 }
 
