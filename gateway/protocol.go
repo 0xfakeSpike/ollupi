@@ -109,6 +109,10 @@ var protocol = struct {
 		"turn/steer":                   handle((*conn).turnSteer),
 		"turn/interrupt":               handle((*conn).turnInterrupt),
 		"attachment/read":              handle((*conn).attachmentRead),
+		"user/list":                    handle((*conn).userList),
+		"user/create":                  handle((*conn).userCreate),
+		"user/rename":                  handle((*conn).userRename),
+		"user/color":                   handle((*conn).userColor),
 		"model/list":                   handle((*conn).modelList),
 		"tool/list":                    handle((*conn).toolList),
 		"mcpServer/list":               handle((*conn).mcpServerList),
@@ -452,6 +456,37 @@ type TurnInterruptParams struct {
 
 type TurnResult struct {
 	Turn TurnRow `json:"turn"`
+}
+
+type UserRow struct {
+	ID      string    `json:"id"`
+	Name    string    `json:"name"`
+	Color   string    `json:"color"`
+	Created time.Time `json:"created"`
+}
+
+type UserListResult struct {
+	Data    []UserRow `json:"data"`
+	Current string    `json:"current"`
+}
+
+type UserCreateParams struct {
+	Name  string `json:"name"`
+	Color string `json:"color,omitempty"`
+}
+
+type UserRenameParams struct {
+	UserID string `json:"userId"`
+	Name   string `json:"name"`
+}
+
+type UserColorParams struct {
+	UserID string `json:"userId"`
+	Color  string `json:"color"`
+}
+
+type UserResult struct {
+	User UserRow `json:"user"`
 }
 
 type WorkspaceListResult struct {

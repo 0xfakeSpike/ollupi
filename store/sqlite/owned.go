@@ -23,6 +23,23 @@ func (r reader) Users() ([]string, error) {
 	return out, err
 }
 
+type userRow struct {
+	ID        string
+	Name      string
+	Color     string
+	CreatedAt time.Time
+}
+
+func (row userRow) user() account.User {
+	return account.User{ID: row.ID, Name: row.Name, Color: row.Color, Created: row.CreatedAt}
+}
+
+func (r reader) Profiles() ([]account.User, error) {
+	return each(r.g.Raw("SELECT * FROM users ORDER BY created_at, id"), func(row userRow) (account.User, error) {
+		return row.user(), nil
+	})
+}
+
 type settingsRow struct {
 	Redaction    bool
 	RedactionKey string
@@ -473,6 +490,14 @@ func (t *tx) EnsureUser(id string) error {
 		return fmt.Errorf("store: the settings of user %s: %w", id, err)
 	}
 	return t.PutEnvironment(id, account.Environment{ID: uuid.NewString(), Name: account.LocalName, Kind: account.Local, Created: now, Updated: now})
+}
+
+func (t *tx) SetUserName(id, name string) error {
+	return one(t.g.Exec("UPDATE users SET name = ? WHERE id = ?", name, id), "user "+id)
+}
+
+func (t *tx) SetUserColor(id, color string) error {
+	return one(t.g.Exec("UPDATE users SET color = ? WHERE id = ?", color, id), "user "+id)
 }
 
 func (t *tx) SetSettings(owner string, s account.Settings) error {

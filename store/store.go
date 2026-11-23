@@ -26,6 +26,7 @@ type Store interface {
 
 type Reader interface {
 	Users() ([]string, error)
+	Profiles() ([]account.User, error)
 	Settings(user string) (account.Settings, error)
 	Workspaces(user string) ([]account.Workspace, error)
 	Workspace(user, id string) (account.Workspace, error)
@@ -73,6 +74,8 @@ type Reader interface {
 type Tx interface {
 	Reader
 	EnsureUser(id string) error
+	SetUserName(id, name string) error
+	SetUserColor(id, color string) error
 	SetSettings(user string, s account.Settings) error
 	PutWorkspace(user string, w account.Workspace) error
 	AddTodo(user string, t account.Todo) (account.Todo, error)
