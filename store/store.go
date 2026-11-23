@@ -67,6 +67,7 @@ type Reader interface {
 	// read instead of failing the whole batch.
 	MissingUsage(thread string, after UsageKey, limit int) (entries []UsageEntry, more bool, err error)
 	UsageBuckets(user string, q UsageQuery) ([]UsageBucket, error)
+	PresenceBuckets(user string, q PresenceQuery) ([]PresenceBucket, error)
 }
 
 type Tx interface {
@@ -85,6 +86,7 @@ type Tx interface {
 	PutMemory(m memory.Memory) error
 	SetMemoryState(user string, s memory.State) error
 	PutUsage(u Usage) error
+	PutPresence(p Presence) error
 	DeleteThread(id string) error
 	CreateThread(t Thread) error
 	UpdateThread(t Thread) error
@@ -187,6 +189,67 @@ type UsageQuery struct {
 type UsageBucket struct {
 	Key    string
 	Tokens conversation.Usage
+}
+
+// Presence is one stretch of time the user spent in the app, as the desktop
+// client observed it. The client writes a stretch when it ends and may write
+// the same id again with a later end: the row is then extended, never moved.
+// Thread and Todo are a snapshot from the moment it is written, so time keeps
+// adding up to the same todo after its thread is archived and reopened.
+type Presence struct {
+	ID        string
+	User      string
+	Thread    string
+	Todo      int64
+	Workspace string
+	State     PresenceState
+	Start     time.Time
+	End       time.Time
+}
+
+// PresenceState is what the app was showing while a stretch was recorded: the
+// thread the user was on, the app without a thread, or neither because the
+// app was not in front.
+type PresenceState string
+
+const (
+	PresenceSeen      PresenceState = "seen"
+	PresenceInApp     PresenceState = "in_app"
+	PresenceElsewhere PresenceState = "elsewhere"
+)
+
+var PresenceStates = []PresenceState{PresenceSeen, PresenceInApp, PresenceElsewhere}
+
+type PresenceGroup string
+
+const (
+	PresenceByThread    PresenceGroup = "thread"
+	PresenceByTodo      PresenceGroup = "todo"
+	PresenceByWorkspace PresenceGroup = "workspace"
+	PresenceByDay       PresenceGroup = "day"
+	PresenceByApp       PresenceGroup = "app"
+)
+
+var PresenceGroups = []PresenceGroup{PresenceByThread, PresenceByTodo, PresenceByWorkspace, PresenceByDay, PresenceByApp}
+
+// PresenceQuery sums the time the user spent over a half-open range. From and
+// To clip a stretch that crosses them, so the buckets of adjacent ranges add
+// up. A day grouping splits a stretch at the days of the caller's time zone;
+// an app grouping returns a single bucket keyed "".
+type PresenceQuery struct {
+	From, To time.Time
+	Group    PresenceGroup
+	// OffsetMinutes is how many minutes east of UTC the days of a day grouping
+	// start, so a client sees the days of its own time zone.
+	OffsetMinutes int
+}
+
+// PresenceBucket is a stretch of time per group key: a thread ID, a todo ID, a
+// workspace ID, a day (YYYY-MM-DD in the caller's time zone) or "" for the
+// app as a whole.
+type PresenceBucket struct {
+	Key     string
+	Seconds int64
 }
 
 type Event struct {

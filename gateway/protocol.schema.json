@@ -2345,6 +2345,136 @@
       ],
       "additionalProperties": false
     },
+    "PresenceGroup": {
+      "type": "string",
+      "enum": [
+        "thread",
+        "todo",
+        "workspace",
+        "day",
+        "app"
+      ]
+    },
+    "PresenceInput": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "todoId": {
+          "type": "integer"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/PresenceState"
+        },
+        "start": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "end": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "state",
+        "start",
+        "end"
+      ],
+      "additionalProperties": false
+    },
+    "PresenceRecordParams": {
+      "type": "object",
+      "properties": {
+        "rows": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "$ref": "#/$defs/PresenceInput"
+          }
+        }
+      },
+      "required": [
+        "rows"
+      ],
+      "additionalProperties": false
+    },
+    "PresenceRow": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "seconds": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "key",
+        "seconds"
+      ],
+      "additionalProperties": false
+    },
+    "PresenceState": {
+      "type": "string",
+      "enum": [
+        "seen",
+        "in_app",
+        "elsewhere"
+      ]
+    },
+    "PresenceSummaryParams": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "to": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "groupBy": {
+          "$ref": "#/$defs/PresenceGroup"
+        },
+        "offsetMinutes": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "groupBy"
+      ],
+      "additionalProperties": false
+    },
+    "PresenceSummaryResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "$ref": "#/$defs/PresenceRow"
+          }
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "additionalProperties": false
+    },
     "ReadFile": {
       "type": "object",
       "properties": {
@@ -4041,6 +4171,22 @@
       },
       "result": {
         "$ref": "#/$defs/ModelListResult"
+      }
+    },
+    "presence/record": {
+      "params": {
+        "$ref": "#/$defs/PresenceRecordParams"
+      },
+      "result": {
+        "$ref": "#/$defs/Empty"
+      }
+    },
+    "presence/summary": {
+      "params": {
+        "$ref": "#/$defs/PresenceSummaryParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PresenceSummaryResult"
       }
     },
     "search": {

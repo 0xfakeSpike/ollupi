@@ -210,6 +210,27 @@ func (c *conn) usageQuery(ctx context.Context, p UsageQueryParams) (UsageQueryRe
 	return UsageQueryResult{Data: out}, err
 }
 
+// presenceRecord writes what the desktop client saw: the stretches of time the
+// user spent on a thread, in the app, or away from it.
+func (c *conn) presenceRecord(ctx context.Context, p PresenceRecordParams) (Empty, error) {
+	rows := make([]store.Presence, len(p.Rows))
+	for i, r := range p.Rows {
+		rows[i] = store.Presence{ID: r.ID, Thread: r.ThreadID, Todo: r.TodoID, Workspace: r.WorkspaceID,
+			State: r.State, Start: r.Start, End: r.End}
+	}
+	return Empty{}, c.s.app.RecordPresence(ctx, c.user, rows)
+}
+
+func (c *conn) presenceSummary(ctx context.Context, p PresenceSummaryParams) (PresenceSummaryResult, error) {
+	buckets, err := c.s.app.Presence(ctx, c.user, store.PresenceQuery{From: p.From, To: p.To, Group: p.GroupBy,
+		OffsetMinutes: p.OffsetMinutes})
+	out := make([]PresenceRow, len(buckets))
+	for i, b := range buckets {
+		out[i] = PresenceRow{Key: b.Key, Seconds: b.Seconds}
+	}
+	return PresenceSummaryResult{Data: out}, err
+}
+
 func (c *conn) settingsRead(ctx context.Context, _ Empty) (SettingsRow, error) {
 	s, err := c.s.app.Settings(ctx, c.user)
 	return settingsRow(s), err

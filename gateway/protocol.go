@@ -137,6 +137,8 @@ var protocol = struct {
 		"memory/move":                  handle((*conn).memoryMove),
 		"memory/forget":                handle((*conn).memoryForget),
 		"usage/query":                  handle((*conn).usageQuery),
+		"presence/record":              handle((*conn).presenceRecord),
+		"presence/summary":             handle((*conn).presenceSummary),
 		"search":                       handle((*conn).search),
 		"todo/list":                    handle((*conn).todoList),
 		"todo/add":                     handle((*conn).todoAdd),
@@ -608,6 +610,42 @@ type UsageRow struct {
 	conversation.Usage
 }
 
+// PresenceRecordParams appends stretches of time the user spent in the app.
+type PresenceRecordParams struct {
+	Rows []PresenceInput `json:"rows"`
+}
+
+// PresenceInput is one stretch: what the app was showing, and when. Sending the
+// same id again only extends the stretch it already recorded.
+type PresenceInput struct {
+	ID          string              `json:"id"`
+	ThreadID    string              `json:"threadId,omitempty"`
+	TodoID      int64               `json:"todoId,omitempty"`
+	WorkspaceID string              `json:"workspaceId,omitempty"`
+	State       store.PresenceState `json:"state"`
+	Start       time.Time           `json:"start"`
+	End         time.Time           `json:"end"`
+}
+
+type PresenceSummaryParams struct {
+	From          time.Time           `json:"from"`
+	To            time.Time           `json:"to"`
+	GroupBy       store.PresenceGroup `json:"groupBy"`
+	OffsetMinutes int                 `json:"offsetMinutes,omitempty"`
+}
+
+type PresenceSummaryResult struct {
+	Data []PresenceRow `json:"data"`
+}
+
+// PresenceRow is one bucket of the aggregation: a thread ID, a todo ID, a
+// workspace ID, a day (YYYY-MM-DD in the caller's time zone) or "" for the
+// whole app, and the seconds it holds.
+type PresenceRow struct {
+	Key     string `json:"key"`
+	Seconds int64  `json:"seconds"`
+}
+
 type SearchParams struct {
 	Query       string `json:"query"`
 	WorkspaceID string `json:"workspaceId,omitempty"`
@@ -712,6 +750,7 @@ var errorCodes = []struct {
 	{app.ErrInvalidDecision, jsonrpc.CodeInvalidParams},
 	{app.ErrInvalidPath, jsonrpc.CodeInvalidParams},
 	{app.ErrInvalidQuery, jsonrpc.CodeInvalidParams},
+	{app.ErrInvalidPresence, jsonrpc.CodeInvalidParams},
 	{app.ErrInvalidTodo, jsonrpc.CodeInvalidParams},
 	{app.ErrSearchTimedOut, errSearchTimedOut},
 	{account.ErrInvalidName, jsonrpc.CodeInvalidParams},

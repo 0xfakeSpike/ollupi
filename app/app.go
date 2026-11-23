@@ -34,6 +34,7 @@ var (
 	ErrEnvironmentInUse = errors.New("a conversation runs in the environment")
 	ErrInvalidQuery     = errors.New("invalid query")
 	ErrInvalidTodo      = errors.New("invalid todo")
+	ErrInvalidPresence  = errors.New("invalid presence")
 	ErrSearchTimedOut   = errors.New("the search took too long; try longer or fewer words")
 )
 
