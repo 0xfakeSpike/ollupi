@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/host"
-	"github.com/0xfakeSpike/ollupi/pkg/llm"
 )
 
 func isolated(args []string) {
@@ -65,8 +64,7 @@ func lone(args []string) {
 	fs.Parse(args)
 	tr := newTracker()
 	e := newEngine(host.Config{
-		Home: *dir, Models: fakeModels,
-		Connections: map[string]llm.Client{"fake": &model{}},
+		Home: *dir, Users: fakeUsers(&model{}),
 	})
 	e.Store.Feed().SubscribeAll(tr.on)
 	e.run()

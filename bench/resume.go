@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/host"
-	"github.com/0xfakeSpike/ollupi/pkg/llm"
 )
 
 func resume(args []string) {
@@ -28,8 +27,7 @@ func resume(args []string) {
 	open := func(m *model, tr *tracker) (*engine, time.Duration) {
 		at := time.Now()
 		e := newEngine(host.Config{
-			Home: dir, Models: fakeModels,
-			Connections: map[string]llm.Client{"fake": m}, Slots: *running + 32,
+			Home: dir, Users: fakeUsers(m), Slots: *running + 32,
 		})
 		e.Store.Feed().SubscribeAll(tr.on)
 		e.run()

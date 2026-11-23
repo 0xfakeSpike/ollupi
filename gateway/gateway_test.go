@@ -251,27 +251,3 @@ func TestAClientSeesWhichHubConversationSentAMessage(t *testing.T) {
 		t.Errorf("the page %+v", page.Items)
 	}
 }
-
-func TestAProfileIsMadeListedAndRenamed(t *testing.T) {
-	_, c := connect(t)
-	var made UserResult
-	c.call("user/create", UserCreateParams{Name: "Work", Color: "teal"}, &made)
-	if made.User.ID == "" || made.User.Name != "Work" || made.User.Color != "teal" {
-		t.Fatalf("made %+v", made.User)
-	}
-	var list UserListResult
-	c.call("user/list", Empty{}, &list)
-	if len(list.Data) != 2 || list.Current != "u" {
-		t.Fatalf("list %+v", list)
-	}
-	var renamed UserResult
-	c.call("user/rename", UserRenameParams{UserID: made.User.ID, Name: "Studio"}, &renamed)
-	if renamed.User.Name != "Studio" {
-		t.Fatalf("renamed %+v", renamed.User)
-	}
-	var coloured UserResult
-	c.call("user/color", UserColorParams{UserID: made.User.ID, Color: "rose"}, &coloured)
-	if coloured.User.Color != "rose" {
-		t.Fatalf("coloured %+v", coloured.User)
-	}
-}

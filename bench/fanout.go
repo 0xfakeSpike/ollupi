@@ -13,7 +13,6 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/host"
-	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -49,10 +48,9 @@ func fanout(args []string) {
 	defer os.RemoveAll(dir)
 	tr := newTracker()
 	e := newEngine(host.Config{
-		Home: dir, Models: fakeModels,
-		Connections: map[string]llm.Client{"fake": fakeConnection(srv.URL, *calls)},
-		Tools:       []kit.Provider{work{latency: *toolLatency}},
-		Slots:       *slots,
+		Home: dir, Users: fakeUsers(fakeConnection(srv.URL, *calls)),
+		Tools: []kit.Provider{work{latency: *toolLatency}},
+		Slots: *slots,
 	})
 	e.Store.Feed().SubscribeAll(tr.on)
 	e.run()

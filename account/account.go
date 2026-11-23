@@ -19,30 +19,6 @@ var (
 
 const MemoryProvider = "memory"
 
-// ProfileColors are the colours a profile may wear in the app's sidebar.
-var ProfileColors = []string{"stone", "amber", "teal", "violet", "rose", "sky"}
-
-// User is a profile: one person the agent works for, whose conversations,
-// memories, workspaces and settings are kept under its id. There is no
-// anonymous one.
-type User struct {
-	ID      string
-	Name    string
-	Color   string
-	Created time.Time
-}
-
-// ProfileColor checks a colour a profile is given; empty takes the first.
-func ProfileColor(color string) (string, error) {
-	if color == "" {
-		return ProfileColors[0], nil
-	}
-	if !slices.Contains(ProfileColors, color) {
-		return "", fmt.Errorf("%w: colour must be one of %q, got %q", ErrInvalidName, ProfileColors, color)
-	}
-	return color, nil
-}
-
 type Settings struct {
 	Redaction    bool
 	RedactionKey string

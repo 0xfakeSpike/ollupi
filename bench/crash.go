@@ -23,7 +23,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/catalog"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/host"
-	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/policy"
 	"github.com/0xfakeSpike/ollupi/shard"
 	"github.com/0xfakeSpike/ollupi/store"
@@ -240,8 +239,7 @@ func crashChild(args []string) {
 	}
 	startAt := time.Now()
 	h, err := host.New(context.Background(), host.Config{
-		Home: *dir, Name: "bench", Models: fakeModels,
-		Connections: map[string]llm.Client{"fake": fakeConnection(*url, *calls)},
+		Home: *dir, Name: "bench", Users: fakeUsers(fakeConnection(*url, *calls)),
 		Tools:       []kit.Provider{work{latency: *toolLatency, log: toolLog}},
 		Permissions: policy.Settings{ApprovalPolicy: string(policy.Never)},
 		Boxes:       here, Slots: *slots, TaskSlots: *slots, UserTaskSlots: *slots,

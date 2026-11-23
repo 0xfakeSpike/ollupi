@@ -115,7 +115,6 @@ var arrays = []field{
 	{reflect.TypeFor[ModelListResult](), "Data"},
 	{reflect.TypeFor[ToolListResult](), "Data"},
 	{reflect.TypeFor[MCPServerListResult](), "Data"},
-	{reflect.TypeFor[UserListResult](), "Data"},
 	{reflect.TypeFor[WorkspaceListResult](), "Data"},
 	{reflect.TypeFor[EnvironmentListResult](), "Data"},
 	{reflect.TypeFor[CronListResult](), "Data"},

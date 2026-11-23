@@ -25,7 +25,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/catalog"
 	"github.com/0xfakeSpike/ollupi/gateway"
 	"github.com/0xfakeSpike/ollupi/host"
-	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/router"
 	"github.com/coder/websocket"
 )
@@ -369,9 +368,8 @@ func connsShard(args []string) {
 	fs.Parse(args)
 	quiet()
 	e := newEngine(host.Config{
-		Home: *dir, Models: fakeModels,
-		Connections: map[string]llm.Client{"fake": &model{}},
-		Gateway:     &gateway.Options{Authenticate: benchUser},
+		Home: *dir, Users: fakeUsers(&model{}),
+		Gateway: &gateway.Options{Authenticate: benchUser},
 	})
 	defer e.stop()
 	e.run()

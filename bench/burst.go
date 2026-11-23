@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/host"
-	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/tool"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
 )
@@ -213,10 +212,9 @@ func burst(args []string) {
 	defer os.RemoveAll(dir)
 	tr := newTracker()
 	e := newEngine(host.Config{
-		Home: dir, Models: fakeModels,
-		Connections: map[string]llm.Client{"fake": fakeConnection(srv.URL, *calls)},
-		Tools:       []kit.Provider{work{latency: *toolLatency}},
-		Slots:       *slots,
+		Home: dir, Users: fakeUsers(fakeConnection(srv.URL, *calls)),
+		Tools: []kit.Provider{work{latency: *toolLatency}},
+		Slots: *slots,
 	})
 	e.Store.Feed().SubscribeAll(tr.on)
 	e.run()

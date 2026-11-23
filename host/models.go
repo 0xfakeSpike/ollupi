@@ -9,20 +9,18 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 )
 
-// UserModels are one user's models and the clients that call them: a
-// connection is named by a user, and only that user's models are theirs.
+// UserModels are one user's complete model configuration: the models they
+// may run, the clients that call them, and the model that learns their memory.
 type UserModels struct {
 	User        string
 	Models      []llm.Model
 	Connections map[string]llm.Client
+	Memory      *llm.Model
 }
 
-// models is the models every user of the host may run. Shared ones (list and
-// connections, as a benchmark or a single-user host gives them) are for users
-// that name none of their own; a host that serves several users passes a set
-// for each and no shared one.
+// models finds the models one user may run. There is no shared or fallback
+// set: a user without a configuration has none.
 type models struct {
-	shared    userModels
 	users     map[string]userModels
 	clientFor func(user, connection string) (llm.Client, error)
 }
@@ -32,11 +30,7 @@ type userModels struct {
 	connections map[string]llm.Client
 }
 
-func newModels(list []llm.Model, connections map[string]llm.Client, clientFor func(user, connection string) (llm.Client, error), users []UserModels) (models, error) {
-	shared, err := newUserModels("the shared models", list, connections)
-	if err != nil {
-		return models{}, err
-	}
+func newModels(clientFor func(user, connection string) (llm.Client, error), users []UserModels) (models, error) {
 	byUser := make(map[string]userModels, len(users))
 	for _, u := range users {
 		if strings.TrimSpace(u.User) == "" {
@@ -49,9 +43,12 @@ func newModels(list []llm.Model, connections map[string]llm.Client, clientFor fu
 		if err != nil {
 			return models{}, err
 		}
+		if u.Memory != nil && set.connections[u.Memory.Connection] == nil {
+			return models{}, fmt.Errorf("host: the models of user %q: learning model connection %q is not among theirs", u.User, u.Memory.Connection)
+		}
 		byUser[u.User] = set
 	}
-	return models{shared: shared, users: byUser, clientFor: clientFor}, nil
+	return models{users: byUser, clientFor: clientFor}, nil
 }
 
 func newUserModels(what string, list []llm.Model, connections map[string]llm.Client) (userModels, error) {
@@ -73,10 +70,7 @@ func newUserModels(what string, list []llm.Model, connections map[string]llm.Cli
 }
 
 func (ms models) of(user string) userModels {
-	if set, ok := ms.users[user]; ok {
-		return set
-	}
-	return ms.shared
+	return ms.users[user]
 }
 
 func (ms models) Models(user string) []llm.Model {

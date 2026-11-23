@@ -3610,37 +3610,6 @@
       ],
       "additionalProperties": false
     },
-    "UserColorParams": {
-      "type": "object",
-      "properties": {
-        "userId": {
-          "type": "string"
-        },
-        "color": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "userId",
-        "color"
-      ],
-      "additionalProperties": false
-    },
-    "UserCreateParams": {
-      "type": "object",
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "color": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "name"
-      ],
-      "additionalProperties": false
-    },
     "UserInput": {
       "type": "object",
       "properties": {
@@ -3802,78 +3771,6 @@
       },
       "required": [
         "answers"
-      ],
-      "additionalProperties": false
-    },
-    "UserListResult": {
-      "type": "object",
-      "properties": {
-        "data": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/UserRow"
-          }
-        },
-        "current": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "data",
-        "current"
-      ],
-      "additionalProperties": false
-    },
-    "UserRenameParams": {
-      "type": "object",
-      "properties": {
-        "userId": {
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "userId",
-        "name"
-      ],
-      "additionalProperties": false
-    },
-    "UserResult": {
-      "type": "object",
-      "properties": {
-        "user": {
-          "$ref": "#/$defs/UserRow"
-        }
-      },
-      "required": [
-        "user"
-      ],
-      "additionalProperties": false
-    },
-    "UserRow": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        },
-        "color": {
-          "type": "string"
-        },
-        "created": {
-          "type": "string",
-          "format": "date-time"
-        }
-      },
-      "required": [
-        "id",
-        "name",
-        "color",
-        "created"
       ],
       "additionalProperties": false
     },
@@ -4470,38 +4367,6 @@
       },
       "result": {
         "$ref": "#/$defs/UsageQueryResult"
-      }
-    },
-    "user/color": {
-      "params": {
-        "$ref": "#/$defs/UserColorParams"
-      },
-      "result": {
-        "$ref": "#/$defs/UserResult"
-      }
-    },
-    "user/create": {
-      "params": {
-        "$ref": "#/$defs/UserCreateParams"
-      },
-      "result": {
-        "$ref": "#/$defs/UserResult"
-      }
-    },
-    "user/list": {
-      "params": {
-        "$ref": "#/$defs/Empty"
-      },
-      "result": {
-        "$ref": "#/$defs/UserListResult"
-      }
-    },
-    "user/rename": {
-      "params": {
-        "$ref": "#/$defs/UserRenameParams"
-      },
-      "result": {
-        "$ref": "#/$defs/UserResult"
       }
     },
     "workspace/add": {

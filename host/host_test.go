@@ -73,7 +73,7 @@ func TestAHostRunsATurnThroughASubagentAndLearnsFromIt(t *testing.T) {
 	learner := llm.Model{Name: "m", Connection: "main"}
 	h, err := New(ctx, Config{
 		Home: t.TempDir(), Name: "Ollupi",
-		Models: []llm.Model{learner}, Connections: map[string]llm.Client{"main": m}, Memory: &learner,
+		Users:   []UserModels{{User: "u", Models: []llm.Model{learner}, Connections: map[string]llm.Client{"main": m}, Memory: &learner}},
 		Tools:   []kit.Provider{weather{}},
 		Boxes:   func(string) (sandbox.Box, error) { return sandbox.Here() },
 		Gateway: &gateway.Options{Authenticate: func(context.Context, string) (string, error) { return "u", nil }},
@@ -144,5 +144,26 @@ func TestAHostRefusesPermissionsItCannotRead(t *testing.T) {
 		Boxes:       func(string) (sandbox.Box, error) { return sandbox.Here() }})
 	if err == nil || !strings.Contains(err.Error(), "approval policy") {
 		t.Errorf("made with %v", err)
+	}
+}
+
+func TestAUserNeverBorrowsAnotherUsersModelsOrLearningModel(t *testing.T) {
+	client := &model{}
+	m := llm.Model{Name: "m", Connection: "main"}
+	ms, err := newModels(nil, []UserModels{{User: "a", Models: []llm.Model{m}, Connections: map[string]llm.Client{"main": client}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ms.Models("b"); len(got) != 0 {
+		t.Fatalf("user b borrowed models: %+v", got)
+	}
+	if _, err := ms.Limits("b", m); err == nil {
+		t.Fatal("user b borrowed another user's model limits")
+	}
+	other := llm.Model{Name: "other", Connection: "other"}
+	if _, err := newModels(nil, []UserModels{{
+		User: "a", Models: []llm.Model{m}, Connections: map[string]llm.Client{"main": client}, Memory: &other,
+	}}); err == nil {
+		t.Fatal("a learning model outside the user's connections was accepted")
 	}
 }

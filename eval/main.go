@@ -84,8 +84,8 @@ func main() {
 	defer stop()
 	h, err := host.New(ctx, host.Config{
 		Home: home, Name: "ollupi",
-		Models:      []llm.Model{{Name: model, Connection: "model"}},
-		Connections: map[string]llm.Client{"model": client},
+		Users: []host.UserModels{{User: user, Models: []llm.Model{{Name: model, Connection: "model"}},
+			Connections: map[string]llm.Client{"model": client}}},
 		Tools:       []kit.Provider{files},
 		Permissions: policy.Settings{ApprovalPolicy: string(policy.Never)},
 		Boxes:       func(string) (sandbox.Box, error) { return sandbox.Here() },

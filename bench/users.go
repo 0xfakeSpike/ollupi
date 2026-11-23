@@ -79,9 +79,12 @@ func users(args []string) {
 	}
 	var failed sync.Map
 	tr := newTracker()
+	users := make([]host.UserModels, 0, len(ids))
+	for _, u := range ids {
+		users = append(users, host.UserModels{User: u, Models: fakeModels, Connections: map[string]llm.Client{"fake": clients[u]}})
+	}
 	e := newEngine(host.Config{
-		Home: dir, Models: fakeModels,
-		Connections: map[string]llm.Client{"fake": clients[heavyUser]},
+		Home: dir, Users: users,
 		ClientFor: func(user, _ string) (llm.Client, error) {
 			if cl := clients[user]; cl != nil {
 				return cl, nil

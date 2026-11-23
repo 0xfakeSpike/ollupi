@@ -16,7 +16,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/host"
-	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
 )
@@ -68,10 +67,9 @@ func mix(args []string) {
 	defer os.RemoveAll(dir)
 	tr := newTracker()
 	e := newEngine(host.Config{
-		Home: dir, Models: fakeModels,
-		Connections: map[string]llm.Client{"fake": fakeConnection(srv.URL, *calls)},
-		Tools:       []kit.Provider{work{latency: *toolLatency}},
-		Slots:       *slots,
+		Home: dir, Users: fakeUsers(fakeConnection(srv.URL, *calls)),
+		Tools: []kit.Provider{work{latency: *toolLatency}},
+		Slots: *slots,
 	})
 	e.Store.Feed().SubscribeAll(func(ev store.Event) {
 		if ev.Change != nil && ev.Change.Header != nil && ev.Change.Header.Parent != "" {

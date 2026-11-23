@@ -73,6 +73,10 @@ func spawn(args ...string) (*exec.Cmd, string) {
 
 var fakeModels = []llm.Model{{Name: "fake", Connection: "fake"}}
 
+func fakeUsers(client llm.Client) []host.UserModels {
+	return []host.UserModels{{User: defaultUser, Models: fakeModels, Connections: map[string]llm.Client{"fake": client}}}
+}
+
 func fakeConnection(url string, calls int) llm.Client {
 	return llm.NewOpenAI(url, "", calls, map[string]llm.Limits{"fake": {Context: 200_000, Output: 32_000}})
 }
@@ -288,8 +292,7 @@ func parked(args []string) {
 	m := &model{}
 	tr := newTracker()
 	e := newEngine(host.Config{
-		Home: dir, Models: fakeModels,
-		Connections: map[string]llm.Client{"fake": m}, Slots: *slots,
+		Home: dir, Users: fakeUsers(m), Slots: *slots,
 	})
 	e.Store.Feed().SubscribeAll(tr.on)
 	e.run()

@@ -12,7 +12,6 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/gateway"
 	"github.com/0xfakeSpike/ollupi/host"
-	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/workspace"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
 )
@@ -50,10 +49,9 @@ func serve(args []string) {
 	defer runner.Close()
 	http.DefaultTransport.(*http.Transport).MaxIdleConnsPerHost = *calls
 	e := newEngine(host.Config{
-		Home: *dir, Models: fakeModels,
-		Connections: map[string]llm.Client{"fake": fakeConnection(*url, *calls)},
-		Tools:       []kit.Provider{tool, runner},
-		Slots:       *slots, TaskSlots: *taskSlots, UserTaskSlots: *userTaskSlots,
+		Home: *dir, Users: fakeUsers(fakeConnection(*url, *calls)),
+		Tools: []kit.Provider{tool, runner},
+		Slots: *slots, TaskSlots: *taskSlots, UserTaskSlots: *userTaskSlots,
 		Gateway: &gateway.Options{Authenticate: benchUser},
 	})
 	defer e.stop()

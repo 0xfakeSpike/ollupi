@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/host"
-	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
 )
 
@@ -55,10 +54,9 @@ func soak(args []string) {
 	defer os.RemoveAll(dir)
 	tr := newTracker()
 	e := newEngine(host.Config{
-		Home: dir, Models: fakeModels,
-		Connections: map[string]llm.Client{"fake": fakeConnection(url, *calls)},
-		Tools:       []kit.Provider{work{latency: *toolLatency}},
-		Slots:       *slots,
+		Home: dir, Users: fakeUsers(fakeConnection(url, *calls)),
+		Tools: []kit.Provider{work{latency: *toolLatency}},
+		Slots: *slots,
 	})
 	dbs := watchDB(e.Store)
 	e.Store.Feed().SubscribeAll(tr.on)
