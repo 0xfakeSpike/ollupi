@@ -8,19 +8,20 @@ import (
 	"github.com/0xfakeSpike/ollupi/store"
 )
 
-func (a *App) CronJobs(ctx context.Context, user, id string) ([]store.CronJobView, error) {
-	var jobs []store.CronJobView
-	err := a.st.Read(ctx, func(r store.Reader) error {
+func (a *App) CronJobs(ctx context.Context, user, id string) (jobs []store.CronJobView, seq int64, err error) {
+	err = a.st.Read(ctx, func(r store.Reader) error {
 		if id != "" {
 			if _, err := thread(r, user, id); err != nil {
 				return err
 			}
 		}
-		var err error
-		jobs, err = r.CronJobs(user, id)
+		if jobs, err = r.CronJobs(user, id); err != nil {
+			return err
+		}
+		seq, err = r.Seq()
 		return err
 	})
-	return jobs, err
+	return jobs, seq, err
 }
 
 func (a *App) inThread(ctx context.Context, user, id string, change func(store.Tx, store.Thread) error) error {

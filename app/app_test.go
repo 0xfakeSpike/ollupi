@@ -126,6 +126,13 @@ func must[T any](t *testing.T) func(T, error) T {
 	}
 }
 
+func read[T any](t *testing.T) func(T, int64, error) T {
+	return func(v T, _ int64, err error) T {
+		t.Helper()
+		return must[T](t)(v, err)
+	}
+}
+
 func sent(t *testing.T) func(conversation.Turn, bool, error) conversation.Turn {
 	return func(turn conversation.Turn, _ bool, err error) conversation.Turn {
 		t.Helper()
@@ -276,7 +283,7 @@ func TestASubagentTakesMessagesInItsRoleAndKeepsRulesInItsWorkspace(t *testing.T
 	if err := f.a.Decide(f.ctx, "u", "child", "a1", conversation.AcceptAlways); err != nil {
 		t.Fatal(err)
 	}
-	ws := must[[]account.Workspace](t)(f.a.Workspaces(f.ctx, "u"))
+	ws := read[[]account.Workspace](t)(f.a.Workspaces(f.ctx, "u"))
 	for _, w := range ws {
 		allowed := w.Settings.Rules.Allow
 		if kept := len(allowed) == 1 && allowed[0] == "run_command(make)"; kept != (w.ID == docs.ID) {
@@ -396,7 +403,7 @@ func TestAWorkspaceKeepsItsInstructionsAndProviders(t *testing.T) {
 	if _, err := f.a.UpdateWorkspaceProviders(f.ctx, "u", w.ID, account.Providers{Enabled: []string{"nowhere"}}); !errors.Is(err, policy.ErrInvalidSettings) {
 		t.Errorf("an unknown provider: %v", err)
 	}
-	stored := must[[]account.Workspace](t)(f.a.Workspaces(f.ctx, "u"))
+	stored := read[[]account.Workspace](t)(f.a.Workspaces(f.ctx, "u"))
 	if stored[0].Instructions != "Plan, do not build." || len(stored[0].Providers.Disabled) != 1 {
 		t.Errorf("stored %+v", stored[0])
 	}
@@ -455,7 +462,7 @@ func TestCronJobsAreNamedOncePerConversation(t *testing.T) {
 	if err := f.a.DeleteCronJob(f.ctx, "u", th.ID, "news"); err != nil {
 		t.Fatal(err)
 	}
-	if jobs := must[[]store.CronJobView](t)(f.a.CronJobs(f.ctx, "u", th.ID)); len(jobs) != 0 {
+	if jobs := read[[]store.CronJobView](t)(f.a.CronJobs(f.ctx, "u", th.ID)); len(jobs) != 0 {
 		t.Errorf("left %+v", jobs)
 	}
 }
@@ -484,7 +491,7 @@ func TestTheUserCorrectsTheirNotes(t *testing.T) {
 	if s := must[MemoryStatus](t)(f.a.MemoryStatus(f.ctx, "u")); s.Active != 0 {
 		t.Errorf("status %+v", s)
 	}
-	if _, err := f.a.Memories(f.ctx, "u", memory.Place{Scope: memory.Workspace}); !errors.Is(err, memory.ErrInvalidChange) {
+	if _, _, err := f.a.Memories(f.ctx, "u", memory.Place{Scope: memory.Workspace}); !errors.Is(err, memory.ErrInvalidChange) {
 		t.Errorf("a workspace place with no workspace: %v", err)
 	}
 }
@@ -572,7 +579,7 @@ func TestAMoveLeftByACrashIsSettledOnStart(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]string{stayed.ID: stayed.Root, went.ID: landed}
-	for _, got := range must[[]account.Workspace](t)(f.a.Workspaces(f.ctx, "u")) {
+	for _, got := range read[[]account.Workspace](t)(f.a.Workspaces(f.ctx, "u")) {
 		if got.Root != want[got.ID] || got.MovingTo != "" {
 			t.Errorf("settled %s at %q moving to %q, want %q", got.Name, got.Root, got.MovingTo, want[got.ID])
 		}

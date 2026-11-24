@@ -20,10 +20,15 @@ import (
 
 const workspaceTimeout = time.Minute
 
-func (a *App) Workspaces(ctx context.Context, user string) ([]account.Workspace, error) {
-	var ws []account.Workspace
-	err := a.st.Read(ctx, func(r store.Reader) (err error) { ws, err = r.Workspaces(user); return err })
-	return ws, err
+func (a *App) Workspaces(ctx context.Context, user string) (ws []account.Workspace, seq int64, err error) {
+	err = a.st.Read(ctx, func(r store.Reader) error {
+		if ws, err = r.Workspaces(user); err != nil {
+			return err
+		}
+		seq, err = r.Seq()
+		return err
+	})
+	return ws, seq, err
 }
 
 func (a *App) AddWorkspace(ctx context.Context, user, path, name string) (account.Workspace, error) {
@@ -43,7 +48,7 @@ func (a *App) AddWorkspace(ctx context.Context, user, path, name string) (accoun
 	if name, err = account.Name("a workspace name", name); err != nil {
 		return account.Workspace{}, err
 	}
-	existing, err := a.Workspaces(ctx, user)
+	existing, _, err := a.Workspaces(ctx, user)
 	if err != nil {
 		return account.Workspace{}, err
 	}
@@ -267,10 +272,15 @@ func checkTarget(ctx context.Context, box sandbox.Box, w account.Workspace, all 
 	return nil
 }
 
-func (a *App) Environments(ctx context.Context, user string) ([]account.Environment, error) {
-	var envs []account.Environment
-	err := a.st.Read(ctx, func(r store.Reader) (err error) { envs, err = r.Environments(user); return err })
-	return envs, err
+func (a *App) Environments(ctx context.Context, user string) (envs []account.Environment, seq int64, err error) {
+	err = a.st.Read(ctx, func(r store.Reader) error {
+		if envs, err = r.Environments(user); err != nil {
+			return err
+		}
+		seq, err = r.Seq()
+		return err
+	})
+	return envs, seq, err
 }
 
 func (a *App) AddEnvironment(ctx context.Context, user, name string, kind account.EnvironmentKind) (account.Environment, error) {
@@ -339,14 +349,22 @@ type MCPServer struct {
 	Status *account.MCPStatus
 }
 
-func (a *App) MCPServers(ctx context.Context, user string) ([]MCPServer, error) {
+func (a *App) MCPServers(ctx context.Context, user string) ([]MCPServer, int64, error) {
 	var stored []account.MCPServer
-	if err := a.st.Read(ctx, func(r store.Reader) (err error) { stored, err = r.MCPServers(user); return err }); err != nil {
-		return nil, err
+	var seq int64
+	err := a.st.Read(ctx, func(r store.Reader) (err error) {
+		if stored, err = r.MCPServers(user); err != nil {
+			return err
+		}
+		seq, err = r.Seq()
+		return err
+	})
+	if err != nil {
+		return nil, 0, err
 	}
 	statuses, err := a.statuses(user)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	out := make([]MCPServer, len(stored))
 	for i, s := range stored {
@@ -356,7 +374,7 @@ func (a *App) MCPServers(ctx context.Context, user string) ([]MCPServer, error) 
 			out[i].Status = &statuses[j]
 		}
 	}
-	return out, nil
+	return out, seq, nil
 }
 
 func (a *App) SetMCPServer(ctx context.Context, user string, s account.MCPServer) error {

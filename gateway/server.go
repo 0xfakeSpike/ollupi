@@ -126,7 +126,7 @@ func (c *conn) event(e store.Event) {
 	case e.Change != nil:
 		c.change(e.Seq, e.Thread, *e.Change)
 	case e.Owned != nil:
-		c.owned(e.Thread, *e.Owned)
+		c.owned(e.Seq, e.Thread, *e.Owned)
 	}
 }
 
@@ -148,31 +148,31 @@ func (c *conn) change(seq int64, thread string, ch store.Change) {
 	}
 }
 
-func (c *conn) owned(thread string, o store.Owned) {
+func (c *conn) owned(seq int64, thread string, o store.Owned) {
 	switch {
 	case o.Settings != nil:
-		c.rpc.Notify(notifySettingsChanged, settingsRow(*o.Settings))
+		c.rpc.Notify(notifySettingsChanged, SettingsChangedNotification{SettingsRow: settingsRow(*o.Settings), Seq: seq})
 	case o.Workspace != nil:
-		c.rpc.Notify(notifyWorkspaceChanged, WorkspaceResult{Workspace: workspaceRow(*o.Workspace)})
+		c.rpc.Notify(notifyWorkspaceChanged, WorkspaceChangedNotification{Workspace: workspaceRow(*o.Workspace), Seq: seq})
 	case o.Environment != nil:
 		row := environmentRow(*o.Environment)
-		c.rpc.Notify(notifyEnvironmentChanged, EnvironmentChangedNotification{EnvironmentID: row.ID, Environment: &row})
+		c.rpc.Notify(notifyEnvironmentChanged, EnvironmentChangedNotification{EnvironmentID: row.ID, Environment: &row, Seq: seq})
 	case o.EnvironmentDeleted != "":
-		c.rpc.Notify(notifyEnvironmentChanged, EnvironmentChangedNotification{EnvironmentID: o.EnvironmentDeleted})
+		c.rpc.Notify(notifyEnvironmentChanged, EnvironmentChangedNotification{EnvironmentID: o.EnvironmentDeleted, Seq: seq})
 	case o.MCPServer != nil:
 		server := mcpServerConfig(*o.MCPServer)
-		c.rpc.Notify(notifyMCPServerChanged, MCPServerChangedNotification{Name: server.Name, Server: &server})
+		c.rpc.Notify(notifyMCPServerChanged, MCPServerChangedNotification{Name: server.Name, Server: &server, Seq: seq})
 	case o.MCPServerDeleted != "":
-		c.rpc.Notify(notifyMCPServerChanged, MCPServerChangedNotification{Name: o.MCPServerDeleted})
+		c.rpc.Notify(notifyMCPServerChanged, MCPServerChangedNotification{Name: o.MCPServerDeleted, Seq: seq})
 	case o.CronJob != nil:
 		row := cronJobRow(*o.CronJob)
-		c.rpc.Notify(notifyCronChanged, CronChangedNotification{ID: row.ID, ThreadID: thread, Job: &row})
+		c.rpc.Notify(notifyCronChanged, CronChangedNotification{ID: row.ID, ThreadID: thread, Job: &row, Seq: seq})
 	case o.CronJobDeleted != "":
-		c.rpc.Notify(notifyCronChanged, CronChangedNotification{ID: o.CronJobDeleted, ThreadID: thread})
+		c.rpc.Notify(notifyCronChanged, CronChangedNotification{ID: o.CronJobDeleted, ThreadID: thread, Seq: seq})
 	case o.Memory != nil:
-		c.rpc.Notify(notifyMemoryChanged, MemoryResult{Memory: memoryRow(*o.Memory)})
+		c.rpc.Notify(notifyMemoryChanged, MemoryChangedNotification{Memory: memoryRow(*o.Memory), Seq: seq})
 	case o.Todo != nil:
-		c.rpc.Notify(notifyTodoChanged, TodoResult{Todo: todoRow(*o.Todo)})
+		c.rpc.Notify(notifyTodoChanged, TodoChangedNotification{Todo: todoRow(*o.Todo), Seq: seq})
 	}
 }
 

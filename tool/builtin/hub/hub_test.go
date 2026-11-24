@@ -220,7 +220,7 @@ func TestAHandOffStartsLinksAndSendsTogetherOrNotAtAll(t *testing.T) {
 		t.Fatal(err)
 	}
 	inDocs := func() []store.Thread {
-		threads, _, err := f.a.Threads(f.ctx, "u", store.ThreadFilter{Workspace: &docs.ID, Limit: 10})
+		threads, _, _, err := f.a.Threads(f.ctx, "u", store.ThreadFilter{Workspace: &docs.ID, Limit: 10})
 		if err != nil {
 			t.Fatal(err)
 		}

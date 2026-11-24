@@ -26,7 +26,7 @@ func (c *conn) toolList(ctx context.Context, _ Empty) (ToolListResult, error) {
 }
 
 func (c *conn) mcpServerList(ctx context.Context, _ Empty) (MCPServerListResult, error) {
-	servers, err := c.s.app.MCPServers(ctx, c.user)
+	servers, seq, err := c.s.app.MCPServers(ctx, c.user)
 	out := make([]MCPServer, len(servers))
 	for i, s := range servers {
 		out[i] = MCPServer{MCPServerConfig: mcpServerConfig(s.MCPServer)}
@@ -34,7 +34,7 @@ func (c *conn) mcpServerList(ctx context.Context, _ Empty) (MCPServerListResult,
 			out[i].Status = &MCPServerStatus{Name: st.Name, Connected: st.Connected, Tools: st.Tools, SkippedTools: st.Skipped, Error: st.Error}
 		}
 	}
-	return MCPServerListResult{Data: out}, err
+	return MCPServerListResult{Data: out, Seq: seq}, err
 }
 
 func (c *conn) mcpServerSet(ctx context.Context, p MCPServerConfig) (MCPServerConfig, error) {
@@ -47,8 +47,8 @@ func (c *conn) mcpServerDelete(ctx context.Context, p MCPServerDeleteParams) (Em
 }
 
 func (c *conn) workspaceList(ctx context.Context, _ Empty) (WorkspaceListResult, error) {
-	ws, err := c.s.app.Workspaces(ctx, c.user)
-	return WorkspaceListResult{Data: each(ws, workspaceRow)}, err
+	ws, seq, err := c.s.app.Workspaces(ctx, c.user)
+	return WorkspaceListResult{Data: each(ws, workspaceRow), Seq: seq}, err
 }
 
 func (c *conn) workspaceAdd(ctx context.Context, p WorkspaceAddParams) (WorkspaceResult, error) {
@@ -95,8 +95,8 @@ func (c *conn) workspacePermissions(ctx context.Context, p WorkspacePermissionsP
 }
 
 func (c *conn) environmentList(ctx context.Context, _ Empty) (EnvironmentListResult, error) {
-	envs, err := c.s.app.Environments(ctx, c.user)
-	return EnvironmentListResult{Data: each(envs, environmentRow)}, err
+	envs, seq, err := c.s.app.Environments(ctx, c.user)
+	return EnvironmentListResult{Data: each(envs, environmentRow), Seq: seq}, err
 }
 
 func (c *conn) environmentAdd(ctx context.Context, p EnvironmentAddParams) (EnvironmentResult, error) {
@@ -114,8 +114,8 @@ func (c *conn) environmentDelete(ctx context.Context, p EnvironmentDeleteParams)
 }
 
 func (c *conn) cronList(ctx context.Context, p CronListParams) (CronListResult, error) {
-	jobs, err := c.s.app.CronJobs(ctx, c.user, p.ThreadID)
-	return CronListResult{Data: each(jobs, cronJobRow)}, err
+	jobs, seq, err := c.s.app.CronJobs(ctx, c.user, p.ThreadID)
+	return CronListResult{Data: each(jobs, cronJobRow), Seq: seq}, err
 }
 
 func (c *conn) cronCreate(ctx context.Context, p CronCreateParams) (CronResult, error) {
@@ -148,8 +148,8 @@ func (c *conn) todoList(ctx context.Context, p TodoListParams) (TodoListResult, 
 	if err := limit(&p.Limit, todoDefaultLimit, todoMaxLimit); err != nil {
 		return TodoListResult{}, err
 	}
-	todos, more, err := c.s.app.Todos(ctx, c.user, p.Statuses, p.Limit)
-	return TodoListResult{Data: each(todos, todoRow), More: more}, err
+	todos, more, seq, err := c.s.app.Todos(ctx, c.user, p.Statuses, p.Limit)
+	return TodoListResult{Data: each(todos, todoRow), More: more, Seq: seq}, err
 }
 
 func (c *conn) todoAdd(ctx context.Context, p TodoAddParams) (TodoResult, error) {
@@ -164,8 +164,8 @@ func (c *conn) todoUpdate(ctx context.Context, p TodoUpdateParams) (TodoResult, 
 }
 
 func (c *conn) memoryList(ctx context.Context, p MemoryListParams) (MemoryListResult, error) {
-	ms, err := c.s.app.Memories(ctx, c.user, memory.Place{Scope: p.Scope, Workspace: p.WorkspaceID})
-	return MemoryListResult{Data: each(ms, memoryRow)}, err
+	ms, seq, err := c.s.app.Memories(ctx, c.user, memory.Place{Scope: p.Scope, Workspace: p.WorkspaceID})
+	return MemoryListResult{Data: each(ms, memoryRow), Seq: seq}, err
 }
 
 func (c *conn) memoryStatus(ctx context.Context, _ Empty) (MemoryStatus, error) {
@@ -173,7 +173,7 @@ func (c *conn) memoryStatus(ctx context.Context, _ Empty) (MemoryStatus, error) 
 	if err != nil {
 		return MemoryStatus{}, err
 	}
-	settings, err := c.s.app.Settings(ctx, c.user)
+	settings, _, err := c.s.app.Settings(ctx, c.user)
 	return MemoryStatus{Enabled: settings.Memory, Unread: s.Unread, Active: s.Active, Attempts: s.Attempts, NextAttempt: s.NextAttempt,
 		Skipped: s.Skipped, LastSuccess: s.LastSuccess, LastFailure: s.LastFailure, LastSkip: s.LastSkip}, err
 }
@@ -231,9 +231,9 @@ func (c *conn) presenceSummary(ctx context.Context, p PresenceSummaryParams) (Pr
 	return PresenceSummaryResult{Data: out}, err
 }
 
-func (c *conn) settingsRead(ctx context.Context, _ Empty) (SettingsRow, error) {
-	s, err := c.s.app.Settings(ctx, c.user)
-	return settingsRow(s), err
+func (c *conn) settingsRead(ctx context.Context, _ Empty) (SettingsReadResult, error) {
+	s, seq, err := c.s.app.Settings(ctx, c.user)
+	return SettingsReadResult{SettingsRow: settingsRow(s), Seq: seq}, err
 }
 
 func (c *conn) settingsUpdate(ctx context.Context, p SettingsUpdateParams) (SettingsRow, error) {

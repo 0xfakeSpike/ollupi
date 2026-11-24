@@ -271,3 +271,56 @@ func TestAUserChoosesAmongTheDeploymentsModels(t *testing.T) {
 type catalog []account.ModelProvider
 
 func (c catalog) Providers() []account.ModelProvider { return c }
+
+func TestAListAndTheChangesAfterItShareOneSequence(t *testing.T) {
+	_, c := connect(t)
+
+	var todos TodoListResult
+	c.call("todo/list", TodoListParams{}, &todos)
+	var added TodoResult
+	c.call("todo/add", TodoAddParams{Title: "write docs"}, &added)
+	var todo TodoChangedNotification
+	json.Unmarshal(c.until(notifyTodoChanged).Params, &todo)
+	if todo.Todo.ID != added.Todo.ID || todo.Seq <= todos.Seq {
+		t.Errorf("todo/changed at %d after todo/list at %d: %+v", todo.Seq, todos.Seq, todo)
+	}
+	c.call("todo/list", TodoListParams{}, &todos)
+	if todos.Seq < todo.Seq || len(todos.Data) != 1 {
+		t.Errorf("todo/list at %d after todo/changed at %d: %+v", todos.Seq, todo.Seq, todos)
+	}
+
+	var settings SettingsReadResult
+	c.call("settings/read", Empty{}, &settings)
+	learn := !settings.Learn
+	var updated SettingsRow
+	c.call("settings/update", SettingsUpdateParams{Learn: &learn}, &updated)
+	var changed SettingsChangedNotification
+	json.Unmarshal(c.until(notifySettingsChanged).Params, &changed)
+	if changed.Learn != learn || changed.Seq <= settings.Seq {
+		t.Errorf("settings/changed at %d after settings/read at %d: %+v", changed.Seq, settings.Seq, changed)
+	}
+
+	var workspaces WorkspaceListResult
+	c.call("workspace/list", Empty{}, &workspaces)
+	var workspace WorkspaceResult
+	c.call("workspace/add", WorkspaceAddParams{Path: t.TempDir()}, &workspace)
+	var moved WorkspaceChangedNotification
+	json.Unmarshal(c.until(notifyWorkspaceChanged).Params, &moved)
+	if moved.Workspace.ID != workspace.Workspace.ID || moved.Seq <= workspaces.Seq {
+		t.Errorf("workspace/changed at %d after workspace/list at %d: %+v", moved.Seq, workspaces.Seq, moved)
+	}
+
+	var threads ThreadListResult
+	c.call("thread/list", ThreadListParams{}, &threads)
+	var started ThreadResult
+	c.call("thread/start", ThreadStartParams{Title: "chat"}, &started)
+	var thread ThreadChangedNotification
+	json.Unmarshal(c.until(notifyThreadChanged).Params, &thread)
+	if thread.ThreadID != started.Thread.ID || thread.Seq <= threads.Seq {
+		t.Errorf("thread/changed at %d after thread/list at %d: %+v", thread.Seq, threads.Seq, thread)
+	}
+	c.call("thread/list", ThreadListParams{}, &threads)
+	if threads.Seq < thread.Seq {
+		t.Errorf("thread/list at %d after thread/changed at %d", threads.Seq, thread.Seq)
+	}
+}

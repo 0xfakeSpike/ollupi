@@ -11,10 +11,15 @@ import (
 	"github.com/0xfakeSpike/ollupi/store"
 )
 
-func (a *App) Settings(ctx context.Context, user string) (account.Settings, error) {
-	var s account.Settings
-	err := a.st.Read(ctx, func(r store.Reader) (err error) { s, err = r.Settings(user); return err })
-	return s, err
+func (a *App) Settings(ctx context.Context, user string) (s account.Settings, seq int64, err error) {
+	err = a.st.Read(ctx, func(r store.Reader) error {
+		if s, err = r.Settings(user); err != nil {
+			return err
+		}
+		seq, err = r.Seq()
+		return err
+	})
+	return s, seq, err
 }
 
 func (a *App) changeSettings(ctx context.Context, user string, change func(*account.Settings) error) (account.Settings, error) {

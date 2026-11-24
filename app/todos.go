@@ -34,20 +34,23 @@ type TodoChange struct {
 
 // Todos lists the user's todos in the given statuses, in the order the store keeps them: the unfinished ones
 // first, then the finished ones by when they ended; with no statuses, all of them. Limit 0 reads all of them.
-func (a *App) Todos(ctx context.Context, user string, statuses []account.TodoStatus, limit int) (todos []account.Todo, more bool, err error) {
+func (a *App) Todos(ctx context.Context, user string, statuses []account.TodoStatus, limit int) (todos []account.Todo, more bool, seq int64, err error) {
 	for _, st := range statuses {
 		if err := todoStatus(st); err != nil {
-			return nil, false, err
+			return nil, false, 0, err
 		}
 	}
 	if err := a.importTodos(ctx, user); err != nil {
-		return nil, false, err
+		return nil, false, 0, err
 	}
 	err = a.st.Read(ctx, func(r store.Reader) error {
-		todos, more, err = r.Todos(user, store.TodoFilter{Statuses: statuses, Limit: limit})
+		if todos, more, err = r.Todos(user, store.TodoFilter{Statuses: statuses, Limit: limit}); err != nil {
+			return err
+		}
+		seq, err = r.Seq()
 		return err
 	})
-	return todos, more, err
+	return todos, more, seq, err
 }
 
 // Todo reads one of the user's todos, naming the ones that exist when the id is unknown.

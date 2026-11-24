@@ -94,7 +94,7 @@ func TestTheOldTodosAreImportedOnce(t *testing.T) {
 	}, "\n"))
 	write("done/2026-01.md", "- [x] T0 earlier · result: landed\n- [x] ~~T9 dropped~~ · 原因：not needed\n")
 
-	todos, _, err := f.a.Todos(f.ctx, "u", nil, 0)
+	todos, _, _, err := f.a.Todos(f.ctx, "u", nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestTheOldTodosAreImportedOnce(t *testing.T) {
 	if archived, _ := filepath.Glob(filepath.Join(root, "TODO.md.imported-*")); len(archived) != 1 {
 		t.Errorf("the archived file %v", archived)
 	}
-	again, _, err := f.a.Todos(f.ctx, "u", nil, 0)
+	again, _, _, err := f.a.Todos(f.ctx, "u", nil, 0)
 	if err != nil || len(again) != 5 {
 		t.Errorf("read again: %d, %v", len(again), err)
 	}
@@ -151,7 +151,7 @@ func TestAnOldFileDoesNotOverwriteTodaysTodos(t *testing.T) {
 		t.Fatal(err)
 	}
 	must[account.Todo](t)(f.a.AddTodo(f.ctx, "v", "a todo of today", ""))
-	todos, _, err := f.a.Todos(f.ctx, "v", nil, 0)
+	todos, _, _, err := f.a.Todos(f.ctx, "v", nil, 0)
 	if err != nil || len(todos) != 1 || todos[0].Title != "a todo of today" {
 		t.Fatalf("read %+v, %v", todos, err)
 	}

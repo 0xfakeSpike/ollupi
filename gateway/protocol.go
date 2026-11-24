@@ -153,13 +153,13 @@ var protocol = struct {
 		notifyItemChanged:        reflect.TypeFor[ItemChangedNotification](),
 		notifyAgentMessageDelta:  reflect.TypeFor[DeltaNotification](),
 		notifyReasoningDelta:     reflect.TypeFor[DeltaNotification](),
-		notifyWorkspaceChanged:   reflect.TypeFor[WorkspaceResult](),
+		notifyWorkspaceChanged:   reflect.TypeFor[WorkspaceChangedNotification](),
 		notifyEnvironmentChanged: reflect.TypeFor[EnvironmentChangedNotification](),
 		notifyCronChanged:        reflect.TypeFor[CronChangedNotification](),
-		notifySettingsChanged:    reflect.TypeFor[SettingsRow](),
+		notifySettingsChanged:    reflect.TypeFor[SettingsChangedNotification](),
 		notifyMCPServerChanged:   reflect.TypeFor[MCPServerChangedNotification](),
-		notifyMemoryChanged:      reflect.TypeFor[MemoryResult](),
-		notifyTodoChanged:        reflect.TypeFor[TodoResult](),
+		notifyMemoryChanged:      reflect.TypeFor[MemoryChangedNotification](),
+		notifyTodoChanged:        reflect.TypeFor[TodoChangedNotification](),
 		notifyError:              reflect.TypeFor[ErrorNotification](),
 	},
 	serverRequests: map[string]serverRequest{
@@ -367,6 +367,7 @@ type ErrorNotification struct {
 type ThreadListResult struct {
 	Data    []ThreadRow `json:"data"`
 	HasMore bool        `json:"hasMore"`
+	Seq     int64       `json:"seq"`
 }
 
 type ModelListResult struct {
@@ -388,6 +389,7 @@ type ToolListResult struct {
 
 type MCPServerListResult struct {
 	Data []MCPServer `json:"data"`
+	Seq  int64       `json:"seq"`
 }
 
 type MCPServer struct {
@@ -410,6 +412,7 @@ type MCPServerDeleteParams struct {
 type MCPServerChangedNotification struct {
 	Name   string           `json:"name"`
 	Server *MCPServerConfig `json:"server"`
+	Seq    int64            `json:"seq"`
 }
 
 type UserInput struct {
@@ -457,6 +460,7 @@ type TurnResult struct {
 
 type WorkspaceListResult struct {
 	Data []WorkspaceRow `json:"data"`
+	Seq  int64          `json:"seq"`
 }
 
 type WorkspaceAddParams struct {
@@ -503,8 +507,14 @@ type WorkspaceResult struct {
 	Workspace WorkspaceRow `json:"workspace"`
 }
 
+type WorkspaceChangedNotification struct {
+	Workspace WorkspaceRow `json:"workspace"`
+	Seq       int64        `json:"seq"`
+}
+
 type EnvironmentListResult struct {
 	Data []EnvironmentRow `json:"data"`
+	Seq  int64            `json:"seq"`
 }
 
 type EnvironmentAddParams struct {
@@ -528,6 +538,7 @@ type EnvironmentResult struct {
 type EnvironmentChangedNotification struct {
 	EnvironmentID string          `json:"environmentId"`
 	Environment   *EnvironmentRow `json:"environment"`
+	Seq           int64           `json:"seq"`
 }
 
 type CronListParams struct {
@@ -536,12 +547,14 @@ type CronListParams struct {
 
 type CronListResult struct {
 	Data []CronJobRow `json:"data"`
+	Seq  int64        `json:"seq"`
 }
 
 type CronChangedNotification struct {
 	ID       string      `json:"id"`
 	ThreadID string      `json:"threadId"`
 	Job      *CronJobRow `json:"job"`
+	Seq      int64       `json:"seq"`
 }
 
 type CronCreateParams struct {
@@ -574,6 +587,7 @@ type MemoryListParams struct {
 
 type MemoryListResult struct {
 	Data []MemoryRow `json:"data"`
+	Seq  int64       `json:"seq"`
 }
 
 type MemoryUpdateParams struct {
@@ -591,6 +605,11 @@ type MemoryForgetParams struct {
 
 type MemoryResult struct {
 	Memory MemoryRow `json:"memory"`
+}
+
+type MemoryChangedNotification struct {
+	Memory MemoryRow `json:"memory"`
+	Seq    int64     `json:"seq"`
 }
 
 type UsageQueryParams struct {
@@ -674,6 +693,16 @@ type SettingsUpdateParams struct {
 	LearnModel *string `json:"learnModel,omitempty"`
 }
 
+type SettingsReadResult struct {
+	SettingsRow
+	Seq int64 `json:"seq"`
+}
+
+type SettingsChangedNotification struct {
+	SettingsRow
+	Seq int64 `json:"seq"`
+}
+
 type SettingsPermissionsParams struct {
 	policy.Settings
 }
@@ -718,6 +747,7 @@ type TodoListParams struct {
 type TodoListResult struct {
 	Data []TodoRow `json:"data"`
 	More bool      `json:"more,omitempty"`
+	Seq  int64     `json:"seq"`
 }
 
 type TodoAddParams struct {
@@ -737,6 +767,11 @@ type TodoUpdateParams struct {
 
 type TodoResult struct {
 	Todo TodoRow `json:"todo"`
+}
+
+type TodoChangedNotification struct {
+	Todo TodoRow `json:"todo"`
+	Seq  int64   `json:"seq"`
 }
 
 var errorCodes = []struct {

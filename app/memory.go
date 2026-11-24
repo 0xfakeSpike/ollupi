@@ -12,13 +12,18 @@ import (
 	"github.com/0xfakeSpike/ollupi/store"
 )
 
-func (a *App) Memories(ctx context.Context, user string, place memory.Place) ([]memory.Memory, error) {
+func (a *App) Memories(ctx context.Context, user string, place memory.Place) (ms []memory.Memory, seq int64, err error) {
 	if err := place.Check(); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	var ms []memory.Memory
-	err := a.st.Read(ctx, func(r store.Reader) (err error) { ms, err = r.Memories(user, place); return err })
-	return ms, err
+	err = a.st.Read(ctx, func(r store.Reader) error {
+		if ms, err = r.Memories(user, place); err != nil {
+			return err
+		}
+		seq, err = r.Seq()
+		return err
+	})
+	return ms, seq, err
 }
 
 type MemoryStatus struct {

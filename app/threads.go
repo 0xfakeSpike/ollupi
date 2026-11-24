@@ -106,12 +106,15 @@ func (a *App) HandOff(ctx context.Context, user string, h HandOff) (HandedOff, e
 	return out, err
 }
 
-func (a *App) Threads(ctx context.Context, user string, f store.ThreadFilter) (threads []store.Thread, more bool, err error) {
+func (a *App) Threads(ctx context.Context, user string, f store.ThreadFilter) (threads []store.Thread, more bool, seq int64, err error) {
 	err = a.st.Read(ctx, func(r store.Reader) error {
-		threads, more, err = r.Threads(user, f)
+		if threads, more, err = r.Threads(user, f); err != nil {
+			return err
+		}
+		seq, err = r.Seq()
 		return err
 	})
-	return threads, more, err
+	return threads, more, seq, err
 }
 
 func (a *App) Page(ctx context.Context, user, id string, before int64, limit int) (th store.Thread, page store.Page, more bool, seq int64, err error) {

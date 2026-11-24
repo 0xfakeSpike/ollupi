@@ -416,12 +416,16 @@
               "$ref": "#/$defs/CronJobRow"
             }
           ]
+        },
+        "seq": {
+          "type": "integer"
         }
       },
       "required": [
         "id",
         "threadId",
-        "job"
+        "job",
+        "seq"
       ],
       "additionalProperties": false
     },
@@ -560,10 +564,14 @@
           "items": {
             "$ref": "#/$defs/CronJobRow"
           }
+        },
+        "seq": {
+          "type": "integer"
         }
       },
       "required": [
-        "data"
+        "data",
+        "seq"
       ],
       "additionalProperties": false
     },
@@ -681,11 +689,15 @@
               "$ref": "#/$defs/EnvironmentRow"
             }
           ]
+        },
+        "seq": {
+          "type": "integer"
         }
       },
       "required": [
         "environmentId",
-        "environment"
+        "environment",
+        "seq"
       ],
       "additionalProperties": false
     },
@@ -716,10 +728,14 @@
           "items": {
             "$ref": "#/$defs/EnvironmentRow"
           }
+        },
+        "seq": {
+          "type": "integer"
         }
       },
       "required": [
-        "data"
+        "data",
+        "seq"
       ],
       "additionalProperties": false
     },
@@ -1691,11 +1707,15 @@
               "$ref": "#/$defs/MCPServerConfig"
             }
           ]
+        },
+        "seq": {
+          "type": "integer"
         }
       },
       "required": [
         "name",
-        "server"
+        "server",
+        "seq"
       ],
       "additionalProperties": false
     },
@@ -1758,10 +1778,14 @@
           "items": {
             "$ref": "#/$defs/MCPServer"
           }
+        },
+        "seq": {
+          "type": "integer"
         }
       },
       "required": [
-        "data"
+        "data",
+        "seq"
       ],
       "additionalProperties": false
     },
@@ -1794,6 +1818,22 @@
         "name",
         "connected",
         "tools"
+      ],
+      "additionalProperties": false
+    },
+    "MemoryChangedNotification": {
+      "type": "object",
+      "properties": {
+        "memory": {
+          "$ref": "#/$defs/MemoryRow"
+        },
+        "seq": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "memory",
+        "seq"
       ],
       "additionalProperties": false
     },
@@ -1848,10 +1888,14 @@
           "items": {
             "$ref": "#/$defs/MemoryRow"
           }
+        },
+        "seq": {
+          "type": "integer"
         }
       },
       "required": [
-        "data"
+        "data",
+        "seq"
       ],
       "additionalProperties": false
     },
@@ -2665,6 +2709,42 @@
       ],
       "additionalProperties": false
     },
+    "SettingsChangedNotification": {
+      "type": "object",
+      "properties": {
+        "redaction": {
+          "type": "boolean"
+        },
+        "memory": {
+          "type": "boolean"
+        },
+        "learn": {
+          "type": "boolean"
+        },
+        "permissions": {
+          "$ref": "#/$defs/PermissionSettings"
+        },
+        "model": {
+          "type": "string"
+        },
+        "learnModel": {
+          "type": "string"
+        },
+        "seq": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "redaction",
+        "memory",
+        "learn",
+        "permissions",
+        "model",
+        "learnModel",
+        "seq"
+      ],
+      "additionalProperties": false
+    },
     "SettingsPermissionsParams": {
       "type": "object",
       "properties": {
@@ -2677,6 +2757,42 @@
       },
       "required": [
         "permissions"
+      ],
+      "additionalProperties": false
+    },
+    "SettingsReadResult": {
+      "type": "object",
+      "properties": {
+        "redaction": {
+          "type": "boolean"
+        },
+        "memory": {
+          "type": "boolean"
+        },
+        "learn": {
+          "type": "boolean"
+        },
+        "permissions": {
+          "$ref": "#/$defs/PermissionSettings"
+        },
+        "model": {
+          "type": "string"
+        },
+        "learnModel": {
+          "type": "string"
+        },
+        "seq": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "redaction",
+        "memory",
+        "learn",
+        "permissions",
+        "model",
+        "learnModel",
+        "seq"
       ],
       "additionalProperties": false
     },
@@ -2917,11 +3033,15 @@
         },
         "hasMore": {
           "type": "boolean"
+        },
+        "seq": {
+          "type": "integer"
         }
       },
       "required": [
         "data",
-        "hasMore"
+        "hasMore",
+        "seq"
       ],
       "additionalProperties": false
     },
@@ -3145,6 +3265,22 @@
       ],
       "additionalProperties": false
     },
+    "TodoChangedNotification": {
+      "type": "object",
+      "properties": {
+        "todo": {
+          "$ref": "#/$defs/TodoRow"
+        },
+        "seq": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "todo",
+        "seq"
+      ],
+      "additionalProperties": false
+    },
     "TodoListParams": {
       "type": "object",
       "properties": {
@@ -3177,10 +3313,14 @@
         },
         "more": {
           "type": "boolean"
+        },
+        "seq": {
+          "type": "integer"
         }
       },
       "required": [
-        "data"
+        "data",
+        "seq"
       ],
       "additionalProperties": false
     },
@@ -3832,6 +3972,22 @@
       ],
       "additionalProperties": false
     },
+    "WorkspaceChangedNotification": {
+      "type": "object",
+      "properties": {
+        "workspace": {
+          "$ref": "#/$defs/WorkspaceRow"
+        },
+        "seq": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "workspace",
+        "seq"
+      ],
+      "additionalProperties": false
+    },
     "WorkspaceInstructionsParams": {
       "type": "object",
       "properties": {
@@ -3863,10 +4019,14 @@
           "items": {
             "$ref": "#/$defs/WorkspaceRow"
           }
+        },
+        "seq": {
+          "type": "integer"
         }
       },
       "required": [
-        "data"
+        "data",
+        "seq"
       ],
       "additionalProperties": false
     },
@@ -4241,7 +4401,7 @@
         "$ref": "#/$defs/Empty"
       },
       "result": {
-        "$ref": "#/$defs/SettingsRow"
+        "$ref": "#/$defs/SettingsReadResult"
       }
     },
     "settings/update": {
@@ -4492,22 +4652,22 @@
       "$ref": "#/$defs/MCPServerChangedNotification"
     },
     "memory/changed": {
-      "$ref": "#/$defs/MemoryResult"
+      "$ref": "#/$defs/MemoryChangedNotification"
     },
     "settings/changed": {
-      "$ref": "#/$defs/SettingsRow"
+      "$ref": "#/$defs/SettingsChangedNotification"
     },
     "thread/changed": {
       "$ref": "#/$defs/ThreadChangedNotification"
     },
     "todo/changed": {
-      "$ref": "#/$defs/TodoResult"
+      "$ref": "#/$defs/TodoChangedNotification"
     },
     "turn/changed": {
       "$ref": "#/$defs/TurnChangedNotification"
     },
     "workspace/changed": {
-      "$ref": "#/$defs/WorkspaceResult"
+      "$ref": "#/$defs/WorkspaceChangedNotification"
     }
   },
   "serverRequests": {

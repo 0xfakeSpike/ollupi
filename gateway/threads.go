@@ -82,8 +82,8 @@ func (c *conn) threadList(ctx context.Context, p ThreadListParams) (ThreadListRe
 	if a := p.After; a != nil {
 		f.After = &store.ThreadCursor{Updated: a.UpdatedAt, Created: a.CreatedAt, ID: a.ID}
 	}
-	threads, more, err := c.s.app.Threads(ctx, c.user, f)
-	return ThreadListResult{Data: each(threads, threadRow), HasMore: more}, err
+	threads, more, seq, err := c.s.app.Threads(ctx, c.user, f)
+	return ThreadListResult{Data: each(threads, threadRow), HasMore: more, Seq: seq}, err
 }
 
 func (c *conn) threadPermissions(ctx context.Context, p ThreadPermissionsParams) (ThreadResult, error) {

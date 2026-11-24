@@ -534,7 +534,7 @@ func (p *Provider) listTodos(ctx context.Context, c tool.Call) (kit.Result, erro
 	if len(statuses) == 0 {
 		statuses = []account.TodoStatus{account.TodoOpen, account.TodoHanded}
 	}
-	listed, more, err := p.App.Todos(ctx, c.User, statuses, maxListed)
+	listed, more, _, err := p.App.Todos(ctx, c.User, statuses, maxListed)
 	if err != nil {
 		return kit.Result{}, err
 	}
