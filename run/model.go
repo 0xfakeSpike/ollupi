@@ -52,7 +52,7 @@ func (r *Runner) callModel(ctx context.Context, s *step, a agent.CallModel) erro
 		if d.Reasoning != "" {
 			delta = store.Delta{Turn: s.turn.ID, Item: ans.reasoning, Reasoning: d.Reasoning}
 		}
-		r.st.Feed().Publish(store.Event{User: s.th.User, Thread: s.th.ID, Delta: &delta})
+		r.st.Feed().Publish([]store.Event{{User: s.th.User, Thread: s.th.ID, Delta: &delta}}, nil)
 	})
 	if err == nil {
 		err = checkResponse(resp, choice)

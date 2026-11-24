@@ -6,6 +6,16 @@ type Feed struct {
 	mu     sync.RWMutex
 	byUser map[string]map[*Subscription]struct{}
 	all    map[*Subscription]struct{}
+
+	queue   chan batch
+	stop    chan struct{}
+	stopped chan struct{}
+	closing sync.Once
+}
+
+type batch struct {
+	events []Event
+	told   func()
 }
 
 type Subscription struct {
@@ -15,8 +25,13 @@ type Subscription struct {
 	fn   func(Event)
 }
 
+const queued = 1024
+
 func NewFeed() *Feed {
-	return &Feed{byUser: map[string]map[*Subscription]struct{}{}, all: map[*Subscription]struct{}{}}
+	f := &Feed{byUser: map[string]map[*Subscription]struct{}{}, all: map[*Subscription]struct{}{},
+		queue: make(chan batch, queued), stop: make(chan struct{}), stopped: make(chan struct{})}
+	go f.tell()
+	return f
 }
 
 func (f *Feed) Subscribe(user string, fn func(Event)) *Subscription {
@@ -52,13 +67,49 @@ func (s *Subscription) Close() {
 	}
 }
 
-func (f *Feed) Publish(e Event) {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
-	for s := range f.byUser[e.User] {
-		s.fn(e)
+func (f *Feed) Publish(events []Event, told func()) {
+	select {
+	case f.queue <- batch{events: events, told: told}:
+	case <-f.stop:
 	}
-	for s := range f.all {
-		s.fn(e)
+}
+
+func (f *Feed) Close() {
+	f.closing.Do(func() { close(f.stop) })
+	<-f.stopped
+}
+
+func (f *Feed) tell() {
+	defer close(f.stopped)
+	for {
+		select {
+		case b := <-f.queue:
+			f.deliver(b)
+		case <-f.stop:
+			for {
+				select {
+				case b := <-f.queue:
+					f.deliver(b)
+				default:
+					return
+				}
+			}
+		}
+	}
+}
+
+func (f *Feed) deliver(b batch) {
+	f.mu.RLock()
+	for _, e := range b.events {
+		for s := range f.byUser[e.User] {
+			s.fn(e)
+		}
+		for s := range f.all {
+			s.fn(e)
+		}
+	}
+	f.mu.RUnlock()
+	if b.told != nil {
+		b.told()
 	}
 }

@@ -22,7 +22,10 @@ type Store struct {
 	g       *gorm.DB
 	r       *gorm.DB
 	feed    *store.Feed
-	telling sync.Mutex
+	writes  chan write
+	quit    chan struct{}
+	wrote   chan struct{}
+	closing sync.Once
 	epoch   atomic.Int64
 	// base is the user's home: workspace roots are kept relative to it, so
 	// the file means the same folders on another machine (paths.go).
@@ -56,12 +59,22 @@ func openAt(home, base string) (*Store, error) {
 		sqlitedb.Close(g)
 		return nil, err
 	}
-	return &Store{g: g, r: r, feed: store.NewFeed(), base: base}, nil
+	s := &Store{g: g, r: r, feed: store.NewFeed(), base: base,
+		writes: make(chan write), quit: make(chan struct{}), wrote: make(chan struct{})}
+	go s.write()
+	return s, nil
 }
 
 const readers = 4
 
-func (s *Store) Close() error { return errors.Join(sqlitedb.Close(s.r), sqlitedb.Close(s.g)) }
+var errClosed = errors.New("store: closed")
+
+func (s *Store) Close() error {
+	s.closing.Do(func() { close(s.quit) })
+	<-s.wrote
+	s.feed.Close()
+	return errors.Join(sqlitedb.Close(s.r), sqlitedb.Close(s.g))
+}
 
 func (s *Store) Gorm() *gorm.DB { return s.g }
 
@@ -84,11 +97,53 @@ func (s *Store) Read(ctx context.Context, fn func(store.Reader) error) error {
 	return s.r.WithContext(ctx).Transaction(func(g *gorm.DB) error { return fn(reader{g: g, base: s.base}) })
 }
 
+type write struct {
+	ctx  context.Context
+	fn   func(store.Tx) error
+	done chan outcome
+}
+
+type outcome struct {
+	err      error
+	panicked any
+}
+
 func (s *Store) Update(ctx context.Context, fn func(store.Tx) error) error {
-	s.telling.Lock()
-	defer s.telling.Unlock()
+	w := write{ctx: ctx, fn: fn, done: make(chan outcome, 1)}
+	select {
+	case s.writes <- w:
+	case <-s.quit:
+		return errClosed
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	out := <-w.done
+	if out.panicked != nil {
+		panic(out.panicked)
+	}
+	return out.err
+}
+
+func (s *Store) write() {
+	defer close(s.wrote)
+	for {
+		select {
+		case w := <-s.writes:
+			s.commit(w)
+		case <-s.quit:
+			return
+		}
+	}
+}
+
+func (s *Store) commit(w write) {
 	var events []store.Event
-	err := s.g.WithContext(ctx).Transaction(func(g *gorm.DB) error {
+	defer func() {
+		if p := recover(); p != nil {
+			w.done <- outcome{panicked: p}
+		}
+	}()
+	err := s.g.WithContext(w.ctx).Transaction(func(g *gorm.DB) error {
 		if mine := s.epoch.Load(); mine != 0 {
 			var current int64
 			if err := g.Raw("SELECT epoch FROM shard_epoch WHERE id = 1").Scan(&current).Error; err != nil {
@@ -99,7 +154,7 @@ func (s *Store) Update(ctx context.Context, fn func(store.Tx) error) error {
 			}
 		}
 		t := &tx{reader: reader{g: g, base: s.base}, views: map[string]conversation.View{}, threads: map[string]*pending{}}
-		if err := fn(t); err != nil {
+		if err := w.fn(t); err != nil {
 			return err
 		}
 		var err error
@@ -115,13 +170,11 @@ func (s *Store) Update(ctx context.Context, fn func(store.Tx) error) error {
 		}
 		return nil
 	})
-	if err != nil {
-		return err
+	if err != nil || len(events) == 0 {
+		w.done <- outcome{err: err}
+		return
 	}
-	for _, e := range events {
-		s.feed.Publish(e)
-	}
-	return nil
+	s.feed.Publish(events, func() { w.done <- outcome{} })
 }
 
 func notFound(err error) error {

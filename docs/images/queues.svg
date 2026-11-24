@@ -6,7 +6,7 @@
 <style>text{font-family:-apple-system, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;fill:#1f2430} .title{font-size:22px;font-weight:700} .sub{font-size:14px;fill:#5a6070} .head{font-size:16px;font-weight:700;fill:#163a66} .n{font-size:13px;font-weight:700} .q{font-size:13px;font-weight:700;fill:#4b2f99} .a{font-size:13px;fill:#4a4f5c} .qt{font-size:12px;font-weight:600;fill:#7a5cc7} .ev{font-family:ui-monospace, "SF Mono", Menlo, monospace;font-size:12.5px;font-weight:700;fill:#163a66} .st{font-size:13px;font-weight:600;fill:#163a66} .rv{font-size:14px;font-weight:700;fill:#163a66} .tiny{font-size:12px;fill:#3978b8} .note{font-size:13.5px;fill:#4a4f5c}</style>
 <rect width="1500" height="1132" rx="16" fill="#ffffff"/>
 <text class="title" x="40" y="48">三个队列和一条总线</text>
-<text class="sub" x="40" y="76">紫色是队列：两个在 SQLite 里，一个在每条连接的内存里。蓝色的河是 store.Feed，只负责叫醒，不排队。</text>
+<text class="sub" x="40" y="76">紫色是队列：两个在 SQLite 里，一个在每条连接的内存里。蓝色的河是 store.Feed，只负责按顺序叫醒，不保存要做的工作。</text>
 <text class="head" x="260.0" y="124.0" text-anchor="middle">① 轮次队列（会话的运行队列）</text>
 <text class="head" x="730.0" y="124.0" text-anchor="middle">② 后台任务队列（工具的执行队列）</text>
 <text class="head" x="1200.0" y="124.0" text-anchor="middle">③ 每个连接的发送队列（给客户端）</text>
@@ -70,8 +70,8 @@
 <text class="ev" x="790.0" y="530.0" text-anchor="middle">TaskLaunched</text>
 <rect x="1039.8" y="512" width="200.5" height="26" rx="8" fill="#ffffff" fill-opacity=".92"/>
 <text class="ev" x="1140.0" y="530.0" text-anchor="middle">这个用户的所有事件 + Delta</text>
-<rect x="685.8" y="552" width="598.4" height="28" rx="8" fill="#ffffff" fill-opacity=".92"/>
-<text class="rv" x="985.0" y="571.0" text-anchor="middle">store.Feed 总线：广播，不是队列。同步调每个订阅者，不缓存、不落库，没人听就没了</text>
+<rect x="727.8" y="552" width="514.4" height="28" rx="8" fill="#ffffff" fill-opacity=".92"/>
+<text class="rv" x="985.0" y="571.0" text-anchor="middle">store.Feed 总线：广播。按提交顺序调每个订阅者，不落库，没人听就没了</text>
 <rect x="40" y="632" width="440" height="88" rx="10" fill="#eaf7ed" stroke="#3c8b53" stroke-width="1.4"/>
 <text class="n" x="260.0" y="656.0" text-anchor="middle">schedule.Threads 听到 → 发唤醒信号</text>
 <text class="a" x="260.0" y="678.0" text-anchor="middle">信号是容量为 1 的 channel：</text>
@@ -132,6 +132,6 @@
 <path d="M730.0,870.0 L730.0,905.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
 <path d="M1200.0,870.0 L1200.0,905.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
 <text class="note" x="40.0" y="1040.0" text-anchor="start">一共三个队列：① ② 在 SQLite 里，和会话日志同一个事务写入，重启不丢；③ 在内存里，每条连接一个，丢了就靠重读补。</text>
-<text class="note" x="40.0" y="1064.0" text-anchor="start">总线本身不排队：它只叫醒两个调度器和网关。调度器回 SQLite 取队列，网关把事件放进这条连接自己的 outbox。</text>
+<text class="note" x="40.0" y="1064.0" text-anchor="start">总线不保存工作：它只按顺序叫醒两个调度器和网关。调度器回 SQLite 取队列，网关把事件放进这条连接自己的 outbox。</text>
 <text class="note" x="40.0" y="1088.0" text-anchor="start">普通工具（不是后台工具）不进任何队列：Runner 在 ① 给它的槽位里直接执行，结果写回日志。</text>
 </svg>
