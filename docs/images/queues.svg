@@ -1,0 +1,137 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 1132" width="1500" height="1132">
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,1 L9,5 L0,9 z" fill="#7a7f8c"/></marker>
+<marker id="d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,1 L9,5 L0,9 z" fill="#3978b8"/></marker>
+<marker id="q" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,1 L9,5 L0,9 z" fill="#7a5cc7"/></marker>
+<linearGradient id="river" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#d6e6fb"/><stop offset="1" stop-color="#b9d3f5"/></linearGradient></defs>
+<style>text{font-family:-apple-system, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;fill:#1f2430} .title{font-size:22px;font-weight:700} .sub{font-size:14px;fill:#5a6070} .head{font-size:16px;font-weight:700;fill:#163a66} .n{font-size:13px;font-weight:700} .q{font-size:13px;font-weight:700;fill:#4b2f99} .a{font-size:13px;fill:#4a4f5c} .qt{font-size:12px;font-weight:600;fill:#7a5cc7} .ev{font-family:ui-monospace, "SF Mono", Menlo, monospace;font-size:12.5px;font-weight:700;fill:#163a66} .st{font-size:13px;font-weight:600;fill:#163a66} .rv{font-size:14px;font-weight:700;fill:#163a66} .tiny{font-size:12px;fill:#3978b8} .note{font-size:13.5px;fill:#4a4f5c}</style>
+<rect width="1500" height="1132" rx="16" fill="#ffffff"/>
+<text class="title" x="40" y="48">三个队列和一条总线</text>
+<text class="sub" x="40" y="76">紫色是队列：两个在 SQLite 里，一个在每条连接的内存里。蓝色的河是 store.Feed，只负责叫醒，不排队。</text>
+<text class="head" x="260.0" y="124.0" text-anchor="middle">① 轮次队列（会话的运行队列）</text>
+<text class="head" x="730.0" y="124.0" text-anchor="middle">② 后台任务队列（工具的执行队列）</text>
+<text class="head" x="1200.0" y="124.0" text-anchor="middle">③ 每个连接的发送队列（给客户端）</text>
+<rect x="40" y="140" width="440" height="108" rx="10" fill="#fff4df" stroke="#c98b2e" stroke-width="1.4"/>
+<text class="n" x="260.0" y="164.0" text-anchor="middle">写入方：app、Runner、汇报……</text>
+<text class="a" x="260.0" y="186.0" text-anchor="middle">往会话日志追加条目；折叠出的视图可运行，</text>
+<text class="a" x="260.0" y="205.0" text-anchor="middle">就在同一个事务里给会话置 runnable_since</text>
+<text class="a" x="260.0" y="224.0" text-anchor="middle">（新消息、审批、回答、子 agent 和任务汇报）</text>
+<rect x="510" y="140" width="440" height="108" rx="10" fill="#fff4df" stroke="#c98b2e" stroke-width="1.4"/>
+<text class="n" x="730.0" y="164.0" text-anchor="middle">写入方：Runner 跑到后台工具</text>
+<text class="a" x="730.0" y="186.0" text-anchor="middle">同一个事务里写 TaskLaunched 条目，</text>
+<text class="a" x="730.0" y="205.0" text-anchor="middle">再往 tasks 表插一行</text>
+<text class="a" x="730.0" y="224.0" text-anchor="middle">（普通工具不进这里，见下）</text>
+<rect x="980" y="140" width="440" height="108" rx="10" fill="#fff4df" stroke="#c98b2e" stroke-width="1.4"/>
+<text class="n" x="1200.0" y="164.0" text-anchor="middle">写入方：所有写 store 的地方</text>
+<text class="a" x="1200.0" y="186.0" text-anchor="middle">每次提交都会变成这个用户的事件；</text>
+<text class="a" x="1200.0" y="205.0" text-anchor="middle">另有 Runner 边收边发的 Delta，</text>
+<text class="a" x="1200.0" y="224.0" text-anchor="middle">不进事务，直接发上总线</text>
+<rect x="26" y="290" width="1448" height="150" rx="12" fill="#e9f2ff" stroke="#3978b8" stroke-width="1.4"/>
+<text class="st" x="40.0" y="312.0" text-anchor="start">SQLite：一次 store.Update 是一个事务；队列 ①② 和会话日志在同一个事务里写，提交了才算数，重启也不丢</text>
+<path d="M260.0,250.0 L260.0,287.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<path d="M730.0,250.0 L730.0,287.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<path d="M1140.0,250.0 L1140.0,287.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="70" y="326" width="380" height="104" rx="10" fill="#f1ecff" stroke="#7a5cc7" stroke-width="1.8"/>
+<text class="q" x="260.0" y="350.0" text-anchor="middle">threads 表：runnable_since 非空的会话</text>
+<rect x="169.5" y="362" width="26" height="18" rx="4" fill="#7a5cc7" fill-opacity="0.46"/>
+<rect x="200.5" y="362" width="26" height="18" rx="4" fill="#7a5cc7" fill-opacity="0.57"/>
+<rect x="231.5" y="362" width="26" height="18" rx="4" fill="#7a5cc7" fill-opacity="0.68"/>
+<rect x="262.5" y="362" width="26" height="18" rx="4" fill="#7a5cc7" fill-opacity="0.78"/>
+<rect x="293.5" y="362" width="26" height="18" rx="4" fill="#7a5cc7" fill-opacity="0.89"/>
+<rect x="324.5" y="362" width="26" height="18" rx="4" fill="#7a5cc7" fill-opacity="1.00"/>
+<path d="M356.5,371.0 L384.5,371.0" stroke="#7a5cc7" stroke-width="1.5" fill="none" marker-end="url(#q)"/>
+<text class="tiny" x="161.5" y="376.0" text-anchor="end">进</text>
+<text class="tiny" x="388.5" y="376.0" text-anchor="start">出</text>
+<text class="a" x="260.0" y="402.0" text-anchor="middle">子会话优先，再按 runnable_since 先后</text>
+<rect x="540" y="326" width="380" height="104" rx="10" fill="#f1ecff" stroke="#7a5cc7" stroke-width="1.8"/>
+<text class="q" x="730.0" y="350.0" text-anchor="middle">tasks 表：每行一个待跑的后台任务</text>
+<rect x="639.5" y="362" width="26" height="18" rx="4" fill="#7a5cc7" fill-opacity="0.46"/>
+<rect x="670.5" y="362" width="26" height="18" rx="4" fill="#7a5cc7" fill-opacity="0.57"/>
+<rect x="701.5" y="362" width="26" height="18" rx="4" fill="#7a5cc7" fill-opacity="0.68"/>
+<rect x="732.5" y="362" width="26" height="18" rx="4" fill="#7a5cc7" fill-opacity="0.78"/>
+<rect x="763.5" y="362" width="26" height="18" rx="4" fill="#7a5cc7" fill-opacity="0.89"/>
+<rect x="794.5" y="362" width="26" height="18" rx="4" fill="#7a5cc7" fill-opacity="1.00"/>
+<path d="M826.5,371.0 L854.5,371.0" stroke="#7a5cc7" stroke-width="1.5" fill="none" marker-end="url(#q)"/>
+<text class="tiny" x="631.5" y="376.0" text-anchor="end">进</text>
+<text class="tiny" x="858.5" y="376.0" text-anchor="start">出</text>
+<text class="a" x="730.0" y="402.0" text-anchor="middle">按 created_at 先后</text>
+<rect x="1010" y="326" width="380" height="104" rx="10" fill="#ffffff" stroke="#3978b8" stroke-width="1.4"/>
+<text class="n" x="1200.0" y="350.0" text-anchor="middle">会话日志、各类资源表</text>
+<text class="a" x="1200.0" y="372.0" text-anchor="middle">这一列在 SQLite 里没有队列</text>
+<path d="M26.0,504.1 L36.0,504.9 L46.0,505.0 L56.0,504.4 L66.0,503.2 L76.0,501.6 L86.0,499.8 L96.0,498.0 L106.0,496.5 L116.0,495.4 L126.0,495.0 L136.0,495.2 L146.0,496.1 L156.0,497.5 L166.0,499.3 L176.0,501.1 L186.0,502.8 L196.0,504.1 L206.0,504.9 L216.0,505.0 L226.0,504.4 L236.0,503.2 L246.0,501.6 L256.0,499.8 L266.0,498.0 L276.0,496.5 L286.0,495.4 L296.0,495.0 L306.0,495.2 L316.0,496.1 L326.0,497.5 L336.0,499.3 L346.0,501.1 L356.0,502.8 L366.0,504.1 L376.0,504.9 L386.0,505.0 L396.0,504.4 L406.0,503.2 L416.0,501.6 L426.0,499.8 L436.0,498.0 L446.0,496.5 L456.0,495.4 L466.0,495.0 L476.0,495.2 L486.0,496.1 L496.0,497.5 L506.0,499.3 L516.0,501.1 L526.0,502.8 L536.0,504.1 L546.0,504.9 L556.0,505.0 L566.0,504.4 L576.0,503.2 L586.0,501.6 L596.0,499.8 L606.0,498.0 L616.0,496.5 L626.0,495.4 L636.0,495.0 L646.0,495.2 L656.0,496.1 L666.0,497.5 L676.0,499.3 L686.0,501.1 L696.0,502.8 L706.0,504.1 L716.0,504.9 L726.0,505.0 L736.0,504.4 L746.0,503.2 L756.0,501.6 L766.0,499.8 L776.0,498.0 L786.0,496.5 L796.0,495.4 L806.0,495.0 L816.0,495.2 L826.0,496.1 L836.0,497.5 L846.0,499.3 L856.0,501.1 L866.0,502.8 L876.0,504.1 L886.0,504.9 L896.0,505.0 L906.0,504.4 L916.0,503.2 L926.0,501.6 L936.0,499.8 L946.0,498.0 L956.0,496.5 L966.0,495.4 L976.0,495.0 L986.0,495.2 L996.0,496.1 L1006.0,497.5 L1016.0,499.3 L1026.0,501.1 L1036.0,502.8 L1046.0,504.1 L1056.0,504.9 L1066.0,505.0 L1076.0,504.4 L1086.0,503.2 L1096.0,501.6 L1106.0,499.8 L1116.0,498.0 L1126.0,496.5 L1136.0,495.4 L1146.0,495.0 L1156.0,495.2 L1166.0,496.1 L1176.0,497.5 L1186.0,499.3 L1196.0,501.1 L1206.0,502.8 L1216.0,504.1 L1226.0,504.9 L1236.0,505.0 L1246.0,504.4 L1256.0,503.2 L1266.0,501.6 L1276.0,499.8 L1286.0,498.0 L1296.0,496.5 L1306.0,495.4 L1316.0,495.0 L1326.0,495.2 L1336.0,496.1 L1346.0,497.5 L1356.0,499.3 L1366.0,501.1 L1376.0,502.8 L1386.0,504.1 L1396.0,504.9 L1406.0,505.0 L1416.0,504.4 L1426.0,503.2 L1436.0,501.6 L1446.0,499.8 L1456.0,498.0 L1466.0,496.5 L1474.0,495.6 L1474.0,588.5 L1466.0,587.6 L1456.0,587.0 L1446.0,587.1 L1436.0,587.9 L1426.0,589.2 L1416.0,590.9 L1406.0,592.7 L1396.0,594.4 L1386.0,595.9 L1376.0,596.7 L1366.0,597.0 L1356.0,596.6 L1346.0,595.5 L1336.0,594.0 L1326.0,592.2 L1316.0,590.4 L1306.0,588.8 L1296.0,587.6 L1286.0,587.0 L1276.0,587.1 L1266.0,587.9 L1256.0,589.2 L1246.0,590.9 L1236.0,592.7 L1226.0,594.4 L1216.0,595.9 L1206.0,596.7 L1196.0,597.0 L1186.0,596.6 L1176.0,595.5 L1166.0,594.0 L1156.0,592.2 L1146.0,590.4 L1136.0,588.8 L1126.0,587.6 L1116.0,587.0 L1106.0,587.1 L1096.0,587.9 L1086.0,589.2 L1076.0,590.9 L1066.0,592.7 L1056.0,594.4 L1046.0,595.9 L1036.0,596.7 L1026.0,597.0 L1016.0,596.6 L1006.0,595.5 L996.0,594.0 L986.0,592.2 L976.0,590.4 L966.0,588.8 L956.0,587.6 L946.0,587.0 L936.0,587.1 L926.0,587.9 L916.0,589.2 L906.0,590.9 L896.0,592.7 L886.0,594.4 L876.0,595.9 L866.0,596.7 L856.0,597.0 L846.0,596.6 L836.0,595.5 L826.0,594.0 L816.0,592.2 L806.0,590.4 L796.0,588.8 L786.0,587.6 L776.0,587.0 L766.0,587.1 L756.0,587.9 L746.0,589.2 L736.0,590.9 L726.0,592.7 L716.0,594.4 L706.0,595.9 L696.0,596.7 L686.0,597.0 L676.0,596.6 L666.0,595.5 L656.0,594.0 L646.0,592.2 L636.0,590.4 L626.0,588.8 L616.0,587.6 L606.0,587.0 L596.0,587.1 L586.0,587.9 L576.0,589.2 L566.0,590.9 L556.0,592.7 L546.0,594.4 L536.0,595.9 L526.0,596.7 L516.0,597.0 L506.0,596.6 L496.0,595.5 L486.0,594.0 L476.0,592.2 L466.0,590.4 L456.0,588.8 L446.0,587.6 L436.0,587.0 L426.0,587.1 L416.0,587.9 L406.0,589.2 L396.0,590.9 L386.0,592.7 L376.0,594.4 L366.0,595.9 L356.0,596.7 L346.0,597.0 L336.0,596.6 L326.0,595.5 L316.0,594.0 L306.0,592.2 L296.0,590.4 L286.0,588.8 L276.0,587.6 L266.0,587.0 L256.0,587.1 L246.0,587.9 L236.0,589.2 L226.0,590.9 L216.0,592.7 L206.0,594.4 L196.0,595.9 L186.0,596.7 L176.0,597.0 L166.0,596.6 L156.0,595.5 L146.0,594.0 L136.0,592.2 L126.0,590.4 L116.0,588.8 L106.0,587.6 L96.0,587.0 L86.0,587.1 L76.0,587.9 L66.0,589.2 L56.0,590.9 L46.0,592.7 L36.0,594.4 L26.0,595.9 Z" fill="url(#river)" stroke="#5b8fd1" stroke-width="1.5"/>
+<path d="M320.0,442.0 L320.0,493.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<path d="M790.0,442.0 L790.0,493.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<path d="M1140.0,442.0 L1140.0,493.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<text class="tiny" x="328.0" y="476.0" text-anchor="start">提交后发事件</text>
+<path d="M1421,194.0 L1436,194.0 L1436,493" stroke="#3978b8" stroke-width="1.5" fill="none" stroke-dasharray="6 5" marker-end="url(#d)"/>
+<text class="tiny" x="1430.0" y="470.0" text-anchor="end">Delta 直达，不进事务</text>
+<rect x="223.5" y="512" width="193.0" height="26" rx="8" fill="#ffffff" fill-opacity=".92"/>
+<text class="ev" x="320.0" y="530.0" text-anchor="middle">Header.Runnable = true</text>
+<rect x="731.0" y="512" width="118.0" height="26" rx="8" fill="#ffffff" fill-opacity=".92"/>
+<text class="ev" x="790.0" y="530.0" text-anchor="middle">TaskLaunched</text>
+<rect x="1039.8" y="512" width="200.5" height="26" rx="8" fill="#ffffff" fill-opacity=".92"/>
+<text class="ev" x="1140.0" y="530.0" text-anchor="middle">这个用户的所有事件 + Delta</text>
+<rect x="685.8" y="552" width="598.4" height="28" rx="8" fill="#ffffff" fill-opacity=".92"/>
+<text class="rv" x="985.0" y="571.0" text-anchor="middle">store.Feed 总线：广播，不是队列。同步调每个订阅者，不缓存、不落库，没人听就没了</text>
+<rect x="40" y="632" width="440" height="88" rx="10" fill="#eaf7ed" stroke="#3c8b53" stroke-width="1.4"/>
+<text class="n" x="260.0" y="656.0" text-anchor="middle">schedule.Threads 听到 → 发唤醒信号</text>
+<text class="a" x="260.0" y="678.0" text-anchor="middle">信号是容量为 1 的 channel：</text>
+<text class="a" x="260.0" y="697.0" text-anchor="middle">连着叫醒几次，只合并成一次</text>
+<rect x="510" y="632" width="440" height="88" rx="10" fill="#eaf7ed" stroke="#3c8b53" stroke-width="1.4"/>
+<text class="n" x="730.0" y="656.0" text-anchor="middle">schedule.Tasks 听到 → 发唤醒信号</text>
+<text class="a" x="730.0" y="678.0" text-anchor="middle">同样是容量为 1 的 channel</text>
+<text class="a" x="730.0" y="697.0" text-anchor="middle">（和 ① 是两个调度器、两组槽位）</text>
+<rect x="980" y="632" width="440" height="88" rx="10" fill="#eaf7ed" stroke="#3c8b53" stroke-width="1.4"/>
+<text class="n" x="1200.0" y="656.0" text-anchor="middle">gateway：每条连接各订阅一次（按用户）</text>
+<text class="a" x="1200.0" y="678.0" text-anchor="middle">把事件翻成通知，要审批、要提问时</text>
+<text class="a" x="1200.0" y="697.0" text-anchor="middle">翻成发给客户端的请求</text>
+<path d="M320.0,599.0 L320.0,629.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<path d="M790.0,599.0 L790.0,629.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<path d="M1140.0,599.0 L1140.0,629.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="40" y="760" width="440" height="108" rx="10" fill="#eaf7ed" stroke="#3c8b53" stroke-width="1.4"/>
+<text class="n" x="260.0" y="784.0" text-anchor="middle">admit：回 SQLite 读队列 ①，按空槽位起 Runner</text>
+<text class="a" x="260.0" y="806.0" text-anchor="middle">槽位有总数和每个用户两道上限；</text>
+<text class="a" x="260.0" y="825.0" text-anchor="middle">在跑的会话跳过，占满了就等有人让出</text>
+<rect x="510" y="760" width="440" height="108" rx="10" fill="#eaf7ed" stroke="#3c8b53" stroke-width="1.4"/>
+<text class="n" x="730.0" y="784.0" text-anchor="middle">admit：回 SQLite 读队列 ②，按空槽位起任务</text>
+<text class="a" x="730.0" y="806.0" text-anchor="middle">槽位同样分总数和每个用户；</text>
+<text class="a" x="730.0" y="825.0" text-anchor="middle">已经在跑的任务跳过</text>
+<rect x="1010" y="760" width="380" height="108" rx="10" fill="#f1ecff" stroke="#7a5cc7" stroke-width="1.8"/>
+<text class="q" x="1200.0" y="784.0" text-anchor="middle">outbox：每条连接一个，在内存里</text>
+<rect x="1109.5" y="796" width="26" height="18" rx="4" fill="#7a5cc7" fill-opacity="0.46"/>
+<rect x="1140.5" y="796" width="26" height="18" rx="4" fill="#7a5cc7" fill-opacity="0.57"/>
+<rect x="1171.5" y="796" width="26" height="18" rx="4" fill="#7a5cc7" fill-opacity="0.68"/>
+<rect x="1202.5" y="796" width="26" height="18" rx="4" fill="#7a5cc7" fill-opacity="0.78"/>
+<rect x="1233.5" y="796" width="26" height="18" rx="4" fill="#7a5cc7" fill-opacity="0.89"/>
+<rect x="1264.5" y="796" width="26" height="18" rx="4" fill="#7a5cc7" fill-opacity="1.00"/>
+<path d="M1296.5,805.0 L1324.5,805.0" stroke="#7a5cc7" stroke-width="1.5" fill="none" marker-end="url(#q)"/>
+<text class="tiny" x="1101.5" y="810.0" text-anchor="end">进</text>
+<text class="tiny" x="1328.5" y="810.0" text-anchor="start">出</text>
+<text class="a" x="1200.0" y="836.0" text-anchor="middle">最多积 16 MiB，超了就断开这条连接</text>
+<path d="M260.0,722.0 L260.0,757.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<path d="M730.0,722.0 L730.0,757.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<path d="M1200.0,722.0 L1200.0,757.0" stroke="#7a5cc7" stroke-width="1.5" fill="none" marker-end="url(#q)"/>
+<path d="M68,378.0 L25,378.0 L25,814.0 L37,814.0" stroke="#7a5cc7" stroke-width="1.6" fill="none" stroke-dasharray="6 5" marker-end="url(#q)"/>
+<rect x="15" y="610" width="20" height="84" rx="4" fill="#ffffff"/>
+<text class="qt" x="25" y="652" text-anchor="middle" dominant-baseline="central" transform="rotate(-90 25 652)">回 store 读</text>
+<path d="M538,378.0 L495,378.0 L495,814.0 L507,814.0" stroke="#7a5cc7" stroke-width="1.6" fill="none" stroke-dasharray="6 5" marker-end="url(#q)"/>
+<rect x="485" y="610" width="20" height="84" rx="4" fill="#ffffff"/>
+<text class="qt" x="495" y="652" text-anchor="middle" dominant-baseline="central" transform="rotate(-90 495 652)">回 store 读</text>
+<rect x="40" y="908" width="440" height="88" rx="10" fill="#eaf7ed" stroke="#3c8b53" stroke-width="1.4"/>
+<text class="n" x="260.0" y="932.0" text-anchor="middle">Runner 在槽位里跑一段</text>
+<text class="a" x="260.0" y="954.0" text-anchor="middle">跑完或要等人就返回、让出槽位；</text>
+<text class="a" x="260.0" y="973.0" text-anchor="middle">不再可运行时清掉 runnable_since</text>
+<rect x="510" y="908" width="440" height="88" rx="10" fill="#eaf7ed" stroke="#3c8b53" stroke-width="1.4"/>
+<text class="n" x="730.0" y="932.0" text-anchor="middle">在用户沙箱里执行这个工具</text>
+<text class="a" x="730.0" y="954.0" text-anchor="middle">一个事务里删掉这一行，</text>
+<text class="a" x="730.0" y="973.0" text-anchor="middle">同时写 TaskReported（又回到 ①）</text>
+<rect x="980" y="908" width="440" height="88" rx="10" fill="#eaf7ed" stroke="#3c8b53" stroke-width="1.4"/>
+<text class="n" x="1200.0" y="932.0" text-anchor="middle">写协程 → WebSocket → 客户端</text>
+<text class="a" x="1200.0" y="954.0" text-anchor="middle">断开后客户端重连，</text>
+<text class="a" x="1200.0" y="973.0" text-anchor="middle">按 seq 重新读页面补上</text>
+<path d="M260.0,870.0 L260.0,905.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<path d="M730.0,870.0 L730.0,905.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<path d="M1200.0,870.0 L1200.0,905.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<text class="note" x="40.0" y="1040.0" text-anchor="start">一共三个队列：① ② 在 SQLite 里，和会话日志同一个事务写入，重启不丢；③ 在内存里，每条连接一个，丢了就靠重读补。</text>
+<text class="note" x="40.0" y="1064.0" text-anchor="start">总线本身不排队：它只叫醒两个调度器和网关。调度器回 SQLite 取队列，网关把事件放进这条连接自己的 outbox。</text>
+<text class="note" x="40.0" y="1088.0" text-anchor="start">普通工具（不是后台工具）不进任何队列：Runner 在 ① 给它的槽位里直接执行，结果写回日志。</text>
+</svg>

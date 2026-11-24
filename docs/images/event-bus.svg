@@ -1,0 +1,340 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1700 1757" width="1700" height="1757">
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,1 L9,5 L0,9 z" fill="#7a7f8c"/></marker>
+<marker id="d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,1 L9,5 L0,9 z" fill="#3978b8"/></marker>
+<linearGradient id="river" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#d6e6fb"/><stop offset="1" stop-color="#b9d3f5"/></linearGradient></defs>
+<style>text{font-family:-apple-system, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;fill:#1f2430} .title{font-size:22px;font-weight:700} .sub{font-size:14px;fill:#5a6070} .row{font-size:17px;font-weight:700;fill:#163a66} .head{font-size:14px;font-weight:700} .n{font-family:ui-monospace, "SF Mono", Menlo, monospace;font-size:12px;font-weight:700} .a{font-size:12.5px;fill:#4a4f5c} .ev{font-family:ui-monospace, "SF Mono", Menlo, monospace;font-size:12px;font-weight:700;fill:#163a66} .st{font-size:12.5px;font-weight:600;fill:#163a66} .tiny{font-size:11px;fill:#3978b8} .note{font-size:13px;fill:#4a4f5c}</style>
+<rect width="1700" height="1757" rx="16" fill="#ffffff"/>
+<text class="title" x="40" y="48">事件总线 store.Feed：每一列是一种事件</text>
+<text class="sub" x="40" y="76">上面橙色是生产者（写 store），中间河里是这次提交在总线上的事件，下面绿色是消费者（听到后做什么）</text>
+<text class="row" x="40.0" y="112.0" text-anchor="start">一轮对话</text>
+<rect x="40.0" y="306" width="354.0" height="28" rx="7" fill="#e9f2ff" stroke="#3978b8" stroke-width="1.3"/>
+<rect x="572.0" y="306" width="1074.0" height="28" rx="7" fill="#e9f2ff" stroke="#3978b8" stroke-width="1.3"/>
+<text class="st" x="1634.0" y="325.0" text-anchor="end">store.Update → SQLite：一个命令一个事务，提交后发事件</text>
+<path d="M26.0,365.5 L36.0,366.0 L46.0,365.7 L56.0,364.9 L66.0,363.5 L76.0,361.8 L86.0,360.2 L96.0,358.9 L106.0,358.1 L116.0,358.0 L126.0,358.6 L136.0,359.8 L146.0,361.3 L156.0,363.0 L166.0,364.5 L176.0,365.5 L186.0,366.0 L196.0,365.7 L206.0,364.9 L216.0,363.5 L226.0,361.8 L236.0,360.2 L246.0,358.9 L256.0,358.1 L266.0,358.0 L276.0,358.6 L286.0,359.8 L296.0,361.3 L306.0,363.0 L316.0,364.5 L326.0,365.5 L336.0,366.0 L346.0,365.7 L356.0,364.9 L366.0,363.5 L376.0,361.8 L386.0,360.2 L396.0,358.9 L406.0,358.1 L416.0,358.0 L426.0,358.6 L436.0,359.8 L446.0,361.3 L456.0,363.0 L466.0,364.5 L476.0,365.5 L486.0,366.0 L496.0,365.7 L506.0,364.9 L516.0,363.5 L526.0,361.8 L536.0,360.2 L546.0,358.9 L556.0,358.1 L566.0,358.0 L576.0,358.6 L586.0,359.8 L596.0,361.3 L606.0,363.0 L616.0,364.5 L626.0,365.5 L636.0,366.0 L646.0,365.7 L656.0,364.9 L666.0,363.5 L676.0,361.8 L686.0,360.2 L696.0,358.9 L706.0,358.1 L716.0,358.0 L726.0,358.6 L736.0,359.8 L746.0,361.3 L756.0,363.0 L766.0,364.5 L776.0,365.5 L786.0,366.0 L796.0,365.7 L806.0,364.9 L816.0,363.5 L826.0,361.8 L836.0,360.2 L846.0,358.9 L856.0,358.1 L866.0,358.0 L876.0,358.6 L886.0,359.8 L896.0,361.3 L906.0,363.0 L916.0,364.5 L926.0,365.5 L936.0,366.0 L946.0,365.7 L956.0,364.9 L966.0,363.5 L976.0,361.8 L986.0,360.2 L996.0,358.9 L1006.0,358.1 L1016.0,358.0 L1026.0,358.6 L1036.0,359.8 L1046.0,361.3 L1056.0,363.0 L1066.0,364.5 L1076.0,365.5 L1086.0,366.0 L1096.0,365.7 L1106.0,364.9 L1116.0,363.5 L1126.0,361.8 L1136.0,360.2 L1146.0,358.9 L1156.0,358.1 L1166.0,358.0 L1176.0,358.6 L1186.0,359.8 L1196.0,361.3 L1206.0,363.0 L1216.0,364.5 L1226.0,365.5 L1236.0,366.0 L1246.0,365.7 L1256.0,364.9 L1266.0,363.5 L1276.0,361.8 L1286.0,360.2 L1296.0,358.9 L1306.0,358.1 L1316.0,358.0 L1326.0,358.6 L1336.0,359.8 L1346.0,361.3 L1356.0,363.0 L1366.0,364.5 L1376.0,365.5 L1386.0,366.0 L1396.0,365.7 L1406.0,364.9 L1416.0,363.5 L1426.0,361.8 L1436.0,360.2 L1446.0,358.9 L1456.0,358.1 L1466.0,358.0 L1476.0,358.6 L1486.0,359.8 L1496.0,361.3 L1506.0,363.0 L1516.0,364.5 L1526.0,365.5 L1536.0,366.0 L1546.0,365.7 L1556.0,364.9 L1566.0,363.5 L1576.0,361.8 L1586.0,360.2 L1596.0,358.9 L1606.0,358.1 L1616.0,358.0 L1626.0,358.6 L1636.0,359.8 L1646.0,361.3 L1656.0,363.0 L1660.0,363.6 L1660.0,460.0 L1656.0,460.0 L1646.0,459.6 L1636.0,458.6 L1626.0,457.2 L1616.0,455.5 L1606.0,453.9 L1596.0,452.7 L1586.0,452.1 L1576.0,452.1 L1566.0,452.8 L1556.0,454.1 L1546.0,455.7 L1536.0,457.3 L1526.0,458.7 L1516.0,459.7 L1506.0,460.0 L1496.0,459.6 L1486.0,458.6 L1476.0,457.2 L1466.0,455.5 L1456.0,453.9 L1446.0,452.7 L1436.0,452.1 L1426.0,452.1 L1416.0,452.8 L1406.0,454.1 L1396.0,455.7 L1386.0,457.3 L1376.0,458.7 L1366.0,459.7 L1356.0,460.0 L1346.0,459.6 L1336.0,458.6 L1326.0,457.2 L1316.0,455.5 L1306.0,453.9 L1296.0,452.7 L1286.0,452.1 L1276.0,452.1 L1266.0,452.8 L1256.0,454.1 L1246.0,455.7 L1236.0,457.3 L1226.0,458.7 L1216.0,459.7 L1206.0,460.0 L1196.0,459.6 L1186.0,458.6 L1176.0,457.2 L1166.0,455.5 L1156.0,453.9 L1146.0,452.7 L1136.0,452.1 L1126.0,452.1 L1116.0,452.8 L1106.0,454.1 L1096.0,455.7 L1086.0,457.3 L1076.0,458.7 L1066.0,459.7 L1056.0,460.0 L1046.0,459.6 L1036.0,458.6 L1026.0,457.2 L1016.0,455.5 L1006.0,453.9 L996.0,452.7 L986.0,452.1 L976.0,452.1 L966.0,452.8 L956.0,454.1 L946.0,455.7 L936.0,457.3 L926.0,458.7 L916.0,459.7 L906.0,460.0 L896.0,459.6 L886.0,458.6 L876.0,457.2 L866.0,455.5 L856.0,453.9 L846.0,452.7 L836.0,452.1 L826.0,452.1 L816.0,452.8 L806.0,454.1 L796.0,455.7 L786.0,457.3 L776.0,458.7 L766.0,459.7 L756.0,460.0 L746.0,459.6 L736.0,458.6 L726.0,457.2 L716.0,455.5 L706.0,453.9 L696.0,452.7 L686.0,452.1 L676.0,452.1 L666.0,452.8 L656.0,454.1 L646.0,455.7 L636.0,457.3 L626.0,458.7 L616.0,459.7 L606.0,460.0 L596.0,459.6 L586.0,458.6 L576.0,457.2 L566.0,455.5 L556.0,453.9 L546.0,452.7 L536.0,452.1 L526.0,452.1 L516.0,452.8 L506.0,454.1 L496.0,455.7 L486.0,457.3 L476.0,458.7 L466.0,459.7 L456.0,460.0 L446.0,459.6 L436.0,458.6 L426.0,457.2 L416.0,455.5 L406.0,453.9 L396.0,452.7 L386.0,452.1 L376.0,452.1 L366.0,452.8 L356.0,454.1 L346.0,455.7 L336.0,457.3 L326.0,458.7 L316.0,459.7 L306.0,460.0 L296.0,459.6 L286.0,458.6 L276.0,457.2 L266.0,455.5 L256.0,453.9 L246.0,452.7 L236.0,452.1 L226.0,452.1 L216.0,452.8 L206.0,454.1 L196.0,455.7 L186.0,457.3 L176.0,458.7 L166.0,459.7 L156.0,460.0 L146.0,459.6 L136.0,458.6 L126.0,457.2 L116.0,455.5 L106.0,453.9 L96.0,452.7 L86.0,452.1 L76.0,452.1 L66.0,452.8 L56.0,454.1 L46.0,455.7 L36.0,457.3 L26.0,458.7 Z" fill="url(#river)" stroke="#5b8fd1" stroke-width="1.5"/>
+<text class="head" x="123.0" y="142.0" text-anchor="middle">新消息</text>
+<rect x="40" y="154" width="166" height="122" rx="9" fill="#fff4df" stroke="#c98b2e" stroke-width="1.4"/>
+<text class="n" x="123.0" y="176.0" text-anchor="middle">app</text>
+<text class="a" x="123.0" y="192.0" text-anchor="middle">Send · Steer · HandOff</text>
+<text class="n" x="123.0" y="212.0" text-anchor="middle">cron.Run</text>
+<text class="a" x="123.0" y="228.0" text-anchor="middle">到点发消息</text>
+<path d="M123.0,278.0 L123.0,303.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<path d="M123.0,336.0 L123.0,356.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="46" y="387.0" width="154" height="44" rx="8" fill="#ffffff" fill-opacity=".92"/>
+<text class="ev" x="123.0" y="405.0" text-anchor="middle">TurnQueued</text>
+<text class="ev" x="123.0" y="422.0" text-anchor="middle">UserMessage</text>
+<path d="M123.0,462.0 L123.0,483.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="40" y="486" width="166" height="122" rx="9" fill="#eaf7ed" stroke="#3c8b53" stroke-width="1.4"/>
+<text class="n" x="123.0" y="508.0" text-anchor="middle">gateway</text>
+<text class="a" x="123.0" y="524.0" text-anchor="middle">turn · item/changed</text>
+<text class="n" x="123.0" y="544.0" text-anchor="middle">schedule.Threads</text>
+<text class="a" x="123.0" y="560.0" text-anchor="middle">可运行 → 起 Runner</text>
+<text class="head" x="303.0" y="142.0" text-anchor="middle">模型回复</text>
+<rect x="220" y="154" width="166" height="122" rx="9" fill="#fff4df" stroke="#c98b2e" stroke-width="1.4"/>
+<text class="n" x="303.0" y="176.0" text-anchor="middle">run.Runner</text>
+<text class="a" x="303.0" y="192.0" text-anchor="middle">调完一次模型</text>
+<path d="M303.0,278.0 L303.0,303.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<path d="M303.0,336.0 L303.0,356.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="226" y="378.5" width="154" height="61" rx="8" fill="#ffffff" fill-opacity=".92"/>
+<text class="ev" x="303.0" y="396.5" text-anchor="middle">ModelResponded</text>
+<text class="ev" x="303.0" y="413.5" text-anchor="middle">AgentMessage</text>
+<text class="ev" x="303.0" y="430.5" text-anchor="middle">ToolCall</text>
+<path d="M303.0,462.0 L303.0,483.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="220" y="486" width="166" height="122" rx="9" fill="#eaf7ed" stroke="#3c8b53" stroke-width="1.4"/>
+<text class="n" x="303.0" y="508.0" text-anchor="middle">gateway</text>
+<text class="a" x="303.0" y="524.0" text-anchor="middle">item/changed</text>
+<text class="n" x="303.0" y="544.0" text-anchor="middle">usage</text>
+<text class="a" x="303.0" y="560.0" text-anchor="middle">补用量</text>
+<text class="head" x="483.0" y="142.0" text-anchor="middle">流式增量</text>
+<rect x="400" y="154" width="166" height="122" rx="9" fill="#fff4df" stroke="#c98b2e" stroke-width="1.4"/>
+<text class="n" x="483.0" y="176.0" text-anchor="middle">run.Runner</text>
+<text class="a" x="483.0" y="192.0" text-anchor="middle">边收边发</text>
+<path d="M483.0,278.0 L483.0,356.0" stroke="#3978b8" stroke-width="1.5" fill="none" marker-end="url(#d)" stroke-dasharray="6 5"/>
+<text class="tiny" x="489.0" y="325.0" text-anchor="start">直达，不进事务</text>
+<rect x="406" y="395.5" width="154" height="27" rx="8" fill="#ffffff" fill-opacity=".92"/>
+<text class="ev" x="483.0" y="413.5" text-anchor="middle">Delta</text>
+<path d="M483.0,462.0 L483.0,483.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="400" y="486" width="166" height="122" rx="9" fill="#eaf7ed" stroke="#3c8b53" stroke-width="1.4"/>
+<text class="n" x="483.0" y="508.0" text-anchor="middle">gateway</text>
+<text class="a" x="483.0" y="524.0" text-anchor="middle">推送增量</text>
+<text class="head" x="663.0" y="142.0" text-anchor="middle">要审批</text>
+<rect x="580" y="154" width="166" height="122" rx="9" fill="#fff4df" stroke="#c98b2e" stroke-width="1.4"/>
+<text class="n" x="663.0" y="176.0" text-anchor="middle">run.Runner</text>
+<text class="a" x="663.0" y="192.0" text-anchor="middle">工具需要批准</text>
+<path d="M663.0,278.0 L663.0,303.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<path d="M663.0,336.0 L663.0,356.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="586" y="395.5" width="154" height="27" rx="8" fill="#ffffff" fill-opacity=".92"/>
+<text class="ev" x="663.0" y="413.5" text-anchor="middle">ApprovalAsked</text>
+<path d="M663.0,462.0 L663.0,483.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="580" y="486" width="166" height="122" rx="9" fill="#eaf7ed" stroke="#3c8b53" stroke-width="1.4"/>
+<text class="n" x="663.0" y="508.0" text-anchor="middle">gateway</text>
+<text class="a" x="663.0" y="524.0" text-anchor="middle">向客户端发审批请求</text>
+<text class="head" x="843.0" y="142.0" text-anchor="middle">审批</text>
+<rect x="760" y="154" width="166" height="122" rx="9" fill="#fff4df" stroke="#c98b2e" stroke-width="1.4"/>
+<text class="n" x="843.0" y="176.0" text-anchor="middle">app</text>
+<text class="a" x="843.0" y="192.0" text-anchor="middle">Decide · Steer 拒绝</text>
+<path d="M843.0,278.0 L843.0,303.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<path d="M843.0,336.0 L843.0,356.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="766" y="395.5" width="154" height="27" rx="8" fill="#ffffff" fill-opacity=".92"/>
+<text class="ev" x="843.0" y="413.5" text-anchor="middle">Decided</text>
+<path d="M843.0,462.0 L843.0,483.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="760" y="486" width="166" height="122" rx="9" fill="#eaf7ed" stroke="#3c8b53" stroke-width="1.4"/>
+<text class="n" x="843.0" y="508.0" text-anchor="middle">gateway</text>
+<text class="a" x="843.0" y="524.0" text-anchor="middle">item/changed</text>
+<text class="n" x="843.0" y="544.0" text-anchor="middle">schedule.Threads</text>
+<text class="a" x="843.0" y="560.0" text-anchor="middle">再起 Runner</text>
+<text class="head" x="1023.0" y="142.0" text-anchor="middle">工具执行</text>
+<rect x="940" y="154" width="166" height="122" rx="9" fill="#fff4df" stroke="#c98b2e" stroke-width="1.4"/>
+<text class="n" x="1023.0" y="176.0" text-anchor="middle">run.Runner</text>
+<text class="a" x="1023.0" y="192.0" text-anchor="middle">工具、压缩、召回</text>
+<path d="M1023.0,278.0 L1023.0,303.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<path d="M1023.0,336.0 L1023.0,356.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="946" y="370.0" width="154" height="78" rx="8" fill="#ffffff" fill-opacity=".92"/>
+<text class="ev" x="1023.0" y="388.0" text-anchor="middle">ToolStarted</text>
+<text class="ev" x="1023.0" y="405.0" text-anchor="middle">ToolResult</text>
+<text class="ev" x="1023.0" y="422.0" text-anchor="middle">Compacted</text>
+<text class="ev" x="1023.0" y="439.0" text-anchor="middle">Recalled</text>
+<path d="M1023.0,462.0 L1023.0,483.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="940" y="486" width="166" height="122" rx="9" fill="#eaf7ed" stroke="#3c8b53" stroke-width="1.4"/>
+<text class="n" x="1023.0" y="508.0" text-anchor="middle">gateway</text>
+<text class="a" x="1023.0" y="524.0" text-anchor="middle">item/changed</text>
+<text class="head" x="1203.0" y="142.0" text-anchor="middle">要提问</text>
+<rect x="1120" y="154" width="166" height="122" rx="9" fill="#fff4df" stroke="#c98b2e" stroke-width="1.4"/>
+<text class="n" x="1203.0" y="176.0" text-anchor="middle">run.Runner</text>
+<text class="a" x="1203.0" y="192.0" text-anchor="middle">ask 工具</text>
+<path d="M1203.0,278.0 L1203.0,303.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<path d="M1203.0,336.0 L1203.0,356.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="1126" y="395.5" width="154" height="27" rx="8" fill="#ffffff" fill-opacity=".92"/>
+<text class="ev" x="1203.0" y="413.5" text-anchor="middle">InputAsked</text>
+<path d="M1203.0,462.0 L1203.0,483.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="1120" y="486" width="166" height="122" rx="9" fill="#eaf7ed" stroke="#3c8b53" stroke-width="1.4"/>
+<text class="n" x="1203.0" y="508.0" text-anchor="middle">gateway</text>
+<text class="a" x="1203.0" y="524.0" text-anchor="middle">向客户端发提问请求</text>
+<text class="head" x="1383.0" y="142.0" text-anchor="middle">回答</text>
+<rect x="1300" y="154" width="166" height="122" rx="9" fill="#fff4df" stroke="#c98b2e" stroke-width="1.4"/>
+<text class="n" x="1383.0" y="176.0" text-anchor="middle">app</text>
+<text class="a" x="1383.0" y="192.0" text-anchor="middle">Answer · Steer 跳过</text>
+<path d="M1383.0,278.0 L1383.0,303.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<path d="M1383.0,336.0 L1383.0,356.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="1306" y="395.5" width="154" height="27" rx="8" fill="#ffffff" fill-opacity=".92"/>
+<text class="ev" x="1383.0" y="413.5" text-anchor="middle">Answered</text>
+<path d="M1383.0,462.0 L1383.0,483.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="1300" y="486" width="166" height="122" rx="9" fill="#eaf7ed" stroke="#3c8b53" stroke-width="1.4"/>
+<text class="n" x="1383.0" y="508.0" text-anchor="middle">gateway</text>
+<text class="a" x="1383.0" y="524.0" text-anchor="middle">item/changed</text>
+<text class="n" x="1383.0" y="544.0" text-anchor="middle">schedule.Threads</text>
+<text class="a" x="1383.0" y="560.0" text-anchor="middle">再起 Runner</text>
+<text class="head" x="1563.0" y="142.0" text-anchor="middle">轮次结束</text>
+<rect x="1480" y="154" width="166" height="122" rx="9" fill="#fff4df" stroke="#c98b2e" stroke-width="1.4"/>
+<text class="n" x="1563.0" y="176.0" text-anchor="middle">run.Runner</text>
+<text class="a" x="1563.0" y="192.0" text-anchor="middle">Finish</text>
+<text class="n" x="1563.0" y="212.0" text-anchor="middle">app</text>
+<text class="a" x="1563.0" y="228.0" text-anchor="middle">Interrupt</text>
+<text class="n" x="1563.0" y="248.0" text-anchor="middle">schedule.Threads</text>
+<text class="a" x="1563.0" y="264.0" text-anchor="middle">失败、超时</text>
+<path d="M1563.0,278.0 L1563.0,303.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<path d="M1563.0,336.0 L1563.0,356.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="1486" y="395.5" width="154" height="27" rx="8" fill="#ffffff" fill-opacity=".92"/>
+<text class="ev" x="1563.0" y="413.5" text-anchor="middle">TurnEnded</text>
+<path d="M1563.0,462.0 L1563.0,483.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="1480" y="486" width="166" height="122" rx="9" fill="#eaf7ed" stroke="#3c8b53" stroke-width="1.4"/>
+<text class="n" x="1563.0" y="508.0" text-anchor="middle">gateway</text>
+<text class="a" x="1563.0" y="524.0" text-anchor="middle">turn/changed</text>
+<text class="n" x="1563.0" y="544.0" text-anchor="middle">schedule.Threads</text>
+<text class="a" x="1563.0" y="560.0" text-anchor="middle">停运行、起下一轮</text>
+<text class="n" x="1563.0" y="580.0" text-anchor="middle">extract</text>
+<text class="a" x="1563.0" y="596.0" text-anchor="middle">学记忆</text>
+<text class="row" x="40.0" y="664.0" text-anchor="start">会话、子 agent、后台任务</text>
+<rect x="40.0" y="858" width="1066.0" height="28" rx="7" fill="#e9f2ff" stroke="#3978b8" stroke-width="1.3"/>
+<text class="st" x="1094.0" y="877.0" text-anchor="end">store.Update → SQLite</text>
+<path d="M26.0,917.5 L36.0,918.0 L46.0,917.7 L56.0,916.9 L66.0,915.5 L76.0,913.8 L86.0,912.2 L96.0,910.9 L106.0,910.1 L116.0,910.0 L126.0,910.6 L136.0,911.8 L146.0,913.3 L156.0,915.0 L166.0,916.5 L176.0,917.5 L186.0,918.0 L196.0,917.7 L206.0,916.9 L216.0,915.5 L226.0,913.8 L236.0,912.2 L246.0,910.9 L256.0,910.1 L266.0,910.0 L276.0,910.6 L286.0,911.8 L296.0,913.3 L306.0,915.0 L316.0,916.5 L326.0,917.5 L336.0,918.0 L346.0,917.7 L356.0,916.9 L366.0,915.5 L376.0,913.8 L386.0,912.2 L396.0,910.9 L406.0,910.1 L416.0,910.0 L426.0,910.6 L436.0,911.8 L446.0,913.3 L456.0,915.0 L466.0,916.5 L476.0,917.5 L486.0,918.0 L496.0,917.7 L506.0,916.9 L516.0,915.5 L526.0,913.8 L536.0,912.2 L546.0,910.9 L556.0,910.1 L566.0,910.0 L576.0,910.6 L586.0,911.8 L596.0,913.3 L606.0,915.0 L616.0,916.5 L626.0,917.5 L636.0,918.0 L646.0,917.7 L656.0,916.9 L666.0,915.5 L676.0,913.8 L686.0,912.2 L696.0,910.9 L706.0,910.1 L716.0,910.0 L726.0,910.6 L736.0,911.8 L746.0,913.3 L756.0,915.0 L766.0,916.5 L776.0,917.5 L786.0,918.0 L796.0,917.7 L806.0,916.9 L816.0,915.5 L826.0,913.8 L836.0,912.2 L846.0,910.9 L856.0,910.1 L866.0,910.0 L876.0,910.6 L886.0,911.8 L896.0,913.3 L906.0,915.0 L916.0,916.5 L926.0,917.5 L936.0,918.0 L946.0,917.7 L956.0,916.9 L966.0,915.5 L976.0,913.8 L986.0,912.2 L996.0,910.9 L1006.0,910.1 L1016.0,910.0 L1026.0,910.6 L1036.0,911.8 L1046.0,913.3 L1056.0,915.0 L1066.0,916.5 L1076.0,917.5 L1086.0,918.0 L1096.0,917.7 L1106.0,916.9 L1116.0,915.5 L1120.0,914.8 L1120.0,987.5 L1116.0,987.8 L1106.0,989.1 L1096.0,990.7 L1086.0,992.3 L1076.0,993.7 L1066.0,994.7 L1056.0,995.0 L1046.0,994.6 L1036.0,993.6 L1026.0,992.2 L1016.0,990.5 L1006.0,988.9 L996.0,987.7 L986.0,987.1 L976.0,987.1 L966.0,987.8 L956.0,989.1 L946.0,990.7 L936.0,992.3 L926.0,993.7 L916.0,994.7 L906.0,995.0 L896.0,994.6 L886.0,993.6 L876.0,992.2 L866.0,990.5 L856.0,988.9 L846.0,987.7 L836.0,987.1 L826.0,987.1 L816.0,987.8 L806.0,989.1 L796.0,990.7 L786.0,992.3 L776.0,993.7 L766.0,994.7 L756.0,995.0 L746.0,994.6 L736.0,993.6 L726.0,992.2 L716.0,990.5 L706.0,988.9 L696.0,987.7 L686.0,987.1 L676.0,987.1 L666.0,987.8 L656.0,989.1 L646.0,990.7 L636.0,992.3 L626.0,993.7 L616.0,994.7 L606.0,995.0 L596.0,994.6 L586.0,993.6 L576.0,992.2 L566.0,990.5 L556.0,988.9 L546.0,987.7 L536.0,987.1 L526.0,987.1 L516.0,987.8 L506.0,989.1 L496.0,990.7 L486.0,992.3 L476.0,993.7 L466.0,994.7 L456.0,995.0 L446.0,994.6 L436.0,993.6 L426.0,992.2 L416.0,990.5 L406.0,988.9 L396.0,987.7 L386.0,987.1 L376.0,987.1 L366.0,987.8 L356.0,989.1 L346.0,990.7 L336.0,992.3 L326.0,993.7 L316.0,994.7 L306.0,995.0 L296.0,994.6 L286.0,993.6 L276.0,992.2 L266.0,990.5 L256.0,988.9 L246.0,987.7 L236.0,987.1 L226.0,987.1 L216.0,987.8 L206.0,989.1 L196.0,990.7 L186.0,992.3 L176.0,993.7 L166.0,994.7 L156.0,995.0 L146.0,994.6 L136.0,993.6 L126.0,992.2 L116.0,990.5 L106.0,988.9 L96.0,987.7 L86.0,987.1 L76.0,987.1 L66.0,987.8 L56.0,989.1 L46.0,990.7 L36.0,992.3 L26.0,993.7 Z" fill="url(#river)" stroke="#5b8fd1" stroke-width="1.5"/>
+<text class="head" x="123.0" y="694.0" text-anchor="middle">会话变化</text>
+<rect x="40" y="706" width="166" height="122" rx="9" fill="#fff4df" stroke="#c98b2e" stroke-width="1.4"/>
+<text class="n" x="123.0" y="728.0" text-anchor="middle">app</text>
+<text class="a" x="123.0" y="744.0" text-anchor="middle">新建、改名、归档</text>
+<text class="n" x="123.0" y="764.0" text-anchor="middle">app</text>
+<text class="a" x="123.0" y="780.0" text-anchor="middle">已读、权限设置</text>
+<path d="M123.0,830.0 L123.0,855.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<path d="M123.0,888.0 L123.0,908.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="46" y="939.0" width="154" height="27" rx="8" fill="#ffffff" fill-opacity=".92"/>
+<text class="ev" x="123.0" y="957.0" text-anchor="middle">Change.Header</text>
+<path d="M123.0,997.0 L123.0,1018.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="40" y="1021" width="166" height="122" rx="9" fill="#eaf7ed" stroke="#3c8b53" stroke-width="1.4"/>
+<text class="n" x="123.0" y="1043.0" text-anchor="middle">gateway</text>
+<text class="a" x="123.0" y="1059.0" text-anchor="middle">thread/changed</text>
+<text class="n" x="123.0" y="1079.0" text-anchor="middle">schedule.Threads</text>
+<text class="a" x="123.0" y="1095.0" text-anchor="middle">可运行就唤醒</text>
+<text class="head" x="303.0" y="694.0" text-anchor="middle">删除会话</text>
+<rect x="220" y="706" width="166" height="122" rx="9" fill="#fff4df" stroke="#c98b2e" stroke-width="1.4"/>
+<text class="n" x="303.0" y="728.0" text-anchor="middle">app</text>
+<text class="a" x="303.0" y="744.0" text-anchor="middle">DeleteThread</text>
+<path d="M303.0,830.0 L303.0,855.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<path d="M303.0,888.0 L303.0,908.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="226" y="922.0" width="154" height="61" rx="8" fill="#ffffff" fill-opacity=".92"/>
+<text class="ev" x="303.0" y="940.0" text-anchor="middle">Change.Deleted</text>
+<text class="ev" x="303.0" y="957.0" text-anchor="middle">CronJobDeleted</text>
+<text class="ev" x="303.0" y="974.0" text-anchor="middle">Todo</text>
+<path d="M303.0,997.0 L303.0,1018.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="220" y="1021" width="166" height="122" rx="9" fill="#eaf7ed" stroke="#3c8b53" stroke-width="1.4"/>
+<text class="n" x="303.0" y="1043.0" text-anchor="middle">gateway</text>
+<text class="a" x="303.0" y="1059.0" text-anchor="middle">thread/changed 等</text>
+<text class="n" x="303.0" y="1079.0" text-anchor="middle">schedule.Threads</text>
+<text class="a" x="303.0" y="1095.0" text-anchor="middle">停运行</text>
+<text class="n" x="303.0" y="1115.0" text-anchor="middle">schedule.Tasks</text>
+<text class="a" x="303.0" y="1131.0" text-anchor="middle">停任务</text>
+<text class="head" x="483.0" y="694.0" text-anchor="middle">启动子 agent</text>
+<rect x="400" y="706" width="166" height="122" rx="9" fill="#fff4df" stroke="#c98b2e" stroke-width="1.4"/>
+<text class="n" x="483.0" y="728.0" text-anchor="middle">run.Runner</text>
+<text class="a" x="483.0" y="744.0" text-anchor="middle">subagent 工具</text>
+<path d="M483.0,830.0 L483.0,855.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<path d="M483.0,888.0 L483.0,908.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="406" y="930.5" width="154" height="44" rx="8" fill="#ffffff" fill-opacity=".92"/>
+<text class="ev" x="483.0" y="948.5" text-anchor="middle">父 ChildLaunched</text>
+<text class="ev" x="483.0" y="965.5" text-anchor="middle">子 TurnQueued</text>
+<path d="M483.0,997.0 L483.0,1018.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="400" y="1021" width="166" height="122" rx="9" fill="#eaf7ed" stroke="#3c8b53" stroke-width="1.4"/>
+<text class="n" x="483.0" y="1043.0" text-anchor="middle">gateway</text>
+<text class="a" x="483.0" y="1059.0" text-anchor="middle">父、子会话 changed</text>
+<text class="n" x="483.0" y="1079.0" text-anchor="middle">schedule.Threads</text>
+<text class="a" x="483.0" y="1095.0" text-anchor="middle">起子会话</text>
+<text class="head" x="663.0" y="694.0" text-anchor="middle">子 agent 汇报</text>
+<rect x="580" y="706" width="166" height="122" rx="9" fill="#fff4df" stroke="#c98b2e" stroke-width="1.4"/>
+<text class="n" x="663.0" y="728.0" text-anchor="middle">run.End</text>
+<text class="a" x="663.0" y="744.0" text-anchor="middle">子轮次结束</text>
+<path d="M663.0,830.0 L663.0,855.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<path d="M663.0,888.0 L663.0,908.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="586" y="930.5" width="154" height="44" rx="8" fill="#ffffff" fill-opacity=".92"/>
+<text class="ev" x="663.0" y="948.5" text-anchor="middle">子 TurnEnded</text>
+<text class="ev" x="663.0" y="965.5" text-anchor="middle">父 ChildReported</text>
+<path d="M663.0,997.0 L663.0,1018.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="580" y="1021" width="166" height="122" rx="9" fill="#eaf7ed" stroke="#3c8b53" stroke-width="1.4"/>
+<text class="n" x="663.0" y="1043.0" text-anchor="middle">gateway</text>
+<text class="a" x="663.0" y="1059.0" text-anchor="middle">父、子会话 changed</text>
+<text class="n" x="663.0" y="1079.0" text-anchor="middle">schedule.Threads</text>
+<text class="a" x="663.0" y="1095.0" text-anchor="middle">起父会话</text>
+<text class="n" x="663.0" y="1115.0" text-anchor="middle">extract</text>
+<text class="a" x="663.0" y="1131.0" text-anchor="middle">学记忆</text>
+<text class="head" x="843.0" y="694.0" text-anchor="middle">启动后台任务</text>
+<rect x="760" y="706" width="166" height="122" rx="9" fill="#fff4df" stroke="#c98b2e" stroke-width="1.4"/>
+<text class="n" x="843.0" y="728.0" text-anchor="middle">run.Runner</text>
+<text class="a" x="843.0" y="744.0" text-anchor="middle">后台工具</text>
+<path d="M843.0,830.0 L843.0,855.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<path d="M843.0,888.0 L843.0,908.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="766" y="939.0" width="154" height="27" rx="8" fill="#ffffff" fill-opacity=".92"/>
+<text class="ev" x="843.0" y="957.0" text-anchor="middle">TaskLaunched</text>
+<path d="M843.0,997.0 L843.0,1018.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="760" y="1021" width="166" height="122" rx="9" fill="#eaf7ed" stroke="#3c8b53" stroke-width="1.4"/>
+<text class="n" x="843.0" y="1043.0" text-anchor="middle">gateway</text>
+<text class="a" x="843.0" y="1059.0" text-anchor="middle">item/changed</text>
+<text class="n" x="843.0" y="1079.0" text-anchor="middle">schedule.Tasks</text>
+<text class="a" x="843.0" y="1095.0" text-anchor="middle">起任务</text>
+<text class="head" x="1023.0" y="694.0" text-anchor="middle">后台任务汇报</text>
+<rect x="940" y="706" width="166" height="122" rx="9" fill="#fff4df" stroke="#c98b2e" stroke-width="1.4"/>
+<text class="n" x="1023.0" y="728.0" text-anchor="middle">run.Runner</text>
+<text class="a" x="1023.0" y="744.0" text-anchor="middle">Task 跑完</text>
+<text class="n" x="1023.0" y="764.0" text-anchor="middle">schedule.Tasks</text>
+<text class="a" x="1023.0" y="780.0" text-anchor="middle">失败、超时</text>
+<text class="n" x="1023.0" y="800.0" text-anchor="middle">run.End</text>
+<text class="a" x="1023.0" y="816.0" text-anchor="middle">父轮次结束</text>
+<path d="M1023.0,830.0 L1023.0,855.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<path d="M1023.0,888.0 L1023.0,908.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="946" y="939.0" width="154" height="27" rx="8" fill="#ffffff" fill-opacity=".92"/>
+<text class="ev" x="1023.0" y="957.0" text-anchor="middle">TaskReported</text>
+<path d="M1023.0,997.0 L1023.0,1018.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="940" y="1021" width="166" height="122" rx="9" fill="#eaf7ed" stroke="#3c8b53" stroke-width="1.4"/>
+<text class="n" x="1023.0" y="1043.0" text-anchor="middle">gateway</text>
+<text class="a" x="1023.0" y="1059.0" text-anchor="middle">item/changed</text>
+<text class="n" x="1023.0" y="1079.0" text-anchor="middle">schedule.Threads</text>
+<text class="a" x="1023.0" y="1095.0" text-anchor="middle">会话可运行</text>
+<text class="n" x="1023.0" y="1115.0" text-anchor="middle">schedule.Tasks</text>
+<text class="a" x="1023.0" y="1131.0" text-anchor="middle">停这个任务</text>
+<text class="row" x="40.0" y="1199.0" text-anchor="start">用户的资源</text>
+<rect x="40.0" y="1393" width="1066.0" height="28" rx="7" fill="#e9f2ff" stroke="#3978b8" stroke-width="1.3"/>
+<text class="st" x="1094.0" y="1412.0" text-anchor="end">store.Update → SQLite</text>
+<path d="M26.0,1452.5 L36.0,1453.0 L46.0,1452.7 L56.0,1451.9 L66.0,1450.5 L76.0,1448.8 L86.0,1447.2 L96.0,1445.9 L106.0,1445.1 L116.0,1445.0 L126.0,1445.6 L136.0,1446.8 L146.0,1448.3 L156.0,1450.0 L166.0,1451.5 L176.0,1452.5 L186.0,1453.0 L196.0,1452.7 L206.0,1451.9 L216.0,1450.5 L226.0,1448.8 L236.0,1447.2 L246.0,1445.9 L256.0,1445.1 L266.0,1445.0 L276.0,1445.6 L286.0,1446.8 L296.0,1448.3 L306.0,1450.0 L316.0,1451.5 L326.0,1452.5 L336.0,1453.0 L346.0,1452.7 L356.0,1451.9 L366.0,1450.5 L376.0,1448.8 L386.0,1447.2 L396.0,1445.9 L406.0,1445.1 L416.0,1445.0 L426.0,1445.6 L436.0,1446.8 L446.0,1448.3 L456.0,1450.0 L466.0,1451.5 L476.0,1452.5 L486.0,1453.0 L496.0,1452.7 L506.0,1451.9 L516.0,1450.5 L526.0,1448.8 L536.0,1447.2 L546.0,1445.9 L556.0,1445.1 L566.0,1445.0 L576.0,1445.6 L586.0,1446.8 L596.0,1448.3 L606.0,1450.0 L616.0,1451.5 L626.0,1452.5 L636.0,1453.0 L646.0,1452.7 L656.0,1451.9 L666.0,1450.5 L676.0,1448.8 L686.0,1447.2 L696.0,1445.9 L706.0,1445.1 L716.0,1445.0 L726.0,1445.6 L736.0,1446.8 L746.0,1448.3 L756.0,1450.0 L766.0,1451.5 L776.0,1452.5 L786.0,1453.0 L796.0,1452.7 L806.0,1451.9 L816.0,1450.5 L826.0,1448.8 L836.0,1447.2 L846.0,1445.9 L856.0,1445.1 L866.0,1445.0 L876.0,1445.6 L886.0,1446.8 L896.0,1448.3 L906.0,1450.0 L916.0,1451.5 L926.0,1452.5 L936.0,1453.0 L946.0,1452.7 L956.0,1451.9 L966.0,1450.5 L976.0,1448.8 L986.0,1447.2 L996.0,1445.9 L1006.0,1445.1 L1016.0,1445.0 L1026.0,1445.6 L1036.0,1446.8 L1046.0,1448.3 L1056.0,1450.0 L1066.0,1451.5 L1076.0,1452.5 L1086.0,1453.0 L1096.0,1452.7 L1106.0,1451.9 L1116.0,1450.5 L1120.0,1449.8 L1120.0,1505.5 L1116.0,1505.8 L1106.0,1507.1 L1096.0,1508.7 L1086.0,1510.3 L1076.0,1511.7 L1066.0,1512.7 L1056.0,1513.0 L1046.0,1512.6 L1036.0,1511.6 L1026.0,1510.2 L1016.0,1508.5 L1006.0,1506.9 L996.0,1505.7 L986.0,1505.1 L976.0,1505.1 L966.0,1505.8 L956.0,1507.1 L946.0,1508.7 L936.0,1510.3 L926.0,1511.7 L916.0,1512.7 L906.0,1513.0 L896.0,1512.6 L886.0,1511.6 L876.0,1510.2 L866.0,1508.5 L856.0,1506.9 L846.0,1505.7 L836.0,1505.1 L826.0,1505.1 L816.0,1505.8 L806.0,1507.1 L796.0,1508.7 L786.0,1510.3 L776.0,1511.7 L766.0,1512.7 L756.0,1513.0 L746.0,1512.6 L736.0,1511.6 L726.0,1510.2 L716.0,1508.5 L706.0,1506.9 L696.0,1505.7 L686.0,1505.1 L676.0,1505.1 L666.0,1505.8 L656.0,1507.1 L646.0,1508.7 L636.0,1510.3 L626.0,1511.7 L616.0,1512.7 L606.0,1513.0 L596.0,1512.6 L586.0,1511.6 L576.0,1510.2 L566.0,1508.5 L556.0,1506.9 L546.0,1505.7 L536.0,1505.1 L526.0,1505.1 L516.0,1505.8 L506.0,1507.1 L496.0,1508.7 L486.0,1510.3 L476.0,1511.7 L466.0,1512.7 L456.0,1513.0 L446.0,1512.6 L436.0,1511.6 L426.0,1510.2 L416.0,1508.5 L406.0,1506.9 L396.0,1505.7 L386.0,1505.1 L376.0,1505.1 L366.0,1505.8 L356.0,1507.1 L346.0,1508.7 L336.0,1510.3 L326.0,1511.7 L316.0,1512.7 L306.0,1513.0 L296.0,1512.6 L286.0,1511.6 L276.0,1510.2 L266.0,1508.5 L256.0,1506.9 L246.0,1505.7 L236.0,1505.1 L226.0,1505.1 L216.0,1505.8 L206.0,1507.1 L196.0,1508.7 L186.0,1510.3 L176.0,1511.7 L166.0,1512.7 L156.0,1513.0 L146.0,1512.6 L136.0,1511.6 L126.0,1510.2 L116.0,1508.5 L106.0,1506.9 L96.0,1505.7 L86.0,1505.1 L76.0,1505.1 L66.0,1505.8 L56.0,1507.1 L46.0,1508.7 L36.0,1510.3 L26.0,1511.7 Z" fill="url(#river)" stroke="#5b8fd1" stroke-width="1.5"/>
+<text class="head" x="123.0" y="1229.0" text-anchor="middle">设置</text>
+<rect x="40" y="1241" width="166" height="122" rx="9" fill="#fff4df" stroke="#c98b2e" stroke-width="1.4"/>
+<text class="n" x="123.0" y="1263.0" text-anchor="middle">app</text>
+<text class="a" x="123.0" y="1279.0" text-anchor="middle">settings/update</text>
+<path d="M123.0,1365.0 L123.0,1390.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<path d="M123.0,1423.0 L123.0,1443.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="46" y="1465.5" width="154" height="27" rx="8" fill="#ffffff" fill-opacity=".92"/>
+<text class="ev" x="123.0" y="1483.5" text-anchor="middle">Settings</text>
+<path d="M123.0,1515.0 L123.0,1536.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="40" y="1539" width="166" height="86" rx="9" fill="#eaf7ed" stroke="#3c8b53" stroke-width="1.4"/>
+<text class="n" x="123.0" y="1561.0" text-anchor="middle">gateway</text>
+<text class="a" x="123.0" y="1577.0" text-anchor="middle">settings/changed</text>
+<text class="head" x="303.0" y="1229.0" text-anchor="middle">工作区 · 执行环境</text>
+<rect x="220" y="1241" width="166" height="122" rx="9" fill="#fff4df" stroke="#c98b2e" stroke-width="1.4"/>
+<text class="n" x="303.0" y="1263.0" text-anchor="middle">app</text>
+<text class="a" x="303.0" y="1279.0" text-anchor="middle">增改、归档工作区、删环境</text>
+<path d="M303.0,1365.0 L303.0,1390.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<path d="M303.0,1423.0 L303.0,1443.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="226" y="1457.0" width="154" height="44" rx="8" fill="#ffffff" fill-opacity=".92"/>
+<text class="ev" x="303.0" y="1475.0" text-anchor="middle">Workspace</text>
+<text class="ev" x="303.0" y="1492.0" text-anchor="middle">Environment</text>
+<path d="M303.0,1515.0 L303.0,1536.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="220" y="1539" width="166" height="86" rx="9" fill="#eaf7ed" stroke="#3c8b53" stroke-width="1.4"/>
+<text class="n" x="303.0" y="1561.0" text-anchor="middle">gateway</text>
+<text class="a" x="303.0" y="1577.0" text-anchor="middle">workspace/changed 等</text>
+<text class="head" x="483.0" y="1229.0" text-anchor="middle">MCP 服务器</text>
+<rect x="400" y="1241" width="166" height="122" rx="9" fill="#fff4df" stroke="#c98b2e" stroke-width="1.4"/>
+<text class="n" x="483.0" y="1263.0" text-anchor="middle">app</text>
+<text class="a" x="483.0" y="1279.0" text-anchor="middle">增删改</text>
+<path d="M483.0,1365.0 L483.0,1390.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<path d="M483.0,1423.0 L483.0,1443.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="406" y="1465.5" width="154" height="27" rx="8" fill="#ffffff" fill-opacity=".92"/>
+<text class="ev" x="483.0" y="1483.5" text-anchor="middle">MCPServer</text>
+<path d="M483.0,1515.0 L483.0,1536.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="400" y="1539" width="166" height="86" rx="9" fill="#eaf7ed" stroke="#3c8b53" stroke-width="1.4"/>
+<text class="n" x="483.0" y="1561.0" text-anchor="middle">gateway</text>
+<text class="a" x="483.0" y="1577.0" text-anchor="middle">mcpServer/changed</text>
+<text class="n" x="483.0" y="1597.0" text-anchor="middle">mcp.Users</text>
+<text class="a" x="483.0" y="1613.0" text-anchor="middle">断开，下次重连</text>
+<text class="head" x="663.0" y="1229.0" text-anchor="middle">定时任务</text>
+<rect x="580" y="1241" width="166" height="122" rx="9" fill="#fff4df" stroke="#c98b2e" stroke-width="1.4"/>
+<text class="n" x="663.0" y="1263.0" text-anchor="middle">app</text>
+<text class="a" x="663.0" y="1279.0" text-anchor="middle">建、停、删</text>
+<text class="n" x="663.0" y="1299.0" text-anchor="middle">cronjobs 工具</text>
+<text class="a" x="663.0" y="1315.0" text-anchor="middle">agent 建任务</text>
+<text class="n" x="663.0" y="1335.0" text-anchor="middle">cron.Run</text>
+<text class="a" x="663.0" y="1351.0" text-anchor="middle">发完推进</text>
+<path d="M663.0,1365.0 L663.0,1390.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<path d="M663.0,1423.0 L663.0,1443.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="586" y="1465.5" width="154" height="27" rx="8" fill="#ffffff" fill-opacity=".92"/>
+<text class="ev" x="663.0" y="1483.5" text-anchor="middle">CronJob</text>
+<path d="M663.0,1515.0 L663.0,1536.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="580" y="1539" width="166" height="86" rx="9" fill="#eaf7ed" stroke="#3c8b53" stroke-width="1.4"/>
+<text class="n" x="663.0" y="1561.0" text-anchor="middle">gateway</text>
+<text class="a" x="663.0" y="1577.0" text-anchor="middle">cron/changed</text>
+<text class="n" x="663.0" y="1597.0" text-anchor="middle">cron.Run</text>
+<text class="a" x="663.0" y="1613.0" text-anchor="middle">重定闹钟</text>
+<text class="head" x="843.0" y="1229.0" text-anchor="middle">记忆</text>
+<rect x="760" y="1241" width="166" height="122" rx="9" fill="#fff4df" stroke="#c98b2e" stroke-width="1.4"/>
+<text class="n" x="843.0" y="1263.0" text-anchor="middle">extract</text>
+<text class="a" x="843.0" y="1279.0" text-anchor="middle">学到的记忆</text>
+<text class="n" x="843.0" y="1299.0" text-anchor="middle">app</text>
+<text class="a" x="843.0" y="1315.0" text-anchor="middle">ForgetMemory</text>
+<path d="M843.0,1365.0 L843.0,1390.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<path d="M843.0,1423.0 L843.0,1443.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="766" y="1465.5" width="154" height="27" rx="8" fill="#ffffff" fill-opacity=".92"/>
+<text class="ev" x="843.0" y="1483.5" text-anchor="middle">Memory</text>
+<path d="M843.0,1515.0 L843.0,1536.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="760" y="1539" width="166" height="86" rx="9" fill="#eaf7ed" stroke="#3c8b53" stroke-width="1.4"/>
+<text class="n" x="843.0" y="1561.0" text-anchor="middle">gateway</text>
+<text class="a" x="843.0" y="1577.0" text-anchor="middle">memory/changed</text>
+<text class="head" x="1023.0" y="1229.0" text-anchor="middle">待办</text>
+<rect x="940" y="1241" width="166" height="122" rx="9" fill="#fff4df" stroke="#c98b2e" stroke-width="1.4"/>
+<text class="n" x="1023.0" y="1263.0" text-anchor="middle">app</text>
+<text class="a" x="1023.0" y="1279.0" text-anchor="middle">todo、hub 工具、HandOff</text>
+<path d="M1023.0,1365.0 L1023.0,1390.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<path d="M1023.0,1423.0 L1023.0,1443.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="946" y="1465.5" width="154" height="27" rx="8" fill="#ffffff" fill-opacity=".92"/>
+<text class="ev" x="1023.0" y="1483.5" text-anchor="middle">Todo</text>
+<path d="M1023.0,1515.0 L1023.0,1536.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="940" y="1539" width="166" height="86" rx="9" fill="#eaf7ed" stroke="#3c8b53" stroke-width="1.4"/>
+<text class="n" x="1023.0" y="1561.0" text-anchor="middle">gateway</text>
+<text class="a" x="1023.0" y="1577.0" text-anchor="middle">todo/changed</text>
+<text class="note" x="40.0" y="1661.0" text-anchor="start">生产者只写 store；提交后 store 算出事件发上总线，同一次提交共用一个 seq，按 seq 顺序发出。只有 Delta 不进事务、直接发布。</text>
+<text class="note" x="40.0" y="1683.0" text-anchor="start">每个会话事件都带会话头：会话可运行时 schedule.Threads 都会被唤醒。gateway 按用户订阅，只收到这个用户的事件。</text>
+<text class="note" x="40.0" y="1705.0" text-anchor="start">消费者只把事件当唤醒信号，回 store 读真相再动手；schedule、cron.Run、extract 既是消费者也是生产者。</text>
+</svg>
