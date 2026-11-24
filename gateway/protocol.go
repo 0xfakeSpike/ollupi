@@ -93,6 +93,7 @@ var protocol = struct {
 	closes              map[int]Ending
 	handshakes          map[int]Ending
 	limits              Limits
+	paths               map[string]string
 }{
 	methods: map[string]method{
 		methodInitialize:               handleThen((*conn).initialize),
@@ -108,7 +109,6 @@ var protocol = struct {
 		"turn/start":                   handle((*conn).turnStart),
 		"turn/steer":                   handle((*conn).turnSteer),
 		"turn/interrupt":               handle((*conn).turnInterrupt),
-		"attachment/read":              read(handle((*conn).attachmentRead)),
 		"model/list":                   read(handle((*conn).modelList)),
 		"tool/list":                    read(handle((*conn).toolList)),
 		"mcpServer/list":               read(handle((*conn).mcpServerList)),
@@ -204,6 +204,7 @@ var protocol = struct {
 		http.StatusServiceUnavailable:  {"unavailable", ReconnectRetryAfter},
 	},
 	limits: Limits{SearchRunes: app.MaxSearchRunes, SearchTerms: app.MaxSearchTerms},
+	paths:  map[string]string{"attachment": AttachmentPath},
 }
 
 type Limits struct {
@@ -431,16 +432,6 @@ type UserInput struct {
 	Path     string `json:"path,omitempty"`
 	Name     string `json:"name,omitempty"`
 	MimeType string `json:"mimeType,omitempty"`
-}
-
-type AttachmentReadParams struct {
-	ThreadID     string `json:"threadId"`
-	AttachmentID string `json:"attachmentId"`
-}
-
-type AttachmentReadResult struct {
-	Attachment conversation.Attachment `json:"attachment"`
-	Data       string                  `json:"data"`
 }
 
 type TurnStartParams struct {

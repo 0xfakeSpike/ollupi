@@ -38,7 +38,7 @@
 
 | 部分 | 包 | 职责 |
 |---|---|---|
-| 接入 | `gateway`、`pkg/wshub`、`auth` | 认证连接；把请求交给 app；把事件推给客户端，等审批或回答时向客户端发请求 |
+| 接入 | `gateway`、`pkg/wshub`、`auth` | 认证连接；把请求交给 app；把事件推给客户端，等审批或回答时向客户端发请求。附件的内容不走 WebSocket，走同一地址上的 `GET /attachments/{thread}/{attachment}`：同样用 `Authorization: Bearer` 认证，按允许 WebSocket 的那些来源答 CORS，可以长期缓存 |
 | 命令 | `app` | 校验后在一个事务里改状态：开会话、发消息、审批、回答、打断、交接、改设置和资源 |
 | 存储 | `store`、`store/sqlite`、`conversation` | 唯一写路径；会话是只追加的日志，轮次和条目从日志折叠出来；提交后按 seq 发事件 |
 | 调度 | `schedule` | 听到"可运行"就在槽位里起一次运行；后台任务另有一组槽位 |

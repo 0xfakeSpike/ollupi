@@ -46,6 +46,7 @@ type contract struct {
 	Closes              map[int]Ending                `json:"closes"`
 	Handshakes          map[int]Ending                `json:"handshakes"`
 	Limits              Limits                        `json:"limits"`
+	Paths               map[string]string             `json:"paths"`
 	BuiltinTools        map[string]toolSchemas        `json:"builtinTools"`
 	Providers           []string                      `json:"providers"`
 }
@@ -365,6 +366,7 @@ func generateSchema() ([]byte, error) {
 		Closes:              protocol.closes,
 		Handshakes:          protocol.handshakes,
 		Limits:              protocol.limits,
+		Paths:               protocol.paths,
 		BuiltinTools:        map[string]toolSchemas{},
 		Providers:           providers,
 	}

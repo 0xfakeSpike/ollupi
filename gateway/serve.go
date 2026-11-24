@@ -13,6 +13,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/auth"
 	"github.com/0xfakeSpike/ollupi/pkg/wshub"
 	"github.com/0xfakeSpike/ollupi/store"
+	"github.com/rs/cors"
 )
 
 const lookupTimeout = 10 * time.Second
@@ -47,14 +48,24 @@ func NewServer(a *app.App, feed *store.Feed, opts Options) (*Server, error) {
 		origins:      append([]string{"localhost:*", "127.0.0.1:*", "[::1]:*"}, opts.AllowedOrigins...),
 		hub:          hub,
 	}
+	attachments := cors.New(cors.Options{
+		AllowOriginFunc: s.allowsOrigin,
+		AllowedMethods:  []string{http.MethodGet},
+		AllowedHeaders:  []string{"Authorization"},
+		MaxAge:          600,
+	}).Handler(http.HandlerFunc(s.attachment))
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET "+auth.HealthPath, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	mux.Handle("GET "+AttachmentPath, attachments)
+	mux.Handle("OPTIONS "+AttachmentPath, attachments)
+	mux.HandleFunc("GET /", s.connect)
+	s.handler = mux
 	return s, nil
 }
 
 func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
-	mux := http.NewServeMux()
-	mux.Handle("GET /", s)
 	srv := &http.Server{
-		Handler:           mux,
+		Handler:           s,
 		BaseContext:       func(net.Listener) context.Context { return ctx },
 		ReadHeaderTimeout: readHeaderTimeout,
 		IdleTimeout:       idleTimeout,

@@ -244,38 +244,6 @@
       ],
       "additionalProperties": false
     },
-    "AttachmentReadParams": {
-      "type": "object",
-      "properties": {
-        "threadId": {
-          "type": "string"
-        },
-        "attachmentId": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "threadId",
-        "attachmentId"
-      ],
-      "additionalProperties": false
-    },
-    "AttachmentReadResult": {
-      "type": "object",
-      "properties": {
-        "attachment": {
-          "$ref": "#/$defs/Attachment"
-        },
-        "data": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "attachment",
-        "data"
-      ],
-      "additionalProperties": false
-    },
     "ClientInfo": {
       "type": "object",
       "properties": {
@@ -4220,14 +4188,6 @@
     }
   },
   "methods": {
-    "attachment/read": {
-      "params": {
-        "$ref": "#/$defs/AttachmentReadParams"
-      },
-      "result": {
-        "$ref": "#/$defs/AttachmentReadResult"
-      }
-    },
     "cron/create": {
       "params": {
         "$ref": "#/$defs/CronCreateParams"
@@ -4760,6 +4720,9 @@
   "limits": {
     "searchRunes": 200,
     "searchTerms": 8
+  },
+  "paths": {
+    "attachment": "/attachments/{thread}/{attachment}"
   },
   "builtinTools": {
     "backend-sub-agent": {

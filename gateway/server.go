@@ -35,15 +35,16 @@ type Server struct {
 	hosts        []string
 	origins      []string
 	hub          *wshub.Hub
+	handler      http.Handler
 	ready        sync.Map
 	served       sync.WaitGroup
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == auth.HealthPath {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
+	s.handler.ServeHTTP(w, r)
+}
+
+func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 	s.served.Add(1)
 	defer s.served.Done()
 	user, ok := s.authorize(w, r)
@@ -53,11 +54,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !s.hub.Admit(w) {
 		return
 	}
-	if _, ok := s.ready.Load(user); !ok {
-		if !s.admits(w, r, user) {
-			return
-		}
-		s.ready.Store(user, struct{}{})
+	if !s.serves(w, r, user) {
+		return
 	}
 	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: s.origins, Subprotocols: []string{auth.TokenProtocol}})
 	if err != nil {
@@ -254,8 +252,8 @@ func version() string {
 	return "unknown"
 }
 
-func (s *Server) admits(w http.ResponseWriter, r *http.Request, user string) bool {
-	if s.admit == nil {
+func (s *Server) serves(w http.ResponseWriter, r *http.Request, user string) bool {
+	if _, ok := s.ready.Load(user); ok || s.admit == nil {
 		return true
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), lookupTimeout)
@@ -264,6 +262,7 @@ func (s *Server) admits(w http.ResponseWriter, r *http.Request, user string) boo
 		s.hub.Refuse(w, "this user is not served here now; try again")
 		return false
 	}
+	s.ready.Store(user, struct{}{})
 	return true
 }
 

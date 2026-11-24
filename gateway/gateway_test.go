@@ -5,9 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -37,15 +41,31 @@ func TestAnUnknownErrorStaysOnTheServer(t *testing.T) {
 	}
 }
 
-type noFiles struct{}
+type files struct{ kept sync.Map }
 
-func (noFiles) Put(context.Context, string, []byte) error   { return nil }
-func (noFiles) Get(context.Context, string) ([]byte, error) { return nil, nil }
-func (noFiles) Delete(context.Context, string) error        { return nil }
-func (noFiles) DeletePrefix(context.Context, string) error  { return nil }
+func (f *files) Put(_ context.Context, name string, data []byte) error {
+	f.kept.Store(name, data)
+	return nil
+}
+
+func (f *files) Get(_ context.Context, name string) ([]byte, error) {
+	data, ok := f.kept.Load(name)
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	return data.([]byte), nil
+}
+
+func (f *files) Delete(_ context.Context, name string) error {
+	f.kept.Delete(name)
+	return nil
+}
+
+func (*files) DeletePrefix(context.Context, string) error { return nil }
 
 type client struct {
 	t    *testing.T
+	base string
 	ws   *websocket.Conn
 	next int
 	kept []message
@@ -130,7 +150,7 @@ func connect(t *testing.T) (store.Store, *client) {
 	boxes := func(string) (sandbox.Box, error) { return sandbox.Here() }
 	users := mcp.NewUsers(ctx, mcp.Client{Name: "ollupi", Version: "test"}, st, boxes)
 	t.Cleanup(func() { users.Close() })
-	a := app.New(st, catalog{{ID: "main", API: account.OpenAI, Models: []account.ProviderModel{{Name: "m", Limits: llm.Limits{Context: 200_000, Output: 8_000}}}}}, users.Tools, users.Statuses, boxes, noFiles{}, cron.NewCalendar(time.UTC), policy.Settings{ApprovalPolicy: string(policy.OnRequest)})
+	a := app.New(st, catalog{{ID: "main", API: account.OpenAI, Models: []account.ProviderModel{{Name: "m", Limits: llm.Limits{Context: 200_000, Output: 8_000}}}}}, users.Tools, users.Statuses, boxes, &files{}, cron.NewCalendar(time.UTC), policy.Settings{ApprovalPolicy: string(policy.OnRequest)})
 	if err := a.EnsureUser(ctx, "u"); err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +172,7 @@ func connect(t *testing.T) (store.Store, *client) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { ws.CloseNow() })
-	c := &client{t: t, ws: ws}
+	c := &client{t: t, base: web.URL, ws: ws}
 	var init InitializeResult
 	c.call(methodInitialize, InitializeParams{}, &init)
 	if init.ProtocolSHA256 != protocolSHA256 {
@@ -364,5 +384,68 @@ func TestReadsSentTogetherAnswerEachAndAskOnce(t *testing.T) {
 	}
 	if asked != 0 {
 		t.Errorf("an approval still waiting on this connection was asked again %d times", asked)
+	}
+}
+
+func TestAnAttachmentIsReadOverHTTP(t *testing.T) {
+	_, c := connect(t)
+	notes := filepath.Join(t.TempDir(), "notes.txt")
+	if err := os.WriteFile(notes, []byte("ship on friday\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var started ThreadResult
+	c.call("thread/start", ThreadStartParams{Title: "chat"}, &started)
+	var turn TurnResult
+	c.call("turn/start", TurnStartParams{ThreadID: started.Thread.ID, Input: []UserInput{{Type: "text", Text: "read this"}, {Type: "file", Path: notes}}}, &turn)
+	var item ItemChangedNotification
+	json.Unmarshal(c.until(notifyItemChanged).Params, &item)
+	if len(item.Item.Attachments) != 1 {
+		t.Fatalf("the message %+v", item.Item)
+	}
+	att := item.Item.Attachments[0]
+
+	get := func(token, thread, id, origin string) *http.Response {
+		t.Helper()
+		req, _ := http.NewRequest(http.MethodGet, c.base+"/attachments/"+thread+"/"+id, nil)
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		if origin != "" {
+			req.Header.Set("Origin", origin)
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { res.Body.Close() })
+		return res
+	}
+	res := get("secret", started.Thread.ID, att.ID, "http://localhost:5173")
+	body, _ := io.ReadAll(res.Body)
+	if res.StatusCode != http.StatusOK || string(body) != "ship on friday\n" || res.Header.Get("Content-Type") != att.MimeType ||
+		res.Header.Get("Access-Control-Allow-Origin") != "http://localhost:5173" {
+		t.Errorf("the attachment: %d %q %v", res.StatusCode, body, res.Header)
+	}
+	if res := get("", started.Thread.ID, att.ID, ""); res.StatusCode != http.StatusUnauthorized {
+		t.Errorf("without a token: %d", res.StatusCode)
+	}
+	if res := get("secret", started.Thread.ID, "nope", ""); res.StatusCode != http.StatusNotFound {
+		t.Errorf("an attachment the thread does not have: %d", res.StatusCode)
+	}
+	if res := get("secret", started.Thread.ID, att.ID, "https://elsewhere.example"); res.Header.Get("Access-Control-Allow-Origin") != "" {
+		t.Errorf("an origin not allowed was let in: %v", res.Header)
+	}
+
+	preflight, _ := http.NewRequest(http.MethodOptions, c.base+"/attachments/"+started.Thread.ID+"/"+att.ID, nil)
+	preflight.Header.Set("Origin", "http://localhost:5173")
+	preflight.Header.Set("Access-Control-Request-Method", http.MethodGet)
+	preflight.Header.Set("Access-Control-Request-Headers", "authorization")
+	answer, err := http.DefaultClient.Do(preflight)
+	if err != nil {
+		t.Fatal(err)
+	}
+	answer.Body.Close()
+	if answer.Header.Get("Access-Control-Allow-Origin") != "http://localhost:5173" || !strings.Contains(strings.ToLower(answer.Header.Get("Access-Control-Allow-Headers")), "authorization") {
+		t.Errorf("the preflight: %d %v", answer.StatusCode, answer.Header)
 	}
 }

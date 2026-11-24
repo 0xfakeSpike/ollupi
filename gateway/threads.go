@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"slices"
 	"strings"
@@ -111,11 +110,6 @@ func (c *conn) threadArchive(ctx context.Context, p ThreadArchiveParams) (Thread
 
 func (c *conn) threadDelete(ctx context.Context, p ThreadDeleteParams) (Empty, error) {
 	return Empty{}, c.s.app.DeleteThread(ctx, c.user, p.ThreadID)
-}
-
-func (c *conn) attachmentRead(ctx context.Context, p AttachmentReadParams) (AttachmentReadResult, error) {
-	att, data, err := c.s.app.ReadAttachment(ctx, c.user, p.ThreadID, p.AttachmentID)
-	return AttachmentReadResult{Attachment: att, Data: base64.StdEncoding.EncodeToString(data)}, err
 }
 
 func (c *conn) turnStart(ctx context.Context, p TurnStartParams) (TurnResult, error) {
