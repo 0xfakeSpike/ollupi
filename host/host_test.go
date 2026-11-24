@@ -167,3 +167,31 @@ func TestAUserNeverBorrowsAnotherUsersModelsOrLearningModel(t *testing.T) {
 		t.Fatal("a learning model outside the user's connections was accepted")
 	}
 }
+
+func TestReplacingUsersModelsTakesEffectWithoutARestart(t *testing.T) {
+	client := &model{}
+	old := llm.Model{Name: "old", Connection: "a"}
+	ms, err := newModels(nil, []UserModels{{User: "u", Models: []llm.Model{old}, Connections: map[string]llm.Client{"a": client}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := llm.Model{Name: "next", Connection: "b"}
+	if err := ms.set([]UserModels{{User: "u", Models: []llm.Model{next}, Connections: map[string]llm.Client{"b": client}, Memory: &next}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := ms.Models("u"); len(got) != 1 || got[0].Connection != "b" {
+		t.Fatalf("models = %+v", got)
+	}
+	if _, err := ms.Client("u", old); err == nil {
+		t.Fatal("a removed model still has a client")
+	}
+	if m, ok := ms.memory("u"); !ok || m.Connection != "b" {
+		t.Fatalf("learning model = %+v, %v", m, ok)
+	}
+	if err := ms.set([]UserModels{{User: "u", Models: []llm.Model{next}}}); err == nil {
+		t.Fatal("a model without a client was accepted")
+	}
+	if got := ms.Models("u"); len(got) != 1 || got[0].Connection != "b" {
+		t.Fatalf("a refused replacement changed the models: %+v", got)
+	}
+}

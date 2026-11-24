@@ -80,6 +80,7 @@ type Host struct {
 	App   *app.App
 	Users *mcp.Users
 
+	models    *models
 	scheduler *schedule.Scheduler
 	tasks     *schedule.Scheduler
 	extractor *extract.Extractor
@@ -117,7 +118,7 @@ func New(ctx context.Context, cfg Config) (*Host, error) {
 		return nil, err
 	}
 	files := blob.Dir(filepath.Join(cfg.Home, "attachments"))
-	h := &Host{Store: st, cal: cron.NewCalendar(cmp.Or(cfg.Location, time.Local))}
+	h := &Host{Store: st, models: modelSet, cal: cron.NewCalendar(cmp.Or(cfg.Location, time.Local))}
 	hubTools := &hub.Provider{St: st}
 	builtins := append(slices.Clone(cfg.Tools), plan.Provider{}, ask.Provider{}, loader.Provider{}, subagent.Provider{},
 		outputs.New(st), memorytool.New(st), web.New(cfg.Boxes))
@@ -138,20 +139,8 @@ func New(ctx context.Context, cfg Config) (*Host, error) {
 	h.scheduler = schedule.New(st, schedule.Threads(runner.Run), slots, cmp.Or(cfg.UserSlots, slots), cmp.Or(cfg.RunLimit, defaultRunLimit))
 	h.tasks = schedule.New(st, schedule.Tasks(runner.Task), cmp.Or(cfg.TaskSlots, defaultTaskSlots),
 		cmp.Or(cfg.UserTaskSlots, defaultUserTaskSlots), cmp.Or(cfg.TaskLimit, defaultTaskLimit))
-	memoryModels := map[string]llm.Model{}
-	for _, user := range cfg.Users {
-		if user.Memory != nil {
-			memoryModels[user.User] = *user.Memory
-		}
-	}
-	if len(memoryModels) > 0 {
-		h.extractor = extract.New(st,
-			func(user string) (llm.Model, bool) {
-				m, ok := memoryModels[user]
-				return m, ok
-			},
-			func(user string, m llm.Model) (llm.Client, error) { return modelSet.Client(user, m) })
-	}
+	h.extractor = extract.New(st, modelSet.memory,
+		func(user string, m llm.Model) (llm.Client, error) { return modelSet.Client(user, m) })
 	if cfg.Gateway != nil {
 		if h.Gateway, err = gateway.NewServer(h.App, st.Feed(), *cfg.Gateway); err != nil {
 			h.Close()
@@ -181,14 +170,16 @@ func (h *Host) Run(ctx context.Context) error {
 	g.Go(func() error { return h.tasks.Run(ctx) })
 	g.Go(func() error { return cron.Run(ctx, h.Store, h.cal, h.App.Scheduled) })
 	g.Go(func() error { return h.usage.Run(ctx) })
-	if h.extractor != nil {
-		g.Go(func() error { return h.extractor.Run(ctx) })
-	}
+	g.Go(func() error { return h.extractor.Run(ctx) })
 	err := g.Wait()
 	if errors.Is(err, context.Canceled) {
 		return nil
 	}
 	return err
+}
+
+func (h *Host) SetUsers(users []UserModels) error {
+	return h.models.set(users)
 }
 
 func (h *Host) Close() error {

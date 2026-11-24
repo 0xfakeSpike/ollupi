@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 )
@@ -21,34 +22,56 @@ type UserModels struct {
 // models finds the models one user may run. There is no shared or fallback
 // set: a user without a configuration has none.
 type models struct {
-	users     map[string]userModels
 	clientFor func(user, connection string) (llm.Client, error)
+	mu        sync.RWMutex
+	users     map[string]userModels
 }
 
 type userModels struct {
 	list        []llm.Model
 	connections map[string]llm.Client
+	memory      *llm.Model
 }
 
-func newModels(clientFor func(user, connection string) (llm.Client, error), users []UserModels) (models, error) {
+func newModels(clientFor func(user, connection string) (llm.Client, error), users []UserModels) (*models, error) {
+	byUser, err := usersOf(users)
+	if err != nil {
+		return nil, err
+	}
+	return &models{users: byUser, clientFor: clientFor}, nil
+}
+
+func (ms *models) set(users []UserModels) error {
+	byUser, err := usersOf(users)
+	if err != nil {
+		return err
+	}
+	ms.mu.Lock()
+	ms.users = byUser
+	ms.mu.Unlock()
+	return nil
+}
+
+func usersOf(users []UserModels) (map[string]userModels, error) {
 	byUser := make(map[string]userModels, len(users))
 	for _, u := range users {
 		if strings.TrimSpace(u.User) == "" {
-			return models{}, errors.New("host: a user of its own models needs a name")
+			return nil, errors.New("host: a user of its own models needs a name")
 		}
 		if _, seen := byUser[u.User]; seen {
-			return models{}, fmt.Errorf("host: user %q is listed twice", u.User)
+			return nil, fmt.Errorf("host: user %q is listed twice", u.User)
 		}
 		set, err := newUserModels("the models of user "+u.User, u.Models, u.Connections)
 		if err != nil {
-			return models{}, err
+			return nil, err
 		}
 		if u.Memory != nil && set.connections[u.Memory.Connection] == nil {
-			return models{}, fmt.Errorf("host: the models of user %q: learning model connection %q is not among theirs", u.User, u.Memory.Connection)
+			return nil, fmt.Errorf("host: the models of user %q: learning model connection %q is not among theirs", u.User, u.Memory.Connection)
 		}
+		set.memory = u.Memory
 		byUser[u.User] = set
 	}
-	return models{users: byUser, clientFor: clientFor}, nil
+	return byUser, nil
 }
 
 func newUserModels(what string, list []llm.Model, connections map[string]llm.Client) (userModels, error) {
@@ -69,11 +92,21 @@ func newUserModels(what string, list []llm.Model, connections map[string]llm.Cli
 	return userModels{list: list, connections: connections}, nil
 }
 
-func (ms models) of(user string) userModels {
+func (ms *models) of(user string) userModels {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
 	return ms.users[user]
 }
 
-func (ms models) Models(user string) []llm.Model {
+func (ms *models) memory(user string) (llm.Model, bool) {
+	m := ms.of(user).memory
+	if m == nil {
+		return llm.Model{}, false
+	}
+	return *m, true
+}
+
+func (ms *models) Models(user string) []llm.Model {
 	set := ms.of(user)
 	out := make([]llm.Model, len(set.list))
 	for i, m := range set.list {
@@ -82,7 +115,7 @@ func (ms models) Models(user string) []llm.Model {
 	return out
 }
 
-func (ms models) Limits(user string, m llm.Model) (llm.Limits, error) {
+func (ms *models) Limits(user string, m llm.Model) (llm.Limits, error) {
 	set := ms.of(user)
 	c := set.connections[m.Connection]
 	if c == nil {
@@ -91,7 +124,7 @@ func (ms models) Limits(user string, m llm.Model) (llm.Limits, error) {
 	return c.Limits(m.Name)
 }
 
-func (ms models) Client(user string, m llm.Model) (llm.Client, error) {
+func (ms *models) Client(user string, m llm.Model) (llm.Client, error) {
 	if ms.clientFor != nil {
 		return ms.clientFor(user, m.Connection)
 	}
