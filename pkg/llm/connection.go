@@ -36,7 +36,7 @@ func (c connection) Limits(model string) (Limits, error) {
 	if !ok {
 		return Limits{}, fmt.Errorf("llm: the context limits of model %q are not declared; declare them on its connection", model)
 	}
-	if err := l.check(); err != nil {
+	if err := l.Check(); err != nil {
 		return Limits{}, fmt.Errorf("llm: limits of model %q: %w", model, err)
 	}
 	return l, nil

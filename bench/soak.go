@@ -54,7 +54,7 @@ func soak(args []string) {
 	defer os.RemoveAll(dir)
 	tr := newTracker()
 	e := newEngine(host.Config{
-		Home: dir, Users: fakeUsers(fakeConnection(url, *calls)),
+		Home: dir, Dial: fakeDial(fakeConnection(url, *calls)),
 		Tools: []kit.Provider{work{latency: *toolLatency}},
 		Slots: *slots,
 	})

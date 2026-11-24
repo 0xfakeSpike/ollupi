@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/account"
@@ -23,19 +24,46 @@ func (a *App) changeSettings(ctx context.Context, user string, change func(*acco
 		func(tx store.Tx, s account.Settings) error { return tx.SetSettings(user, s) })
 }
 
-func (a *App) UpdateSettings(ctx context.Context, user string, redaction, memory, learn *bool) (account.Settings, error) {
-	return a.changeSettings(ctx, user, func(s *account.Settings) error {
-		if redaction != nil {
-			s.Redaction = *redaction
-		}
-		if memory != nil {
-			s.Memory = *memory
-		}
-		if learn != nil {
-			s.Learn = *learn
-		}
-		return nil
-	})
+// SettingsChange is what an update sets; a nil field stays as it is.
+type SettingsChange struct {
+	Redaction, Memory, Learn *bool
+	// Model and LearnModel name one of the deployment's models, or are empty.
+	Model, LearnModel *string
+}
+
+func (a *App) UpdateSettings(ctx context.Context, user string, c SettingsChange) (account.Settings, error) {
+	return edit(ctx, a.st,
+		func(tx store.Tx) (account.Settings, error) { return tx.Settings(user) },
+		func(tx store.Tx, s *account.Settings) error {
+			if c.Redaction != nil {
+				s.Redaction = *c.Redaction
+			}
+			if c.Memory != nil {
+				s.Memory = *c.Memory
+			}
+			if c.Learn != nil {
+				s.Learn = *c.Learn
+			}
+			if c.Model == nil && c.LearnModel == nil {
+				return nil
+			}
+			providers := a.catalog.Providers()
+			for _, set := range []struct {
+				to    *string
+				field *string
+				what  string
+			}{{c.Model, &s.Model, "the model a conversation starts with"}, {c.LearnModel, &s.LearnModel, "the model that learns memories"}} {
+				if set.to == nil {
+					continue
+				}
+				if _, _, ok := account.Find(providers, *set.to); *set.to != "" && !ok {
+					return fmt.Errorf("%w: %s, %q, is none of the models served", account.ErrUnknownModel, set.what, *set.to)
+				}
+				*set.field = *set.to
+			}
+			return nil
+		},
+		func(tx store.Tx, s account.Settings) error { return tx.SetSettings(user, s) })
 }
 
 func (a *App) UpdateUserPermissions(ctx context.Context, user string, p policy.Settings) (account.Settings, error) {

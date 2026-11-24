@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/app"
 	"github.com/0xfakeSpike/ollupi/ask"
@@ -239,7 +240,7 @@ func crashChild(args []string) {
 	}
 	startAt := time.Now()
 	h, err := host.New(context.Background(), host.Config{
-		Home: *dir, Name: "bench", Users: fakeUsers(fakeConnection(*url, *calls)),
+		Home: *dir, Name: "bench", Models: []account.ModelProvider{fakeProvider}, Dial: fakeDial(fakeConnection(*url, *calls)),
 		Tools:       []kit.Provider{work{latency: *toolLatency, log: toolLog}},
 		Permissions: policy.Settings{ApprovalPolicy: string(policy.Never)},
 		Boxes:       here, Slots: *slots, TaskSlots: *slots, UserTaskSlots: *slots,

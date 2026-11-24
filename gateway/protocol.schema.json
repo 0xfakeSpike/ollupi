@@ -2690,13 +2690,21 @@
         },
         "permissions": {
           "$ref": "#/$defs/PermissionSettings"
+        },
+        "model": {
+          "type": "string"
+        },
+        "learnModel": {
+          "type": "string"
         }
       },
       "required": [
         "redaction",
         "memory",
         "learn",
-        "permissions"
+        "permissions",
+        "model",
+        "learnModel"
       ],
       "additionalProperties": false
     },
@@ -2719,6 +2727,18 @@
           "type": [
             "null",
             "boolean"
+          ]
+        },
+        "model": {
+          "type": [
+            "null",
+            "string"
+          ]
+        },
+        "learnModel": {
+          "type": [
+            "null",
+            "string"
           ]
         }
       },

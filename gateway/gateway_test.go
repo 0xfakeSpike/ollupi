@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/app"
 	"github.com/0xfakeSpike/ollupi/auth"
 	"github.com/0xfakeSpike/ollupi/conversation"
@@ -34,13 +35,6 @@ func TestAnUnknownErrorStaysOnTheServer(t *testing.T) {
 	if known.Code != jsonrpc.CodeInvalidParams || !strings.Contains(known.Message, "/nowhere") {
 		t.Errorf("a known error: %+v", known)
 	}
-}
-
-type models struct{}
-
-func (models) Models(string) []llm.Model { return []llm.Model{{Name: "m", Connection: "main"}} }
-func (models) Limits(string, llm.Model) (llm.Limits, error) {
-	return llm.Limits{Context: 200_000, Output: 8_000}, nil
 }
 
 type noFiles struct{}
@@ -136,7 +130,7 @@ func connect(t *testing.T) (store.Store, *client) {
 	boxes := func(string) (sandbox.Box, error) { return sandbox.Here() }
 	users := mcp.NewUsers(ctx, mcp.Client{Name: "ollupi", Version: "test"}, st, boxes)
 	t.Cleanup(func() { users.Close() })
-	a := app.New(st, models{}, users.Tools, users.Statuses, boxes, noFiles{}, cron.NewCalendar(time.UTC), policy.Settings{ApprovalPolicy: string(policy.OnRequest)})
+	a := app.New(st, catalog{{ID: "main", API: account.OpenAI, Models: []account.ProviderModel{{Name: "m", Limits: llm.Limits{Context: 200_000, Output: 8_000}}}}}, users.Tools, users.Statuses, boxes, noFiles{}, cron.NewCalendar(time.UTC), policy.Settings{ApprovalPolicy: string(policy.OnRequest)})
 	if err := a.EnsureUser(ctx, "u"); err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +226,7 @@ func TestAClientSeesWhichHubConversationSentAMessage(t *testing.T) {
 	c.call("thread/start", ThreadStartParams{Title: "notes"}, &notes)
 	err := st.Update(ctx, func(tx store.Tx) error {
 		_, err := tx.Append(notes.Thread.ID,
-			conversation.Entry{Turn: "t", Body: conversation.TurnQueued{Model: llm.Model{Name: "m", Connection: "main"}}},
+			conversation.Entry{Turn: "t", Body: conversation.TurnQueued{Model: llm.Model{Name: "m", Connection: "main/m"}}},
 			conversation.Entry{Turn: "t", Item: "m", Body: conversation.UserMessage{Text: "write notes",
 				From: &conversation.Sender{Thread: plan.Thread.ID, Title: "plan"}}})
 		return err
@@ -251,3 +245,29 @@ func TestAClientSeesWhichHubConversationSentAMessage(t *testing.T) {
 		t.Errorf("the page %+v", page.Items)
 	}
 }
+
+func TestAUserChoosesAmongTheDeploymentsModels(t *testing.T) {
+	_, c := connect(t)
+	var models ModelListResult
+	c.call("model/list", Empty{}, &models)
+	if len(models.Data) != 1 || models.Data[0].Connection != "main/m" || models.Default != "main/m" {
+		t.Fatalf("models %+v", models)
+	}
+	if m := c.reply("settings/update", map[string]any{"model": "nobody/x"}); m.Error == nil || m.Error.Code != jsonrpc.CodeInvalidParams {
+		t.Fatalf("a model the deployment does not serve was chosen: %+v", m.Error)
+	}
+	var row SettingsRow
+	c.call("settings/update", map[string]any{"model": "main/m", "learnModel": "main/m"}, &row)
+	if row.Model != "main/m" || row.LearnModel != "main/m" {
+		t.Fatalf("settings %+v", row)
+	}
+	raw, _ := json.Marshal(models)
+	if strings.Contains(string(raw), "apiKey") || strings.Contains(string(raw), "baseUrl") {
+		t.Fatalf("the catalog's account reached a user: %s", raw)
+	}
+}
+
+// catalog is a deployment's fixed models.
+type catalog []account.ModelProvider
+
+func (c catalog) Providers() []account.ModelProvider { return c }

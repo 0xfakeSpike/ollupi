@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/app"
 	"github.com/0xfakeSpike/ollupi/ask"
 	"github.com/0xfakeSpike/ollupi/conversation"
@@ -49,20 +50,11 @@ func main() {
 	model := required("OLLUPI_MODEL")
 	key := required("OLLUPI_API_KEY")
 	baseURL := os.Getenv("OLLUPI_BASE_URL")
-	limits := map[string]llm.Limits{model: {Context: number("OLLUPI_CONTEXT", 128_000), Output: number("OLLUPI_OUTPUT", 8_192)}}
-	var client llm.Client
-	var err error
-	switch api := cmp.Or(os.Getenv("OLLUPI_API"), "openai"); api {
-	case "openai":
-		client = llm.NewOpenAI(baseURL, key, 4, limits)
-	case "anthropic":
-		client = llm.NewAnthropic(baseURL, key, 4, limits)
-	case "gemini":
-		if client, err = llm.NewGemini(baseURL, key, 4, limits); err != nil {
-			log.Fatalf("eval: %v", err)
-		}
-	default:
-		log.Fatalf("eval: unknown OLLUPI_API %q", api)
+	// The deployment serves one model, the one every turn runs on.
+	provider := account.ModelProvider{ID: "api", API: account.ModelAPI(cmp.Or(os.Getenv("OLLUPI_API"), "openai")), BaseURL: baseURL, APIKey: key,
+		Models: []account.ProviderModel{{Name: model, Calls: 4, Limits: llm.Limits{Context: number("OLLUPI_CONTEXT", 128_000), Output: number("OLLUPI_OUTPUT", 8_192)}}}}
+	if err := provider.Check(); err != nil {
+		log.Fatalf("eval: %v", err)
 	}
 	dir, err := os.Getwd()
 	if err != nil {
@@ -84,8 +76,7 @@ func main() {
 	defer stop()
 	h, err := host.New(ctx, host.Config{
 		Home: home, Name: "ollupi",
-		Users: []host.UserModels{{User: user, Models: []llm.Model{{Name: model, Connection: "model"}},
-			Connections: map[string]llm.Client{"model": client}}},
+		Models:      []account.ModelProvider{provider},
 		Tools:       []kit.Provider{files},
 		Permissions: policy.Settings{ApprovalPolicy: string(policy.Never)},
 		Boxes:       func(string) (sandbox.Box, error) { return sandbox.Here() },

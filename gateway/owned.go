@@ -12,8 +12,8 @@ import (
 )
 
 func (c *conn) modelList(ctx context.Context, _ Empty) (ModelListResult, error) {
-	models, fallback := c.s.app.Models(c.user)
-	return ModelListResult{Data: models, Default: fallback}, nil
+	models, first, err := c.s.app.Models(ctx, c.user)
+	return ModelListResult{Data: models, Default: first}, err
 }
 
 func (c *conn) toolList(ctx context.Context, _ Empty) (ToolListResult, error) {
@@ -237,10 +237,10 @@ func (c *conn) settingsRead(ctx context.Context, _ Empty) (SettingsRow, error) {
 }
 
 func (c *conn) settingsUpdate(ctx context.Context, p SettingsUpdateParams) (SettingsRow, error) {
-	if p.Redaction == nil && p.Memory == nil && p.Learn == nil {
-		return SettingsRow{}, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "give redaction, memory or learn")
+	if p.Redaction == nil && p.Memory == nil && p.Learn == nil && p.Model == nil && p.LearnModel == nil {
+		return SettingsRow{}, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "give redaction, memory, learn, model or learnModel")
 	}
-	s, err := c.s.app.UpdateSettings(ctx, c.user, p.Redaction, p.Memory, p.Learn)
+	s, err := c.s.app.UpdateSettings(ctx, c.user, app.SettingsChange{Redaction: p.Redaction, Memory: p.Memory, Learn: p.Learn, Model: p.Model, LearnModel: p.LearnModel})
 	return settingsRow(s), err
 }
 

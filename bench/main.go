@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/app"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/host"
@@ -71,10 +72,20 @@ func spawn(args ...string) (*exec.Cmd, string) {
 	return cmd, strings.TrimSpace(line)
 }
 
-var fakeModels = []llm.Model{{Name: "fake", Connection: "fake"}}
+// fakeProvider is the model the bench deployment serves; the engine's Dial
+// answers it with the bench's client.
+var fakeProvider = account.ModelProvider{ID: "bench", API: account.OpenAI,
+	Models: []account.ProviderModel{{Name: "fake", Limits: llm.Limits{Context: 200_000, Output: 32_000}}}}
 
-func fakeUsers(client llm.Client) []host.UserModels {
-	return []host.UserModels{{User: defaultUser, Models: fakeModels, Connections: map[string]llm.Client{"fake": client}}}
+func fakeDial(client llm.Client) host.Dial {
+	return func(account.ModelProvider, account.ProviderModel) (llm.Client, error) { return client, nil }
+}
+
+// addUser makes a user, as a sign-up would.
+func (e *engine) addUser(user string) {
+	if err := e.App.EnsureUser(e.ctx, user); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func fakeConnection(url string, calls int) llm.Client {
@@ -94,16 +105,18 @@ type engine struct {
 
 func newEngine(cfg host.Config) *engine {
 	cfg.Name, cfg.Boxes = "bench", here
+	if cfg.Models == nil {
+		cfg.Models = []account.ModelProvider{fakeProvider}
+	}
 	cfg.Permissions = policy.Settings{ApprovalPolicy: string(policy.Never)}
 	ctx, cancel := context.WithCancel(context.Background())
 	h, err := host.New(ctx, cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := h.App.EnsureUser(ctx, defaultUser); err != nil {
-		log.Fatal(err)
-	}
-	return &engine{Host: h, ctx: ctx, cancel: cancel, done: make(chan error, 1)}
+	e := &engine{Host: h, ctx: ctx, cancel: cancel, done: make(chan error, 1)}
+	e.addUser(defaultUser)
+	return e
 }
 
 func (e *engine) run() {
@@ -292,7 +305,7 @@ func parked(args []string) {
 	m := &model{}
 	tr := newTracker()
 	e := newEngine(host.Config{
-		Home: dir, Users: fakeUsers(m), Slots: *slots,
+		Home: dir, Dial: fakeDial(m), Slots: *slots,
 	})
 	e.Store.Feed().SubscribeAll(tr.on)
 	e.run()

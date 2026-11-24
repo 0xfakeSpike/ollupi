@@ -358,6 +358,21 @@ func benchUser(_ context.Context, token string) (string, error) {
 	return token, nil
 }
 
+// signUp stands in for a deployment's sign-up service: a user a shard has
+// not seen is made on their first connection.
+func signUp(e **engine) auth.Authenticate {
+	var once sync.Map
+	return func(ctx context.Context, token string) (string, error) {
+		user, err := benchUser(ctx, token)
+		if err != nil {
+			return "", err
+		}
+		made, _ := once.LoadOrStore(user, new(sync.Once))
+		made.(*sync.Once).Do(func() { (*e).addUser(user) })
+		return user, nil
+	}
+}
+
 func quiet() {
 }
 
@@ -367,9 +382,10 @@ func connsShard(args []string) {
 	addr := fs.String("addr", "", "address to listen on")
 	fs.Parse(args)
 	quiet()
-	e := newEngine(host.Config{
-		Home: *dir, Users: fakeUsers(&model{}),
-		Gateway: &gateway.Options{Authenticate: benchUser},
+	var e *engine
+	e = newEngine(host.Config{
+		Home: *dir, Dial: fakeDial(&model{}),
+		Gateway: &gateway.Options{Authenticate: signUp(&e)},
 	})
 	defer e.stop()
 	e.run()

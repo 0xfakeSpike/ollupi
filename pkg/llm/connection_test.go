@@ -22,12 +22,12 @@ func TestLimitsInput(t *testing.T) {
 
 func TestLimitsCheck(t *testing.T) {
 	for _, l := range []Limits{{}, {Context: 100}, {Output: 100}, {Context: 1000, Output: 100, MaxInput: -1}} {
-		if l.check() == nil {
+		if l.Check() == nil {
 			t.Errorf("%+v passed", l)
 		}
 	}
 	for _, l := range []Limits{{Context: 1000, Output: 100, MaxInput: 500}, {Context: 1000, Output: 1000}} {
-		if err := l.check(); err != nil {
+		if err := l.Check(); err != nil {
 			t.Error(err)
 		}
 	}

@@ -665,6 +665,12 @@ type SettingsUpdateParams struct {
 	Redaction *bool `json:"redaction,omitempty"`
 	Memory    *bool `json:"memory,omitempty"`
 	Learn     *bool `json:"learn,omitempty"`
+	// Model is the one of the deployment's models a new conversation starts
+	// with; empty is the first.
+	Model *string `json:"model,omitempty"`
+	// LearnModel is the one of the deployment's models that learns the
+	// user's memories; empty learns none.
+	LearnModel *string `json:"learnModel,omitempty"`
 }
 
 type SettingsPermissionsParams struct {
@@ -759,6 +765,7 @@ var errorCodes = []struct {
 	{app.ErrSearchTimedOut, errSearchTimedOut},
 	{account.ErrInvalidName, jsonrpc.CodeInvalidParams},
 	{account.ErrInvalidMCPServer, jsonrpc.CodeInvalidParams},
+	{account.ErrUnknownModel, jsonrpc.CodeInvalidParams},
 	{policy.ErrInvalidSettings, jsonrpc.CodeInvalidParams},
 	{memory.ErrInvalidChange, jsonrpc.CodeInvalidParams},
 	{kit.ErrUnknownTool, jsonrpc.CodeInvalidParams},

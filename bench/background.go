@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -70,7 +69,7 @@ func background(args []string) {
 	defer os.RemoveAll(dir)
 	tr := newTracker()
 	e := newEngine(host.Config{
-		Home: dir, Users: fakeUsers(fakeConnection(srv.URL, *calls)),
+		Home: dir, Dial: fakeDial(fakeConnection(srv.URL, *calls)),
 		Tools: []kit.Provider{work{latency: *toolLatency}},
 		Slots: *slots, TaskSlots: *taskSlots, UserTaskSlots: *userTaskSlots,
 	})
@@ -79,9 +78,7 @@ func background(args []string) {
 		users = append(users, fmt.Sprintf("user%03d", i))
 	}
 	for _, u := range users {
-		if err := e.App.EnsureUser(context.Background(), u); err != nil {
-			log.Fatal(err)
-		}
+		e.addUser(u)
 	}
 	e.Store.Feed().SubscribeAll(tr.on)
 	e.run()

@@ -48,11 +48,12 @@ func serve(args []string) {
 	}
 	defer runner.Close()
 	http.DefaultTransport.(*http.Transport).MaxIdleConnsPerHost = *calls
-	e := newEngine(host.Config{
-		Home: *dir, Users: fakeUsers(fakeConnection(*url, *calls)),
+	var e *engine
+	e = newEngine(host.Config{
+		Home: *dir, Dial: fakeDial(fakeConnection(*url, *calls)),
 		Tools: []kit.Provider{tool, runner},
 		Slots: *slots, TaskSlots: *taskSlots, UserTaskSlots: *userTaskSlots,
-		Gateway: &gateway.Options{Authenticate: benchUser},
+		Gateway: &gateway.Options{Authenticate: signUp(&e)},
 	})
 	defer e.stop()
 	e.run()

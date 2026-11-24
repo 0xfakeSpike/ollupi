@@ -38,9 +38,10 @@ var (
 	ErrSearchTimedOut   = errors.New("the search took too long; try longer or fewer words")
 )
 
-type Models interface {
-	Models(user string) []llm.Model
-	Limits(user string, m llm.Model) (llm.Limits, error)
+// Catalog is the deployment's models: the providers every user's turns run
+// on. A user only chooses among them.
+type Catalog interface {
+	Providers() []account.ModelProvider
 }
 
 type Boxes func(user string) (sandbox.Box, error)
@@ -56,7 +57,7 @@ type Attachments interface {
 
 type App struct {
 	st          store.Store
-	models      Models
+	catalog     Catalog
 	tools       tool.Tools
 	statuses    Statuses
 	boxes       Boxes
@@ -68,20 +69,23 @@ type App struct {
 	moving map[string]bool
 }
 
-func New(st store.Store, models Models, tools tool.Tools, statuses Statuses, boxes Boxes, attachments Attachments, cal cron.Calendar, deployment policy.Settings) *App {
-	return &App{st: st, models: models, tools: tools, statuses: statuses, boxes: boxes, attachments: attachments, cal: cal, deployment: deployment, moving: map[string]bool{}}
+func New(st store.Store, catalog Catalog, tools tool.Tools, statuses Statuses, boxes Boxes, attachments Attachments, cal cron.Calendar, deployment policy.Settings) *App {
+	return &App{st: st, catalog: catalog, tools: tools, statuses: statuses, boxes: boxes, attachments: attachments, cal: cal, deployment: deployment, moving: map[string]bool{}}
 }
 
 func (a *App) EnsureUser(ctx context.Context, user string) error {
 	return a.st.Update(ctx, func(tx store.Tx) error { return tx.EnsureUser(user) })
 }
 
-func (a *App) Models(user string) ([]llm.Model, string) {
-	models := a.models.Models(user)
-	if len(models) == 0 {
-		return nil, ""
+// Models are the deployment's models and the connection the user's
+// conversations start with.
+func (a *App) Models(ctx context.Context, user string) ([]llm.Model, string, error) {
+	var s account.Settings
+	if err := a.st.Read(ctx, func(r store.Reader) (err error) { s, err = r.Settings(user); return err }); err != nil {
+		return nil, "", err
 	}
-	return models, models[0].Connection
+	models, first := account.Models(a.catalog.Providers(), s)
+	return models, first, nil
 }
 
 func (a *App) Tools(ctx context.Context, user string) ([]tool.Spec, error) {
@@ -92,16 +96,20 @@ func (a *App) Tools(ctx context.Context, user string) ([]tool.Spec, error) {
 	return set.Specs(), nil
 }
 
-func (a *App) pickModel(user, connection string, last *llm.Model) (llm.Model, error) {
-	models := a.models.Models(user)
+func (a *App) pickModel(r store.Reader, user, connection string, last *llm.Model) (llm.Model, error) {
+	s, err := r.Settings(user)
+	if err != nil {
+		return llm.Model{}, err
+	}
+	models, first := account.Models(a.catalog.Providers(), s)
 	if len(models) == 0 {
-		return llm.Model{}, fmt.Errorf("%w: this profile has no models; add one in Settings", ErrInvalidMessage)
+		return llm.Model{}, fmt.Errorf("%w: there are no models to run; the deployment serves none", ErrInvalidMessage)
 	}
 	if connection == "" && last != nil {
 		connection = last.Connection
 	}
 	if connection == "" {
-		connection = models[0].Connection
+		connection = first
 	}
 	i := slices.IndexFunc(models, func(m llm.Model) bool { return m.Connection == connection })
 	if i < 0 {

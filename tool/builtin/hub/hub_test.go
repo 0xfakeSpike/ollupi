@@ -27,12 +27,6 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
-type models struct{}
-
-func (models) Models(string) []llm.Model { return []llm.Model{{Name: "big", Connection: "main"}} }
-func (models) Limits(string, llm.Model) (llm.Limits, error) {
-	return llm.Limits{Context: 200_000, Output: 8_000}, nil
-}
 func noStatuses(string) ([]account.MCPStatus, error) { return nil, nil }
 func here(string) (sandbox.Box, error)               { return sandbox.Here() }
 
@@ -53,7 +47,7 @@ func setup(t *testing.T) *fixture {
 	t.Cleanup(func() { st.Close() })
 	p := &Provider{St: st}
 	tools := func(ctx context.Context, _ string) (tool.Set, error) { return kit.New(ctx, nil, p) }
-	a := app.New(st, models{}, tools, noStatuses, here, blob.Dir(t.TempDir()), cron.NewCalendar(time.UTC), policy.Settings{ApprovalPolicy: string(policy.OnRequest)})
+	a := app.New(st, catalog{{ID: "main", API: account.OpenAI, Models: []account.ProviderModel{{Name: "big", Limits: llm.Limits{Context: 200_000, Output: 8_000}}}}}, tools, noStatuses, here, blob.Dir(t.TempDir()), cron.NewCalendar(time.UTC), policy.Settings{ApprovalPolicy: string(policy.OnRequest)})
 	p.App = a
 	f := &fixture{t: t, ctx: context.Background(), st: st, a: a, p: p}
 	if err := a.EnsureUser(f.ctx, "u"); err != nil {
@@ -205,3 +199,8 @@ func TestTheHubKeepsItsTodosInTheApp(t *testing.T) {
 		t.Errorf("the hub's tools %q", names)
 	}
 }
+
+// catalog is a deployment's fixed models.
+type catalog []account.ModelProvider
+
+func (c catalog) Providers() []account.ModelProvider { return c }

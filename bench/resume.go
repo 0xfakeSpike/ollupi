@@ -27,7 +27,7 @@ func resume(args []string) {
 	open := func(m *model, tr *tracker) (*engine, time.Duration) {
 		at := time.Now()
 		e := newEngine(host.Config{
-			Home: dir, Users: fakeUsers(m), Slots: *running + 32,
+			Home: dir, Dial: fakeDial(m), Slots: *running + 32,
 		})
 		e.Store.Feed().SubscribeAll(tr.on)
 		e.run()

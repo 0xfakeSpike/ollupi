@@ -72,7 +72,7 @@ func steady(args []string) {
 	}
 	tr := newTracker()
 	e := newEngine(host.Config{
-		Home: dir, Users: fakeUsers(fakeConnection(url, *calls)),
+		Home: dir, Dial: fakeDial(fakeConnection(url, *calls)),
 		Tools: providers,
 		Slots: *slots,
 	})

@@ -29,6 +29,8 @@ type settingsRow struct {
 	Memory       bool
 	Learn        bool
 	Permissions  string
+	Model        string
+	LearnModel   string
 }
 
 func (r reader) Settings(owner string) (account.Settings, error) {
@@ -36,7 +38,7 @@ func (r reader) Settings(owner string) (account.Settings, error) {
 	if err := notFound(r.g.Raw("SELECT * FROM settings WHERE user_id = ?", owner).Take(&row).Error); err != nil {
 		return account.Settings{}, fmt.Errorf("store: the settings of user %s: %w", owner, err)
 	}
-	s := account.Settings{Redaction: row.Redaction, RedactionKey: row.RedactionKey, Memory: row.Memory, Learn: row.Learn}
+	s := account.Settings{Redaction: row.Redaction, RedactionKey: row.RedactionKey, Memory: row.Memory, Learn: row.Learn, Model: row.Model, LearnModel: row.LearnModel}
 	if err := json.Unmarshal([]byte(row.Permissions), &s.Permissions); err != nil {
 		return account.Settings{}, fmt.Errorf("store: the permissions of user %s: %w", owner, err)
 	}
@@ -477,7 +479,8 @@ func (t *tx) EnsureUser(id string) error {
 
 func (t *tx) SetSettings(owner string, s account.Settings) error {
 	permissions, _ := json.Marshal(s.Permissions)
-	res := t.g.Exec("UPDATE settings SET redaction = ?, memory = ?, learn = ?, permissions = ? WHERE user_id = ?", s.Redaction, s.Memory, s.Learn, string(permissions), owner)
+	res := t.g.Exec("UPDATE settings SET redaction = ?, memory = ?, learn = ?, permissions = ?, model = ?, learn_model = ? WHERE user_id = ?",
+		s.Redaction, s.Memory, s.Learn, string(permissions), s.Model, s.LearnModel, owner)
 	if err := one(res, "the settings of user "+owner); err != nil {
 		return err
 	}

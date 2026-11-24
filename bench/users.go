@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -72,19 +71,18 @@ func users(args []string) {
 
 	dir := tempHome()
 	defer os.RemoveAll(dir)
+	var failed sync.Map
+	tr := newTracker()
+	// Each user calls the fake API with a key of their own, by which it tells
+	// them apart, as a deployment billing each user's account would; the
+	// heavy user may run more calls at once.
 	limits := map[string]llm.Limits{"fake": {Context: 200_000, Output: 32_000}}
 	clients := map[string]llm.Client{heavyUser: llm.NewOpenAI(srv.URL, heavyUser, *heavyCalls, limits)}
 	for _, u := range ids[1:] {
 		clients[u] = llm.NewOpenAI(srv.URL, u, *calls, limits)
 	}
-	var failed sync.Map
-	tr := newTracker()
-	users := make([]host.UserModels, 0, len(ids))
-	for _, u := range ids {
-		users = append(users, host.UserModels{User: u, Models: fakeModels, Connections: map[string]llm.Client{"fake": clients[u]}})
-	}
 	e := newEngine(host.Config{
-		Home: dir, Users: users,
+		Home: dir,
 		ClientFor: func(user, _ string) (llm.Client, error) {
 			if cl := clients[user]; cl != nil {
 				return cl, nil
@@ -95,9 +93,7 @@ func users(args []string) {
 		Slots: *slots, UserSlots: *userSlots,
 	})
 	for _, u := range ids {
-		if err := e.App.EnsureUser(context.Background(), u); err != nil {
-			log.Fatal(err)
-		}
+		e.addUser(u)
 	}
 	e.Store.Feed().SubscribeAll(func(ev store.Event) {
 		if ev.Change != nil {

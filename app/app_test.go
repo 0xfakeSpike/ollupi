@@ -27,14 +27,17 @@ import (
 	"github.com/google/uuid"
 )
 
-type models struct{}
+// provider is the models the test deployment serves: main/big takes images,
+// main/small does not.
+var provider = account.ModelProvider{ID: "main", API: account.OpenAI, Models: []account.ProviderModel{
+	{Name: "big", Images: true, Limits: llm.Limits{Context: 200_000, Output: 8_000}},
+	{Name: "small", Limits: llm.Limits{Context: 200_000, Output: 8_000}},
+}}
 
-func (models) Models(string) []llm.Model {
-	return []llm.Model{{Name: "big", Connection: "main", Images: true}, {Name: "small", Connection: "text"}}
-}
-func (models) Limits(string, llm.Model) (llm.Limits, error) {
-	return llm.Limits{Context: 200_000, Output: 8_000}, nil
-}
+// catalog is a deployment's fixed models.
+type catalog []account.ModelProvider
+
+func (c catalog) Providers() []account.ModelProvider { return c }
 
 type set struct{}
 
@@ -106,7 +109,7 @@ func setup(t *testing.T) *fixture {
 	t.Cleanup(func() { st.Close() })
 	b := &blobs{files: map[string][]byte{}}
 	f := &fixture{t: t, ctx: context.Background(), st: st, blobs: b,
-		a: New(st, models{}, tools, noStatuses, here, b, cron.NewCalendar(time.UTC), policy.Settings{ApprovalPolicy: string(policy.OnRequest)})}
+		a: New(st, catalog{provider}, tools, noStatuses, here, b, cron.NewCalendar(time.UTC), policy.Settings{ApprovalPolicy: string(policy.OnRequest)})}
 	if err := f.a.EnsureUser(f.ctx, "u"); err != nil {
 		t.Fatal(err)
 	}
@@ -166,10 +169,10 @@ func TestMessagesQueueTurnsAndSteeringAnswersWhatTheTurnAsked(t *testing.T) {
 		t.Fatal("the conversation is in no environment")
 	}
 	first := sent(t)(f.a.Send(f.ctx, "u", th.ID, Input{Text: "build it"}))
-	if first.Model.Connection != "main" || first.Role != string(agent.FullMain) {
+	if first.Model.Connection != "main/big" || first.Role != string(agent.FullMain) {
 		t.Errorf("the turn %+v", first)
 	}
-	second := sent(t)(f.a.Send(f.ctx, "u", th.ID, Input{Text: "then test it", Connection: "text"}))
+	second := sent(t)(f.a.Send(f.ctx, "u", th.ID, Input{Text: "then test it", Connection: "main/small"}))
 	if v := f.view(th.ID); len(v.Queued()) != 1 || v.Queued()[0].ID != second.ID || second.Model.Name != "small" {
 		t.Fatalf("the second turn waits behind: %+v", v.Queued())
 	}
@@ -261,7 +264,7 @@ func TestASubagentTakesMessagesInItsRoleAndKeepsRulesInItsWorkspace(t *testing.T
 			return err
 		}
 		_, err := tx.Append("child",
-			conversation.Entry{Turn: "t1", Body: conversation.TurnQueued{Model: llm.Model{Name: "big", Connection: "main"}, Role: string(agent.GeneralSub)}},
+			conversation.Entry{Turn: "t1", Body: conversation.TurnQueued{Model: llm.Model{Name: "big", Connection: "main/big"}, Role: string(agent.GeneralSub)}},
 			conversation.Entry{Turn: "t1", Item: "m1", Body: conversation.UserMessage{Text: "write the page"}})
 		return err
 	})
@@ -297,7 +300,7 @@ func (f *fixture) launch(parent store.Thread, id string, role agent.Name, task s
 			return err
 		}
 		_, err := tx.Append(id,
-			conversation.Entry{Turn: id + "-t1", Body: conversation.TurnQueued{Model: llm.Model{Name: "big", Connection: "main"}, Role: string(role)}},
+			conversation.Entry{Turn: id + "-t1", Body: conversation.TurnQueued{Model: llm.Model{Name: "big", Connection: "main/big"}, Role: string(role)}},
 			conversation.Entry{Turn: id + "-t1", Item: id + "-m1", Body: conversation.UserMessage{Text: task}})
 		return err
 	})
@@ -411,7 +414,7 @@ func TestAUserHasOneHubWhoseConversationsRunAsTheHub(t *testing.T) {
 	if home.Kind != account.ProjectWorkspace {
 		t.Errorf("a new workspace is %q", home.Kind)
 	}
-	noHub := New(f.st, models{}, func(context.Context, string) (tool.Set, error) { return plainSet{}, nil }, noStatuses, here, f.blobs,
+	noHub := New(f.st, catalog{provider}, func(context.Context, string) (tool.Set, error) { return plainSet{}, nil }, noStatuses, here, f.blobs,
 		cron.NewCalendar(time.UTC), policy.Settings{})
 	if _, err := noHub.SetWorkspaceKind(f.ctx, "u", home.ID, account.HubWorkspace); !errors.Is(err, ErrNoHub) {
 		t.Errorf("a hub where the deployment offers none: %v", err)

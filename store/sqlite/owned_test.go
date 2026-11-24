@@ -228,3 +228,17 @@ func TestSearchFindsTitlesMessagesAndCronJobs(t *testing.T) {
 		t.Errorf("another user found %+v", none)
 	}
 }
+
+func TestAUserKeepsTheModelsTheyChose(t *testing.T) {
+	s := open(t, t.TempDir())
+	update(t, s, func(tx store.Tx) error { return tx.EnsureUser("a") })
+	settings := read(t, s, func(r store.Reader) (account.Settings, error) { return r.Settings("a") })
+	if settings.Model != "" || settings.LearnModel != "" {
+		t.Fatalf("a new user chose %+v", settings)
+	}
+	settings.Model, settings.LearnModel = "DeepSeek 官方/deepseek-chat", "DeepSeek 官方/deepseek-reasoner"
+	update(t, s, func(tx store.Tx) error { return tx.SetSettings("a", settings) })
+	if got := read(t, s, func(r store.Reader) (account.Settings, error) { return r.Settings("a") }); got.Model != settings.Model || got.LearnModel != settings.LearnModel {
+		t.Fatalf("settings %+v", got)
+	}
+}

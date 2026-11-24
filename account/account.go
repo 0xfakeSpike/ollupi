@@ -25,6 +25,12 @@ type Settings struct {
 	Memory       bool
 	Learn        bool
 	Permissions  policy.Settings
+	// Model is the connection a new conversation starts with; empty starts
+	// with the user's first model.
+	Model string
+	// LearnModel is the connection that learns memories from finished turns;
+	// empty learns none.
+	LearnModel string
 }
 
 func (s Settings) Layer() policy.Layer {

@@ -64,7 +64,7 @@ func lone(args []string) {
 	fs.Parse(args)
 	tr := newTracker()
 	e := newEngine(host.Config{
-		Home: *dir, Users: fakeUsers(&model{}),
+		Home: *dir, Dial: fakeDial(&model{}),
 	})
 	e.Store.Feed().SubscribeAll(tr.on)
 	e.run()

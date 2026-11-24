@@ -24,7 +24,7 @@ func (l Limits) Answer(input int) int {
 	return min(l.Output, max(l.reserve(), l.Context-input))
 }
 
-func (l Limits) check() error {
+func (l Limits) Check() error {
 	if l.Context <= 0 || l.Output <= 0 {
 		return fmt.Errorf("context %d and output %d must be positive", l.Context, l.Output)
 	}

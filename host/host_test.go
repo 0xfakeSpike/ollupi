@@ -2,20 +2,24 @@ package host
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/app"
 	"github.com/0xfakeSpike/ollupi/conversation"
+	"github.com/0xfakeSpike/ollupi/cron"
 	"github.com/0xfakeSpike/ollupi/gateway"
 	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/policy"
 	"github.com/0xfakeSpike/ollupi/store"
+	"github.com/0xfakeSpike/ollupi/store/sqlite"
 	"github.com/0xfakeSpike/ollupi/tool"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
 )
@@ -70,10 +74,10 @@ func TestAHostRunsATurnThroughASubagentAndLearnsFromIt(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	m := &model{}
-	learner := llm.Model{Name: "m", Connection: "main"}
 	h, err := New(ctx, Config{
 		Home: t.TempDir(), Name: "Ollupi",
-		Users:   []UserModels{{User: "u", Models: []llm.Model{learner}, Connections: map[string]llm.Client{"main": m}, Memory: &learner}},
+		Models:  []account.ModelProvider{provider("main", "m")},
+		Dial:    func(account.ModelProvider, account.ProviderModel) (llm.Client, error) { return m, nil },
 		Tools:   []kit.Provider{weather{}},
 		Boxes:   func(string) (sandbox.Box, error) { return sandbox.Here() },
 		Gateway: &gateway.Options{Authenticate: func(context.Context, string) (string, error) { return "u", nil }},
@@ -102,6 +106,10 @@ func TestAHostRunsATurnThroughASubagentAndLearnsFromIt(t *testing.T) {
 	go func() { done <- h.Run(ctx) }()
 
 	if err := h.App.EnsureUser(ctx, "u"); err != nil {
+		t.Fatal(err)
+	}
+	learn := "main/m"
+	if _, err := h.App.UpdateSettings(ctx, "u", app.SettingsChange{LearnModel: &learn}); err != nil {
 		t.Fatal(err)
 	}
 	th, err := h.App.StartThread(ctx, "u", "", "", "weather")
@@ -147,51 +155,97 @@ func TestAHostRefusesPermissionsItCannotRead(t *testing.T) {
 	}
 }
 
-func TestAUserNeverBorrowsAnotherUsersModelsOrLearningModel(t *testing.T) {
-	client := &model{}
-	m := llm.Model{Name: "m", Connection: "main"}
-	ms, err := newModels(nil, []UserModels{{User: "a", Models: []llm.Model{m}, Connections: map[string]llm.Client{"main": client}}})
+// testModels are a host's models over a fresh store holding users a and b,
+// every client dialled counted.
+func testModels(t *testing.T, catalog ...account.ModelProvider) (*models, *app.App, *int) {
+	t.Helper()
+	st, err := sqlite.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := ms.Models("b"); len(got) != 0 {
-		t.Fatalf("user b borrowed models: %+v", got)
+	t.Cleanup(func() { st.Close() })
+	dialled := new(int)
+	ms, err := newModels(context.Background(), st, catalog, func(account.ModelProvider, account.ProviderModel) (llm.Client, error) {
+		*dialled++
+		return &model{}, nil
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := ms.Limits("b", m); err == nil {
-		t.Fatal("user b borrowed another user's model limits")
+	a := app.New(st, ms, nil, nil, nil, nil, cron.NewCalendar(time.UTC), policy.Settings{ApprovalPolicy: string(policy.OnRequest)})
+	for _, u := range []string{"a", "b"} {
+		if err := a.EnsureUser(context.Background(), u); err != nil {
+			t.Fatal(err)
+		}
 	}
-	other := llm.Model{Name: "other", Connection: "other"}
-	if _, err := newModels(nil, []UserModels{{
-		User: "a", Models: []llm.Model{m}, Connections: map[string]llm.Client{"main": client}, Memory: &other,
-	}}); err == nil {
-		t.Fatal("a learning model outside the user's connections was accepted")
+	return ms, a, dialled
+}
+
+func provider(id string, names ...string) account.ModelProvider {
+	p := account.ModelProvider{ID: id, API: account.OpenAI, APIKey: "sk-" + id}
+	for _, n := range names {
+		p.Models = append(p.Models, account.ProviderModel{Name: n, Limits: llm.Limits{Context: 100_000, Output: 4_000}})
+	}
+	return p
+}
+
+func TestEachUserChoosesAmongTheSameModels(t *testing.T) {
+	ms, a, _ := testModels(t, provider("main", "x", "y"))
+	ctx := context.Background()
+	start, learn := "main/y", "main/x"
+	if _, err := a.UpdateSettings(ctx, "a", app.SettingsChange{Model: &start, LearnModel: &learn}); err != nil {
+		t.Fatal(err)
+	}
+	if _, first, _ := a.Models(ctx, "a"); first != "main/y" {
+		t.Fatalf("a starts with %q", first)
+	}
+	if models, first, _ := a.Models(ctx, "b"); len(models) != 2 || first != "main/x" {
+		t.Fatalf("b has %+v and starts with %q", models, first)
+	}
+	if m, ok := ms.memory("a"); !ok || m.Connection != "main/x" {
+		t.Fatalf("a learns with %+v, %v", m, ok)
+	}
+	if _, ok := ms.memory("b"); ok {
+		t.Fatal("b learns without having chosen a model")
+	}
+	other := "elsewhere/z"
+	if _, err := a.UpdateSettings(ctx, "a", app.SettingsChange{Model: &other}); !errors.Is(err, account.ErrUnknownModel) {
+		t.Fatalf("chose a model the deployment does not serve: %v", err)
 	}
 }
 
-func TestReplacingUsersModelsTakesEffectWithoutARestart(t *testing.T) {
-	client := &model{}
-	old := llm.Model{Name: "old", Connection: "a"}
-	ms, err := newModels(nil, []UserModels{{User: "u", Models: []llm.Model{old}, Connections: map[string]llm.Client{"a": client}}})
+func TestReplacingTheModelsTakesEffectAtOnce(t *testing.T) {
+	ms, a, dialled := testModels(t, provider("old", "x"), provider("keep", "k"))
+	ctx := context.Background()
+	start, learn := "old/x", "old/x"
+	if _, err := a.UpdateSettings(ctx, "a", app.SettingsChange{Model: &start, LearnModel: &learn}); err != nil {
+		t.Fatal(err)
+	}
+	kept, err := ms.Client("a", llm.Model{Connection: "keep/k"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	next := llm.Model{Name: "next", Connection: "b"}
-	if err := ms.set([]UserModels{{User: "u", Models: []llm.Model{next}, Connections: map[string]llm.Client{"b": client}, Memory: &next}}); err != nil {
+	if err := ms.set([]account.ModelProvider{provider("new", "y"), provider("keep", "k")}); err != nil {
 		t.Fatal(err)
 	}
-	if got := ms.Models("u"); len(got) != 1 || got[0].Connection != "b" {
-		t.Fatalf("models = %+v", got)
+	if _, err := ms.Client("a", llm.Model{Connection: "old/x"}); err == nil {
+		t.Fatal("a model no longer served still has a client")
 	}
-	if _, err := ms.Client("u", old); err == nil {
-		t.Fatal("a removed model still has a client")
+	if c, _ := ms.Client("a", llm.Model{Connection: "keep/k"}); c != kept || *dialled != 3 {
+		t.Fatalf("an unchanged model was dialled again (%d dials)", *dialled)
 	}
-	if m, ok := ms.memory("u"); !ok || m.Connection != "b" {
-		t.Fatalf("learning model = %+v, %v", m, ok)
+	// A choice the deployment no longer serves falls back to its first model,
+	// and learns nothing.
+	if _, first, _ := a.Models(ctx, "a"); first != "new/y" {
+		t.Fatalf("a starts with %q", first)
 	}
-	if err := ms.set([]UserModels{{User: "u", Models: []llm.Model{next}}}); err == nil {
-		t.Fatal("a model without a client was accepted")
+	if _, ok := ms.memory("a"); ok {
+		t.Fatal("a learns with a model no longer served")
 	}
-	if got := ms.Models("u"); len(got) != 1 || got[0].Connection != "b" {
-		t.Fatalf("a refused replacement changed the models: %+v", got)
+	if err := ms.set([]account.ModelProvider{provider("dup", "m"), provider("dup", "n")}); err == nil {
+		t.Fatal("a catalog naming a provider twice was taken")
+	}
+	if models, _, _ := a.Models(ctx, "a"); len(models) != 2 {
+		t.Fatalf("a refused catalog changed the models: %+v", models)
 	}
 }

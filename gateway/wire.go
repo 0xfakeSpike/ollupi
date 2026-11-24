@@ -282,10 +282,15 @@ type SettingsRow struct {
 	Memory      bool            `json:"memory"`
 	Learn       bool            `json:"learn"`
 	Permissions policy.Settings `json:"permissions"`
+	// Model is the connection a new conversation starts with; empty is the
+	// first model.
+	Model string `json:"model"`
+	// LearnModel is the connection that learns memories; empty learns none.
+	LearnModel string `json:"learnModel"`
 }
 
 func settingsRow(s account.Settings) SettingsRow {
-	return SettingsRow{Redaction: s.Redaction, Memory: s.Memory, Learn: s.Learn, Permissions: s.Permissions}
+	return SettingsRow{Redaction: s.Redaction, Memory: s.Memory, Learn: s.Learn, Permissions: s.Permissions, Model: s.Model, LearnModel: s.LearnModel}
 }
 
 type MCPServerConfig struct {

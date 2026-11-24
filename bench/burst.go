@@ -212,7 +212,7 @@ func burst(args []string) {
 	defer os.RemoveAll(dir)
 	tr := newTracker()
 	e := newEngine(host.Config{
-		Home: dir, Users: fakeUsers(fakeConnection(srv.URL, *calls)),
+		Home: dir, Dial: fakeDial(fakeConnection(srv.URL, *calls)),
 		Tools: []kit.Provider{work{latency: *toolLatency}},
 		Slots: *slots,
 	})
