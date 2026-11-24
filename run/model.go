@@ -152,11 +152,20 @@ func (r *Runner) recall(ctx context.Context, s *step) (*conversation.Recalled, e
 	if err != nil {
 		return nil, err
 	}
-	recalled := memory.Recall(memories, place, s.window.MemoryBudget())
+	recalled := memory.Recall(memories, place, s.window.MemoryBudget(), latestUserText(s.items))
 	if recalled.Text == "" {
 		return nil, nil
 	}
 	return &recalled, nil
+}
+
+func latestUserText(items []conversation.Item) string {
+	for i := len(items) - 1; i >= 0; i-- {
+		if items[i].Kind == conversation.ItemUserMessage {
+			return items[i].Text
+		}
+	}
+	return ""
 }
 
 func recalledSinceCompaction(items []conversation.Item) bool {

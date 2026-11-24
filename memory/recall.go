@@ -23,9 +23,10 @@ const (
 	omittedNote    = "\n\n%d more memories did not fit here; find them with " + SearchTool + " when they may matter."
 )
 
-func Recall(memories []Memory, place Place, budget int) conversation.Recalled {
+func Recall(memories []Memory, place Place, budget int, query string) conversation.Recalled {
 	var global, local []Memory
-	for _, r := range rank(memories, recallScore) {
+	terms := recallTerms(query)
+	for _, r := range rank(memories, func(m Memory) int { return recallScore(m, terms) }) {
 		if r.score == 0 {
 			break
 		}
@@ -61,11 +62,54 @@ func Recall(memories []Memory, place Place, budget int) conversation.Recalled {
 
 var recallKinds = []Kind{Fact, Procedure, Decision, Preference}
 
-func recallScore(m Memory) int {
+func recallScore(m Memory, query []string) int {
 	if m.Status != Active {
 		return 0
 	}
-	return 1 + slices.Index(recallKinds, m.Kind)
+	kind := 1 + slices.Index(recallKinds, m.Kind)
+	if len(query) == 0 {
+		return kind
+	}
+	if relevance := recallRelevance(m, query); relevance > 0 {
+		return 1_000 + relevance*10 + kind
+	}
+	if m.Kind == Preference || m.Kind == Decision {
+		return kind
+	}
+	return 0
+}
+
+var stopWords = map[string]bool{
+	"the": true, "and": true, "for": true, "with": true, "this": true, "that": true, "you": true, "are": true,
+	"was": true, "can": true, "how": true, "what": true, "why": true, "please": true, "from": true, "into": true,
+	"its": true, "our": true, "your": true, "have": true, "has": true, "not": true, "but": true,
+	"all": true, "any": true, "about": true, "then": true, "than": true, "there": true, "here": true, "does": true,
+	"一下": true, "一个": true, "这个": true, "那个": true, "我们": true, "你们": true, "怎么": true, "什么": true,
+	"可以": true, "请你": true, "帮我": true,
+}
+
+func recallTerms(query string) []string {
+	var terms []string
+	for _, t := range searchTerms(query) {
+		if !stopWords[t] {
+			terms = append(terms, t)
+		}
+	}
+	return terms
+}
+
+func recallRelevance(m Memory, query []string) int {
+	words := searchTerms(m.Topic + " " + m.Text)
+	score := 0
+	for _, term := range query {
+		for _, w := range words {
+			if strings.HasPrefix(w, term) {
+				score += 1 + min(8, len([]rune(term)))
+				break
+			}
+		}
+	}
+	return score
 }
 
 func fit(memories []Memory, budget int) ([]Memory, int) {
