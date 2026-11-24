@@ -625,13 +625,17 @@
         },
         "delta": {
           "type": "string"
+        },
+        "offset": {
+          "type": "integer"
         }
       },
       "required": [
         "threadId",
         "turnId",
         "itemId",
-        "delta"
+        "delta",
+        "offset"
       ],
       "additionalProperties": false
     },

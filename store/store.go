@@ -297,6 +297,7 @@ type Delta struct {
 	Item      string
 	Text      string
 	Reasoning string
+	Offset    int
 }
 
 // TodoFilter picks the todos to read: the given statuses, or all of them when none are given, and at most

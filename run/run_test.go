@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf16"
 
 	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/agent"
@@ -24,12 +25,19 @@ import (
 type model struct {
 	mu     sync.Mutex
 	answer func(req llm.ChatRequest) llm.ChatResponse
+	stream []llm.Delta
 }
 
 func (m *model) Chat(_ context.Context, req llm.ChatRequest, onDelta func(llm.Delta)) (llm.ChatResponse, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	resp := m.answer(req)
+	if m.stream != nil {
+		for _, d := range m.stream {
+			onDelta(d)
+		}
+		return resp, nil
+	}
 	if resp.Message.ReasoningContent != "" {
 		onDelta(llm.Delta{Reasoning: resp.Message.ReasoningContent})
 		time.Sleep(20 * time.Millisecond)
@@ -520,5 +528,36 @@ func TestAWorkspaceGivesItsInstructionsAndHidesTheProvidersItTurnsOff(t *testing
 	}
 	if slices.Contains(offered, string(agent.GeneralSub)) || !slices.Contains(offered, agent.ReadFileTool) {
 		t.Errorf("offered %q", offered)
+	}
+}
+
+func TestDeltasSayWhereTheyGoInTheFinalText(t *testing.T) {
+	f := setup(t, nil)
+	f.m.stream = []llm.Delta{{Reasoning: "thinking "}, {Reasoning: "再想😀", Content: "Hi "}, {Content: "😀 there"}}
+	f.m.answer = func(llm.ChatRequest) llm.ChatResponse {
+		resp := answer("Hi 😀 there")
+		resp.Message.ReasoningContent = "thinking 再想😀"
+		return resp
+	}
+	built := map[string][]uint16{}
+	f.st.Feed().Subscribe("u", func(e store.Event) {
+		d := e.Delta
+		if d == nil {
+			return
+		}
+		if d.Offset != len(built[d.Item]) {
+			t.Errorf("a delta of %s at %d, after %d units", d.Item, d.Offset, len(built[d.Item]))
+		}
+		built[d.Item] = append(built[d.Item], utf16.Encode([]rune(d.Text+d.Reasoning))...)
+	})
+	f.ask("th", "hi")
+	f.run("th")
+	for _, it := range f.view("th").Items {
+		if it.Kind != conversation.ItemAgentMessage && it.Kind != conversation.ItemReasoning {
+			continue
+		}
+		if got := string(utf16.Decode(built[it.ID])); got != it.Text {
+			t.Errorf("the deltas of the %s build %q, not %q", it.Kind, got, it.Text)
+		}
 	}
 }

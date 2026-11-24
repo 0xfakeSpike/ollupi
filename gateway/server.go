@@ -122,7 +122,7 @@ func (c *conn) event(e store.Event) {
 		if d.Reasoning != "" {
 			method, text = notifyReasoningDelta, d.Reasoning
 		}
-		c.rpc.Notify(method, DeltaNotification{ThreadID: e.Thread, TurnID: d.Turn, ItemID: d.Item, Delta: text})
+		c.rpc.Notify(method, DeltaNotification{ThreadID: e.Thread, TurnID: d.Turn, ItemID: d.Item, Delta: text, Offset: d.Offset})
 	case e.Change != nil:
 		c.change(e.Seq, e.Thread, *e.Change)
 	case e.Owned != nil:

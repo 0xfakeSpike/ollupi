@@ -354,6 +354,7 @@ type DeltaNotification struct {
 	TurnID   string `json:"turnId"`
 	ItemID   string `json:"itemId"`
 	Delta    string `json:"delta"`
+	Offset   int    `json:"offset"`
 }
 
 type ErrorNotification struct {

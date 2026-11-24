@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf16"
 
 	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/conversation"
@@ -48,11 +49,11 @@ func (r *Runner) callModel(ctx context.Context, s *step, a agent.CallModel) erro
 	ans := modelAnswer{response: uuid.NewString(), message: uuid.NewString(), reasoning: uuid.NewString(), sent: time.Now().UTC()}
 	resp, err := r.send(ctx, s, req, in.Tools, choice, func(d llm.Delta) {
 		ans.hear(d)
-		delta := store.Delta{Turn: s.turn.ID, Item: ans.message, Text: d.Content}
-		if d.Reasoning != "" {
-			delta = store.Delta{Turn: s.turn.ID, Item: ans.reasoning, Reasoning: d.Reasoning}
+		var events []store.Event
+		for _, delta := range ans.deltas(s.turn.ID, d) {
+			events = append(events, store.Event{User: s.th.User, Thread: s.th.ID, Delta: &delta})
 		}
-		r.st.Feed().Publish([]store.Event{{User: s.th.User, Thread: s.th.ID, Delta: &delta}}, nil)
+		r.st.Feed().Publish(events, nil)
 	})
 	if err == nil {
 		err = checkResponse(resp, choice)
@@ -89,6 +90,28 @@ func (r *Runner) callModel(ctx context.Context, s *step, a agent.CallModel) erro
 type modelAnswer struct {
 	response, message, reasoning string
 	sent, began, answered        time.Time
+	thought, said                int
+}
+
+func (a *modelAnswer) deltas(turn string, d llm.Delta) []store.Delta {
+	var out []store.Delta
+	if d.Reasoning != "" {
+		out = append(out, store.Delta{Turn: turn, Item: a.reasoning, Reasoning: d.Reasoning, Offset: a.thought})
+		a.thought += utf16Len(d.Reasoning)
+	}
+	if d.Content != "" {
+		out = append(out, store.Delta{Turn: turn, Item: a.message, Text: d.Content, Offset: a.said})
+		a.said += utf16Len(d.Content)
+	}
+	return out
+}
+
+func utf16Len(s string) int {
+	n := 0
+	for _, r := range s {
+		n += utf16.RuneLen(r)
+	}
+	return n
 }
 
 func (a *modelAnswer) hear(d llm.Delta) {
