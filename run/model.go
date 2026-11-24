@@ -207,15 +207,17 @@ func recalledSinceCompaction(items []conversation.Item) bool {
 func (r *Runner) input(ctx context.Context, s *step) (prompt.Context, error) {
 	var found []skill.Skill
 	err := r.st.Read(ctx, func(rd store.Reader) (err error) {
-		found, err = rd.Skills(string(s.role.Name))
+		found, err = rd.Skills(s.th.User)
 		return err
 	})
 	if err != nil {
 		return prompt.Context{}, fmt.Errorf("run: the skills of %s: %w", s.role.Name, err)
 	}
-	skills := make([]prompt.Skill, len(found))
-	for i, f := range found {
-		skills[i] = prompt.Skill{Name: f.Name, Description: f.Description}
+	var skills []prompt.Skill
+	for _, f := range found {
+		if slices.Contains(f.Roles, string(s.role.Name)) {
+			skills = append(skills, prompt.Skill{Name: f.Name, Description: f.Description})
+		}
 	}
 	system := prompt.System{Role: s.role, Agent: r.name, Prompt: r.prompt, Skills: skills}
 	if s.workspace != nil {

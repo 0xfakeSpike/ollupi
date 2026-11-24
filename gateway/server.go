@@ -171,6 +171,11 @@ func (c *conn) owned(seq int64, thread string, o store.Owned) {
 		c.rpc.Notify(notifyMemoryChanged, MemoryChangedNotification{Memory: memoryRow(*o.Memory), Seq: seq})
 	case o.Todo != nil:
 		c.rpc.Notify(notifyTodoChanged, TodoChangedNotification{Todo: todoRow(*o.Todo), Seq: seq})
+	case o.Skill != nil:
+		row := skillRow(*o.Skill)
+		c.rpc.Notify(notifySkillChanged, SkillChangedNotification{Name: row.Name, Skill: &row, Seq: seq})
+	case o.SkillDeleted != "":
+		c.rpc.Notify(notifySkillChanged, SkillChangedNotification{Name: o.SkillDeleted, Seq: seq})
 	}
 }
 

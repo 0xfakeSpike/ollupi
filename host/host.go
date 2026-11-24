@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/account"
-	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/app"
 	"github.com/0xfakeSpike/ollupi/blob"
 	"github.com/0xfakeSpike/ollupi/cron"
@@ -23,7 +22,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/policy"
 	"github.com/0xfakeSpike/ollupi/run"
 	"github.com/0xfakeSpike/ollupi/schedule"
-	"github.com/0xfakeSpike/ollupi/skill"
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/0xfakeSpike/ollupi/store/sqlite"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/ask"
@@ -167,21 +165,6 @@ func (h *Host) Run(ctx context.Context) error {
 // choice of a model no longer served falls back to the first.
 func (h *Host) SetModels(catalog []account.ModelProvider) error {
 	return h.models.set(catalog)
-}
-
-func (h *Host) PutSkill(ctx context.Context, p skill.Package) error {
-	roles := make([]string, len(agent.Names))
-	for i, n := range agent.Names {
-		roles[i] = string(n)
-	}
-	if err := p.Check(roles); err != nil {
-		return fmt.Errorf("host: %w", err)
-	}
-	return h.Store.Update(ctx, func(tx store.Tx) error { return tx.PutSkill(p) })
-}
-
-func (h *Host) DeleteSkill(ctx context.Context, name string) error {
-	return h.Store.Update(ctx, func(tx store.Tx) error { return tx.DeleteSkill(name) })
 }
 
 func (h *Host) Close() error {

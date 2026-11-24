@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/0xfakeSpike/ollupi/conversation"
@@ -42,19 +43,34 @@ func (*Provider) Name() (string, string) {
 func (p *Provider) Invoke(ctx context.Context, c tool.Call) (kit.Result, error) {
 	switch c.Tool {
 	case toolListSkills:
-		var own []skill.Skill
+		var all []skill.Skill
 		err := p.st.Read(ctx, func(rd store.Reader) (err error) {
-			own, err = rd.Skills(c.Role)
+			all, err = rd.Skills(c.User)
 			return err
 		})
 		if err != nil {
 			return kit.Result{}, err
 		}
+		own := make([]skill.Skill, 0, len(all))
+		for _, s := range all {
+			if slices.Contains(s.Roles, c.Role) {
+				own = append(own, s)
+			}
+		}
 		return kit.Result{Output: map[string]any{"skills": own}}, nil
 	case toolActivateSkill:
 		return p.activate(ctx, c)
 	}
-	return p.readResource(ctx, c.Role, c.Arguments)
+	return p.readResource(ctx, c.Caller, c.Arguments)
+}
+
+func ownSkill(rd store.Reader, c tool.Caller, name string) (skill.Skill, error) {
+	s, err := rd.Skill(c.User, name)
+	missing := errors.Is(err, store.ErrNotFound) || err == nil && !slices.Contains(s.Roles, c.Role)
+	if missing {
+		return skill.Skill{}, fmt.Errorf("skills: you have no skill named %q; use a name from AVAILABLE SKILLS", name)
+	}
+	return s, err
 }
 
 type activateArgs struct {
@@ -105,15 +121,12 @@ func (p *Provider) activate(ctx context.Context, c tool.Call) (kit.Result, error
 	var files []skill.File
 	err := p.st.Read(ctx, func(rd store.Reader) error {
 		var err error
-		if found, err = rd.Skill(c.Role, name); err != nil {
+		if found, err = ownSkill(rd, c.Caller, name); err != nil {
 			return err
 		}
-		files, err = rd.SkillFiles(name)
+		files, err = rd.SkillFiles(c.User, name)
 		return err
 	})
-	if errors.Is(err, store.ErrNotFound) {
-		return kit.Result{}, fmt.Errorf("skills: you have no skill named %q; use a name from AVAILABLE SKILLS", name)
-	}
 	if err != nil {
 		return kit.Result{}, err
 	}
@@ -170,7 +183,7 @@ func (p *Provider) place(ctx context.Context, user string, s skill.Skill, files 
 	return dir, nil
 }
 
-func (p *Provider) readResource(ctx context.Context, role string, arguments map[string]any) (kit.Result, error) {
+func (p *Provider) readResource(ctx context.Context, c tool.Caller, arguments map[string]any) (kit.Result, error) {
 	args, err := kit.DecodeArguments[resourceArgs](arguments)
 	if err != nil {
 		return kit.Result{}, err
@@ -179,11 +192,11 @@ func (p *Provider) readResource(ctx context.Context, role string, arguments map[
 	resourcePath := strings.TrimSpace(args.Path)
 	var body []byte
 	err = p.st.Read(ctx, func(rd store.Reader) error {
-		if _, err := rd.Skill(role, name); err != nil {
-			return fmt.Errorf("skills: you have no skill named %q: %w", name, err)
+		if _, err := ownSkill(rd, c, name); err != nil {
+			return err
 		}
 		var err error
-		if body, err = rd.SkillFile(name, resourcePath); errors.Is(err, store.ErrNotFound) {
+		if body, err = rd.SkillFile(c.User, name, resourcePath); errors.Is(err, store.ErrNotFound) {
 			return fmt.Errorf("skills: resource %q is not exposed by skill %q", resourcePath, name)
 		}
 		return err

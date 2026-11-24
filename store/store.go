@@ -64,10 +64,10 @@ type Reader interface {
 	EndedTurns(user string, after memory.Cursor, limit int) ([]memory.Cursor, error)
 	Unread(user string, after memory.Cursor) (int64, error)
 
-	Skills(role string) ([]skill.Skill, error)
-	Skill(role, name string) (skill.Skill, error)
-	SkillFile(name, path string) ([]byte, error)
-	SkillFiles(name string) ([]skill.File, error)
+	Skills(user string) ([]skill.Skill, error)
+	Skill(user, name string) (skill.Skill, error)
+	SkillFile(user, name, path string) ([]byte, error)
+	SkillFiles(user, name string) ([]skill.File, error)
 
 	// MissingUsage returns the modelResponded entries that have no usage row
 	// yet, in (thread, seq) order after the given key. A thread of "" reads
@@ -93,8 +93,8 @@ type Tx interface {
 	DeleteCronJob(id string) error
 	PutMemory(m memory.Memory) error
 	SetMemoryState(user string, s memory.State) error
-	PutSkill(p skill.Package) error
-	DeleteSkill(name string) error
+	PutSkill(user string, p skill.Package) error
+	DeleteSkill(user, name string) error
 	PutUsage(u Usage) error
 	PutPresence(p Presence) error
 	DeleteThread(id string) error
@@ -290,6 +290,8 @@ type Owned struct {
 	CronJobDeleted     string
 	Memory             *memory.Memory
 	Todo               *account.Todo
+	Skill              *skill.Skill
+	SkillDeleted       string
 }
 
 type Change struct {

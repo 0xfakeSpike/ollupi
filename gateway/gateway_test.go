@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/account"
+	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/app"
 	"github.com/0xfakeSpike/ollupi/auth"
 	"github.com/0xfakeSpike/ollupi/conversation"
@@ -447,5 +448,44 @@ func TestAnAttachmentIsReadOverHTTP(t *testing.T) {
 	answer.Body.Close()
 	if answer.Header.Get("Access-Control-Allow-Origin") != "http://localhost:5173" || !strings.Contains(strings.ToLower(answer.Header.Get("Access-Control-Allow-Headers")), "authorization") {
 		t.Errorf("the preflight: %d %v", answer.StatusCode, answer.Header)
+	}
+}
+
+func TestAUserKeepsTheirOwnSkills(t *testing.T) {
+	_, c := connect(t)
+	set := SkillSetParams{Name: "deploy", Description: "How to deploy.", Instructions: "Run the script.",
+		Roles: []agent.Name{agent.FullMain, agent.BackendSub}, Files: []SkillFile{{Path: "scripts/run.sh", Text: "echo run", Executable: true}}}
+	var put SkillResult
+	c.call("skill/set", set, &put)
+	var changed SkillChangedNotification
+	json.Unmarshal(c.until(notifySkillChanged).Params, &changed)
+	if changed.Skill == nil || changed.Skill.Digest != put.Skill.Digest || len(changed.Skill.Files) != 1 {
+		t.Errorf("skill/changed after skill/set: %+v", changed)
+	}
+
+	var list SkillListResult
+	c.call("skill/list", Empty{}, &list)
+	if len(list.Data) != 1 || len(list.Data[0].Roles) != 2 || list.Data[0].Files[0] != (SkillFileInfo{Path: "scripts/run.sh", ByteSize: 8}) {
+		t.Errorf("skill/list: %+v", list)
+	}
+	var read SkillReadResult
+	c.call("skill/read", SkillNameParams{Name: "deploy"}, &read)
+	if read.Instructions != "Run the script." || len(read.Files) != 1 || read.Files[0] != set.Files[0] {
+		t.Errorf("skill/read: %+v", read)
+	}
+
+	bad := set
+	bad.Roles = []agent.Name{"main-agent"}
+	if m := c.reply("skill/set", bad); m.Error == nil || m.Error.Code != jsonrpc.CodeInvalidParams {
+		t.Errorf("a skill of no role: %+v", m.Error)
+	}
+
+	c.call("skill/delete", SkillNameParams{Name: "deploy"}, &Empty{})
+	json.Unmarshal(c.until(notifySkillChanged).Params, &changed)
+	if changed.Name != "deploy" || changed.Skill != nil {
+		t.Errorf("skill/changed after skill/delete: %+v", changed)
+	}
+	if m := c.reply("skill/read", SkillNameParams{Name: "deploy"}); m.Error == nil || m.Error.Code != errNotFound {
+		t.Errorf("a deleted skill: %+v", m.Error)
 	}
 }

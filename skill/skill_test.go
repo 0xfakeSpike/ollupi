@@ -1,72 +1,25 @@
 package skill
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func writeSkill(t *testing.T, dir string, files map[string]string) {
-	t.Helper()
-	for name, body := range files {
-		path := filepath.Join(dir, filepath.FromSlash(name))
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-}
-
-func TestReadDirTakesTheInstructionsAndTheTextFilesOfASkill(t *testing.T) {
-	base := t.TempDir()
-	dir := filepath.Join(base, "deploy")
-	writeSkill(t, dir, map[string]string{
-		"SKILL.md":           "---\nname: deploy\ndescription: How to deploy.\nmetadata:\n  version: 2\n---\nDo it step by step.\n",
-		"docs/guide.md":      "guide",
-		"scripts/run.sh":     "echo run",
-		"image.png":          "not text",
-		".hidden/secret.md":  "hidden",
-		"../outside/note.md": "outside",
-	})
-	if err := os.Chmod(filepath.Join(dir, "scripts", "run.sh"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(filepath.Join(base, "outside", "note.md"), filepath.Join(dir, "docs", "link.md")); err != nil {
-		t.Fatal(err)
-	}
-	p, err := ReadDir(dir, []string{"full-main-agent"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if p.Name != "deploy" || p.Description != "How to deploy." || p.Version != "2" || p.Instructions != "Do it step by step." {
-		t.Errorf("the skill: %+v", p)
-	}
-	if len(p.Files) != 2 || p.Files[0].Path != "docs/guide.md" || p.Files[0].Executable || p.Files[1].Path != "scripts/run.sh" || !p.Files[1].Executable {
-		t.Errorf("the files: %+v", p.Files)
-	}
-	if err := p.Check([]string{"full-main-agent"}); err != nil {
-		t.Errorf("a valid skill: %v", err)
-	}
-
-	writeSkill(t, filepath.Join(base, "other"), map[string]string{"SKILL.md": "---\nname: deploy\ndescription: d\n---\nbody\n"})
-	if _, err := ReadDir(filepath.Join(base, "other"), nil); err == nil || !strings.Contains(err.Error(), "must match") {
-		t.Errorf("a directory named apart from its skill: %v", err)
-	}
-}
-
 func TestCheckRefusesASkillOfNoRoleAndAFileOutsideIt(t *testing.T) {
-	roles := []string{"full-main-agent"}
+	roles := []string{"full-main-agent", "code-sub-agent"}
 	valid := func() Package {
-		return Package{Name: "deploy", Description: "d", Instructions: "body", Roles: roles,
+		return Package{Name: "deploy", Description: "d", Instructions: "body", Roles: []string{"full-main-agent"},
 			Files: []File{{Path: "docs/guide.md", Body: []byte("guide")}}}
+	}
+	if err := valid().Check(roles); err != nil {
+		t.Fatalf("a valid skill: %v", err)
 	}
 	cases := map[string]func(*Package){
 		"no role":      func(p *Package) { p.Roles = nil },
 		"unknown role": func(p *Package) { p.Roles = []string{"main-agent"} },
+		"role twice":   func(p *Package) { p.Roles = []string{"code-sub-agent", "code-sub-agent"} },
 		"bad name":     func(p *Package) { p.Name = "Deploy" },
+		"blank":        func(p *Package) { p.Instructions = " \n" },
 		"parent":       func(p *Package) { p.Files[0].Path = "../secret.md" },
 		"absolute":     func(p *Package) { p.Files[0].Path = "/etc/passwd.txt" },
 		"unclean":      func(p *Package) { p.Files[0].Path = "docs/../guide.md" },
@@ -74,6 +27,7 @@ func TestCheckRefusesASkillOfNoRoleAndAFileOutsideIt(t *testing.T) {
 		"binary":       func(p *Package) { p.Files[0].Path = "image.png" },
 		"not utf-8":    func(p *Package) { p.Files[0].Body = []byte{0xff} },
 		"twice":        func(p *Package) { p.Files = append(p.Files, p.Files[0]) },
+		"too large":    func(p *Package) { p.Files[0].Body = []byte(strings.Repeat("a", MaxBytes)) },
 	}
 	for name, change := range cases {
 		p := valid()

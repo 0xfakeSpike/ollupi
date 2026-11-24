@@ -8,6 +8,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/cron"
 	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
+	"github.com/0xfakeSpike/ollupi/skill"
 	"github.com/0xfakeSpike/ollupi/store"
 )
 
@@ -247,4 +248,35 @@ func (c *conn) settingsUpdate(ctx context.Context, p SettingsUpdateParams) (Sett
 func (c *conn) settingsPermissions(ctx context.Context, p SettingsPermissionsParams) (SettingsRow, error) {
 	s, err := c.s.app.UpdateUserPermissions(ctx, c.user, p.Settings)
 	return settingsRow(s), err
+}
+
+func (c *conn) skillList(ctx context.Context, _ Empty) (SkillListResult, error) {
+	skills, seq, err := c.s.app.Skills(ctx, c.user)
+	return SkillListResult{Data: each(skills, skillRow), Seq: seq}, err
+}
+
+func (c *conn) skillRead(ctx context.Context, p SkillNameParams) (SkillReadResult, error) {
+	s, files, err := c.s.app.Skill(ctx, c.user, p.Name)
+	out := SkillReadResult{Skill: skillRow(s), Instructions: s.Instructions, Files: make([]SkillFile, len(files))}
+	for i, f := range files {
+		out.Files[i] = SkillFile{Path: f.Path, Text: string(f.Body), Executable: f.Executable}
+	}
+	return out, err
+}
+
+func (c *conn) skillSet(ctx context.Context, p SkillSetParams) (SkillResult, error) {
+	pkg := skill.Package{Name: p.Name, Description: p.Description, Version: p.Version, Instructions: p.Instructions,
+		Roles: make([]string, len(p.Roles)), Files: make([]skill.File, len(p.Files))}
+	for i, r := range p.Roles {
+		pkg.Roles[i] = string(r)
+	}
+	for i, f := range p.Files {
+		pkg.Files[i] = skill.File{Path: f.Path, Body: []byte(f.Text), Executable: f.Executable}
+	}
+	s, err := c.s.app.SetSkill(ctx, c.user, pkg)
+	return SkillResult{Skill: skillRow(s)}, err
+}
+
+func (c *conn) skillDelete(ctx context.Context, p SkillNameParams) (Empty, error) {
+	return Empty{}, c.s.app.DeleteSkill(ctx, c.user, p.Name)
 }

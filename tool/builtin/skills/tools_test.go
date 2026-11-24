@@ -2,6 +2,7 @@ package skills
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -29,27 +30,38 @@ func setup(t *testing.T) (*Provider, *sqlite.Store, string) {
 	return New(st, func(string) (sandbox.Box, error) { return box, nil }), st, box.Roots()[0]
 }
 
-func put(t *testing.T, st store.Store, p skill.Package) {
+func put(t *testing.T, st store.Store, user string, p skill.Package) {
 	t.Helper()
-	if err := st.Update(context.Background(), func(tx store.Tx) error { return tx.PutSkill(p) }); err != nil {
+	if err := st.Update(context.Background(), func(tx store.Tx) error { return errors.Join(tx.EnsureUser(user), tx.PutSkill(user, p)) }); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func call(ts *Provider, role, name string, args map[string]any) (kit.Result, error) {
-	return ts.Invoke(context.Background(), tool.Call{Caller: tool.Caller{User: "u", Role: role}, Tool: name, Arguments: args})
+	return callAs(ts, "u", role, name, args)
 }
 
-func TestACallReachesOnlyItsRolesSkills(t *testing.T) {
+func callAs(ts *Provider, user, role, name string, args map[string]any) (kit.Result, error) {
+	return ts.Invoke(context.Background(), tool.Call{Caller: tool.Caller{User: user, Role: role}, Tool: name, Arguments: args})
+}
+
+func TestACallReachesOnlyItsUsersSkillsOfItsRole(t *testing.T) {
 	ts, st, _ := setup(t)
-	put(t, st, skill.Package{Name: "deploy", Description: "How to deploy.", Instructions: "Deploy.", Roles: []string{"full-main-agent"},
+	put(t, st, "u", skill.Package{Name: "deploy", Description: "How to deploy.", Instructions: "Deploy.", Roles: []string{"full-main-agent"},
 		Files: []skill.File{{Path: "docs/guide.md", Body: []byte("guide")}}})
-	put(t, st, skill.Package{Name: "site-login", Description: "How to log in.", Instructions: "Log in.", Roles: []string{"browser-sub-agent"}})
+	put(t, st, "u", skill.Package{Name: "site-login", Description: "How to log in.", Instructions: "Log in.", Roles: []string{"browser-sub-agent"}})
 	if _, err := call(ts, "full-main-agent", toolActivateSkill, map[string]any{"name": "deploy"}); err != nil {
 		t.Errorf("a role's own skill: %v", err)
 	}
 	if _, err := call(ts, "browser-sub-agent", toolActivateSkill, map[string]any{"name": "deploy"}); err == nil {
 		t.Error("the browser subagent activated a skill of the main agent")
+	}
+	put(t, st, "v", skill.Package{Name: "review", Description: "How to review.", Instructions: "Review.", Roles: []string{"full-main-agent"}})
+	if _, err := call(ts, "full-main-agent", toolActivateSkill, map[string]any{"name": "review"}); err == nil {
+		t.Error("u activated a skill of v")
+	}
+	if _, err := callAs(ts, "v", "full-main-agent", toolActivateSkill, map[string]any{"name": "review"}); err != nil {
+		t.Errorf("v's own skill: %v", err)
 	}
 	if _, err := call(ts, "browser-sub-agent", toolReadResource, map[string]any{"skill": "deploy", "path": "docs/guide.md"}); err == nil {
 		t.Error("the browser subagent read a resource of the main agent")
@@ -68,7 +80,7 @@ func TestActivatingASkillPutsItsFilesInTheSandboxOncePerVersion(t *testing.T) {
 	ts, st, root := setup(t)
 	deploy := skill.Package{Name: "deploy", Description: "How to deploy.", Instructions: "Deploy.", Roles: []string{"full-main-agent"},
 		Files: []skill.File{{Path: "scripts/run.sh", Body: []byte("echo run"), Executable: true}}}
-	put(t, st, deploy)
+	put(t, st, "u", deploy)
 	activated, err := call(ts, "full-main-agent", toolActivateSkill, map[string]any{"name": "deploy"})
 	if err != nil {
 		t.Fatal(err)
@@ -94,7 +106,7 @@ func TestActivatingASkillPutsItsFilesInTheSandboxOncePerVersion(t *testing.T) {
 	}
 
 	deploy.Files[0].Body = []byte("echo run 2")
-	put(t, st, deploy)
+	put(t, st, "u", deploy)
 	if _, err := call(ts, "full-main-agent", toolActivateSkill, map[string]any{"name": "deploy"}); err != nil {
 		t.Fatal(err)
 	}

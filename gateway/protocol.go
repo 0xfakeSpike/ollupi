@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/account"
+	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/app"
 	"github.com/0xfakeSpike/ollupi/ask"
 	"github.com/0xfakeSpike/ollupi/conversation"
@@ -21,6 +22,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/wshub"
 	"github.com/0xfakeSpike/ollupi/policy"
+	"github.com/0xfakeSpike/ollupi/skill"
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/0xfakeSpike/ollupi/tool"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
@@ -62,6 +64,7 @@ const (
 	notifyMCPServerChanged   = "mcpServer/changed"
 	notifyMemoryChanged      = "memory/changed"
 	notifyTodoChanged        = "todo/changed"
+	notifySkillChanged       = "skill/changed"
 	notifyError              = "error"
 )
 
@@ -136,6 +139,10 @@ var protocol = struct {
 		"memory/update":                handle((*conn).memoryUpdate),
 		"memory/move":                  handle((*conn).memoryMove),
 		"memory/forget":                handle((*conn).memoryForget),
+		"skill/list":                   read(handle((*conn).skillList)),
+		"skill/read":                   read(handle((*conn).skillRead)),
+		"skill/set":                    handle((*conn).skillSet),
+		"skill/delete":                 handle((*conn).skillDelete),
 		"usage/query":                  read(handle((*conn).usageQuery)),
 		"presence/record":              handle((*conn).presenceRecord),
 		"presence/summary":             read(handle((*conn).presenceSummary)),
@@ -160,6 +167,7 @@ var protocol = struct {
 		notifyMCPServerChanged:   reflect.TypeFor[MCPServerChangedNotification](),
 		notifyMemoryChanged:      reflect.TypeFor[MemoryChangedNotification](),
 		notifyTodoChanged:        reflect.TypeFor[TodoChangedNotification](),
+		notifySkillChanged:       reflect.TypeFor[SkillChangedNotification](),
 		notifyError:              reflect.TypeFor[ErrorNotification](),
 	},
 	serverRequests: map[string]serverRequest{
@@ -203,13 +211,14 @@ var protocol = struct {
 		http.StatusInternalServerError: {"internalError", ReconnectBackoff},
 		http.StatusServiceUnavailable:  {"unavailable", ReconnectRetryAfter},
 	},
-	limits: Limits{SearchRunes: app.MaxSearchRunes, SearchTerms: app.MaxSearchTerms},
+	limits: Limits{SearchRunes: app.MaxSearchRunes, SearchTerms: app.MaxSearchTerms, SkillBytes: skill.MaxBytes},
 	paths:  map[string]string{"attachment": AttachmentPath},
 }
 
 type Limits struct {
 	SearchRunes int `json:"searchRunes"`
 	SearchTerms int `json:"searchTerms"`
+	SkillBytes  int `json:"skillBytes"`
 }
 
 type method struct {
@@ -424,6 +433,40 @@ type MCPServerChangedNotification struct {
 	Name   string           `json:"name"`
 	Server *MCPServerConfig `json:"server"`
 	Seq    int64            `json:"seq"`
+}
+
+type SkillListResult struct {
+	Data []SkillRow `json:"data"`
+	Seq  int64      `json:"seq"`
+}
+
+type SkillNameParams struct {
+	Name string `json:"name"`
+}
+
+type SkillReadResult struct {
+	Skill        SkillRow    `json:"skill"`
+	Instructions string      `json:"instructions"`
+	Files        []SkillFile `json:"files"`
+}
+
+type SkillSetParams struct {
+	Name         string       `json:"name"`
+	Description  string       `json:"description"`
+	Version      string       `json:"version,omitempty"`
+	Instructions string       `json:"instructions"`
+	Roles        []agent.Name `json:"roles"`
+	Files        []SkillFile  `json:"files,omitempty"`
+}
+
+type SkillResult struct {
+	Skill SkillRow `json:"skill"`
+}
+
+type SkillChangedNotification struct {
+	Name  string    `json:"name"`
+	Skill *SkillRow `json:"skill"`
+	Seq   int64     `json:"seq"`
 }
 
 type UserInput struct {
@@ -805,6 +848,7 @@ var errorCodes = []struct {
 	{account.ErrUnknownModel, jsonrpc.CodeInvalidParams},
 	{policy.ErrInvalidSettings, jsonrpc.CodeInvalidParams},
 	{memory.ErrInvalidChange, jsonrpc.CodeInvalidParams},
+	{skill.ErrInvalid, jsonrpc.CodeInvalidParams},
 	{kit.ErrUnknownTool, jsonrpc.CodeInvalidParams},
 	{kit.ErrInvalidArguments, jsonrpc.CodeInvalidParams},
 	{cron.ErrInvalidJob, jsonrpc.CodeInvalidParams},

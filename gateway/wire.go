@@ -10,6 +10,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/policy"
+	"github.com/0xfakeSpike/ollupi/skill"
 	"github.com/0xfakeSpike/ollupi/store"
 )
 
@@ -345,4 +346,36 @@ func nonNil[T any](s []T) []T {
 		return []T{}
 	}
 	return s
+}
+
+type SkillRow struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Version     string          `json:"version,omitempty"`
+	Roles       []agent.Name    `json:"roles"`
+	Files       []SkillFileInfo `json:"files"`
+	Digest      string          `json:"digest"`
+}
+
+type SkillFileInfo struct {
+	Path     string `json:"path"`
+	ByteSize int64  `json:"byteSize"`
+}
+
+type SkillFile struct {
+	Path       string `json:"path"`
+	Text       string `json:"text"`
+	Executable bool   `json:"executable,omitempty"`
+}
+
+func skillRow(s skill.Skill) SkillRow {
+	row := SkillRow{Name: s.Name, Description: s.Description, Version: s.Version, Digest: s.Digest,
+		Roles: make([]agent.Name, len(s.Roles)), Files: make([]SkillFileInfo, len(s.Resources))}
+	for i, r := range s.Roles {
+		row.Roles[i] = agent.Name(r)
+	}
+	for i, r := range s.Resources {
+		row.Files[i] = SkillFileInfo{Path: r.Path, ByteSize: r.ByteSize}
+	}
+	return row
 }

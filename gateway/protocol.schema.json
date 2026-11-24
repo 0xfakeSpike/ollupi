@@ -2832,6 +2832,213 @@
       },
       "additionalProperties": false
     },
+    "SkillChangedNotification": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "skill": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/SkillRow"
+            }
+          ]
+        },
+        "seq": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "skill",
+        "seq"
+      ],
+      "additionalProperties": false
+    },
+    "SkillFile": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "executable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path",
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "SkillFileInfo": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "byteSize": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "byteSize"
+      ],
+      "additionalProperties": false
+    },
+    "SkillListResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SkillRow"
+          }
+        },
+        "seq": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "data",
+        "seq"
+      ],
+      "additionalProperties": false
+    },
+    "SkillNameParams": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "SkillReadResult": {
+      "type": "object",
+      "properties": {
+        "skill": {
+          "$ref": "#/$defs/SkillRow"
+        },
+        "instructions": {
+          "type": "string"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SkillFile"
+          }
+        }
+      },
+      "required": [
+        "skill",
+        "instructions",
+        "files"
+      ],
+      "additionalProperties": false
+    },
+    "SkillResult": {
+      "type": "object",
+      "properties": {
+        "skill": {
+          "$ref": "#/$defs/SkillRow"
+        }
+      },
+      "required": [
+        "skill"
+      ],
+      "additionalProperties": false
+    },
+    "SkillRow": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AgentRole"
+          }
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SkillFileInfo"
+          }
+        },
+        "digest": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "roles",
+        "files",
+        "digest"
+      ],
+      "additionalProperties": false
+    },
+    "SkillSetParams": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "instructions": {
+          "type": "string"
+        },
+        "roles": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "$ref": "#/$defs/AgentRole"
+          }
+        },
+        "files": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "$ref": "#/$defs/SkillFile"
+          }
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "instructions",
+        "roles"
+      ],
+      "additionalProperties": false
+    },
     "Status": {
       "type": "string",
       "enum": [
@@ -4380,6 +4587,38 @@
         "$ref": "#/$defs/SettingsRow"
       }
     },
+    "skill/delete": {
+      "params": {
+        "$ref": "#/$defs/SkillNameParams"
+      },
+      "result": {
+        "$ref": "#/$defs/Empty"
+      }
+    },
+    "skill/list": {
+      "params": {
+        "$ref": "#/$defs/Empty"
+      },
+      "result": {
+        "$ref": "#/$defs/SkillListResult"
+      }
+    },
+    "skill/read": {
+      "params": {
+        "$ref": "#/$defs/SkillNameParams"
+      },
+      "result": {
+        "$ref": "#/$defs/SkillReadResult"
+      }
+    },
+    "skill/set": {
+      "params": {
+        "$ref": "#/$defs/SkillSetParams"
+      },
+      "result": {
+        "$ref": "#/$defs/SkillResult"
+      }
+    },
     "thread/archive": {
       "params": {
         "$ref": "#/$defs/ThreadArchiveParams"
@@ -4617,6 +4856,9 @@
     "settings/changed": {
       "$ref": "#/$defs/SettingsChangedNotification"
     },
+    "skill/changed": {
+      "$ref": "#/$defs/SkillChangedNotification"
+    },
     "thread/changed": {
       "$ref": "#/$defs/ThreadChangedNotification"
     },
@@ -4719,7 +4961,8 @@
   },
   "limits": {
     "searchRunes": 200,
-    "searchTerms": 8
+    "searchTerms": 8,
+    "skillBytes": 2097152
   },
   "paths": {
     "attachment": "/attachments/{thread}/{attachment}"
