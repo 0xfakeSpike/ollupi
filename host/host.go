@@ -21,7 +21,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/policy"
-	"github.com/0xfakeSpike/ollupi/prompt"
 	"github.com/0xfakeSpike/ollupi/run"
 	"github.com/0xfakeSpike/ollupi/schedule"
 	"github.com/0xfakeSpike/ollupi/skill"
@@ -71,7 +70,6 @@ type Config struct {
 	Allowlist     []string
 	Permissions   policy.Settings
 	Boxes         func(user string) (sandbox.Box, error)
-	SkillsDir     string
 	Slots         int
 	UserSlots     int
 	RunLimit      time.Duration
@@ -107,15 +105,6 @@ func New(ctx context.Context, cfg Config) (*Host, error) {
 	if err := cfg.Permissions.Check(); err != nil {
 		return nil, fmt.Errorf("host: the permissions: %w", err)
 	}
-	if cfg.SkillsDir != "" {
-		roles := make([]string, len(agent.Names))
-		for i, n := range agent.Names {
-			roles[i] = string(n)
-		}
-		if err := skill.Check(cfg.SkillsDir, roles); err != nil {
-			return nil, fmt.Errorf("host: %w", err)
-		}
-	}
 	st, err := sqlite.Open(cfg.Home)
 	if err != nil {
 		return nil, err
@@ -129,19 +118,16 @@ func New(ctx context.Context, cfg Config) (*Host, error) {
 	h := &Host{Store: st, models: modelSet, cal: cron.NewCalendar(cmp.Or(cfg.Location, time.Local))}
 	hubTools := &hub.Provider{St: st}
 	builtins := append(slices.Clone(cfg.Tools), plan.Provider{}, ask.Provider{}, loader.Provider{}, subagent.Provider{},
-		outputs.New(st), memorytool.New(st), web.New(cfg.Boxes))
+		outputs.New(st), memorytool.New(st), web.New(cfg.Boxes), skills.New(st, cfg.Boxes))
 	if cfg.Hub {
 		builtins = append(builtins, hubTools)
-	}
-	if cfg.SkillsDir != "" {
-		builtins = append(builtins, skills.New(cfg.SkillsDir))
 	}
 	builtins = append(builtins, cronjobs.New(st, h.cal))
 	h.Users = mcp.NewUsers(ctx, mcp.Client{Name: cfg.Name, Version: version()}, st, cfg.Boxes, builtins...)
 	h.App = app.New(st, modelSet, h.Users.Tools, h.Users.Statuses, cfg.Boxes, files, h.cal, cfg.Permissions)
 	h.usage = usage.New(st)
 	hubTools.App = h.App
-	runner := run.New(st, modelSet, h.Users.Tools, files, skillsOf(cfg.SkillsDir),
+	runner := run.New(st, modelSet, h.Users.Tools, files,
 		run.Deployment{Name: cfg.Name, Prompt: cfg.Prompt, Permissions: cfg.Permissions, Allowlist: cfg.Allowlist, OptIn: cfg.OptIn})
 	slots := cmp.Or(cfg.Slots, defaultSlots)
 	h.scheduler = schedule.New(st, schedule.Threads(runner.Run), slots, cmp.Or(cfg.UserSlots, slots), cmp.Or(cfg.RunLimit, defaultRunLimit))
@@ -156,20 +142,6 @@ func New(ctx context.Context, cfg Config) (*Host, error) {
 		}
 	}
 	return h, nil
-}
-
-func skillsOf(dir string) run.Skills {
-	return func(role agent.Name) ([]prompt.Skill, error) {
-		if dir == "" {
-			return nil, nil
-		}
-		found, err := skill.Load(dir, string(role))
-		out := make([]prompt.Skill, len(found))
-		for i, s := range found {
-			out[i] = prompt.Skill{Name: s.Name, Description: s.Description}
-		}
-		return out, err
-	}
 }
 
 func (h *Host) Run(ctx context.Context) error {
@@ -195,6 +167,21 @@ func (h *Host) Run(ctx context.Context) error {
 // choice of a model no longer served falls back to the first.
 func (h *Host) SetModels(catalog []account.ModelProvider) error {
 	return h.models.set(catalog)
+}
+
+func (h *Host) PutSkill(ctx context.Context, p skill.Package) error {
+	roles := make([]string, len(agent.Names))
+	for i, n := range agent.Names {
+		roles[i] = string(n)
+	}
+	if err := p.Check(roles); err != nil {
+		return fmt.Errorf("host: %w", err)
+	}
+	return h.Store.Update(ctx, func(tx store.Tx) error { return tx.PutSkill(p) })
+}
+
+func (h *Host) DeleteSkill(ctx context.Context, name string) error {
+	return h.Store.Update(ctx, func(tx store.Tx) error { return tx.DeleteSkill(name) })
 }
 
 func (h *Host) Close() error {

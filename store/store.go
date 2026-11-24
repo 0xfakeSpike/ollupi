@@ -9,6 +9,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/memory"
+	"github.com/0xfakeSpike/ollupi/skill"
 )
 
 var (
@@ -63,6 +64,11 @@ type Reader interface {
 	EndedTurns(user string, after memory.Cursor, limit int) ([]memory.Cursor, error)
 	Unread(user string, after memory.Cursor) (int64, error)
 
+	Skills(role string) ([]skill.Skill, error)
+	Skill(role, name string) (skill.Skill, error)
+	SkillFile(name, path string) ([]byte, error)
+	SkillFiles(name string) ([]skill.File, error)
+
 	// MissingUsage returns the modelResponded entries that have no usage row
 	// yet, in (thread, seq) order after the given key. A thread of "" reads
 	// every thread. The body is raw so the caller can skip an entry it cannot
@@ -87,6 +93,8 @@ type Tx interface {
 	DeleteCronJob(id string) error
 	PutMemory(m memory.Memory) error
 	SetMemoryState(user string, s memory.State) error
+	PutSkill(p skill.Package) error
+	DeleteSkill(name string) error
 	PutUsage(u Usage) error
 	PutPresence(p Presence) error
 	DeleteThread(id string) error

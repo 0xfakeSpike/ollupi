@@ -15,6 +15,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/prompt"
+	"github.com/0xfakeSpike/ollupi/skill"
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/google/uuid"
 )
@@ -30,7 +31,7 @@ func (r *Runner) callModel(ctx context.Context, s *step, a agent.CallModel) erro
 	if recalled != nil {
 		return r.append(ctx, s.th.ID, conversation.Entry{Turn: s.turn.ID, Item: uuid.NewString(), Body: *recalled})
 	}
-	in, err := r.input(s)
+	in, err := r.input(ctx, s)
 	if err != nil {
 		return err
 	}
@@ -203,10 +204,18 @@ func recalledSinceCompaction(items []conversation.Item) bool {
 	return false
 }
 
-func (r *Runner) input(s *step) (prompt.Context, error) {
-	skills, err := r.skills(s.role.Name)
+func (r *Runner) input(ctx context.Context, s *step) (prompt.Context, error) {
+	var found []skill.Skill
+	err := r.st.Read(ctx, func(rd store.Reader) (err error) {
+		found, err = rd.Skills(string(s.role.Name))
+		return err
+	})
 	if err != nil {
 		return prompt.Context{}, fmt.Errorf("run: the skills of %s: %w", s.role.Name, err)
+	}
+	skills := make([]prompt.Skill, len(found))
+	for i, f := range found {
+		skills[i] = prompt.Skill{Name: f.Name, Description: f.Description}
 	}
 	system := prompt.System{Role: s.role, Agent: r.name, Prompt: r.prompt, Skills: skills}
 	if s.workspace != nil {

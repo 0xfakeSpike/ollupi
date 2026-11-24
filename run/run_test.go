@@ -16,7 +16,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/policy"
-	"github.com/0xfakeSpike/ollupi/prompt"
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/0xfakeSpike/ollupi/store/sqlite"
 	"github.com/0xfakeSpike/ollupi/tool"
@@ -57,7 +56,6 @@ type models struct{ m *model }
 func (ms models) Limits(string, llm.Model) (llm.Limits, error) { return limits, nil }
 func (ms models) Client(string, llm.Model) (llm.Client, error) { return ms.m, nil }
 func (noFiles) Get(context.Context, string) ([]byte, error)    { return nil, errors.New("no files") }
-func noSkills(agent.Name) ([]prompt.Skill, error)              { return nil, nil }
 func answer(text string) llm.ChatResponse                      { return reply(text) }
 func reply(text string, calls ...llm.ToolCall) llm.ChatResponse {
 	return llm.ChatResponse{Message: llm.ChatMessage{Role: llm.RoleAssistant, Content: text, ToolCalls: calls}, FinishReason: "stop"}
@@ -103,7 +101,7 @@ func setup(t *testing.T, invoke func(tool.Call) tool.Result) *fixture {
 	t.Cleanup(func() { st.Close() })
 	m := &model{}
 	tools := func(context.Context, string) (tool.Set, error) { return set{invoke: invoke}, nil }
-	r := New(st, models{m}, tools, noFiles{}, noSkills, Deployment{Name: "Ollupi", Permissions: policy.Settings{ApprovalPolicy: string(policy.OnRequest)}})
+	r := New(st, models{m}, tools, noFiles{}, Deployment{Name: "Ollupi", Permissions: policy.Settings{ApprovalPolicy: string(policy.OnRequest)}})
 	return &fixture{t: t, st: st, r: r, m: m}
 }
 

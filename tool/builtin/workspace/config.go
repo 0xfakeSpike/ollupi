@@ -64,8 +64,7 @@ func (c *Config) normalize(base string) error {
 }
 
 type AgentFiles struct {
-	Home      string
-	SkillsDir string
+	Home string
 }
 
 var agentProtectedNames = []string{
@@ -79,19 +78,15 @@ const (
 
 func sandboxConfig(o Options, c Config) sandbox.Config {
 	denyRead := append([]string(nil), o.DenyRead...)
-	var readOnly []string
 	if home := o.Agent.Home; home != "" {
 		denyRead = append(denyRead, filepath.Join(home, dataDir))
-	}
-	if o.Agent.SkillsDir != "" {
-		readOnly = append(readOnly, o.Agent.SkillsDir)
 	}
 	return sandbox.Config{
 		Mode:           c.SandboxMode,
 		Network:        c.Network,
 		Domains:        sandbox.DomainRules{Allowed: c.AllowedDomains, Denied: c.DeniedDomains},
 		DenyRead:       append(denyRead, c.DenyRead...),
-		ReadOnly:       append(readOnly, c.ReadOnly...),
+		ReadOnly:       append([]string(nil), c.ReadOnly...),
 		ProtectedNames: agentProtectedNames,
 		EnvMarker:      o.EnvMarker,
 		ExtraWritable:  c.ExtraWritable,

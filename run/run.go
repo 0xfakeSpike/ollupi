@@ -25,14 +25,11 @@ type Attachments interface {
 	Get(ctx context.Context, key string) ([]byte, error)
 }
 
-type Skills func(role agent.Name) ([]prompt.Skill, error)
-
 type Runner struct {
 	st          store.Store
 	models      Models
 	tools       tool.Tools
 	attachments Attachments
-	skills      Skills
 	name        string
 	prompt      string
 	deployment  policy.Settings
@@ -48,8 +45,8 @@ type Deployment struct {
 	OptIn       []string
 }
 
-func New(st store.Store, models Models, tools tool.Tools, attachments Attachments, skills Skills, d Deployment) *Runner {
-	return &Runner{st: st, models: models, tools: tools, attachments: attachments, skills: skills,
+func New(st store.Store, models Models, tools tool.Tools, attachments Attachments, d Deployment) *Runner {
+	return &Runner{st: st, models: models, tools: tools, attachments: attachments,
 		name: d.Name, prompt: d.Prompt, deployment: d.Permissions, allowlist: d.Allowlist, optIn: d.OptIn}
 }
 

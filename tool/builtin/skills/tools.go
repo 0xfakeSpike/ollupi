@@ -2,13 +2,17 @@ package skills
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 	"strings"
 
 	"github.com/0xfakeSpike/ollupi/conversation"
+	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/prompt"
 	"github.com/0xfakeSpike/ollupi/skill"
+	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/0xfakeSpike/ollupi/tool"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
 	"github.com/google/jsonschema-go/jsonschema"
@@ -16,36 +20,41 @@ import (
 
 const (
 	providerName      = "skills"
-	toolGetRootDir    = "get_skills_root_dir"
 	toolListSkills    = "list_skills"
 	toolActivateSkill = "activate_skill"
 	toolReadResource  = "read_skill_resource"
+	digestFile        = ".digest"
 )
 
 type Provider struct {
-	root string
+	st    store.Store
+	boxes func(user string) (sandbox.Box, error)
 }
 
-func New(root string) *Provider { return &Provider{root: root} }
+func New(st store.Store, boxes func(user string) (sandbox.Box, error)) *Provider {
+	return &Provider{st: st, boxes: boxes}
+}
 
 func (*Provider) Name() (string, string) {
-	return providerName, "Directory-based Agent Skills with explicit activation and on-demand resources."
+	return providerName, "Agent Skills with explicit activation and on-demand resources."
 }
 
-func (t *Provider) Invoke(_ context.Context, c tool.Call) (kit.Result, error) {
+func (p *Provider) Invoke(ctx context.Context, c tool.Call) (kit.Result, error) {
 	switch c.Tool {
-	case toolGetRootDir:
-		return kit.Result{Output: map[string]any{"skills_root_dir": filepath.Join(t.root, c.Role)}}, nil
 	case toolListSkills:
-		own, err := skill.Load(t.root, c.Role)
+		var own []skill.Skill
+		err := p.st.Read(ctx, func(rd store.Reader) (err error) {
+			own, err = rd.Skills(c.Role)
+			return err
+		})
 		if err != nil {
 			return kit.Result{}, err
 		}
 		return kit.Result{Output: map[string]any{"skills": own}}, nil
 	case toolActivateSkill:
-		return t.activate(c.Role, c.Arguments)
+		return p.activate(ctx, c)
 	}
-	return t.readResource(c.Role, c.Arguments)
+	return p.readResource(ctx, c.Role, c.Arguments)
 }
 
 type activateArgs struct {
@@ -54,7 +63,7 @@ type activateArgs struct {
 
 type resourceArgs struct {
 	Skill       string `json:"skill"`
-	Path        string `json:"path" jsonschema:"Resource path relative to the skill directory, as activate_skill listed it."`
+	Path        string `json:"path" jsonschema:"Resource path relative to the skill, as activate_skill listed it."`
 	OffsetRunes int    `json:"offset_runes,omitempty"`
 	LimitRunes  int    `json:"limit_runes,omitempty"`
 }
@@ -69,12 +78,6 @@ func (*Provider) Tools(context.Context) ([]kit.Spec, error) {
 	read := tool.Annotations{ReadOnlyHint: true, OpenWorldHint: new(false)}
 	return []kit.Spec{
 		{
-			Name:        toolGetRootDir,
-			Annotations: read,
-			Description: "Return the directory of your Agent Skills, where each of them lives.",
-			InputSchema: kit.InputSchema[struct{}](),
-		},
-		{
 			Name:        toolListSkills,
 			Annotations: read,
 			Description: "List available Agent Skills and their supporting resource files.",
@@ -83,7 +86,7 @@ func (*Provider) Tools(context.Context) ([]kit.Spec, error) {
 		{
 			Name:        toolActivateSkill,
 			Annotations: read,
-			Description: "Activate one exact Agent Skill. Its complete SKILL.md instructions remain active for the conversation.",
+			Description: "Activate one exact Agent Skill. Its complete SKILL.md instructions remain active for the conversation, and its resource files are put in the sandbox, in the directory it returns.",
 			InputSchema: kit.InputSchema[activateArgs](),
 		},
 		{
@@ -95,20 +98,41 @@ func (*Provider) Tools(context.Context) ([]kit.Spec, error) {
 	}, nil
 }
 
-func (t *Provider) activate(role string, arguments map[string]any) (kit.Result, error) {
-	args, _ := kit.DecodeArguments[activateArgs](arguments)
-	found, err := t.find(role, args.Name)
+func (p *Provider) activate(ctx context.Context, c tool.Call) (kit.Result, error) {
+	args, _ := kit.DecodeArguments[activateArgs](c.Arguments)
+	name := strings.TrimSpace(args.Name)
+	var found skill.Skill
+	var files []skill.File
+	err := p.st.Read(ctx, func(rd store.Reader) error {
+		var err error
+		if found, err = rd.Skill(c.Role, name); err != nil {
+			return err
+		}
+		files, err = rd.SkillFiles(name)
+		return err
+	})
+	if errors.Is(err, store.ErrNotFound) {
+		return kit.Result{}, fmt.Errorf("skills: you have no skill named %q; use a name from AVAILABLE SKILLS", name)
+	}
 	if err != nil {
 		return kit.Result{}, err
 	}
+	out := map[string]any{
+		"activated":   found.Name,
+		"description": found.Description,
+		"version":     found.Version,
+		"digest":      found.Digest,
+		"resources":   found.Resources,
+	}
+	if len(files) > 0 {
+		dir, err := p.place(ctx, c.User, found, files)
+		if err != nil {
+			return kit.Result{}, err
+		}
+		out["directory"] = dir
+	}
 	return kit.Result{
-		Output: map[string]any{
-			"activated":   found.Name,
-			"description": found.Description,
-			"version":     found.Version,
-			"digest":      found.Digest,
-			"resources":   found.Resources,
-		},
+		Output: out,
 		Artifacts: []conversation.Artifact{{
 			Kind:    prompt.SkillArtifact,
 			Name:    found.Name,
@@ -117,30 +141,55 @@ func (t *Provider) activate(role string, arguments map[string]any) (kit.Result, 
 	}, nil
 }
 
-func (t *Provider) readResource(role string, arguments map[string]any) (kit.Result, error) {
+func (p *Provider) place(ctx context.Context, user string, s skill.Skill, files []skill.File) (string, error) {
+	box, err := p.boxes(user)
+	if err != nil {
+		return "", fmt.Errorf("skills: the sandbox of the user: %w", err)
+	}
+	roots := box.Roots()
+	if len(roots) == 0 {
+		return "", fmt.Errorf("skills: the sandbox has no folder to put the files of %s in", s.Name)
+	}
+	dir := filepath.Join(roots[0], ".ollupi", "skills", s.Name)
+	marker := filepath.Join(dir, digestFile)
+	if have, err := sandbox.ReadFile(ctx, box, marker, int64(len(s.Digest))); err == nil && string(have) == s.Digest {
+		return dir, nil
+	}
+	for _, f := range files {
+		perm := fs.FileMode(0o644)
+		if f.Executable {
+			perm = 0o755
+		}
+		if err := box.WriteFile(ctx, filepath.Join(dir, filepath.FromSlash(f.Path)), f.Body, perm); err != nil {
+			return "", fmt.Errorf("skills: put %s of %s in the sandbox: %w", f.Path, s.Name, err)
+		}
+	}
+	if err := box.WriteFile(ctx, marker, []byte(s.Digest), 0o644); err != nil {
+		return "", fmt.Errorf("skills: put %s in the sandbox: %w", s.Name, err)
+	}
+	return dir, nil
+}
+
+func (p *Provider) readResource(ctx context.Context, role string, arguments map[string]any) (kit.Result, error) {
 	args, err := kit.DecodeArguments[resourceArgs](arguments)
 	if err != nil {
 		return kit.Result{}, err
 	}
-	found, err := t.find(role, args.Skill)
+	name := strings.TrimSpace(args.Skill)
+	resourcePath := strings.TrimSpace(args.Path)
+	var body []byte
+	err = p.st.Read(ctx, func(rd store.Reader) error {
+		if _, err := rd.Skill(role, name); err != nil {
+			return fmt.Errorf("skills: you have no skill named %q: %w", name, err)
+		}
+		var err error
+		if body, err = rd.SkillFile(name, resourcePath); errors.Is(err, store.ErrNotFound) {
+			return fmt.Errorf("skills: resource %q is not exposed by skill %q", resourcePath, name)
+		}
+		return err
+	})
 	if err != nil {
 		return kit.Result{}, err
 	}
-	page, err := found.Page(args.Path, args.OffsetRunes, args.LimitRunes)
-	if err != nil {
-		return kit.Result{}, err
-	}
-	return kit.Result{Output: page}, nil
-}
-
-func (t *Provider) find(role, name string) (skill.Skill, error) {
-	own, err := skill.Load(t.root, role)
-	if err != nil {
-		return skill.Skill{}, err
-	}
-	found, ok := skill.Find(own, name)
-	if !ok {
-		return skill.Skill{}, fmt.Errorf("skills: you have no skill named %q; use a name from AVAILABLE SKILLS", strings.TrimSpace(name))
-	}
-	return found, nil
+	return kit.Result{Output: skill.Page(name, resourcePath, body, args.OffsetRunes, args.LimitRunes)}, nil
 }

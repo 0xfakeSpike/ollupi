@@ -3,13 +3,14 @@ package skill
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -22,8 +23,8 @@ const (
 	maxInstructionLines   = 500
 	defaultResourceRunes  = 12000
 	MaxResourceRunes      = 30000
-	maxReadableResourceB  = 1 << 20
-	maxListedResources    = 200
+	maxFileBytes          = 1 << 20
+	maxFiles              = 200
 	skillInstructionsFile = "SKILL.md"
 )
 
@@ -32,11 +33,8 @@ var skillNamePattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 type Skill struct {
 	Name         string     `json:"name"`
 	Description  string     `json:"description"`
-	SourceFile   string     `json:"source_file"`
 	Version      string     `json:"version"`
 	Resources    []Resource `json:"resources"`
-	ByteSize     int64      `json:"byte_size"`
-	RootDir      string     `json:"-"`
 	Instructions string     `json:"-"`
 	Digest       string     `json:"-"`
 }
@@ -44,6 +42,21 @@ type Skill struct {
 type Resource struct {
 	Path     string `json:"path"`
 	ByteSize int64  `json:"byte_size"`
+}
+
+type File struct {
+	Path       string
+	Body       []byte
+	Executable bool
+}
+
+type Package struct {
+	Name         string
+	Description  string
+	Version      string
+	Instructions string
+	Roles        []string
+	Files        []File
 }
 
 type ResourcePage struct {
@@ -57,77 +70,118 @@ type ResourcePage struct {
 	EOF             bool   `json:"eof"`
 }
 
-func Load(root, role string) ([]Skill, error) {
-	root = filepath.Clean(strings.TrimSpace(root))
-	dir := filepath.Join(root, role)
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		return nil, nil
+func ReadDir(dir string, roles []string) (Package, error) {
+	raw, err := os.ReadFile(filepath.Join(dir, skillInstructionsFile))
+	if err != nil {
+		return Package{}, fmt.Errorf("skills: %w", err)
 	}
-	return scanRole(root, dir)
+	fm, instructions, err := parseDocument(string(raw))
+	if err != nil {
+		return Package{}, fmt.Errorf("skills: parse %s in %q: %w", skillInstructionsFile, dir, err)
+	}
+	p := Package{
+		Name:         strings.TrimSpace(fm.Name),
+		Description:  strings.TrimSpace(fm.Description),
+		Version:      version(fm.Metadata),
+		Instructions: strings.TrimSpace(instructions),
+		Roles:        roles,
+	}
+	if p.Name != filepath.Base(dir) {
+		return Package{}, fmt.Errorf("skills: directory %q must match frontmatter name %q", filepath.Base(dir), p.Name)
+	}
+	if p.Files, err = readFiles(dir); err != nil {
+		return Package{}, err
+	}
+	return p, nil
 }
 
-func Check(root string, roles []string) error {
-	root = filepath.Clean(strings.TrimSpace(root))
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		return fmt.Errorf("skills: read root %q: %w", root, err)
+func (p Package) Check(roles []string) error {
+	if !skillNamePattern.MatchString(p.Name) || len(p.Name) > 64 {
+		return fmt.Errorf("skills: invalid name %q; use 1-64 lowercase letters, numbers, and hyphens", p.Name)
 	}
-	for _, entry := range entries {
-		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
-			continue
+	if p.Description == "" {
+		return fmt.Errorf("skills: %s: description is required", p.Name)
+	}
+	if utf8.RuneCountInString(p.Description) > maxDescriptionRunes {
+		return fmt.Errorf("skills: %s: description exceeds %d runes", p.Name, maxDescriptionRunes)
+	}
+	if p.Instructions == "" {
+		return fmt.Errorf("skills: %s: instruction body is required", p.Name)
+	}
+	if utf8.RuneCountInString(p.Instructions) > maxInstructionRunes {
+		return fmt.Errorf("skills: %s: instruction body exceeds %d runes; move details into references/", p.Name, maxInstructionRunes)
+	}
+	if lines := strings.Count(p.Instructions, "\n") + 1; lines > maxInstructionLines {
+		return fmt.Errorf("skills: %s: instruction body has %d lines; maximum is %d", p.Name, lines, maxInstructionLines)
+	}
+	if len(p.Roles) == 0 {
+		return fmt.Errorf("skills: %s: at least one role is required", p.Name)
+	}
+	for _, role := range p.Roles {
+		if !slices.Contains(roles, role) {
+			return fmt.Errorf("skills: %s: %q is no role; the roles are %q", p.Name, role, roles)
 		}
-		dir := filepath.Join(root, entry.Name())
-		if _, err := os.Lstat(filepath.Join(dir, skillInstructionsFile)); err == nil {
-			return fmt.Errorf("skills: %q is a skill outside a role's directory; move it to %s", dir, filepath.Join(root, "<role>", entry.Name()))
+	}
+	if len(p.Files) > maxFiles {
+		return fmt.Errorf("skills: %s has more than %d files", p.Name, maxFiles)
+	}
+	seen := map[string]bool{}
+	for _, f := range p.Files {
+		if err := checkFile(f); err != nil {
+			return fmt.Errorf("skills: %s: %w", p.Name, err)
 		}
-		if !slices.Contains(roles, entry.Name()) {
-			return fmt.Errorf("skills: %s has skills for %q, which is no role; the roles are %q", root, entry.Name(), roles)
+		if seen[f.Path] {
+			return fmt.Errorf("skills: %s: file %q is listed twice", p.Name, f.Path)
 		}
-		if _, err := scanRole(root, dir); err != nil {
-			return err
-		}
+		seen[f.Path] = true
 	}
 	return nil
 }
 
-func Find(skills []Skill, name string) (Skill, bool) {
-	i := slices.IndexFunc(skills, func(s Skill) bool { return s.Name == strings.TrimSpace(name) })
-	if i < 0 {
-		return Skill{}, false
+func checkFile(f File) error {
+	local := filepath.IsLocal(filepath.FromSlash(f.Path)) && path.Clean(f.Path) == f.Path && !strings.Contains(f.Path, `\`)
+	if !local {
+		return fmt.Errorf("file %q must be a relative path inside the skill", f.Path)
 	}
-	return skills[i], true
+	if f.Path == skillInstructionsFile {
+		return fmt.Errorf("%s is the instructions, not a file", skillInstructionsFile)
+	}
+	if !isReadableResource(f.Path) {
+		return fmt.Errorf("file %q is not a readable text file", f.Path)
+	}
+	if len(f.Body) > maxFileBytes {
+		return fmt.Errorf("file %q exceeds %d bytes", f.Path, maxFileBytes)
+	}
+	if !utf8.Valid(f.Body) {
+		return fmt.Errorf("file %q is not valid UTF-8", f.Path)
+	}
+	return nil
 }
 
-func (skill Skill) Page(resourcePath string, offset, limit int) (ResourcePage, error) {
-	resourcePath = filepath.ToSlash(strings.TrimSpace(resourcePath))
-	if resourcePath == "" {
-		return ResourcePage{}, fmt.Errorf("skills: resource path is required")
+func (p Package) Skill() Skill {
+	files := slices.SortedFunc(slices.Values(p.Files), func(a, b File) int { return strings.Compare(a.Path, b.Path) })
+	resources := make([]Resource, len(files))
+	for i, f := range files {
+		resources[i] = Resource{Path: f.Path, ByteSize: int64(len(f.Body))}
 	}
-	exposed := func(r Resource) bool { return r.Path == resourcePath }
-	if !slices.ContainsFunc(skill.Resources, exposed) {
-		return ResourcePage{}, fmt.Errorf("skills: resource %q is not exposed by skill %q", resourcePath, skill.Name)
-	}
+	canonical, _ := json.Marshal(struct {
+		Name, Description, Version, Instructions string
+		Files                                    []File
+	}{p.Name, p.Description, p.Version, p.Instructions, files})
+	sum := sha256.Sum256(canonical)
+	return Skill{Name: p.Name, Description: p.Description, Version: p.Version, Resources: resources,
+		Instructions: p.Instructions, Digest: hex.EncodeToString(sum[:])}
+}
+
+func Page(skill, resourcePath string, body []byte, offset, limit int) ResourcePage {
 	if limit <= 0 {
 		limit = defaultResourceRunes
 	}
-
-	raw, err := readResource(skill.RootDir, resourcePath)
-	if err != nil {
-		return ResourcePage{}, err
-	}
-	if !utf8.Valid(raw) {
-		return ResourcePage{}, fmt.Errorf("skills: resource %q is not valid UTF-8", resourcePath)
-	}
-	runes := []rune(string(raw))
-	if offset > len(runes) {
-		offset = len(runes)
-	}
-	end := offset + limit
-	if end > len(runes) {
-		end = len(runes)
-	}
+	runes := []rune(string(body))
+	offset = min(offset, len(runes))
+	end := min(offset+limit, len(runes))
 	return ResourcePage{
-		Skill:           skill.Name,
+		Skill:           skill,
 		Path:            resourcePath,
 		Text:            string(runes[offset:end]),
 		OffsetRunes:     offset,
@@ -135,99 +189,13 @@ func (skill Skill) Page(resourcePath string, offset, limit int) (ResourcePage, e
 		TotalRunes:      len(runes),
 		NextOffsetRunes: end,
 		EOF:             end >= len(runes),
-	}, nil
+	}
 }
 
 type frontmatter struct {
 	Name        string         `yaml:"name"`
 	Description string         `yaml:"description"`
 	Metadata    map[string]any `yaml:"metadata"`
-}
-
-func scanRole(root, dir string) ([]Skill, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, fmt.Errorf("skills: read %q: %w", dir, err)
-	}
-	var loaded []Skill
-	for _, entry := range entries {
-		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
-			continue
-		}
-		skillDir := filepath.Join(dir, entry.Name())
-		sourcePath := filepath.Join(skillDir, skillInstructionsFile)
-		info, err := os.Lstat(sourcePath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return nil, fmt.Errorf("skills: stat %q: %w", sourcePath, err)
-		}
-		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-			return nil, fmt.Errorf("skills: %q must be a regular non-symlink file", sourcePath)
-		}
-		skill, err := parseSkill(root, skillDir, sourcePath, info.Size())
-		if err != nil {
-			return nil, err
-		}
-		if skill.Name != entry.Name() {
-			return nil, fmt.Errorf("skills: directory %q must match frontmatter name %q", entry.Name(), skill.Name)
-		}
-		loaded = append(loaded, skill)
-	}
-	return loaded, nil
-}
-
-func parseSkill(root, skillDir, sourcePath string, byteSize int64) (Skill, error) {
-	raw, err := os.ReadFile(sourcePath)
-	if err != nil {
-		return Skill{}, fmt.Errorf("skills: read %q: %w", sourcePath, err)
-	}
-	if !utf8.Valid(raw) {
-		return Skill{}, fmt.Errorf("skills: %q is not valid UTF-8", sourcePath)
-	}
-	fm, instructions, err := parseDocument(string(raw))
-	if err != nil {
-		return Skill{}, fmt.Errorf("skills: parse %q: %w", sourcePath, err)
-	}
-	name := strings.TrimSpace(fm.Name)
-	if !skillNamePattern.MatchString(name) || len([]rune(name)) > 64 {
-		return Skill{}, fmt.Errorf("invalid name %q; use 1-64 lowercase letters, numbers, and hyphens", name)
-	}
-	description := strings.TrimSpace(fm.Description)
-	if description == "" {
-		return Skill{}, fmt.Errorf("description is required")
-	}
-	if len([]rune(description)) > maxDescriptionRunes {
-		return Skill{}, fmt.Errorf("description exceeds %d runes", maxDescriptionRunes)
-	}
-	instructions = strings.TrimSpace(instructions)
-	if instructions == "" {
-		return Skill{}, fmt.Errorf("instruction body is required")
-	}
-	if len([]rune(instructions)) > maxInstructionRunes {
-		return Skill{}, fmt.Errorf("instruction body exceeds %d runes; move details into references/", maxInstructionRunes)
-	}
-	if lines := strings.Count(instructions, "\n") + 1; lines > maxInstructionLines {
-		return Skill{}, fmt.Errorf("instruction body has %d lines; maximum is %d", lines, maxInstructionLines)
-	}
-	resources, err := scanResources(skillDir)
-	if err != nil {
-		return Skill{}, err
-	}
-	sourceFile, _ := filepath.Rel(root, sourcePath)
-	digestBytes := sha256.Sum256(raw)
-	return Skill{
-		Name:         name,
-		Description:  description,
-		Version:      version(fm.Metadata),
-		RootDir:      skillDir,
-		SourceFile:   filepath.ToSlash(sourceFile),
-		Instructions: instructions,
-		Digest:       hex.EncodeToString(digestBytes[:]),
-		ByteSize:     byteSize,
-		Resources:    resources,
-	}, nil
 }
 
 func parseDocument(text string) (frontmatter, string, error) {
@@ -253,19 +221,16 @@ func parseDocument(text string) (frontmatter, string, error) {
 	return fm, strings.Join(lines[closing+1:], "\n"), nil
 }
 
-func scanResources(skillDir string) ([]Resource, error) {
-	resources := make([]Resource, 0)
-	err := filepath.WalkDir(skillDir, func(path string, entry fs.DirEntry, walkErr error) error {
+func readFiles(dir string) ([]File, error) {
+	var files []File
+	err := filepath.WalkDir(dir, func(p string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
-		if path == skillDir {
+		if p == dir {
 			return nil
 		}
-		if entry.Type()&os.ModeSymlink != 0 {
-			if entry.IsDir() {
-				return filepath.SkipDir
-			}
+		if entry.Type()&fs.ModeSymlink != 0 {
 			return nil
 		}
 		if entry.IsDir() {
@@ -281,18 +246,18 @@ func scanResources(skillDir string) ([]Resource, error) {
 		if err != nil {
 			return err
 		}
-		rel, _ := filepath.Rel(skillDir, path)
-		resources = append(resources, Resource{Path: filepath.ToSlash(rel), ByteSize: info.Size()})
-		if len(resources) > maxListedResources {
-			return fmt.Errorf("skill %q exposes more than %d readable resources", skillDir, maxListedResources)
+		body, err := os.ReadFile(p)
+		if err != nil {
+			return err
 		}
+		rel, _ := filepath.Rel(dir, p)
+		files = append(files, File{Path: filepath.ToSlash(rel), Body: body, Executable: info.Mode()&0o111 != 0})
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("skills: scan resources in %q: %w", skillDir, err)
+		return nil, fmt.Errorf("skills: read the files in %q: %w", dir, err)
 	}
-	sort.Slice(resources, func(i, j int) bool { return resources[i].Path < resources[j].Path })
-	return resources, nil
+	return files, nil
 }
 
 func isReadableResource(name string) bool {
@@ -302,30 +267,6 @@ func isReadableResource(name string) bool {
 	default:
 		return false
 	}
-}
-
-func readResource(root, resourcePath string) ([]byte, error) {
-	r, err := os.OpenRoot(root)
-	if err != nil {
-		return nil, fmt.Errorf("skills: open the skill: %w", err)
-	}
-	defer r.Close()
-	name := filepath.FromSlash(resourcePath)
-	info, err := r.Lstat(name)
-	if err != nil {
-		return nil, fmt.Errorf("skills: resource %q: %w", resourcePath, err)
-	}
-	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("skills: resource %q must be a regular non-symlink file", resourcePath)
-	}
-	if info.Size() > maxReadableResourceB {
-		return nil, fmt.Errorf("skills: resource %q exceeds %d bytes", resourcePath, maxReadableResourceB)
-	}
-	raw, err := r.ReadFile(name)
-	if err != nil {
-		return nil, fmt.Errorf("skills: read resource %q: %w", resourcePath, err)
-	}
-	return raw, nil
 }
 
 func version(metadata map[string]any) string {
