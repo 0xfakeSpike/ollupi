@@ -34,6 +34,7 @@ go.work.sum
 .DS_Store
 .gocache/
 .tmp_gocache/
+.ollupi-quickstart/
 
 # Local-only design notes (kept out of the repository)
 docs/outbound-call-integration.md
