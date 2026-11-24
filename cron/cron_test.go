@@ -151,3 +151,31 @@ func TestARunTheConversationRefusesIsSkipped(t *testing.T) {
 		t.Errorf("the refused run: %+v", j)
 	}
 }
+
+func TestAJobChangedWhileRunningIsSentAtItsTime(t *testing.T) {
+	f := setup(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sent := make(chan string, 1)
+	submit := func(tx store.Tx, thread, prompt, job string) error {
+		sent <- job
+		return queue(tx, thread, prompt, job)
+	}
+	done := make(chan error, 1)
+	go func() { done <- Run(ctx, f.st, f.cal, submit) }()
+	soon := f.job
+	soon.NextRun = time.Now().UTC().Add(300 * time.Millisecond)
+	f.update(func(tx store.Tx) error { return tx.PutCronJob(soon) })
+	select {
+	case job := <-sent:
+		if job != "j" {
+			t.Errorf("sent job %q", job)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the changed job was not sent at its time")
+	}
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Errorf("run: %v", err)
+	}
+}

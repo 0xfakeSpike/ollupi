@@ -215,6 +215,17 @@ func (r reader) Due(now time.Time) ([]account.CronJob, error) {
 		WHERE j.paused = 0 AND j.next_run_at <= ? AND t.archived_at IS NULL ORDER BY j.next_run_at, j.id`, now.UTC()), cronRow.job)
 }
 
+func (r reader) NextRun() (time.Time, bool, error) {
+	var rows []cronRow
+	if err := r.g.Raw("SELECT * FROM cron_jobs WHERE paused = 0 ORDER BY next_run_at LIMIT 1").Scan(&rows).Error; err != nil {
+		return time.Time{}, false, err
+	}
+	if len(rows) == 0 {
+		return time.Time{}, false, nil
+	}
+	return rows[0].NextRunAt, true, nil
+}
+
 func (r reader) Threads(owner string, f store.ThreadFilter) ([]store.Thread, bool, error) {
 	query := "SELECT * FROM threads WHERE user_id = ? AND " + listed
 	args := []any{owner}

@@ -37,6 +37,7 @@ type Reader interface {
 	CronJobs(user, thread string) ([]CronJobView, error)
 	CronJob(id string) (account.CronJob, error)
 	Due(now time.Time) ([]account.CronJob, error)
+	NextRun() (time.Time, bool, error)
 	Threads(user string, f ThreadFilter) (threads []Thread, more bool, err error)
 	Waiting(user string) ([]string, error)
 	Children(thread string) ([]Thread, error)

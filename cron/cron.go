@@ -13,17 +13,43 @@ import (
 
 type Submit func(tx store.Tx, thread, prompt, job string) error
 
+const clockCheck = time.Minute
+
 func Run(ctx context.Context, st store.Store, cal Calendar, submit Submit) error {
-	tick := time.NewTicker(time.Minute)
-	defer tick.Stop()
+	changed := make(chan struct{}, 1)
+	sub := st.Feed().SubscribeAll(func(e store.Event) {
+		jobChanged := e.Owned != nil && (e.Owned.CronJob != nil || e.Owned.CronJobDeleted != "")
+		if !jobChanged {
+			return
+		}
+		select {
+		case changed <- struct{}{}:
+		default:
+		}
+	})
+	defer sub.Close()
 	for {
 		if err := sendDue(ctx, st, cal, submit, time.Now().UTC()); err != nil {
 			return err
 		}
+		var next time.Time
+		var scheduled bool
+		if err := st.Read(ctx, func(r store.Reader) (err error) { next, scheduled, err = r.NextRun(); return err }); err != nil {
+			return err
+		}
+		var clock <-chan time.Time
+		if scheduled {
+			wait := time.Until(next)
+			if wait <= 0 || wait > clockCheck {
+				wait = clockCheck
+			}
+			clock = time.After(wait)
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-tick.C:
+		case <-changed:
+		case <-clock:
 		}
 	}
 }
