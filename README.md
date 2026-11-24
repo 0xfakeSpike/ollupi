@@ -84,7 +84,7 @@ Commands, files, and local MCP servers are accessed through `sandbox.Box`; a clo
 - `sandbox.Here` runs with full access to the machine. Use it only for users who may use the whole machine.
 - Under the `never` approval policy, an escalated command runs without asking. Do not offer that policy to untrusted users.
 - A repository's `.git` is writable inside the sandbox. Hooks written by a command may later run outside those limits when the user invokes Git.
-- SQLite is the measured bottleneck for very large single-shard histories and concurrency. Choose shard count from your own workload and keep one connection per shard in mind.
+- SQLite is the measured bottleneck for very large single-shard histories and concurrency. Choose shard count from your own workload and keep in mind that each shard writes through one connection (reads use a small read-only pool).
 - The benchmark numbers date from v0.18.0 and were measured on one Apple M1. Re-run [bench](bench/README.md) for deployment-specific capacity.
 
 ## Documentation

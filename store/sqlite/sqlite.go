@@ -20,6 +20,7 @@ var migrations embed.FS
 
 type Store struct {
 	g       *gorm.DB
+	r       *gorm.DB
 	feed    *store.Feed
 	telling sync.Mutex
 	epoch   atomic.Int64
@@ -50,10 +51,17 @@ func openAt(home, base string) (*Store, error) {
 		sqlitedb.Close(g)
 		return nil, fmt.Errorf("store: %s: %w", path, err)
 	}
-	return &Store{g: g, feed: store.NewFeed(), base: base}, nil
+	r, err := sqlitedb.OpenReader(path, readers)
+	if err != nil {
+		sqlitedb.Close(g)
+		return nil, err
+	}
+	return &Store{g: g, r: r, feed: store.NewFeed(), base: base}, nil
 }
 
-func (s *Store) Close() error { return sqlitedb.Close(s.g) }
+const readers = 4
+
+func (s *Store) Close() error { return errors.Join(sqlitedb.Close(s.r), sqlitedb.Close(s.g)) }
 
 func (s *Store) Gorm() *gorm.DB { return s.g }
 
@@ -73,7 +81,7 @@ func (s *Store) Fence(epoch int64) error {
 }
 
 func (s *Store) Read(ctx context.Context, fn func(store.Reader) error) error {
-	return s.g.WithContext(ctx).Transaction(func(g *gorm.DB) error { return fn(reader{g: g, base: s.base}) })
+	return s.r.WithContext(ctx).Transaction(func(g *gorm.DB) error { return fn(reader{g: g, base: s.base}) })
 }
 
 func (s *Store) Update(ctx context.Context, fn func(store.Tx) error) error {

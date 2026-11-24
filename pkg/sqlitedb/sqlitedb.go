@@ -15,13 +15,21 @@ import (
 )
 
 func Open(path string) (*gorm.DB, error) {
+	return open(path, "_txlock=immediate", 1)
+}
+
+func OpenReader(path string, conns int) (*gorm.DB, error) {
+	return open(path, "_txlock=deferred&_query_only=on", conns)
+}
+
+func open(path, mode string, conns int) (*gorm.DB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("storage: create directory of %s: %w", path, err)
 	}
 	dsn := (&url.URL{
 		Scheme:   "file",
 		Path:     filepath.ToSlash(path),
-		RawQuery: "_busy_timeout=5000&_journal_mode=WAL&_foreign_keys=on&_txlock=immediate",
+		RawQuery: "_busy_timeout=5000&_journal_mode=WAL&_foreign_keys=on&" + mode,
 	}).String()
 	g, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		Logger:  logger.Default.LogMode(logger.Silent),
@@ -34,7 +42,7 @@ func Open(path string) (*gorm.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("storage: open %s: %w", path, err)
 	}
-	conn.SetMaxOpenConns(1)
+	conn.SetMaxOpenConns(conns)
 	return g, nil
 }
 
