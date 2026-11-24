@@ -331,27 +331,13 @@ func (p *Provider) start(ctx context.Context, c tool.Call) (kit.Result, error) {
 	if w.Kind == account.HubWorkspace {
 		return kit.Result{}, fmt.Errorf("workspace %s is a hub; hand work only to a project workspace", w.Name)
 	}
-	if args.Todo != 0 {
-		if _, err := p.App.Todo(ctx, c.User, args.Todo); err != nil {
-			return kit.Result{}, err
-		}
-	}
-	th, err := p.App.StartThread(ctx, c.User, w.ID, "", args.Title)
+	handed, err := p.App.HandOff(ctx, c.User, app.HandOff{Workspace: w.ID, Title: args.Title, Message: args.Message, From: c.Thread, Todo: args.Todo})
 	if err != nil {
 		return kit.Result{}, err
 	}
-	turn, inProgress, err := p.App.Send(ctx, c.User, th.ID, app.Input{Text: args.Message, From: c.Thread})
-	if err != nil {
-		return kit.Result{}, fmt.Errorf("conversation %s was started, but its first message was not sent: %w", th.ID, err)
-	}
-	out := Started{Conversation: th.ID, Turn: turn.ID, Queued: !inProgress}
-	if args.Todo != 0 {
-		handed, conversation := account.TodoHanded, th.ID
-		t, err := p.App.UpdateTodo(ctx, c.User, args.Todo, app.TodoChange{Status: &handed, Thread: &conversation})
-		if err != nil {
-			return kit.Result{}, fmt.Errorf("conversation %s was started, but todo %d was not linked to it: %w", th.ID, args.Todo, err)
-		}
-		linked := todoOf(t)
+	out := Started{Conversation: handed.Thread.ID, Turn: handed.Turn.ID, Queued: !handed.InProgress}
+	if handed.Todo != nil {
+		linked := todoOf(*handed.Todo)
 		out.Todo = &linked
 	}
 	return kit.Result{Output: out}, nil

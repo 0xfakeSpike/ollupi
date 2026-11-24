@@ -204,3 +204,43 @@ func TestTheHubKeepsItsTodosInTheApp(t *testing.T) {
 type catalog []account.ModelProvider
 
 func (c catalog) Providers() []account.ModelProvider { return c }
+
+func TestAHandOffStartsLinksAndSendsTogetherOrNotAtAll(t *testing.T) {
+	f := setup(t)
+	home, docs := f.workspace("home"), f.workspace("docs")
+	if _, err := f.a.SetWorkspaceKind(f.ctx, "u", home.ID, account.HubWorkspace); err != nil {
+		t.Fatal(err)
+	}
+	hub, err := f.a.StartThread(f.ctx, "u", home.ID, "", "plan")
+	if err != nil {
+		t.Fatal(err)
+	}
+	todo, err := f.a.AddTodo(f.ctx, "u", "release notes", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	inDocs := func() []store.Thread {
+		threads, _, err := f.a.Threads(f.ctx, "u", store.ThreadFilter{Workspace: &docs.ID, Limit: 10})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return threads
+	}
+	if _, err := f.call(hub.ID, agent.StartConversationTool, map[string]any{"workspace": docs.ID, "title": "notes", "message": " ", "todo": todo.ID}); err == nil {
+		t.Fatal("a hand-off with a blank message was taken")
+	}
+	if left, _ := f.a.Todo(f.ctx, "u", todo.ID); len(inDocs()) != 0 || left.Status != account.TodoOpen || left.Thread != "" {
+		t.Fatalf("a refused hand-off left %d conversations and the todo %+v", len(inDocs()), left)
+	}
+	out, err := f.call(hub.ID, agent.StartConversationTool, map[string]any{"workspace": docs.ID, "title": "notes", "message": "write them", "todo": todo.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var started Started
+	json.Unmarshal(out, &started)
+	linked, _ := f.a.Todo(f.ctx, "u", todo.ID)
+	if threads := inDocs(); len(threads) != 1 || threads[0].ID != started.Conversation || linked.Status != account.TodoHanded ||
+		linked.Thread != started.Conversation || started.Todo == nil || started.Todo.Status != "handed" {
+		t.Errorf("handed off %s; the todo %+v", out, linked)
+	}
+}
