@@ -88,6 +88,7 @@ type Tx interface {
 	PutUsage(u Usage) error
 	PutPresence(p Presence) error
 	DeleteThread(id string) error
+	DeleteUser(id string) ([]string, error)
 	CreateThread(t Thread) error
 	UpdateThread(t Thread) error
 	Append(thread string, entries ...conversation.Entry) (conversation.View, error)

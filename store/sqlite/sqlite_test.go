@@ -10,6 +10,7 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/conversation"
+	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/store"
 )
 
@@ -190,6 +191,55 @@ func TestAReopenedStoreReadsTheSameView(t *testing.T) {
 	}
 	if c, _ := v.ItemOf("c1"); c.Status != conversation.Done || string(c.Result.Output) != string(out) {
 		t.Errorf("the call %+v", c)
+	}
+}
+
+func TestDeletingAUserRemovesTheirConversationData(t *testing.T) {
+	ctx := context.Background()
+	s := open(t, t.TempDir())
+	now := time.Now().UTC()
+	err := s.Update(ctx, func(tx store.Tx) error {
+		if err := tx.EnsureUser("gone"); err != nil {
+			return err
+		}
+		if err := tx.CreateThread(store.Thread{User: "gone", Thread: account.Thread{ID: "th", Title: "x", Created: now, Updated: now}}); err != nil {
+			return err
+		}
+		_, err := tx.Append("th",
+			conversation.Entry{Turn: "t1", Body: conversation.TurnQueued{}},
+			conversation.Entry{Turn: "t1", Item: "m1", Body: conversation.UserMessage{Text: "hi"}},
+			conversation.Entry{Turn: "t1", Body: conversation.TurnEnded{Status: conversation.Completed}})
+		if err != nil {
+			return err
+		}
+		if _, err := tx.AddTodo("gone", account.Todo{Title: "x", Status: account.TodoOpen, Thread: "th", Created: now, Updated: now}); err != nil {
+			return err
+		}
+		return tx.PutMemory(memory.Memory{ID: "mem", User: "gone", Place: memory.GlobalPlace, Topic: "t", Kind: memory.Fact, Text: "x", Status: memory.Active, Created: now, Updated: now})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var threads []string
+	if err := s.Update(ctx, func(tx store.Tx) (err error) { threads, err = tx.DeleteUser("gone"); return err }); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(threads, []string{"th"}) {
+		t.Fatalf("threads = %v", threads)
+	}
+	var users []string
+	if err := s.Read(ctx, func(r store.Reader) (err error) { users, err = r.Users(); return err }); err != nil {
+		t.Fatal(err)
+	}
+	if len(users) != 0 {
+		t.Fatalf("users = %v", users)
+	}
+	var left int64
+	if err := s.g.Raw("SELECT (SELECT count(*) FROM memories) + (SELECT count(*) FROM todos) + (SELECT count(*) FROM entries)").Scan(&left).Error; err != nil {
+		t.Fatal(err)
+	}
+	if left != 0 {
+		t.Fatalf("%d rows of the deleted user are left", left)
 	}
 }
 

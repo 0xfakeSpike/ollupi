@@ -644,6 +644,37 @@ func (t *tx) DeleteThread(id string) error {
 	return nil
 }
 
+func (t *tx) DeleteUser(id string) ([]string, error) {
+	var busy int64
+	if err := t.g.Raw("SELECT count(*) FROM threads WHERE user_id = ? AND status <> ?", id, string(conversation.ThreadIdle)).Scan(&busy).Error; err != nil {
+		return nil, err
+	}
+	if busy > 0 {
+		return nil, fmt.Errorf("store: user %s has a turn in progress or queued", id)
+	}
+	var threads []string
+	if err := t.g.Raw("SELECT id FROM threads WHERE user_id = ?", id).Scan(&threads).Error; err != nil {
+		return nil, err
+	}
+	var roots []string
+	if err := t.g.Raw("SELECT id FROM threads WHERE user_id = ? AND parent_id IS NULL", id).Scan(&roots).Error; err != nil {
+		return nil, err
+	}
+	for _, thread := range roots {
+		if err := t.DeleteThread(thread); err != nil {
+			return nil, err
+		}
+	}
+	if err := t.g.Exec("DELETE FROM usage WHERE user_id = ?", id).Error; err != nil {
+		return nil, err
+	}
+	res := t.g.Exec("DELETE FROM users WHERE id = ?", id)
+	if err := one(res, "user "+id); err != nil {
+		return nil, err
+	}
+	return threads, nil
+}
+
 func one(res *gorm.DB, what string) error {
 	if res.Error != nil {
 		return fmt.Errorf("store: %s: %w", what, res.Error)
