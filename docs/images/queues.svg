@@ -41,7 +41,7 @@
 <path d="M356.5,371.0 L384.5,371.0" stroke="#7a5cc7" stroke-width="1.5" fill="none" marker-end="url(#q)"/>
 <text class="tiny" x="161.5" y="376.0" text-anchor="end">进</text>
 <text class="tiny" x="388.5" y="376.0" text-anchor="start">出</text>
-<text class="a" x="260.0" y="402.0" text-anchor="middle">子会话优先，再按 runnable_since 先后</text>
+<text class="a" x="260.0" y="402.0" text-anchor="middle">顶层会话优先，再按 runnable_since 先后</text>
 <rect x="540" y="326" width="380" height="104" rx="10" fill="#f1ecff" stroke="#7a5cc7" stroke-width="1.8"/>
 <text class="q" x="730.0" y="350.0" text-anchor="middle">tasks 表：每行一个待跑的后台任务</text>
 <rect x="639.5" y="362" width="26" height="18" rx="4" fill="#7a5cc7" fill-opacity="0.46"/>
