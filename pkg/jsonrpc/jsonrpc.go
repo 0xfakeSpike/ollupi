@@ -56,6 +56,7 @@ const (
 	maxInboxBytes     = 8 << 20
 	messagesPerSecond = 50
 	messageBurst      = 200
+	maxConcurrent     = 8
 )
 
 type Conn struct {
@@ -75,7 +76,7 @@ func NewConn(ws *websocket.Conn) *Conn {
 	return &Conn{ws: ws, pending: make(map[string]ResponseFunc), ready: make(chan struct{}, 1)}
 }
 
-func (c *Conn) Serve(ctx context.Context, h Handler) (err error) {
+func (c *Conn) Serve(ctx context.Context, h Handler, concurrent func(method string) bool) (err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	written := make(chan struct{})
 	go func() {
@@ -90,10 +91,13 @@ func (c *Conn) Serve(ctx context.Context, h Handler) (err error) {
 		readErr = c.read(ctx, room, inbox)
 		cancel()
 	}()
+	slots := semaphore.NewWeighted(maxConcurrent)
+	var running sync.WaitGroup
 	defer func() {
 		cancel()
 		for range inbox {
 		}
+		running.Wait()
 		err = readErr
 		c.mu.Lock()
 		c.closed = true
@@ -105,8 +109,25 @@ func (c *Conn) Serve(ctx context.Context, h Handler) (err error) {
 		if ctx.Err() != nil {
 			break
 		}
-		c.handle(ctx, h, data)
-		room.Release(inboxWeight(data))
+		weight := inboxWeight(data)
+		m, ok := c.decode(data)
+		aside := ok && m.Method != "" && m.ID != nil && concurrent(m.Method)
+		if !aside {
+			if ok {
+				c.handle(ctx, h, m)
+			}
+			room.Release(weight)
+			continue
+		}
+		if err := slots.Acquire(ctx, 1); err != nil {
+			room.Release(weight)
+			break
+		}
+		running.Go(func() {
+			defer room.Release(weight)
+			defer slots.Release(1)
+			c.handle(ctx, h, m)
+		})
 	}
 	return nil
 }
@@ -148,12 +169,16 @@ func inboxWeight(data []byte) int64 {
 	return int64(min(len(data), maxInboxBytes))
 }
 
-func (c *Conn) handle(ctx context.Context, h Handler, data []byte) {
+func (c *Conn) decode(data []byte) (Message, bool) {
 	var m Message
 	if err := json.Unmarshal(data, &m); err != nil {
 		c.reply(nil, nil, Errorf(CodeParseError, "%v", err))
-		return
+		return Message{}, false
 	}
+	return m, true
+}
+
+func (c *Conn) handle(ctx context.Context, h Handler, m Message) {
 	switch {
 	case m.JSONRPC != "2.0":
 		c.reply(m.ID, nil, Errorf(CodeInvalidRequest, `jsonrpc must be "2.0"`))

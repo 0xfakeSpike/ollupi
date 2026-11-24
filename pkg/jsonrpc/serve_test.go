@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,9 +15,18 @@ import (
 	"github.com/coder/websocket"
 )
 
+func serial(string) bool { return false }
+
 func serve(ctx context.Context, t *testing.T, h func(*Conn) Handler) (*websocket.Conn, *websocket.Conn) {
 	t.Helper()
+	server, client, _ := serveWith(ctx, t, h, serial)
+	return server, client
+}
+
+func serveWith(ctx context.Context, t *testing.T, h func(*Conn) Handler, concurrent func(string) bool) (*websocket.Conn, *websocket.Conn, <-chan struct{}) {
+	t.Helper()
 	accepted := make(chan *websocket.Conn, 1)
+	served := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ws, err := websocket.Accept(w, r, nil)
 		if err != nil {
@@ -25,7 +35,8 @@ func serve(ctx context.Context, t *testing.T, h func(*Conn) Handler) (*websocket
 		}
 		accepted <- ws
 		c := NewConn(ws)
-		c.Serve(r.Context(), h(c))
+		c.Serve(r.Context(), h(c), concurrent)
+		close(served)
 	}))
 	t.Cleanup(srv.Close)
 	client, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http"), nil)
@@ -33,7 +44,7 @@ func serve(ctx context.Context, t *testing.T, h func(*Conn) Handler) (*websocket
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { client.CloseNow() })
-	return <-accepted, client
+	return <-accepted, client, served
 }
 
 func write(ctx context.Context, t *testing.T, ws *websocket.Conn, msg string) {
@@ -158,7 +169,7 @@ func served(ctx context.Context, t *testing.T, h Handler) *websocket.Conn {
 			return
 		}
 		c := NewConn(ws)
-		hub.Serve(r.Context(), "k", ws, c.Silent, func(ctx context.Context) error { return c.Serve(ctx, h) })
+		hub.Serve(r.Context(), "k", ws, c.Silent, func(ctx context.Context) error { return c.Serve(ctx, h, serial) })
 	}))
 	t.Cleanup(srv.Close)
 	client, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http"), nil)
@@ -202,4 +213,50 @@ func TestAClientWaitingOnAFullInboxIsNotTakenForGone(t *testing.T) {
 		return "ok", nil, nil
 	})
 	flood(ctx, t, client, 2*maxInboxMessages)
+}
+
+func TestAReadDoesNotWaitForASlowerOne(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	release := make(chan struct{})
+	var finished atomic.Bool
+	_, client, served := serveWith(ctx, t, func(*Conn) Handler {
+		return Handler(func(ctx context.Context, method string, _ json.RawMessage) (any, func(), *Error) {
+			switch method {
+			case "slow":
+				<-release
+			case "hang":
+				<-ctx.Done()
+				time.Sleep(50 * time.Millisecond)
+				finished.Store(true)
+			}
+			return method, nil, nil
+		})
+	}, func(method string) bool { return method != "write" })
+	write(ctx, t, client, `{"jsonrpc":"2.0","id":1,"method":"slow"}`)
+	write(ctx, t, client, `{"jsonrpc":"2.0","id":2,"method":"fast"}`)
+	write(ctx, t, client, `{"jsonrpc":"2.0","id":3,"method":"write"}`)
+	got := map[string]bool{}
+	for range 2 {
+		got[string(next(ctx, t, client).ID)] = true
+	}
+	if !got["2"] || !got["3"] {
+		t.Fatalf("while a slow read runs, the replies came for %v", got)
+	}
+	close(release)
+	if m := next(ctx, t, client); string(m.ID) != "1" {
+		t.Fatalf("the slow read's reply came for %s", m.ID)
+	}
+
+	write(ctx, t, client, `{"jsonrpc":"2.0","id":4,"method":"hang"}`)
+	time.Sleep(50 * time.Millisecond)
+	client.Close(websocket.StatusNormalClosure, "")
+	select {
+	case <-served:
+	case <-ctx.Done():
+		t.Fatal("Serve did not return")
+	}
+	if !finished.Load() {
+		t.Error("Serve returned while a read still ran")
+	}
 }

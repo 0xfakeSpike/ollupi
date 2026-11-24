@@ -97,9 +97,9 @@ var protocol = struct {
 	methods: map[string]method{
 		methodInitialize:               handleThen((*conn).initialize),
 		"thread/start":                 handle((*conn).threadStart),
-		"thread/resume":                handleThen(threadPage(true)),
-		"thread/read":                  handleThen(threadPage(false)),
-		"thread/list":                  handle((*conn).threadList),
+		"thread/resume":                read(handleThen(threadPage(true))),
+		"thread/read":                  read(handleThen(threadPage(false))),
+		"thread/list":                  read(handle((*conn).threadList)),
 		"thread/updatePermissions":     handle((*conn).threadPermissions),
 		"thread/rename":                handle((*conn).threadRename),
 		"thread/archive":               handle((*conn).threadArchive),
@@ -108,13 +108,13 @@ var protocol = struct {
 		"turn/start":                   handle((*conn).turnStart),
 		"turn/steer":                   handle((*conn).turnSteer),
 		"turn/interrupt":               handle((*conn).turnInterrupt),
-		"attachment/read":              handle((*conn).attachmentRead),
-		"model/list":                   handle((*conn).modelList),
-		"tool/list":                    handle((*conn).toolList),
-		"mcpServer/list":               handle((*conn).mcpServerList),
+		"attachment/read":              read(handle((*conn).attachmentRead)),
+		"model/list":                   read(handle((*conn).modelList)),
+		"tool/list":                    read(handle((*conn).toolList)),
+		"mcpServer/list":               read(handle((*conn).mcpServerList)),
 		"mcpServer/set":                handle((*conn).mcpServerSet),
 		"mcpServer/delete":             handle((*conn).mcpServerDelete),
-		"workspace/list":               handle((*conn).workspaceList),
+		"workspace/list":               read(handle((*conn).workspaceList)),
 		"workspace/add":                handle((*conn).workspaceAdd),
 		"workspace/rename":             handle((*conn).workspaceRename),
 		"workspace/move":               handle((*conn).workspaceMove),
@@ -123,27 +123,27 @@ var protocol = struct {
 		"workspace/updatePermissions":  handle((*conn).workspacePermissions),
 		"workspace/updateInstructions": handle((*conn).workspaceInstructions),
 		"workspace/updateProviders":    handle((*conn).workspaceProviders),
-		"environment/list":             handle((*conn).environmentList),
+		"environment/list":             read(handle((*conn).environmentList)),
 		"environment/add":              handle((*conn).environmentAdd),
 		"environment/rename":           handle((*conn).environmentRename),
 		"environment/delete":           handle((*conn).environmentDelete),
-		"cron/list":                    handle((*conn).cronList),
+		"cron/list":                    read(handle((*conn).cronList)),
 		"cron/create":                  handle((*conn).cronCreate),
 		"cron/pause":                   handle((*conn).cronPause),
 		"cron/delete":                  handle((*conn).cronDelete),
-		"memory/list":                  handle((*conn).memoryList),
-		"memory/status":                handle((*conn).memoryStatus),
+		"memory/list":                  read(handle((*conn).memoryList)),
+		"memory/status":                read(handle((*conn).memoryStatus)),
 		"memory/update":                handle((*conn).memoryUpdate),
 		"memory/move":                  handle((*conn).memoryMove),
 		"memory/forget":                handle((*conn).memoryForget),
-		"usage/query":                  handle((*conn).usageQuery),
+		"usage/query":                  read(handle((*conn).usageQuery)),
 		"presence/record":              handle((*conn).presenceRecord),
-		"presence/summary":             handle((*conn).presenceSummary),
-		"search":                       handle((*conn).search),
+		"presence/summary":             read(handle((*conn).presenceSummary)),
+		"search":                       read(handle((*conn).search)),
 		"todo/list":                    handle((*conn).todoList),
 		"todo/add":                     handle((*conn).todoAdd),
 		"todo/update":                  handle((*conn).todoUpdate),
-		"settings/read":                handle((*conn).settingsRead),
+		"settings/read":                read(handle((*conn).settingsRead)),
 		"settings/update":              handle((*conn).settingsUpdate),
 		"settings/updatePermissions":   handle((*conn).settingsPermissions),
 	},
@@ -214,6 +214,16 @@ type Limits struct {
 type method struct {
 	params, result reflect.Type
 	call           func(c *conn, ctx context.Context, params json.RawMessage) (any, func(), *jsonrpc.Error)
+	read           bool
+}
+
+func read(m method) method {
+	m.read = true
+	return m
+}
+
+func concurrent(name string) bool {
+	return protocol.methods[name].read
 }
 
 type serverRequest struct {

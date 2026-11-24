@@ -324,3 +324,45 @@ func TestAListAndTheChangesAfterItShareOneSequence(t *testing.T) {
 		t.Errorf("thread/list at %d after thread/changed at %d", threads.Seq, thread.Seq)
 	}
 }
+
+func TestReadsSentTogetherAnswerEachAndAskOnce(t *testing.T) {
+	ctx := context.Background()
+	st, c := connect(t)
+	var started ThreadResult
+	c.call("thread/start", ThreadStartParams{Title: "chat"}, &started)
+	var turn TurnResult
+	c.call("turn/start", TurnStartParams{ThreadID: started.Thread.ID, Input: []UserInput{{Type: "text", Text: "build it"}}}, &turn)
+	err := st.Update(ctx, func(tx store.Tx) error {
+		_, err := tx.Append(started.Thread.ID,
+			conversation.Entry{Turn: turn.Turn.ID, Body: conversation.ModelResponded{Response: "r"}},
+			conversation.Entry{Turn: turn.Turn.ID, Item: "c1", Body: conversation.ToolCall{Call: "x", Tool: "run_command", Arguments: `{"command":"make"}`, Response: "r"}},
+			conversation.Entry{Turn: turn.Turn.ID, Item: "c1", Body: conversation.ApprovalAsked{Approval: "a1", Content: "make"}})
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.until(requestApproval)
+
+	const sent = 6
+	for i := range sent {
+		c.send(map[string]any{"jsonrpc": "2.0", "id": 100 + i, "method": "thread/resume", "params": ThreadPageParams{ThreadID: started.Thread.ID}})
+	}
+	c.send(map[string]any{"jsonrpc": "2.0", "id": 200, "method": "thread/rename", "params": ThreadRenameParams{ThreadID: started.Thread.ID, Title: "renamed"}})
+	answered, asked := map[string]bool{}, 0
+	for len(answered) < sent+1 {
+		m := c.read()
+		switch {
+		case m.Method == requestApproval:
+			asked++
+		case m.ID != nil && m.Method == "":
+			if m.Error != nil {
+				t.Fatalf("reply %s: %+v", *m.ID, m.Error)
+			}
+			answered[string(*m.ID)] = true
+		}
+	}
+	if asked != 0 {
+		t.Errorf("an approval still waiting on this connection was asked again %d times", asked)
+	}
+}

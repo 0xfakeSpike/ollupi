@@ -15,7 +15,7 @@
 <rect x="270.0" y="111" width="18" height="14" rx="3" fill="#3978b8" fill-opacity="0.86"/>
 <rect x="292.0" y="111" width="18" height="14" rx="3" fill="#3978b8" fill-opacity="1.00"/>
 <path d="M318.0,118.0 L344.0,118.0" stroke="#3978b8" stroke-width="1.5" fill="none" marker-end="url(#d)"/>
-<text class="st" x="356.0" y="123.0" text-anchor="start">inbox：每条连接一个，在内存里；读协程限速 50 条/秒，积满 64 条或 8 MiB 就停读；一个协程逐条交给 app，做完一条才取下一条</text>
+<text class="st" x="356.0" y="123.0" text-anchor="start">inbox：每条连接一个，在内存里；读协程限速 50 条/秒，积满 64 条或 8 MiB 就停读；只读请求并发（每条连接最多 8 个），其余逐条做完才取下一条</text>
 <path d="M440.0,142.0 L440.0,201.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
 <path d="M1380.0,142.0 L1380.0,201.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
 <g transform="translate(0 64)">
@@ -163,7 +163,7 @@
 <path d="M730.0,942.0 L730.0,977.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
 <path d="M1200.0,942.0 L1200.0,977.0" stroke="#7a7f8c" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
 <text class="note" x="40.0" y="1132.0" text-anchor="start">放工作的队列有三个（紫色）：① ② 在 SQLite 里，和会话日志同一个事务写入，重启不丢；③ 在内存里，每条连接一个，丢了就靠重读补。</text>
-<text class="note" x="40.0" y="1156.0" text-anchor="start">排先后的队列有三个（蓝色）：inbox 让一条连接的请求逐条处理；写队列让事务逐个提交；事件队列让订阅者按提交顺序听到。写协程放完事件就去做下一个事务，不等订阅者。</text>
+<text class="note" x="40.0" y="1156.0" text-anchor="start">排先后的队列有三个（蓝色）：inbox 让一条连接上的写按到达顺序处理；写队列让事务逐个提交；事件队列让订阅者按提交顺序听到。写协程放完事件就去做下一个事务，不等订阅者。</text>
 <text class="note" x="40.0" y="1180.0" text-anchor="start">总线不保存工作：它只按顺序叫醒两个调度器和网关。调度器回 SQLite 取队列，网关把事件放进这条连接自己的 outbox。</text>
 <text class="note" x="40.0" y="1204.0" text-anchor="start">普通工具（不是后台工具）不进任何队列：Runner 在 ① 给它的槽位里直接执行，结果写回日志。两种工具都跑在用户沙箱里，沙箱本身不排队。</text>
 <text class="note" x="40.0" y="1228.0" text-anchor="start">槽位和模型连接的名额只限个数，不排序，也不保存工作：Runner 拿不到模型名额时占着 ① 的槽位等，不回队列。</text>
