@@ -27,7 +27,7 @@ flowchart LR
 
 - **写**：一切变化都是向日志追加记录（`conversation.Entry`），在 `store.Update` 的一个事务里完成。`Tx.Append` 先用 `conversation.Check` 判断每条记录能不能接在当前日志后面，不能就整个事务失败（`conversation.ErrRefused`）；能就用 `conversation.View.Apply` 折叠进视图，再把变了的轮次、条目和会话的状态列一起写下。
 - **读**：视图（`conversation.View`）由同一组纯函数从日志折叠出来；`turns`、`items` 表和 `threads` 的 `head`、`own_status`、`runnable_since` 列只是它的物化，为了查询。`status` 是会话的状态加上子会话对用户的等待：子会话在等审批或回答时，父会话也显示在等，审批排在回答前面（`conversation.RollUp`），委派会话不算在内；子会话的记录写入时，store 在同一事务里重算祖先会话的这一列。
-- **通知**：事务提交之后，它改变的东西作为一个事件发到 store 的 feed 上（`store.Event`），同一次提交的事件共用一个序号 `seq`。gateway、调度器、记忆抽取都只从 feed 得知变化；写的一方不通知任何人。
+- **通知**：事务提交之后，它改变的东西作为一个事件发到 store 的 feed 上（`store.Event`），同一次提交的事件共用一个序号 `seq`，事件按 `seq` 的顺序发出。gateway、调度器、记忆抽取都只从 feed 得知变化；写的一方不通知任何人。
 
 代码：[conversation/](../conversation/)、[store/store.go](../store/store.go)、[store/sqlite/](../store/sqlite/)。
 

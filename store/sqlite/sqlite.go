@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 
 	"github.com/0xfakeSpike/ollupi/conversation"
@@ -18,9 +19,10 @@ import (
 var migrations embed.FS
 
 type Store struct {
-	g     *gorm.DB
-	feed  *store.Feed
-	epoch atomic.Int64
+	g       *gorm.DB
+	feed    *store.Feed
+	telling sync.Mutex
+	epoch   atomic.Int64
 	// base is the user's home: workspace roots are kept relative to it, so
 	// the file means the same folders on another machine (paths.go).
 	base string
@@ -75,6 +77,8 @@ func (s *Store) Read(ctx context.Context, fn func(store.Reader) error) error {
 }
 
 func (s *Store) Update(ctx context.Context, fn func(store.Tx) error) error {
+	s.telling.Lock()
+	defer s.telling.Unlock()
 	var events []store.Event
 	err := s.g.WithContext(ctx).Transaction(func(g *gorm.DB) error {
 		if mine := s.epoch.Load(); mine != 0 {
