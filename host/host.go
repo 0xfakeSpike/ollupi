@@ -173,6 +173,9 @@ func skillsOf(dir string) run.Skills {
 }
 
 func (h *Host) Run(ctx context.Context) error {
+	if err := h.App.SettleMoves(ctx); err != nil {
+		return err
+	}
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return h.scheduler.Run(ctx) })
 	g.Go(func() error { return h.tasks.Run(ctx) })

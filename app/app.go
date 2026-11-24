@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"sync"
 
 	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/conversation"
@@ -64,13 +63,10 @@ type App struct {
 	attachments Attachments
 	cal         cron.Calendar
 	deployment  policy.Settings
-
-	mu     sync.Mutex
-	moving map[string]bool
 }
 
 func New(st store.Store, catalog Catalog, tools tool.Tools, statuses Statuses, boxes Boxes, attachments Attachments, cal cron.Calendar, deployment policy.Settings) *App {
-	return &App{st: st, catalog: catalog, tools: tools, statuses: statuses, boxes: boxes, attachments: attachments, cal: cal, deployment: deployment, moving: map[string]bool{}}
+	return &App{st: st, catalog: catalog, tools: tools, statuses: statuses, boxes: boxes, attachments: attachments, cal: cal, deployment: deployment}
 }
 
 func (a *App) EnsureUser(ctx context.Context, user string) error {

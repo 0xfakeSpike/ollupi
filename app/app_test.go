@@ -508,3 +508,73 @@ func TestAMessageKeepsTheHubConversationThatSentIt(t *testing.T) {
 		t.Errorf("the user's message came from %+v", it.From)
 	}
 }
+
+func TestAMoveWaitsForATurnBeingQueued(t *testing.T) {
+	f := setup(t)
+	dir := t.TempDir()
+	root, to := filepath.Join(dir, "project"), filepath.Join(dir, "moved")
+	os.Mkdir(root, 0o755)
+	os.Mkdir(to, 0o755)
+	w := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", root, ""))
+	th := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", w.ID, "", ""))
+	checked, release := make(chan struct{}), make(chan struct{})
+	queued := make(chan error, 1)
+	go func() {
+		queued <- f.st.Update(f.ctx, func(tx store.Tx) error {
+			if _, _, err := f.a.queue(tx, th, conversation.UserMessage{Text: "work"}, "", ""); err != nil {
+				return err
+			}
+			close(checked)
+			<-release
+			return nil
+		})
+	}()
+	<-checked
+	moved := make(chan error, 1)
+	go func() {
+		_, err := f.a.MoveWorkspace(f.ctx, "u", w.ID, to)
+		moved <- err
+	}()
+	time.Sleep(100 * time.Millisecond)
+	close(release)
+	if err := <-queued; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-moved; !errors.Is(err, ErrWorkspaceBusy) {
+		t.Errorf("a move while a turn was being queued: %v", err)
+	}
+	if _, err := os.Stat(root); err != nil {
+		t.Errorf("the folder moved from under a queued turn: %v", err)
+	}
+}
+
+func TestAMoveLeftByACrashIsSettledOnStart(t *testing.T) {
+	f := setup(t)
+	dir := t.TempDir()
+	os.Mkdir(filepath.Join(dir, "stayed"), 0o755)
+	os.Mkdir(filepath.Join(dir, "went"), 0o755)
+	stayed := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", filepath.Join(dir, "stayed"), ""))
+	went := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", filepath.Join(dir, "went"), ""))
+	landed := filepath.Join(filepath.Dir(went.Root), "landed")
+	if err := os.Rename(went.Root, landed); err != nil {
+		t.Fatal(err)
+	}
+	stayed.MovingTo, went.MovingTo = filepath.Join(filepath.Dir(stayed.Root), "nowhere"), landed
+	if err := f.st.Update(f.ctx, func(tx store.Tx) error {
+		return errors.Join(tx.PutWorkspace("u", stayed), tx.PutWorkspace("u", went))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := f.a.Send(f.ctx, "u", must[store.Thread](t)(f.a.StartThread(f.ctx, "u", stayed.ID, "", "")).ID, Input{Text: "x"}); !errors.Is(err, ErrWorkspaceBusy) {
+		t.Errorf("a message to a workspace left moving: %v", err)
+	}
+	if err := f.a.SettleMoves(f.ctx); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{stayed.ID: stayed.Root, went.ID: landed}
+	for _, got := range must[[]account.Workspace](t)(f.a.Workspaces(f.ctx, "u")) {
+		if got.Root != want[got.ID] || got.MovingTo != "" {
+			t.Errorf("settled %s at %q moving to %q, want %q", got.Name, got.Root, got.MovingTo, want[got.ID])
+		}
+	}
+}

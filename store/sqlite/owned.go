@@ -49,6 +49,7 @@ type workspaceRow struct {
 	ID           string
 	Name         string
 	Root         string
+	MovingTo     string
 	Kind         string
 	Instructions string
 	Providers    string
@@ -59,7 +60,7 @@ type workspaceRow struct {
 }
 
 func (row workspaceRow) workspace(base string) (account.Workspace, error) {
-	w := account.Workspace{ID: row.ID, Name: row.Name, Root: readRoot(row.Root, base), Kind: account.WorkspaceKind(row.Kind), Instructions: row.Instructions,
+	w := account.Workspace{ID: row.ID, Name: row.Name, Root: readRoot(row.Root, base), MovingTo: readRoot(row.MovingTo, base), Kind: account.WorkspaceKind(row.Kind), Instructions: row.Instructions,
 		Created: row.CreatedAt, Updated: row.UpdatedAt, Archived: row.ArchivedAt}
 	if err := json.Unmarshal([]byte(row.Settings), &w.Settings); err != nil {
 		return account.Workspace{}, fmt.Errorf("store: the settings of workspace %s: %w", row.ID, err)
@@ -73,6 +74,22 @@ func (row workspaceRow) workspace(base string) (account.Workspace, error) {
 func (r reader) Workspaces(owner string) ([]account.Workspace, error) {
 	return each(r.g.Raw("SELECT * FROM workspaces WHERE user_id = ? ORDER BY name, id", owner),
 		func(row workspaceRow) (account.Workspace, error) { return row.workspace(r.base) })
+}
+
+func (r reader) Moves() ([]store.Move, error) {
+	var rows []struct{ UserID, ID string }
+	if err := r.g.Raw("SELECT user_id, id FROM workspaces WHERE moving_to <> ''").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]store.Move, len(rows))
+	for i, row := range rows {
+		w, err := r.Workspace(row.UserID, row.ID)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = store.Move{User: row.UserID, Workspace: w}
+	}
+	return out, nil
 }
 
 func (r reader) Workspace(owner, id string) (account.Workspace, error) {
@@ -506,11 +523,13 @@ func (t *tx) SetSettings(owner string, s account.Settings) error {
 func (t *tx) PutWorkspace(owner string, w account.Workspace) error {
 	settings, _ := json.Marshal(w.Settings)
 	providers, _ := json.Marshal(w.Providers)
-	err := t.g.Exec(`INSERT INTO workspaces(id, user_id, name, root, kind, instructions, providers, settings, created_at, updated_at, archived_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET name = excluded.name, root = excluded.root, kind = excluded.kind, instructions = excluded.instructions,
-			providers = excluded.providers, settings = excluded.settings, updated_at = excluded.updated_at, archived_at = excluded.archived_at`,
-		w.ID, owner, w.Name, storeRoot(w.Root, t.base), string(w.Kind), w.Instructions, string(providers), string(settings), w.Created, w.Updated, w.Archived).Error
+	err := t.g.Exec(`INSERT INTO workspaces(id, user_id, name, root, moving_to, kind, instructions, providers, settings, created_at, updated_at, archived_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET name = excluded.name, root = excluded.root, moving_to = excluded.moving_to, kind = excluded.kind,
+			instructions = excluded.instructions, providers = excluded.providers, settings = excluded.settings, updated_at = excluded.updated_at,
+			archived_at = excluded.archived_at`,
+		w.ID, owner, w.Name, storeRoot(w.Root, t.base), storeRoot(w.MovingTo, t.base), string(w.Kind), w.Instructions, string(providers), string(settings),
+		w.Created, w.Updated, w.Archived).Error
 	if err != nil {
 		return fmt.Errorf("store: workspace %s: %w", w.Name, err)
 	}

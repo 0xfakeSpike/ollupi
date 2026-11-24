@@ -54,6 +54,7 @@ type Workspace struct {
 	ID           string
 	Name         string
 	Root         string
+	MovingTo     string
 	Kind         WorkspaceKind
 	Instructions string
 	Providers    Providers

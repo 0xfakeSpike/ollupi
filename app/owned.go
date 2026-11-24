@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -158,61 +160,92 @@ func (a *App) MoveWorkspace(ctx context.Context, user, id, path string) (account
 	if err != nil {
 		return account.Workspace{}, fmt.Errorf("%w: %v", ErrInvalidPath, err)
 	}
-	w, all, err := a.claimForMove(ctx, user, id)
+	w, all, err := a.claimMove(ctx, user, id, target)
 	if err != nil {
-		return account.Workspace{}, err
-	}
-	defer func() {
-		a.mu.Lock()
-		delete(a.moving, w.ID)
-		a.mu.Unlock()
-	}()
-	if box.Same(ctx, w.Root, target) {
-		return w, nil
-	}
-	if err := checkTarget(ctx, box, w, all, target); err != nil {
-		return account.Workspace{}, err
-	}
-	if err := box.Move(move, w.Root, target); err != nil {
 		return account.Workspace{}, err
 	}
 	from := w.Root
-	w.Root, w.Updated = target, time.Now().UTC()
-	if err := a.st.Update(move, func(tx store.Tx) error { return tx.PutWorkspace(user, w) }); err != nil {
-		if back := box.Move(move, target, from); back != nil {
-			return account.Workspace{}, fmt.Errorf("the folder is now at %s but the workspace still names %s: %w; moving it back failed too: %v", target, from, err, back)
-		}
-		return account.Workspace{}, err
+	stay := func(err error) (account.Workspace, error) {
+		w, settled := a.settleMove(move, user, id, from)
+		return w, errors.Join(err, settled)
 	}
-	return w, nil
+	if box.Same(ctx, from, target) {
+		return stay(nil)
+	}
+	if err := checkTarget(ctx, box, w, all, target); err != nil {
+		return stay(err)
+	}
+	if err := box.Move(move, from, target); err != nil {
+		return stay(err)
+	}
+	moved, err := a.settleMove(move, user, id, target)
+	if err == nil {
+		return moved, nil
+	}
+	if back := box.Move(move, target, from); back != nil {
+		return account.Workspace{}, fmt.Errorf("the folder is now at %s but the workspace still names %s: %w; moving it back failed too: %v", target, from, err, back)
+	}
+	return stay(err)
 }
 
-func (a *App) claimForMove(ctx context.Context, user, id string) (account.Workspace, []account.Workspace, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	var w account.Workspace
-	var all []account.Workspace
-	err := a.st.Read(ctx, func(r store.Reader) (err error) {
-		if w, err = r.Workspace(user, id); err != nil {
+func (a *App) claimMove(ctx context.Context, user, id, target string) (w account.Workspace, all []account.Workspace, err error) {
+	err = a.st.Update(ctx, func(tx store.Tx) error {
+		if w, err = tx.Workspace(user, id); err != nil {
 			return err
 		}
-		if all, err = r.Workspaces(user); err != nil {
+		if all, err = tx.Workspaces(user); err != nil {
 			return err
 		}
-		busy, err := r.WorkspaceBusy(user, id)
+		busy, err := tx.WorkspaceBusy(user, id)
 		if err != nil {
 			return err
 		}
-		if busy || a.moving[id] {
+		if busy || w.MovingTo != "" {
 			return fmt.Errorf("workspace %s: %w", w.Name, ErrWorkspaceBusy)
 		}
+		w.MovingTo, w.Updated = target, time.Now().UTC()
+		return tx.PutWorkspace(user, w)
+	})
+	return w, all, err
+}
+
+func (a *App) settleMove(ctx context.Context, user, id, root string) (account.Workspace, error) {
+	return a.changeWorkspace(ctx, user, id, func(_ store.Tx, w *account.Workspace) error {
+		w.Root, w.MovingTo = root, ""
 		return nil
 	})
-	if err != nil {
-		return account.Workspace{}, nil, err
+}
+
+func (a *App) SettleMoves(ctx context.Context) error {
+	var moves []store.Move
+	if err := a.st.Read(ctx, func(r store.Reader) (err error) { moves, err = r.Moves(); return err }); err != nil {
+		return fmt.Errorf("the workspaces left moving: %w", err)
 	}
-	a.moving[id] = true
-	return w, all, nil
+	for _, m := range moves {
+		w := m.Workspace
+		root, err := a.landed(ctx, m.User, w)
+		if err == nil {
+			_, err = a.settleMove(ctx, m.User, w.ID, root)
+		}
+		if err != nil {
+			slog.Warn("app: a workspace left moving is not settled; it stays busy", "user", m.User, "workspace", w.ID, "error", err)
+		}
+	}
+	return nil
+}
+
+func (a *App) landed(ctx context.Context, user string, w account.Workspace) (string, error) {
+	box, err := a.boxes(user)
+	if err != nil {
+		return "", err
+	}
+	if _, err := box.Stat(ctx, w.Root); err == nil {
+		return w.Root, nil
+	}
+	if _, err := box.Stat(ctx, w.MovingTo); err == nil {
+		return w.MovingTo, nil
+	}
+	return w.Root, nil
 }
 
 func checkTarget(ctx context.Context, box sandbox.Box, w account.Workspace, all []account.Workspace, target string) error {

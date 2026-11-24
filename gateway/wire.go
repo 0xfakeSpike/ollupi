@@ -177,6 +177,7 @@ type WorkspaceRow struct {
 	ID           string                `json:"id"`
 	Name         string                `json:"name"`
 	RootPath     string                `json:"rootPath"`
+	MovingTo     string                `json:"movingTo,omitempty"`
 	Kind         account.WorkspaceKind `json:"kind"`
 	Instructions string                `json:"instructions,omitempty"`
 	Providers    account.Providers     `json:"providers"`
@@ -187,7 +188,7 @@ type WorkspaceRow struct {
 }
 
 func workspaceRow(w account.Workspace) WorkspaceRow {
-	return WorkspaceRow{ID: w.ID, Name: w.Name, RootPath: w.Root, Kind: w.Kind, Instructions: w.Instructions, Providers: w.Providers,
+	return WorkspaceRow{ID: w.ID, Name: w.Name, RootPath: w.Root, MovingTo: w.MovingTo, Kind: w.Kind, Instructions: w.Instructions, Providers: w.Providers,
 		Settings: w.Settings, CreatedAt: w.Created, UpdatedAt: w.Updated, ArchivedAt: w.Archived}
 }
 

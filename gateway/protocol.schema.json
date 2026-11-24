@@ -3999,6 +3999,9 @@
         "rootPath": {
           "type": "string"
         },
+        "movingTo": {
+          "type": "string"
+        },
         "kind": {
           "$ref": "#/$defs/WorkspaceKind"
         },

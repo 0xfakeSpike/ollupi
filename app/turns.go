@@ -244,9 +244,7 @@ func (a *App) usableWorkspace(tx store.Tx, th store.Thread) (account.Workspace, 
 	if err := w.Usable(); err != nil {
 		return account.Workspace{}, err
 	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.moving[w.ID] {
+	if w.MovingTo != "" {
 		return account.Workspace{}, fmt.Errorf("workspace %s is moving: %w", w.Name, ErrWorkspaceBusy)
 	}
 	return w, nil

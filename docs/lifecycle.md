@@ -46,7 +46,7 @@ stateDiagram-v2
 ```
 
 - **添加**：`app.AddWorkspace` 先让沙箱确认路径是个目录（`box.Directory`），再按文件夹去重：同一用户已有指向同一文件夹的工作区（`box.Same`）就用它，已归档的顺带恢复。
-- **移动**：`app.MoveWorkspace` 把文件夹搬到一个已存在且为空的目录，只改 `root`。会话、记忆、定时任务都按工作区 id 引用它。移动要求名下的会话都空闲（`Reader.WorkspaceBusy`），移动期间 app 拦住新轮次。
+- **移动**：`app.MoveWorkspace` 把文件夹搬到一个已存在且为空的目录，只改 `root`。会话、记忆、定时任务都按工作区 id 引用它。移动要求名下的会话都空闲（`Reader.WorkspaceBusy`）。开始移动是一次写入：在同一个事务里检查空闲，并在工作区上记下 `moving_to`（要搬去的目录）。排新轮次的事务也在事务里读它，看到正在移动就拒绝。两者都排在同一个写队列里，所以不会出现"刚检查完空闲，就排进来一个轮次"的情况。搬完（或者没搬成）再用一次写入改 `root`、清掉 `moving_to`，每次都会发 `workspace/changed`，客户端能看到 `movingTo`。进程在移动途中退出的话，host 启动时由 `app.SettleMoves` 收尾：原目录还在就留在原处，否则目标目录在就改成目标。
 - **归档**：已归档的工作区不能新建会话，名下的会话也不能发新消息（`account.ErrWorkspaceArchived`）。
 - **指令**：`app.UpdateWorkspaceInstructions` 给工作区一段指令（最多两万字）。这个工作区里每个会话、每个角色的系统提示词都带上它，放在角色规则之后（`# WORKSPACE INSTRUCTIONS`）。
 - **工具来源**：`app.UpdateWorkspaceProviders` 给工作区开（`enabled`）或关（`disabled`）某些 provider 的工具，名字要是用户工具里有的 provider。部署可以把一些 provider 设成默认关闭（`host.Config.OptIn`）：它们只在 `enabled` 里写了它们的工作区出现，没挂工作区的会话里也没有。这一层排在工作区权限之后（`account.Layers`），对所有角色都生效；`disabled` 优先于 `enabled`。
