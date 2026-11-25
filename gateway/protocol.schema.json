@@ -4128,6 +4128,34 @@
       ],
       "additionalProperties": false
     },
+    "UserChangedNotification": {
+      "type": "object",
+      "properties": {
+        "user": {
+          "$ref": "#/$defs/UserRow"
+        },
+        "seq": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "user",
+        "seq"
+      ],
+      "additionalProperties": false
+    },
+    "UserCreateParams": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
     "UserInput": {
       "type": "object",
       "properties": {
@@ -4289,6 +4317,72 @@
       },
       "required": [
         "answers"
+      ],
+      "additionalProperties": false
+    },
+    "UserListResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "$ref": "#/$defs/UserRow"
+          }
+        },
+        "seq": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "data",
+        "seq"
+      ],
+      "additionalProperties": false
+    },
+    "UserResult": {
+      "type": "object",
+      "properties": {
+        "user": {
+          "$ref": "#/$defs/UserRow"
+        }
+      },
+      "required": [
+        "user"
+      ],
+      "additionalProperties": false
+    },
+    "UserRow": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "UserUpdateParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
       ],
       "additionalProperties": false
     },
@@ -4950,6 +5044,38 @@
         "$ref": "#/$defs/UsageQueryResult"
       }
     },
+    "user/create": {
+      "params": {
+        "$ref": "#/$defs/UserCreateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/UserResult"
+      }
+    },
+    "user/list": {
+      "params": {
+        "$ref": "#/$defs/Empty"
+      },
+      "result": {
+        "$ref": "#/$defs/UserListResult"
+      }
+    },
+    "user/read": {
+      "params": {
+        "$ref": "#/$defs/Empty"
+      },
+      "result": {
+        "$ref": "#/$defs/UserResult"
+      }
+    },
+    "user/update": {
+      "params": {
+        "$ref": "#/$defs/UserUpdateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/UserResult"
+      }
+    },
     "workspace/add": {
       "params": {
         "$ref": "#/$defs/WorkspaceAddParams"
@@ -5068,6 +5194,9 @@
     },
     "turn/changed": {
       "$ref": "#/$defs/TurnChangedNotification"
+    },
+    "user/changed": {
+      "$ref": "#/$defs/UserChangedNotification"
     },
     "workspace/changed": {
       "$ref": "#/$defs/WorkspaceChangedNotification"

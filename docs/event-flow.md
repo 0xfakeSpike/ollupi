@@ -213,4 +213,5 @@ flowchart TB
 
   写接口的返回值不带 seq：`Update` 返回之前通知已经进了出站队列，镜像应以通知为准，不要应用写结果。
 - **模型目录在 store 里，是部署的，不属于哪个用户。** `Tx.SetCatalog` 整份替换 `providers` 和 `provider_models` 两张表，提交时发一条不带用户的事件（`store.Owned.Catalog`）。不带用户的事件每个订阅者都收到：host 的模型集合据此换掉变了的模型客户端，已经在调模型的轮次用原来的客户端跑完；网关给运营者连接发 `catalog/changed`（含 key），给每个连接发 `model/changed`（只有模型和它开新会话用哪个）。用户选哪个模型开新会话、哪个模型学记忆，存在设置里（`Settings.Model`、`Settings.LearnModel`），改动照常经事务提交，以 `settings/changed` 通知客户端。记忆抽取每次处理一个用户时都重新读它的设置，不需要监听设置的变化。
+- **用户的名字也走不带用户的事件。** `Tx.CreateUser` 和 `Tx.SetUserName` 提交一条不带用户的事件（`store.Owned.User`），每个订阅者都收到；网关只发给运营者连接和这个用户自己的连接（`user/changed`），别的用户听不到。
 - **只有这几处由时间驱动：** 定时任务按最早的下次运行时间定闹钟，最长一分钟醒一次核对时钟（Go 的计时器不计电脑睡眠的时间，归档的会话恢复时也没有定时任务事件）；抽取和用量失败后定时重试；shard 定时续租；wshub 定时 ping。

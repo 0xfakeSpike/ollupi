@@ -27,6 +27,9 @@ type Store interface {
 
 type Reader interface {
 	Users() ([]string, error)
+	// UserList is every user with their name, by id.
+	UserList() ([]account.User, error)
+	User(id string) (account.User, error)
 	Settings(user string) (account.Settings, error)
 	Workspaces(user string) ([]account.Workspace, error)
 	Workspace(user, id string) (account.Workspace, error)
@@ -85,6 +88,9 @@ type Reader interface {
 type Tx interface {
 	Reader
 	EnsureUser(id string) error
+	// CreateUser makes a user that does not exist yet, named.
+	CreateUser(u account.User) error
+	SetUserName(id, name string) error
 	SetSettings(user string, s account.Settings) error
 	PutWorkspace(user string, w account.Workspace) error
 	AddTodo(user string, t account.Todo) (account.Todo, error)
@@ -301,6 +307,9 @@ type Owned struct {
 	SkillDeleted       string
 	// Catalog is the deployment's catalog after a change, keys included.
 	Catalog *[]account.ModelProvider
+	// User is a user after they were made or renamed. Its event is the
+	// deployment's: the operator lists every user.
+	User *account.User
 }
 
 type Change struct {

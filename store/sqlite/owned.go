@@ -23,6 +23,23 @@ func (r reader) Users() ([]string, error) {
 	return out, err
 }
 
+func (r reader) UserList() ([]account.User, error) {
+	var out []account.User
+	err := r.g.Raw("SELECT id, name FROM users ORDER BY id").Scan(&out).Error
+	if err != nil {
+		return nil, fmt.Errorf("store: the users: %w", err)
+	}
+	return out, nil
+}
+
+func (r reader) User(id string) (account.User, error) {
+	var u account.User
+	if err := notFound(r.g.Raw("SELECT id, name FROM users WHERE id = ?", id).Take(&u).Error); err != nil {
+		return account.User{}, fmt.Errorf("store: user %s: %w", id, err)
+	}
+	return u, nil
+}
+
 type settingsRow struct {
 	Redaction    bool
 	RedactionKey string
@@ -495,8 +512,39 @@ func (t *tx) EnsureUser(id string) error {
 	if err := t.g.Raw("SELECT count(*) FROM users WHERE id = ?", id).Scan(&known).Error; err != nil || known > 0 {
 		return err
 	}
+	return t.makeUser(account.User{ID: id})
+}
+
+func (t *tx) CreateUser(u account.User) error {
+	var known int64
+	if err := t.g.Raw("SELECT count(*) FROM users WHERE id = ?", u.ID).Scan(&known).Error; err != nil {
+		return err
+	}
+	if known > 0 {
+		return fmt.Errorf("store: user %s already exists", u.ID)
+	}
+	if err := t.makeUser(u); err != nil {
+		return err
+	}
+	t.owned = append(t.owned, store.Event{Owned: &store.Owned{User: &u}})
+	return nil
+}
+
+func (t *tx) SetUserName(id, name string) error {
+	if err := one(t.g.Exec("UPDATE users SET name = ? WHERE id = ?", name, id), "user "+id); err != nil {
+		return err
+	}
+	u := account.User{ID: id, Name: name}
+	t.owned = append(t.owned, store.Event{Owned: &store.Owned{User: &u}})
+	return nil
+}
+
+// makeUser makes a user with the settings and the environment every user
+// starts with.
+func (t *tx) makeUser(u account.User) error {
+	id := u.ID
 	now := time.Now().UTC()
-	if err := t.g.Exec("INSERT INTO users(id, created_at) VALUES (?, ?)", id, now).Error; err != nil {
+	if err := t.g.Exec("INSERT INTO users(id, name, created_at) VALUES (?, ?, ?)", id, u.Name, now).Error; err != nil {
 		return fmt.Errorf("store: user %s: %w", id, err)
 	}
 	if err := t.g.Exec("INSERT INTO settings(user_id, redaction, redaction_key, memory) VALUES (?, 1, ?, 1)", id, rand.Text()).Error; err != nil {

@@ -30,6 +30,43 @@ func (c *conn) catalogSet(ctx context.Context, p CatalogSetParams) (Empty, error
 	return Empty{}, c.s.app.SetCatalog(ctx, providers)
 }
 
+func (c *conn) userRead(ctx context.Context, _ Empty) (UserResult, error) {
+	u, err := c.s.app.User(ctx, c.user)
+	return UserResult{User: userRow(u)}, err
+}
+
+func (c *conn) userList(ctx context.Context, _ Empty) (UserListResult, error) {
+	users, seq, err := c.s.app.Users(ctx)
+	return UserListResult{Data: each(users, userRow), Seq: seq}, err
+}
+
+func (c *conn) userCreate(ctx context.Context, p UserCreateParams) (UserResult, error) {
+	u, err := c.s.app.CreateUser(ctx, p.Name)
+	if err != nil {
+		return UserResult{}, err
+	}
+	if c.s.welcome != nil {
+		if err := c.s.welcome(ctx, u.ID); err != nil {
+			return UserResult{}, err
+		}
+	}
+	return UserResult{User: userRow(u)}, nil
+}
+
+// userUpdate renames the connection's own user, or, for the operator, any.
+func (c *conn) userUpdate(ctx context.Context, p UserUpdateParams) (UserResult, error) {
+	if p.ID != c.user && !c.operator {
+		return UserResult{}, jsonrpc.Errorf(errForbidden, "a user renames only themself; another is the deployment operator's to rename")
+	}
+	if _, err := c.s.app.User(ctx, p.ID); err != nil {
+		return UserResult{}, err
+	}
+	u, err := c.s.app.RenameUser(ctx, p.ID, p.Name)
+	return UserResult{User: userRow(u)}, err
+}
+
+func userRow(u account.User) UserRow { return UserRow{ID: u.ID, Name: u.Name} }
+
 func providerRow(p account.ModelProvider) ModelProviderRow {
 	models := p.Models
 	if models == nil {

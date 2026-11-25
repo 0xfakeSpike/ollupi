@@ -68,6 +68,7 @@ const (
 	notifySkillChanged       = "skill/changed"
 	notifyCatalogChanged     = "catalog/changed"
 	notifyModelChanged       = "model/changed"
+	notifyUserChanged        = "user/changed"
 	notifyError              = "error"
 )
 
@@ -148,6 +149,10 @@ var protocol = struct {
 		"skill/delete":                 handle((*conn).skillDelete),
 		"catalog/read":                 operator(read(handle((*conn).catalogRead))),
 		"catalog/set":                  operator(handle((*conn).catalogSet)),
+		"user/read":                    read(handle((*conn).userRead)),
+		"user/update":                  handle((*conn).userUpdate),
+		"user/list":                    operator(read(handle((*conn).userList))),
+		"user/create":                  operator(handle((*conn).userCreate)),
 		"usage/query":                  read(handle((*conn).usageQuery)),
 		"presence/record":              handle((*conn).presenceRecord),
 		"presence/summary":             read(handle((*conn).presenceSummary)),
@@ -175,6 +180,7 @@ var protocol = struct {
 		notifySkillChanged:       reflect.TypeFor[SkillChangedNotification](),
 		notifyCatalogChanged:     reflect.TypeFor[CatalogChangedNotification](),
 		notifyModelChanged:       reflect.TypeFor[ModelChangedNotification](),
+		notifyUserChanged:        reflect.TypeFor[UserChangedNotification](),
 		notifyError:              reflect.TypeFor[ErrorNotification](),
 	},
 	serverRequests: map[string]serverRequest{
@@ -429,6 +435,38 @@ type ModelProviderRow struct {
 	BaseURL string                  `json:"baseUrl,omitempty"`
 	APIKey  string                  `json:"apiKey,omitempty"`
 	Models  []account.ProviderModel `json:"models"`
+}
+
+// UserRow is a user of the deployment: the id a connection's token names,
+// and the name people see them by, empty until someone names them.
+type UserRow struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type UserResult struct {
+	User UserRow `json:"user"`
+}
+
+type UserListResult struct {
+	Data []UserRow `json:"data"`
+	Seq  int64     `json:"seq"`
+}
+
+type UserCreateParams struct {
+	Name string `json:"name"`
+}
+
+type UserUpdateParams struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// UserChangedNotification is a user after they were made or renamed: the
+// operator hears of every user, a user only of themself.
+type UserChangedNotification struct {
+	User UserRow `json:"user"`
+	Seq  int64   `json:"seq"`
 }
 
 type CatalogResult struct {

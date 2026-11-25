@@ -154,6 +154,15 @@ func connect(t *testing.T) (store.Store, *client) {
 // and the deployment's operator.
 func serve(t *testing.T) (store.Store, func(token string) *client) {
 	t.Helper()
+	st, dial, _ := serveWelcoming(t)
+	return st, dial
+}
+
+// serveWelcoming is serve, and the users the gateway welcomed as it made
+// them.
+func serveWelcoming(t *testing.T) (store.Store, func(token string) *client, *[]string) {
+	t.Helper()
+	welcomed := new([]string)
 	ctx := context.Background()
 	st, err := sqlite.Open(t.TempDir())
 	if err != nil {
@@ -170,7 +179,10 @@ func serve(t *testing.T) (store.Store, func(token string) *client) {
 	if err := a.EnsureUser(ctx, "u"); err != nil {
 		t.Fatal(err)
 	}
-	server, err := NewServer(a, st.Feed(), Options{Authenticate: func(_ context.Context, token string) (auth.Identity, error) {
+	server, err := NewServer(a, st.Feed(), Options{Welcome: func(_ context.Context, user string) error {
+		*welcomed = append(*welcomed, user)
+		return nil
+	}, Authenticate: func(_ context.Context, token string) (auth.Identity, error) {
 		switch token {
 		case "secret":
 			return auth.Identity{User: "u"}, nil
@@ -200,7 +212,7 @@ func serve(t *testing.T) (store.Store, func(token string) *client) {
 			t.Errorf("initialize %+v", init)
 		}
 		return c
-	}
+	}, welcomed
 }
 
 func TestAClientHearsWhatChangesAndAnswersWhatWaitsOnIt(t *testing.T) {
@@ -563,5 +575,69 @@ func TestOnlyTheOperatorReadsAndChangesTheCatalogAndEveryoneHearsTheModels(t *te
 	user.call("model/list", Empty{}, &list)
 	if len(list.Data) != 2 || list.Default != "deep/flash" || list.Seq < changed.Seq {
 		t.Fatalf("model/list %+v", list)
+	}
+}
+
+func TestTheOperatorMakesAndNamesUsersAndAUserNamesOnlyThemself(t *testing.T) {
+	_, dial, welcomed := serveWelcoming(t)
+	user, op := dial("secret"), dial("operator")
+
+	var me UserResult
+	user.call("user/read", Empty{}, &me)
+	if me.User != (UserRow{ID: "u"}) {
+		t.Fatalf("u reads %+v", me)
+	}
+	for _, m := range []string{"user/list", "user/create"} {
+		if reply := user.reply(m, UserCreateParams{Name: "x"}); reply.Error == nil || reply.Error.Code != errForbidden {
+			t.Fatalf("a user's %s: %+v", m, reply)
+		}
+	}
+
+	var made UserResult
+	op.call("user/create", UserCreateParams{Name: "  Work  "}, &made)
+	if made.User.ID == "" || made.User.Name != "Work" || len(*welcomed) != 1 || (*welcomed)[0] != made.User.ID {
+		t.Fatalf("made %+v, welcomed %v", made, *welcomed)
+	}
+	if bad := op.reply("user/create", UserCreateParams{Name: " "}); bad.Error == nil || bad.Error.Code != jsonrpc.CodeInvalidParams {
+		t.Fatalf("a user without a name: %+v", bad)
+	}
+	var changed UserChangedNotification
+	json.Unmarshal(op.until(notifyUserChanged).Params, &changed)
+	if changed.User != made.User || changed.Seq == 0 {
+		t.Fatalf("the operator heard %+v", changed)
+	}
+
+	// A user renames themself, not another; the operator renames anyone.
+	if reply := user.reply("user/update", UserUpdateParams{ID: made.User.ID, Name: "Mine"}); reply.Error == nil || reply.Error.Code != errForbidden {
+		t.Fatalf("u renamed another: %+v", reply)
+	}
+	user.call("user/update", UserUpdateParams{ID: "u", Name: "Me"}, &me)
+	var heard UserChangedNotification
+	json.Unmarshal(user.until(notifyUserChanged).Params, &heard)
+	if heard.User != (UserRow{ID: "u", Name: "Me"}) {
+		t.Fatalf("u heard %+v", heard)
+	}
+	// u heard of themself, never of the user the operator made.
+	for _, m := range user.kept {
+		if m.Method == notifyUserChanged && strings.Contains(string(m.Params), made.User.ID) {
+			t.Fatalf("u heard of another user: %s", m.Params)
+		}
+	}
+	op.call("user/update", UserUpdateParams{ID: made.User.ID, Name: "Office"}, &made)
+	if reply := op.reply("user/update", UserUpdateParams{ID: "nobody", Name: "x"}); reply.Error == nil || reply.Error.Code != errNotFound {
+		t.Fatalf("renamed a user who is not there: %+v", reply)
+	}
+
+	var list UserListResult
+	op.call("user/list", Empty{}, &list)
+	if len(list.Data) != 2 || list.Seq == 0 {
+		t.Fatalf("users %+v", list)
+	}
+	names := map[string]string{}
+	for _, u := range list.Data {
+		names[u.ID] = u.Name
+	}
+	if names["u"] != "Me" || names[made.User.ID] != "Office" {
+		t.Fatalf("users %+v", list)
 	}
 }

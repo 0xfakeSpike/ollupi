@@ -32,6 +32,7 @@ type Server struct {
 	app          *app.App
 	feed         *store.Feed
 	authenticate auth.Authenticate
+	welcome      func(ctx context.Context, user string) error
 	admit        func(ctx context.Context, user string) error
 	hosts        []string
 	origins      []string
@@ -186,6 +187,11 @@ func (c *conn) owned(seq int64, thread string, o store.Owned) {
 		c.rpc.Notify(notifySkillChanged, SkillChangedNotification{Name: o.SkillDeleted, Seq: seq})
 	case o.Catalog != nil:
 		c.catalogChanged(seq, *o.Catalog)
+	case o.User != nil:
+		// The operator hears of every user; a user only of themself.
+		if c.operator || o.User.ID == c.user {
+			c.rpc.Notify(notifyUserChanged, UserChangedNotification{User: userRow(*o.User), Seq: seq})
+		}
 	}
 }
 

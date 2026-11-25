@@ -183,6 +183,18 @@ func Layers(deployment policy.Layer, optIn []string, s Settings, w *Workspace, c
 
 const maxNameRunes = 120
 
+// User is one user of the deployment: the id their data is kept under and
+// the name people see them by, empty until someone names them.
+type User struct {
+	ID   string
+	Name string
+}
+
+// UserName is a user's name as kept: 1 to 120 characters, trimmed.
+func UserName(name string) (string, error) {
+	return Name("a user's name", name)
+}
+
 func Title(title string, required bool) (string, error) {
 	title = strings.TrimSpace(title)
 	if (required && title == "") || len([]rune(title)) > maxNameRunes {

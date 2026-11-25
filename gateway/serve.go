@@ -21,7 +21,10 @@ const lookupTimeout = 10 * time.Second
 type Options struct {
 	// Authenticate names the user a connection acts as. It is required: no
 	// connection works without a user, and none is made up for it.
-	Authenticate   auth.Authenticate
+	Authenticate auth.Authenticate
+	// Welcome, when set, gives a user the operator just made what the
+	// deployment starts everyone with, before user/create answers.
+	Welcome        func(ctx context.Context, user string) error
 	AllowedOrigins []string
 	AllowedHosts   []string
 	Connections    wshub.Options
@@ -43,6 +46,7 @@ func NewServer(a *app.App, feed *store.Feed, opts Options) (*Server, error) {
 		app:          a,
 		feed:         feed,
 		authenticate: opts.Authenticate,
+		welcome:      opts.Welcome,
 		admit:        opts.Admit,
 		hosts:        append(slices.Clone(localHosts), opts.AllowedHosts...),
 		origins:      append([]string{"localhost:*", "127.0.0.1:*", "[::1]:*"}, opts.AllowedOrigins...),
