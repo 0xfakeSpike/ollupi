@@ -104,6 +104,21 @@ func seatbeltArgs(p policy, tempDirs []string, argv []string) ([]string, error) 
 	return append(args, argv...), nil
 }
 
+// fullAccessArgs run argv with full access but for the withheld folders,
+// which it neither reads nor writes.
+func fullAccessArgs(withheld, argv []string) []string {
+	var b strings.Builder
+	b.WriteString("(version 1)\n(allow default)\n")
+	args := []string{"-p", ""}
+	for i, path := range withheld {
+		key := fmt.Sprintf("WITHHELD_%d", i)
+		b.WriteString(`(deny file-read* file-write* (subpath (param "` + key + `")))` + "\n")
+		args = append(args, "-D", key+"="+path)
+	}
+	args[1] = b.String()
+	return append(append(args, "--"), argv...)
+}
+
 func seatbeltProfile(p policy, tempDirs []string) (string, [][2]string, error) {
 	var params [][2]string
 	param := func(prefix string, i int, path string) string {

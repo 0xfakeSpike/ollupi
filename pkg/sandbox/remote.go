@@ -166,3 +166,42 @@ func (r *remote) CheckWrite(roots []string, path string) error {
 }
 
 const moveTimeout = 10 * time.Minute
+
+func (r *remote) MakeDir(ctx context.Context, path string) error {
+	if r.Machine == nil {
+		return errors.New("sandbox: this box has no machine to make folders in")
+	}
+	path, err := r.Canonical(ctx, path)
+	if err != nil {
+		return err
+	}
+	if err := r.run(ctx, "mkdir", "--", path); err != nil {
+		return fmt.Errorf("sandbox: make %s: %w", path, err)
+	}
+	return nil
+}
+
+// remoteTrash moves $1 into the freedesktop.org trash of the machine's
+// home, recording $2, the path as a .trashinfo has it, and the time.
+const remoteTrash = `set -e
+dir="${XDG_DATA_HOME:-$HOME/.local/share}/Trash"
+mkdir -p "$dir/files" "$dir/info"
+base=$(basename -- "$1"); name=$base; n=1
+while ! (set -C; : > "$dir/info/$name.trashinfo") 2>/dev/null; do n=$((n+1)); name="$base.$n"; done
+printf '[Trash Info]\nPath=%s\nDeletionDate=%s\n' "$2" "$(date +%Y-%m-%dT%H:%M:%S)" > "$dir/info/$name.trashinfo"
+mv -- "$1" "$dir/files/$name" || { rm -f "$dir/info/$name.trashinfo"; exit 1; }`
+
+// Trash moves path into the machine's freedesktop.org trash.
+func (r *remote) Trash(ctx context.Context, path string) error {
+	if r.Machine == nil {
+		return errors.New("sandbox: this box has no machine to move files in")
+	}
+	path, err := r.Canonical(ctx, path)
+	if err != nil {
+		return err
+	}
+	if err := r.run(ctx, "sh", "-c", remoteTrash, "sh", path, trashInfoPath(path)); err != nil {
+		return fmt.Errorf("sandbox: move %s to the trash: %w", path, err)
+	}
+	return nil
+}

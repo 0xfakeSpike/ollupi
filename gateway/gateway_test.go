@@ -11,6 +11,8 @@ import (
 	"mime"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -678,5 +680,39 @@ func TestADeploymentWithoutModelsListsNoneNotNull(t *testing.T) {
 	reply := c.reply("model/list", Empty{})
 	if reply.Error != nil || !strings.Contains(string(reply.Result), `"data":[]`) {
 		t.Fatalf("model/list %s %+v", reply.Result, reply.Error)
+	}
+}
+
+func TestAWorkspaceFileIsServedOverHTTPAndNothingOutsideIt(t *testing.T) {
+	_, c := connect(t)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a b.png"), []byte("\x89PNG"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var added WorkspaceResult
+	c.call("workspace/add", WorkspaceAddParams{Path: dir}, &added)
+	var listed WorkspaceFilesResult
+	c.call("workspace/listFiles", WorkspacePathParams{WorkspaceID: added.Workspace.ID}, &listed)
+	if len(listed.Data) != 1 || listed.Data[0].Name != "a b.png" {
+		t.Errorf("the files %+v", listed.Data)
+	}
+	get := func(rel string) *http.Response {
+		t.Helper()
+		req, _ := http.NewRequest(http.MethodGet, c.base+"/workspaces/"+added.Workspace.ID+"/files/"+rel, nil)
+		req.Header.Set("Authorization", "Bearer secret")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { res.Body.Close() })
+		return res
+	}
+	res := get("a%20b.png")
+	body, _ := io.ReadAll(res.Body)
+	if res.StatusCode != http.StatusOK || string(body) != "\x89PNG" || res.Header.Get("Content-Type") != "image/png" {
+		t.Errorf("the file: %d %q %v", res.StatusCode, body, res.Header)
+	}
+	if res := get("..%2F..%2Fetc%2Fpasswd"); res.StatusCode != http.StatusNotFound {
+		t.Errorf("a path out of the workspace: %d", res.StatusCode)
 	}
 }

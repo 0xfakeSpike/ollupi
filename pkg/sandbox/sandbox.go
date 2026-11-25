@@ -13,10 +13,13 @@ import (
 )
 
 type Config struct {
-	Mode           string
-	Network        bool
-	Domains        DomainRules
-	Roots          []string
+	Mode    string
+	Network bool
+	Domains DomainRules
+	Roots   []string
+	// DenyRead are folders no command reads or writes: a limited one, as
+	// it reads no credentials of the home either, and on macOS one with
+	// full access too, which Seatbelt then lets do all else.
 	DenyRead       []string
 	ReadOnly       []string
 	ProtectedNames []string
@@ -87,6 +90,9 @@ type Sandbox struct {
 	maxOutputBytes int
 	denials        *denialLog
 	envMarker      string
+	// withheld are the folders a command with full access is kept from
+	// (Config.DenyRead), under Seatbelt; none where there is no Seatbelt.
+	withheld []string
 }
 
 func New(c Config) (*Sandbox, error) {
@@ -147,6 +153,18 @@ func New(c Config) (*Sandbox, error) {
 	}
 	if s.maxOutputBytes == 0 {
 		s.maxOutputBytes = defaultMaxOutputBytes
+	}
+	if runtime.GOOS == "darwin" && len(c.DenyRead) > 0 {
+		if _, err := os.Stat(seatbeltExecutable); err != nil {
+			return nil, fmt.Errorf("sandbox: commands with full access are kept from deny_read under Seatbelt: %w", err)
+		}
+		for _, path := range c.DenyRead {
+			withheld, err := canonicalPath(path, home)
+			if err != nil {
+				return nil, fmt.Errorf("sandbox: deny_read: %w", err)
+			}
+			s.withheld = append(s.withheld, withheld)
+		}
 	}
 	if mode != ModeFullAccess && runtime.GOOS == "darwin" {
 		l := newDenialLog()
@@ -328,7 +346,11 @@ func (s *Sandbox) Run(ctx context.Context, c Command) (Result, error) {
 
 func (s *Sandbox) command(ctx context.Context, c Command) (*exec.Cmd, *proxy, string, error) {
 	if !s.Enforced() || c.FullAccess {
-		cmd := exec.CommandContext(ctx, c.Program, c.Args...)
+		program, args := c.Program, c.Args
+		if len(s.withheld) > 0 {
+			program, args = seatbeltExecutable, fullAccessArgs(s.withheld, append([]string{c.Program}, c.Args...))
+		}
+		cmd := exec.CommandContext(ctx, program, args...)
 		cmd.Dir = c.Cwd
 		cmd.Env = fullEnviron(os.Environ(), s.hideEnv, c.Env)
 		return cmd, nil, "", nil

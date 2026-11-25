@@ -21,6 +21,11 @@ type Box interface {
 	Open(ctx context.Context, path string) (io.ReadCloser, error)
 	WriteFile(ctx context.Context, path string, data []byte, perm fs.FileMode) error
 	Move(ctx context.Context, from, to string) error
+	// MakeDir makes a folder, its parent being there, as a person does.
+	MakeDir(ctx context.Context, path string) error
+	// Trash moves a file or folder to the machine's trash, where a person
+	// finds it and puts it back.
+	Trash(ctx context.Context, path string) error
 	Canonical(ctx context.Context, path string) (string, error)
 	Directory(ctx context.Context, path string) (string, error)
 	Executable(ctx context.Context, program, cwd string) (string, error)

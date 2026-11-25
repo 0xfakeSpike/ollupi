@@ -306,6 +306,44 @@
       ],
       "additionalProperties": false
     },
+    "ChangeKind": {
+      "type": "string",
+      "enum": [
+        "modified",
+        "added",
+        "deleted",
+        "untracked"
+      ]
+    },
+    "ChangesResult": {
+      "type": "object",
+      "properties": {
+        "repo": {
+          "type": "boolean"
+        },
+        "head": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/HeadRow"
+            }
+          ]
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FileChangeRow"
+          }
+        }
+      },
+      "required": [
+        "repo",
+        "files"
+      ],
+      "additionalProperties": false
+    },
     "ClientInfo": {
       "type": "object",
       "properties": {
@@ -361,6 +399,22 @@
         "stderr",
         "exit_code",
         "work_dir"
+      ],
+      "additionalProperties": false
+    },
+    "CommitResult": {
+      "type": "object",
+      "properties": {
+        "hash": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "hash",
+        "subject"
       ],
       "additionalProperties": false
     },
@@ -748,6 +802,40 @@
       ],
       "additionalProperties": false
     },
+    "EnvironmentFoldersParams": {
+      "type": "object",
+      "properties": {
+        "environmentId": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "EnvironmentFoldersResult": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "parent": {
+          "type": "string"
+        },
+        "folders": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "path",
+        "folders"
+      ],
+      "additionalProperties": false
+    },
     "EnvironmentListResult": {
       "type": "object",
       "properties": {
@@ -774,6 +862,37 @@
         "data",
         "seq",
         "providers"
+      ],
+      "additionalProperties": false
+    },
+    "EnvironmentMakeFolderParams": {
+      "type": "object",
+      "properties": {
+        "environmentId": {
+          "type": "string"
+        },
+        "parent": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "parent",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "EnvironmentMakeFolderResult": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
       ],
       "additionalProperties": false
     },
@@ -900,6 +1019,76 @@
       ],
       "additionalProperties": false
     },
+    "FileChangeRow": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ChangeKind"
+        },
+        "staged": {
+          "$ref": "#/$defs/Staged"
+        },
+        "added": {
+          "type": [
+            "null",
+            "integer"
+          ]
+        },
+        "removed": {
+          "type": [
+            "null",
+            "integer"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "kind",
+        "staged"
+      ],
+      "additionalProperties": false
+    },
+    "FileDiffResult": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "FileEntryRow": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/FileKind"
+        }
+      },
+      "required": [
+        "name",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "FileKind": {
+      "type": "string",
+      "enum": [
+        "file",
+        "folder"
+      ]
+    },
     "FileOutput": {
       "type": "object",
       "properties": {
@@ -923,6 +1112,31 @@
         "path",
         "added",
         "removed"
+      ],
+      "additionalProperties": false
+    },
+    "FilePreviewRow": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/PreviewKind"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "text": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "mimeType": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "size"
       ],
       "additionalProperties": false
     },
@@ -1082,6 +1296,18 @@
         "files",
         "matches"
       ],
+      "additionalProperties": false
+    },
+    "HeadRow": {
+      "type": "object",
+      "properties": {
+        "branch": {
+          "type": "string"
+        },
+        "detached": {
+          "type": "string"
+        }
+      },
       "additionalProperties": false
     },
     "HubConversation": {
@@ -2657,6 +2883,15 @@
       ],
       "additionalProperties": false
     },
+    "PreviewKind": {
+      "type": "string",
+      "enum": [
+        "text",
+        "image",
+        "pdf",
+        "binary"
+      ]
+    },
     "ProviderModel": {
       "type": "object",
       "properties": {
@@ -3244,6 +3479,14 @@
         "roles"
       ],
       "additionalProperties": false
+    },
+    "Staged": {
+      "type": "string",
+      "enum": [
+        "all",
+        "part",
+        "none"
+      ]
     },
     "Status": {
       "type": "string",
@@ -4492,6 +4735,88 @@
       ],
       "additionalProperties": false
     },
+    "WorkspaceCommitParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "WorkspaceDiffParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "untracked": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "WorkspaceDiscardParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ChangeKind"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "path",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "WorkspaceFilesResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FileEntryRow"
+          }
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "WorkspaceIDParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workspaceId"
+      ],
+      "additionalProperties": false
+    },
     "WorkspaceInstructionsParams": {
       "type": "object",
       "properties": {
@@ -4548,6 +4873,40 @@
       "required": [
         "workspaceId",
         "path"
+      ],
+      "additionalProperties": false
+    },
+    "WorkspacePathParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workspaceId"
+      ],
+      "additionalProperties": false
+    },
+    "WorkspacePathsParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "workspaceId",
+        "paths"
       ],
       "additionalProperties": false
     },
@@ -4726,6 +5085,15 @@
         "kind"
       ],
       "additionalProperties": false
+    },
+    "WorkspaceStatResult": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/FileKind"
+        }
+      },
+      "additionalProperties": false
     }
   },
   "methods": {
@@ -4799,6 +5167,22 @@
       },
       "result": {
         "$ref": "#/$defs/EnvironmentListResult"
+      }
+    },
+    "environment/listFolders": {
+      "params": {
+        "$ref": "#/$defs/EnvironmentFoldersParams"
+      },
+      "result": {
+        "$ref": "#/$defs/EnvironmentFoldersResult"
+      }
+    },
+    "environment/makeFolder": {
+      "params": {
+        "$ref": "#/$defs/EnvironmentMakeFolderParams"
+      },
+      "result": {
+        "$ref": "#/$defs/EnvironmentMakeFolderResult"
       }
     },
     "environment/rename": {
@@ -5153,6 +5537,38 @@
         "$ref": "#/$defs/WorkspaceResult"
       }
     },
+    "workspace/changes": {
+      "params": {
+        "$ref": "#/$defs/WorkspaceIDParams"
+      },
+      "result": {
+        "$ref": "#/$defs/ChangesResult"
+      }
+    },
+    "workspace/commit": {
+      "params": {
+        "$ref": "#/$defs/WorkspaceCommitParams"
+      },
+      "result": {
+        "$ref": "#/$defs/CommitResult"
+      }
+    },
+    "workspace/diff": {
+      "params": {
+        "$ref": "#/$defs/WorkspaceDiffParams"
+      },
+      "result": {
+        "$ref": "#/$defs/FileDiffResult"
+      }
+    },
+    "workspace/discard": {
+      "params": {
+        "$ref": "#/$defs/WorkspaceDiscardParams"
+      },
+      "result": {
+        "$ref": "#/$defs/Empty"
+      }
+    },
     "workspace/list": {
       "params": {
         "$ref": "#/$defs/Empty"
@@ -5161,12 +5577,28 @@
         "$ref": "#/$defs/WorkspaceListResult"
       }
     },
+    "workspace/listFiles": {
+      "params": {
+        "$ref": "#/$defs/WorkspacePathParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WorkspaceFilesResult"
+      }
+    },
     "workspace/move": {
       "params": {
         "$ref": "#/$defs/WorkspaceMoveParams"
       },
       "result": {
         "$ref": "#/$defs/WorkspaceResult"
+      }
+    },
+    "workspace/readFile": {
+      "params": {
+        "$ref": "#/$defs/WorkspacePathParams"
+      },
+      "result": {
+        "$ref": "#/$defs/FilePreviewRow"
       }
     },
     "workspace/rename": {
@@ -5183,6 +5615,30 @@
       },
       "result": {
         "$ref": "#/$defs/WorkspaceResult"
+      }
+    },
+    "workspace/stage": {
+      "params": {
+        "$ref": "#/$defs/WorkspacePathsParams"
+      },
+      "result": {
+        "$ref": "#/$defs/Empty"
+      }
+    },
+    "workspace/statFile": {
+      "params": {
+        "$ref": "#/$defs/WorkspacePathParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WorkspaceStatResult"
+      }
+    },
+    "workspace/unstage": {
+      "params": {
+        "$ref": "#/$defs/WorkspacePathsParams"
+      },
+      "result": {
+        "$ref": "#/$defs/Empty"
       }
     },
     "workspace/updateInstructions": {
@@ -5358,7 +5814,8 @@
   },
   "paths": {
     "attachment": "/attachments/{thread}/{attachment}",
-    "upload": "/uploads"
+    "upload": "/uploads",
+    "workspaceFile": "/workspaces/{workspace}/files/{path...}"
   },
   "builtinTools": {
     "backend-sub-agent": {

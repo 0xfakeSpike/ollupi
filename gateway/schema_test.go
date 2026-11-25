@@ -19,6 +19,7 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/app"
 	"github.com/0xfakeSpike/ollupi/ask"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/memory"
@@ -95,6 +96,7 @@ var enums = []any{
 	plan.StatusValues, account.WorkspaceKinds, account.ModelAPIs, store.UsageGroups, store.PresenceStates, store.PresenceGroups,
 	account.TodoStatuses,
 	hub.TodoStatuses,
+	app.FileKinds, app.PreviewKinds, app.ChangeKinds, app.StagedValues,
 }
 
 var plainStrings = []reflect.Type{}
@@ -118,6 +120,10 @@ var arrays = []field{
 	{reflect.TypeFor[MCPServerListResult](), "Data"},
 	{reflect.TypeFor[WorkspaceListResult](), "Data"},
 	{reflect.TypeFor[EnvironmentListResult](), "Data"},
+	{reflect.TypeFor[WorkspaceFilesResult](), "Data"},
+	{reflect.TypeFor[ChangesResult](), "Files"},
+	{reflect.TypeFor[EnvironmentFoldersResult](), "Folders"},
+	{reflect.TypeFor[WorkspacePathsParams](), "Paths"},
 	{reflect.TypeFor[SkillListResult](), "Data"},
 	{reflect.TypeFor[SkillReadResult](), "Files"},
 	{reflect.TypeFor[SkillRow](), "Roles"},
