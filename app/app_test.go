@@ -646,7 +646,10 @@ func TestAWorkspaceAndItsConversationsAreInOneEnvironment(t *testing.T) {
 	for name, change := range map[string]func() error{
 		"archive": func() error { _, err := f.a.ArchiveWorkspace(f.ctx, "u", firstScratch.ID, true); return err },
 		"move":    func() error { _, err := f.a.MoveWorkspace(f.ctx, "u", firstScratch.ID, t.TempDir()); return err },
-		"kind":    func() error { _, err := f.a.SetWorkspaceKind(f.ctx, "u", firstScratch.ID, account.ProjectWorkspace); return err },
+		"kind": func() error {
+			_, err := f.a.SetWorkspaceKind(f.ctx, "u", firstScratch.ID, account.ProjectWorkspace)
+			return err
+		},
 	} {
 		if err := change(); !errors.Is(err, ErrScratchWorkspace) {
 			t.Errorf("%s a scratch workspace: %v", name, err)
