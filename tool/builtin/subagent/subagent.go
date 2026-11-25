@@ -22,9 +22,9 @@ var kinds = map[agent.Name]kind{
 		title: "Subagent",
 		description: "Launch a general-purpose subagent: another run of you, with your tools, that does one task on its own and reports back. " +
 			"When the task is one of these, launch the specialist instead: " + string(agent.BrowserSub) + " for work in the built-in browser; " +
-			string(agent.DesignSub) + " for a picture, an icon, a poster or a UI mockup; " + string(agent.CodebaseSub) + " to have a whole codebase read and explained; " +
+			string(agent.DesignSub) + " for a picture, an icon, a poster or a UI mockup; " + string(agent.CodebaseSub) + " to find out how a project's own code works; " +
 			string(agent.FrontendSub) + " to build or change a front end; " + string(agent.BackendSub) + " for servers, data, APIs and their tests; " +
-			string(agent.WritingSub) + " to write or rewrite a text; " + string(agent.ResearchSub) + " to gather information and check what is true; " +
+			string(agent.WritingSub) + " to write or rewrite a text; " + string(agent.ResearchSub) + " to find out what is true outside the project, from the web and documents; " +
 			string(agent.VerifySub) + " to check finished work against what it must do. " +
 			"To work on independent tasks at the same time, call " + string(agent.GeneralSub) + " several times in the same response; the subagents run in parallel.",
 	},
@@ -46,7 +46,8 @@ var kinds = map[agent.Name]kind{
 		description: "Launch a codebase subagent to read a whole project and explain it: what it is for, its modules and layers, " +
 			"how a request or a piece of data flows through them, where state lives, its dependencies and constraints, and what a change would touch. " +
 			"It reads the code itself, cites files and symbols, changes nothing, and reports back. " +
-			"Use it for research in a project too big to read in this conversation.",
+			"Use it for any question the project's own code settles, in a project too big to read in this conversation; " +
+			"use " + string(agent.ResearchSub) + " for what lies outside the project.",
 	},
 	agent.FrontendSub: {
 		title: "Frontend subagent",
@@ -76,9 +77,10 @@ var kinds = map[agent.Name]kind{
 	},
 	agent.ResearchSub: {
 		title: "Research subagent",
-		description: "Launch a research subagent to gather information and report what is true: the public web, a set of pages or documents, or a question the project's files can settle. " +
+		description: "Launch a research subagent to gather information from outside the project and report what is true: the public web, a site, or documents you name or put in the workspace. " +
 			"It reads only, cites each finding with its URL or path, separates what a source says from what it inferred, and reports back what it could not confirm. " +
-			"Give it the question, how deep to go, and what would count as an answer.",
+			"Give it the question, how deep to go, and what would count as an answer; " +
+			"use " + string(agent.CodebaseSub) + " for how the project's own code works.",
 	},
 }
 
