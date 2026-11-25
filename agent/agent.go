@@ -120,6 +120,18 @@ func RoleOf(name Name) (Role, bool) {
 	return r, ok
 }
 
+// Having names the roles whose own layers keep a tool, in the order of Names: the agents that can be
+// offered it, before a workspace or a conversation's settings take any away.
+func Having(t policy.Tool) []Name {
+	out := []Name{}
+	for _, name := range Names {
+		if policy.Kept(roles[name].Own, t) {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
 func MainRole(inputTokens int) Name {
 	if inputTokens < compactBelowTokens {
 		return CompactMain

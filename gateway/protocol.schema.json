@@ -1979,10 +1979,17 @@
               "$ref": "#/$defs/MCPServerStatus"
             }
           ]
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AgentRole"
+          }
         }
       },
       "required": [
-        "name"
+        "name",
+        "roles"
       ],
       "additionalProperties": false
     },
@@ -1998,7 +2005,7 @@
               "type": "null"
             },
             {
-              "$ref": "#/$defs/MCPServerConfig"
+              "$ref": "#/$defs/MCPServer"
             }
           ]
         },
@@ -4163,6 +4170,12 @@
         "input_schema": {
           "type": "object",
           "additionalProperties": true
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AgentRole"
+          }
         }
       },
       "required": [
@@ -4170,7 +4183,8 @@
         "name",
         "description",
         "annotations",
-        "input_schema"
+        "input_schema",
+        "roles"
       ],
       "additionalProperties": false
     },

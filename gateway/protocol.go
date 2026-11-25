@@ -504,6 +504,8 @@ type ToolDescriptor struct {
 	Description string           `json:"description"`
 	Annotations tool.Annotations `json:"annotations"`
 	InputSchema map[string]any   `json:"input_schema"`
+	// Roles are the agents whose role keeps the tool.
+	Roles []agent.Name `json:"roles"`
 }
 
 type ToolListResult struct {
@@ -518,6 +520,8 @@ type MCPServerListResult struct {
 type MCPServer struct {
 	MCPServerConfig
 	Status *MCPServerStatus `json:"status,omitempty"`
+	// Roles are the agents whose role keeps the server's tools.
+	Roles []agent.Name `json:"roles"`
 }
 
 type MCPServerStatus struct {
@@ -533,9 +537,9 @@ type MCPServerDeleteParams struct {
 }
 
 type MCPServerChangedNotification struct {
-	Name   string           `json:"name"`
-	Server *MCPServerConfig `json:"server"`
-	Seq    int64            `json:"seq"`
+	Name   string     `json:"name"`
+	Server *MCPServer `json:"server"`
+	Seq    int64      `json:"seq"`
 }
 
 type SkillListResult struct {

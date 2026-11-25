@@ -6,10 +6,12 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 
 	"github.com/0xfakeSpike/ollupi/account"
+	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/app"
 	"github.com/0xfakeSpike/ollupi/cron"
 	"github.com/0xfakeSpike/ollupi/memory"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
+	"github.com/0xfakeSpike/ollupi/policy"
 	"github.com/0xfakeSpike/ollupi/skill"
 	"github.com/0xfakeSpike/ollupi/store"
 )
@@ -85,7 +87,8 @@ func (c *conn) toolList(ctx context.Context, _ Empty) (ToolListResult, error) {
 	specs, err := c.s.app.Tools(ctx, c.user)
 	out := make([]ToolDescriptor, len(specs))
 	for i, s := range specs {
-		out[i] = ToolDescriptor{Provider: s.Provider, Name: s.Name, Description: s.Description, Annotations: s.Annotations, InputSchema: s.Schema}
+		out[i] = ToolDescriptor{Provider: s.Provider, Name: s.Name, Description: s.Description, Annotations: s.Annotations, InputSchema: s.Schema,
+			Roles: agent.Having(policy.Tool{Name: s.Name, Provider: s.Provider})}
 	}
 	return ToolListResult{Data: out}, err
 }
@@ -94,12 +97,18 @@ func (c *conn) mcpServerList(ctx context.Context, _ Empty) (MCPServerListResult,
 	servers, seq, err := c.s.app.MCPServers(ctx, c.user)
 	out := make([]MCPServer, len(servers))
 	for i, s := range servers {
-		out[i] = MCPServer{MCPServerConfig: mcpServerConfig(s.MCPServer)}
+		out[i] = mcpServerRow(s.MCPServer)
 		if st := s.Status; st != nil {
 			out[i].Status = &MCPServerStatus{Name: st.Name, Connected: st.Connected, Tools: st.Tools, SkippedTools: st.Skipped, Error: st.Error}
 		}
 	}
 	return MCPServerListResult{Data: out, Seq: seq}, err
+}
+
+// mcpServerRow is a server as written, with the agents whose role keeps its tools; how it is
+// doing is the caller's to add.
+func mcpServerRow(s account.MCPServer) MCPServer {
+	return MCPServer{MCPServerConfig: mcpServerConfig(s), Roles: agent.Having(policy.Tool{Provider: s.Name})}
 }
 
 func (c *conn) mcpServerSet(ctx context.Context, p MCPServerConfig) (MCPServerConfig, error) {

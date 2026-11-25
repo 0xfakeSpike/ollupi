@@ -164,7 +164,7 @@ func (c *conn) owned(seq int64, thread string, o store.Owned) {
 	case o.EnvironmentDeleted != "":
 		c.rpc.Notify(notifyEnvironmentChanged, EnvironmentChangedNotification{EnvironmentID: o.EnvironmentDeleted, Seq: seq})
 	case o.MCPServer != nil:
-		server := mcpServerConfig(*o.MCPServer)
+		server := mcpServerRow(*o.MCPServer)
 		c.rpc.Notify(notifyMCPServerChanged, MCPServerChangedNotification{Name: server.Name, Server: &server, Seq: seq})
 	case o.MCPServerDeleted != "":
 		c.rpc.Notify(notifyMCPServerChanged, MCPServerChangedNotification{Name: o.MCPServerDeleted, Seq: seq})

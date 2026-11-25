@@ -228,3 +228,21 @@ func TestOnlyTheHubHandsOutWork(t *testing.T) {
 		}
 	}
 }
+
+func TestHavingNamesTheRolesThatKeepATool(t *testing.T) {
+	cases := []struct {
+		provider string
+		want     []Name
+	}{
+		{HubProvider, []Name{HubMain}},
+		{SubagentsProvider, []Name{FullMain, CompactMain}},
+		{"github", []Name{FullMain, CompactMain, GeneralSub, HubMain}},
+		{WebProvider, []Name{FullMain, CompactMain, GeneralSub, ResearchSub, HubMain}},
+		{WorkspaceProvider, Names},
+	}
+	for _, c := range cases {
+		if got := Having(policy.Tool{Name: "x", Provider: c.provider}); !slices.Equal(got, c.want) {
+			t.Errorf("Having(%s) = %v, want %v", c.provider, got, c.want)
+		}
+	}
+}
