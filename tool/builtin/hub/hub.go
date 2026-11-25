@@ -105,8 +105,8 @@ func (TodoStatus) Constrain(s *jsonschema.Schema) {
 
 type AddTodoArgs struct {
 	Title  string `json:"title" jsonschema:"What is to be done, in one line."`
-	Notes  string `json:"notes,omitempty" jsonschema:"What is worth remembering about it: how to do it, what it waits for."`
-	Parent int64  `json:"parent,omitempty" jsonschema:"Id of the todo this one is a part of."`
+	Notes  string `json:"notes,omitempty" jsonschema:"What is worth remembering about it: how to do it, what it waits for. Not a log of changes."`
+	Parent int64  `json:"parent,omitempty" jsonschema:"Id of the todo this one is a part of. This is the only place the relation is kept: titles and notes never repeat it."`
 }
 
 func (AddTodoArgs) Constrain(s *jsonschema.Schema) {
@@ -117,10 +117,10 @@ func (AddTodoArgs) Constrain(s *jsonschema.Schema) {
 
 type UpdateTodoArgs struct {
 	ID           int64       `json:"id" jsonschema:"Id of the todo."`
-	Parent       *int64      `json:"parent,omitempty" jsonschema:"Id of the todo this one is a part of; 0 takes it out to the top."`
+	Parent       *int64      `json:"parent,omitempty" jsonschema:"Id of the todo this one is a part of; 0 takes it out to the top. This is the only place the relation is kept: titles and notes never repeat it."`
 	Title        *string     `json:"title,omitempty" jsonschema:"A new title, one line."`
 	Status       *TodoStatus `json:"status,omitempty" jsonschema:"How the todo stands now."`
-	Notes        *string     `json:"notes,omitempty" jsonschema:"New notes; an empty string clears them."`
+	Notes        *string     `json:"notes,omitempty" jsonschema:"New notes; an empty string clears them. Notes are for what to do and what it waits for, not a log of changes."`
 	Result       *string     `json:"result,omitempty" jsonschema:"One line on how it ended; an empty string clears it."`
 	Conversation *string     `json:"conversation,omitempty" jsonschema:"Id of the conversation working on it; an empty string unlinks it. This does not change the status."`
 }
