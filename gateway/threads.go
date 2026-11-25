@@ -148,8 +148,10 @@ func input(parts []UserInput) (app.Input, error) {
 		switch part.Type {
 		case "text":
 			texts = append(texts, part.Text)
-		case "file":
-			in.Attachments = append(in.Attachments, app.AttachmentInput{Path: part.Path, Name: part.Name, MimeType: part.MimeType})
+		case "upload":
+			in.Attachments = append(in.Attachments, app.AttachmentInput{Upload: part.UploadID})
+		case "workspaceFile":
+			in.Attachments = append(in.Attachments, app.AttachmentInput{Workspace: part.WorkspaceID, Path: part.Path})
 		default:
 			return app.Input{}, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "input type %q is not supported", part.Type)
 		}

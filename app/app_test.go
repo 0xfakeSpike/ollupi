@@ -354,24 +354,55 @@ func TestAnswersMustAnswerEveryQuestionAsked(t *testing.T) {
 
 func TestAttachmentsAreCopiedAndGoWithTheirConversation(t *testing.T) {
 	f := setup(t)
-	path := filepath.Join(t.TempDir(), "notes.txt")
-	os.WriteFile(path, []byte("remember the milk"), 0o600)
 	th := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", "", "", ""))
-	if _, _, err := f.a.Send(f.ctx, "u", th.ID, Input{Attachments: []AttachmentInput{{Path: "relative.txt"}}}); !errors.Is(err, ErrInvalidMessage) {
-		t.Errorf("a relative path: %v", err)
+	up := must[conversation.Attachment](t)(f.a.Upload(f.ctx, "u", "notes.txt", "text/plain", []byte("remember the milk")))
+	if _, err := f.a.Upload(f.ctx, "u", "blob.bin", "", []byte{0, 1, 2}); !errors.Is(err, ErrInvalidMessage) {
+		t.Errorf("an upload neither an image nor text: %v", err)
 	}
-	turn := sent(t)(f.a.Send(f.ctx, "u", th.ID, Input{Text: "read this", Attachments: []AttachmentInput{{Path: path}}}))
+	if _, _, err := f.a.Send(f.ctx, "v", th.ID, Input{Attachments: []AttachmentInput{{Upload: up.ID}}}); err == nil {
+		t.Error("another user sent the upload")
+	}
+	turn := sent(t)(f.a.Send(f.ctx, "u", th.ID, Input{Text: "read this", Attachments: []AttachmentInput{{Upload: up.ID}}}))
 	att := f.view(th.ID).ItemsOf(turn.ID)[0].Attachments[0]
 	got, data, err := f.a.ReadAttachment(f.ctx, "u", th.ID, att.ID)
 	if err != nil || got.Name != "notes.txt" || string(data) != "remember the milk" {
 		t.Fatalf("the attachment %+v %q %v", got, data, err)
 	}
+	if _, _, err := f.a.Send(f.ctx, "u", th.ID, Input{Attachments: []AttachmentInput{{Upload: up.ID}}}); !errors.Is(err, ErrInvalidMessage) {
+		t.Errorf("an upload sent twice: %v", err)
+	}
+	if _, ok := f.blobs.files[uploadKey("u", up.ID)]; ok {
+		t.Error("an upload sent is still kept")
+	}
+
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "plan.md"), []byte("# Plan"), 0o600)
+	outside := filepath.Join(t.TempDir(), "secret.txt")
+	os.WriteFile(outside, []byte("no"), 0o600)
+	os.Symlink(outside, filepath.Join(dir, "link.txt"))
+	w := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", "", dir, "plans"))
+	in := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", w.ID, "", ""))
+	for _, rel := range []string{"../secret.txt", "link.txt", "missing.md"} {
+		if _, _, err := f.a.Send(f.ctx, "u", in.ID, Input{Attachments: []AttachmentInput{{Workspace: w.ID, Path: rel}}}); err == nil {
+			t.Errorf("the workspace file %s was sent", rel)
+		}
+	}
+	planned := sent(t)(f.a.Send(f.ctx, "u", in.ID, Input{Attachments: []AttachmentInput{{Workspace: w.ID, Path: "plan.md"}}}))
+	if atts := f.view(in.ID).ItemsOf(planned.ID)[0].Attachments; len(atts) != 1 || atts[0].Name != "plan.md" {
+		t.Errorf("the workspace file sent %+v", atts)
+	}
+	f.a.Interrupt(f.ctx, "u", in.ID, planned.ID)
 	if err := f.a.DeleteThread(f.ctx, "u", th.ID); !errors.Is(err, ErrThreadBusy) {
 		t.Errorf("deleting a busy conversation: %v", err)
 	}
 	f.a.Interrupt(f.ctx, "u", th.ID, turn.ID)
-	if err := f.a.DeleteThread(f.ctx, "u", th.ID); err != nil || len(f.blobs.files) != 0 {
-		t.Errorf("deleted: %v, %d files left", err, len(f.blobs.files))
+	if err := f.a.DeleteThread(f.ctx, "u", th.ID); err != nil {
+		t.Errorf("deleted: %v", err)
+	}
+	for key := range f.blobs.files {
+		if strings.HasPrefix(key, th.ID+"/") {
+			t.Errorf("deleted, but its file %s is left", key)
+		}
 	}
 }
 

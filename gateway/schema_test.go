@@ -349,7 +349,7 @@ func generateSchema() ([]byte, error) {
 	for _, tool := range builtinTools {
 		roots = append(roots, tool.arguments, tool.output)
 	}
-	roots = append(roots, preparedExecution)
+	roots = append(roots, preparedExecution, reflect.TypeFor[UploadResult]())
 	for _, root := range roots {
 		if root == nil {
 			continue

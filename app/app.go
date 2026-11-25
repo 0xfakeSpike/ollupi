@@ -62,6 +62,7 @@ type App struct {
 	statuses    Statuses
 	envs        *environment.Boxes
 	attachments Attachments
+	uploads     uploads
 	cal         cron.Calendar
 	deployment  policy.Settings
 }

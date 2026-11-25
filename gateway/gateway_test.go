@@ -1,16 +1,16 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/0xfakeSpike/ollupi/environment"
 	"io"
+	"mime"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -428,14 +428,36 @@ func TestReadsSentTogetherAnswerEachAndAskOnce(t *testing.T) {
 
 func TestAnAttachmentIsReadOverHTTP(t *testing.T) {
 	_, c := connect(t)
-	notes := filepath.Join(t.TempDir(), "notes.txt")
-	if err := os.WriteFile(notes, []byte("ship on friday\n"), 0o600); err != nil {
-		t.Fatal(err)
+	post := func(token, name string, body []byte) *http.Response {
+		t.Helper()
+		req, _ := http.NewRequest(http.MethodPost, c.base+UploadPath, bytes.NewReader(body))
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		req.Header.Set("Content-Type", "text/plain")
+		req.Header.Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name}))
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { res.Body.Close() })
+		return res
+	}
+	if res := post("", "notes.txt", []byte("x")); res.StatusCode != http.StatusUnauthorized {
+		t.Errorf("an upload without a token: %d", res.StatusCode)
+	}
+	if res := post("secret", "blob.bin", []byte{0, 1}); res.StatusCode != http.StatusBadRequest {
+		t.Errorf("an upload neither an image nor text: %d", res.StatusCode)
+	}
+	res := post("secret", "笔记.txt", []byte("ship on friday\n"))
+	var up UploadResult
+	if err := json.NewDecoder(res.Body).Decode(&up); err != nil || res.StatusCode != http.StatusOK || up.Name != "笔记.txt" || up.Size != 15 {
+		t.Fatalf("the upload: %d %+v %v", res.StatusCode, up, err)
 	}
 	var started ThreadResult
 	c.call("thread/start", ThreadStartParams{Title: "chat"}, &started)
 	var turn TurnResult
-	c.call("turn/start", TurnStartParams{ThreadID: started.Thread.ID, Input: []UserInput{{Type: "text", Text: "read this"}, {Type: "file", Path: notes}}}, &turn)
+	c.call("turn/start", TurnStartParams{ThreadID: started.Thread.ID, Input: []UserInput{{Type: "text", Text: "read this"}, {Type: "upload", UploadID: up.UploadID}}}, &turn)
 	var item ItemChangedNotification
 	json.Unmarshal(c.until(notifyItemChanged).Params, &item)
 	if len(item.Item.Attachments) != 1 {
@@ -459,7 +481,7 @@ func TestAnAttachmentIsReadOverHTTP(t *testing.T) {
 		t.Cleanup(func() { res.Body.Close() })
 		return res
 	}
-	res := get("secret", started.Thread.ID, att.ID, "http://localhost:5173")
+	res = get("secret", started.Thread.ID, att.ID, "http://localhost:5173")
 	body, _ := io.ReadAll(res.Body)
 	if res.StatusCode != http.StatusOK || string(body) != "ship on friday\n" || res.Header.Get("Content-Type") != att.MimeType ||
 		res.Header.Get("Access-Control-Allow-Origin") != "http://localhost:5173" {

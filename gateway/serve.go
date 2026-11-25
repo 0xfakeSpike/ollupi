@@ -58,10 +58,18 @@ func NewServer(a *app.App, feed *store.Feed, opts Options) (*Server, error) {
 		AllowedHeaders:  []string{"Authorization"},
 		MaxAge:          600,
 	}).Handler(http.HandlerFunc(s.attachment))
+	uploads := cors.New(cors.Options{
+		AllowOriginFunc: s.allowsOrigin,
+		AllowedMethods:  []string{http.MethodPost},
+		AllowedHeaders:  []string{"Authorization", "Content-Type", "Content-Disposition"},
+		MaxAge:          600,
+	}).Handler(http.HandlerFunc(s.upload))
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+auth.HealthPath, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.Handle("GET "+AttachmentPath, attachments)
 	mux.Handle("OPTIONS "+AttachmentPath, attachments)
+	mux.Handle("POST "+UploadPath, uploads)
+	mux.Handle("OPTIONS "+UploadPath, uploads)
 	mux.HandleFunc("GET /", s.connect)
 	s.handler = mux
 	return s, nil

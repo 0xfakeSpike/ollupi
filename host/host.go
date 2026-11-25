@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"runtime/debug"
 	"slices"
@@ -139,6 +140,9 @@ func New(ctx context.Context, cfg Config) (*Host, error) {
 	builtins = append(builtins, cronjobs.New(st, h.cal))
 	h.Users = mcp.NewUsers(ctx, mcp.Client{Name: cfg.Name, Version: version()}, st, envs.In, builtins...)
 	h.App = app.New(st, modelSet, h.Users.Tools, h.Users.Statuses, envs, files, h.cal, cfg.Permissions)
+	if err := h.App.ClearUploads(ctx); err != nil {
+		slog.Warn("host: the uploads of an earlier run are left in the store", "error", err)
+	}
 	h.usage = usage.New(st)
 	hubTools.App = h.App
 	runner := run.New(st, modelSet, h.Users.Tools, files,

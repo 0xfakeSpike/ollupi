@@ -226,7 +226,7 @@ var protocol = struct {
 		http.StatusServiceUnavailable:  {"unavailable", ReconnectRetryAfter},
 	},
 	limits: Limits{SearchRunes: app.MaxSearchRunes, SearchTerms: app.MaxSearchTerms, SkillBytes: skill.MaxBytes},
-	paths:  map[string]string{"attachment": AttachmentPath},
+	paths:  map[string]string{"attachment": AttachmentPath, "upload": UploadPath},
 }
 
 type Limits struct {
@@ -561,12 +561,26 @@ type SkillChangedNotification struct {
 	Seq   int64     `json:"seq"`
 }
 
+// UserInput is a part of a message: "text" with Text; "upload", a file
+// the person uploaded (POST to the upload path), with UploadID; or
+// "workspaceFile", a file of a workspace, with WorkspaceID and Path
+// relative to its root.
 type UserInput struct {
-	Type     string `json:"type"`
-	Text     string `json:"text,omitempty"`
-	Path     string `json:"path,omitempty"`
-	Name     string `json:"name,omitempty"`
-	MimeType string `json:"mimeType,omitempty"`
+	Type        string `json:"type"`
+	Text        string `json:"text,omitempty"`
+	UploadID    string `json:"uploadId,omitempty"`
+	WorkspaceID string `json:"workspaceId,omitempty"`
+	Path        string `json:"path,omitempty"`
+}
+
+// UploadResult answers an upload: the id a message names the file by, and
+// the file as it will be attached.
+type UploadResult struct {
+	UploadID string `json:"uploadId"`
+	Name     string `json:"name"`
+	MimeType string `json:"mimeType"`
+	Size     int64  `json:"size"`
+	Kind     string `json:"kind"`
 }
 
 type TurnStartParams struct {

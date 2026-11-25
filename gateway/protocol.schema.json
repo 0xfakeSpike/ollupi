@@ -4044,6 +4044,34 @@
       ],
       "additionalProperties": false
     },
+    "UploadResult": {
+      "type": "object",
+      "properties": {
+        "uploadId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "mimeType": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "kind": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "uploadId",
+        "name",
+        "mimeType",
+        "size",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
     "Usage": {
       "type": "object",
       "properties": {
@@ -4190,13 +4218,13 @@
         "text": {
           "type": "string"
         },
+        "uploadId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
         "path": {
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        },
-        "mimeType": {
           "type": "string"
         }
       },
@@ -5329,7 +5357,8 @@
     "skillBytes": 2097152
   },
   "paths": {
-    "attachment": "/attachments/{thread}/{attachment}"
+    "attachment": "/attachments/{thread}/{attachment}",
+    "upload": "/uploads"
   },
   "builtinTools": {
     "backend-sub-agent": {

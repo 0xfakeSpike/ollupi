@@ -3,7 +3,6 @@ package app
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"image"
 	_ "image/gif"
@@ -38,10 +37,13 @@ const (
 	attachmentTimeout = time.Minute
 )
 
+// AttachmentInput is a file a message sends: one the person uploaded from
+// their device (Upload, an id Upload gave), or one of a workspace's, at
+// Path relative to its root.
 type AttachmentInput struct {
-	Path     string
-	Name     string
-	MimeType string
+	Upload    string
+	Workspace string
+	Path      string
 }
 
 var imageTypes = map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}
@@ -68,20 +70,19 @@ func (a *App) attach(ctx context.Context, user, thread string, ins []AttachmentI
 }
 
 func (a *App) keepAttachment(ctx context.Context, user, thread string, in AttachmentInput) (conversation.Attachment, error) {
-	if !filepath.IsAbs(in.Path) {
-		return conversation.Attachment{}, fmt.Errorf("%w: attachment path %q is not absolute", ErrInvalidMessage, in.Path)
+	var att conversation.Attachment
+	var data []byte
+	var err error
+	switch {
+	case in.Upload != "" && in.Workspace == "" && in.Path == "":
+		att, data, err = a.takeUpload(ctx, user, in.Upload)
+	case in.Upload == "" && in.Workspace != "":
+		att, data, err = a.workspaceAttachment(ctx, user, in.Workspace, in.Path)
+	default:
+		err = fmt.Errorf("%w: an attachment is an upload or a file of a workspace", ErrInvalidMessage)
 	}
-	data, err := a.attachmentSource(ctx, user, in.Path)
 	if err != nil {
-		return conversation.Attachment{}, fmt.Errorf("%w: attachment %s: %v", ErrInvalidMessage, in.Path, err)
-	}
-	name := in.Name
-	if strings.TrimSpace(name) == "" {
-		name = in.Path
-	}
-	att, err := describe(data, attachmentName(name), in.MimeType)
-	if err != nil {
-		return conversation.Attachment{}, fmt.Errorf("%w: %v", ErrInvalidMessage, err)
+		return conversation.Attachment{}, err
 	}
 	att.File = thread + "/" + att.File
 	if err := a.attachments.Put(ctx, att.File, data); err != nil {
@@ -90,24 +91,36 @@ func (a *App) keepAttachment(ctx context.Context, user, thread string, in Attach
 	return att, nil
 }
 
-// attachmentSource reads a file sent by its path: a file of the machine of
-// the user's first environment, the one the client sending it is on.
-func (a *App) attachmentSource(ctx context.Context, user, path string) ([]byte, error) {
-	box, err := a.envs.In(ctx, user, "")
+// workspaceAttachment is a file of one of the user's workspaces, read in
+// its environment.
+func (a *App) workspaceAttachment(ctx context.Context, user, workspace, rel string) (conversation.Attachment, []byte, error) {
+	p, err := a.place(ctx, user, workspace)
 	if err != nil {
-		return nil, err
+		return conversation.Attachment{}, nil, err
 	}
-	info, err := box.Stat(ctx, path)
+	path, err := p.path(ctx, rel)
 	if err != nil {
-		return nil, err
+		return conversation.Attachment{}, nil, err
+	}
+	info, err := p.box.Stat(ctx, path)
+	if err != nil {
+		return conversation.Attachment{}, nil, fmt.Errorf("%w: attachment %s: %v", ErrInvalidMessage, rel, err)
 	}
 	if !info.Mode().IsRegular() {
-		return nil, errors.New("not a file")
+		return conversation.Attachment{}, nil, fmt.Errorf("%w: attachment %s is not a file", ErrInvalidMessage, rel)
 	}
 	if info.Size() > maxImageBytes {
-		return nil, fmt.Errorf("%d bytes; at most %d are accepted", info.Size(), maxImageBytes)
+		return conversation.Attachment{}, nil, fmt.Errorf("%w: attachment %s has %d bytes; at most %d are accepted", ErrInvalidMessage, rel, info.Size(), maxImageBytes)
 	}
-	return sandbox.ReadFile(ctx, box, path, maxImageBytes)
+	data, err := sandbox.ReadFile(ctx, p.box, path, maxImageBytes)
+	if err != nil {
+		return conversation.Attachment{}, nil, fmt.Errorf("%w: attachment %s: %v", ErrInvalidMessage, rel, err)
+	}
+	att, err := describe(data, attachmentName(rel), "")
+	if err != nil {
+		return conversation.Attachment{}, nil, fmt.Errorf("%w: %v", ErrInvalidMessage, err)
+	}
+	return att, data, nil
 }
 
 func describe(data []byte, name, mime string) (conversation.Attachment, error) {
