@@ -921,13 +921,15 @@ type TodoListResult struct {
 }
 
 type TodoAddParams struct {
-	Title string `json:"title"`
-	Notes string `json:"notes,omitempty"`
+	Title    string `json:"title"`
+	Notes    string `json:"notes,omitempty"`
+	ParentID int64  `json:"parentId,omitempty"`
 }
 
-// TodoUpdateParams changes the fields it names of a todo: a field left out stays as it is, and "" clears it.
+// TodoUpdateParams changes the fields it names of a todo: a field left out stays as it is, and "" or a parentId of 0 clears it.
 type TodoUpdateParams struct {
 	ID       int64               `json:"id"`
+	ParentID *int64              `json:"parentId,omitempty"`
 	Title    *string             `json:"title,omitempty"`
 	Status   *account.TodoStatus `json:"status,omitempty"`
 	Notes    *string             `json:"notes,omitempty"`

@@ -94,6 +94,7 @@ const hubMainRules = `You are the user's hub: the conversation where they plan t
 - When you start planning, call ` + "`" + ListTodosTool + "`" + ` first: it lists the open and handed todos, each with its project and conversation. Do not record the same todo twice.
 - A todo is open until it is handed out. To hand it out, start the conversation with ` + "`" + StartConversationTool + "`" + ` and pass the todo's id as its ` + "`" + `todo` + "`" + ` argument: that links the conversation to it and marks it handed in one call. If the conversation already exists, call ` + "`" + UpdateTodoTool + "`" + ` with ` + "`" + `status: handed` + "`" + ` and its ` + "`" + `conversation` + "`" + `.
 - When the task is done and you have checked it, set ` + "`" + `status: done` + "`" + ` and a one-line ` + "`" + `result` + "`" + `. When the user gives it up, set ` + "`" + `status: dropped` + "`" + ` and say why in ` + "`" + `notes` + "`" + `. They move to the archive; you never delete a todo.
+- A todo that is a part of a bigger one has that todo as its ` + "`" + `parent` + "`" + `: pass it when you add the todo, or set it with ` + "`" + UpdateTodoTool + "`" + `. Todos go at most three levels deep. Which todo is under which lives only there, never in titles or notes, so moving one is a single change.
 - How a conversation stands comes from ` + "`" + ListConversationsTool + "`" + `, never from a copy in a todo's notes: keep ` + "`" + `notes` + "`" + ` for what to do, what it waits for, and why it was dropped.
 
 # Safety

@@ -19,10 +19,12 @@ const (
 	MaxTodoNotesRunes = 2000
 	// MaxTodoResultRunes is how long the result of a finished todo may be.
 	MaxTodoResultRunes = 500
+	MaxTodoLevels      = 3
 )
 
 // TodoChange is what UpdateTodo changes in a todo. A field left nil stays as it is; a pointer to "" clears it.
 type TodoChange struct {
+	Parent *int64
 	Title  *string
 	Status *account.TodoStatus
 	Notes  *string
@@ -60,8 +62,8 @@ func (a *App) Todo(ctx context.Context, user string, id int64) (account.Todo, er
 	return t, err
 }
 
-// AddTodo records an open todo of the user's and gives it the user's next todo id.
-func (a *App) AddTodo(ctx context.Context, user, title, notes string) (account.Todo, error) {
+// AddTodo records an open todo of the user's, under parent unless it is 0, and gives it the user's next todo id.
+func (a *App) AddTodo(ctx context.Context, user, title, notes string, parent int64) (account.Todo, error) {
 	var err error
 	if title, err = todoTitle(title); err != nil {
 		return account.Todo{}, err
@@ -75,7 +77,10 @@ func (a *App) AddTodo(ctx context.Context, user, title, notes string) (account.T
 	now := time.Now().UTC()
 	var added account.Todo
 	err = a.st.Update(ctx, func(tx store.Tx) (err error) {
-		added, err = tx.AddTodo(user, account.Todo{Title: title, Status: account.TodoOpen, Notes: notes, Created: now, Updated: now})
+		if err := todoParent(tx, user, 0, parent); err != nil {
+			return err
+		}
+		added, err = tx.AddTodo(user, account.Todo{Parent: parent, Title: title, Status: account.TodoOpen, Notes: notes, Created: now, Updated: now})
 		return err
 	})
 	return added, err
@@ -116,6 +121,12 @@ func (a *App) UpdateTodo(ctx context.Context, user string, id int64, c TodoChang
 	return edit(ctx, a.st,
 		func(tx store.Tx) (account.Todo, error) { return todo(tx, user, id) },
 		func(tx store.Tx, t *account.Todo) error {
+			if c.Parent != nil {
+				if err := todoParent(tx, user, t.ID, *c.Parent); err != nil {
+					return err
+				}
+				t.Parent = *c.Parent
+			}
 			if c.Thread != nil {
 				if *c.Thread == "" {
 					t.Thread, t.Workspace = "", ""
@@ -177,6 +188,45 @@ func todo(r store.Reader, user string, id int64) (account.Todo, error) {
 		fmt.Fprintf(&b, "\n%d %s", k.ID, k.Title)
 	}
 	return account.Todo{}, fmt.Errorf("%w: %s", ErrInvalidTodo, b.String())
+}
+
+func todoParent(r store.Reader, user string, id, parent int64) error {
+	above := 0
+	for at := parent; at != 0; above++ {
+		if at == id {
+			return fmt.Errorf("%w: todo %d cannot be under %d, which is %d itself or one of its parts", ErrInvalidTodo, id, parent, id)
+		}
+		p, err := todo(r, user, at)
+		if err != nil {
+			return err
+		}
+		at = p.Parent
+	}
+	if above == 0 {
+		return nil
+	}
+	levels := 1
+	if id != 0 {
+		all, _, err := r.Todos(user, store.TodoFilter{})
+		if err != nil {
+			return err
+		}
+		levels = todoLevels(all, id)
+	}
+	if above+levels > MaxTodoLevels {
+		return fmt.Errorf("%w: todos go at most %d levels deep, and under todo %d this one would make %d", ErrInvalidTodo, MaxTodoLevels, parent, above+levels)
+	}
+	return nil
+}
+
+func todoLevels(all []account.Todo, id int64) int {
+	deepest := 0
+	for _, t := range all {
+		if t.Parent == id {
+			deepest = max(deepest, todoLevels(all, t.ID))
+		}
+	}
+	return deepest + 1
 }
 
 func todoTitle(title string) (string, error) {

@@ -228,13 +228,13 @@ func (c *conn) todoList(ctx context.Context, p TodoListParams) (TodoListResult, 
 }
 
 func (c *conn) todoAdd(ctx context.Context, p TodoAddParams) (TodoResult, error) {
-	t, err := c.s.app.AddTodo(ctx, c.user, p.Title, p.Notes)
+	t, err := c.s.app.AddTodo(ctx, c.user, p.Title, p.Notes, p.ParentID)
 	return TodoResult{Todo: todoRow(t)}, err
 }
 
 func (c *conn) todoUpdate(ctx context.Context, p TodoUpdateParams) (TodoResult, error) {
 	t, err := c.s.app.UpdateTodo(ctx, c.user, p.ID, app.TodoChange{
-		Title: p.Title, Status: p.Status, Notes: p.Notes, Result: p.Result, Thread: p.ThreadID})
+		Parent: p.ParentID, Title: p.Title, Status: p.Status, Notes: p.Notes, Result: p.Result, Thread: p.ThreadID})
 	return TodoResult{Todo: todoRow(t)}, err
 }
 

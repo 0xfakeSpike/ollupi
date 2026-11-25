@@ -316,6 +316,7 @@ const (
 
 type todoRow struct {
 	ID          int64
+	Parent      int64
 	Title       string
 	WorkspaceID string
 	ThreadID    string
@@ -328,7 +329,7 @@ type todoRow struct {
 }
 
 func (row todoRow) todo() (account.Todo, error) {
-	return account.Todo{ID: row.ID, Title: row.Title, Workspace: row.WorkspaceID, Thread: row.ThreadID, Status: account.TodoStatus(row.Status),
+	return account.Todo{ID: row.ID, Parent: row.Parent, Title: row.Title, Workspace: row.WorkspaceID, Thread: row.ThreadID, Status: account.TodoStatus(row.Status),
 		Notes: row.Notes, Result: row.Result, Created: row.CreatedAt, Updated: row.UpdatedAt, Ended: row.EndedAt}, nil
 }
 
@@ -365,8 +366,8 @@ func (t *tx) AddTodo(owner string, todo account.Todo) (account.Todo, error) {
 	if err := t.g.Raw("SELECT coalesce(max(id), 0) + 1 FROM todos WHERE user_id = ?", owner).Scan(&todo.ID).Error; err != nil {
 		return account.Todo{}, err
 	}
-	err := t.g.Exec(`INSERT INTO todos(user_id, id, title, workspace_id, thread_id, status, notes, result, created_at, updated_at, ended_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, owner, todo.ID, todo.Title, todo.Workspace, todo.Thread, string(todo.Status), todo.Notes, todo.Result,
+	err := t.g.Exec(`INSERT INTO todos(user_id, id, parent, title, workspace_id, thread_id, status, notes, result, created_at, updated_at, ended_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, owner, todo.ID, todo.Parent, todo.Title, todo.Workspace, todo.Thread, string(todo.Status), todo.Notes, todo.Result,
 		todo.Created, todo.Updated, todo.Ended).Error
 	if err != nil {
 		return account.Todo{}, fmt.Errorf("store: add todo: %w", err)
@@ -376,8 +377,8 @@ func (t *tx) AddTodo(owner string, todo account.Todo) (account.Todo, error) {
 }
 
 func (t *tx) PutTodo(owner string, todo account.Todo) error {
-	res := t.g.Exec(`UPDATE todos SET title = ?, workspace_id = ?, thread_id = ?, status = ?, notes = ?, result = ?, updated_at = ?, ended_at = ?
-		WHERE user_id = ? AND id = ?`, todo.Title, todo.Workspace, todo.Thread, string(todo.Status), todo.Notes, todo.Result, todo.Updated, todo.Ended,
+	res := t.g.Exec(`UPDATE todos SET parent = ?, title = ?, workspace_id = ?, thread_id = ?, status = ?, notes = ?, result = ?, updated_at = ?, ended_at = ?
+		WHERE user_id = ? AND id = ?`, todo.Parent, todo.Title, todo.Workspace, todo.Thread, string(todo.Status), todo.Notes, todo.Result, todo.Updated, todo.Ended,
 		owner, todo.ID)
 	if err := one(res, fmt.Sprintf("todo %d", todo.ID)); err != nil {
 		return err

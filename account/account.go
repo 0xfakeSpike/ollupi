@@ -135,6 +135,7 @@ var TodoStatuses = []TodoStatus{TodoOpen, TodoHanded, TodoDone, TodoDropped}
 // Ended is when it entered done or dropped, and nil while it is open or handed.
 type Todo struct {
 	ID        int64
+	Parent    int64
 	Title     string
 	Workspace string
 	Thread    string

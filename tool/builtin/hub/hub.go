@@ -104,17 +104,20 @@ func (TodoStatus) Constrain(s *jsonschema.Schema) {
 }
 
 type AddTodoArgs struct {
-	Title string `json:"title" jsonschema:"What is to be done, in one line."`
-	Notes string `json:"notes,omitempty" jsonschema:"What is worth remembering about it: how to do it, what it waits for."`
+	Title  string `json:"title" jsonschema:"What is to be done, in one line."`
+	Notes  string `json:"notes,omitempty" jsonschema:"What is worth remembering about it: how to do it, what it waits for."`
+	Parent int64  `json:"parent,omitempty" jsonschema:"Id of the todo this one is a part of."`
 }
 
 func (AddTodoArgs) Constrain(s *jsonschema.Schema) {
 	s.Properties["title"].MinLength, s.Properties["title"].MaxLength = jsonschema.Ptr(1), jsonschema.Ptr(app.MaxTodoTitleRunes)
 	s.Properties["notes"].MaxLength = jsonschema.Ptr(app.MaxTodoNotesRunes)
+	s.Properties["parent"].Minimum = jsonschema.Ptr(1.0)
 }
 
 type UpdateTodoArgs struct {
 	ID           int64       `json:"id" jsonschema:"Id of the todo."`
+	Parent       *int64      `json:"parent,omitempty" jsonschema:"Id of the todo this one is a part of; 0 takes it out to the top."`
 	Title        *string     `json:"title,omitempty" jsonschema:"A new title, one line."`
 	Status       *TodoStatus `json:"status,omitempty" jsonschema:"How the todo stands now."`
 	Notes        *string     `json:"notes,omitempty" jsonschema:"New notes; an empty string clears them."`
@@ -124,6 +127,7 @@ type UpdateTodoArgs struct {
 
 func (UpdateTodoArgs) Constrain(s *jsonschema.Schema) {
 	s.Properties["id"].Minimum = jsonschema.Ptr(1.0)
+	s.Properties["parent"].Minimum = jsonschema.Ptr(0.0)
 	for field, max := range map[string]int{"title": app.MaxTodoTitleRunes, "notes": app.MaxTodoNotesRunes, "result": app.MaxTodoResultRunes} {
 		if p := s.Properties[field]; p != nil {
 			p.MaxLength = jsonschema.Ptr(max)
@@ -157,6 +161,7 @@ type Started struct {
 // Todo is a todo of the user's as the tools show it: what it is, how it stands, and what it waits on.
 type Todo struct {
 	ID           int64      `json:"id"`
+	Parent       int64      `json:"parent,omitempty"`
 	Title        string     `json:"title"`
 	Status       TodoStatus `json:"status"`
 	Workspace    string     `json:"workspace,omitempty"`
@@ -169,7 +174,7 @@ type Todo struct {
 }
 
 func todoOf(t account.Todo) Todo {
-	out := Todo{ID: t.ID, Title: t.Title, Status: TodoStatus(t.Status), Workspace: t.Workspace, Conversation: t.Thread,
+	out := Todo{ID: t.ID, Parent: t.Parent, Title: t.Title, Status: TodoStatus(t.Status), Workspace: t.Workspace, Conversation: t.Thread,
 		Notes: t.Notes, Result: t.Result, Created: t.Created.Format(minute), Updated: t.Updated.Format(minute)}
 	if t.Ended != nil {
 		out.Ended = t.Ended.Format(minute)
@@ -265,7 +270,7 @@ func (*Provider) Tools(context.Context) ([]kit.Spec, error) {
 		},
 		{
 			Name: agent.UpdateTodoTool,
-			Description: "Changes one of the user's todos: its title, status, notes, one-line result, or the conversation working on it. Fields left out stay as they are; " +
+			Description: "Changes one of the user's todos: its parent, title, status, notes, one-line result, or the conversation working on it. Fields left out stay as they are; " +
 				"set done or dropped only when the work has ended, and give a done todo the result it has in one line.",
 			InputSchema: kit.InputSchema[UpdateTodoArgs](),
 			Annotations: tool.Annotations{Title: "Update a todo", OpenWorldHint: new(false)},
@@ -495,7 +500,7 @@ func (p *Provider) addTodo(ctx context.Context, c tool.Call) (kit.Result, error)
 	if err != nil {
 		return kit.Result{}, err
 	}
-	t, err := p.App.AddTodo(ctx, c.User, args.Title, args.Notes)
+	t, err := p.App.AddTodo(ctx, c.User, args.Title, args.Notes, args.Parent)
 	if err != nil {
 		return kit.Result{}, err
 	}
@@ -507,7 +512,7 @@ func (p *Provider) updateTodo(ctx context.Context, c tool.Call) (kit.Result, err
 	if err != nil {
 		return kit.Result{}, err
 	}
-	change := app.TodoChange{Title: args.Title, Notes: args.Notes, Result: args.Result, Thread: args.Conversation}
+	change := app.TodoChange{Parent: args.Parent, Title: args.Title, Notes: args.Notes, Result: args.Result, Thread: args.Conversation}
 	if args.Status != nil {
 		status := account.TodoStatus(*args.Status)
 		change.Status = &status

@@ -229,7 +229,7 @@ func TestAHandOffStartsLinksAndSendsTogetherOrNotAtAll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	todo, err := f.a.AddTodo(f.ctx, "u", "release notes", "")
+	todo, err := f.a.AddTodo(f.ctx, "u", "release notes", "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}

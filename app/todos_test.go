@@ -15,9 +15,57 @@ import (
 
 func ref[T any](v T) *T { return &v }
 
+func TestATodoSitsUnderAnother(t *testing.T) {
+	f := setup(t)
+	whole := must[account.Todo](t)(f.a.AddTodo(f.ctx, "u", "build the framework", "", 0))
+	part := must[account.Todo](t)(f.a.AddTodo(f.ctx, "u", "computer use", "", whole.ID))
+	loose := must[account.Todo](t)(f.a.AddTodo(f.ctx, "u", "a plugin", "", 0))
+	if part.Parent != whole.ID || loose.Parent != 0 {
+		t.Fatalf("added %+v and %+v", part, loose)
+	}
+	moved := must[account.Todo](t)(f.a.UpdateTodo(f.ctx, "u", loose.ID, TodoChange{Parent: &whole.ID}))
+	if moved.Parent != whole.ID || moved.Title != "a plugin" {
+		t.Errorf("moved %+v", moved)
+	}
+	deeper := must[account.Todo](t)(f.a.UpdateTodo(f.ctx, "u", moved.ID, TodoChange{Parent: &part.ID}))
+	if deeper.Parent != part.ID {
+		t.Errorf("under a part %+v", deeper)
+	}
+
+	if _, err := f.a.AddTodo(f.ctx, "u", "orphan", "", 99); !errors.Is(err, ErrInvalidTodo) {
+		t.Errorf("a parent that does not exist: %v", err)
+	}
+	if _, err := f.a.UpdateTodo(f.ctx, "u", whole.ID, TodoChange{Parent: &whole.ID}); !errors.Is(err, ErrInvalidTodo) {
+		t.Errorf("under itself: %v", err)
+	}
+	if _, err := f.a.UpdateTodo(f.ctx, "u", whole.ID, TodoChange{Parent: &deeper.ID}); !errors.Is(err, ErrInvalidTodo) {
+		t.Errorf("under one of its own parts: %v", err)
+	}
+
+	if _, err := f.a.AddTodo(f.ctx, "u", "a fourth level", "", deeper.ID); !errors.Is(err, ErrInvalidTodo) {
+		t.Errorf("a fourth level: %v", err)
+	}
+	other := must[account.Todo](t)(f.a.AddTodo(f.ctx, "u", "another framework", "", 0))
+	sub := must[account.Todo](t)(f.a.AddTodo(f.ctx, "u", "its part", "", other.ID))
+	if _, err := f.a.UpdateTodo(f.ctx, "u", part.ID, TodoChange{Parent: &sub.ID}); !errors.Is(err, ErrInvalidTodo) {
+		t.Errorf("a todo with a part of its own, moved to the third level: %v", err)
+	}
+	if again := must[account.Todo](t)(f.a.UpdateTodo(f.ctx, "u", part.ID, TodoChange{Parent: &other.ID})); again.Parent != other.ID {
+		t.Errorf("a todo with a part of its own, moved to the second level: %+v", again)
+	}
+
+	top := must[account.Todo](t)(f.a.UpdateTodo(f.ctx, "u", deeper.ID, TodoChange{Parent: ref(int64(0))}))
+	if top.Parent != 0 {
+		t.Errorf("taken out to the top %+v", top)
+	}
+	if back := must[account.Todo](t)(f.a.Todo(f.ctx, "u", part.ID)); back.Parent != other.ID {
+		t.Errorf("read back %+v", back)
+	}
+}
+
 func TestATodoGoesThroughItsStatuses(t *testing.T) {
 	f := setup(t)
-	todo := must[account.Todo](t)(f.a.AddTodo(f.ctx, "u", "  write\nthe notes ", "from the release"))
+	todo := must[account.Todo](t)(f.a.AddTodo(f.ctx, "u", "  write\nthe notes ", "from the release", 0))
 	if todo.ID != 1 || todo.Status != account.TodoOpen || todo.Title != "write the notes" {
 		t.Fatalf("added %+v", todo)
 	}
@@ -48,10 +96,10 @@ func TestATodoGoesThroughItsStatuses(t *testing.T) {
 	if _, err := f.a.UpdateTodo(f.ctx, "u", 99, TodoChange{}); !errors.Is(err, ErrInvalidTodo) || !strings.Contains(err.Error(), "write the notes") {
 		t.Errorf("an unknown id: %v", err)
 	}
-	if _, err := f.a.AddTodo(f.ctx, "u", "  ", ""); !errors.Is(err, ErrInvalidTodo) {
+	if _, err := f.a.AddTodo(f.ctx, "u", "  ", "", 0); !errors.Is(err, ErrInvalidTodo) {
 		t.Errorf("an empty title: %v", err)
 	}
-	if _, err := f.a.AddTodo(f.ctx, "u", strings.Repeat("x", MaxTodoTitleRunes+1), ""); !errors.Is(err, ErrInvalidTodo) {
+	if _, err := f.a.AddTodo(f.ctx, "u", strings.Repeat("x", MaxTodoTitleRunes+1), "", 0); !errors.Is(err, ErrInvalidTodo) {
 		t.Errorf("a long title: %v", err)
 	}
 	if _, err := f.a.UpdateTodo(f.ctx, "u", todo.ID, TodoChange{Thread: ref("no-such-conversation")}); !errors.Is(err, ErrInvalidTodo) {
@@ -148,7 +196,7 @@ func TestAnOldFileDoesNotOverwriteTodaysTodos(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "TODO.md"), []byte("- [ ] old line\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	must[account.Todo](t)(f.a.AddTodo(f.ctx, "v", "a todo of today", ""))
+	must[account.Todo](t)(f.a.AddTodo(f.ctx, "v", "a todo of today", "", 0))
 	todos, _, _, err := f.a.Todos(f.ctx, "v", nil, 0)
 	if err != nil || len(todos) != 1 || todos[0].Title != "a todo of today" {
 		t.Fatalf("read %+v, %v", todos, err)

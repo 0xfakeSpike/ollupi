@@ -1526,6 +1526,9 @@
         "id": {
           "type": "integer"
         },
+        "parent": {
+          "type": "integer"
+        },
         "title": {
           "type": "string"
         },
@@ -3948,6 +3951,9 @@
         },
         "notes": {
           "type": "string"
+        },
+        "parentId": {
+          "type": "integer"
         }
       },
       "required": [
@@ -4032,6 +4038,9 @@
         "id": {
           "type": "integer"
         },
+        "parentId": {
+          "type": "integer"
+        },
         "title": {
           "type": "string"
         },
@@ -4089,6 +4098,12 @@
       "properties": {
         "id": {
           "type": "integer"
+        },
+        "parentId": {
+          "type": [
+            "null",
+            "integer"
+          ]
         },
         "title": {
           "type": [

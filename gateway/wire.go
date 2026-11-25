@@ -195,6 +195,7 @@ func workspaceRow(w account.Workspace) WorkspaceRow {
 
 type TodoRow struct {
 	ID          int64              `json:"id"`
+	ParentID    int64              `json:"parentId,omitempty"`
 	Title       string             `json:"title"`
 	Status      account.TodoStatus `json:"status"`
 	WorkspaceID string             `json:"workspaceId,omitempty"`
@@ -207,7 +208,7 @@ type TodoRow struct {
 }
 
 func todoRow(t account.Todo) TodoRow {
-	return TodoRow{ID: t.ID, Title: t.Title, Status: t.Status, WorkspaceID: t.Workspace, ThreadID: t.Thread,
+	return TodoRow{ID: t.ID, ParentID: t.Parent, Title: t.Title, Status: t.Status, WorkspaceID: t.Workspace, ThreadID: t.Thread,
 		Notes: t.Notes, Result: t.Result, CreatedAt: t.Created, UpdatedAt: t.Updated, EndedAt: t.Ended}
 }
 

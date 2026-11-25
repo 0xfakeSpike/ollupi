@@ -1,0 +1,1 @@
+ALTER TABLE todos ADD COLUMN parent integer NOT NULL DEFAULT 0;
