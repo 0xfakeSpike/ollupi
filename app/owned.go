@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/agent"
+	"github.com/0xfakeSpike/ollupi/environment"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/policy"
 	"github.com/0xfakeSpike/ollupi/store"
@@ -31,12 +33,18 @@ func (a *App) Workspaces(ctx context.Context, user string) (ws []account.Workspa
 	return ws, seq, err
 }
 
-func (a *App) AddWorkspace(ctx context.Context, user, path, name string) (account.Workspace, error) {
+// AddWorkspace makes a folder of one of the user's environments a
+// workspace; an empty environment is the user's first.
+func (a *App) AddWorkspace(ctx context.Context, user, environment, path, name string) (account.Workspace, error) {
 	ctx, cancel := context.WithTimeout(ctx, workspaceTimeout)
 	defer cancel()
-	box, err := a.boxes(user)
+	env, err := a.environment(ctx, user, environment)
 	if err != nil {
-		return account.Workspace{}, fmt.Errorf("the sandbox of the user: %w", err)
+		return account.Workspace{}, err
+	}
+	box, err := a.envs.In(ctx, user, env.ID)
+	if err != nil {
+		return account.Workspace{}, err
 	}
 	root, err := box.Directory(ctx, path)
 	if err != nil {
@@ -52,9 +60,9 @@ func (a *App) AddWorkspace(ctx context.Context, user, path, name string) (accoun
 	if err != nil {
 		return account.Workspace{}, err
 	}
-	i := slices.IndexFunc(existing, func(w account.Workspace) bool { return box.Same(ctx, w.Root, root) })
+	i := slices.IndexFunc(existing, func(w account.Workspace) bool { return w.Environment == env.ID && box.Same(ctx, w.Root, root) })
 	now := time.Now().UTC()
-	w := account.Workspace{ID: uuid.NewString(), Name: name, Root: root, Kind: account.ProjectWorkspace, Created: now, Updated: now}
+	w := account.Workspace{ID: uuid.NewString(), Name: name, Environment: env.ID, Root: root, Kind: account.ProjectWorkspace, Created: now, Updated: now}
 	if i >= 0 {
 		if w = existing[i]; w.Archived == nil {
 			return w, nil
@@ -157,9 +165,13 @@ func (a *App) MoveWorkspace(ctx context.Context, user, id, path string) (account
 	move := context.WithoutCancel(ctx)
 	ctx, cancel := context.WithTimeout(ctx, workspaceTimeout)
 	defer cancel()
-	box, err := a.boxes(user)
+	var at account.Workspace
+	if err := a.st.Read(ctx, func(r store.Reader) (err error) { at, err = r.Workspace(user, id); return err }); err != nil {
+		return account.Workspace{}, err
+	}
+	box, err := a.envs.In(ctx, user, at.Environment)
 	if err != nil {
-		return account.Workspace{}, fmt.Errorf("the sandbox of the user: %w", err)
+		return account.Workspace{}, err
 	}
 	target, err := box.Directory(ctx, path)
 	if err != nil {
@@ -240,7 +252,7 @@ func (a *App) SettleMoves(ctx context.Context) error {
 }
 
 func (a *App) landed(ctx context.Context, user string, w account.Workspace) (string, error) {
-	box, err := a.boxes(user)
+	box, err := a.envs.In(ctx, user, w.Environment)
 	if err != nil {
 		return "", err
 	}
@@ -265,7 +277,7 @@ func checkTarget(ctx context.Context, box sandbox.Box, w account.Workspace, all 
 		return fmt.Errorf("%w: %q is not empty", ErrInvalidPath, target)
 	}
 	for _, other := range all {
-		if other.ID != w.ID && box.Same(ctx, other.Root, target) {
+		if other.ID != w.ID && other.Environment == w.Environment && box.Same(ctx, other.Root, target) {
 			return fmt.Errorf("%w: %q is the folder of the workspace %s", ErrInvalidPath, target, other.Name)
 		}
 	}
@@ -283,16 +295,43 @@ func (a *App) Environments(ctx context.Context, user string) (envs []account.Env
 	return envs, seq, err
 }
 
-func (a *App) AddEnvironment(ctx context.Context, user, name string, kind account.EnvironmentKind) (account.Environment, error) {
+// environment is one of the user's environments; an empty id is their
+// first.
+func (a *App) environment(ctx context.Context, user, id string) (env account.Environment, err error) {
+	err = a.st.Read(ctx, func(r store.Reader) error { env, err = environmentOf(r, user, id); return err })
+	return env, err
+}
+
+func environmentOf(r store.Reader, user, id string) (account.Environment, error) {
+	if id != "" {
+		return r.Environment(user, id)
+	}
+	envs, err := r.Environments(user)
+	if err != nil {
+		return account.Environment{}, err
+	}
+	if len(envs) == 0 {
+		return account.Environment{}, fmt.Errorf("user %s has no environment", user)
+	}
+	return envs[0], nil
+}
+
+// Providers are the sandboxes the deployment offers an environment of.
+func (a *App) Providers() []environment.Provider { return a.envs.Providers() }
+
+// AddEnvironment names a new sandbox of one of the deployment's providers,
+// with config. It is made the first time a conversation runs in it.
+func (a *App) AddEnvironment(ctx context.Context, user, name, provider string, config json.RawMessage) (account.Environment, error) {
 	name, err := account.Name("an environment name", name)
 	if err != nil {
 		return account.Environment{}, err
 	}
-	if kind, err = account.NewEnvironmentKind(kind); err != nil {
-		return account.Environment{}, err
+	if err := a.envs.Check(provider, config); err != nil {
+		return account.Environment{}, fmt.Errorf("%w: %v", ErrInvalidEnvironment, err)
 	}
 	now := time.Now().UTC()
-	e := account.Environment{ID: uuid.NewString(), Name: name, Kind: kind, Created: now, Updated: now}
+	e := account.NewEnvironment(name, provider, config)
+	e.Created, e.Updated = now, now
 	err = a.st.Update(ctx, func(tx store.Tx) error { return a.putEnvironment(tx, user, e) })
 	return e, err
 }
@@ -324,14 +363,20 @@ func (a *App) putEnvironment(tx store.Tx, user string, e account.Environment) er
 	return tx.PutEnvironment(user, e)
 }
 
+// DeleteEnvironment deletes an environment no conversation or workspace is
+// in, then removes its sandbox. A user's first environment stays.
 func (a *App) DeleteEnvironment(ctx context.Context, user, id string) error {
-	return a.st.Update(ctx, func(tx store.Tx) error {
-		e, err := tx.Environment(user, id)
+	var e account.Environment
+	err := a.st.Update(ctx, func(tx store.Tx) (err error) {
+		if e, err = tx.Environment(user, id); err != nil {
+			return err
+		}
+		first, err := environmentOf(tx, user, "")
 		if err != nil {
 			return err
 		}
-		if e.Kind == account.Local {
-			return fmt.Errorf("%w: %s is this machine, whose folders the workspaces are", account.ErrInvalidName, e.Name)
+		if first.ID == e.ID {
+			return fmt.Errorf("environment %s: %w", e.Name, ErrFirstEnvironment)
 		}
 		used, err := tx.EnvironmentInUse(user, id)
 		if err != nil {
@@ -342,6 +387,13 @@ func (a *App) DeleteEnvironment(ctx context.Context, user, id string) error {
 		}
 		return tx.DeleteEnvironment(user, id)
 	})
+	if err != nil {
+		return err
+	}
+	if err := a.envs.Remove(context.WithoutCancel(ctx), user, e); err != nil {
+		return fmt.Errorf("the environment is deleted, but its sandbox may be left: %w", err)
+	}
+	return nil
 }
 
 type MCPServer struct {

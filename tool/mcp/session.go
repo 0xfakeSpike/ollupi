@@ -43,7 +43,9 @@ func connect(ctx, running context.Context, client *mcp.Client, box sandbox.Box, 
 			return nil, err
 		}
 		out.stderr = &tail{}
-		process, err := box.Start(running, sandbox.Command{Program: program, Args: s.Args, Cwd: cwd, Env: s.Env}, out.stderr)
+		// A server is the user's own program: it runs with their full access
+		// where the sandbox can give it, as it would outside ollupi.
+		process, err := box.Start(running, sandbox.Command{Program: program, Args: s.Args, Cwd: cwd, Env: s.Env, FullAccess: box.CanEscalate()}, out.stderr)
 		if err != nil {
 			return nil, err
 		}

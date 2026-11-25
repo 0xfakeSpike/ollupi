@@ -61,6 +61,8 @@ var defaultProtectedNames = []string{
 	".gitconfig", ".gitmodules",
 
 	".ripgreprc",
+
+	"AGENTS.md", ".agents", ".codex", ".claude", "CLAUDE.md", ".cursor", ".mcp.json",
 }
 
 func validProtectedName(name string) error {

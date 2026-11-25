@@ -29,7 +29,7 @@ func ask(t *testing.T, st store.Store, thread string) {
 	t.Helper()
 	now := time.Now().UTC()
 	err := st.Update(context.Background(), func(tx store.Tx) error {
-		if err := tx.EnsureUser("u"); err != nil {
+		if err := tx.EnsureUser("u", account.NewEnvironment("This computer", "local", nil)); err != nil {
 			return err
 		}
 		if err := tx.CreateThread(store.Thread{User: "u", Thread: account.Thread{ID: thread, Created: now, Updated: now}}); err != nil {

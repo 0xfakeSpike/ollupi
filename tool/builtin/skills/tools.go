@@ -29,10 +29,12 @@ const (
 
 type Provider struct {
 	st    store.Store
-	boxes func(user string) (sandbox.Box, error)
+	boxes sandbox.Boxes
 }
 
-func New(st store.Store, boxes func(user string) (sandbox.Box, error)) *Provider {
+// New puts a skill's files in the environment of the conversation that
+// loads it, where its commands run.
+func New(st store.Store, boxes sandbox.Boxes) *Provider {
 	return &Provider{st: st, boxes: boxes}
 }
 
@@ -138,7 +140,7 @@ func (p *Provider) activate(ctx context.Context, c tool.Call) (kit.Result, error
 		"resources":   found.Resources,
 	}
 	if len(files) > 0 {
-		dir, err := p.place(ctx, c.User, found, files)
+		dir, err := p.place(ctx, c.Caller, found, files)
 		if err != nil {
 			return kit.Result{}, err
 		}
@@ -154,10 +156,10 @@ func (p *Provider) activate(ctx context.Context, c tool.Call) (kit.Result, error
 	}, nil
 }
 
-func (p *Provider) place(ctx context.Context, user string, s skill.Skill, files []skill.File) (string, error) {
-	box, err := p.boxes(user)
+func (p *Provider) place(ctx context.Context, c tool.Caller, s skill.Skill, files []skill.File) (string, error) {
+	box, err := p.boxes(ctx, c.User, c.Environment)
 	if err != nil {
-		return "", fmt.Errorf("skills: the sandbox of the user: %w", err)
+		return "", fmt.Errorf("skills: the environment of the conversation: %w", err)
 	}
 	roots := box.Roots()
 	if len(roots) == 0 {

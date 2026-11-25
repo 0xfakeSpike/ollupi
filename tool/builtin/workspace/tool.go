@@ -11,19 +11,13 @@ import (
 )
 
 type Options struct {
-	Config    Config
-	Agent     AgentFiles
-	DenyRead  []string
-	EnvMarker string
-	Box       sandbox.Box
-	BoxFor    func(user string) (sandbox.Box, error)
-	BoxIn     func(caller tool.Caller) (sandbox.Box, error)
+	Config Config
+	// Boxes finds the box of the environment a call's conversation runs in.
+	Boxes sandbox.Boxes
 }
 
 type Provider struct {
-	box           sandbox.Box
-	boxFor        func(user string) (sandbox.Box, error)
-	boxIn         func(caller tool.Caller) (sandbox.Box, error)
+	boxes         sandbox.Boxes
 	timeoutSec    int
 	maxTimeoutSec int
 	blacklist     []string
@@ -31,34 +25,14 @@ type Provider struct {
 
 func New(o Options) (*Provider, error) {
 	c := o.Config
-	c.WorkspaceDirs = append([]string(nil), c.WorkspaceDirs...)
-	if o.Box != nil {
-		c.WorkspaceDirs = o.Box.Roots()
-	}
-	if err := c.normalize(o.Agent.Home); err != nil {
+	if err := c.normalize(); err != nil {
 		return nil, fmt.Errorf("workspace: %w", err)
 	}
-	box := o.Box
-	if box == nil {
-		cfg := sandboxConfig(o, c)
-		cfg.Roots = make([]string, 0, len(c.WorkspaceDirs))
-		for _, r := range c.WorkspaceDirs {
-			abs, err := sandbox.CanonicalDirectory(r)
-			if err != nil {
-				return nil, fmt.Errorf("workspace: workspace dir: %w", err)
-			}
-			cfg.Roots = append(cfg.Roots, abs)
-		}
-		local, err := sandbox.New(cfg)
-		if err != nil {
-			return nil, fmt.Errorf("workspace: %w", err)
-		}
-		box = local
+	if o.Boxes == nil {
+		return nil, fmt.Errorf("workspace: no environments to run commands in")
 	}
-	return &Provider{box: box, boxFor: o.BoxFor, boxIn: o.BoxIn, timeoutSec: c.CommandTimeoutSec, maxTimeoutSec: c.MaxCommandTimeoutSec, blacklist: append([]string(nil), c.CommandBlacklist...)}, nil
+	return &Provider{boxes: o.Boxes, timeoutSec: c.CommandTimeoutSec, maxTimeoutSec: c.MaxCommandTimeoutSec, blacklist: append([]string(nil), c.CommandBlacklist...)}, nil
 }
-
-func (r *Provider) Close() error { return r.box.Close() }
 
 const providerName = "workspace"
 

@@ -7,12 +7,10 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/gateway"
 	"github.com/0xfakeSpike/ollupi/host"
-	"github.com/0xfakeSpike/ollupi/tool/builtin/workspace"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
 )
 
@@ -37,21 +35,11 @@ func serve(args []string) {
 		}
 		tool.log = f
 	}
-	folder := filepath.Join(*dir, "work")
-	if err := os.MkdirAll(folder, 0o755); err != nil {
-		log.Fatal(err)
-	}
-	runner, err := workspace.New(workspace.Options{Config: workspace.Config{WorkspaceDirs: []string{folder}, SandboxMode: "full-access"},
-		Agent: workspace.AgentFiles{Home: *dir}})
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer runner.Close()
 	http.DefaultTransport.(*http.Transport).MaxIdleConnsPerHost = *calls
 	var e *engine
 	e = newEngine(host.Config{
 		Home: *dir, Dial: fakeDial(fakeConnection(*url, *calls)),
-		Tools: []kit.Provider{tool, runner},
+		Tools: []kit.Provider{tool},
 		Slots: *slots, TaskSlots: *taskSlots, UserTaskSlots: *userTaskSlots,
 		Gateway: &gateway.Options{Authenticate: signUp(&e)},
 	})

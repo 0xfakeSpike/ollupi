@@ -36,10 +36,6 @@ func constrainRun(s *jsonschema.Schema) {
 func (r *Provider) inputSchema() *jsonschema.Schema {
 	s := kit.InputSchema[commandArgs]()
 	s.Properties["timeout_sec"].Maximum = jsonschema.Ptr(float64(r.maxTimeoutSec))
-	if !r.box.CanEscalate() {
-		delete(s.Properties, "sandbox_permissions")
-		delete(s.Properties, "justification")
-	}
 	return s
 }
 
@@ -177,24 +173,12 @@ const (
 )
 
 func (r *Provider) commandTool() kit.Spec {
-	desc := "Run a command: set arguments.program to argv0 (a binary on PATH or an absolute path). work_dir defaults to the project root, or outside a project to " + r.box.Roots()[0] +
-		", and must stay inside the project (outside a project: inside " + strings.Join(r.box.Roots(), ", ") + "). " + r.box.Summary() +
-		". A non-zero exit_code is returned with the output, not as an error. To read, find or search files use " +
-		ToolReadFile + ", " + ToolGlob + " and " + ToolGrep + ", not cat, find or grep"
-	if r.box.Enforced() {
-		desc += ". Commands run within the sandbox's limits without asking the user"
-	}
-	if r.box.CanEscalate() {
-		desc += ". A result's sandbox_denials lists what the sandbox's limits stopped. " +
-			"When a command fails because of the sandbox's limits (a write outside the command directories or to a protected file, " +
-			"a host outside the allowed domains, the network, a local socket), " +
-			"retry it with sandbox_permissions \"require_escalated\" and a one-sentence justification: " +
-			"the command then runs with full access, without those limits, and the user is asked first unless the approval policy never asks. " +
-			"Do not escalate to get around a denied path on purpose, and do not escalate commands that work within the limits"
-	}
-	if r.boxIn != nil {
-		desc += ". A conversation runs in the environment it was started in, whose folders need not be this machine's"
-	}
+	desc := "Run a command: set arguments.program to argv0 (a binary on PATH or an absolute path). " +
+		"It runs in the conversation's environment (see ENVIRONMENT): work_dir defaults to the project root, or outside a project to the environment's folder, " +
+		"and must stay inside the project (outside a project: inside that folder). " +
+		"A non-zero exit_code is returned with the output, not as an error. To read, find or search files use " +
+		ToolReadFile + ", " + ToolGlob + " and " + ToolGrep + ", not cat, find or grep. " +
+		"Set sandbox_permissions only as ENVIRONMENT says"
 
 	return kit.Spec{
 		Name:        ToolRunCommand,

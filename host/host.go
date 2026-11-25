@@ -11,9 +11,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/app"
 	"github.com/0xfakeSpike/ollupi/blob"
 	"github.com/0xfakeSpike/ollupi/cron"
+	"github.com/0xfakeSpike/ollupi/environment"
 	"github.com/0xfakeSpike/ollupi/extract"
 	"github.com/0xfakeSpike/ollupi/gateway"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
@@ -33,6 +35,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/tool/builtin/skills"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/subagent"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/web"
+	"github.com/0xfakeSpike/ollupi/tool/builtin/workspace"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
 	"github.com/0xfakeSpike/ollupi/tool/mcp"
 	"github.com/0xfakeSpike/ollupi/usage"
@@ -56,13 +59,20 @@ type Config struct {
 	// ClientFor, when set, picks the client a user's call goes through
 	// instead of the catalog's, as a deployment that bills each user's own
 	// account would.
-	ClientFor     func(user, connection string) (llm.Client, error)
-	Tools         []kit.Provider
-	Hub           bool
-	OptIn         []string
-	Allowlist     []string
-	Permissions   policy.Settings
-	Boxes         func(user string) (sandbox.Box, error)
+	ClientFor   func(user, connection string) (llm.Client, error)
+	Tools       []kit.Provider
+	Hub         bool
+	OptIn       []string
+	Allowlist   []string
+	Permissions policy.Settings
+	// Sandboxes are the providers a user's environments are sandboxes of,
+	// by id: this machine, a cloud's. Sandbox names the one every user's
+	// first environment is a sandbox of.
+	Sandboxes map[string]sandbox.Provider
+	Sandbox   string
+	// Commands is how commands run in every environment: timeouts and the
+	// commands never run.
+	Commands      workspace.Config
 	Slots         int
 	UserSlots     int
 	RunLimit      time.Duration
@@ -79,6 +89,7 @@ type Host struct {
 	Users *mcp.Users
 
 	models    *models
+	envs      *environment.Boxes
 	scheduler *schedule.Scheduler
 	tasks     *schedule.Scheduler
 	extractor *extract.Extractor
@@ -90,9 +101,6 @@ type Host struct {
 func New(ctx context.Context, cfg Config) (*Host, error) {
 	if strings.TrimSpace(cfg.Name) == "" {
 		return nil, errors.New("host: a name is required")
-	}
-	if cfg.Boxes == nil {
-		return nil, errors.New("host: Boxes is required")
 	}
 	cfg.Permissions.ApprovalPolicy = cmp.Or(cfg.Permissions.ApprovalPolicy, string(policy.OnRequest))
 	if err := cfg.Permissions.Check(); err != nil {
@@ -107,21 +115,35 @@ func New(ctx context.Context, cfg Config) (*Host, error) {
 		st.Close()
 		return nil, err
 	}
+	envs, err := environment.New(st, cfg.Sandboxes, cfg.Sandbox)
+	if err != nil {
+		modelSet.close()
+		st.Close()
+		return nil, fmt.Errorf("host: %w", err)
+	}
+	commands, err := workspace.New(workspace.Options{Config: cfg.Commands, Boxes: envs.In})
+	if err != nil {
+		envs.Close()
+		modelSet.close()
+		st.Close()
+		return nil, fmt.Errorf("host: %w", err)
+	}
 	files := blob.Dir(filepath.Join(cfg.Home, "attachments"))
-	h := &Host{Store: st, models: modelSet, cal: cron.NewCalendar(cmp.Or(cfg.Location, time.Local))}
+	h := &Host{Store: st, models: modelSet, envs: envs, cal: cron.NewCalendar(cmp.Or(cfg.Location, time.Local))}
 	hubTools := &hub.Provider{St: st}
-	builtins := append(slices.Clone(cfg.Tools), plan.Provider{}, ask.Provider{}, loader.Provider{}, subagent.Provider{},
-		outputs.New(st), memorytool.New(st), web.New(cfg.Boxes), skills.New(st, cfg.Boxes))
+	builtins := append(slices.Clone(cfg.Tools), commands, plan.Provider{}, ask.Provider{}, loader.Provider{}, subagent.Provider{},
+		outputs.New(st), memorytool.New(st), web.New(envs.In), skills.New(st, envs.In))
 	if cfg.Hub {
 		builtins = append(builtins, hubTools)
 	}
 	builtins = append(builtins, cronjobs.New(st, h.cal))
-	h.Users = mcp.NewUsers(ctx, mcp.Client{Name: cfg.Name, Version: version()}, st, cfg.Boxes, builtins...)
-	h.App = app.New(st, modelSet, h.Users.Tools, h.Users.Statuses, cfg.Boxes, files, h.cal, cfg.Permissions)
+	h.Users = mcp.NewUsers(ctx, mcp.Client{Name: cfg.Name, Version: version()}, st, envs.In, builtins...)
+	h.App = app.New(st, modelSet, h.Users.Tools, h.Users.Statuses, envs, files, h.cal, cfg.Permissions)
 	h.usage = usage.New(st)
 	hubTools.App = h.App
 	runner := run.New(st, modelSet, h.Users.Tools, files,
-		run.Deployment{Name: cfg.Name, Prompt: cfg.Prompt, Permissions: cfg.Permissions, Allowlist: cfg.Allowlist, OptIn: cfg.OptIn})
+		run.Deployment{Name: cfg.Name, Prompt: cfg.Prompt, Permissions: cfg.Permissions, Allowlist: cfg.Allowlist, OptIn: cfg.OptIn,
+			Environment: h.describe})
 	slots := cmp.Or(cfg.Slots, defaultSlots)
 	h.scheduler = schedule.New(st, schedule.Threads(runner.Run), slots, cmp.Or(cfg.UserSlots, slots), cmp.Or(cfg.RunLimit, defaultRunLimit))
 	h.tasks = schedule.New(st, schedule.Tasks(runner.Task), cmp.Or(cfg.TaskSlots, defaultTaskSlots),
@@ -156,7 +178,22 @@ func (h *Host) Run(ctx context.Context) error {
 
 func (h *Host) Close() error {
 	h.models.close()
-	return errors.Join(h.Users.Close(), h.Store.Close())
+	return errors.Join(h.Users.Close(), h.envs.Close(), h.Store.Close())
+}
+
+// describe says where a conversation's commands and files are, for its
+// system prompt.
+func (h *Host) describe(ctx context.Context, user, id string) (string, error) {
+	var env account.Environment
+	err := h.Store.Read(ctx, func(r store.Reader) (err error) { env, err = r.Environment(user, id); return err })
+	if err != nil {
+		return "", err
+	}
+	box, err := h.envs.In(ctx, user, env.ID)
+	if err != nil {
+		return "", err
+	}
+	return workspace.Describe(env.Name, box), nil
 }
 
 func version() string {

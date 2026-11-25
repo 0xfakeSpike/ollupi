@@ -35,14 +35,18 @@ func read[T any](t *testing.T, s *Store, fn func(store.Reader) (T, error)) T {
 
 func TestAUserIsReadyWithSettingsAndThisMachine(t *testing.T) {
 	s := open(t, t.TempDir())
-	update(t, s, func(tx store.Tx) error { return tx.EnsureUser("u") })
-	update(t, s, func(tx store.Tx) error { return tx.EnsureUser("u") })
+	update(t, s, func(tx store.Tx) error {
+		return tx.EnsureUser("u", account.NewEnvironment("This computer", "local", nil))
+	})
+	update(t, s, func(tx store.Tx) error {
+		return tx.EnsureUser("u", account.NewEnvironment("This computer", "local", nil))
+	})
 	settings := read(t, s, func(r store.Reader) (account.Settings, error) { return r.Settings("u") })
 	if !settings.Redaction || !settings.Memory || len(settings.RedactionKey) < 16 {
 		t.Errorf("settings %+v", settings)
 	}
 	envs := read(t, s, func(r store.Reader) ([]account.Environment, error) { return r.Environments("u") })
-	if len(envs) != 1 || envs[0].Kind != account.Local {
+	if len(envs) != 1 || envs[0].Provider != "local" || envs[0].Name != "This computer" {
 		t.Fatalf("environments %+v", envs)
 	}
 	settings.Memory, settings.Permissions = false, policy.Settings{Rules: policy.Rules{Allow: []string{"read_file"}}}
@@ -62,26 +66,29 @@ func TestWhatAUserOwnsIsTheirsAlone(t *testing.T) {
 	now := time.Now().UTC()
 	update(t, s, func(tx store.Tx) error {
 		for _, u := range []string{"a", "b"} {
-			if err := tx.EnsureUser(u); err != nil {
+			if err := tx.EnsureUser(u, account.Environment{ID: "here-" + u, Name: "This computer", Provider: "local"}); err != nil {
 				return err
 			}
 		}
-		if err := tx.PutWorkspace("a", account.Workspace{ID: "w1", Name: "app", Root: "/app", Created: now, Updated: now}); err != nil {
+		if err := tx.PutWorkspace("a", account.Workspace{ID: "w1", Name: "app", Environment: "here-a", Root: "/app", Created: now, Updated: now}); err != nil {
 			return err
 		}
-		if err := tx.PutEnvironment("a", account.Environment{ID: "e1", Name: "Cloud", Kind: account.Machine, Created: now, Updated: now}); err != nil {
+		if err := tx.PutEnvironment("a", account.Environment{ID: "e1", Name: "Cloud", Provider: "cloud", Config: []byte(`{"template":"base"}`), Created: now.Add(time.Hour), Updated: now.Add(time.Hour)}); err != nil {
 			return err
 		}
 		return tx.PutMCPServer("a", account.MCPServer{Name: "github", URL: "https://x/mcp", Headers: map[string]string{"Authorization": "t"}})
 	})
 	err := s.Update(context.Background(), func(tx store.Tx) error {
-		return tx.PutWorkspace("a", account.Workspace{ID: "w2", Name: "again", Root: "/app", Created: now, Updated: now})
+		return tx.PutWorkspace("a", account.Workspace{ID: "w2", Name: "again", Environment: "here-a", Root: "/app", Created: now, Updated: now})
 	})
 	if err == nil {
 		t.Error("two workspaces share a folder")
 	}
+	update(t, s, func(tx store.Tx) error {
+		return tx.PutWorkspace("a", account.Workspace{ID: "w3", Name: "there", Environment: "e1", Root: "/app", Created: now, Updated: now})
+	})
 	err = s.Update(context.Background(), func(tx store.Tx) error {
-		return tx.PutEnvironment("a", account.Environment{ID: "e2", Name: "cloud", Kind: account.Machine, Created: now, Updated: now})
+		return tx.PutEnvironment("a", account.Environment{ID: "e2", Name: "cloud", Provider: "cloud", Created: now, Updated: now})
 	})
 	if err == nil {
 		t.Error("two environments share a name, but for case")
@@ -93,8 +100,12 @@ func TestWhatAUserOwnsIsTheirsAlone(t *testing.T) {
 		t.Errorf("the workspace %+v, %v", w, err)
 	}
 	envs := read(t, s, func(r store.Reader) ([]account.Environment, error) { return r.Environments("a") })
-	if len(envs) != 2 || envs[0].Kind != account.Local || envs[1].ID != "e1" {
+	if len(envs) != 2 || envs[0].ID != "here-a" || envs[1].ID != "e1" || string(envs[1].Config) != `{"template":"base"}` || len(envs[1].State) != 2 {
 		t.Errorf("environments %+v", envs)
+	}
+	update(t, s, func(tx store.Tx) error { return tx.KeepEnvironmentState("a", "e1", []byte(`{"sandbox":"sb-1"}`)) })
+	if e := read(t, s, func(r store.Reader) (account.Environment, error) { return r.Environment("a", "e1") }); string(e.State) != `{"sandbox":"sb-1"}` {
+		t.Errorf("the kept state %s", e.State)
 	}
 	servers := read(t, s, func(r store.Reader) ([]account.MCPServer, error) { return r.MCPServers("a") })
 	if len(servers) != 1 || servers[0].Headers["Authorization"] != "t" || servers[0].Args == nil {
@@ -231,7 +242,9 @@ func TestSearchFindsTitlesMessagesAndCronJobs(t *testing.T) {
 
 func TestAUserKeepsTheModelsTheyChose(t *testing.T) {
 	s := open(t, t.TempDir())
-	update(t, s, func(tx store.Tx) error { return tx.EnsureUser("a") })
+	update(t, s, func(tx store.Tx) error {
+		return tx.EnsureUser("a", account.NewEnvironment("This computer", "local", nil))
+	})
 	settings := read(t, s, func(r store.Reader) (account.Settings, error) { return r.Settings("a") })
 	if settings.Model != "" || settings.LearnModel != "" {
 		t.Fatalf("a new user chose %+v", settings)

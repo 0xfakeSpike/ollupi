@@ -3,6 +3,7 @@ package sandbox
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -18,6 +19,28 @@ func environ(host []string, passthrough []string, extra map[string]string) []str
 	for _, pair := range host {
 		k, v, ok := strings.Cut(pair, "=")
 		if ok && (allowed[k] || strings.HasPrefix(k, "LC_")) {
+			values[k] = v
+		}
+	}
+	for k, v := range extra {
+		values[k] = v
+	}
+	out := make([]string, 0, len(values))
+	for k, v := range values {
+		out = append(out, k+"="+v)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// fullEnviron is the environment of a command with full access: the
+// backend's, but for the variables whose names start with a hidden prefix,
+// and extra.
+func fullEnviron(host []string, hidden []string, extra map[string]string) []string {
+	values := map[string]string{}
+	for _, pair := range host {
+		k, v, ok := strings.Cut(pair, "=")
+		if ok && !slices.ContainsFunc(hidden, func(p string) bool { return strings.HasPrefix(k, p) }) {
 			values[k] = v
 		}
 	}

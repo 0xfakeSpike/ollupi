@@ -40,7 +40,11 @@ type model struct {
 	onCall  atomic.Pointer[func()]
 }
 
-func here(string) (sandbox.Box, error) { return sandbox.Here() }
+// thisMachine is the one sandbox bench offers: this machine, whose
+// environments are folders under home, running commands in mode.
+func thisMachine(home, mode string) map[string]sandbox.Provider {
+	return map[string]sandbox.Provider{"local": sandbox.Local{Dir: filepath.Join(home, "users"), Config: sandbox.Config{Mode: mode}}}
+}
 
 func tempHome() string {
 	dir, err := os.MkdirTemp("", "ollupi-bench-")
@@ -104,7 +108,11 @@ type engine struct {
 }
 
 func newEngine(cfg host.Config) *engine {
-	cfg.Name, cfg.Boxes = "bench", here
+	cfg.Name = "bench"
+	if cfg.Sandboxes == nil {
+		cfg.Sandboxes = thisMachine(cfg.Home, string(sandbox.ModeFullAccess))
+	}
+	cfg.Sandbox = "local"
 	cfg.Permissions = policy.Settings{ApprovalPolicy: string(policy.Never)}
 	ctx, cancel := context.WithCancel(context.Background())
 	h, err := host.New(ctx, cfg)

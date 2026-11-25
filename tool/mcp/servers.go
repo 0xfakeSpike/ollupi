@@ -33,7 +33,7 @@ type Users struct {
 	ctx      context.Context
 	client   *mcp.Client
 	st       store.Store
-	boxes    func(user string) (sandbox.Box, error)
+	boxes    sandbox.Boxes
 	builtins []kit.Provider
 	sub      *store.Subscription
 
@@ -53,7 +53,9 @@ type link struct {
 	err    error
 }
 
-func NewUsers(ctx context.Context, client Client, st store.Store, boxes func(user string) (sandbox.Box, error), builtins ...kit.Provider) *Users {
+// NewUsers runs each user's MCP servers in the user's first environment:
+// the servers are the user's, not one conversation's.
+func NewUsers(ctx context.Context, client Client, st store.Store, boxes sandbox.Boxes, builtins ...kit.Provider) *Users {
 	u := &Users{ctx: ctx, client: mcp.NewClient(&mcp.Implementation{Name: client.Name, Version: client.Version}, nil),
 		st: st, boxes: boxes, builtins: builtins, users: map[string]*connected{}}
 	u.sub = st.Feed().SubscribeAll(u.hear)
@@ -144,9 +146,9 @@ func (u *Users) connect(c *connected, name string) error {
 	if err := u.st.Read(u.ctx, func(r store.Reader) (err error) { stored, err = r.MCPServers(name); return err }); err != nil {
 		return fmt.Errorf("mcp: the servers of the user: %w", err)
 	}
-	box, err := u.boxes(name)
+	box, err := u.boxes(u.ctx, name, "")
 	if err != nil {
-		return fmt.Errorf("mcp: the sandbox of the user: %w", err)
+		return fmt.Errorf("mcp: the first environment of the user: %w", err)
 	}
 	c.links = make([]link, len(stored))
 	var wg sync.WaitGroup

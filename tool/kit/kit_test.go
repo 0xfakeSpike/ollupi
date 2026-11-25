@@ -76,7 +76,9 @@ func (slow) Tools(context.Context) ([]Spec, error) {
 	return []Spec{{Name: "build", InputSchema: schema, Background: tool.BackgroundOptional}, {Name: "count", InputSchema: schema}}, nil
 }
 
-func (slow) Invoke(_ context.Context, c tool.Call) (Result, error) { return Result{Output: c.Tool}, nil }
+func (slow) Invoke(_ context.Context, c tool.Call) (Result, error) {
+	return Result{Output: c.Tool}, nil
+}
 
 func TestAToolThatMayRunInTheBackgroundTakesTheArgument(t *testing.T) {
 	r, err := New(context.Background(), nil, slow{})

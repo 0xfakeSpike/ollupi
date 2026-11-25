@@ -27,15 +27,15 @@ func (a *App) User(ctx context.Context, id string) (u account.User, err error) {
 	return u, err
 }
 
-// CreateUser makes a user, named, with a new id: their settings, the
-// environment of this machine, and nothing else of anyone's.
+// CreateUser makes a user, named, with a new id: their settings, their
+// first environment, and nothing else of anyone's.
 func (a *App) CreateUser(ctx context.Context, name string) (account.User, error) {
 	name, err := account.UserName(name)
 	if err != nil {
 		return account.User{}, err
 	}
 	u := account.User{ID: uuid.NewString(), Name: name}
-	return u, a.st.Update(ctx, func(tx store.Tx) error { return tx.CreateUser(u) })
+	return u, a.st.Update(ctx, func(tx store.Tx) error { return tx.CreateUser(u, a.envs.First()) })
 }
 
 func (a *App) RenameUser(ctx context.Context, id, name string) (account.User, error) {

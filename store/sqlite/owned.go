@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -13,7 +14,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/store"
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -63,21 +63,22 @@ func (r reader) Settings(owner string) (account.Settings, error) {
 }
 
 type workspaceRow struct {
-	ID           string
-	Name         string
-	Root         string
-	MovingTo     string
-	Kind         string
-	Instructions string
-	Providers    string
-	Settings     string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	ArchivedAt   *time.Time
+	ID            string
+	EnvironmentID string
+	Name          string
+	Root          string
+	MovingTo      string
+	Kind          string
+	Instructions  string
+	Providers     string
+	Settings      string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	ArchivedAt    *time.Time
 }
 
 func (row workspaceRow) workspace(base string) (account.Workspace, error) {
-	w := account.Workspace{ID: row.ID, Name: row.Name, Root: readRoot(row.Root, base), MovingTo: readRoot(row.MovingTo, base), Kind: account.WorkspaceKind(row.Kind), Instructions: row.Instructions,
+	w := account.Workspace{ID: row.ID, Name: row.Name, Environment: row.EnvironmentID, Root: readRoot(row.Root, base), MovingTo: readRoot(row.MovingTo, base), Kind: account.WorkspaceKind(row.Kind), Instructions: row.Instructions,
 		Created: row.CreatedAt, Updated: row.UpdatedAt, Archived: row.ArchivedAt}
 	if err := json.Unmarshal([]byte(row.Settings), &w.Settings); err != nil {
 		return account.Workspace{}, fmt.Errorf("store: the settings of workspace %s: %w", row.ID, err)
@@ -120,17 +121,21 @@ func (r reader) Workspace(owner, id string) (account.Workspace, error) {
 type environmentRow struct {
 	ID        string
 	Name      string
-	Kind      string
+	Provider  string
+	Config    string
+	State     string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
 
 func (row environmentRow) environment() (account.Environment, error) {
-	return account.Environment{ID: row.ID, Name: row.Name, Kind: account.EnvironmentKind(row.Kind), Created: row.CreatedAt, Updated: row.UpdatedAt}, nil
+	return account.Environment{ID: row.ID, Name: row.Name, Provider: row.Provider, Config: json.RawMessage(row.Config), State: json.RawMessage(row.State),
+		Created: row.CreatedAt, Updated: row.UpdatedAt}, nil
 }
 
+// Environments are the user's, the one made with them first.
 func (r reader) Environments(owner string) ([]account.Environment, error) {
-	return each(r.g.Raw("SELECT * FROM environments WHERE user_id = ? ORDER BY kind <> ?, created_at, id", owner, string(account.Local)), environmentRow.environment)
+	return each(r.g.Raw("SELECT * FROM environments WHERE user_id = ? ORDER BY created_at, id", owner), environmentRow.environment)
 }
 
 func (r reader) Environment(owner, id string) (account.Environment, error) {
@@ -143,7 +148,8 @@ func (r reader) Environment(owner, id string) (account.Environment, error) {
 
 func (r reader) EnvironmentInUse(owner, id string) (bool, error) {
 	var n int64
-	err := r.g.Raw("SELECT count(*) FROM threads WHERE user_id = ? AND environment_id = ?", owner, id).Scan(&n).Error
+	err := r.g.Raw(`SELECT (SELECT count(*) FROM threads WHERE user_id = ? AND environment_id = ?)
+		+ (SELECT count(*) FROM workspaces WHERE user_id = ? AND environment_id = ?)`, owner, id, owner, id).Scan(&n).Error
 	return n > 0, err
 }
 
@@ -507,15 +513,15 @@ func (r reader) Active(since time.Time) (int64, error) {
 	return n, err
 }
 
-func (t *tx) EnsureUser(id string) error {
+func (t *tx) EnsureUser(id string, first account.Environment) error {
 	var known int64
 	if err := t.g.Raw("SELECT count(*) FROM users WHERE id = ?", id).Scan(&known).Error; err != nil || known > 0 {
 		return err
 	}
-	return t.makeUser(account.User{ID: id})
+	return t.makeUser(account.User{ID: id}, first)
 }
 
-func (t *tx) CreateUser(u account.User) error {
+func (t *tx) CreateUser(u account.User, first account.Environment) error {
 	var known int64
 	if err := t.g.Raw("SELECT count(*) FROM users WHERE id = ?", u.ID).Scan(&known).Error; err != nil {
 		return err
@@ -523,7 +529,7 @@ func (t *tx) CreateUser(u account.User) error {
 	if known > 0 {
 		return fmt.Errorf("store: user %s already exists", u.ID)
 	}
-	if err := t.makeUser(u); err != nil {
+	if err := t.makeUser(u, first); err != nil {
 		return err
 	}
 	t.owned = append(t.owned, store.Event{Owned: &store.Owned{User: &u}})
@@ -539,9 +545,9 @@ func (t *tx) SetUserName(id, name string) error {
 	return nil
 }
 
-// makeUser makes a user with the settings and the environment every user
-// starts with.
-func (t *tx) makeUser(u account.User) error {
+// makeUser makes a user with the settings every user starts with and their
+// first environment.
+func (t *tx) makeUser(u account.User, first account.Environment) error {
 	id := u.ID
 	now := time.Now().UTC()
 	if err := t.g.Exec("INSERT INTO users(id, name, created_at) VALUES (?, ?, ?)", id, u.Name, now).Error; err != nil {
@@ -550,7 +556,8 @@ func (t *tx) makeUser(u account.User) error {
 	if err := t.g.Exec("INSERT INTO settings(user_id, redaction, redaction_key, memory) VALUES (?, 1, ?, 1)", id, rand.Text()).Error; err != nil {
 		return fmt.Errorf("store: the settings of user %s: %w", id, err)
 	}
-	return t.PutEnvironment(id, account.Environment{ID: uuid.NewString(), Name: account.LocalName, Kind: account.Local, Created: now, Updated: now})
+	first.Created, first.Updated = now, now
+	return t.PutEnvironment(id, first)
 }
 
 func (t *tx) SetSettings(owner string, s account.Settings) error {
@@ -571,12 +578,12 @@ func (t *tx) SetSettings(owner string, s account.Settings) error {
 func (t *tx) PutWorkspace(owner string, w account.Workspace) error {
 	settings, _ := json.Marshal(w.Settings)
 	providers, _ := json.Marshal(w.Providers)
-	err := t.g.Exec(`INSERT INTO workspaces(id, user_id, name, root, moving_to, kind, instructions, providers, settings, created_at, updated_at, archived_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	err := t.g.Exec(`INSERT INTO workspaces(id, user_id, environment_id, name, root, moving_to, kind, instructions, providers, settings, created_at, updated_at, archived_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET name = excluded.name, root = excluded.root, moving_to = excluded.moving_to, kind = excluded.kind,
 			instructions = excluded.instructions, providers = excluded.providers, settings = excluded.settings, updated_at = excluded.updated_at,
 			archived_at = excluded.archived_at`,
-		w.ID, owner, w.Name, storeRoot(w.Root, t.base), storeRoot(w.MovingTo, t.base), string(w.Kind), w.Instructions, string(providers), string(settings),
+		w.ID, owner, w.Environment, w.Name, storeRoot(w.Root, t.base), storeRoot(w.MovingTo, t.base), string(w.Kind), w.Instructions, string(providers), string(settings),
 		w.Created, w.Updated, w.Archived).Error
 	if err != nil {
 		return fmt.Errorf("store: workspace %s: %w", w.Name, err)
@@ -585,15 +592,32 @@ func (t *tx) PutWorkspace(owner string, w account.Workspace) error {
 	return nil
 }
 
+// PutEnvironment makes an environment or renames it: its provider and
+// config are what it was made with, and its state is the provider's
+// (KeepEnvironmentState).
 func (t *tx) PutEnvironment(owner string, e account.Environment) error {
-	err := t.g.Exec(`INSERT INTO environments(id, user_id, name, kind, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+	err := t.g.Exec(`INSERT INTO environments(id, user_id, name, provider, config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET name = excluded.name, updated_at = excluded.updated_at`,
-		e.ID, owner, e.Name, string(e.Kind), e.Created, e.Updated).Error
+		e.ID, owner, e.Name, e.Provider, jsonOr(e.Config), e.Created, e.Updated).Error
 	if err != nil {
 		return fmt.Errorf("store: environment %s: %w", e.Name, err)
 	}
 	t.owned = append(t.owned, store.Event{User: owner, Owned: &store.Owned{Environment: &e}})
 	return nil
+}
+
+// KeepEnvironmentState keeps what an environment's provider keeps of its
+// sandbox. No one is told: the state is the provider's alone.
+func (t *tx) KeepEnvironmentState(owner, id string, state json.RawMessage) error {
+	return one(t.g.Exec("UPDATE environments SET state = ? WHERE id = ? AND user_id = ?", jsonOr(state), id, owner), "environment "+id)
+}
+
+// jsonOr is a JSON value to store, {} for none.
+func jsonOr(v json.RawMessage) string {
+	if len(bytes.TrimSpace(v)) == 0 {
+		return "{}"
+	}
+	return string(v)
 }
 
 func (t *tx) DeleteEnvironment(owner, id string) error {

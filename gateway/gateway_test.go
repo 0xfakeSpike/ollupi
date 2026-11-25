@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/0xfakeSpike/ollupi/environment"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -172,10 +173,14 @@ func serveWelcoming(t *testing.T) (store.Store, func(token string) *client, *[]s
 	if err := st.Update(ctx, func(tx store.Tx) error { return tx.SetCatalog(served) }); err != nil {
 		t.Fatal(err)
 	}
-	boxes := func(string) (sandbox.Box, error) { return sandbox.Here() }
-	users := mcp.NewUsers(ctx, mcp.Client{Name: "ollupi", Version: "test"}, st, boxes)
+	envs, err := environment.New(st, map[string]sandbox.Provider{"local": sandbox.Local{Dir: t.TempDir(), Config: sandbox.Config{Mode: string(sandbox.ModeFullAccess)}}}, "local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { envs.Close() })
+	users := mcp.NewUsers(ctx, mcp.Client{Name: "ollupi", Version: "test"}, st, envs.In)
 	t.Cleanup(func() { users.Close() })
-	a := app.New(st, catalog(served), users.Tools, users.Statuses, boxes, &files{}, cron.NewCalendar(time.UTC), policy.Settings{ApprovalPolicy: string(policy.OnRequest)})
+	a := app.New(st, catalog(served), users.Tools, users.Statuses, envs, &files{}, cron.NewCalendar(time.UTC), policy.Settings{ApprovalPolicy: string(policy.OnRequest)})
 	if err := a.EnsureUser(ctx, "u"); err != nil {
 		t.Fatal(err)
 	}

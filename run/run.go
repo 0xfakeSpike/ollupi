@@ -35,6 +35,7 @@ type Runner struct {
 	deployment  policy.Settings
 	optIn       []string
 	allowlist   []string
+	environment func(ctx context.Context, user, environment string) (string, error)
 }
 
 type Deployment struct {
@@ -43,11 +44,14 @@ type Deployment struct {
 	Permissions policy.Settings
 	Allowlist   []string
 	OptIn       []string
+	// Environment says where a conversation's commands and files are, for
+	// the system prompt: the environment it runs in.
+	Environment func(ctx context.Context, user, environment string) (string, error)
 }
 
 func New(st store.Store, models Models, tools tool.Tools, attachments Attachments, d Deployment) *Runner {
 	return &Runner{st: st, models: models, tools: tools, attachments: attachments,
-		name: d.Name, prompt: d.Prompt, deployment: d.Permissions, allowlist: d.Allowlist, optIn: d.OptIn}
+		name: d.Name, prompt: d.Prompt, deployment: d.Permissions, allowlist: d.Allowlist, optIn: d.OptIn, environment: d.Environment}
 }
 
 func (r *Runner) Run(ctx context.Context, thread string) error {

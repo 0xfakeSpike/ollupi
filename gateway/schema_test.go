@@ -92,7 +92,7 @@ var providers = []string{agent.CronProvider, agent.SkillsProvider, account.Memor
 var enums = []any{
 	conversation.ItemKinds, conversation.ItemStatuses, conversation.ThreadStatuses, conversation.Ends, conversation.Decisions,
 	TurnStatuses, memory.Scopes, memory.Kinds, memory.Statuses, memory.FailureCodes, policy.PolicyValues, agent.Names,
-	plan.StatusValues, account.EnvironmentKinds, account.WorkspaceKinds, account.ModelAPIs, store.UsageGroups, store.PresenceStates, store.PresenceGroups,
+	plan.StatusValues, account.WorkspaceKinds, account.ModelAPIs, store.UsageGroups, store.PresenceStates, store.PresenceGroups,
 	account.TodoStatuses,
 	hub.TodoStatuses,
 }

@@ -20,21 +20,9 @@ type dirs struct {
 }
 
 func (r *Provider) dirs(ctx context.Context, caller tool.Caller) (dirs, error) {
-	box := r.box
-	switch {
-	case r.boxIn != nil:
-		var err error
-		if box, err = r.boxIn(caller); err != nil {
-			return dirs{}, fmt.Errorf("workspace: the environment of the conversation: %w", err)
-		}
-		if box == nil {
-			box = r.box
-		}
-	case r.boxFor != nil:
-		var err error
-		if box, err = r.boxFor(caller.User); err != nil {
-			return dirs{}, fmt.Errorf("workspace: the sandbox of the user: %w", err)
-		}
+	box, err := r.boxes(ctx, caller.User, caller.Environment)
+	if err != nil {
+		return dirs{}, fmt.Errorf("workspace: the environment of the conversation: %w", err)
 	}
 	if caller.Root == "" {
 		return dirs{box: box, roots: box.Roots()}, nil

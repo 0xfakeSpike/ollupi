@@ -48,7 +48,7 @@ func TestEachUsersServersRunInTheirMachine(t *testing.T) {
 	own := func(u string) []account.MCPServer {
 		return []account.MCPServer{{Name: "own", Command: "mcp-server", Args: []string{"--stdio"}, Env: map[string]string{"TOKEN": "of-" + u}}}
 	}
-	users, st := newUsers(t, ctx, map[string][]account.MCPServer{"a": own("a"), "b": own("b"), "c": nil}, func(u string) (sandbox.Box, error) {
+	users, st := newUsers(t, ctx, map[string][]account.MCPServer{"a": own("a"), "b": own("b"), "c": nil}, func(_ context.Context, u, _ string) (sandbox.Box, error) {
 		return sandbox.Remote(machines[u], []string{"/cloud/work"}, "cloud"), nil
 	})
 	defer users.Close()

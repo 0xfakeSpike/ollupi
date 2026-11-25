@@ -21,7 +21,7 @@ func TestACronJobMadeInAConversationIsListedPausedAndDeleted(t *testing.T) {
 	defer st.Close()
 	now := time.Now().UTC()
 	err = st.Update(ctx, func(tx store.Tx) error {
-		if err := tx.EnsureUser("u"); err != nil {
+		if err := tx.EnsureUser("u", account.NewEnvironment("This computer", "local", nil)); err != nil {
 			return err
 		}
 		return tx.CreateThread(store.Thread{User: "u", Thread: account.Thread{ID: "th", Title: "news", Created: now, Updated: now}})

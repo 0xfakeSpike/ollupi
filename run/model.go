@@ -224,6 +224,11 @@ func (r *Runner) input(ctx context.Context, s *step) (prompt.Context, error) {
 		system.Instructions = s.workspace.Instructions
 	}
 	inProject := slices.ContainsFunc(slices.Concat(s.sent, s.deferred), func(t prompt.Tool) bool { return t.Provider == agent.WorkspaceProvider })
+	if inProject && r.environment != nil {
+		if system.Environment, err = r.environment(ctx, s.th.User, s.th.Environment); err != nil {
+			return prompt.Context{}, fmt.Errorf("run: the environment of the conversation: %w", err)
+		}
+	}
 	if inProject && s.workspace != nil {
 		system.Project = s.workspace.Root
 	}

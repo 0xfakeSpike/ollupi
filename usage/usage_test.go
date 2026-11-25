@@ -63,10 +63,10 @@ func converse(t *testing.T, s store.Store, user, thread string, responses ...con
 	t.Helper()
 	now := time.Now().UTC()
 	update(t, s, func(tx store.Tx) error {
-		if err := tx.EnsureUser(user); err != nil {
+		if err := tx.EnsureUser(user, account.Environment{ID: "here", Name: "This computer", Provider: "local"}); err != nil {
 			return err
 		}
-		if err := tx.PutWorkspace(user, account.Workspace{ID: "w", Name: "proj", Root: t.TempDir(), Created: now, Updated: now}); err != nil {
+		if err := tx.PutWorkspace(user, account.Workspace{ID: "w", Name: "proj", Environment: "here", Root: t.TempDir(), Created: now, Updated: now}); err != nil {
 			return err
 		}
 		if err := tx.CreateThread(store.Thread{User: user, Thread: account.Thread{ID: thread, Workspace: "w", Title: "chat", Created: now, Updated: now}}); err != nil {

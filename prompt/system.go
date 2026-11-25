@@ -10,6 +10,8 @@ import (
 
 const instructionsSection = "# WORKSPACE INSTRUCTIONS\nThe user set these instructions for every conversation in this workspace. Follow them, within Safety.\n\n"
 
+const environmentSection = "# ENVIRONMENT\n"
+
 const projectSection = "# PROJECT\nThis conversation works in the project at %s; commands run there unless you set work_dir."
 
 const defaultAgentPrompt = `You are %s, a personal assistant working on the user's own computer. You help one person get real things done: finding and organizing information, working with files, documents, and data, running tasks, and following up on them later.
@@ -32,7 +34,10 @@ type System struct {
 	Prompt       string
 	Instructions string
 	Skills       []Skill
-	Project      string
+	// Environment says where commands and files are: the environment the
+	// conversation runs in.
+	Environment string
+	Project     string
 }
 
 func (w Window) System(s System, deferred []Tool) string {
@@ -53,6 +58,9 @@ func (w Window) System(s System, deferred []Tool) string {
 	}
 	if len(deferred) > 0 {
 		parts = append(parts, listDeferred(deferred))
+	}
+	if s.Environment != "" {
+		parts = append(parts, environmentSection+s.Environment)
 	}
 	if s.Project != "" {
 		parts = append(parts, fmt.Sprintf(projectSection, s.Project))

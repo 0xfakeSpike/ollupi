@@ -695,12 +695,17 @@
         "name": {
           "type": "string"
         },
-        "kind": {
-          "$ref": "#/$defs/EnvironmentKind"
+        "provider": {
+          "type": "string"
+        },
+        "config": {
+          "type": "object",
+          "additionalProperties": true
         }
       },
       "required": [
-        "name"
+        "name",
+        "provider"
       ],
       "additionalProperties": false
     },
@@ -743,13 +748,6 @@
       ],
       "additionalProperties": false
     },
-    "EnvironmentKind": {
-      "type": "string",
-      "enum": [
-        "local",
-        "machine"
-      ]
-    },
     "EnvironmentListResult": {
       "type": "object",
       "properties": {
@@ -761,11 +759,21 @@
         },
         "seq": {
           "type": "integer"
+        },
+        "providers": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "$ref": "#/$defs/SandboxProviderRow"
+          }
         }
       },
       "required": [
         "data",
-        "seq"
+        "seq",
+        "providers"
       ],
       "additionalProperties": false
     },
@@ -806,8 +814,12 @@
         "name": {
           "type": "string"
         },
-        "kind": {
-          "$ref": "#/$defs/EnvironmentKind"
+        "provider": {
+          "type": "string"
+        },
+        "config": {
+          "type": "object",
+          "additionalProperties": true
         },
         "createdAt": {
           "type": "string",
@@ -821,7 +833,7 @@
       "required": [
         "id",
         "name",
-        "kind",
+        "provider",
         "createdAt",
         "updatedAt"
       ],
@@ -2775,6 +2787,22 @@
       ],
       "additionalProperties": false
     },
+    "SandboxProviderRow": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "additionalProperties": false
+    },
     "Scope": {
       "type": "string",
       "enum": [
@@ -4394,6 +4422,9 @@
         },
         "name": {
           "type": "string"
+        },
+        "environmentId": {
+          "type": "string"
         }
       },
       "required": [
@@ -4604,6 +4635,9 @@
         "name": {
           "type": "string"
         },
+        "environmentId": {
+          "type": "string"
+        },
         "rootPath": {
           "type": "string"
         },
@@ -4641,6 +4675,7 @@
       "required": [
         "id",
         "name",
+        "environmentId",
         "rootPath",
         "kind",
         "providers",

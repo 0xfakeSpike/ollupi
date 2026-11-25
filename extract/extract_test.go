@@ -57,7 +57,7 @@ func converse(t *testing.T, st store.Store, user, th string) {
 	t.Helper()
 	now := time.Now().UTC()
 	update(t, st, func(tx store.Tx) error {
-		if err := tx.EnsureUser(user); err != nil {
+		if err := tx.EnsureUser(user, account.NewEnvironment("This computer", "local", nil)); err != nil {
 			return err
 		}
 		if err := tx.CreateThread(store.Thread{User: user, Thread: account.Thread{ID: th, Title: "chat", Created: now, Updated: now}}); err != nil {

@@ -72,7 +72,7 @@ func TestATodoGoesThroughItsStatuses(t *testing.T) {
 func TestTheOldTodosAreImportedOnce(t *testing.T) {
 	f := setup(t)
 	root := t.TempDir()
-	hub := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", root, "hub"))
+	hub := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", "", root, "hub"))
 	must[account.Workspace](t)(f.a.SetWorkspaceKind(f.ctx, "u", hub.ID, account.HubWorkspace))
 	write := func(name, text string) {
 		t.Helper()
@@ -145,7 +145,7 @@ func TestAnOldFileDoesNotOverwriteTodaysTodos(t *testing.T) {
 	}
 	importedTodos.Delete("v")
 	root := t.TempDir()
-	hub := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "v", root, "hub"))
+	hub := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "v", "", root, "hub"))
 	must[account.Workspace](t)(f.a.SetWorkspaceKind(f.ctx, "v", hub.ID, account.HubWorkspace))
 	if err := os.WriteFile(filepath.Join(root, "TODO.md"), []byte("- [ ] old line\n"), 0o644); err != nil {
 		t.Fatal(err)

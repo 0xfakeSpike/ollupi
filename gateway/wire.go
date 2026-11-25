@@ -175,21 +175,22 @@ type ThreadView struct {
 }
 
 type WorkspaceRow struct {
-	ID           string                `json:"id"`
-	Name         string                `json:"name"`
-	RootPath     string                `json:"rootPath"`
-	MovingTo     string                `json:"movingTo,omitempty"`
-	Kind         account.WorkspaceKind `json:"kind"`
-	Instructions string                `json:"instructions,omitempty"`
-	Providers    account.Providers     `json:"providers"`
-	Settings     policy.Settings       `json:"settings"`
-	CreatedAt    time.Time             `json:"createdAt"`
-	UpdatedAt    time.Time             `json:"updatedAt"`
-	ArchivedAt   *time.Time            `json:"archivedAt,omitempty"`
+	ID            string                `json:"id"`
+	Name          string                `json:"name"`
+	EnvironmentID string                `json:"environmentId"`
+	RootPath      string                `json:"rootPath"`
+	MovingTo      string                `json:"movingTo,omitempty"`
+	Kind          account.WorkspaceKind `json:"kind"`
+	Instructions  string                `json:"instructions,omitempty"`
+	Providers     account.Providers     `json:"providers"`
+	Settings      policy.Settings       `json:"settings"`
+	CreatedAt     time.Time             `json:"createdAt"`
+	UpdatedAt     time.Time             `json:"updatedAt"`
+	ArchivedAt    *time.Time            `json:"archivedAt,omitempty"`
 }
 
 func workspaceRow(w account.Workspace) WorkspaceRow {
-	return WorkspaceRow{ID: w.ID, Name: w.Name, RootPath: w.Root, MovingTo: w.MovingTo, Kind: w.Kind, Instructions: w.Instructions, Providers: w.Providers,
+	return WorkspaceRow{ID: w.ID, Name: w.Name, EnvironmentID: w.Environment, RootPath: w.Root, MovingTo: w.MovingTo, Kind: w.Kind, Instructions: w.Instructions, Providers: w.Providers,
 		Settings: w.Settings, CreatedAt: w.Created, UpdatedAt: w.Updated, ArchivedAt: w.Archived}
 }
 
@@ -211,16 +212,21 @@ func todoRow(t account.Todo) TodoRow {
 		Notes: t.Notes, Result: t.Result, CreatedAt: t.Created, UpdatedAt: t.Updated, EndedAt: t.Ended}
 }
 
+// EnvironmentRow is an environment as its user sees it: what the
+// provider keeps of its sandbox is not shown.
 type EnvironmentRow struct {
-	ID        string                  `json:"id"`
-	Name      string                  `json:"name"`
-	Kind      account.EnvironmentKind `json:"kind"`
-	CreatedAt time.Time               `json:"createdAt"`
-	UpdatedAt time.Time               `json:"updatedAt"`
+	ID        string         `json:"id"`
+	Name      string         `json:"name"`
+	Provider  string         `json:"provider"`
+	Config    map[string]any `json:"config,omitempty"`
+	CreatedAt time.Time      `json:"createdAt"`
+	UpdatedAt time.Time      `json:"updatedAt"`
 }
 
 func environmentRow(e account.Environment) EnvironmentRow {
-	return EnvironmentRow{ID: e.ID, Name: e.Name, Kind: e.Kind, CreatedAt: e.Created, UpdatedAt: e.Updated}
+	var config map[string]any
+	_ = json.Unmarshal(e.Config, &config)
+	return EnvironmentRow{ID: e.ID, Name: e.Name, Provider: e.Provider, Config: config, CreatedAt: e.Created, UpdatedAt: e.Updated}
 }
 
 type CronJobRow struct {

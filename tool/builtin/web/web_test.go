@@ -90,7 +90,10 @@ func TestAFetchGoesOutThroughTheCallersBox(t *testing.T) {
 		return resp, nil
 	})}
 	var asked []string
-	p := New(func(user string) (sandbox.Box, error) { asked = append(asked, user); return box, nil })
+	p := New(func(_ context.Context, user, _ string) (sandbox.Box, error) {
+		asked = append(asked, user)
+		return box, nil
+	})
 	res, err := p.Invoke(context.Background(), tool.Call{Caller: tool.Caller{User: "u"}, Arguments: map[string]any{"url": "https://ollupi-test.invalid/page"}})
 	if err != nil {
 		t.Fatal(err)

@@ -22,8 +22,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/policy"
 	"github.com/0xfakeSpike/ollupi/store"
-	"github.com/0xfakeSpike/ollupi/tool/builtin/workspace"
-	"github.com/0xfakeSpike/ollupi/tool/kit"
 	_ "golang.org/x/crypto/x509roots/fallback"
 )
 
@@ -55,26 +53,19 @@ func main() {
 	if err != nil {
 		log.Fatalf("quickstart: current directory: %v", err)
 	}
-	files, err := workspace.New(workspace.Options{
-		Config: workspace.Config{
-			WorkspaceDirs: []string{workDir},
-			SandboxMode:   cmp.Or(os.Getenv("OLLUPI_SANDBOX"), string(sandbox.ModeWorkspaceWrite)),
-		},
-		Agent: workspace.AgentFiles{Home: homeDir},
-	})
-	if err != nil {
-		log.Fatalf("quickstart: workspace tools: %v", err)
-	}
-	defer files.Close()
-
 	const user = "demo"
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	h, err := host.New(ctx, host.Config{
 		Home: homeDir, Name: "ollupi-quickstart",
-		Tools:       []kit.Provider{files},
 		Permissions: policy.Settings{ApprovalPolicy: string(policy.OnRequest)},
-		Boxes:       func(string) (sandbox.Box, error) { return sandbox.Here() },
+		// Conversations run on this machine, the one sandbox offered: each
+		// environment a folder under the home, commands limited by the mode.
+		Sandboxes: map[string]sandbox.Provider{"local": sandbox.Local{
+			Dir:    filepath.Join(homeDir, "users"),
+			Config: sandbox.Config{Mode: cmp.Or(os.Getenv("OLLUPI_SANDBOX"), string(sandbox.ModeWorkspaceWrite))},
+		}},
+		Sandbox: "local",
 	})
 	if err != nil {
 		log.Fatalf("quickstart: host: %v", err)
@@ -89,7 +80,12 @@ func main() {
 	if err := h.App.EnsureUser(ctx, user); err != nil {
 		log.Fatalf("quickstart: user: %v", err)
 	}
-	thread, err := h.App.StartThread(ctx, user, "", "", "quickstart")
+	// The current folder is the project the conversation works in.
+	project, err := h.App.AddWorkspace(ctx, user, "", workDir, "")
+	if err != nil {
+		log.Fatalf("quickstart: workspace: %v", err)
+	}
+	thread, err := h.App.StartThread(ctx, user, project.ID, "", "quickstart")
 	if err != nil {
 		log.Fatalf("quickstart: thread: %v", err)
 	}

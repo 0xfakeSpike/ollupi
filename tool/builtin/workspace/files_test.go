@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"fmt"
+	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -75,11 +76,14 @@ func TestFileTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := New(Options{Config: Config{WorkspaceDirs: []string{root}, SandboxMode: "full-access"}})
+	box, err := sandbox.New(sandbox.Config{Mode: "full-access", Roots: []string{root}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
+	r, err := New(Options{Boxes: sandbox.Fixed(box)})
+	if err != nil {
+		t.Fatal(err)
+	}
 	specs, _ := r.Tools(context.Background())
 	spec := map[string]kit.Spec{}
 	for _, s := range specs {
@@ -174,11 +178,14 @@ func TestAChangeIsShownRelativeToItsWorkspaceAndWholeWithoutOne(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := New(Options{Config: Config{WorkspaceDirs: []string{scratch}, ExtraWritable: []string{project}, SandboxMode: "full-access"}})
+	box, err := sandbox.New(sandbox.Config{Mode: "full-access", Roots: []string{scratch}, ExtraWritable: []string{project}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
+	r, err := New(Options{Boxes: sandbox.Fixed(box)})
+	if err != nil {
+		t.Fatal(err)
+	}
 	write := func(caller tool.Caller) string {
 		t.Helper()
 		ctx, call := context.Background(), tool.Call{Caller: caller, Tool: ToolWriteFile, Arguments: map[string]any{"path": "notes/report.md", "content": "x\n"}}

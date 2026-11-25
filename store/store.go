@@ -87,15 +87,18 @@ type Reader interface {
 
 type Tx interface {
 	Reader
-	EnsureUser(id string) error
+	// EnsureUser and CreateUser make a user with first, their first
+	// environment, which is never removed.
+	EnsureUser(id string, first account.Environment) error
 	// CreateUser makes a user that does not exist yet, named.
-	CreateUser(u account.User) error
+	CreateUser(u account.User, first account.Environment) error
 	SetUserName(id, name string) error
 	SetSettings(user string, s account.Settings) error
 	PutWorkspace(user string, w account.Workspace) error
 	AddTodo(user string, t account.Todo) (account.Todo, error)
 	PutTodo(user string, t account.Todo) error
 	PutEnvironment(user string, e account.Environment) error
+	KeepEnvironmentState(user, id string, state json.RawMessage) error
 	DeleteEnvironment(user, id string) error
 	PutMCPServer(user string, s account.MCPServer) error
 	DeleteMCPServer(user, name string) error

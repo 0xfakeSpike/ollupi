@@ -9,32 +9,34 @@ import (
 	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/cron"
+	"github.com/0xfakeSpike/ollupi/environment"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
-	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/policy"
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/0xfakeSpike/ollupi/tool"
 )
 
 var (
-	ErrNoHub            = errors.New("this deployment offers no hub")
-	ErrSecondHub        = errors.New("the user has a hub workspace already; make it a project workspace first")
-	ErrWorkspaceBusy    = errors.New("a conversation in the workspace has a turn in progress or queued; interrupt it first")
-	ErrThreadBusy       = errors.New("the conversation has a turn in progress or queued; interrupt it first")
-	ErrThreadArchived   = errors.New("the conversation is archived; restore it before sending to it")
-	ErrQueueFull        = fmt.Errorf("the conversation has %d messages waiting already; send this one once they start", maxQueued)
-	ErrNoActiveTurn     = errors.New("the conversation has no turn in progress")
-	ErrTurnMismatch     = errors.New("the turn in progress is not the one named")
-	ErrNoSuchRequest    = errors.New("the conversation does not wait on that request")
-	ErrInvalidMessage   = errors.New("invalid message")
-	ErrInvalidAnswer    = errors.New("invalid answer")
-	ErrInvalidDecision  = errors.New("invalid decision")
-	ErrInvalidPath      = errors.New("invalid path")
-	ErrEnvironmentInUse = errors.New("a conversation runs in the environment")
-	ErrInvalidQuery     = errors.New("invalid query")
-	ErrInvalidTodo      = errors.New("invalid todo")
-	ErrInvalidPresence  = errors.New("invalid presence")
-	ErrSearchTimedOut   = errors.New("the search took too long; try longer or fewer words")
+	ErrNoHub              = errors.New("this deployment offers no hub")
+	ErrSecondHub          = errors.New("the user has a hub workspace already; make it a project workspace first")
+	ErrWorkspaceBusy      = errors.New("a conversation in the workspace has a turn in progress or queued; interrupt it first")
+	ErrThreadBusy         = errors.New("the conversation has a turn in progress or queued; interrupt it first")
+	ErrThreadArchived     = errors.New("the conversation is archived; restore it before sending to it")
+	ErrQueueFull          = fmt.Errorf("the conversation has %d messages waiting already; send this one once they start", maxQueued)
+	ErrNoActiveTurn       = errors.New("the conversation has no turn in progress")
+	ErrTurnMismatch       = errors.New("the turn in progress is not the one named")
+	ErrNoSuchRequest      = errors.New("the conversation does not wait on that request")
+	ErrInvalidMessage     = errors.New("invalid message")
+	ErrInvalidAnswer      = errors.New("invalid answer")
+	ErrInvalidDecision    = errors.New("invalid decision")
+	ErrInvalidPath        = errors.New("invalid path")
+	ErrEnvironmentInUse   = errors.New("a conversation or a workspace is in the environment")
+	ErrFirstEnvironment   = errors.New("it is the first environment of the user, made with them, and stays")
+	ErrInvalidEnvironment = errors.New("invalid environment")
+	ErrInvalidQuery       = errors.New("invalid query")
+	ErrInvalidTodo        = errors.New("invalid todo")
+	ErrInvalidPresence    = errors.New("invalid presence")
+	ErrSearchTimedOut     = errors.New("the search took too long; try longer or fewer words")
 )
 
 // Catalog is the deployment's models: the providers every user's turns run
@@ -42,8 +44,6 @@ var (
 type Catalog interface {
 	Providers() []account.ModelProvider
 }
-
-type Boxes func(user string) (sandbox.Box, error)
 
 type Statuses func(user string) ([]account.MCPStatus, error)
 
@@ -59,18 +59,21 @@ type App struct {
 	catalog     Catalog
 	tools       tool.Tools
 	statuses    Statuses
-	boxes       Boxes
+	envs        *environment.Boxes
 	attachments Attachments
 	cal         cron.Calendar
 	deployment  policy.Settings
 }
 
-func New(st store.Store, catalog Catalog, tools tool.Tools, statuses Statuses, boxes Boxes, attachments Attachments, cal cron.Calendar, deployment policy.Settings) *App {
-	return &App{st: st, catalog: catalog, tools: tools, statuses: statuses, boxes: boxes, attachments: attachments, cal: cal, deployment: deployment}
+// New makes the app of a deployment whose conversations run in the
+// environments of envs.
+func New(st store.Store, catalog Catalog, tools tool.Tools, statuses Statuses, envs *environment.Boxes, attachments Attachments, cal cron.Calendar, deployment policy.Settings) *App {
+	return &App{st: st, catalog: catalog, tools: tools, statuses: statuses, envs: envs, attachments: attachments, cal: cal, deployment: deployment}
 }
 
+// EnsureUser makes user, with their first environment, unless they are.
 func (a *App) EnsureUser(ctx context.Context, user string) error {
-	return a.st.Update(ctx, func(tx store.Tx) error { return tx.EnsureUser(user) })
+	return a.st.Update(ctx, func(tx store.Tx) error { return tx.EnsureUser(user, a.envs.First()) })
 }
 
 // Models are the deployment's models, the connection the user's

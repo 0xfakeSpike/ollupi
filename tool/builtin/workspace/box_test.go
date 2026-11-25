@@ -18,7 +18,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/tool"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
-	"github.com/google/jsonschema-go/jsonschema"
 )
 
 type memoryMachine struct {
@@ -88,8 +87,7 @@ func TestToolsRunOnTheUsersMachine(t *testing.T) {
 	}
 	roots := []string{machineRoot}
 	r, err := New(Options{
-		Box: sandbox.Remote(nil, roots, "A cloud sandbox of your own"),
-		BoxFor: func(user string) (sandbox.Box, error) {
+		Boxes: func(_ context.Context, user, _ string) (sandbox.Box, error) {
 			m, ok := machines[user]
 			if !ok {
 				return nil, errors.New("no sandbox for this user")
@@ -100,7 +98,6 @@ func TestToolsRunOnTheUsersMachine(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
 	specs, err := r.Tools(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -175,14 +172,12 @@ func TestToolsRunOnTheUsersMachine(t *testing.T) {
 	if _, err := act("a", ToolRunCommand, map[string]any{"program": "make", "sandbox_permissions": sandboxRequireEscalated, "justification": "x"}); err == nil {
 		t.Error("a command got full access on a remote sandbox")
 	}
-	if _, ok := spec[ToolRunCommand].InputSchema.(*jsonschema.Schema).Properties["sandbox_permissions"]; ok {
-		t.Error("the tool offers full access a remote sandbox cannot give")
+	described := Describe("Cloud", sandbox.Remote(machines["a"], roots, "A cloud sandbox of your own"))
+	if strings.Contains(described, "require_escalated") || !strings.Contains(described, "A cloud sandbox of your own") || !strings.Contains(described, machineRoot) {
+		t.Errorf("the environment of a remote sandbox is described as: %s", described)
 	}
-	if strings.Contains(spec[ToolRunCommand].Description, "require_escalated") {
-		t.Error("the tool describes full access")
-	}
-	if !strings.Contains(spec[ToolRunCommand].Description, "A cloud sandbox of your own") {
-		t.Errorf("the tool does not describe its sandbox: %s", spec[ToolRunCommand].Description)
+	if !strings.Contains(spec[ToolRunCommand].Description, "ENVIRONMENT") {
+		t.Errorf("the tool does not point to where it runs: %s", spec[ToolRunCommand].Description)
 	}
 
 	if _, err := r.Invoke(context.Background(), tool.Call{Caller: as("nobody"), Tool: ToolGlob, Arguments: map[string]any{"pattern": "*"}}); err == nil {
@@ -195,10 +190,8 @@ func TestACallRunsInTheEnvironmentItNames(t *testing.T) {
 	here := machineWith(map[string]string{"here.txt": "this machine\n"})
 	there := machineWith(map[string]string{"there.txt": "the cloud\n"})
 	r, err := New(Options{
-		Box:    sandbox.Remote(here, roots, "this machine"),
-		BoxFor: func(string) (sandbox.Box, error) { return sandbox.Remote(here, roots, "this machine"), nil },
-		BoxIn: func(c tool.Caller) (sandbox.Box, error) {
-			if c.Environment == "cloud" {
+		Boxes: func(_ context.Context, _, environment string) (sandbox.Box, error) {
+			if environment == "cloud" {
 				return sandbox.Remote(there, roots, "the cloud"), nil
 			}
 			return sandbox.Remote(here, roots, "this machine"), nil
@@ -207,7 +200,6 @@ func TestACallRunsInTheEnvironmentItNames(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
 
 	glob := func(environment string) []string {
 		t.Helper()
@@ -226,33 +218,12 @@ func TestACallRunsInTheEnvironmentItNames(t *testing.T) {
 	}
 }
 
-func TestBoxInMayLeaveTheCallInTheProvidersBox(t *testing.T) {
-	here := machineWith(map[string]string{"here.txt": "this machine\n"})
-	r, err := New(Options{
-		Box:   sandbox.Remote(here, []string{machineRoot}, "this machine"),
-		BoxIn: func(tool.Caller) (sandbox.Box, error) { return nil, nil },
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer r.Close()
-	ctx, caller := context.Background(), tool.Caller{User: "a", Environment: "local"}
-	res, err := r.Invoke(ctx, tool.Call{Caller: caller, Tool: ToolGlob, Arguments: map[string]any{"pattern": "**/*.txt"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if files := res.Output.(GlobOutput).Files; !slices.Equal(files, []string{machineRoot + "/here.txt"}) {
-		t.Errorf("the call ran in %v, want this machine's box", files)
-	}
-}
-
 func TestACommandPreparedOnAMachineIsConfined(t *testing.T) {
 	m := machineWith(map[string]string{"a.txt": "a\n"})
-	r, err := New(Options{Box: sandbox.Remote(m, []string{machineRoot}, "cloud")})
+	r, err := New(Options{Boxes: sandbox.Fixed(sandbox.Remote(m, []string{machineRoot}, "cloud"))})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
 	p, err := r.prepareCommand(context.Background(), tool.Call{Tool: ToolRunCommand, Arguments: map[string]any{"program": "ls"}})
 	if err != nil {
 		t.Fatal(err)
@@ -276,11 +247,10 @@ func (m brokenMachine) Open(ctx context.Context, p string) (io.ReadCloser, error
 
 func TestGrepReportsWhatItCouldNotRead(t *testing.T) {
 	m := brokenMachine{machineWith(map[string]string{"a.txt": "needle\n", "b.txt": "needle\n"}), machineRoot + "/b.txt"}
-	r, err := New(Options{Box: sandbox.Remote(m, []string{machineRoot}, "cloud")})
+	r, err := New(Options{Boxes: sandbox.Fixed(sandbox.Remote(m, []string{machineRoot}, "cloud"))})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
 	ctx, caller := context.Background(), tool.Caller{User: "a"}
 	res, err := r.Invoke(ctx, tool.Call{Caller: caller, Tool: ToolGrep, Arguments: map[string]any{"pattern": "needle", "files_only": true}})
 	if err != nil {

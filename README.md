@@ -77,11 +77,11 @@ More detail: [workspace, conversation, turn, and item lifecycle](docs/lifecycle.
 
 One SQLite database is one shard. Users share a shard but remain isolated by user, and a shard process holds a renewable lease in a separate catalog. When a process exits, a standby acquires the shard lease and recovers its session work from the database. This is the cross-process failover path that complements agent-level crash recovery. Lease epochs prevent a stalled former holder from writing after a new holder starts. A router places users on accepting shards and publishes the selected shard to an Envoy external processor when one is used.
 
-Commands, files, and local MCP servers are accessed through `sandbox.Box`; a cloud sandbox plugs in through `sandbox.Machine`. A conversation keeps the environment it started in. Model traffic may use each user's own connection, and attachments are stored under the host's `attachments` directory.
+Commands, files, and MCP servers are reached through `sandbox.Box`. A deployment offers sandboxes as providers (`sandbox.Provider` in `host.Config.Sandboxes`): this machine is one, `sandbox.Local`, and a cloud sandbox plugs in the same way, its machine behind `sandbox.Remote`. Each environment a user has is one sandbox of a provider, made the first time a conversation needs it and found again after a restart from the state the provider keeps. Every user starts with one environment of the first provider; a workspace is a folder of one environment, and a conversation keeps the environment it started in. Model traffic may use each user's own connection, and attachments are stored under the host's `attachments` directory.
 
 ## Security and operating limits
 
-- `sandbox.Here` runs with full access to the machine. Use it only for users who may use the whole machine.
+- `sandbox.Local` in `full-access` mode, and `sandbox.Here`, run commands with full access to the machine. Use them only for users who may use the whole machine.
 - Under the `never` approval policy, an escalated command runs without asking. Do not offer that policy to untrusted users.
 - A repository's `.git` is writable inside the sandbox. Hooks written by a command may later run outside those limits when the user invokes Git.
 - SQLite is the measured bottleneck for very large single-shard histories and concurrency. Choose shard count from your own workload and keep in mind that each shard writes through one connection (reads use a small read-only pool).

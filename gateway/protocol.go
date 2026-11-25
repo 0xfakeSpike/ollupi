@@ -600,6 +600,9 @@ type WorkspaceListResult struct {
 type WorkspaceAddParams struct {
 	Path string `json:"path"`
 	Name string `json:"name,omitempty"`
+	// EnvironmentID is the environment whose folder path is; omitted, the
+	// user's first.
+	EnvironmentID string `json:"environmentId,omitempty"`
 }
 
 type WorkspaceRenameParams struct {
@@ -649,11 +652,22 @@ type WorkspaceChangedNotification struct {
 type EnvironmentListResult struct {
 	Data []EnvironmentRow `json:"data"`
 	Seq  int64            `json:"seq"`
+	// Providers are the sandboxes the deployment offers an environment of,
+	// the one every user's first environment is of first.
+	Providers []SandboxProviderRow `json:"providers"`
+}
+
+type SandboxProviderRow struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 type EnvironmentAddParams struct {
-	Name string                  `json:"name"`
-	Kind account.EnvironmentKind `json:"kind,omitempty"`
+	Name     string `json:"name"`
+	Provider string `json:"provider"`
+	// Config is what the provider makes the sandbox of: a template, a
+	// region. Omitted, it is the provider's default.
+	Config map[string]any `json:"config,omitempty"`
 }
 
 type EnvironmentRenameParams struct {
@@ -925,6 +939,8 @@ var errorCodes = []struct {
 	{app.ErrQueueFull, errThreadBusy},
 	{conversation.ErrRefused, errRefused},
 	{app.ErrEnvironmentInUse, jsonrpc.CodeInvalidParams},
+	{app.ErrFirstEnvironment, jsonrpc.CodeInvalidParams},
+	{app.ErrInvalidEnvironment, jsonrpc.CodeInvalidParams},
 	{app.ErrInvalidMessage, jsonrpc.CodeInvalidParams},
 	{app.ErrInvalidAnswer, jsonrpc.CodeInvalidParams},
 	{app.ErrInvalidDecision, jsonrpc.CodeInvalidParams},

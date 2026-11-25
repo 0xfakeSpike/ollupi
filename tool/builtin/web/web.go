@@ -49,10 +49,12 @@ type fetchOutput struct {
 }
 
 type Provider struct {
-	boxes func(user string) (sandbox.Box, error)
+	boxes sandbox.Boxes
 }
 
-func New(boxes func(user string) (sandbox.Box, error)) *Provider {
+// New fetches from the environment a call's conversation runs in, through
+// its box's network.
+func New(boxes sandbox.Boxes) *Provider {
 	return &Provider{boxes: boxes}
 }
 
@@ -136,7 +138,7 @@ func parseURL(raw string) (*url.URL, error) {
 
 func (p *Provider) Invoke(ctx context.Context, c tool.Call) (kit.Result, error) {
 	f, _ := kit.DecodeArguments[fetchArgs](c.Arguments)
-	box, err := p.boxes(c.Caller.User)
+	box, err := p.boxes(ctx, c.Caller.User, c.Caller.Environment)
 	if err != nil {
 		return kit.Result{}, fmt.Errorf("web: the sandbox of the user: %w", err)
 	}

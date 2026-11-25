@@ -12,7 +12,9 @@ import (
 
 func TestTheCatalogIsReplacedWholeInOrderAndEveryUserHearsIt(t *testing.T) {
 	s := open(t, t.TempDir())
-	update(t, s, func(tx store.Tx) error { return errors.Join(tx.EnsureUser("u"), tx.EnsureUser("v")) })
+	update(t, s, func(tx store.Tx) error {
+		return errors.Join(tx.EnsureUser("u", account.NewEnvironment("This computer", "local", nil)), tx.EnsureUser("v", account.NewEnvironment("This computer", "local", nil)))
+	})
 	if got := read(t, s, func(r store.Reader) ([]account.ModelProvider, error) { return r.Catalog() }); len(got) != 0 {
 		t.Fatalf("a new store's catalog: %+v", got)
 	}

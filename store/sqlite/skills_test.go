@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"errors"
+	"github.com/0xfakeSpike/ollupi/account"
 	"slices"
 	"testing"
 
@@ -11,7 +12,9 @@ import (
 
 func TestAUsersSkillIsTheirsAndReplacedWhole(t *testing.T) {
 	s := open(t, t.TempDir())
-	update(t, s, func(tx store.Tx) error { return errors.Join(tx.EnsureUser("u"), tx.EnsureUser("v")) })
+	update(t, s, func(tx store.Tx) error {
+		return errors.Join(tx.EnsureUser("u", account.NewEnvironment("This computer", "local", nil)), tx.EnsureUser("v", account.NewEnvironment("This computer", "local", nil)))
+	})
 	deploy := skill.Package{Name: "deploy", Description: "How to deploy.", Instructions: "Do it.", Roles: []string{"full-main-agent", "code-sub-agent"},
 		Files: []skill.File{{Path: "scripts/run.sh", Body: []byte("echo run"), Executable: true}, {Path: "docs/guide.md", Body: []byte("guide")}}}
 	var heard []store.Event

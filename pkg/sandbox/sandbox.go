@@ -23,7 +23,13 @@ type Config struct {
 	EnvMarker      string
 	ExtraWritable  []string
 	UnixSockets    []string
+	// EnvPassthrough names the variables of the backend's environment a
+	// limited command gets, beside the base ones (PATH, HOME, ...).
 	EnvPassthrough []string
+	// HideEnv are the prefixes of variables a command with full access does
+	// not get: it gets the rest of the backend's environment, as the user's
+	// own programs would.
+	HideEnv        []string
 	MaxOutputBytes int
 }
 
@@ -77,6 +83,7 @@ type Sandbox struct {
 	policy         policy
 	rules          compiledRules
 	envPassthrough []string
+	hideEnv        []string
 	maxOutputBytes int
 	denials        *denialLog
 	envMarker      string
@@ -134,6 +141,7 @@ func New(c Config) (*Sandbox, error) {
 		policy:         p,
 		rules:          rules,
 		envPassthrough: append([]string(nil), c.EnvPassthrough...),
+		hideEnv:        append([]string(nil), c.HideEnv...),
 		maxOutputBytes: c.MaxOutputBytes,
 		envMarker:      c.EnvMarker,
 	}
@@ -218,8 +226,9 @@ func (s *Sandbox) Fingerprint() any {
 		Policy         policy
 		Domains        DomainRules
 		EnvPassthrough []string
+		HideEnv        []string
 		MaxOutputBytes int
-	}{s.policy, s.rules.named(), s.envPassthrough, s.maxOutputBytes}
+	}{s.policy, s.rules.named(), s.envPassthrough, s.hideEnv, s.maxOutputBytes}
 }
 
 func (s *Sandbox) Summary() string {
@@ -251,7 +260,7 @@ func (s *Sandbox) Summary() string {
 }
 
 func protectedSummary(names []string) string {
-	shown := append([]string{".vscode", ".envrc", ".husky"}, names[len(defaultProtectedNames):]...)
+	shown := append([]string{".vscode", ".envrc", ".husky", "AGENTS.md", ".claude"}, names[len(defaultProtectedNames):]...)
 	return strings.Join(shown, ", ") + ", ..."
 }
 
@@ -321,7 +330,7 @@ func (s *Sandbox) command(ctx context.Context, c Command) (*exec.Cmd, *proxy, st
 	if !s.Enforced() || c.FullAccess {
 		cmd := exec.CommandContext(ctx, c.Program, c.Args...)
 		cmd.Dir = c.Cwd
-		cmd.Env = environ(os.Environ(), s.envPassthrough, c.Env)
+		cmd.Env = fullEnviron(os.Environ(), s.hideEnv, c.Env)
 		return cmd, nil, "", nil
 	}
 	roots, err := s.commandRoots(c)

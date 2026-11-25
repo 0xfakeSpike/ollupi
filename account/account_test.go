@@ -64,12 +64,6 @@ func TestNamesAndKinds(t *testing.T) {
 	if name, err := Name("a workspace name", "  app  "); err != nil || name != "app" {
 		t.Errorf("%q, %v", name, err)
 	}
-	if kind, err := NewEnvironmentKind(""); err != nil || kind != Machine {
-		t.Errorf("%q, %v", kind, err)
-	}
-	if _, err := NewEnvironmentKind(Local); !errors.Is(err, ErrInvalidName) {
-		t.Errorf("a second local environment: %v", err)
-	}
 }
 
 func TestAWorkspaceTurnsProvidersOnAndOff(t *testing.T) {

@@ -54,9 +54,9 @@ func (a *App) importTodoFiles(ctx context.Context, user string) error {
 	if hub.ID == "" {
 		return nil
 	}
-	box, err := a.boxes(user)
+	box, err := a.envs.In(ctx, user, hub.Environment)
 	if err != nil {
-		return fmt.Errorf("the sandbox of the user: %w", err)
+		return err
 	}
 	todos, found, err := readTodoFiles(ctx, box, hub.Root)
 	if err != nil {

@@ -3,6 +3,7 @@ package skills
 import (
 	"context"
 	"errors"
+	"github.com/0xfakeSpike/ollupi/account"
 	"os"
 	"path/filepath"
 	"testing"
@@ -27,12 +28,14 @@ func setup(t *testing.T) (*Provider, *sqlite.Store, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { box.Close() })
-	return New(st, func(string) (sandbox.Box, error) { return box, nil }), st, box.Roots()[0]
+	return New(st, func(context.Context, string, string) (sandbox.Box, error) { return box, nil }), st, box.Roots()[0]
 }
 
 func put(t *testing.T, st store.Store, user string, p skill.Package) {
 	t.Helper()
-	if err := st.Update(context.Background(), func(tx store.Tx) error { return errors.Join(tx.EnsureUser(user), tx.PutSkill(user, p)) }); err != nil {
+	if err := st.Update(context.Background(), func(tx store.Tx) error {
+		return errors.Join(tx.EnsureUser(user, account.NewEnvironment("This computer", "local", nil)), tx.PutSkill(user, p))
+	}); err != nil {
 		t.Fatal(err)
 	}
 }

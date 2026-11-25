@@ -3,6 +3,7 @@ package workspace
 import (
 	"bufio"
 	"context"
+	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,11 +55,14 @@ func readFixture(t *testing.T) (root string, call func(name string, args map[str
 	old := time.Now().Add(-time.Hour)
 	os.Chtimes(filepath.Join(root, "src", "a.go"), old, old)
 
-	r, err := New(Options{Config: Config{WorkspaceDirs: []string{root}, SandboxMode: "full-access"}, DenyRead: []string{secrets}})
+	box, err := sandbox.New(sandbox.Config{Mode: "full-access", Roots: []string{root}, DenyRead: []string{secrets}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { r.Close() })
+	r, err := New(Options{Boxes: sandbox.Fixed(box)})
+	if err != nil {
+		t.Fatal(err)
+	}
 	specs, _ := r.Tools(context.Background())
 	spec := map[string]kit.Spec{}
 	for _, s := range specs {

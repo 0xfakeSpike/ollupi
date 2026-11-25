@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,8 +26,6 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/policy"
 	"github.com/0xfakeSpike/ollupi/store"
-	"github.com/0xfakeSpike/ollupi/tool/builtin/workspace"
-	"github.com/0xfakeSpike/ollupi/tool/kit"
 	_ "golang.org/x/crypto/x509roots/fallback"
 )
 
@@ -64,21 +63,14 @@ func main() {
 	if err != nil {
 		log.Fatalf("eval: %v", err)
 	}
-	files, err := workspace.New(workspace.Options{
-		Config: workspace.Config{WorkspaceDirs: []string{dir}, SandboxMode: string(sandbox.ModeFullAccess)},
-		Agent:  workspace.AgentFiles{Home: home},
-	})
-	if err != nil {
-		log.Fatalf("eval: %v", err)
-	}
-	defer files.Close()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	h, err := host.New(ctx, host.Config{
 		Home: home, Name: "ollupi",
-		Tools:       []kit.Provider{files},
 		Permissions: policy.Settings{ApprovalPolicy: string(policy.Never)},
-		Boxes:       func(string) (sandbox.Box, error) { return sandbox.Here() },
+		Sandboxes: map[string]sandbox.Provider{"local": sandbox.Local{
+			Dir: filepath.Join(home, "users"), Config: sandbox.Config{Mode: string(sandbox.ModeFullAccess)}}},
+		Sandbox: "local",
 	})
 	if err != nil {
 		log.Fatalf("eval: %v", err)
@@ -90,7 +82,11 @@ func main() {
 	if err := h.App.EnsureUser(ctx, user); err != nil {
 		log.Fatalf("eval: %v", err)
 	}
-	th, err := h.App.StartThread(ctx, user, "", "", "eval")
+	project, err := h.App.AddWorkspace(ctx, user, "", dir, "")
+	if err != nil {
+		log.Fatalf("eval: %v", err)
+	}
+	th, err := h.App.StartThread(ctx, user, project.ID, "", "eval")
 	if err != nil {
 		log.Fatalf("eval: %v", err)
 	}

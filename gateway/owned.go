@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 
 	"github.com/0xfakeSpike/ollupi/account"
@@ -116,7 +117,7 @@ func (c *conn) workspaceList(ctx context.Context, _ Empty) (WorkspaceListResult,
 }
 
 func (c *conn) workspaceAdd(ctx context.Context, p WorkspaceAddParams) (WorkspaceResult, error) {
-	w, err := c.s.app.AddWorkspace(ctx, c.user, p.Path, p.Name)
+	w, err := c.s.app.AddWorkspace(ctx, c.user, p.EnvironmentID, p.Path, p.Name)
 	return WorkspaceResult{Workspace: workspaceRow(w)}, err
 }
 
@@ -160,11 +161,19 @@ func (c *conn) workspacePermissions(ctx context.Context, p WorkspacePermissionsP
 
 func (c *conn) environmentList(ctx context.Context, _ Empty) (EnvironmentListResult, error) {
 	envs, seq, err := c.s.app.Environments(ctx, c.user)
-	return EnvironmentListResult{Data: each(envs, environmentRow), Seq: seq}, err
+	providers := []SandboxProviderRow{}
+	for _, p := range c.s.app.Providers() {
+		providers = append(providers, SandboxProviderRow{ID: p.ID, Name: p.Name})
+	}
+	return EnvironmentListResult{Data: each(envs, environmentRow), Seq: seq, Providers: providers}, err
 }
 
 func (c *conn) environmentAdd(ctx context.Context, p EnvironmentAddParams) (EnvironmentResult, error) {
-	e, err := c.s.app.AddEnvironment(ctx, c.user, p.Name, p.Kind)
+	var config json.RawMessage
+	if p.Config != nil {
+		config, _ = json.Marshal(p.Config)
+	}
+	e, err := c.s.app.AddEnvironment(ctx, c.user, p.Name, p.Provider, config)
 	return EnvironmentResult{Environment: environmentRow(e)}, err
 }
 

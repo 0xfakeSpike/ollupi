@@ -12,7 +12,9 @@ import (
 func TestReadsGoOnWhileAWriteIsOpen(t *testing.T) {
 	s := open(t, t.TempDir())
 	ctx := context.Background()
-	if err := s.Update(ctx, func(tx store.Tx) error { return tx.EnsureUser("u") }); err != nil {
+	if err := s.Update(ctx, func(tx store.Tx) error {
+		return tx.EnsureUser("u", account.NewEnvironment("This computer", "local", nil))
+	}); err != nil {
 		t.Fatal(err)
 	}
 	writing, release := make(chan struct{}), make(chan struct{})

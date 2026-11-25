@@ -90,8 +90,10 @@ func (a *App) keepAttachment(ctx context.Context, user, thread string, in Attach
 	return att, nil
 }
 
+// attachmentSource reads a file sent by its path: a file of the machine of
+// the user's first environment, the one the client sending it is on.
 func (a *App) attachmentSource(ctx context.Context, user, path string) ([]byte, error) {
-	box, err := a.boxes(user)
+	box, err := a.envs.In(ctx, user, "")
 	if err != nil {
 		return nil, err
 	}

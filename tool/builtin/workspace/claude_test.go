@@ -24,11 +24,10 @@ func (m claudeMachine) Run(ctx context.Context, c sandbox.Command) (sandbox.Resu
 func TestClaudeRunsWithItsFlagsInTheUsersMachine(t *testing.T) {
 	m := claudeMachine{memoryMachine: machineWith(map[string]string{"a.go": "package a\n"}),
 		stdout: `{"type":"result","subtype":"success","is_error":false,"num_turns":3,"result":"done","session_id":"s1","total_cost_usd":0.4}`}
-	r, err := New(Options{Box: sandbox.Remote(m, []string{machineRoot}, "cloud")})
+	r, err := New(Options{Boxes: sandbox.Fixed(sandbox.Remote(m, []string{machineRoot}, "cloud"))})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
 	args := map[string]any{"prompt": " fix the test "}
 	p, err := r.prepareClaude(context.Background(), tool.Call{Tool: ToolClaude, Arguments: args})
 	if err != nil {
@@ -57,11 +56,10 @@ func TestClaudeRunsWithItsFlagsInTheUsersMachine(t *testing.T) {
 
 func TestClaudeThatCannotAnswerReturnsItsOutput(t *testing.T) {
 	m := claudeMachine{memoryMachine: machineWith(map[string]string{"a.go": "package a\n"}), stdout: "Not logged in"}
-	r, err := New(Options{Box: sandbox.Remote(m, []string{machineRoot}, "cloud")})
+	r, err := New(Options{Boxes: sandbox.Fixed(sandbox.Remote(m, []string{machineRoot}, "cloud"))})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
 	args := map[string]any{"prompt": "x"}
 	p, err := r.prepareClaude(context.Background(), tool.Call{Tool: ToolClaude, Arguments: args})
 	if err != nil {

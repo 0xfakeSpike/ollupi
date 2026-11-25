@@ -56,7 +56,7 @@ func testServer() *mcp.Server {
 	return s
 }
 
-func newUsers(t *testing.T, ctx context.Context, configs map[string][]account.MCPServer, boxes func(string) (sandbox.Box, error)) (*Users, store.Store) {
+func newUsers(t *testing.T, ctx context.Context, configs map[string][]account.MCPServer, boxes func(context.Context, string, string) (sandbox.Box, error)) (*Users, store.Store) {
 	t.Helper()
 	st, err := sqlite.Open(t.TempDir())
 	if err != nil {
@@ -65,7 +65,7 @@ func newUsers(t *testing.T, ctx context.Context, configs map[string][]account.MC
 	t.Cleanup(func() { st.Close() })
 	err = st.Update(ctx, func(tx store.Tx) error {
 		for u, servers := range configs {
-			if err := tx.EnsureUser(u); err != nil {
+			if err := tx.EnsureUser(u, account.NewEnvironment("This computer", "local", nil)); err != nil {
 				return err
 			}
 			for _, s := range servers {
@@ -140,7 +140,7 @@ func TestConnect(t *testing.T) {
 		{Name: "no-header", URL: web.URL},
 		{Name: "crashes", Command: self, Env: map[string]string{"OLLUPI_MCP_TEST_SERVER": "fail"}},
 		{Name: "gone", URL: unreachable},
-	}}, func(string) (sandbox.Box, error) { return box, nil })
+	}}, func(context.Context, string, string) (sandbox.Box, error) { return box, nil })
 	defer users.Close()
 
 	byName := statuses(t, users, "someone")
@@ -241,7 +241,7 @@ func TestHeadersStayWithTheirServer(t *testing.T) {
 	defer front.Close()
 	users, _ := newUsers(t, context.Background(), map[string][]account.MCPServer{"someone": {
 		{Name: "moved", URL: front.URL, Headers: map[string]string{"Authorization": "Bearer secret"}},
-	}}, func(string) (sandbox.Box, error) { return sandbox.Here() })
+	}}, func(context.Context, string, string) (sandbox.Box, error) { return sandbox.Here() })
 	defer users.Close()
 	if _, err := users.Tools(context.Background(), "someone"); err != nil {
 		t.Fatal(err)
@@ -257,7 +257,9 @@ func TestARemoteUserCannotReachThisNetwork(t *testing.T) {
 	web := httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return testServer() }, nil))
 	defer web.Close()
 	users, _ := newUsers(t, context.Background(), map[string][]account.MCPServer{"someone": {{Name: "internal", URL: web.URL}}},
-		func(string) (sandbox.Box, error) { return sandbox.Remote(nil, []string{"/cloud"}, "cloud"), nil })
+		func(context.Context, string, string) (sandbox.Box, error) {
+			return sandbox.Remote(nil, []string{"/cloud"}, "cloud"), nil
+		})
 	defer users.Close()
 	if st := statuses(t, users, "someone")["internal"]; st.Connected || !strings.Contains(st.Error, sandbox.ErrLocalAddress.Error()) {
 		t.Errorf("%+v", st)
@@ -290,7 +292,7 @@ func TestStdioServerRunsInThisMachinesBox(t *testing.T) {
 	}
 	users, _ := newUsers(t, context.Background(), map[string][]account.MCPServer{"someone": {
 		{Name: "local", Command: self, Env: map[string]string{"OLLUPI_MCP_TEST_SERVER": "serve", "GREETING": "from here"}},
-	}}, func(string) (sandbox.Box, error) { return sandbox.Here() })
+	}}, func(context.Context, string, string) (sandbox.Box, error) { return sandbox.Here() })
 	defer users.Close()
 	if st := statuses(t, users, "someone")["local"]; !st.Connected || st.Error != "" {
 		t.Errorf("local: %+v", st)

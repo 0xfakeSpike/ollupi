@@ -24,6 +24,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/catalog"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/host"
+	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/policy"
 	"github.com/0xfakeSpike/ollupi/shard"
 	"github.com/0xfakeSpike/ollupi/store"
@@ -243,7 +244,7 @@ func crashChild(args []string) {
 		Home: *dir, Name: "bench", Dial: fakeDial(fakeConnection(*url, *calls)),
 		Tools:       []kit.Provider{work{latency: *toolLatency, log: toolLog}},
 		Permissions: policy.Settings{ApprovalPolicy: string(policy.Never)},
-		Boxes:       here, Slots: *slots, TaskSlots: *slots, UserTaskSlots: *slots,
+		Sandboxes:   thisMachine(*dir, string(sandbox.ModeFullAccess)), Sandbox: "local", Slots: *slots, TaskSlots: *slots, UserTaskSlots: *slots,
 	})
 	if err != nil {
 		log.Fatal(err)

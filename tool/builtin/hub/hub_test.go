@@ -3,6 +3,7 @@ package hub
 import (
 	"context"
 	"encoding/json"
+	"github.com/0xfakeSpike/ollupi/environment"
 	"os"
 	"path/filepath"
 	"slices"
@@ -28,7 +29,18 @@ import (
 )
 
 func noStatuses(string) ([]account.MCPStatus, error) { return nil, nil }
-func here(string) (sandbox.Box, error)               { return sandbox.Here() }
+
+// here are the environments of a deployment that offers this machine, its
+// environments folders of a temporary one.
+func here(t testing.TB, st store.Store) *environment.Boxes {
+	t.Helper()
+	envs, err := environment.New(st, map[string]sandbox.Provider{"local": sandbox.Local{Dir: t.TempDir(), Config: sandbox.Config{Mode: string(sandbox.ModeFullAccess)}}}, "local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { envs.Close() })
+	return envs
+}
 
 type fixture struct {
 	t   *testing.T
@@ -47,7 +59,7 @@ func setup(t *testing.T) *fixture {
 	t.Cleanup(func() { st.Close() })
 	p := &Provider{St: st}
 	tools := func(ctx context.Context, _ string) (tool.Set, error) { return kit.New(ctx, nil, p) }
-	a := app.New(st, catalog{{ID: "main", API: account.OpenAI, Models: []account.ProviderModel{{Name: "big", Limits: llm.Limits{Context: 200_000, Output: 8_000}}}}}, tools, noStatuses, here, blob.Dir(t.TempDir()), cron.NewCalendar(time.UTC), policy.Settings{ApprovalPolicy: string(policy.OnRequest)})
+	a := app.New(st, catalog{{ID: "main", API: account.OpenAI, Models: []account.ProviderModel{{Name: "big", Limits: llm.Limits{Context: 200_000, Output: 8_000}}}}}, tools, noStatuses, here(t, st), blob.Dir(t.TempDir()), cron.NewCalendar(time.UTC), policy.Settings{ApprovalPolicy: string(policy.OnRequest)})
 	p.App = a
 	f := &fixture{t: t, ctx: context.Background(), st: st, a: a, p: p}
 	if err := a.EnsureUser(f.ctx, "u"); err != nil {
@@ -60,7 +72,7 @@ func (f *fixture) workspace(name string) account.Workspace {
 	f.t.Helper()
 	dir := filepath.Join(f.t.TempDir(), name)
 	os.Mkdir(dir, 0o755)
-	w, err := f.a.AddWorkspace(f.ctx, "u", dir, name)
+	w, err := f.a.AddWorkspace(f.ctx, "u", "", dir, name)
 	if err != nil {
 		f.t.Fatal(err)
 	}

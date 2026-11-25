@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"github.com/0xfakeSpike/ollupi/account"
 	"testing"
 	"time"
 
@@ -11,7 +12,7 @@ import (
 func putPresence(t *testing.T, s *Store, user string, rows ...store.Presence) {
 	t.Helper()
 	update(t, s, func(tx store.Tx) error {
-		if err := tx.EnsureUser(user); err != nil {
+		if err := tx.EnsureUser(user, account.NewEnvironment("This computer", "local", nil)); err != nil {
 			return err
 		}
 		for _, p := range rows {

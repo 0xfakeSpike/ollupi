@@ -16,7 +16,9 @@ func TestCommitsAreToldInTheOrderOfTheirSeq(t *testing.T) {
 	ctx := context.Background()
 	const writers, writes = 4, 30
 	for w := range writers {
-		if err := s.Update(ctx, func(tx store.Tx) error { return tx.EnsureUser(fmt.Sprint("u", w)) }); err != nil {
+		if err := s.Update(ctx, func(tx store.Tx) error {
+			return tx.EnsureUser(fmt.Sprint("u", w), account.NewEnvironment("This computer", "local", nil))
+		}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -57,7 +59,9 @@ func TestCommitsGoOnWhileAListenerIsSlow(t *testing.T) {
 	s := open(t, t.TempDir())
 	ctx := context.Background()
 	for _, u := range []string{"slow", "other"} {
-		if err := s.Update(ctx, func(tx store.Tx) error { return tx.EnsureUser(u) }); err != nil {
+		if err := s.Update(ctx, func(tx store.Tx) error {
+			return tx.EnsureUser(u, account.NewEnvironment("This computer", "local", nil))
+		}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -89,7 +93,9 @@ func TestCommitsGoOnWhileAListenerIsSlow(t *testing.T) {
 func TestDeltasKeepTheirPlaceAfterEarlierCommits(t *testing.T) {
 	s := open(t, t.TempDir())
 	ctx := context.Background()
-	if err := s.Update(ctx, func(tx store.Tx) error { return tx.EnsureUser("u") }); err != nil {
+	if err := s.Update(ctx, func(tx store.Tx) error {
+		return tx.EnsureUser("u", account.NewEnvironment("This computer", "local", nil))
+	}); err != nil {
 		t.Fatal(err)
 	}
 	hearing, release := make(chan struct{}), make(chan struct{})

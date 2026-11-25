@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/0xfakeSpike/ollupi/environment"
 	"os"
 	"path/filepath"
 	"slices"
@@ -57,7 +58,18 @@ func (plainSet) Specs() []tool.Spec {
 }
 
 func tools(context.Context, string) (tool.Set, error) { return set{}, nil }
-func here(string) (sandbox.Box, error)                { return sandbox.Here() }
+
+// here are the environments of a deployment that offers this machine, its
+// environments folders of a temporary one.
+func here(t testing.TB, st store.Store) *environment.Boxes {
+	t.Helper()
+	envs, err := environment.New(st, map[string]sandbox.Provider{"local": sandbox.Local{Dir: t.TempDir(), Config: sandbox.Config{Mode: string(sandbox.ModeFullAccess)}}}, "local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { envs.Close() })
+	return envs
+}
 
 type blobs struct {
 	mu    sync.Mutex
@@ -109,7 +121,7 @@ func setup(t *testing.T) *fixture {
 	t.Cleanup(func() { st.Close() })
 	b := &blobs{files: map[string][]byte{}}
 	f := &fixture{t: t, ctx: context.Background(), st: st, blobs: b,
-		a: New(st, catalog{provider}, tools, noStatuses, here, b, cron.NewCalendar(time.UTC), policy.Settings{ApprovalPolicy: string(policy.OnRequest)})}
+		a: New(st, catalog{provider}, tools, noStatuses, here(t, st), b, cron.NewCalendar(time.UTC), policy.Settings{ApprovalPolicy: string(policy.OnRequest)})}
 	if err := f.a.EnsureUser(f.ctx, "u"); err != nil {
 		t.Fatal(err)
 	}
@@ -260,8 +272,8 @@ func TestASubagentTakesMessagesInItsRoleAndKeepsRulesInItsWorkspace(t *testing.T
 	dir := t.TempDir()
 	os.Mkdir(filepath.Join(dir, "home"), 0o755)
 	os.Mkdir(filepath.Join(dir, "docs"), 0o755)
-	home := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", filepath.Join(dir, "home"), ""))
-	docs := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", filepath.Join(dir, "docs"), ""))
+	home := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", "", filepath.Join(dir, "home"), ""))
+	docs := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", "", filepath.Join(dir, "docs"), ""))
 	parent := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", home.ID, "", ""))
 	now := time.Now().UTC()
 	err := f.st.Update(f.ctx, func(tx store.Tx) error {
@@ -369,8 +381,8 @@ func TestAWorkspaceMovesOnlyWhenItsConversationsAreIdle(t *testing.T) {
 	root, to := filepath.Join(dir, "project"), filepath.Join(dir, "moved")
 	os.Mkdir(root, 0o755)
 	os.Mkdir(to, 0o755)
-	w := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", root, ""))
-	if again := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", root+"/", "other")); again.ID != w.ID || w.Name != "project" {
+	w := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", "", root, ""))
+	if again := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", "", root+"/", "other")); again.ID != w.ID || w.Name != "project" {
 		t.Errorf("the same folder twice: %+v %+v", w, again)
 	}
 	th := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", w.ID, "", ""))
@@ -391,7 +403,7 @@ func TestAWorkspaceMovesOnlyWhenItsConversationsAreIdle(t *testing.T) {
 
 func TestAWorkspaceKeepsItsInstructionsAndProviders(t *testing.T) {
 	f := setup(t)
-	w := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", t.TempDir(), "plans"))
+	w := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", "", t.TempDir(), "plans"))
 	got := must[account.Workspace](t)(f.a.UpdateWorkspaceInstructions(f.ctx, "u", w.ID, "  Plan, do not build.  "))
 	if got.Instructions != "Plan, do not build." {
 		t.Errorf("the instructions %q", got.Instructions)
@@ -415,13 +427,13 @@ func TestAUserHasOneHubWhoseConversationsRunAsTheHub(t *testing.T) {
 	for _, name := range []string{"home", "work", "docs"} {
 		os.Mkdir(filepath.Join(dir, name), 0o755)
 	}
-	home := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", filepath.Join(dir, "home"), ""))
-	work := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", filepath.Join(dir, "work"), ""))
-	docs := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", filepath.Join(dir, "docs"), ""))
+	home := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", "", filepath.Join(dir, "home"), ""))
+	work := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", "", filepath.Join(dir, "work"), ""))
+	docs := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", "", filepath.Join(dir, "docs"), ""))
 	if home.Kind != account.ProjectWorkspace {
 		t.Errorf("a new workspace is %q", home.Kind)
 	}
-	noHub := New(f.st, catalog{provider}, func(context.Context, string) (tool.Set, error) { return plainSet{}, nil }, noStatuses, here, f.blobs,
+	noHub := New(f.st, catalog{provider}, func(context.Context, string) (tool.Set, error) { return plainSet{}, nil }, noStatuses, here(f.t, f.st), f.blobs,
 		cron.NewCalendar(time.UTC), policy.Settings{})
 	if _, err := noHub.SetWorkspaceKind(f.ctx, "u", home.ID, account.HubWorkspace); !errors.Is(err, ErrNoHub) {
 		t.Errorf("a hub where the deployment offers none: %v", err)
@@ -522,7 +534,7 @@ func TestAMoveWaitsForATurnBeingQueued(t *testing.T) {
 	root, to := filepath.Join(dir, "project"), filepath.Join(dir, "moved")
 	os.Mkdir(root, 0o755)
 	os.Mkdir(to, 0o755)
-	w := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", root, ""))
+	w := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", "", root, ""))
 	th := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", w.ID, "", ""))
 	checked, release := make(chan struct{}), make(chan struct{})
 	queued := make(chan error, 1)
@@ -560,8 +572,8 @@ func TestAMoveLeftByACrashIsSettledOnStart(t *testing.T) {
 	dir := t.TempDir()
 	os.Mkdir(filepath.Join(dir, "stayed"), 0o755)
 	os.Mkdir(filepath.Join(dir, "went"), 0o755)
-	stayed := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", filepath.Join(dir, "stayed"), ""))
-	went := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", filepath.Join(dir, "went"), ""))
+	stayed := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", "", filepath.Join(dir, "stayed"), ""))
+	went := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", "", filepath.Join(dir, "went"), ""))
 	landed := filepath.Join(filepath.Dir(went.Root), "landed")
 	if err := os.Rename(went.Root, landed); err != nil {
 		t.Fatal(err)
@@ -583,5 +595,50 @@ func TestAMoveLeftByACrashIsSettledOnStart(t *testing.T) {
 		if got.Root != want[got.ID] || got.MovingTo != "" {
 			t.Errorf("settled %s at %q moving to %q, want %q", got.Name, got.Root, got.MovingTo, want[got.ID])
 		}
+	}
+}
+
+func TestAWorkspaceAndItsConversationsAreInOneEnvironment(t *testing.T) {
+	f := setup(t)
+	envs, _, err := f.a.Environments(f.ctx, "u")
+	if err != nil || len(envs) != 1 || envs[0].Provider != "local" {
+		t.Fatalf("a new user's environments %+v, %v", envs, err)
+	}
+	first := envs[0]
+	if _, err := f.a.AddEnvironment(f.ctx, "u", "Elsewhere", "cloud", nil); !errors.Is(err, ErrInvalidEnvironment) {
+		t.Errorf("an environment of a sandbox not offered: %v", err)
+	}
+	if _, err := f.a.AddEnvironment(f.ctx, "u", "Odd", "local", json.RawMessage(`{"region":"x"}`)); !errors.Is(err, ErrInvalidEnvironment) {
+		t.Errorf("an environment with settings its provider does not take: %v", err)
+	}
+	other := must[account.Environment](t)(f.a.AddEnvironment(f.ctx, "u", "Scratch", "local", nil))
+
+	dir := t.TempDir()
+	here := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", "", dir, "here"))
+	there := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", other.ID, dir, "there"))
+	if here.Environment != first.ID || there.Environment != other.ID || here.ID == there.ID {
+		t.Errorf("one folder in two environments: %+v, %+v", here, there)
+	}
+
+	th := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", there.ID, "", "in there"))
+	if th.Environment != other.ID {
+		t.Errorf("a conversation in a workspace of %s runs in %s", other.ID, th.Environment)
+	}
+	if _, err := f.a.StartThread(f.ctx, "u", there.ID, first.ID, "mismatched"); !errors.Is(err, ErrInvalidEnvironment) {
+		t.Errorf("a conversation in a workspace, but in another environment: %v", err)
+	}
+	if loose := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", "", "", "loose")); loose.Environment != first.ID {
+		t.Errorf("a conversation outside a workspace runs in %s", loose.Environment)
+	}
+
+	if err := f.a.DeleteEnvironment(f.ctx, "u", first.ID); !errors.Is(err, ErrFirstEnvironment) {
+		t.Errorf("the first environment: %v", err)
+	}
+	if err := f.a.DeleteEnvironment(f.ctx, "u", other.ID); !errors.Is(err, ErrEnvironmentInUse) {
+		t.Errorf("an environment with a workspace and a conversation: %v", err)
+	}
+	unused := must[account.Environment](t)(f.a.AddEnvironment(f.ctx, "u", "Unused", "local", nil))
+	if err := f.a.DeleteEnvironment(f.ctx, "u", unused.ID); err != nil {
+		t.Errorf("an environment nothing is in: %v", err)
 	}
 }

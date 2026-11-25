@@ -3,6 +3,7 @@ package host
 import (
 	"context"
 	"errors"
+	"github.com/0xfakeSpike/ollupi/environment"
 	"strings"
 	"sync"
 	"testing"
@@ -25,7 +26,11 @@ import (
 	"github.com/0xfakeSpike/ollupi/tool/kit"
 )
 
-type model struct{ mu sync.Mutex }
+type model struct {
+	mu sync.Mutex
+	// systems are the system prompts of the main agent's calls.
+	systems []string
+}
 
 func (*model) Limits(string) (llm.Limits, error) {
 	return llm.Limits{Context: 200_000, Output: 8_000}, nil
@@ -35,6 +40,9 @@ func (m *model) Chat(_ context.Context, req llm.ChatRequest, _ func(llm.Delta)) 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	system, last := req.Messages[0].Content, req.Messages[len(req.Messages)-1]
+	if strings.Contains(system, "You are Ollupi") {
+		m.systems = append(m.systems, system)
+	}
 	reply := func(text string, calls ...llm.ToolCall) (llm.ChatResponse, error) {
 		return llm.ChatResponse{Message: llm.ChatMessage{Role: llm.RoleAssistant, Content: text, ToolCalls: calls}, FinishReason: "stop"}, nil
 	}
@@ -77,9 +85,9 @@ func TestAHostRunsATurnThroughASubagentAndLearnsFromIt(t *testing.T) {
 	m := &model{}
 	h, err := New(ctx, Config{
 		Home: t.TempDir(), Name: "Ollupi",
-		Dial:    func(account.ModelProvider, account.ProviderModel) (llm.Client, error) { return m, nil },
-		Tools:   []kit.Provider{weather{}},
-		Boxes:   func(string) (sandbox.Box, error) { return sandbox.Here() },
+		Dial:      func(account.ModelProvider, account.ProviderModel) (llm.Client, error) { return m, nil },
+		Tools:     []kit.Provider{weather{}},
+		Sandboxes: thisMachine(t), Sandbox: "local",
 		Gateway: &gateway.Options{Authenticate: func(context.Context, string) (auth.Identity, error) { return auth.Identity{User: "u"}, nil }},
 	})
 	if err != nil {
@@ -135,6 +143,11 @@ func TestAHostRunsATurnThroughASubagentAndLearnsFromIt(t *testing.T) {
 	if last := v.Items[len(v.Items)-1]; last.Text != "The subagent says it rains, which you like." {
 		t.Errorf("the answer %+v", last)
 	}
+	m.mu.Lock()
+	if len(m.systems) == 0 || !strings.Contains(m.systems[0], "# ENVIRONMENT\nCommands and file edits run in "+sandbox.LocalName+".") {
+		t.Errorf("the system prompt does not say where commands run:\n%v", m.systems)
+	}
+	m.mu.Unlock()
 	select {
 	case n := <-learned:
 		if n.Text != "Likes rain." || n.Scope != memory.Global {
@@ -152,7 +165,7 @@ func TestAHostRunsATurnThroughASubagentAndLearnsFromIt(t *testing.T) {
 func TestAHostRefusesPermissionsItCannotRead(t *testing.T) {
 	_, err := New(context.Background(), Config{Home: t.TempDir(), Name: "Ollupi",
 		Permissions: policy.Settings{ApprovalPolicy: "sometimes"},
-		Boxes:       func(string) (sandbox.Box, error) { return sandbox.Here() }})
+		Sandboxes:   thisMachine(t), Sandbox: "local"})
 	if err == nil || !strings.Contains(err.Error(), "approval policy") {
 		t.Errorf("made with %v", err)
 	}
@@ -178,7 +191,12 @@ func testModels(t *testing.T, catalog ...account.ModelProvider) (*models, *app.A
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := app.New(st, ms, nil, nil, nil, nil, cron.NewCalendar(time.UTC), policy.Settings{ApprovalPolicy: string(policy.OnRequest)})
+	envs, err := environment.New(st, thisMachine(t), "local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { envs.Close() })
+	a := app.New(st, ms, nil, nil, envs, nil, cron.NewCalendar(time.UTC), policy.Settings{ApprovalPolicy: string(policy.OnRequest)})
 	for _, u := range []string{"a", "b"} {
 		if err := a.EnsureUser(context.Background(), u); err != nil {
 			t.Fatal(err)
@@ -256,4 +274,10 @@ func TestReplacingTheModelsTakesEffectAtOnce(t *testing.T) {
 	if models, _, _, _ := a.Models(ctx, "a"); len(models) != 2 {
 		t.Fatalf("a refused catalog changed the models: %+v", models)
 	}
+}
+
+// thisMachine is the one sandbox a test deployment offers: this machine,
+// its environments folders of a temporary one.
+func thisMachine(t *testing.T) map[string]sandbox.Provider {
+	return map[string]sandbox.Provider{"local": sandbox.Local{Dir: t.TempDir(), Config: sandbox.Config{Mode: string(sandbox.ModeFullAccess)}}}
 }

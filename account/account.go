@@ -1,6 +1,7 @@
 package account
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/policy"
+	"github.com/google/uuid"
 )
 
 var (
@@ -51,8 +53,11 @@ const (
 var WorkspaceKinds = []WorkspaceKind{ProjectWorkspace, HubWorkspace}
 
 type Workspace struct {
-	ID           string
-	Name         string
+	ID   string
+	Name string
+	// Environment is the environment whose folder Root is: a workspace is a
+	// folder of one machine.
+	Environment  string
 	Root         string
 	MovingTo     string
 	Kind         WorkspaceKind
@@ -116,33 +121,24 @@ type Todo struct {
 	Ended     *time.Time
 }
 
-type EnvironmentKind string
-
-const (
-	Local   EnvironmentKind = "local"
-	Machine EnvironmentKind = "machine"
-)
-
-var EnvironmentKinds = []EnvironmentKind{Local, Machine}
-
-const LocalName = "This computer"
-
+// Environment is one sandbox a user's conversations can run in: a sandbox
+// of one of the deployment's providers (pkg/sandbox), made the first time a
+// conversation needs it. Config is what the user chose for it; State is
+// what the provider keeps of it, as a cloud sandbox's id, and is never shown.
 type Environment struct {
-	ID      string
-	Name    string
-	Kind    EnvironmentKind
-	Created time.Time
-	Updated time.Time
+	ID       string
+	Name     string
+	Provider string
+	Config   json.RawMessage
+	State    json.RawMessage
+	Created  time.Time
+	Updated  time.Time
 }
 
-func NewEnvironmentKind(kind EnvironmentKind) (EnvironmentKind, error) {
-	switch kind {
-	case "", Machine:
-		return Machine, nil
-	case Local:
-		return "", fmt.Errorf("%w: this machine is one environment and every user has it; name a cloud sandbox instead", ErrInvalidName)
-	}
-	return "", fmt.Errorf("%w: an environment is %q, not %q", ErrInvalidName, Machine, kind)
+// NewEnvironment is an environment not made yet: a new id, a sandbox of
+// provider with config, and no state.
+func NewEnvironment(name, provider string, config json.RawMessage) Environment {
+	return Environment{ID: uuid.NewString(), Name: name, Provider: provider, Config: config}
 }
 
 type Thread struct {

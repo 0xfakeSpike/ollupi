@@ -109,7 +109,7 @@ func (f *fixture) ask(thread, text string) {
 	f.t.Helper()
 	now := time.Now().UTC()
 	f.update(func(tx store.Tx) error {
-		if err := tx.EnsureUser("u"); err != nil {
+		if err := tx.EnsureUser("u", account.NewEnvironment("This computer", "local", nil)); err != nil {
 			return err
 		}
 		if err := tx.CreateThread(store.Thread{User: "u", Thread: account.Thread{ID: thread, Created: now, Updated: now}}); err != nil {
@@ -315,7 +315,7 @@ func TestASubagentWorksAtThePermissionSettingsOfItsThread(t *testing.T) {
 	loose := policy.Settings{ApprovalPolicy: string(policy.Never), Rules: policy.Rules{Allow: []string{"run_command(make)"}}}
 	f.update(func(tx store.Tx) error {
 		now := time.Now().UTC()
-		if err := tx.EnsureUser("u"); err != nil {
+		if err := tx.EnsureUser("u", account.NewEnvironment("This computer", "local", nil)); err != nil {
 			return err
 		}
 		if err := tx.CreateThread(store.Thread{User: "u", Thread: account.Thread{ID: "th", Settings: loose, Created: now, Updated: now}}); err != nil {
@@ -504,10 +504,10 @@ func TestAWorkspaceGivesItsInstructionsAndHidesTheProvidersItTurnsOff(t *testing
 	}
 	now := time.Now().UTC()
 	f.update(func(tx store.Tx) error {
-		if err := tx.EnsureUser("u"); err != nil {
+		if err := tx.EnsureUser("u", account.Environment{ID: "here", Name: "This computer", Provider: "local"}); err != nil {
 			return err
 		}
-		w := account.Workspace{ID: "w", Name: "plans", Root: t.TempDir(), Instructions: "Answer in haiku.",
+		w := account.Workspace{ID: "w", Name: "plans", Environment: "here", Root: t.TempDir(), Instructions: "Answer in haiku.",
 			Providers: account.Providers{Disabled: []string{agent.SubagentsProvider}}, Created: now, Updated: now}
 		if err := tx.PutWorkspace("u", w); err != nil {
 			return err

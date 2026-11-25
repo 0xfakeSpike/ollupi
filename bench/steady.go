@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"runtime"
 	"runtime/pprof"
 	"strconv"
@@ -17,6 +16,7 @@ import (
 	"time"
 
 	"github.com/0xfakeSpike/ollupi/host"
+	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/tool/builtin/workspace"
 	"github.com/0xfakeSpike/ollupi/tool/kit"
 )
@@ -56,24 +56,19 @@ func steady(args []string) {
 	http.DefaultTransport.(*http.Transport).MaxIdleConnsPerHost = *calls
 	dir := tempHome()
 	defer os.RemoveAll(dir)
-	providers := []kit.Provider{work{latency: *toolLatency}}
+	// Each tool call is work, or with -command a sleep through run_command
+	// in this machine's sandbox of that mode.
+	var providers []kit.Provider
+	sandboxes := thisMachine(dir, string(sandbox.ModeFullAccess))
 	if *command != "" {
-		folder := filepath.Join(dir, "work")
-		if err := os.Mkdir(folder, 0o755); err != nil {
-			log.Fatal(err)
-		}
-		runner, err := workspace.New(workspace.Options{Config: workspace.Config{WorkspaceDirs: []string{folder}, SandboxMode: *command},
-			Agent: workspace.AgentFiles{Home: dir}})
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer runner.Close()
-		providers = []kit.Provider{runner}
+		sandboxes = thisMachine(dir, *command)
+	} else {
+		providers = []kit.Provider{work{latency: *toolLatency}}
 	}
 	tr := newTracker()
 	e := newEngine(host.Config{
 		Home: dir, Dial: fakeDial(fakeConnection(url, *calls)),
-		Tools: providers,
+		Tools: providers, Sandboxes: sandboxes,
 		Slots: *slots,
 	})
 	dbs := watchDB(e.Store)

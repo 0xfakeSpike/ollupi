@@ -78,10 +78,10 @@ func putRoot(t *testing.T, s *Store, id, root string) {
 	t.Helper()
 	now := time.Now().UTC()
 	err := s.Update(context.Background(), func(tx store.Tx) error {
-		if err := tx.EnsureUser("a"); err != nil {
+		if err := tx.EnsureUser("a", account.Environment{ID: "here-" + "a", Name: "This computer", Provider: "local"}); err != nil {
 			return err
 		}
-		return tx.PutWorkspace("a", account.Workspace{ID: id, Name: "app", Root: root, Created: now, Updated: now})
+		return tx.PutWorkspace("a", account.Workspace{ID: id, Name: "app", Environment: "here-a", Root: root, Created: now, Updated: now})
 	})
 	if err != nil {
 		t.Fatal(err)

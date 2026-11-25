@@ -10,15 +10,21 @@ import (
 
 func TestAUserIsMadeNamedAndRenamedAndEveryoneHearsIt(t *testing.T) {
 	s := open(t, t.TempDir())
-	update(t, s, func(tx store.Tx) error { return tx.EnsureUser("old") })
+	update(t, s, func(tx store.Tx) error {
+		return tx.EnsureUser("old", account.NewEnvironment("This computer", "local", nil))
+	})
 	var heard []account.User
 	s.Feed().Subscribe("old", func(e store.Event) {
 		if e.Owned != nil && e.Owned.User != nil && e.User == "" {
 			heard = append(heard, *e.Owned.User)
 		}
 	})
-	update(t, s, func(tx store.Tx) error { return tx.CreateUser(account.User{ID: "new", Name: "Work"}) })
-	if err := s.Update(t.Context(), func(tx store.Tx) error { return tx.CreateUser(account.User{ID: "new", Name: "Again"}) }); err == nil {
+	update(t, s, func(tx store.Tx) error {
+		return tx.CreateUser(account.User{ID: "new", Name: "Work"}, account.NewEnvironment("This computer", "local", nil))
+	})
+	if err := s.Update(t.Context(), func(tx store.Tx) error {
+		return tx.CreateUser(account.User{ID: "new", Name: "Again"}, account.NewEnvironment("This computer", "local", nil))
+	}); err == nil {
 		t.Fatal("a user was made twice")
 	}
 	update(t, s, func(tx store.Tx) error { return tx.SetUserName("old", "Me") })

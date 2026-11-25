@@ -28,7 +28,7 @@ func start(t *testing.T, s *Store, owner, thread string) {
 	t.Helper()
 	now := time.Now().UTC()
 	err := s.Update(context.Background(), func(tx store.Tx) error {
-		if err := tx.EnsureUser(owner); err != nil {
+		if err := tx.EnsureUser(owner, account.NewEnvironment("This computer", "local", nil)); err != nil {
 			return err
 		}
 		if err := tx.CreateThread(store.Thread{User: owner, Thread: account.Thread{ID: thread, Title: "a chat", Created: now, Updated: now}}); err != nil {
@@ -156,14 +156,18 @@ func TestALaterHolderFencesTheOneBefore(t *testing.T) {
 	if err := second.Fence(2); err != nil {
 		t.Fatal(err)
 	}
-	err := first.Update(ctx, func(tx store.Tx) error { return tx.EnsureUser("late") })
+	err := first.Update(ctx, func(tx store.Tx) error {
+		return tx.EnsureUser("late", account.NewEnvironment("This computer", "local", nil))
+	})
 	if !errors.Is(err, store.ErrShardLost) {
 		t.Errorf("the earlier holder's write: %v", err)
 	}
 	if err := first.Fence(1); !errors.Is(err, store.ErrShardLost) {
 		t.Errorf("fencing again under the earlier epoch: %v", err)
 	}
-	if err := second.Update(ctx, func(tx store.Tx) error { return tx.EnsureUser("taker") }); err != nil {
+	if err := second.Update(ctx, func(tx store.Tx) error {
+		return tx.EnsureUser("taker", account.NewEnvironment("This computer", "local", nil))
+	}); err != nil {
 		t.Errorf("the later holder's write: %v", err)
 	}
 }
@@ -199,7 +203,7 @@ func TestDeletingAUserRemovesTheirConversationData(t *testing.T) {
 	s := open(t, t.TempDir())
 	now := time.Now().UTC()
 	err := s.Update(ctx, func(tx store.Tx) error {
-		if err := tx.EnsureUser("gone"); err != nil {
+		if err := tx.EnsureUser("gone", account.NewEnvironment("This computer", "local", nil)); err != nil {
 			return err
 		}
 		if err := tx.CreateThread(store.Thread{User: "gone", Thread: account.Thread{ID: "th", Title: "x", Created: now, Updated: now}}); err != nil {

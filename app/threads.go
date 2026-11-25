@@ -24,6 +24,9 @@ func (a *App) StartThread(ctx context.Context, user, workspace, environment, tit
 	return th, err
 }
 
+// newThread starts a conversation. One in a workspace runs in the
+// workspace's environment, whose folder the workspace is; one outside runs
+// in the environment named, or the user's first.
 func newThread(tx store.Tx, user, workspace, environment, title string) (store.Thread, error) {
 	if workspace != "" {
 		w, err := tx.Workspace(user, workspace)
@@ -33,21 +36,17 @@ func newThread(tx store.Tx, user, workspace, environment, title string) (store.T
 		if err := w.Usable(); err != nil {
 			return store.Thread{}, err
 		}
+		if environment != "" && environment != w.Environment {
+			return store.Thread{}, fmt.Errorf("%w: workspace %s is a folder of another environment", ErrInvalidEnvironment, w.Name)
+		}
+		environment = w.Environment
 	}
-	envs, err := tx.Environments(user)
+	env, err := environmentOf(tx, user, environment)
 	if err != nil {
 		return store.Thread{}, err
 	}
-	env := envs[0].ID
-	if environment != "" {
-		e, err := tx.Environment(user, environment)
-		if err != nil {
-			return store.Thread{}, err
-		}
-		env = e.ID
-	}
 	now := time.Now().UTC()
-	th := store.Thread{User: user, Thread: account.Thread{ID: uuid.NewString(), Title: title, Workspace: workspace, Environment: env, Created: now, Updated: now}}
+	th := store.Thread{User: user, Thread: account.Thread{ID: uuid.NewString(), Title: title, Workspace: workspace, Environment: env.ID, Created: now, Updated: now}}
 	if err := tx.CreateThread(th); err != nil {
 		return store.Thread{}, err
 	}
