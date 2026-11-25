@@ -208,12 +208,20 @@ func (a *App) ResizeTerminal(user, id string, cols, rows int) error {
 	return t.shell.Resize(cols, rows)
 }
 
-// CloseTerminal ends a terminal of the user's.
+// CloseTerminal ends a terminal of the user's; once it returns, opening
+// the workspace's terminal starts a new one.
 func (a *App) CloseTerminal(user, id string) error {
-	t, err := a.terminal(user, id)
-	if err != nil {
-		return err
+	a.terms.mu.Lock()
+	t := a.terms.byID[id]
+	if t == nil || t.user != user {
+		a.terms.mu.Unlock()
+		return fmt.Errorf("terminal %s: %w", id, ErrNoTerminal)
 	}
+	delete(a.terms.byID, id)
+	if a.terms.byPlace[[2]string{t.user, t.workspace}] == t {
+		delete(a.terms.byPlace, [2]string{t.user, t.workspace})
+	}
+	a.terms.mu.Unlock()
 	return t.shell.Close()
 }
 
