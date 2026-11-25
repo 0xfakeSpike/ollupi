@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
-	"slices"
 	"strings"
 
+	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/pkg/sandbox"
 	"github.com/0xfakeSpike/ollupi/prompt"
@@ -53,9 +53,10 @@ func (p *Provider) Invoke(ctx context.Context, c tool.Call) (kit.Result, error) 
 		if err != nil {
 			return kit.Result{}, err
 		}
+		role, _ := agent.RoleOf(agent.Name(c.Role))
 		own := make([]skill.Skill, 0, len(all))
 		for _, s := range all {
-			if slices.Contains(s.Roles, c.Role) {
+			if role.HasSkill(s.Roles) {
 				own = append(own, s)
 			}
 		}
@@ -68,7 +69,8 @@ func (p *Provider) Invoke(ctx context.Context, c tool.Call) (kit.Result, error) 
 
 func ownSkill(rd store.Reader, c tool.Caller, name string) (skill.Skill, error) {
 	s, err := rd.Skill(c.User, name)
-	missing := errors.Is(err, store.ErrNotFound) || err == nil && !slices.Contains(s.Roles, c.Role)
+	role, _ := agent.RoleOf(agent.Name(c.Role))
+	missing := errors.Is(err, store.ErrNotFound) || err == nil && !role.HasSkill(s.Roles)
 	if missing {
 		return skill.Skill{}, fmt.Errorf("skills: you have no skill named %q; use a name from AVAILABLE SKILLS", name)
 	}

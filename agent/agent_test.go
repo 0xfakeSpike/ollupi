@@ -126,40 +126,28 @@ func TestTheMainAgentFitsTheWindow(t *testing.T) {
 	}
 }
 
-func TestSpecialistSubagentsAppearOnlyWhenTheyHaveTools(t *testing.T) {
-	full := []policy.Tool{
+func TestSubagentsAppearOnlyWhenTheyHaveTools(t *testing.T) {
+	launches := []policy.Tool{
+		{Name: string(GeneralSub), Provider: SubagentsProvider},
+		{Name: string(ExploreSub), Provider: SubagentsProvider},
+		{Name: string(VerifySub), Provider: SubagentsProvider},
+	}
+	full := append([]policy.Tool{
 		{Name: ReadFileTool, Provider: WorkspaceProvider},
 		{Name: RunCommandTool, Provider: WorkspaceProvider, Content: true},
 		{Name: "browser_click", Provider: BrowserProvider},
-		{Name: string(GeneralSub), Provider: SubagentsProvider},
-		{Name: string(BrowserSub), Provider: SubagentsProvider},
-		{Name: string(DesignSub), Provider: SubagentsProvider},
-		{Name: string(CodebaseSub), Provider: SubagentsProvider},
-		{Name: string(CodingSub), Provider: SubagentsProvider},
-		{Name: string(WritingSub), Provider: SubagentsProvider},
-		{Name: string(ResearchSub), Provider: SubagentsProvider},
-		{Name: string(VerifySub), Provider: SubagentsProvider},
-	}
-	for _, name := range []Name{GeneralSub, BrowserSub, DesignSub, CodebaseSub, CodingSub, WritingSub, ResearchSub, VerifySub} {
+	}, launches...)
+	for _, name := range []Name{GeneralSub, ExploreSub, VerifySub} {
 		if !offers(Launchable(full), string(name)) {
 			t.Errorf("%s is not offered with a full toolbox", name)
 		}
 	}
-	browserOnly := []policy.Tool{
-		{Name: "browser_click", Provider: BrowserProvider},
-		{Name: string(DesignSub), Provider: SubagentsProvider},
-		{Name: string(CodebaseSub), Provider: SubagentsProvider},
-		{Name: string(CodingSub), Provider: SubagentsProvider},
-		{Name: string(WritingSub), Provider: SubagentsProvider},
-		{Name: string(ResearchSub), Provider: SubagentsProvider},
-		{Name: string(VerifySub), Provider: SubagentsProvider},
+	got := Launchable(append([]policy.Tool{{Name: "web_search", Provider: WebProvider}}, launches...))
+	if !offers(got, string(GeneralSub)) || !offers(got, string(ExploreSub)) {
+		t.Errorf("with only web tools, the roles that can search should stay: %+v", got)
 	}
-	got := Launchable(browserOnly)
-	if !offers(got, string(DesignSub)) || !offers(got, string(CodingSub)) || !offers(got, string(ResearchSub)) || !offers(got, string(VerifySub)) {
-		t.Errorf("with only browser tools, the roles that can browse should stay: %+v", got)
-	}
-	if offers(got, string(CodebaseSub)) || offers(got, string(WritingSub)) {
-		t.Errorf("with only browser tools, roles with nothing to work with should go: %+v", got)
+	if offers(got, string(VerifySub)) {
+		t.Errorf("with only web tools, the verifier has nothing to work with: %+v", got)
 	}
 }
 
@@ -173,7 +161,7 @@ func TestARolesKindSaysWhereItsReplyGoes(t *testing.T) {
 			t.Errorf("%s should answer the user in its own conversation: %+v", name, r)
 		}
 	}
-	for _, name := range []Name{BrowserSub, DesignSub, CodebaseSub, CodingSub, WritingSub, ResearchSub, VerifySub} {
+	for _, name := range []Name{ExploreSub, VerifySub} {
 		if !Reporting(string(name)) {
 			t.Errorf("%s should report back to the agent that launched it", name)
 		}
@@ -240,9 +228,8 @@ func TestReadersAndTheVerifierCannotEdit(t *testing.T) {
 		{Name: "browser_click", Provider: BrowserProvider},
 	}}
 	cases := map[Name][]string{
-		CodebaseSub: {ReadFileTool, RunCommandTool},
-		ResearchSub: {ReadFileTool, RunCommandTool, "browser_click"},
-		VerifySub:   {ReadFileTool, RunCommandTool, "browser_click"},
+		ExploreSub: {ReadFileTool, RunCommandTool, "browser_click"},
+		VerifySub:  {ReadFileTool, RunCommandTool, "browser_click"},
 	}
 	edit := Having(policy.Tool{Name: EditFileTool, Provider: WorkspaceProvider})
 	for name, want := range cases {
@@ -275,12 +262,24 @@ func TestHavingNamesTheRolesThatKeepATool(t *testing.T) {
 		{HubProvider, []Name{HubMain}},
 		{SubagentsProvider, []Name{FullMain, CompactMain}},
 		{"github", []Name{FullMain, CompactMain, GeneralSub, HubMain}},
-		{WebProvider, []Name{FullMain, CompactMain, GeneralSub, ResearchSub, HubMain}},
+		{WebProvider, []Name{FullMain, CompactMain, GeneralSub, ExploreSub, HubMain}},
 		{WorkspaceProvider, Names},
 	}
 	for _, c := range cases {
 		if got := Having(policy.Tool{Name: "x", Provider: c.provider}); !slices.Equal(got, c.want) {
 			t.Errorf("Having(%s) = %v, want %v", c.provider, got, c.want)
 		}
+	}
+}
+
+func TestTheGeneralSubagentTakesTheMainAgentsSkills(t *testing.T) {
+	general, _ := RoleOf(GeneralSub)
+	verify, _ := RoleOf(VerifySub)
+	main := []string{string(FullMain), string(CompactMain)}
+	if !general.HasSkill(main) || verify.HasSkill(main) {
+		t.Errorf("a main agent's skill: general %v, verify %v", general.HasSkill(main), verify.HasSkill(main))
+	}
+	if !general.HasSkill([]string{string(GeneralSub)}) || general.HasSkill([]string{string(HubMain)}) {
+		t.Errorf("the general subagent's own skills, or the hub's, are offered wrongly")
 	}
 }

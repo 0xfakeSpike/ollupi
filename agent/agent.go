@@ -14,17 +14,12 @@ const (
 	FullMain    Name = "full-main-agent"
 	CompactMain Name = "compact-main-agent"
 	GeneralSub  Name = "general-sub-agent"
-	BrowserSub  Name = "browser-sub-agent"
-	DesignSub   Name = "design-sub-agent"
-	CodebaseSub Name = "codebase-sub-agent"
-	CodingSub   Name = "coding-sub-agent"
-	WritingSub  Name = "writing-sub-agent"
-	ResearchSub Name = "research-sub-agent"
+	ExploreSub  Name = "explore-sub-agent"
 	VerifySub   Name = "verify-sub-agent"
 	HubMain     Name = "hub-main-agent"
 )
 
-var Names = []Name{FullMain, CompactMain, GeneralSub, BrowserSub, DesignSub, CodebaseSub, CodingSub, WritingSub, ResearchSub, VerifySub, HubMain}
+var Names = []Name{FullMain, CompactMain, GeneralSub, ExploreSub, VerifySub, HubMain}
 
 // Kind says where a role's reply goes: back to the agent that launched it, or to the user.
 type Kind string
@@ -66,17 +61,30 @@ const (
 )
 
 type Role struct {
-	Name    Name
-	Kind    Kind
-	Rules   string
-	Own     []policy.Layer
-	Core    []string
-	Recalls bool
+	Name       Name
+	Kind       Kind
+	Rules      string
+	Own        []policy.Layer
+	Core       []string
+	Recalls    bool
+	SkillsFrom []Name
 	Limits
 }
 
 // AnswersUser says whether the role's reply is shown to the user, rather than to the agent that launched it.
 func (r Role) AnswersUser() bool { return r.Kind != ReportingKind }
+
+func (r Role) HasSkill(roles []string) bool {
+	if slices.Contains(roles, string(r.Name)) {
+		return true
+	}
+	for _, from := range r.SkillsFrom {
+		if slices.Contains(roles, string(from)) {
+			return true
+		}
+	}
+	return false
+}
 
 // Reporting says whether a role's reply goes back to the agent that launched it.
 func Reporting(name string) bool { return roles[Name(name)].Kind == ReportingKind }
@@ -91,7 +99,6 @@ var standard = Limits{MaxModelCalls: 200, MaxToolCalls: 400, MaxConsecutiveFailu
 
 var readOnly = policy.Settings{Rules: policy.Rules{Deny: []string{EditFileTool, WriteFileTool, ClaudeTool}}}
 
-// deep suits a subagent that reads a whole project: more reading than writing, many small reads.
 var deep = Limits{MaxModelCalls: 400, MaxToolCalls: 1_200, MaxConsecutiveFailures: 10}
 
 var roles = map[Name]Role{
@@ -102,21 +109,10 @@ var roles = map[Name]Role{
 	HubMain: {Name: HubMain, Kind: MainKind, Rules: hubMainRules, Recalls: true,
 		Own: []policy.Layer{{Of: "the hub's role", Without: []string{SubagentsProvider, BrowserProvider},
 			Settings: policy.Settings{Rules: policy.Rules{Allow: []string{StartConversationTool, SendMessageTool}}}}}, Limits: standard},
-	GeneralSub: {Name: GeneralSub, Kind: ReportingKind, Rules: generalSubRules, Recalls: true,
-		Own: []policy.Layer{{Of: "the general subagent's role", Without: []string{SubagentsProvider, CronProvider, HubProvider}}}, Limits: standard},
-	BrowserSub: {Name: BrowserSub, Kind: ReportingKind, Rules: browserSubRules, Recalls: true,
-		Own: []policy.Layer{{Of: "the browser subagent's role", Providers: []string{WorkspaceProvider, BrowserProvider, OutputsProvider, SkillsProvider, PlanProvider}}}, Limits: standard},
-	DesignSub: {Name: DesignSub, Kind: ReportingKind, Rules: designSubRules, Recalls: true,
-		Own: []policy.Layer{{Of: "the design subagent's role", Providers: []string{WorkspaceProvider, BrowserProvider, OutputsProvider, SkillsProvider, PlanProvider}}}, Limits: standard},
-	CodebaseSub: {Name: CodebaseSub, Kind: ReportingKind, Rules: codebaseSubRules, Recalls: true,
-		Own: []policy.Layer{{Of: "the codebase subagent's role", Providers: []string{WorkspaceProvider, OutputsProvider, SkillsProvider, PlanProvider},
-			Settings: readOnly}}, Limits: deep},
-	CodingSub: {Name: CodingSub, Kind: ReportingKind, Rules: codingSubRules, Recalls: true,
-		Own: []policy.Layer{{Of: "the coding subagent's role", Providers: []string{WorkspaceProvider, BrowserProvider, OutputsProvider, SkillsProvider, PlanProvider}}}, Limits: deep},
-	WritingSub: {Name: WritingSub, Kind: ReportingKind, Rules: writingSubRules, Recalls: true,
-		Own: []policy.Layer{{Of: "the writing subagent's role", Providers: []string{WorkspaceProvider, OutputsProvider, SkillsProvider, PlanProvider}}}, Limits: standard},
-	ResearchSub: {Name: ResearchSub, Kind: ReportingKind, Rules: researchSubRules, Recalls: true,
-		Own: []policy.Layer{{Of: "the research subagent's role", Providers: []string{WorkspaceProvider, WebProvider, BrowserProvider, OutputsProvider, SkillsProvider, PlanProvider},
+	GeneralSub: {Name: GeneralSub, Kind: ReportingKind, Rules: generalSubRules, Recalls: true, SkillsFrom: []Name{FullMain, CompactMain},
+		Own: []policy.Layer{{Of: "the general subagent's role", Without: []string{SubagentsProvider, CronProvider, HubProvider}}}, Limits: deep},
+	ExploreSub: {Name: ExploreSub, Kind: ReportingKind, Rules: exploreSubRules, Recalls: true,
+		Own: []policy.Layer{{Of: "the explore subagent's role", Providers: []string{WorkspaceProvider, WebProvider, BrowserProvider, OutputsProvider, SkillsProvider, PlanProvider},
 			Settings: readOnly}}, Limits: deep},
 	VerifySub: {Name: VerifySub, Kind: ReportingKind, Rules: verifySubRules, Recalls: true,
 		Own: []policy.Layer{{Of: "the verify subagent's role", Providers: []string{WorkspaceProvider, BrowserProvider, OutputsProvider, SkillsProvider, PlanProvider},

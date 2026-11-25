@@ -52,12 +52,15 @@ func TestACallReachesOnlyItsUsersSkillsOfItsRole(t *testing.T) {
 	ts, st, _ := setup(t)
 	put(t, st, "u", skill.Package{Name: "deploy", Description: "How to deploy.", Instructions: "Deploy.", Roles: []string{"full-main-agent"},
 		Files: []skill.File{{Path: "docs/guide.md", Body: []byte("guide")}}})
-	put(t, st, "u", skill.Package{Name: "site-login", Description: "How to log in.", Instructions: "Log in.", Roles: []string{"browser-sub-agent"}})
+	put(t, st, "u", skill.Package{Name: "site-login", Description: "How to log in.", Instructions: "Log in.", Roles: []string{"explore-sub-agent"}})
 	if _, err := call(ts, "full-main-agent", toolActivateSkill, map[string]any{"name": "deploy"}); err != nil {
 		t.Errorf("a role's own skill: %v", err)
 	}
-	if _, err := call(ts, "browser-sub-agent", toolActivateSkill, map[string]any{"name": "deploy"}); err == nil {
-		t.Error("the browser subagent activated a skill of the main agent")
+	if _, err := call(ts, "explore-sub-agent", toolActivateSkill, map[string]any{"name": "deploy"}); err == nil {
+		t.Error("the explore subagent activated a skill of the main agent")
+	}
+	if _, err := call(ts, "general-sub-agent", toolActivateSkill, map[string]any{"name": "deploy"}); err != nil {
+		t.Errorf("the general subagent cannot use a skill of the main agent: %v", err)
 	}
 	put(t, st, "v", skill.Package{Name: "review", Description: "How to review.", Instructions: "Review.", Roles: []string{"full-main-agent"}})
 	if _, err := call(ts, "full-main-agent", toolActivateSkill, map[string]any{"name": "review"}); err == nil {
@@ -66,12 +69,12 @@ func TestACallReachesOnlyItsUsersSkillsOfItsRole(t *testing.T) {
 	if _, err := callAs(ts, "v", "full-main-agent", toolActivateSkill, map[string]any{"name": "review"}); err != nil {
 		t.Errorf("v's own skill: %v", err)
 	}
-	if _, err := call(ts, "browser-sub-agent", toolReadResource, map[string]any{"skill": "deploy", "path": "docs/guide.md"}); err == nil {
-		t.Error("the browser subagent read a resource of the main agent")
+	if _, err := call(ts, "explore-sub-agent", toolReadResource, map[string]any{"skill": "deploy", "path": "docs/guide.md"}); err == nil {
+		t.Error("the explore subagent read a resource of the main agent")
 	}
-	listed, err := call(ts, "browser-sub-agent", toolListSkills, map[string]any{})
+	listed, err := call(ts, "explore-sub-agent", toolListSkills, map[string]any{})
 	if got := listed.Output.(map[string]any)["skills"].([]skill.Skill); err != nil || len(got) != 1 || got[0].Name != "site-login" {
-		t.Errorf("the browser subagent's list: %+v %v", listed, err)
+		t.Errorf("the explore subagent's list: %+v %v", listed, err)
 	}
 	page, err := call(ts, "full-main-agent", toolReadResource, map[string]any{"skill": "deploy", "path": "docs/guide.md"})
 	if err != nil || page.Output.(skill.ResourcePage).Text != "guide" {

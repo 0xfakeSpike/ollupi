@@ -7,12 +7,7 @@
         "full-main-agent",
         "compact-main-agent",
         "general-sub-agent",
-        "browser-sub-agent",
-        "design-sub-agent",
-        "codebase-sub-agent",
-        "coding-sub-agent",
-        "writing-sub-agent",
-        "research-sub-agent",
+        "explore-sub-agent",
         "verify-sub-agent",
         "hub-main-agent"
       ]
@@ -5920,41 +5915,17 @@
     "workspaceFile": "/workspaces/{workspace}/files/{path...}"
   },
   "builtinTools": {
-    "browser-sub-agent": {
-      "arguments": {
-        "$ref": "#/$defs/SubagentCall"
-      },
-      "output": {
-        "$ref": "#/$defs/SubagentLaunched"
-      }
-    },
-    "codebase-sub-agent": {
-      "arguments": {
-        "$ref": "#/$defs/SubagentCall"
-      },
-      "output": {
-        "$ref": "#/$defs/SubagentLaunched"
-      }
-    },
-    "coding-sub-agent": {
-      "arguments": {
-        "$ref": "#/$defs/SubagentCall"
-      },
-      "output": {
-        "$ref": "#/$defs/SubagentLaunched"
-      }
-    },
-    "design-sub-agent": {
-      "arguments": {
-        "$ref": "#/$defs/SubagentCall"
-      },
-      "output": {
-        "$ref": "#/$defs/SubagentLaunched"
-      }
-    },
     "edit_file": {
       "output": {
         "$ref": "#/$defs/FileOutput"
+      }
+    },
+    "explore-sub-agent": {
+      "arguments": {
+        "$ref": "#/$defs/SubagentCall"
+      },
+      "output": {
+        "$ref": "#/$defs/SubagentLaunched"
       }
     },
     "general-sub-agent": {
@@ -6018,14 +5989,6 @@
         "$ref": "#/$defs/UserInputAnswers"
       }
     },
-    "research-sub-agent": {
-      "arguments": {
-        "$ref": "#/$defs/SubagentCall"
-      },
-      "output": {
-        "$ref": "#/$defs/SubagentLaunched"
-      }
-    },
     "run_command": {
       "output": {
         "$ref": "#/$defs/CommandOutput"
@@ -6063,14 +6026,6 @@
     "write_file": {
       "output": {
         "$ref": "#/$defs/FileOutput"
-      }
-    },
-    "writing-sub-agent": {
-      "arguments": {
-        "$ref": "#/$defs/SubagentCall"
-      },
-      "output": {
-        "$ref": "#/$defs/SubagentLaunched"
       }
     }
   },

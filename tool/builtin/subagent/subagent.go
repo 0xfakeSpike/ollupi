@@ -20,46 +20,11 @@ type kind struct {
 var kinds = map[agent.Name]kind{
 	agent.GeneralSub: {
 		title: "Subagent",
-		description: "Launch a general-purpose subagent: another run of you, with your tools, that does one task on its own and reports back. " +
-			"When the task is one of these, launch the specialist instead: " + string(agent.BrowserSub) + " for work in the built-in browser; " +
-			string(agent.DesignSub) + " for a picture, an icon, a poster or a UI mockup; " + string(agent.CodebaseSub) + " to find out how a project's own code works; " +
-			string(agent.CodingSub) + " to build or change a project's code, front end and back end alike, with its tests; " +
-			string(agent.WritingSub) + " to write or rewrite a text; " + string(agent.ResearchSub) + " to find out what is true outside the project, from the web and documents; " +
-			string(agent.VerifySub) + " to check finished work against what it must do. " +
-			"To work on independent tasks at the same time, call " + string(agent.GeneralSub) + " several times in the same response; the subagents run in parallel.",
-	},
-	agent.BrowserSub: {
-		title: "Browser subagent",
-		description: "Launch a browser subagent: an agent that does one task in the built-in browser (opening pages, reading them, clicking and typing) and reports back. " +
-			"It has only the browser's tools. Use it for browser work of many steps, so the pages it reads stay out of this conversation. " +
-			"Browser subagents share the one browser, so launch one at a time.",
-	},
-	agent.DesignSub: {
-		title: "Design subagent",
-		description: "Launch a design subagent to make a picture: an illustration, diagram, chart, icon, logo, poster, banner, cover image, or UI mockup. " +
-			"It draws from a source it leaves beside the result (SVG, HTML/CSS, or a plotting script), renders it, looks at the render and fixes it, then reports back " +
-			"the paths, the size, and what it shows. Give it the content, the format or place it is for, and any style to follow; " +
-			"use " + string(agent.GeneralSub) + " for work whose result is not a picture.",
-	},
-	agent.CodebaseSub: {
-		title: "Codebase subagent",
-		description: "Launch a codebase subagent to read a whole project and explain it: what it is for, its modules and layers, " +
-			"how a request or a piece of data flows through them, where state lives, its dependencies and constraints, and what a change would touch. " +
-			"It reads the code itself, cites files and symbols, cannot edit or write files, and reports back; a document you ask for comes back in its report for you to write. " +
-			"Use it for any question the project's own code settles, in a project too big to read in this conversation; " +
-			"use " + string(agent.ResearchSub) + " for what lies outside the project.",
-	},
-	agent.CodingSub: {
-		title: "Coding subagent",
-		description: "Launch a coding subagent to build or change a project's code — its interface, its servers and command-line tools, its data and migrations — together with the tests around the change. " +
-			"It reads the project's conventions first and keeps them, changes every side a feature crosses in one pass, proves the change with the project's build and tests and, for an interface, by looking at it in the browser, " +
-			"and reports back the files it touched, what it ran and what that returned. Give it the project, the behaviour or screen wanted, and any constraint that must hold.",
-	},
-	agent.WritingSub: {
-		title: "Writing subagent",
-		description: "Launch a writing subagent to write or rewrite a text for a named reader and place: a document, README, article, post, email or report. " +
-			"It keeps the facts, names and voice it finds in the project and in the material you point it at, writes the text into the file the task names, and reports back the path, what it changed and what it could not settle. " +
-			"Give it the reader, the purpose, the source material and the language.",
+		description: "Launch a general-purpose subagent: another run of you, with your tools and skills, that does one task on its own and reports back — " +
+			"writing code, a text or a picture, working in the built-in browser, or anything else that needs acting. " +
+			"When the task only needs reading, launch " + string(agent.ExploreSub) + " instead; to check finished work, launch " + string(agent.VerifySub) + ". " +
+			"To work on independent tasks at the same time, call " + string(agent.GeneralSub) + " several times in the same response; the subagents run in parallel, " +
+			"so never give two of them work on the same files, and give work in the built-in browser to one at a time, since there is one browser.",
 	},
 	agent.VerifySub: {
 		title: "Verify subagent",
@@ -69,13 +34,12 @@ var kinds = map[agent.Name]kind{
 			"Give it what was changed and where, and the criteria the work must meet; it takes your account of the work as the claim to test, not as evidence. " +
 			"Use it after a change of several files or steps, before you tell the user the work is done.",
 	},
-	agent.ResearchSub: {
-		title: "Research subagent",
-		description: "Launch a research subagent to gather information from outside the project and report what is true: the public web, a site, or documents you name or put in the workspace. " +
-			"It reads only and cannot edit or write files, cites each finding with its URL or path, separates what a source says from what it inferred, and reports back what it could not confirm; " +
-			"a document you ask for comes back in its report for you to write. " +
-			"Give it the question, how deep to go, and what would count as an answer; " +
-			"use " + string(agent.CodebaseSub) + " for how the project's own code works.",
+	agent.ExploreSub: {
+		title: "Explore subagent",
+		description: "Launch an explore subagent to find out what is true: how a project's code works — its modules and layers, how a request or a piece of data flows through them, where state lives, what a change would touch — " +
+			"or what the web, a site or a document says. It cannot change anything: it reads, runs only commands that read, cites each finding with its path or URL, separates what a source says from what it inferred, " +
+			"and reports back what it could not confirm; a document you ask for comes back in its report for you to write. Several can run at once on independent questions. " +
+			"Give it the question, how deep to go, and what would count as an answer.",
 	},
 }
 
