@@ -14,7 +14,7 @@ func presenceByDay(user string, q store.PresenceQuery) (string, []any) {
 	query := `WITH RECURSIVE
 		seg(id, s, e) AS (
 			SELECT id, datetime(max(started_at, ?)), datetime(min(ended_at, ?))
-			FROM presence WHERE user_id = ? AND ended_at > ? AND started_at < ?
+			FROM presence WHERE user_id = ? AND ended_at > ? AND started_at < ? AND state <> 'elsewhere'
 		),
 		part(id, s, e) AS (
 			SELECT id, s, min(e, datetime(date(s, ?), '+1 day', ?)) FROM seg WHERE e > s
@@ -50,16 +50,9 @@ func (r reader) PresenceBuckets(user string, q store.PresenceQuery) ([]store.Pre
 		default:
 			return nil, fmt.Errorf("store: presence grouped by %q", q.Group)
 		}
-		scope := ""
+		scope := " AND state <> 'elsewhere'"
 		if q.Group == store.PresenceByThread {
-			// The time on no thread is in the app or elsewhere, and belongs to no
-			// thread the caller could name.
-			scope = " AND thread_id <> ''"
-		}
-		if q.Group == store.PresenceByApp {
-			// The app layer is time with the window in front, with or without a
-			// conversation on screen; elsewhere is time in another application.
-			scope = " AND state <> 'elsewhere'"
+			scope += " AND thread_id <> ''"
 		}
 		query = "SELECT " + key + ` AS key,
 			CAST(ROUND(SUM((julianday(min(ended_at, ?)) - julianday(max(started_at, ?))) * 86400)) AS INTEGER) AS seconds

@@ -63,10 +63,11 @@ func TestPresenceGroupsByTodoAndSkipsOtherStretches(t *testing.T) {
 	putPresence(t, s, "u",
 		store.Presence{ID: "a", Thread: "th", Todo: 7, State: store.PresenceSeen, Start: at(9, 0), End: at(9, 30)},
 		store.Presence{ID: "b", Thread: "th2", Todo: 7, State: store.PresenceSeen, Start: at(9, 30), End: at(9, 45)},
-		store.Presence{ID: "c", State: store.PresenceElsewhere, Start: at(9, 45), End: at(10, 0)})
+		store.Presence{ID: "c", State: store.PresenceInApp, Start: at(9, 45), End: at(10, 0)},
+		store.Presence{ID: "d", State: store.PresenceElsewhere, Start: at(10, 0), End: at(10, 30)})
 	got := presenceOf(t, s, "u", store.PresenceQuery{From: at(8, 0), To: at(11, 0), Group: store.PresenceByTodo})
 	if len(got) != 2 {
-		t.Fatalf("two todos with time, the elsewhere stretch in neither: %+v", got)
+		t.Fatalf("todo 7 and the app with no todo, the elsewhere stretch in neither: %+v", got)
 	}
 	for _, b := range got {
 		switch b.Key {
@@ -100,14 +101,16 @@ func TestPresenceSplitsAtLocalMidnight(t *testing.T) {
 	}
 }
 
-func TestPresenceAppLayerLeavesOutElsewhere(t *testing.T) {
+func TestPresenceLeavesOutElsewhereInEveryGrouping(t *testing.T) {
 	s := open(t, t.TempDir())
 	putPresence(t, s, "u",
-		store.Presence{ID: "a", Thread: "th", State: store.PresenceSeen, Start: at(9, 0), End: at(9, 30)},
-		store.Presence{ID: "b", State: store.PresenceInApp, Start: at(9, 30), End: at(9, 40)},
-		store.Presence{ID: "c", State: store.PresenceElsewhere, Start: at(9, 40), End: at(10, 40)})
-	got := presenceOf(t, s, "u", store.PresenceQuery{From: at(8, 0), To: at(11, 0), Group: store.PresenceByApp})
-	if len(got) != 1 || got[0].Key != "" || got[0].Seconds != 40*60 {
-		t.Fatalf("the app layer is the conversation and the app without one, 40 minutes, got %+v", got)
+		store.Presence{ID: "a", Thread: "th", Workspace: "w", State: store.PresenceSeen, Start: at(9, 0), End: at(9, 30)},
+		store.Presence{ID: "b", Workspace: "w", State: store.PresenceInApp, Start: at(9, 30), End: at(9, 40)},
+		store.Presence{ID: "c", Workspace: "w", State: store.PresenceElsewhere, Start: at(9, 40), End: at(10, 40)})
+	for _, group := range []store.PresenceGroup{store.PresenceByApp, store.PresenceByDay, store.PresenceByWorkspace, store.PresenceByTodo} {
+		got := presenceOf(t, s, "u", store.PresenceQuery{From: at(8, 0), To: at(11, 0), Group: group})
+		if len(got) != 1 || got[0].Seconds != 40*60 {
+			t.Errorf("by %s: the conversation and the app without one, 40 minutes, got %+v", group, got)
+		}
 	}
 }
