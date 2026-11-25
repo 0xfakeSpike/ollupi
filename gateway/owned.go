@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"github.com/0xfakeSpike/ollupi/pkg/llm"
 
 	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/app"
@@ -14,6 +15,10 @@ import (
 
 func (c *conn) modelList(ctx context.Context, _ Empty) (ModelListResult, error) {
 	models, first, seq, err := c.s.app.Models(ctx, c.user)
+	if models == nil {
+		// A deployment serving no models yet lists none, not null.
+		models = []llm.Model{}
+	}
 	return ModelListResult{Data: models, Default: first, Seq: seq}, err
 }
 

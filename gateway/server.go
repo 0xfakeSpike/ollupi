@@ -15,6 +15,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/auth"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/pkg/jsonrpc"
+	"github.com/0xfakeSpike/ollupi/pkg/llm"
 	"github.com/0xfakeSpike/ollupi/pkg/wshub"
 	"github.com/0xfakeSpike/ollupi/store"
 	"github.com/coder/websocket"
@@ -206,6 +207,9 @@ func (c *conn) catalogChanged(seq int64, catalog []account.ModelProvider) {
 		return
 	}
 	models, first := account.Models(catalog, s)
+	if models == nil {
+		models = []llm.Model{}
+	}
 	c.rpc.Notify(notifyModelChanged, ModelChangedNotification{Data: models, Default: first, Seq: seq})
 }
 

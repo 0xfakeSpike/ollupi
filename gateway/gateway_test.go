@@ -641,3 +641,15 @@ func TestTheOperatorMakesAndNamesUsersAndAUserNamesOnlyThemself(t *testing.T) {
 		t.Fatalf("users %+v", list)
 	}
 }
+
+func TestADeploymentWithoutModelsListsNoneNotNull(t *testing.T) {
+	st, dial := serve(t)
+	if err := st.Update(context.Background(), func(tx store.Tx) error { return tx.SetCatalog(nil) }); err != nil {
+		t.Fatal(err)
+	}
+	c := dial("secret")
+	reply := c.reply("model/list", Empty{})
+	if reply.Error != nil || !strings.Contains(string(reply.Result), `"data":[]`) {
+		t.Fatalf("model/list %s %+v", reply.Result, reply.Error)
+	}
+}
