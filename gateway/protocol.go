@@ -139,6 +139,9 @@ var protocol = struct {
 		"workspace/unstage":            handle((*conn).workspaceUnstage),
 		"workspace/discard":            handle((*conn).workspaceDiscard),
 		"workspace/commit":             handle((*conn).workspaceCommit),
+		"terminal/open":                handle((*conn).terminalOpen),
+		"terminal/resize":              handle((*conn).terminalResize),
+		"terminal/close":               handle((*conn).terminalClose),
 		"environment/list":             read(handle((*conn).environmentList)),
 		"environment/listFolders":      read(handle((*conn).environmentListFolders)),
 		"environment/makeFolder":       handle((*conn).environmentMakeFolder),
@@ -237,7 +240,7 @@ var protocol = struct {
 		http.StatusServiceUnavailable:  {"unavailable", ReconnectRetryAfter},
 	},
 	limits: Limits{SearchRunes: app.MaxSearchRunes, SearchTerms: app.MaxSearchTerms, SkillBytes: skill.MaxBytes},
-	paths:  map[string]string{"attachment": AttachmentPath, "upload": UploadPath, "workspaceFile": WorkspaceFilePath},
+	paths:  map[string]string{"attachment": AttachmentPath, "upload": UploadPath, "workspaceFile": WorkspaceFilePath, "terminal": TerminalPath},
 }
 
 type Limits struct {
@@ -969,6 +972,7 @@ var errorCodes = []struct {
 	{app.ErrFirstEnvironment, jsonrpc.CodeInvalidParams},
 	{app.ErrScratchWorkspace, jsonrpc.CodeInvalidParams},
 	{app.ErrNotARepository, jsonrpc.CodeInvalidParams},
+	{app.ErrNoTerminal, errNotFound},
 	{app.ErrInvalidEnvironment, jsonrpc.CodeInvalidParams},
 	{app.ErrInvalidMessage, jsonrpc.CodeInvalidParams},
 	{app.ErrInvalidAnswer, jsonrpc.CodeInvalidParams},

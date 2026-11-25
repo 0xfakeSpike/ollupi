@@ -318,11 +318,13 @@ func (r repo) gitOK(ctx context.Context, ok []int, args ...string) (string, erro
 	return out, err
 }
 
-// gitRaw runs git in the workspace's folder, as the person. No optional
-// locks: the agent may be running git in the same repository.
+// gitRaw runs git in the workspace's folder, as the person: with full
+// access where the box limits commands, and as any command of a sandbox
+// that is the user's whole. No optional locks: the agent may be running
+// git in the same repository.
 func (r repo) gitRaw(ctx context.Context, ok []int, args ...string) (string, bool, error) {
 	res, err := r.box.Run(ctx, sandbox.Command{Program: "git", Args: append([]string{"-c", "core.quotePath=off"}, args...), Cwd: r.root,
-		Env: map[string]string{"GIT_OPTIONAL_LOCKS": "0"}, Timeout: gitTimeout, FullAccess: true})
+		Env: map[string]string{"GIT_OPTIONAL_LOCKS": "0"}, Timeout: gitTimeout, FullAccess: r.box.CanEscalate()})
 	if err != nil {
 		return "", false, fmt.Errorf("git %s: %w", args[0], err)
 	}

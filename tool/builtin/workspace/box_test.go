@@ -35,6 +35,10 @@ func (m *memoryMachine) Run(_ context.Context, c sandbox.Command) (sandbox.Resul
 	return sandbox.Result{Stdout: "ran in the machine", ExitCode: 3}, nil
 }
 
+func (m *memoryMachine) Terminal(context.Context, sandbox.TerminalSpec) (sandbox.Terminal, error) {
+	return nil, errors.New("no terminal")
+}
+
 func (m *memoryMachine) Start(context.Context, sandbox.Command, io.Writer) (sandbox.Process, error) {
 	return nil, errors.New("no process runs here")
 }

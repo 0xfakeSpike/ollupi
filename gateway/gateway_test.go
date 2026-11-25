@@ -716,3 +716,40 @@ func TestAWorkspaceFileIsServedOverHTTPAndNothingOutsideIt(t *testing.T) {
 		t.Errorf("a path out of the workspace: %d", res.StatusCode)
 	}
 }
+
+func TestATerminalStreamsWhatItsShellPrintsUntilItExits(t *testing.T) {
+	t.Setenv("SHELL", "/bin/sh")
+	_, c := connect(t)
+	var added WorkspaceResult
+	c.call("workspace/add", WorkspaceAddParams{Path: t.TempDir()}, &added)
+	var opened TerminalOpenResult
+	c.call("terminal/open", TerminalOpenParams{WorkspaceID: added.Workspace.ID, Cols: 80, Rows: 24}, &opened)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	url := "ws" + strings.TrimPrefix(c.base, "http") + "/terminals/" + opened.TerminalID
+	if _, _, err := websocket.Dial(ctx, url, &websocket.DialOptions{Subprotocols: []string{auth.TokenProtocol, "wrong"}}); err == nil {
+		t.Error("a stream opened without the token")
+	}
+	ws, _, err := websocket.Dial(ctx, url, &websocket.DialOptions{Subprotocols: []string{auth.TokenProtocol, "secret"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.CloseNow()
+	if err := ws.Write(ctx, websocket.MessageBinary, []byte("echo from-$((6*7)); exit 3\n")); err != nil {
+		t.Fatal(err)
+	}
+	var seen strings.Builder
+	for {
+		_, data, err := ws.Read(ctx)
+		if err != nil {
+			if websocket.CloseStatus(err) != websocket.StatusNormalClosure || !strings.Contains(err.Error(), "exit 3") {
+				t.Errorf("the stream ended with %v", err)
+			}
+			break
+		}
+		seen.Write(data)
+	}
+	if !strings.Contains(seen.String(), "from-42") {
+		t.Errorf("the stream showed %q", seen.String())
+	}
+}

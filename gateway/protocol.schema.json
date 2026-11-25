@@ -3538,6 +3538,70 @@
       ],
       "additionalProperties": false
     },
+    "TerminalOpenParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "cols": {
+          "type": "integer"
+        },
+        "rows": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "cols",
+        "rows"
+      ],
+      "additionalProperties": false
+    },
+    "TerminalOpenResult": {
+      "type": "object",
+      "properties": {
+        "terminalId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "terminalId"
+      ],
+      "additionalProperties": false
+    },
+    "TerminalParams": {
+      "type": "object",
+      "properties": {
+        "terminalId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "terminalId"
+      ],
+      "additionalProperties": false
+    },
+    "TerminalResizeParams": {
+      "type": "object",
+      "properties": {
+        "terminalId": {
+          "type": "string"
+        },
+        "cols": {
+          "type": "integer"
+        },
+        "rows": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "terminalId",
+        "cols",
+        "rows"
+      ],
+      "additionalProperties": false
+    },
     "ThreadArchiveParams": {
       "type": "object",
       "properties": {
@@ -5353,6 +5417,30 @@
         "$ref": "#/$defs/SkillResult"
       }
     },
+    "terminal/close": {
+      "params": {
+        "$ref": "#/$defs/TerminalParams"
+      },
+      "result": {
+        "$ref": "#/$defs/Empty"
+      }
+    },
+    "terminal/open": {
+      "params": {
+        "$ref": "#/$defs/TerminalOpenParams"
+      },
+      "result": {
+        "$ref": "#/$defs/TerminalOpenResult"
+      }
+    },
+    "terminal/resize": {
+      "params": {
+        "$ref": "#/$defs/TerminalResizeParams"
+      },
+      "result": {
+        "$ref": "#/$defs/Empty"
+      }
+    },
     "thread/archive": {
       "params": {
         "$ref": "#/$defs/ThreadArchiveParams"
@@ -5814,6 +5902,7 @@
   },
   "paths": {
     "attachment": "/attachments/{thread}/{attachment}",
+    "terminal": "/terminals/{terminal}",
     "upload": "/uploads",
     "workspaceFile": "/workspaces/{workspace}/files/{path...}"
   },

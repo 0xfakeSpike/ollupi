@@ -19,6 +19,8 @@ type Machine interface {
 	ReadDir(ctx context.Context, path string) ([]fs.DirEntry, error)
 	Open(ctx context.Context, path string) (io.ReadCloser, error)
 	WriteFile(ctx context.Context, path string, data []byte, perm fs.FileMode) error
+	// Terminal starts the login shell of the machine's user, as Box.Terminal.
+	Terminal(ctx context.Context, spec TerminalSpec) (Terminal, error)
 	Close() error
 }
 

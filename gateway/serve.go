@@ -78,6 +78,7 @@ func NewServer(a *app.App, feed *store.Feed, opts Options) (*Server, error) {
 	mux.Handle("OPTIONS "+WorkspaceFilePath, files)
 	mux.Handle("POST "+UploadPath, uploads)
 	mux.Handle("OPTIONS "+UploadPath, uploads)
+	mux.HandleFunc("GET "+TerminalPath, s.terminalStream)
 	mux.HandleFunc("GET /", s.connect)
 	s.handler = mux
 	return s, nil

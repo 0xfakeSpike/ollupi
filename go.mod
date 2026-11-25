@@ -10,6 +10,7 @@ require (
 	github.com/aymanbagabas/go-udiff v0.4.1
 	github.com/bmatcuk/doublestar/v4 v4.10.4
 	github.com/coder/websocket v1.8.15
+	github.com/creack/pty v1.1.24
 	github.com/envoyproxy/go-control-plane/envoy v1.40.0
 	github.com/go-git/go-git/v5 v5.19.3
 	github.com/google/jsonschema-go v0.4.2

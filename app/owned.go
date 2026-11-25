@@ -145,8 +145,10 @@ func (a *App) SetWorkspaceKind(ctx context.Context, user, id string, kind accoun
 	})
 }
 
+// ArchiveWorkspace archives a workspace or restores it; the terminal of
+// one archived ends.
 func (a *App) ArchiveWorkspace(ctx context.Context, user, id string, archived bool) (account.Workspace, error) {
-	return a.changeWorkspace(ctx, user, id, func(_ store.Tx, w *account.Workspace) error {
+	w, err := a.changeWorkspace(ctx, user, id, func(_ store.Tx, w *account.Workspace) error {
 		if w.Scratch() {
 			return fmt.Errorf("workspace %s: %w", w.Name, ErrScratchWorkspace)
 		}
@@ -157,6 +159,10 @@ func (a *App) ArchiveWorkspace(ctx context.Context, user, id string, archived bo
 		}
 		return nil
 	})
+	if err == nil && archived {
+		a.closeTerminals(func(u, w string) bool { return u != user || w != id })
+	}
+	return w, err
 }
 
 func (a *App) changeWorkspace(ctx context.Context, user, id string, change func(store.Tx, *account.Workspace) error) (account.Workspace, error) {
@@ -378,6 +384,7 @@ func (a *App) putEnvironment(tx store.Tx, user string, e account.Environment) er
 // in, then removes its sandbox. A user's first environment stays.
 func (a *App) DeleteEnvironment(ctx context.Context, user, id string) error {
 	var e account.Environment
+	var scratch string
 	err := a.st.Update(ctx, func(tx store.Tx) (err error) {
 		if e, err = tx.Environment(user, id); err != nil {
 			return err
@@ -396,10 +403,18 @@ func (a *App) DeleteEnvironment(ctx context.Context, user, id string) error {
 		if used {
 			return fmt.Errorf("environment %s: %w", e.Name, ErrEnvironmentInUse)
 		}
+		w, err := tx.Scratch(user, id)
+		if err != nil {
+			return err
+		}
+		scratch = w.ID
 		return tx.DeleteEnvironment(user, id)
 	})
 	if err != nil {
 		return err
+	}
+	if scratch != "" {
+		a.closeTerminals(func(u, w string) bool { return u != user || w != scratch })
 	}
 	if err := a.envs.Remove(context.WithoutCancel(ctx), user, e); err != nil {
 		return fmt.Errorf("the environment is deleted, but its sandbox may be left: %w", err)

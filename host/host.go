@@ -181,6 +181,7 @@ func (h *Host) Run(ctx context.Context) error {
 }
 
 func (h *Host) Close() error {
+	h.App.CloseTerminals()
 	h.models.close()
 	return errors.Join(h.Users.Close(), h.envs.Close(), h.Store.Close())
 }

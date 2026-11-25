@@ -26,6 +26,9 @@ type Box interface {
 	// Trash moves a file or folder to the machine's trash, where a person
 	// finds it and puts it back.
 	Trash(ctx context.Context, path string) error
+	// Terminal starts a person's login shell in a folder, with full
+	// access, as their own terminal does.
+	Terminal(ctx context.Context, spec TerminalSpec) (Terminal, error)
 	Canonical(ctx context.Context, path string) (string, error)
 	Directory(ctx context.Context, path string) (string, error)
 	Executable(ctx context.Context, program, cwd string) (string, error)
