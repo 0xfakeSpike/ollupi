@@ -267,12 +267,15 @@ func (r reader) Due(now time.Time) ([]account.CronJob, error) {
 }
 
 func (r reader) NextRun() (time.Time, bool, error) {
-	var rows []cronRow
-	if err := r.g.Raw("SELECT * FROM cron_jobs WHERE paused = 0 ORDER BY next_run_at LIMIT 1").Scan(&rows).Error; err != nil {
+	var unpaused int64
+	if err := r.g.Raw("SELECT count(*) FROM cron_jobs WHERE paused = 0").Scan(&unpaused).Error; err != nil || unpaused == 0 {
 		return time.Time{}, false, err
 	}
-	if len(rows) == 0 {
-		return time.Time{}, false, nil
+	var rows []cronRow
+	err := r.g.Raw(`SELECT j.* FROM cron_jobs j JOIN threads t ON t.id = j.thread_id
+		WHERE j.paused = 0 AND t.archived_at IS NULL ORDER BY j.next_run_at LIMIT 1`).Scan(&rows).Error
+	if err != nil || len(rows) == 0 {
+		return time.Time{}, true, err
 	}
 	return rows[0].NextRunAt, true, nil
 }

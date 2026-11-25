@@ -187,6 +187,45 @@ func TestThreadsListTheirCronJobsAndGoWithThem(t *testing.T) {
 	}
 }
 
+func TestNextRunWaitsForJobsOfConversationsNotArchived(t *testing.T) {
+	s := open(t, t.TempDir())
+	start(t, s, "u", "archived")
+	start(t, s, "u", "live")
+	now := time.Now().UTC().Truncate(time.Second)
+	update(t, s, func(tx store.Tx) error {
+		if err := tx.PutCronJob(account.CronJob{ID: "overdue", Thread: "archived", Name: "old", Spec: "@daily", Prompt: "x", NextRun: now.Add(-time.Hour), Created: now}); err != nil {
+			return err
+		}
+		return tx.PutCronJob(account.CronJob{ID: "soon", Thread: "live", Name: "soon", Spec: "@daily", Prompt: "x", NextRun: now.Add(10 * time.Second), Created: now})
+	})
+	archive := func(id string) {
+		update(t, s, func(tx store.Tx) error {
+			th, err := tx.Thread(id)
+			if err != nil {
+				return err
+			}
+			th.Archived = &now
+			return tx.UpdateThread(th)
+		})
+	}
+	nextRun := func() (time.Time, bool) {
+		var next time.Time
+		var scheduled bool
+		if err := s.Read(context.Background(), func(r store.Reader) (err error) { next, scheduled, err = r.NextRun(); return err }); err != nil {
+			t.Fatal(err)
+		}
+		return next, scheduled
+	}
+	archive("archived")
+	if next, scheduled := nextRun(); !scheduled || !next.Equal(now.Add(10*time.Second)) {
+		t.Errorf("the next run is the live job's, got %v %v", next, scheduled)
+	}
+	archive("live")
+	if next, scheduled := nextRun(); !scheduled || !next.IsZero() {
+		t.Errorf("with every job's conversation archived, none can run but jobs remain: got %v %v", next, scheduled)
+	}
+}
+
 func (s *Store) readThread(id string) (store.Thread, error) {
 	var th store.Thread
 	err := s.Read(context.Background(), func(r store.Reader) error {
