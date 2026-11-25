@@ -30,11 +30,13 @@ func dial(p account.ModelProvider, m account.ProviderModel) (llm.Client, error) 
 	return nil, fmt.Errorf("model provider %s: unknown API %q", p.ID, p.API)
 }
 
-// models is the deployment's catalog: the providers and models every user's
-// turns run on, each model with the one client that calls it, which caps
-// the calls to it at once across users. Which model a user starts with and
-// learns with is theirs, in their settings. The catalog can be replaced while
-// the host runs; a turn already calling a model finishes on its client.
+// models is the deployment's catalog as the host runs it: the providers and
+// models every user's turns run on, each model with the one client that
+// calls it, which caps the calls to it at once across users. The catalog is
+// kept in the store; the host reads it at start and takes every change to it
+// (store.Owned.Catalog) while it runs, and a turn already calling a model
+// finishes on its client. Which model a user starts with and learns with is
+// theirs, in their settings.
 type models struct {
 	ctx  context.Context
 	st   store.Store
@@ -42,6 +44,7 @@ type models struct {
 	// clientFor, when set, picks a user's client instead of the catalog's,
 	// as a deployment that bills each user's own account would.
 	clientFor func(user, connection string) (llm.Client, error)
+	sub       *store.Subscription
 
 	mu      sync.RWMutex
 	catalog []account.ModelProvider
@@ -56,13 +59,32 @@ type dialled struct {
 	model    account.ProviderModel
 }
 
-func newModels(ctx context.Context, st store.Store, catalog []account.ModelProvider, d Dial, clientFor func(user, connection string) (llm.Client, error)) (*models, error) {
+func newModels(ctx context.Context, st store.Store, d Dial, clientFor func(user, connection string) (llm.Client, error)) (*models, error) {
 	if d == nil {
 		d = dial
 	}
 	ms := &models{ctx: ctx, st: st, dial: d, clientFor: clientFor, clients: map[string]dialled{}}
-	return ms, ms.set(catalog)
+	var catalog []account.ModelProvider
+	if err := st.Read(ctx, func(r store.Reader) (err error) { catalog, err = r.Catalog(); return err }); err != nil {
+		return nil, err
+	}
+	if err := ms.set(catalog); err != nil {
+		return nil, err
+	}
+	ms.sub = st.Feed().SubscribeAll(func(e store.Event) {
+		if e.Owned == nil || e.Owned.Catalog == nil {
+			return
+		}
+		// The catalog was checked before it was stored; a model that cannot
+		// be dialled leaves the one in use, said here.
+		if err := ms.set(*e.Owned.Catalog); err != nil {
+			slog.Error("the changed catalog was not taken", "err", err)
+		}
+	})
+	return ms, nil
 }
+
+func (ms *models) close() { ms.sub.Close() }
 
 // set replaces the catalog; a catalog that does not check, or a model that
 // cannot be dialled, leaves the one in use.

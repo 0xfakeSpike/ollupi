@@ -8,7 +8,15 @@ import (
 	"strings"
 )
 
-type Authenticate func(ctx context.Context, token string) (user string, err error)
+// Identity is who a connection acts as: a user, and whether it is also the
+// deployment's operator, who may change what is no user's own, as the
+// catalog of models.
+type Identity struct {
+	User     string
+	Operator bool
+}
+
+type Authenticate func(ctx context.Context, token string) (Identity, error)
 
 var ErrUnknownToken = errors.New("invalid or missing token")
 

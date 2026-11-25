@@ -76,7 +76,6 @@ func main() {
 	defer stop()
 	h, err := host.New(ctx, host.Config{
 		Home: home, Name: "ollupi",
-		Models:      []account.ModelProvider{provider},
 		Tools:       []kit.Provider{files},
 		Permissions: policy.Settings{ApprovalPolicy: string(policy.Never)},
 		Boxes:       func(string) (sandbox.Box, error) { return sandbox.Here() },
@@ -85,6 +84,9 @@ func main() {
 		log.Fatalf("eval: %v", err)
 	}
 	defer h.Close()
+	if err := h.App.SetCatalog(ctx, []account.ModelProvider{provider}); err != nil {
+		log.Fatalf("eval: %v", err)
+	}
 	if err := h.App.EnsureUser(ctx, user); err != nil {
 		log.Fatalf("eval: %v", err)
 	}

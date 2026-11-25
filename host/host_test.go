@@ -11,6 +11,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/agent"
 	"github.com/0xfakeSpike/ollupi/app"
+	"github.com/0xfakeSpike/ollupi/auth"
 	"github.com/0xfakeSpike/ollupi/conversation"
 	"github.com/0xfakeSpike/ollupi/cron"
 	"github.com/0xfakeSpike/ollupi/gateway"
@@ -76,16 +77,18 @@ func TestAHostRunsATurnThroughASubagentAndLearnsFromIt(t *testing.T) {
 	m := &model{}
 	h, err := New(ctx, Config{
 		Home: t.TempDir(), Name: "Ollupi",
-		Models:  []account.ModelProvider{provider("main", "m")},
 		Dial:    func(account.ModelProvider, account.ProviderModel) (llm.Client, error) { return m, nil },
 		Tools:   []kit.Provider{weather{}},
 		Boxes:   func(string) (sandbox.Box, error) { return sandbox.Here() },
-		Gateway: &gateway.Options{Authenticate: func(context.Context, string) (string, error) { return "u", nil }},
+		Gateway: &gateway.Options{Authenticate: func(context.Context, string) (auth.Identity, error) { return auth.Identity{User: "u"}, nil }},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer h.Close()
+	if err := h.App.SetCatalog(ctx, []account.ModelProvider{provider("main", "m")}); err != nil {
+		t.Fatal(err)
+	}
 	learned := make(chan memory.Memory, 1)
 	ended := make(chan conversation.Ending, 4)
 	sub := h.Store.Feed().Subscribe("u", func(e store.Event) {
@@ -155,8 +158,8 @@ func TestAHostRefusesPermissionsItCannotRead(t *testing.T) {
 	}
 }
 
-// testModels are a host's models over a fresh store holding users a and b,
-// every client dialled counted.
+// testModels are a host's models over a fresh store holding users a and b
+// and the catalog, every client dialled counted.
 func testModels(t *testing.T, catalog ...account.ModelProvider) (*models, *app.App, *int) {
 	t.Helper()
 	st, err := sqlite.Open(t.TempDir())
@@ -164,8 +167,11 @@ func testModels(t *testing.T, catalog ...account.ModelProvider) (*models, *app.A
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
+	if err := st.Update(context.Background(), func(tx store.Tx) error { return tx.SetCatalog(catalog) }); err != nil {
+		t.Fatal(err)
+	}
 	dialled := new(int)
-	ms, err := newModels(context.Background(), st, catalog, func(account.ModelProvider, account.ProviderModel) (llm.Client, error) {
+	ms, err := newModels(context.Background(), st, func(account.ModelProvider, account.ProviderModel) (llm.Client, error) {
 		*dialled++
 		return &model{}, nil
 	}, nil)
@@ -196,10 +202,10 @@ func TestEachUserChoosesAmongTheSameModels(t *testing.T) {
 	if _, err := a.UpdateSettings(ctx, "a", app.SettingsChange{Model: &start, LearnModel: &learn}); err != nil {
 		t.Fatal(err)
 	}
-	if _, first, _ := a.Models(ctx, "a"); first != "main/y" {
+	if _, first, _, _ := a.Models(ctx, "a"); first != "main/y" {
 		t.Fatalf("a starts with %q", first)
 	}
-	if models, first, _ := a.Models(ctx, "b"); len(models) != 2 || first != "main/x" {
+	if models, first, _, _ := a.Models(ctx, "b"); len(models) != 2 || first != "main/x" {
 		t.Fatalf("b has %+v and starts with %q", models, first)
 	}
 	if m, ok := ms.memory("a"); !ok || m.Connection != "main/x" {
@@ -225,7 +231,9 @@ func TestReplacingTheModelsTakesEffectAtOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ms.set([]account.ModelProvider{provider("new", "y"), provider("keep", "k")}); err != nil {
+	// Through the store, as the operator changes it: the host takes it before
+	// the change returns.
+	if err := a.SetCatalog(ctx, []account.ModelProvider{provider("new", "y"), provider("keep", "k")}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ms.Client("a", llm.Model{Connection: "old/x"}); err == nil {
@@ -236,16 +244,16 @@ func TestReplacingTheModelsTakesEffectAtOnce(t *testing.T) {
 	}
 	// A choice the deployment no longer serves falls back to its first model,
 	// and learns nothing.
-	if _, first, _ := a.Models(ctx, "a"); first != "new/y" {
+	if _, first, _, _ := a.Models(ctx, "a"); first != "new/y" {
 		t.Fatalf("a starts with %q", first)
 	}
 	if _, ok := ms.memory("a"); ok {
 		t.Fatal("a learns with a model no longer served")
 	}
-	if err := ms.set([]account.ModelProvider{provider("dup", "m"), provider("dup", "n")}); err == nil {
-		t.Fatal("a catalog naming a provider twice was taken")
+	if err := a.SetCatalog(ctx, []account.ModelProvider{provider("dup", "m"), provider("dup", "n")}); !errors.Is(err, account.ErrInvalidModelProvider) {
+		t.Fatalf("a catalog naming a provider twice was taken: %v", err)
 	}
-	if models, _, _ := a.Models(ctx, "a"); len(models) != 2 {
+	if models, _, _, _ := a.Models(ctx, "a"); len(models) != 2 {
 		t.Fatalf("a refused catalog changed the models: %+v", models)
 	}
 }

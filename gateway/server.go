@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/app"
 	"github.com/0xfakeSpike/ollupi/ask"
 	"github.com/0xfakeSpike/ollupi/auth"
@@ -47,22 +48,23 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 	s.served.Add(1)
 	defer s.served.Done()
-	user, ok := s.authorize(w, r)
+	id, ok := s.authorize(w, r)
 	if !ok {
 		return
 	}
 	if !s.hub.Admit(w) {
 		return
 	}
-	if !s.serves(w, r, user) {
+	if !s.serves(w, r, id.User) {
 		return
 	}
+	user := id.User
 	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: s.origins, Subprotocols: []string{auth.TokenProtocol}})
 	if err != nil {
 		return
 	}
 	ws.SetReadLimit(maxMessageBytes)
-	c := &conn{s: s, user: user, ws: ws, rpc: jsonrpc.NewConn(ws), asked: make(map[string]bool)}
+	c := &conn{s: s, user: user, operator: id.Operator, ws: ws, rpc: jsonrpc.NewConn(ws), asked: make(map[string]bool)}
 	s.hub.Serve(r.Context(), user, ws, c.rpc.Silent, func(ctx context.Context) error { return c.rpc.Serve(ctx, c.Call, concurrent) })
 	c.mu.Lock()
 	sub := c.sub
@@ -74,9 +76,12 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 
 type conn struct {
 	user string
-	s    *Server
-	ws   *websocket.Conn
-	rpc  *jsonrpc.Conn
+	// operator is a connection of the deployment's operator, which may read
+	// and change the catalog of models.
+	operator bool
+	s        *Server
+	ws       *websocket.Conn
+	rpc      *jsonrpc.Conn
 
 	mu          sync.Mutex
 	initialized bool
@@ -97,6 +102,9 @@ func (c *conn) Call(ctx context.Context, method string, params json.RawMessage) 
 	m, ok := protocol.methods[method]
 	if !ok {
 		return nil, nil, jsonrpc.Errorf(jsonrpc.CodeMethodNotFound, "method %q not found", method)
+	}
+	if m.operator && !c.operator {
+		return nil, nil, jsonrpc.Errorf(errForbidden, "%s is the deployment operator's; this connection acts as a user", method)
 	}
 	return m.call(c, ctx, params)
 }
@@ -176,7 +184,23 @@ func (c *conn) owned(seq int64, thread string, o store.Owned) {
 		c.rpc.Notify(notifySkillChanged, SkillChangedNotification{Name: row.Name, Skill: &row, Seq: seq})
 	case o.SkillDeleted != "":
 		c.rpc.Notify(notifySkillChanged, SkillChangedNotification{Name: o.SkillDeleted, Seq: seq})
+	case o.Catalog != nil:
+		c.catalogChanged(seq, *o.Catalog)
 	}
+}
+
+// catalogChanged tells the operator the catalog, and every connection the
+// models its user now chooses among.
+func (c *conn) catalogChanged(seq int64, catalog []account.ModelProvider) {
+	if c.operator {
+		c.rpc.Notify(notifyCatalogChanged, CatalogChangedNotification{Data: each(catalog, providerRow), Seq: seq})
+	}
+	s, _, err := c.s.app.Settings(context.Background(), c.user)
+	if err != nil {
+		return
+	}
+	models, first := account.Models(catalog, s)
+	c.rpc.Notify(notifyModelChanged, ModelChangedNotification{Data: models, Default: first, Seq: seq})
 }
 
 func (c *conn) requests(pending []app.Request, err error) {

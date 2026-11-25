@@ -240,7 +240,7 @@ func crashChild(args []string) {
 	}
 	startAt := time.Now()
 	h, err := host.New(context.Background(), host.Config{
-		Home: *dir, Name: "bench", Models: []account.ModelProvider{fakeProvider}, Dial: fakeDial(fakeConnection(*url, *calls)),
+		Home: *dir, Name: "bench", Dial: fakeDial(fakeConnection(*url, *calls)),
 		Tools:       []kit.Provider{work{latency: *toolLatency, log: toolLog}},
 		Permissions: policy.Settings{ApprovalPolicy: string(policy.Never)},
 		Boxes:       here, Slots: *slots, TaskSlots: *slots, UserTaskSlots: *slots,
@@ -249,6 +249,9 @@ func crashChild(args []string) {
 		log.Fatal(err)
 	}
 	defer h.Close()
+	if err := h.App.SetCatalog(context.Background(), []account.ModelProvider{fakeProvider}); err != nil {
+		log.Fatal(err)
+	}
 	answer := func(threadID, itemID string) {
 		go func() {
 			time.Sleep(200 * time.Millisecond)

@@ -101,6 +101,14 @@ func (f *Feed) tell() {
 func (f *Feed) deliver(b batch) {
 	f.mu.RLock()
 	for _, e := range b.events {
+		if e.User == "" {
+			// The deployment's: every user's subscribers hear it.
+			for _, subs := range f.byUser {
+				for s := range subs {
+					s.fn(e)
+				}
+			}
+		}
 		for s := range f.byUser[e.User] {
 			s.fn(e)
 		}

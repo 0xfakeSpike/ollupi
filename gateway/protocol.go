@@ -44,6 +44,7 @@ const (
 	errRefused           = -32018
 	errSecondHub         = -32020
 	errNoHub             = -32021
+	errForbidden         = -32022
 )
 
 const (
@@ -65,6 +66,8 @@ const (
 	notifyMemoryChanged      = "memory/changed"
 	notifyTodoChanged        = "todo/changed"
 	notifySkillChanged       = "skill/changed"
+	notifyCatalogChanged     = "catalog/changed"
+	notifyModelChanged       = "model/changed"
 	notifyError              = "error"
 )
 
@@ -143,6 +146,8 @@ var protocol = struct {
 		"skill/read":                   read(handle((*conn).skillRead)),
 		"skill/set":                    handle((*conn).skillSet),
 		"skill/delete":                 handle((*conn).skillDelete),
+		"catalog/read":                 operator(read(handle((*conn).catalogRead))),
+		"catalog/set":                  operator(handle((*conn).catalogSet)),
 		"usage/query":                  read(handle((*conn).usageQuery)),
 		"presence/record":              handle((*conn).presenceRecord),
 		"presence/summary":             read(handle((*conn).presenceSummary)),
@@ -168,6 +173,8 @@ var protocol = struct {
 		notifyMemoryChanged:      reflect.TypeFor[MemoryChangedNotification](),
 		notifyTodoChanged:        reflect.TypeFor[TodoChangedNotification](),
 		notifySkillChanged:       reflect.TypeFor[SkillChangedNotification](),
+		notifyCatalogChanged:     reflect.TypeFor[CatalogChangedNotification](),
+		notifyModelChanged:       reflect.TypeFor[ModelChangedNotification](),
 		notifyError:              reflect.TypeFor[ErrorNotification](),
 	},
 	serverRequests: map[string]serverRequest{
@@ -196,6 +203,7 @@ var protocol = struct {
 		errRefused:                 "refused",
 		errSecondHub:               "secondHub",
 		errNoHub:                   "noHub",
+		errForbidden:               "forbidden",
 	},
 	closes: map[int]Ending{
 		int(websocket.StatusGoingAway):       {"goingAway", ReconnectSoon},
@@ -225,10 +233,18 @@ type method struct {
 	params, result reflect.Type
 	call           func(c *conn, ctx context.Context, params json.RawMessage) (any, func(), *jsonrpc.Error)
 	read           bool
+	// operator is a method only the deployment's operator may call; a user's
+	// connection is answered forbidden.
+	operator bool
 }
 
 func read(m method) method {
 	m.read = true
+	return m
+}
+
+func operator(m method) method {
+	m.operator = true
 	return m
 }
 
@@ -393,6 +409,42 @@ type ThreadListResult struct {
 type ModelListResult struct {
 	Data    []llm.Model `json:"data"`
 	Default string      `json:"default"`
+	Seq     int64       `json:"seq"`
+}
+
+// ModelChangedNotification is the models a user chooses among after the
+// catalog changed, and the one their conversations now start with.
+type ModelChangedNotification struct {
+	Data    []llm.Model `json:"data"`
+	Default string      `json:"default"`
+	Seq     int64       `json:"seq"`
+}
+
+// ModelProviderRow is one provider of the catalog, an API account with its
+// key, and the models it serves, in order. Only the operator reads or
+// writes it.
+type ModelProviderRow struct {
+	ID      string                  `json:"id"`
+	API     account.ModelAPI        `json:"api"`
+	BaseURL string                  `json:"baseUrl,omitempty"`
+	APIKey  string                  `json:"apiKey,omitempty"`
+	Models  []account.ProviderModel `json:"models"`
+}
+
+type CatalogResult struct {
+	Data []ModelProviderRow `json:"data"`
+	Seq  int64              `json:"seq"`
+}
+
+// CatalogSetParams replaces the catalog whole: the first provider's first
+// model is the one a user starts with until they choose.
+type CatalogSetParams struct {
+	Data []ModelProviderRow `json:"data"`
+}
+
+type CatalogChangedNotification struct {
+	Data []ModelProviderRow `json:"data"`
+	Seq  int64              `json:"seq"`
 }
 
 type ToolDescriptor struct {
@@ -843,6 +895,7 @@ var errorCodes = []struct {
 	{app.ErrInvalidPresence, jsonrpc.CodeInvalidParams},
 	{app.ErrInvalidTodo, jsonrpc.CodeInvalidParams},
 	{app.ErrSearchTimedOut, errSearchTimedOut},
+	{account.ErrInvalidModelProvider, jsonrpc.CodeInvalidParams},
 	{account.ErrInvalidName, jsonrpc.CodeInvalidParams},
 	{account.ErrInvalidMCPServer, jsonrpc.CodeInvalidParams},
 	{account.ErrUnknownModel, jsonrpc.CodeInvalidParams},

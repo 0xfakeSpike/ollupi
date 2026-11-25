@@ -105,13 +105,13 @@ type engine struct {
 
 func newEngine(cfg host.Config) *engine {
 	cfg.Name, cfg.Boxes = "bench", here
-	if cfg.Models == nil {
-		cfg.Models = []account.ModelProvider{fakeProvider}
-	}
 	cfg.Permissions = policy.Settings{ApprovalPolicy: string(policy.Never)}
 	ctx, cancel := context.WithCancel(context.Background())
 	h, err := host.New(ctx, cfg)
 	if err != nil {
+		log.Fatal(err)
+	}
+	if err := h.App.SetCatalog(ctx, []account.ModelProvider{fakeProvider}); err != nil {
 		log.Fatal(err)
 	}
 	e := &engine{Host: h, ctx: ctx, cancel: cancel, done: make(chan error, 1)}

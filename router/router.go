@@ -30,14 +30,14 @@ func NewLocator(authenticate auth.Authenticate, c catalog.Catalog) (*Locator, er
 func (l *Locator) Locate(ctx context.Context, header http.Header) (shard, address string, err error) {
 	ctx, cancel := context.WithTimeout(ctx, lookupTimeout)
 	defer cancel()
-	user, err := l.authenticate(ctx, auth.TokenOf(header))
+	id, err := l.authenticate(ctx, auth.TokenOf(header))
 	if errors.Is(err, auth.ErrUnknownToken) {
 		return "", "", err
 	}
 	if err != nil {
 		return "", "", fmt.Errorf("router: the token could not be checked: %w", err)
 	}
-	return l.catalog.Locate(ctx, user)
+	return l.catalog.Locate(ctx, id.User)
 }
 
 type Router struct {

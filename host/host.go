@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/0xfakeSpike/ollupi/account"
 	"github.com/0xfakeSpike/ollupi/app"
 	"github.com/0xfakeSpike/ollupi/blob"
 	"github.com/0xfakeSpike/ollupi/cron"
@@ -52,10 +51,6 @@ type Config struct {
 	Home   string
 	Name   string
 	Prompt string
-	// Models are the deployment's catalog: the providers, with their keys,
-	// and the models every user's turns run on. A user only chooses among
-	// them; the host is never told about users. SetModels replaces it.
-	Models []account.ModelProvider
 	// Dial makes the client of each model; nil calls the provider's API.
 	Dial Dial
 	// ClientFor, when set, picks the client a user's call goes through
@@ -107,7 +102,7 @@ func New(ctx context.Context, cfg Config) (*Host, error) {
 	if err != nil {
 		return nil, err
 	}
-	modelSet, err := newModels(ctx, st, cfg.Models, cfg.Dial, cfg.ClientFor)
+	modelSet, err := newModels(ctx, st, cfg.Dial, cfg.ClientFor)
 	if err != nil {
 		st.Close()
 		return nil, err
@@ -159,15 +154,8 @@ func (h *Host) Run(ctx context.Context) error {
 	return err
 }
 
-// SetModels replaces the deployment's catalog while the host runs: new
-// turns run on it at once, and a turn already calling a model finishes on
-// its client. A catalog that does not check leaves the one in use. A user's
-// choice of a model no longer served falls back to the first.
-func (h *Host) SetModels(catalog []account.ModelProvider) error {
-	return h.models.set(catalog)
-}
-
 func (h *Host) Close() error {
+	h.models.close()
 	return errors.Join(h.Users.Close(), h.Store.Close())
 }
 

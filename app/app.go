@@ -73,15 +73,26 @@ func (a *App) EnsureUser(ctx context.Context, user string) error {
 	return a.st.Update(ctx, func(tx store.Tx) error { return tx.EnsureUser(user) })
 }
 
-// Models are the deployment's models and the connection the user's
-// conversations start with.
-func (a *App) Models(ctx context.Context, user string) ([]llm.Model, string, error) {
+// Models are the deployment's models, the connection the user's
+// conversations start with, and the commit they were read at.
+func (a *App) Models(ctx context.Context, user string) (models []llm.Model, first string, seq int64, err error) {
 	var s account.Settings
-	if err := a.st.Read(ctx, func(r store.Reader) (err error) { s, err = r.Settings(user); return err }); err != nil {
-		return nil, "", err
+	var catalog []account.ModelProvider
+	err = a.st.Read(ctx, func(r store.Reader) error {
+		if s, err = r.Settings(user); err != nil {
+			return err
+		}
+		if catalog, err = r.Catalog(); err != nil {
+			return err
+		}
+		seq, err = r.Seq()
+		return err
+	})
+	if err != nil {
+		return nil, "", 0, err
 	}
-	models, first := account.Models(a.catalog.Providers(), s)
-	return models, first, nil
+	models, first = account.Models(catalog, s)
+	return models, first, seq, nil
 }
 
 func (a *App) Tools(ctx context.Context, user string) ([]tool.Spec, error) {

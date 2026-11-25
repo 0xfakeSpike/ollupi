@@ -140,7 +140,19 @@ func (c *client) until(method string) message {
 	}
 }
 
+// served is the one model the tests' catalog serves.
+var served = []account.ModelProvider{{ID: "main", API: account.OpenAI, Models: []account.ProviderModel{{Name: "m", Limits: llm.Limits{Context: 200_000, Output: 8_000}}}}}
+
 func connect(t *testing.T) (store.Store, *client) {
+	t.Helper()
+	st, dial := serve(t)
+	return st, dial("secret")
+}
+
+// serve runs a gateway whose catalog serves main/m. dial connects with a
+// token and initializes: "secret" acts as the user u, and "operator" as u
+// and the deployment's operator.
+func serve(t *testing.T) (store.Store, func(token string) *client) {
 	t.Helper()
 	ctx := context.Background()
 	st, err := sqlite.Open(t.TempDir())
@@ -148,38 +160,47 @@ func connect(t *testing.T) (store.Store, *client) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
+	if err := st.Update(ctx, func(tx store.Tx) error { return tx.SetCatalog(served) }); err != nil {
+		t.Fatal(err)
+	}
 	boxes := func(string) (sandbox.Box, error) { return sandbox.Here() }
 	users := mcp.NewUsers(ctx, mcp.Client{Name: "ollupi", Version: "test"}, st, boxes)
 	t.Cleanup(func() { users.Close() })
-	a := app.New(st, catalog{{ID: "main", API: account.OpenAI, Models: []account.ProviderModel{{Name: "m", Limits: llm.Limits{Context: 200_000, Output: 8_000}}}}}, users.Tools, users.Statuses, boxes, &files{}, cron.NewCalendar(time.UTC), policy.Settings{ApprovalPolicy: string(policy.OnRequest)})
+	a := app.New(st, catalog(served), users.Tools, users.Statuses, boxes, &files{}, cron.NewCalendar(time.UTC), policy.Settings{ApprovalPolicy: string(policy.OnRequest)})
 	if err := a.EnsureUser(ctx, "u"); err != nil {
 		t.Fatal(err)
 	}
-	server, err := NewServer(a, st.Feed(), Options{Authenticate: func(_ context.Context, token string) (string, error) {
-		if token != "secret" {
-			return "", auth.ErrUnknownToken
+	server, err := NewServer(a, st.Feed(), Options{Authenticate: func(_ context.Context, token string) (auth.Identity, error) {
+		switch token {
+		case "secret":
+			return auth.Identity{User: "u"}, nil
+		case "operator":
+			return auth.Identity{User: "u", Operator: true}, nil
 		}
-		return "u", nil
+		return auth.Identity{}, auth.ErrUnknownToken
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	web := httptest.NewServer(server)
 	t.Cleanup(web.Close)
-	ws, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(web.URL, "http"), &websocket.DialOptions{
-		HTTPHeader: http.Header{"Authorization": {"Bearer secret"}},
-	})
-	if err != nil {
-		t.Fatal(err)
+	return st, func(token string) *client {
+		t.Helper()
+		ws, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(web.URL, "http"), &websocket.DialOptions{
+			HTTPHeader: http.Header{"Authorization": {"Bearer " + token}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { ws.CloseNow() })
+		c := &client{t: t, base: web.URL, ws: ws}
+		var init InitializeResult
+		c.call(methodInitialize, InitializeParams{}, &init)
+		if init.ProtocolSHA256 != protocolSHA256 {
+			t.Errorf("initialize %+v", init)
+		}
+		return c
 	}
-	t.Cleanup(func() { ws.CloseNow() })
-	c := &client{t: t, base: web.URL, ws: ws}
-	var init InitializeResult
-	c.call(methodInitialize, InitializeParams{}, &init)
-	if init.ProtocolSHA256 != protocolSHA256 {
-		t.Errorf("initialize %+v", init)
-	}
-	return st, c
 }
 
 func TestAClientHearsWhatChangesAndAnswersWhatWaitsOnIt(t *testing.T) {
@@ -487,5 +508,60 @@ func TestAUserKeepsTheirOwnSkills(t *testing.T) {
 	}
 	if m := c.reply("skill/read", SkillNameParams{Name: "deploy"}); m.Error == nil || m.Error.Code != errNotFound {
 		t.Errorf("a deleted skill: %+v", m.Error)
+	}
+}
+
+func TestOnlyTheOperatorReadsAndChangesTheCatalogAndEveryoneHearsTheModels(t *testing.T) {
+	_, dial := serve(t)
+	user, op := dial("secret"), dial("operator")
+
+	for _, m := range []string{"catalog/read", "catalog/set"} {
+		reply := user.reply(m, CatalogSetParams{Data: []ModelProviderRow{}})
+		if reply.Error == nil || reply.Error.Code != errForbidden {
+			t.Fatalf("a user's %s: %+v", m, reply)
+		}
+	}
+
+	var read CatalogResult
+	op.call("catalog/read", Empty{}, &read)
+	if len(read.Data) != 1 || read.Data[0].ID != "main" || read.Data[0].API != account.OpenAI || read.Seq == 0 {
+		t.Fatalf("the catalog %+v", read)
+	}
+
+	// Refused whole: the catalog stays as it was.
+	bad := op.reply("catalog/set", CatalogSetParams{Data: []ModelProviderRow{{ID: "a/b", API: account.OpenAI, Models: []account.ProviderModel{{Name: "x", Limits: llm.Limits{Context: 1000, Output: 100}}}}}})
+	if bad.Error == nil || bad.Error.Code != jsonrpc.CodeInvalidParams || !strings.Contains(bad.Error.Message, "'/'") {
+		t.Fatalf("a catalog that does not check: %+v", bad)
+	}
+
+	next := []ModelProviderRow{
+		{ID: "deep", API: account.OpenAI, BaseURL: "https://api.deepseek.com", APIKey: "sk-d", Models: []account.ProviderModel{{Name: "flash", Limits: llm.Limits{Context: 128_000, Output: 8_000}}}},
+		{ID: "main", API: account.OpenAI, Models: []account.ProviderModel{{Name: "m", Limits: llm.Limits{Context: 200_000, Output: 8_000}}}},
+	}
+	op.call("catalog/set", CatalogSetParams{Data: next}, &Empty{})
+
+	var changed CatalogChangedNotification
+	json.Unmarshal(op.until(notifyCatalogChanged).Params, &changed)
+	if len(changed.Data) != 2 || changed.Data[0].APIKey != "sk-d" || changed.Seq <= read.Seq {
+		t.Fatalf("the operator heard %+v", changed)
+	}
+	for name, c := range map[string]*client{"user": user, "operator": op} {
+		var models ModelChangedNotification
+		json.Unmarshal(c.until(notifyModelChanged).Params, &models)
+		if len(models.Data) != 2 || models.Default != "deep/flash" || models.Seq != changed.Seq {
+			t.Fatalf("the %s heard the models %+v", name, models)
+		}
+	}
+	// A user hears the models, never the catalog and its keys.
+	for _, m := range user.kept {
+		if m.Method == notifyCatalogChanged {
+			t.Fatalf("a user heard the catalog: %s", m.Params)
+		}
+	}
+
+	var list ModelListResult
+	user.call("model/list", Empty{}, &list)
+	if len(list.Data) != 2 || list.Default != "deep/flash" || list.Seq < changed.Seq {
+		t.Fatalf("model/list %+v", list)
 	}
 }

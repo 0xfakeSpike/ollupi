@@ -13,8 +13,29 @@ import (
 )
 
 func (c *conn) modelList(ctx context.Context, _ Empty) (ModelListResult, error) {
-	models, first, err := c.s.app.Models(ctx, c.user)
-	return ModelListResult{Data: models, Default: first}, err
+	models, first, seq, err := c.s.app.Models(ctx, c.user)
+	return ModelListResult{Data: models, Default: first, Seq: seq}, err
+}
+
+func (c *conn) catalogRead(ctx context.Context, _ Empty) (CatalogResult, error) {
+	providers, seq, err := c.s.app.Catalog(ctx)
+	return CatalogResult{Data: each(providers, providerRow), Seq: seq}, err
+}
+
+func (c *conn) catalogSet(ctx context.Context, p CatalogSetParams) (Empty, error) {
+	providers := make([]account.ModelProvider, len(p.Data))
+	for i, row := range p.Data {
+		providers[i] = account.ModelProvider{ID: row.ID, API: row.API, BaseURL: row.BaseURL, APIKey: row.APIKey, Models: row.Models}
+	}
+	return Empty{}, c.s.app.SetCatalog(ctx, providers)
+}
+
+func providerRow(p account.ModelProvider) ModelProviderRow {
+	models := p.Models
+	if models == nil {
+		models = []account.ProviderModel{}
+	}
+	return ModelProviderRow{ID: p.ID, API: p.API, BaseURL: p.BaseURL, APIKey: p.APIKey, Models: models}
 }
 
 func (c *conn) toolList(ctx context.Context, _ Empty) (ToolListResult, error) {

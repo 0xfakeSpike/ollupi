@@ -72,7 +72,6 @@ func main() {
 	defer stop()
 	h, err := host.New(ctx, host.Config{
 		Home: homeDir, Name: "ollupi-quickstart",
-		Models:      []account.ModelProvider{provider},
 		Tools:       []kit.Provider{files},
 		Permissions: policy.Settings{ApprovalPolicy: string(policy.OnRequest)},
 		Boxes:       func(string) (sandbox.Box, error) { return sandbox.Here() },
@@ -81,6 +80,11 @@ func main() {
 		log.Fatalf("quickstart: host: %v", err)
 	}
 	defer h.Close()
+	// The catalog is the deployment's, kept in the store: set once, it
+	// stays for the next start.
+	if err := h.App.SetCatalog(ctx, []account.ModelProvider{provider}); err != nil {
+		log.Fatalf("quickstart: models: %v", err)
+	}
 
 	if err := h.App.EnsureUser(ctx, user); err != nil {
 		log.Fatalf("quickstart: user: %v", err)

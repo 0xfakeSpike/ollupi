@@ -64,6 +64,10 @@ type Reader interface {
 	EndedTurns(user string, after memory.Cursor, limit int) ([]memory.Cursor, error)
 	Unread(user string, after memory.Cursor) (int64, error)
 
+	// Catalog is the deployment's providers and their models, keys
+	// included, in order.
+	Catalog() ([]account.ModelProvider, error)
+
 	Skills(user string) ([]skill.Skill, error)
 	Skill(user, name string) (skill.Skill, error)
 	SkillFile(user, name, path string) ([]byte, error)
@@ -93,6 +97,7 @@ type Tx interface {
 	DeleteCronJob(id string) error
 	PutMemory(m memory.Memory) error
 	SetMemoryState(user string, s memory.State) error
+	SetCatalog(providers []account.ModelProvider) error
 	PutSkill(user string, p skill.Package) error
 	DeleteSkill(user, name string) error
 	PutUsage(u Usage) error
@@ -270,6 +275,8 @@ type PresenceBucket struct {
 	Seconds int64
 }
 
+// Event is a committed change. One of no user is the deployment's, as a
+// change to the catalog is, and every subscriber hears it.
 type Event struct {
 	Seq    int64
 	User   string
@@ -292,6 +299,8 @@ type Owned struct {
 	Todo               *account.Todo
 	Skill              *skill.Skill
 	SkillDeleted       string
+	// Catalog is the deployment's catalog after a change, keys included.
+	Catalog *[]account.ModelProvider
 }
 
 type Change struct {

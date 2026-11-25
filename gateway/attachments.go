@@ -15,11 +15,11 @@ import (
 const AttachmentPath = "/attachments/{thread}/{attachment}"
 
 func (s *Server) attachment(w http.ResponseWriter, r *http.Request) {
-	user, ok := s.authorize(w, r)
-	if !ok || !s.serves(w, r, user) {
+	id, ok := s.authorize(w, r)
+	if !ok || !s.serves(w, r, id.User) {
 		return
 	}
-	att, data, err := s.app.ReadAttachment(r.Context(), user, r.PathValue("thread"), r.PathValue("attachment"))
+	att, data, err := s.app.ReadAttachment(r.Context(), id.User, r.PathValue("thread"), r.PathValue("attachment"))
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		http.Error(w, "no such attachment", http.StatusNotFound)

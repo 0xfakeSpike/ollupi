@@ -351,25 +351,25 @@ func answerStats() {
 	}
 }
 
-func benchUser(_ context.Context, token string) (string, error) {
+func benchUser(_ context.Context, token string) (auth.Identity, error) {
 	if !strings.HasPrefix(token, "user") {
-		return "", auth.ErrUnknownToken
+		return auth.Identity{}, auth.ErrUnknownToken
 	}
-	return token, nil
+	return auth.Identity{User: token}, nil
 }
 
 // signUp stands in for a deployment's sign-up service: a user a shard has
 // not seen is made on their first connection.
 func signUp(e **engine) auth.Authenticate {
 	var once sync.Map
-	return func(ctx context.Context, token string) (string, error) {
-		user, err := benchUser(ctx, token)
+	return func(ctx context.Context, token string) (auth.Identity, error) {
+		id, err := benchUser(ctx, token)
 		if err != nil {
-			return "", err
+			return auth.Identity{}, err
 		}
-		made, _ := once.LoadOrStore(user, new(sync.Once))
-		made.(*sync.Once).Do(func() { (*e).addUser(user) })
-		return user, nil
+		made, _ := once.LoadOrStore(id.User, new(sync.Once))
+		made.(*sync.Once).Do(func() { (*e).addUser(id.User) })
+		return id, nil
 	}
 }
 
