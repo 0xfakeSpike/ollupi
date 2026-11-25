@@ -17,7 +17,7 @@ flowchart LR
 
 | 概念 | 是什么 | 保存在 | 归属 | 怎样结束 |
 |---|---|---|---|---|
-| 工作区 | 某个执行环境里的一个文件夹，带一层权限设置 | `workspaces` | 用户和执行环境 | 只能归档，不能删除；草稿工作区随环境一起删 |
+| 工作区 | 某个执行环境里的一个文件夹，带一层权限设置 | `workspaces` | 用户和执行环境 | 只能归档，不能删除；临时工作区随环境一起删 |
 | 会话 | 一段对话，在某个工作区里，运行在它所在的执行环境 | `threads`，日志在 `entries` | 用户；子会话还属于父会话的一个调用 | 归档或删除，二者都要求空闲 |
 | 轮次 | 用户（或定时任务、父 agent）交给 agent 的一件事 | 日志的投影，物化在 `turns` | 会话 | `completed` / `failed` / `interrupted` |
 | 条目 | 轮次里的一步：一条消息、一段思考、一次工具调用…… | 日志的投影，物化在 `items` | 会话和轮次 | `completed` / `failed` / `declined` |
@@ -26,7 +26,7 @@ flowchart LR
 
 工作区是某个执行环境里的一个文件夹。执行环境是部署提供的某种沙箱（`sandbox.Provider`，本机是其中一种）的一个实例，第一次用到时才打开；同一个路径在两个环境里是两个文件夹。每个会话都在一个工作区里，在工作区所在的环境里运行，工具调用在这个文件夹里执行；工作区的权限设置是权限分层里的一层（部署 → 用户 → 工作区 → 会话）。
 
-每个执行环境都有一个草稿工作区（`kind` 为 `scratch`），随环境一起建、一起删，`root` 为空，文件夹就是环境自己的文件夹。开会话时不指定工作区，会话就进所选环境（默认用户的第一个环境）的草稿工作区。草稿工作区不能归档、移动或改类型（`app.ErrScratchWorkspace`）。
+每个执行环境都有一个临时工作区（`kind` 为 `scratch`），随环境一起建、一起删，`root` 为空，文件夹就是环境自己的文件夹。开会话时不指定工作区，会话就进所选环境（默认用户的第一个环境）的临时工作区。临时工作区不能归档（`app.ErrScratchWorkspace`），也不能移动（`app.ErrKeptFolder`）。
 
 ```mermaid
 stateDiagram-v2
@@ -39,11 +39,11 @@ stateDiagram-v2
 ```
 
 - **添加**：`app.AddWorkspace` 先让沙箱确认路径是个目录（`box.Directory`），再按文件夹去重：同一用户已有指向同一文件夹的工作区（`box.Same`）就用它，已归档的顺带恢复。
-- **移动**：`app.MoveWorkspace` 把文件夹搬到一个已存在且为空的目录，只改 `root`。会话、记忆、定时任务都按工作区 id 引用它。移动要求名下的会话都空闲（`Reader.WorkspaceBusy`）。开始移动是一次写入：在同一个事务里检查空闲，并在工作区上记下 `moving_to`（要搬去的目录）。排新轮次的事务也在事务里读它，看到正在移动就拒绝。两者都排在同一个写队列里，所以不会出现"刚检查完空闲，就排进来一个轮次"的情况。搬完（或者没搬成）再用一次写入改 `root`、清掉 `moving_to`，每次都会发 `workspace/changed`，客户端能看到 `movingTo`。进程在移动途中退出的话，host 启动时由 `app.SettleMoves` 收尾：原目录还在就留在原处，否则目标目录在就改成目标。
+- **移动**：`app.MoveWorkspace` 把项目的文件夹搬到一个已存在且为空的目录，只改 `root`。会话、记忆、定时任务都按工作区 id 引用它。移动要求名下的会话都空闲（`Reader.WorkspaceBusy`）。开始移动是一次写入：在同一个事务里检查空闲，并在工作区上记下 `moving_to`（要搬去的目录）。排新轮次的事务也在事务里读它，看到正在移动就拒绝。两者都排在同一个写队列里，所以不会出现"刚检查完空闲，就排进来一个轮次"的情况。搬完（或者没搬成）再用一次写入改 `root`、清掉 `moving_to`，每次都会发 `workspace/changed`，客户端能看到 `movingTo`。进程在移动途中退出的话，host 启动时由 `app.SettleMoves` 收尾：原目录还在就留在原处，否则目标目录在就改成目标。
 - **归档**：已归档的工作区不能新建会话，名下的会话也不能发新消息（`account.ErrWorkspaceArchived`）。
 - **指令**：`app.UpdateWorkspaceInstructions` 给工作区一段指令（最多两万字）。这个工作区里每个会话、每个角色的系统提示词都带上它，放在角色规则之后（`# WORKSPACE INSTRUCTIONS`）。
 - **工具来源**：`app.UpdateWorkspaceProviders` 给工作区开（`enabled`）或关（`disabled`）某些 provider 的工具，名字要是用户工具里有的 provider。部署可以把一些 provider 设成默认关闭（`host.Config.OptIn`）：它们只在 `enabled` 里写了它们的工作区出现，没挂工作区的会话里也没有。这一层排在工作区权限之后（`account.Layers`），对所有角色都生效；`disabled` 优先于 `enabled`。
-- **类型**：工作区是项目（`project`，新建时的类型）、中枢（`hub`）或草稿（`scratch`），前两种之间用 `app.SetWorkspaceKind` 改。中枢默认关闭：部署打开 `host.Config.Hub` 才注册中枢工具，没有中枢工具时设成中枢会被拒绝（`app.ErrNoHub`）。一个用户最多一个中枢（`app.ErrSecondHub`）；会话不记这个类型，它在哪种工作区里，每一轮就按哪种选角色（见"轮次"）。
+- **类型**：工作区是项目（`project`）、中枢（`hub`）或临时（`scratch`）。项目是用户选的文件夹；中枢和临时工作区的文件夹由执行环境保管，不能移动（`app.ErrKeptFolder`）。中枢由 `app.StartHub` 建：在用户第一个环境替它保管的文件夹里（`Box.Folder("super-agent")`，本机是 `~/.ollupi/super-agent`），已有就返回它，归档了就恢复；每个用户只有一个。中枢默认关闭：部署打开 `host.Config.Hub` 才注册中枢工具，没有中枢工具时 `StartHub` 被拒绝（`app.ErrNoHub`）；会话不记这个类型，它在哪种工作区里，每一轮就按哪种选角色（见"轮次"）。
 - **中枢**：中枢工作区里的会话以 `hub-main-agent` 运行。它不做项目里的活，用中枢专有的工具（`tool/builtin/hub`）把工作交给项目：`list_workspaces` 列出工作区；`start_conversation` 在一个项目工作区里新建会话并发出第一条消息，`send_message` 给一个项目工作区里的会话发消息，二者都走用户自己用的 `app.StartThread` / `app.Send`。发送者记在消息上，不写进正文：`app.Input.From` 是发消息的中枢会话，app 核对它是这个用户的会话后，把它的 id 和当时的标题记进用户消息（`conversation.UserMessage.From`、`Item.From`），协议里是这条消息的 `sentByThreadId`，`read_conversation` 里是它的 `from`；给模型看的消息头写成 `[sent <时间> by the hub conversation "<标题>" on the user's behalf]`，压缩摘要里列出的早先消息也注明。会话按它所在工作区的权限运行，中枢角色自带的规则放行这两个调用；`list_conversations` 默认列出中枢工作区里任何一个会话开过的会话（按 `items_calls` 索引从这些会话日志里的 `start_conversation` 调用找，`Reader.Calls`），也能按 id 或工作区查用户的任何会话，给出状态、排队的轮次、最后一轮怎样结束、是否已读和最后回答的开头；`read_conversation` 给出一个会话最近几轮的消息。中枢不能把工作交给中枢工作区，也不能启动子 agent 或用浏览器；其他角色都没有这些工具。
 - **中枢的待办**：中枢的待办和已完成事项存在引擎里，`todos` 表（迁移 0012）是唯一的真相：一条待办有 id、标题、状态（`open` 未开始 / `handed` 已交给会话 / `done` 完成 / `dropped` 放弃）、指向的项目工作区与会话、备注、完成时的一句话结果和结束时间（`ended_at`，归档按它分月）。中枢会话用 `add_todo` / `update_todo` / `list_todos` 维护它们，不写文件，也不读 `TODO.md`；交给项目时用 `start_conversation` 的 `todo` 参数：`app.HandOff` 在一个事务里新建会话、发出第一条消息、链接待办并置 `handed`，任何一步被拒绝，三样都不留下。待办跟着用户走，不跟着文件夹：中枢换了工作区，待办还在。删掉一个会话时，挂在它上面的 `handed` 待办退回 `open` 并解除链接。桌面端用 `todo/list` 读、`todo/update` 改，每次 Add/Put 成功都收到 `todo/changed`。早先记在中枢工作区根目录 `TODO.md` 和 `done/*.md` 里的计划在第一次读待办时一次性导入，`TODO.md` 随后改名为 `TODO.md.imported-<年-月-日>`；`done/*.md` 原样留着，引擎不再读写这些文件。
 
