@@ -45,7 +45,7 @@ var kinds = map[agent.Name]kind{
 		title: "Codebase subagent",
 		description: "Launch a codebase subagent to read a whole project and explain it: what it is for, its modules and layers, " +
 			"how a request or a piece of data flows through them, where state lives, its dependencies and constraints, and what a change would touch. " +
-			"It reads the code itself, cites files and symbols, changes nothing, and reports back. " +
+			"It reads the code itself, cites files and symbols, cannot edit or write files, and reports back; a document you ask for comes back in its report for you to write. " +
 			"Use it for any question the project's own code settles, in a project too big to read in this conversation; " +
 			"use " + string(agent.ResearchSub) + " for what lies outside the project.",
 	},
@@ -78,7 +78,8 @@ var kinds = map[agent.Name]kind{
 	agent.ResearchSub: {
 		title: "Research subagent",
 		description: "Launch a research subagent to gather information from outside the project and report what is true: the public web, a site, or documents you name or put in the workspace. " +
-			"It reads only, cites each finding with its URL or path, separates what a source says from what it inferred, and reports back what it could not confirm. " +
+			"It reads only and cannot edit or write files, cites each finding with its URL or path, separates what a source says from what it inferred, and reports back what it could not confirm; " +
+			"a document you ask for comes back in its report for you to write. " +
 			"Give it the question, how deep to go, and what would count as an answer; " +
 			"use " + string(agent.CodebaseSub) + " for how the project's own code works.",
 	},

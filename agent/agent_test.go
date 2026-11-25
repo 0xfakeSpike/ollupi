@@ -232,7 +232,7 @@ func TestOnlyTheHubHandsOutWork(t *testing.T) {
 	}
 }
 
-func TestTheVerifierRunsChecksButCannotEdit(t *testing.T) {
+func TestReadersAndTheVerifierCannotEdit(t *testing.T) {
 	box := policy.Toolbox{Tools: []policy.Tool{
 		{Name: ReadFileTool, Provider: WorkspaceProvider},
 		{Name: RunCommandTool, Provider: WorkspaceProvider, Content: true},
@@ -241,20 +241,31 @@ func TestTheVerifierRunsChecksButCannotEdit(t *testing.T) {
 		{Name: ClaudeTool, Provider: WorkspaceProvider, Content: true},
 		{Name: "browser_click", Provider: BrowserProvider},
 	}}
-	role, _ := RoleOf(VerifySub)
-	checker, err := policy.New(slices.Concat(role.Own, []policy.Layer{{Of: "deployment", Settings: policy.Settings{ApprovalPolicy: string(policy.OnRequest)}}}), nil, box)
-	if err != nil {
-		t.Fatal(err)
+	cases := map[Name][]string{
+		CodebaseSub: {ReadFileTool, RunCommandTool},
+		ResearchSub: {ReadFileTool, RunCommandTool, "browser_click"},
+		VerifySub:   {ReadFileTool, RunCommandTool, "browser_click"},
 	}
-	var visible []string
-	for _, tl := range checker.Tools() {
-		visible = append(visible, tl.Name)
+	edit := Having(policy.Tool{Name: EditFileTool, Provider: WorkspaceProvider})
+	for name, want := range cases {
+		role, _ := RoleOf(name)
+		checker, err := policy.New(slices.Concat(role.Own, []policy.Layer{{Of: "deployment", Settings: policy.Settings{ApprovalPolicy: string(policy.OnRequest)}}}), nil, box)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		var visible []string
+		for _, tl := range checker.Tools() {
+			visible = append(visible, tl.Name)
+		}
+		if !slices.Equal(visible, want) {
+			t.Errorf("%s sees %q", name, visible)
+		}
+		if slices.Contains(edit, name) {
+			t.Errorf("Having(edit_file) = %v names %s", edit, name)
+		}
 	}
-	if !slices.Equal(visible, []string{ReadFileTool, RunCommandTool, "browser_click"}) {
-		t.Errorf("the verifier sees %q", visible)
-	}
-	if got := Having(policy.Tool{Name: EditFileTool, Provider: WorkspaceProvider}); slices.Contains(got, VerifySub) || !slices.Contains(got, GeneralSub) {
-		t.Errorf("Having(edit_file) = %v", got)
+	if !slices.Contains(edit, GeneralSub) {
+		t.Errorf("Having(edit_file) = %v", edit)
 	}
 }
 

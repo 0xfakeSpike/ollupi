@@ -90,6 +90,8 @@ type Limits struct {
 
 var standard = Limits{MaxModelCalls: 200, MaxToolCalls: 400, MaxConsecutiveFailures: 10}
 
+var readOnly = policy.Settings{Rules: policy.Rules{Deny: []string{EditFileTool, WriteFileTool, ClaudeTool}}}
+
 // deep suits a subagent that reads a whole project: more reading than writing, many small reads.
 var deep = Limits{MaxModelCalls: 400, MaxToolCalls: 1_200, MaxConsecutiveFailures: 10}
 
@@ -108,7 +110,8 @@ var roles = map[Name]Role{
 	DesignSub: {Name: DesignSub, Kind: ReportingKind, Rules: designSubRules, Recalls: true,
 		Own: []policy.Layer{{Of: "the design subagent's role", Providers: []string{WorkspaceProvider, BrowserProvider, OutputsProvider, SkillsProvider, PlanProvider}}}, Limits: standard},
 	CodebaseSub: {Name: CodebaseSub, Kind: ReportingKind, Rules: codebaseSubRules, Recalls: true,
-		Own: []policy.Layer{{Of: "the codebase subagent's role", Providers: []string{WorkspaceProvider, OutputsProvider, SkillsProvider, PlanProvider}}}, Limits: deep},
+		Own: []policy.Layer{{Of: "the codebase subagent's role", Providers: []string{WorkspaceProvider, OutputsProvider, SkillsProvider, PlanProvider},
+			Settings: readOnly}}, Limits: deep},
 	FrontendSub: {Name: FrontendSub, Kind: ReportingKind, Rules: frontendSubRules, Recalls: true,
 		Own: []policy.Layer{{Of: "the frontend subagent's role", Providers: []string{WorkspaceProvider, BrowserProvider, OutputsProvider, SkillsProvider, PlanProvider}}}, Limits: standard},
 	BackendSub: {Name: BackendSub, Kind: ReportingKind, Rules: backendSubRules, Recalls: true,
@@ -116,10 +119,11 @@ var roles = map[Name]Role{
 	WritingSub: {Name: WritingSub, Kind: ReportingKind, Rules: writingSubRules, Recalls: true,
 		Own: []policy.Layer{{Of: "the writing subagent's role", Providers: []string{WorkspaceProvider, OutputsProvider, SkillsProvider, PlanProvider}}}, Limits: standard},
 	ResearchSub: {Name: ResearchSub, Kind: ReportingKind, Rules: researchSubRules, Recalls: true,
-		Own: []policy.Layer{{Of: "the research subagent's role", Providers: []string{WorkspaceProvider, WebProvider, BrowserProvider, OutputsProvider, SkillsProvider, PlanProvider}}}, Limits: deep},
+		Own: []policy.Layer{{Of: "the research subagent's role", Providers: []string{WorkspaceProvider, WebProvider, BrowserProvider, OutputsProvider, SkillsProvider, PlanProvider},
+			Settings: readOnly}}, Limits: deep},
 	VerifySub: {Name: VerifySub, Kind: ReportingKind, Rules: verifySubRules, Recalls: true,
 		Own: []policy.Layer{{Of: "the verify subagent's role", Providers: []string{WorkspaceProvider, BrowserProvider, OutputsProvider, SkillsProvider, PlanProvider},
-			Settings: policy.Settings{Rules: policy.Rules{Deny: []string{EditFileTool, WriteFileTool, ClaudeTool}}}}}, Limits: standard},
+			Settings: readOnly}}, Limits: standard},
 }
 
 func RoleOf(name Name) (Role, bool) {
