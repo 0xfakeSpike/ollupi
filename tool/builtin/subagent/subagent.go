@@ -89,7 +89,7 @@ func (Provider) Name() (string, string) { return agent.SubagentsProvider, "Launc
 
 const reporting = "It knows nothing of this conversation: put everything it needs in prompt, including what its report must contain. " +
 	"The call returns at once and the subagent works on its own; its report comes back to you as a message when it ends. " +
-	"Meanwhile go on with what does not need the report, or end your reply: the turn waits for the reports of all its subagents, and answers the user if they write. "
+	"Meanwhile go on only with work the subagent does not cover, never its task, which it is already doing, and finish what depends on its report only after the report comes back; or end your reply: the turn waits for the reports of all its subagents, and answers the user if they write. "
 
 const elsewhere = "It works in this conversation's workspace. Subagents cannot launch subagents."
 
