@@ -17,15 +17,14 @@ const (
 	BrowserSub  Name = "browser-sub-agent"
 	DesignSub   Name = "design-sub-agent"
 	CodebaseSub Name = "codebase-sub-agent"
-	FrontendSub Name = "frontend-sub-agent"
-	BackendSub  Name = "backend-sub-agent"
+	CodingSub   Name = "coding-sub-agent"
 	WritingSub  Name = "writing-sub-agent"
 	ResearchSub Name = "research-sub-agent"
 	VerifySub   Name = "verify-sub-agent"
 	HubMain     Name = "hub-main-agent"
 )
 
-var Names = []Name{FullMain, CompactMain, GeneralSub, BrowserSub, DesignSub, CodebaseSub, FrontendSub, BackendSub, WritingSub, ResearchSub, VerifySub, HubMain}
+var Names = []Name{FullMain, CompactMain, GeneralSub, BrowserSub, DesignSub, CodebaseSub, CodingSub, WritingSub, ResearchSub, VerifySub, HubMain}
 
 // Kind says where a role's reply goes: back to the agent that launched it, or to the user.
 type Kind string
@@ -112,10 +111,8 @@ var roles = map[Name]Role{
 	CodebaseSub: {Name: CodebaseSub, Kind: ReportingKind, Rules: codebaseSubRules, Recalls: true,
 		Own: []policy.Layer{{Of: "the codebase subagent's role", Providers: []string{WorkspaceProvider, OutputsProvider, SkillsProvider, PlanProvider},
 			Settings: readOnly}}, Limits: deep},
-	FrontendSub: {Name: FrontendSub, Kind: ReportingKind, Rules: frontendSubRules, Recalls: true,
-		Own: []policy.Layer{{Of: "the frontend subagent's role", Providers: []string{WorkspaceProvider, BrowserProvider, OutputsProvider, SkillsProvider, PlanProvider}}}, Limits: standard},
-	BackendSub: {Name: BackendSub, Kind: ReportingKind, Rules: backendSubRules, Recalls: true,
-		Own: []policy.Layer{{Of: "the backend subagent's role", Providers: []string{WorkspaceProvider, OutputsProvider, SkillsProvider, PlanProvider}}}, Limits: deep},
+	CodingSub: {Name: CodingSub, Kind: ReportingKind, Rules: codingSubRules, Recalls: true,
+		Own: []policy.Layer{{Of: "the coding subagent's role", Providers: []string{WorkspaceProvider, BrowserProvider, OutputsProvider, SkillsProvider, PlanProvider}}}, Limits: deep},
 	WritingSub: {Name: WritingSub, Kind: ReportingKind, Rules: writingSubRules, Recalls: true,
 		Own: []policy.Layer{{Of: "the writing subagent's role", Providers: []string{WorkspaceProvider, OutputsProvider, SkillsProvider, PlanProvider}}}, Limits: standard},
 	ResearchSub: {Name: ResearchSub, Kind: ReportingKind, Rules: researchSubRules, Recalls: true,

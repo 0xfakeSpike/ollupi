@@ -23,7 +23,7 @@ var kinds = map[agent.Name]kind{
 		description: "Launch a general-purpose subagent: another run of you, with your tools, that does one task on its own and reports back. " +
 			"When the task is one of these, launch the specialist instead: " + string(agent.BrowserSub) + " for work in the built-in browser; " +
 			string(agent.DesignSub) + " for a picture, an icon, a poster or a UI mockup; " + string(agent.CodebaseSub) + " to find out how a project's own code works; " +
-			string(agent.FrontendSub) + " to build or change a front end; " + string(agent.BackendSub) + " for servers, data, APIs and their tests; " +
+			string(agent.CodingSub) + " to build or change a project's code, front end and back end alike, with its tests; " +
 			string(agent.WritingSub) + " to write or rewrite a text; " + string(agent.ResearchSub) + " to find out what is true outside the project, from the web and documents; " +
 			string(agent.VerifySub) + " to check finished work against what it must do. " +
 			"To work on independent tasks at the same time, call " + string(agent.GeneralSub) + " several times in the same response; the subagents run in parallel.",
@@ -49,17 +49,11 @@ var kinds = map[agent.Name]kind{
 			"Use it for any question the project's own code settles, in a project too big to read in this conversation; " +
 			"use " + string(agent.ResearchSub) + " for what lies outside the project.",
 	},
-	agent.FrontendSub: {
-		title: "Frontend subagent",
-		description: "Launch a frontend subagent to build or change a project's interface — pages, components, styles, layout and interaction — and to check it rendered in the browser. " +
-			"It reads the components, tokens and conventions already in the project and keeps them, makes the change, and reports back the files it touched, what it ran and how the result looked. " +
-			"Give it the project, the screen or flow, and the look to keep or the one wanted.",
-	},
-	agent.BackendSub: {
-		title: "Backend subagent",
-		description: "Launch a backend subagent to change how a server, service or command-line tool behaves: handlers and interfaces, data models and migrations, concurrency, and the tests around them. " +
-			"It reads the entry points, the data model and the existing tests first, keeps the project's structure and error handling, and reports back what it changed and what its build, tests and checks returned. " +
-			"Give it the project, the behaviour wanted, and any constraint that must hold.",
+	agent.CodingSub: {
+		title: "Coding subagent",
+		description: "Launch a coding subagent to build or change a project's code — its interface, its servers and command-line tools, its data and migrations — together with the tests around the change. " +
+			"It reads the project's conventions first and keeps them, changes every side a feature crosses in one pass, proves the change with the project's build and tests and, for an interface, by looking at it in the browser, " +
+			"and reports back the files it touched, what it ran and what that returned. Give it the project, the behaviour or screen wanted, and any constraint that must hold.",
 	},
 	agent.WritingSub: {
 		title: "Writing subagent",

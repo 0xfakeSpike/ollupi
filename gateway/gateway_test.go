@@ -516,7 +516,7 @@ func TestAnAttachmentIsReadOverHTTP(t *testing.T) {
 func TestAUserKeepsTheirOwnSkills(t *testing.T) {
 	_, c := connect(t)
 	set := SkillSetParams{Name: "deploy", Description: "How to deploy.", Instructions: "Run the script.",
-		Roles: []agent.Name{agent.FullMain, agent.BackendSub}, Files: []SkillFile{{Path: "scripts/run.sh", Text: "echo run", Executable: true}}}
+		Roles: []agent.Name{agent.FullMain, agent.CodingSub}, Files: []SkillFile{{Path: "scripts/run.sh", Text: "echo run", Executable: true}}}
 	var put SkillResult
 	c.call("skill/set", set, &put)
 	var changed SkillChangedNotification
