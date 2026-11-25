@@ -64,3 +64,30 @@ func TestACommandWithFullAccessGetsTheEnvironmentButWhatIsHidden(t *testing.T) {
 		t.Errorf("the command's environment:\n%s", res.Stdout)
 	}
 }
+
+func TestADeploymentNamesTheFolderOfAnEnvironment(t *testing.T) {
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	named := filepath.Join(dir, "scratch")
+	l := Local{Dir: filepath.Join(dir, "users"), Config: Config{Mode: string(ModeFullAccess)},
+		Folder: func(_ context.Context, env Env) (string, error) {
+			if env.ID == "first" {
+				return named, nil
+			}
+			return "", nil
+		}}
+	ctx := context.Background()
+	first, err := l.Open(ctx, Env{User: "u", ID: "first"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := l.Open(ctx, Env{User: "u", ID: "other"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Roots()[0] != named || other.Roots()[0] != filepath.Join(dir, "users", "u", "other") {
+		t.Errorf("folders %v and %v", first.Roots(), other.Roots())
+	}
+}

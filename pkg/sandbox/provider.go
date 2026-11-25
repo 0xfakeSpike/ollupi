@@ -59,11 +59,15 @@ func Fixed(b Box) Boxes {
 const LocalName = "This computer"
 
 // Local is this machine as a provider. Every environment of it is a folder
-// of this machine, Dir/<user>/<environment>, where a command runs when the
-// conversation has no project; commands run with the limits of Config,
-// whose Roots it sets. Its environments keep no state.
+// of this machine, where a command runs when the conversation has no
+// project: Dir/<user>/<environment>, or the one Folder names. Commands run
+// with the limits of Config, whose Roots it sets. Its environments keep no
+// state.
 type Local struct {
-	Dir    string
+	Dir string
+	// Folder, when set, names an environment's folder; an empty one leaves
+	// it Dir/<user>/<environment>.
+	Folder func(ctx context.Context, env Env) (string, error)
 	Config Config
 }
 
@@ -76,8 +80,8 @@ func (Local) Check(config json.RawMessage) error {
 	return nil
 }
 
-func (l Local) Open(_ context.Context, env Env) (Box, error) {
-	root, err := l.root(env)
+func (l Local) Open(ctx context.Context, env Env) (Box, error) {
+	root, err := l.root(ctx, env)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +96,13 @@ func (l Local) Open(_ context.Context, env Env) (Box, error) {
 // Remove leaves the environment's folder: what is in it is the user's.
 func (l Local) Remove(context.Context, Env) error { return nil }
 
-func (l Local) root(env Env) (string, error) {
+func (l Local) root(ctx context.Context, env Env) (string, error) {
+	if l.Folder != nil {
+		folder, err := l.Folder(ctx, env)
+		if err != nil || folder != "" {
+			return folder, err
+		}
+	}
 	if l.Dir == "" {
 		return "", errors.New("sandbox: this machine has no folder for its environments")
 	}
