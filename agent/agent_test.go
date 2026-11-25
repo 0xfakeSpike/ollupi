@@ -139,8 +139,9 @@ func TestSpecialistSubagentsAppearOnlyWhenTheyHaveTools(t *testing.T) {
 		{Name: string(BackendSub), Provider: SubagentsProvider},
 		{Name: string(WritingSub), Provider: SubagentsProvider},
 		{Name: string(ResearchSub), Provider: SubagentsProvider},
+		{Name: string(VerifySub), Provider: SubagentsProvider},
 	}
-	for _, name := range []Name{GeneralSub, BrowserSub, DesignSub, CodebaseSub, FrontendSub, BackendSub, WritingSub, ResearchSub} {
+	for _, name := range []Name{GeneralSub, BrowserSub, DesignSub, CodebaseSub, FrontendSub, BackendSub, WritingSub, ResearchSub, VerifySub} {
 		if !offers(Launchable(full), string(name)) {
 			t.Errorf("%s is not offered with a full toolbox", name)
 		}
@@ -153,9 +154,10 @@ func TestSpecialistSubagentsAppearOnlyWhenTheyHaveTools(t *testing.T) {
 		{Name: string(BackendSub), Provider: SubagentsProvider},
 		{Name: string(WritingSub), Provider: SubagentsProvider},
 		{Name: string(ResearchSub), Provider: SubagentsProvider},
+		{Name: string(VerifySub), Provider: SubagentsProvider},
 	}
 	got := Launchable(browserOnly)
-	if !offers(got, string(DesignSub)) || !offers(got, string(FrontendSub)) || !offers(got, string(ResearchSub)) {
+	if !offers(got, string(DesignSub)) || !offers(got, string(FrontendSub)) || !offers(got, string(ResearchSub)) || !offers(got, string(VerifySub)) {
 		t.Errorf("with only browser tools, the roles that can browse should stay: %+v", got)
 	}
 	if offers(got, string(CodebaseSub)) || offers(got, string(BackendSub)) || offers(got, string(WritingSub)) {
@@ -173,7 +175,7 @@ func TestARolesKindSaysWhereItsReplyGoes(t *testing.T) {
 			t.Errorf("%s should answer the user in its own conversation: %+v", name, r)
 		}
 	}
-	for _, name := range []Name{BrowserSub, DesignSub, CodebaseSub, FrontendSub, BackendSub, WritingSub, ResearchSub} {
+	for _, name := range []Name{BrowserSub, DesignSub, CodebaseSub, FrontendSub, BackendSub, WritingSub, ResearchSub, VerifySub} {
 		if !Reporting(string(name)) {
 			t.Errorf("%s should report back to the agent that launched it", name)
 		}
@@ -192,8 +194,9 @@ func TestOnlyTheHubHandsOutWork(t *testing.T) {
 		{Name: UpdateTodoTool, Provider: HubProvider},
 		{Name: ListTodosTool, Provider: HubProvider},
 		{Name: ReadFileTool, Provider: WorkspaceProvider},
-		{Name: "write_file", Provider: WorkspaceProvider, Content: true},
-		{Name: "edit_file", Provider: WorkspaceProvider, Content: true},
+		{Name: WriteFileTool, Provider: WorkspaceProvider, Content: true},
+		{Name: EditFileTool, Provider: WorkspaceProvider, Content: true},
+		{Name: ClaudeTool, Provider: WorkspaceProvider, Content: true},
 		{Name: string(GeneralSub), Provider: SubagentsProvider},
 		{Name: RunCommandTool, Provider: WorkspaceProvider, Content: true},
 	}}
@@ -226,6 +229,32 @@ func TestOnlyTheHubHandsOutWork(t *testing.T) {
 				t.Errorf("the hub sees %q", visible)
 			}
 		}
+	}
+}
+
+func TestTheVerifierRunsChecksButCannotEdit(t *testing.T) {
+	box := policy.Toolbox{Tools: []policy.Tool{
+		{Name: ReadFileTool, Provider: WorkspaceProvider},
+		{Name: RunCommandTool, Provider: WorkspaceProvider, Content: true},
+		{Name: WriteFileTool, Provider: WorkspaceProvider, Content: true},
+		{Name: EditFileTool, Provider: WorkspaceProvider, Content: true},
+		{Name: ClaudeTool, Provider: WorkspaceProvider, Content: true},
+		{Name: "browser_click", Provider: BrowserProvider},
+	}}
+	role, _ := RoleOf(VerifySub)
+	checker, err := policy.New(slices.Concat(role.Own, []policy.Layer{{Of: "deployment", Settings: policy.Settings{ApprovalPolicy: string(policy.OnRequest)}}}), nil, box)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var visible []string
+	for _, tl := range checker.Tools() {
+		visible = append(visible, tl.Name)
+	}
+	if !slices.Equal(visible, []string{ReadFileTool, RunCommandTool, "browser_click"}) {
+		t.Errorf("the verifier sees %q", visible)
+	}
+	if got := Having(policy.Tool{Name: EditFileTool, Provider: WorkspaceProvider}); slices.Contains(got, VerifySub) || !slices.Contains(got, GeneralSub) {
+		t.Errorf("Having(edit_file) = %v", got)
 	}
 }
 

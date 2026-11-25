@@ -87,7 +87,9 @@ func Kept(layers []Layer, t Tool) bool {
 }
 
 func (l Layer) Keeps(t Tool) bool {
-	return (l.Providers == nil || slices.Contains(l.Providers, t.Provider)) && !slices.Contains(l.Without, t.Provider)
+	deny, _ := parseList("deny", l.Settings.Rules.Deny)
+	return (l.Providers == nil || slices.Contains(l.Providers, t.Provider)) && !slices.Contains(l.Without, t.Provider) &&
+		!ruleSet{deny: deny}.removes(t.Name)
 }
 
 func Resolve(layers ...Settings) Settings {

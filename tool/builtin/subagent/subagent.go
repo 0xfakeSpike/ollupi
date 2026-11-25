@@ -24,7 +24,8 @@ var kinds = map[agent.Name]kind{
 			"When the task is one of these, launch the specialist instead: " + string(agent.BrowserSub) + " for work in the built-in browser; " +
 			string(agent.DesignSub) + " for a picture, an icon, a poster or a UI mockup; " + string(agent.CodebaseSub) + " to have a whole codebase read and explained; " +
 			string(agent.FrontendSub) + " to build or change a front end; " + string(agent.BackendSub) + " for servers, data, APIs and their tests; " +
-			string(agent.WritingSub) + " to write or rewrite a text; " + string(agent.ResearchSub) + " to gather information and check what is true. " +
+			string(agent.WritingSub) + " to write or rewrite a text; " + string(agent.ResearchSub) + " to gather information and check what is true; " +
+			string(agent.VerifySub) + " to check finished work against what it must do. " +
 			"To work on independent tasks at the same time, call " + string(agent.GeneralSub) + " several times in the same response; the subagents run in parallel.",
 	},
 	agent.BrowserSub: {
@@ -64,6 +65,14 @@ var kinds = map[agent.Name]kind{
 		description: "Launch a writing subagent to write or rewrite a text for a named reader and place: a document, README, article, post, email or report. " +
 			"It keeps the facts, names and voice it finds in the project and in the material you point it at, writes the text into the file the task names, and reports back the path, what it changed and what it could not settle. " +
 			"Give it the reader, the purpose, the source material and the language.",
+	},
+	agent.VerifySub: {
+		title: "Verify subagent",
+		description: "Launch a verify subagent to check finished work against what it must do: it builds the project, runs its whole test suite and checks, " +
+			"tries the behaviour itself — a command, a request, a page in the browser — including the cases that should fail, and reports back a verdict for each criterion " +
+			"with the command and output that show it, and what it could not check. It cannot edit files and fixes nothing. " +
+			"Give it what was changed and where, and the criteria the work must meet; it takes your account of the work as the claim to test, not as evidence. " +
+			"Use it after a change of several files or steps, before you tell the user the work is done.",
 	},
 	agent.ResearchSub: {
 		title: "Research subagent",

@@ -21,10 +21,11 @@ const (
 	BackendSub  Name = "backend-sub-agent"
 	WritingSub  Name = "writing-sub-agent"
 	ResearchSub Name = "research-sub-agent"
+	VerifySub   Name = "verify-sub-agent"
 	HubMain     Name = "hub-main-agent"
 )
 
-var Names = []Name{FullMain, CompactMain, GeneralSub, BrowserSub, DesignSub, CodebaseSub, FrontendSub, BackendSub, WritingSub, ResearchSub, HubMain}
+var Names = []Name{FullMain, CompactMain, GeneralSub, BrowserSub, DesignSub, CodebaseSub, FrontendSub, BackendSub, WritingSub, ResearchSub, VerifySub, HubMain}
 
 // Kind says where a role's reply goes: back to the agent that launched it, or to the user.
 type Kind string
@@ -39,6 +40,9 @@ const (
 const (
 	ReadFileTool          = "read_file"
 	RunCommandTool        = "run_command"
+	EditFileTool          = "edit_file"
+	WriteFileTool         = "write_file"
+	ClaudeTool            = "claude"
 	PlanTool              = "update_plan"
 	ReadOutputTool        = "read_tool_output"
 	LoadToolsTool         = "load_tools"
@@ -113,6 +117,9 @@ var roles = map[Name]Role{
 		Own: []policy.Layer{{Of: "the writing subagent's role", Providers: []string{WorkspaceProvider, OutputsProvider, SkillsProvider, PlanProvider}}}, Limits: standard},
 	ResearchSub: {Name: ResearchSub, Kind: ReportingKind, Rules: researchSubRules, Recalls: true,
 		Own: []policy.Layer{{Of: "the research subagent's role", Providers: []string{WorkspaceProvider, WebProvider, BrowserProvider, OutputsProvider, SkillsProvider, PlanProvider}}}, Limits: deep},
+	VerifySub: {Name: VerifySub, Kind: ReportingKind, Rules: verifySubRules, Recalls: true,
+		Own: []policy.Layer{{Of: "the verify subagent's role", Providers: []string{WorkspaceProvider, BrowserProvider, OutputsProvider, SkillsProvider, PlanProvider},
+			Settings: policy.Settings{Rules: policy.Rules{Deny: []string{EditFileTool, WriteFileTool, ClaudeTool}}}}}, Limits: standard},
 }
 
 func RoleOf(name Name) (Role, bool) {
