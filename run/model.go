@@ -176,7 +176,7 @@ func (r *Runner) recall(ctx context.Context, s *step) (*conversation.Recalled, e
 	if err != nil {
 		return nil, err
 	}
-	recalled := memory.Recall(memories, place, s.window.MemoryBudget(), latestUserText(s.items))
+	recalled := memory.Recall(memories, s.window.MemoryBudget(), latestUserText(s.items))
 	if recalled.Text == "" {
 		return nil, nil
 	}
@@ -219,17 +219,14 @@ func (r *Runner) input(ctx context.Context, s *step) (prompt.Context, error) {
 			skills = append(skills, prompt.Skill{Name: f.Name, Description: f.Description})
 		}
 	}
-	system := prompt.System{Role: s.role, Agent: r.name, Prompt: r.prompt, Skills: skills}
-	if s.workspace != nil {
-		system.Instructions = s.workspace.Instructions
-	}
+	system := prompt.System{Role: s.role, Agent: r.name, Prompt: r.prompt, Skills: skills, Instructions: s.workspace.Instructions}
 	inProject := slices.ContainsFunc(slices.Concat(s.sent, s.deferred), func(t prompt.Tool) bool { return t.Provider == agent.WorkspaceProvider })
 	if inProject && r.environment != nil {
-		if system.Environment, err = r.environment(ctx, s.th.User, s.th.Environment); err != nil {
+		if system.Environment, err = r.environment(ctx, s.th.User, s.workspace.Environment); err != nil {
 			return prompt.Context{}, fmt.Errorf("run: the environment of the conversation: %w", err)
 		}
 	}
-	if inProject && s.workspace != nil {
+	if inProject {
 		system.Project = s.workspace.Root
 	}
 	return prompt.Context{Items: s.items, Responses: s.v.Responses, System: s.window.System(system, s.deferred), Tools: prompt.Specs(s.sent)}, nil

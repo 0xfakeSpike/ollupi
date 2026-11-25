@@ -25,8 +25,7 @@ type threadRow struct {
 	UserID        string
 	Title         string
 	Settings      string
-	WorkspaceID   *string
-	EnvironmentID *string
+	WorkspaceID   string
 	ParentID      *string
 	ParentItem    string
 	Role          string
@@ -46,7 +45,7 @@ func (r threadRow) thread() (store.Thread, error) {
 		return store.Thread{}, fmt.Errorf("store: the settings of thread %s: %w", r.ID, err)
 	}
 	t := store.Thread{
-		Thread: account.Thread{ID: r.ID, Title: r.Title, Settings: settings, Workspace: deref(r.WorkspaceID), Environment: deref(r.EnvironmentID),
+		Thread: account.Thread{ID: r.ID, Title: r.Title, Settings: settings, Workspace: r.WorkspaceID,
 			Parent: deref(r.ParentID), ParentItem: r.ParentItem, Role: r.Role, Created: r.CreatedAt, Updated: r.UpdatedAt, Archived: r.ArchivedAt, Replied: r.RepliedAt, Read: r.ReadAt},
 		User: r.UserID, Head: r.Head, Status: conversation.ThreadStatus(r.Status), Runnable: r.RunnableSince != nil,
 	}
@@ -226,8 +225,8 @@ func (t *tx) pendingFor(thread, owner string) *pending {
 
 func (t *tx) CreateThread(th store.Thread) error {
 	settings, _ := json.Marshal(th.Settings)
-	err := t.g.Exec(`INSERT INTO threads(id, user_id, title, settings, workspace_id, environment_id, parent_id, parent_item, role, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, th.ID, th.User, th.Title, string(settings), orNull(th.Workspace), orNull(th.Environment), orNull(th.Parent),
+	err := t.g.Exec(`INSERT INTO threads(id, user_id, title, settings, workspace_id, parent_id, parent_item, role, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, th.ID, th.User, th.Title, string(settings), th.Workspace, orNull(th.Parent),
 		th.ParentItem, th.Role, th.Created, th.Updated).Error
 	if err != nil {
 		return fmt.Errorf("store: create thread %s: %w", th.ID, err)

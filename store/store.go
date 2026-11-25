@@ -33,6 +33,8 @@ type Reader interface {
 	Settings(user string) (account.Settings, error)
 	Workspaces(user string) ([]account.Workspace, error)
 	Workspace(user, id string) (account.Workspace, error)
+	// Scratch is the scratch workspace of one of the user's environments.
+	Scratch(user, environment string) (account.Workspace, error)
 	Environments(user string) ([]account.Environment, error)
 	Environment(user, id string) (account.Environment, error)
 	EnvironmentInUse(user, id string) (bool, error)

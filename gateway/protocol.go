@@ -317,6 +317,8 @@ type InitializeResult struct {
 }
 
 type ThreadStartParams struct {
+	// WorkspaceID is the workspace to start in; omitted, the scratch
+	// workspace of EnvironmentID, or of the user's first environment.
 	WorkspaceID   string `json:"workspaceId,omitempty"`
 	EnvironmentID string `json:"environmentId,omitempty"`
 	Title         string `json:"title,omitempty"`
@@ -940,6 +942,7 @@ var errorCodes = []struct {
 	{conversation.ErrRefused, errRefused},
 	{app.ErrEnvironmentInUse, jsonrpc.CodeInvalidParams},
 	{app.ErrFirstEnvironment, jsonrpc.CodeInvalidParams},
+	{app.ErrScratchWorkspace, jsonrpc.CodeInvalidParams},
 	{app.ErrInvalidEnvironment, jsonrpc.CodeInvalidParams},
 	{app.ErrInvalidMessage, jsonrpc.CodeInvalidParams},
 	{app.ErrInvalidAnswer, jsonrpc.CodeInvalidParams},

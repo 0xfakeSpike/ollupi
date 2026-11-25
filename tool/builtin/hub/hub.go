@@ -354,9 +354,6 @@ func (p *Provider) send(ctx context.Context, c tool.Call) (kit.Result, error) {
 		if to, err = owned(r, c.User, args.Conversation); err != nil {
 			return err
 		}
-		if to.Workspace == "" {
-			return nil
-		}
 		w, err = r.Workspace(c.User, to.Workspace)
 		return err
 	})

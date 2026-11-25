@@ -76,7 +76,11 @@ func setup(t *testing.T) *fixture {
 		if err := tx.EnsureUser("u", account.NewEnvironment("This computer", "local", nil)); err != nil {
 			return err
 		}
-		if err := tx.CreateThread(store.Thread{User: "u", Thread: account.Thread{ID: "th", Created: now, Updated: now}}); err != nil {
+		scratch, err := scratchOf(tx, "u")
+		if err != nil {
+			return err
+		}
+		if err := tx.CreateThread(store.Thread{User: "u", Thread: account.Thread{ID: "th", Workspace: scratch, Created: now, Updated: now}}); err != nil {
 			return err
 		}
 		return tx.PutCronJob(f.job)
@@ -178,4 +182,15 @@ func TestAJobChangedWhileRunningIsSentAtItsTime(t *testing.T) {
 	if err := <-done; !errors.Is(err, context.Canceled) {
 		t.Errorf("run: %v", err)
 	}
+}
+
+// scratchOf is the scratch workspace of the user's first environment, where
+// a conversation started in no workspace is.
+func scratchOf(r store.Reader, user string) (string, error) {
+	envs, err := r.Environments(user)
+	if err != nil {
+		return "", err
+	}
+	w, err := r.Scratch(user, envs[0].ID)
+	return w.ID, err
 }

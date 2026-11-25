@@ -112,10 +112,14 @@ func (f *fixture) ask(thread, text string) {
 		if err := tx.EnsureUser("u", account.NewEnvironment("This computer", "local", nil)); err != nil {
 			return err
 		}
-		if err := tx.CreateThread(store.Thread{User: "u", Thread: account.Thread{ID: thread, Created: now, Updated: now}}); err != nil {
+		scratch, err := scratchOf(tx, "u")
+		if err != nil {
 			return err
 		}
-		_, err := tx.Append(thread,
+		if err := tx.CreateThread(store.Thread{User: "u", Thread: account.Thread{ID: thread, Workspace: scratch, Created: now, Updated: now}}); err != nil {
+			return err
+		}
+		_, err = tx.Append(thread,
 			conversation.Entry{Turn: "t1", Body: conversation.TurnQueued{Model: llm.Model{Name: "m"}, Role: string(agent.FullMain)}},
 			conversation.Entry{Turn: "t1", Item: "m1", Body: conversation.UserMessage{Text: text}})
 		return err
@@ -318,10 +322,14 @@ func TestASubagentWorksAtThePermissionSettingsOfItsThread(t *testing.T) {
 		if err := tx.EnsureUser("u", account.NewEnvironment("This computer", "local", nil)); err != nil {
 			return err
 		}
-		if err := tx.CreateThread(store.Thread{User: "u", Thread: account.Thread{ID: "th", Settings: loose, Created: now, Updated: now}}); err != nil {
+		scratch, err := scratchOf(tx, "u")
+		if err != nil {
 			return err
 		}
-		_, err := tx.Append("th",
+		if err := tx.CreateThread(store.Thread{User: "u", Thread: account.Thread{ID: "th", Workspace: scratch, Settings: loose, Created: now, Updated: now}}); err != nil {
+			return err
+		}
+		_, err = tx.Append("th",
 			conversation.Entry{Turn: "t1", Body: conversation.TurnQueued{Model: llm.Model{Name: "m"}, Role: string(agent.FullMain)}},
 			conversation.Entry{Turn: "t1", Item: "m1", Body: conversation.UserMessage{Text: "how many files?"}})
 		return err
@@ -558,4 +566,15 @@ func TestDeltasSayWhereTheyGoInTheFinalText(t *testing.T) {
 			t.Errorf("the deltas of the %s build %q, not %q", it.Kind, got, it.Text)
 		}
 	}
+}
+
+// scratchOf is the scratch workspace of the user's first environment, where
+// a conversation started in no workspace is.
+func scratchOf(r store.Reader, user string) (string, error) {
+	envs, err := r.Environments(user)
+	if err != nil {
+		return "", err
+	}
+	w, err := r.Scratch(user, envs[0].ID)
+	return w.ID, err
 }

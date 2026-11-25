@@ -24,29 +24,32 @@ func (a *App) StartThread(ctx context.Context, user, workspace, environment, tit
 	return th, err
 }
 
-// newThread starts a conversation. One in a workspace runs in the
-// workspace's environment, whose folder the workspace is; one outside runs
-// in the environment named, or the user's first.
+// newThread starts a conversation in a workspace: the one named, or the
+// scratch workspace of the environment named, or of the user's first.
 func newThread(tx store.Tx, user, workspace, environment, title string) (store.Thread, error) {
-	if workspace != "" {
-		w, err := tx.Workspace(user, workspace)
+	if workspace == "" {
+		env, err := environmentOf(tx, user, environment)
 		if err != nil {
 			return store.Thread{}, err
 		}
-		if err := w.Usable(); err != nil {
+		w, err := tx.Scratch(user, env.ID)
+		if err != nil {
 			return store.Thread{}, err
 		}
-		if environment != "" && environment != w.Environment {
-			return store.Thread{}, fmt.Errorf("%w: workspace %s is a folder of another environment", ErrInvalidEnvironment, w.Name)
-		}
-		environment = w.Environment
+		workspace = w.ID
 	}
-	env, err := environmentOf(tx, user, environment)
+	w, err := tx.Workspace(user, workspace)
 	if err != nil {
 		return store.Thread{}, err
 	}
+	if err := w.Usable(); err != nil {
+		return store.Thread{}, err
+	}
+	if environment != "" && environment != w.Environment {
+		return store.Thread{}, fmt.Errorf("%w: workspace %s is a folder of another environment", ErrInvalidEnvironment, w.Name)
+	}
 	now := time.Now().UTC()
-	th := store.Thread{User: user, Thread: account.Thread{ID: uuid.NewString(), Title: title, Workspace: workspace, Environment: env.ID, Created: now, Updated: now}}
+	th := store.Thread{User: user, Thread: account.Thread{ID: uuid.NewString(), Title: title, Workspace: w.ID, Created: now, Updated: now}}
 	if err := tx.CreateThread(th); err != nil {
 		return store.Thread{}, err
 	}

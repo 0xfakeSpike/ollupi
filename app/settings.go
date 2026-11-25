@@ -124,14 +124,11 @@ func (a *App) permitThread(tx store.Tx, box policy.Toolbox, th *store.Thread, ne
 	if err != nil {
 		return err
 	}
-	below := []policy.Layer{account.Deployment(a.deployment), s.Layer()}
-	if th.Workspace != "" {
-		w, err := tx.Workspace(th.User, th.Workspace)
-		if err != nil {
-			return err
-		}
-		below = append(below, w.Layer())
+	w, err := tx.Workspace(th.User, th.Workspace)
+	if err != nil {
+		return err
 	}
+	below := []policy.Layer{account.Deployment(a.deployment), s.Layer(), w.Layer()}
 	changed := *th
 	changed.Settings = next
 	if err := policy.Validate(below, th.Settings, changed.Layer(), box); err != nil {
@@ -151,13 +148,6 @@ func (a *App) allowAlways(tx store.Tx, box policy.Toolbox, id string, asked conv
 		allowed.Rules = policy.Rules{Escalate: asked.Suggested}
 	}
 	now := time.Now().UTC()
-	if th.Workspace == "" {
-		if err := a.permitThread(tx, box, &th, policy.Resolve(th.Settings, allowed)); err != nil {
-			return err
-		}
-		th.Updated = now
-		return tx.UpdateThread(th)
-	}
 	w, err := tx.Workspace(th.User, th.Workspace)
 	if err != nil {
 		return err

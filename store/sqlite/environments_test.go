@@ -59,8 +59,9 @@ func TestEnvironmentsBecomeSandboxesOfAProvider(t *testing.T) {
 		t.Fatalf("environments %+v", envs)
 	}
 	th := read(t, s, func(r store.Reader) (store.Thread, error) { return r.Thread("in-cloud") })
-	if th.Environment != "here" {
-		t.Errorf("a conversation of the cloud machine runs in %q", th.Environment)
+	scratch := read(t, s, func(r store.Reader) (account.Workspace, error) { return r.Scratch("u", "here") })
+	if th.Workspace != scratch.ID || scratch.Root != "" || !scratch.Scratch() {
+		t.Errorf("a conversation of the cloud machine is in %q, not the scratch workspace %+v", th.Workspace, scratch)
 	}
 	w := read(t, s, func(r store.Reader) (account.Workspace, error) { return r.Workspace("u", "w") })
 	if w.Environment != "here" || w.Root != "/srv/app" {

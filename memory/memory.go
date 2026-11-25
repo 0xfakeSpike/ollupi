@@ -17,11 +17,10 @@ type Scope string
 
 const (
 	Global    Scope = conversation.GlobalScope
-	General   Scope = "general"
 	Workspace Scope = "workspace"
 )
 
-var Scopes = []Scope{Global, General, Workspace}
+var Scopes = []Scope{Global, Workspace}
 
 type Kind string
 
@@ -49,10 +48,8 @@ type Place struct {
 	Workspace string `json:"workspaceId,omitempty"`
 }
 
+// Local is the place of the memories of a workspace's conversations.
 func Local(workspace string) Place {
-	if workspace == "" {
-		return Place{Scope: General}
-	}
 	return Place{Scope: Workspace, Workspace: workspace}
 }
 

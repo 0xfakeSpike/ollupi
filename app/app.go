@@ -32,6 +32,7 @@ var (
 	ErrInvalidPath        = errors.New("invalid path")
 	ErrEnvironmentInUse   = errors.New("a conversation or a workspace is in the environment")
 	ErrFirstEnvironment   = errors.New("it is the first environment of the user, made with them, and stays")
+	ErrScratchWorkspace   = errors.New("it is the scratch workspace of its environment, its own folder, which stays with it")
 	ErrInvalidEnvironment = errors.New("invalid environment")
 	ErrInvalidQuery       = errors.New("invalid query")
 	ErrInvalidTodo        = errors.New("invalid todo")

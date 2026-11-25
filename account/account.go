@@ -48,16 +48,26 @@ type WorkspaceKind string
 const (
 	ProjectWorkspace WorkspaceKind = "project"
 	HubWorkspace     WorkspaceKind = "hub"
+	// ScratchWorkspace is the folder of an environment itself: every
+	// environment has one, made and deleted with it, and a conversation
+	// started in no workspace is in it.
+	ScratchWorkspace WorkspaceKind = "scratch"
 )
 
-var WorkspaceKinds = []WorkspaceKind{ProjectWorkspace, HubWorkspace}
+var WorkspaceKinds = []WorkspaceKind{ProjectWorkspace, HubWorkspace, ScratchWorkspace}
+
+// ScratchName is what an environment's scratch workspace is called when it
+// is made.
+const ScratchName = "Scratch"
 
 type Workspace struct {
 	ID   string
 	Name string
 	// Environment is the environment whose folder Root is: a workspace is a
 	// folder of one machine.
-	Environment  string
+	Environment string
+	// Root is the folder; empty for a scratch workspace, whose folder is the
+	// environment's own, as its sandbox names it.
 	Root         string
 	MovingTo     string
 	Kind         WorkspaceKind
@@ -86,6 +96,14 @@ func Instructions(text string) (string, error) {
 		return "", fmt.Errorf("%w: instructions must be at most %d characters", ErrInvalidName, maxInstructionsRunes)
 	}
 	return text, nil
+}
+
+// Scratch is whether the workspace is its environment's own folder.
+func (w Workspace) Scratch() bool { return w.Kind == ScratchWorkspace }
+
+// NewScratch is the scratch workspace of environment e, made with it.
+func NewScratch(e Environment) Workspace {
+	return Workspace{ID: uuid.NewString(), Name: ScratchName, Environment: e.ID, Kind: ScratchWorkspace, Created: e.Created, Updated: e.Created}
 }
 
 func (w Workspace) Usable() error {
@@ -142,19 +160,18 @@ func NewEnvironment(name, provider string, config json.RawMessage) Environment {
 }
 
 type Thread struct {
-	ID          string
-	Title       string
-	Settings    policy.Settings
-	Workspace   string
-	Environment string
-	Parent      string
-	ParentItem  string
-	Role        string
-	Created     time.Time
-	Updated     time.Time
-	Archived    *time.Time
-	Replied     *time.Time
-	Read        *time.Time
+	ID         string
+	Title      string
+	Settings   policy.Settings
+	Workspace  string
+	Parent     string
+	ParentItem string
+	Role       string
+	Created    time.Time
+	Updated    time.Time
+	Archived   *time.Time
+	Replied    *time.Time
+	Read       *time.Time
 }
 
 func (t Thread) Layer() policy.Layer {
@@ -165,15 +182,10 @@ func Deployment(s policy.Settings) policy.Layer {
 	return policy.Layer{Of: "the default permission settings", Settings: s, Shared: true}
 }
 
-func Layers(deployment policy.Layer, optIn []string, s Settings, w *Workspace, conversation policy.Layer) []policy.Layer {
-	off := optIn
-	out := []policy.Layer{deployment, s.Layer()}
-	if w != nil {
-		out = append(out, w.Layer())
-		off = slices.DeleteFunc(slices.Clone(optIn), func(p string) bool { return slices.Contains(w.Providers.Enabled, p) })
-		off = append(off, w.Providers.Disabled...)
-	}
-	out = append(out, policy.Layer{Of: "the providers of this workspace", Without: off})
+func Layers(deployment policy.Layer, optIn []string, s Settings, w Workspace, conversation policy.Layer) []policy.Layer {
+	off := slices.DeleteFunc(slices.Clone(optIn), func(p string) bool { return slices.Contains(w.Providers.Enabled, p) })
+	off = append(off, w.Providers.Disabled...)
+	out := []policy.Layer{deployment, s.Layer(), w.Layer(), {Of: "the providers of this workspace", Without: off}}
 	return append(out, conversation)
 }
 

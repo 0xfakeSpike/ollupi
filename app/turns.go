@@ -234,9 +234,6 @@ func (a *App) fits(model llm.Model, v conversation.View, text string, atts []con
 func isImage(att conversation.Attachment) bool { return att.Kind == imageKind }
 
 func (a *App) usableWorkspace(tx store.Tx, th store.Thread) (account.Workspace, error) {
-	if th.Workspace == "" {
-		return account.Workspace{}, nil
-	}
 	w, err := tx.Workspace(th.User, th.Workspace)
 	if err != nil {
 		return account.Workspace{}, err

@@ -113,8 +113,10 @@ func (a *App) UpdateWorkspaceProviders(ctx context.Context, user, id string, p a
 }
 
 func (a *App) SetWorkspaceKind(ctx context.Context, user, id string, kind account.WorkspaceKind) (account.Workspace, error) {
-	if !slices.Contains(account.WorkspaceKinds, kind) {
-		return account.Workspace{}, fmt.Errorf("%w: a workspace is one of %q, not %q", account.ErrInvalidName, account.WorkspaceKinds, kind)
+	// A scratch workspace is one only by being its environment's own.
+	settable := []account.WorkspaceKind{account.ProjectWorkspace, account.HubWorkspace}
+	if !slices.Contains(settable, kind) {
+		return account.Workspace{}, fmt.Errorf("%w: a workspace is set to one of %q, not %q", account.ErrInvalidName, settable, kind)
 	}
 	if kind == account.HubWorkspace {
 		box, err := a.toolbox(ctx, user)
@@ -127,6 +129,9 @@ func (a *App) SetWorkspaceKind(ctx context.Context, user, id string, kind accoun
 		}
 	}
 	return a.changeWorkspace(ctx, user, id, func(tx store.Tx, w *account.Workspace) error {
+		if w.Scratch() {
+			return fmt.Errorf("workspace %s: %w", w.Name, ErrScratchWorkspace)
+		}
 		all, err := tx.Workspaces(user)
 		if err != nil {
 			return err
@@ -142,6 +147,9 @@ func (a *App) SetWorkspaceKind(ctx context.Context, user, id string, kind accoun
 
 func (a *App) ArchiveWorkspace(ctx context.Context, user, id string, archived bool) (account.Workspace, error) {
 	return a.changeWorkspace(ctx, user, id, func(_ store.Tx, w *account.Workspace) error {
+		if w.Scratch() {
+			return fmt.Errorf("workspace %s: %w", w.Name, ErrScratchWorkspace)
+		}
 		w.Archived = nil
 		if archived {
 			at := w.Updated
@@ -168,6 +176,9 @@ func (a *App) MoveWorkspace(ctx context.Context, user, id, path string) (account
 	var at account.Workspace
 	if err := a.st.Read(ctx, func(r store.Reader) (err error) { at, err = r.Workspace(user, id); return err }); err != nil {
 		return account.Workspace{}, err
+	}
+	if at.Scratch() {
+		return account.Workspace{}, fmt.Errorf("workspace %s: %w", at.Name, ErrScratchWorkspace)
 	}
 	box, err := a.envs.In(ctx, user, at.Environment)
 	if err != nil {

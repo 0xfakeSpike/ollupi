@@ -11,7 +11,7 @@ import (
 
 func TestTheLayersStackFromTheDeploymentToTheConversation(t *testing.T) {
 	deployment := policy.Layer{Of: "the default permission settings", Shared: true}
-	w := &Workspace{Name: "app"}
+	w := Workspace{Name: "app"}
 	layers := Layers(deployment, nil, Settings{Memory: true}, w, Thread{}.Layer())
 	var of []string
 	for _, l := range layers {
@@ -21,9 +21,6 @@ func TestTheLayersStackFromTheDeploymentToTheConversation(t *testing.T) {
 		"the providers of this workspace", "this conversation's permission settings"}
 	if !slices.Equal(of, want) {
 		t.Errorf("layers %q", of)
-	}
-	if len(Layers(deployment, nil, Settings{Memory: true}, nil, Thread{}.Layer())) != 4 {
-		t.Error("a conversation outside any workspace has a workspace's layer")
 	}
 }
 
@@ -68,18 +65,18 @@ func TestNamesAndKinds(t *testing.T) {
 
 func TestAWorkspaceTurnsProvidersOnAndOff(t *testing.T) {
 	optIn := []string{"hub"}
-	kept := func(w *Workspace, provider string) bool {
+	kept := func(w Workspace, provider string) bool {
 		layers := Layers(Deployment(policy.Settings{}), optIn, Settings{}, w, policy.Layer{})
 		return policy.Kept(layers, policy.Tool{Name: "x", Provider: provider})
 	}
-	plain := &Workspace{}
-	hub := &Workspace{Providers: Providers{Enabled: []string{"hub"}, Disabled: []string{"browser"}}}
+	plain := Workspace{}
+	hub := Workspace{Providers: Providers{Enabled: []string{"hub"}, Disabled: []string{"browser"}}}
 	for _, c := range []struct {
-		w        *Workspace
+		w        Workspace
 		provider string
 		want     bool
 	}{
-		{nil, "hub", false}, {plain, "hub", false}, {hub, "hub", true},
+		{plain, "hub", false}, {hub, "hub", true},
 		{plain, "browser", true}, {hub, "browser", false}, {hub, "workspace", true},
 	} {
 		if got := kept(c.w, c.provider); got != c.want {

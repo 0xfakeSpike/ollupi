@@ -118,6 +118,15 @@ func (r reader) Workspace(owner, id string) (account.Workspace, error) {
 	return row.workspace(r.base)
 }
 
+func (r reader) Scratch(owner, environment string) (account.Workspace, error) {
+	var row workspaceRow
+	err := r.g.Raw("SELECT * FROM workspaces WHERE user_id = ? AND environment_id = ? AND kind = ?", owner, environment, string(account.ScratchWorkspace)).Take(&row).Error
+	if err := notFound(err); err != nil {
+		return account.Workspace{}, fmt.Errorf("store: the scratch workspace of environment %s: %w", environment, err)
+	}
+	return row.workspace(r.base)
+}
+
 type environmentRow struct {
 	ID        string
 	Name      string
@@ -146,10 +155,12 @@ func (r reader) Environment(owner, id string) (account.Environment, error) {
 	return row.environment()
 }
 
+// EnvironmentInUse is whether a conversation or a workspace but its scratch
+// one is in the environment.
 func (r reader) EnvironmentInUse(owner, id string) (bool, error) {
 	var n int64
-	err := r.g.Raw(`SELECT (SELECT count(*) FROM threads WHERE user_id = ? AND environment_id = ?)
-		+ (SELECT count(*) FROM workspaces WHERE user_id = ? AND environment_id = ?)`, owner, id, owner, id).Scan(&n).Error
+	err := r.g.Raw(`SELECT (SELECT count(*) FROM threads t JOIN workspaces w ON w.id = t.workspace_id WHERE t.user_id = ? AND w.environment_id = ?)
+		+ (SELECT count(*) FROM workspaces WHERE user_id = ? AND environment_id = ? AND kind <> ?)`, owner, id, owner, id, string(account.ScratchWorkspace)).Scan(&n).Error
 	return n > 0, err
 }
 
@@ -274,12 +285,8 @@ func (r reader) Threads(owner string, f store.ThreadFilter) ([]store.Thread, boo
 		args = append(args, c.Updated.UTC(), c.Updated.UTC(), c.Created.UTC(), c.Created.UTC(), c.ID)
 	}
 	if f.Workspace != nil {
-		if *f.Workspace == "" {
-			query += " AND workspace_id IS NULL"
-		} else {
-			query += " AND workspace_id = ?"
-			args = append(args, *f.Workspace)
-		}
+		query += " AND workspace_id = ?"
+		args = append(args, *f.Workspace)
 	}
 	if f.Archived {
 		query += " AND archived_at IS NOT NULL"
@@ -592,10 +599,14 @@ func (t *tx) PutWorkspace(owner string, w account.Workspace) error {
 	return nil
 }
 
-// PutEnvironment makes an environment or renames it: its provider and
-// config are what it was made with, and its state is the provider's
-// (KeepEnvironmentState).
+// PutEnvironment makes an environment, with its scratch workspace, or
+// renames it: its provider and config are what it was made with, and its
+// state is the provider's (KeepEnvironmentState).
 func (t *tx) PutEnvironment(owner string, e account.Environment) error {
+	var known int64
+	if err := t.g.Raw("SELECT count(*) FROM environments WHERE id = ? AND user_id = ?", e.ID, owner).Scan(&known).Error; err != nil {
+		return err
+	}
 	err := t.g.Exec(`INSERT INTO environments(id, user_id, name, provider, config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET name = excluded.name, updated_at = excluded.updated_at`,
 		e.ID, owner, e.Name, e.Provider, jsonOr(e.Config), e.Created, e.Updated).Error
@@ -603,7 +614,10 @@ func (t *tx) PutEnvironment(owner string, e account.Environment) error {
 		return fmt.Errorf("store: environment %s: %w", e.Name, err)
 	}
 	t.owned = append(t.owned, store.Event{User: owner, Owned: &store.Owned{Environment: &e}})
-	return nil
+	if known > 0 {
+		return nil
+	}
+	return t.PutWorkspace(owner, account.NewScratch(e))
 }
 
 // KeepEnvironmentState keeps what an environment's provider keeps of its
@@ -620,7 +634,12 @@ func jsonOr(v json.RawMessage) string {
 	return string(v)
 }
 
+// DeleteEnvironment deletes an environment and its scratch workspace; no
+// conversation may be in it (EnvironmentInUse).
 func (t *tx) DeleteEnvironment(owner, id string) error {
+	if err := t.g.Exec("DELETE FROM workspaces WHERE user_id = ? AND environment_id = ? AND kind = ?", owner, id, string(account.ScratchWorkspace)).Error; err != nil {
+		return fmt.Errorf("store: the scratch workspace of environment %s: %w", id, err)
+	}
 	if err := one(t.g.Exec("DELETE FROM environments WHERE id = ? AND user_id = ?", id, owner), "environment "+id); err != nil {
 		return err
 	}

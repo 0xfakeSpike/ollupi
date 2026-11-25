@@ -15,7 +15,11 @@ func TestNotesAreKeptByPlaceAndATopicOncePerPlace(t *testing.T) {
 	start(t, s, "u", "th")
 	now := time.Now().UTC()
 	at := func(id string, p memory.Place, topic string) memory.Memory {
-		return memory.Memory{ID: id, User: "u", Place: p, Topic: topic, Kind: memory.Fact, Text: id,
+		origin := ""
+		if p == memory.GlobalPlace {
+			origin = "w"
+		}
+		return memory.Memory{ID: id, User: "u", Place: p, Origin: origin, Topic: topic, Kind: memory.Fact, Text: id,
 			Status: memory.Active, Sources: []memory.Source{{Thread: "th", Item: "m1"}}, Created: now, Updated: now}
 	}
 	var heard []store.Event

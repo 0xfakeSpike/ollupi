@@ -184,8 +184,8 @@ func (f *fixture) waitOnApproval(id string, turn conversation.Turn) conversation
 func TestMessagesQueueTurnsAndSteeringAnswersWhatTheTurnAsked(t *testing.T) {
 	f := setup(t)
 	th := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", "", "", "chat"))
-	if th.Environment == "" {
-		t.Fatal("the conversation is in no environment")
+	if th.Workspace == "" {
+		t.Fatal("the conversation is in no workspace")
 	}
 	first := sent(t)(f.a.Send(f.ctx, "u", th.ID, Input{Text: "build it"}))
 	if first.Model.Connection != "main/big" || first.Role != string(agent.FullMain) {
@@ -222,7 +222,7 @@ func TestMessagesQueueTurnsAndSteeringAnswersWhatTheTurnAsked(t *testing.T) {
 	}
 }
 
-func TestAcceptingAlwaysKeepsTheRuleWithTheConversation(t *testing.T) {
+func TestAcceptingAlwaysKeepsTheRuleWithTheWorkspace(t *testing.T) {
 	f := setup(t)
 	th := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", "", "", ""))
 	turn := sent(t)(f.a.Send(f.ctx, "u", th.ID, Input{Text: "build"}))
@@ -233,8 +233,8 @@ func TestAcceptingAlwaysKeepsTheRuleWithTheConversation(t *testing.T) {
 	if err := f.a.Decide(f.ctx, "u", th.ID, "a1", conversation.AcceptAlways); err != nil {
 		t.Fatal(err)
 	}
-	var stored store.Thread
-	f.st.Read(f.ctx, func(r store.Reader) (err error) { stored, err = r.Thread(th.ID); return err })
+	var stored account.Workspace
+	f.st.Read(f.ctx, func(r store.Reader) (err error) { stored, err = r.Workspace("u", th.Workspace); return err })
 	if got := stored.Settings.Rules.Allow; len(got) != 1 || got[0] != "run_command(make)" {
 		t.Errorf("the rules kept: %+v", stored.Settings)
 	}
@@ -260,8 +260,8 @@ func TestAcceptingAnEscalatedCallAlwaysKeepsItsRuleAsAnEscalateRule(t *testing.T
 	if err := f.a.Decide(f.ctx, "u", th.ID, "a1", conversation.AcceptAlways); err != nil {
 		t.Fatal(err)
 	}
-	var stored store.Thread
-	f.st.Read(f.ctx, func(r store.Reader) (err error) { stored, err = r.Thread(th.ID); return err })
+	var stored account.Workspace
+	f.st.Read(f.ctx, func(r store.Reader) (err error) { stored, err = r.Workspace("u", th.Workspace); return err })
 	if rules := stored.Settings.Rules; !slices.Equal(rules.Escalate, []string{"run_command(ssh:*)"}) || len(rules.Allow) != 0 {
 		t.Errorf("the rules kept: %+v", rules)
 	}
@@ -277,7 +277,7 @@ func TestASubagentTakesMessagesInItsRoleAndKeepsRulesInItsWorkspace(t *testing.T
 	parent := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", home.ID, "", ""))
 	now := time.Now().UTC()
 	err := f.st.Update(f.ctx, func(tx store.Tx) error {
-		child := store.Thread{User: "u", Thread: account.Thread{ID: "child", Workspace: docs.ID, Environment: parent.Environment,
+		child := store.Thread{User: "u", Thread: account.Thread{ID: "child", Workspace: docs.ID,
 			Parent: parent.ID, ParentItem: "launch", Role: string(agent.GeneralSub), Created: now, Updated: now}}
 		if err := tx.CreateThread(child); err != nil {
 			return err
@@ -313,7 +313,7 @@ func (f *fixture) launch(parent store.Thread, id string, role agent.Name, task s
 	f.t.Helper()
 	now := time.Now().UTC()
 	err := f.st.Update(f.ctx, func(tx store.Tx) error {
-		child := store.Thread{User: "u", Thread: account.Thread{ID: id, Title: task, Environment: parent.Environment,
+		child := store.Thread{User: "u", Thread: account.Thread{ID: id, Title: task, Workspace: parent.Workspace,
 			Parent: parent.ID, ParentItem: "launch-" + id, Role: string(role), Created: now, Updated: now}}
 		if err := tx.CreateThread(child); err != nil {
 			return err
@@ -416,8 +416,9 @@ func TestAWorkspaceKeepsItsInstructionsAndProviders(t *testing.T) {
 		t.Errorf("an unknown provider: %v", err)
 	}
 	stored := read[[]account.Workspace](t)(f.a.Workspaces(f.ctx, "u"))
-	if stored[0].Instructions != "Plan, do not build." || len(stored[0].Providers.Disabled) != 1 {
-		t.Errorf("stored %+v", stored[0])
+	i := slices.IndexFunc(stored, func(o account.Workspace) bool { return o.ID == w.ID })
+	if i < 0 || stored[i].Instructions != "Plan, do not build." || len(stored[i].Providers.Disabled) != 1 {
+		t.Errorf("stored %+v", stored)
 	}
 }
 
@@ -482,7 +483,7 @@ func TestCronJobsAreNamedOncePerConversation(t *testing.T) {
 func TestTheUserCorrectsTheirNotes(t *testing.T) {
 	f := setup(t)
 	now := time.Now().UTC()
-	note := memory.Memory{ID: "n", User: "u", Place: memory.Place{Scope: memory.General}, Topic: "editor", Kind: memory.Preference, Text: "Uses vim.",
+	note := memory.Memory{ID: "n", User: "u", Place: memory.Local("w"), Topic: "editor", Kind: memory.Preference, Text: "Uses vim.",
 		Status: memory.Active, Sources: []memory.Source{}, Created: now, Updated: now}
 	f.st.Update(f.ctx, func(tx store.Tx) error { return tx.PutMemory(note) })
 	if m := must[memory.Memory](t)(f.a.EditMemory(f.ctx, "u", "n", "Uses helix.")); !m.UserEdited || m.Text != "Uses helix." {
@@ -611,7 +612,7 @@ func TestAWorkspaceAndItsConversationsAreInOneEnvironment(t *testing.T) {
 	if _, err := f.a.AddEnvironment(f.ctx, "u", "Odd", "local", json.RawMessage(`{"region":"x"}`)); !errors.Is(err, ErrInvalidEnvironment) {
 		t.Errorf("an environment with settings its provider does not take: %v", err)
 	}
-	other := must[account.Environment](t)(f.a.AddEnvironment(f.ctx, "u", "Scratch", "local", nil))
+	other := must[account.Environment](t)(f.a.AddEnvironment(f.ctx, "u", "Elsewhere", "local", nil))
 
 	dir := t.TempDir()
 	here := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", "", dir, "here"))
@@ -620,15 +621,36 @@ func TestAWorkspaceAndItsConversationsAreInOneEnvironment(t *testing.T) {
 		t.Errorf("one folder in two environments: %+v, %+v", here, there)
 	}
 
-	th := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", there.ID, "", "in there"))
-	if th.Environment != other.ID {
-		t.Errorf("a conversation in a workspace of %s runs in %s", other.ID, th.Environment)
+	if th := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", there.ID, "", "in there")); th.Workspace != there.ID {
+		t.Errorf("a conversation started in %s is in %s", there.ID, th.Workspace)
 	}
 	if _, err := f.a.StartThread(f.ctx, "u", there.ID, first.ID, "mismatched"); !errors.Is(err, ErrInvalidEnvironment) {
 		t.Errorf("a conversation in a workspace, but in another environment: %v", err)
 	}
-	if loose := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", "", "", "loose")); loose.Environment != first.ID {
-		t.Errorf("a conversation outside a workspace runs in %s", loose.Environment)
+	var firstScratch, otherScratch account.Workspace
+	if err := f.st.Read(f.ctx, func(r store.Reader) (err error) {
+		if firstScratch, err = r.Scratch("u", first.ID); err != nil {
+			return err
+		}
+		otherScratch, err = r.Scratch("u", other.ID)
+		return err
+	}); err != nil {
+		t.Fatalf("every environment has a scratch workspace: %v", err)
+	}
+	if loose := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", "", "", "loose")); loose.Workspace != firstScratch.ID {
+		t.Errorf("a conversation started in no workspace is in %s, not the first environment's scratch workspace", loose.Workspace)
+	}
+	if loose := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", "", other.ID, "loose there")); loose.Workspace != otherScratch.ID {
+		t.Errorf("a conversation started in another environment is in %s, not its scratch workspace", loose.Workspace)
+	}
+	for name, change := range map[string]func() error{
+		"archive": func() error { _, err := f.a.ArchiveWorkspace(f.ctx, "u", firstScratch.ID, true); return err },
+		"move":    func() error { _, err := f.a.MoveWorkspace(f.ctx, "u", firstScratch.ID, t.TempDir()); return err },
+		"kind":    func() error { _, err := f.a.SetWorkspaceKind(f.ctx, "u", firstScratch.ID, account.ProjectWorkspace); return err },
+	} {
+		if err := change(); !errors.Is(err, ErrScratchWorkspace) {
+			t.Errorf("%s a scratch workspace: %v", name, err)
+		}
 	}
 
 	if err := f.a.DeleteEnvironment(f.ctx, "u", first.ID); !errors.Is(err, ErrFirstEnvironment) {

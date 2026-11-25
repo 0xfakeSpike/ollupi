@@ -137,7 +137,11 @@ func TestThreadsListTheirCronJobsAndGoWithThem(t *testing.T) {
 	start(t, s, "u", "second")
 	now := time.Now().UTC()
 	update(t, s, func(tx store.Tx) error {
-		if err := tx.CreateThread(store.Thread{User: "u", Thread: account.Thread{ID: "child", Parent: "first", Created: now, Updated: now}}); err != nil {
+		scratch, err := scratchOf(tx, "u")
+		if err != nil {
+			return err
+		}
+		if err := tx.CreateThread(store.Thread{User: "u", Thread: account.Thread{ID: "child", Workspace: scratch, Parent: "first", Created: now, Updated: now}}); err != nil {
 			return err
 		}
 		if err := tx.PutCronJob(account.CronJob{ID: "j1", Thread: "first", Name: "standup", Spec: "@daily", Prompt: "write the notes", NextRun: now.Add(-time.Minute), Created: now}); err != nil {

@@ -17,10 +17,14 @@ func usageStart(t *testing.T, s *Store, owner, thread, workspace string) {
 		if err := tx.EnsureUser(owner, account.Environment{ID: "here-" + owner, Name: "This computer", Provider: "local"}); err != nil {
 			return err
 		}
-		if workspace != "" {
-			if err := tx.PutWorkspace(owner, account.Workspace{ID: workspace, Name: workspace, Environment: "here-" + owner, Root: t.TempDir(), Created: now, Updated: now}); err != nil {
+		if workspace == "" {
+			scratch, err := tx.Scratch(owner, "here-"+owner)
+			if err != nil {
 				return err
 			}
+			workspace = scratch.ID
+		} else if err := tx.PutWorkspace(owner, account.Workspace{ID: workspace, Name: workspace, Environment: "here-" + owner, Root: t.TempDir(), Created: now, Updated: now}); err != nil {
+			return err
 		}
 		return tx.CreateThread(store.Thread{User: owner, Thread: account.Thread{ID: thread, Workspace: workspace, Title: "chat", Created: now, Updated: now}})
 	})

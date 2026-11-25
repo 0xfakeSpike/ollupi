@@ -26,7 +26,7 @@ func TestRecallShowsGlobalAndLocalNotesThatFit(t *testing.T) {
 		kept("l", w, "build", Fact, "Builds with make."),
 		{ID: "r", Place: Place{Scope: Workspace, Workspace: "w"}, Topic: "old", Text: "Retired.", Status: Retired},
 	}
-	r := Recall(memories, w, 2000, "how does this build?")
+	r := Recall(memories, 2000, "how does this build?")
 	if !strings.Contains(r.Text, "Global memories") || !strings.Contains(r.Text, "this conversation's workspace") || len(r.Memories) != 2 {
 		t.Fatalf("recalled %d: %s", len(r.Memories), r.Text)
 	}
@@ -36,10 +36,10 @@ func TestRecallShowsGlobalAndLocalNotesThatFit(t *testing.T) {
 	for i := range 40 {
 		memories = append(memories, kept(fmt.Sprint("x", i), w, fmt.Sprint("topic ", i), Fact, strings.Repeat("a long note ", 20)))
 	}
-	if r := Recall(memories, w, 1500, "long note"); !strings.Contains(r.Text, "find them with "+SearchTool) {
+	if r := Recall(memories, 1500, "long note"); !strings.Contains(r.Text, "find them with "+SearchTool) {
 		t.Errorf("the notes that do not fit are not counted: %s", r.Text)
 	}
-	if r := Recall(nil, w, 2000, ""); r.Text != "" || r.Memories != nil {
+	if r := Recall(nil, 2000, ""); r.Text != "" || r.Memories != nil {
 		t.Errorf("nothing to recall: %+v", r)
 	}
 }
@@ -51,11 +51,11 @@ func TestRecallPrefersTheCurrentRequestAndKeepsStablePreferences(t *testing.T) {
 		kept("y", GlobalPlace, "language", Preference, "Answers in Chinese."),
 		kept("z", w, "testing", Procedure, "Runs the Go race detector."),
 	}
-	r := Recall(memories, w, 2000, "run the go tests")
+	r := Recall(memories, 2000, "run the go tests")
 	if len(r.Memories) != 2 || r.Memories[0].ID != "y" || r.Memories[1].ID != "z" {
 		t.Fatalf("recalled %+v", r.Memories)
 	}
-	if r := Recall(memories, w, 2000, "is this in the helmet?"); len(r.Memories) != 1 || r.Memories[0].ID != "y" {
+	if r := Recall(memories, 2000, "is this in the helmet?"); len(r.Memories) != 1 || r.Memories[0].ID != "y" {
 		t.Fatalf("common words and partial words recalled %+v", r.Memories)
 	}
 }
@@ -105,13 +105,13 @@ func endedTurn(t *testing.T, messages int, size int) conversation.View {
 
 func TestATurnsEvidenceLeavesOutWhatAForgottenNoteWasLearnedFrom(t *testing.T) {
 	v := endedTurn(t, 2, 10)
-	forgotten := Memory{ID: "f", Place: Place{Scope: General}, Topic: "x", Status: Forgotten, Sources: []Source{{Thread: "th", Item: "m1"}}}
-	b := Gather("u", "th", "", v, "t", []Memory{forgotten})
+	forgotten := Memory{ID: "f", Place: Local("w"), Topic: "x", Status: Forgotten, Sources: []Source{{Thread: "th", Item: "m1"}}}
+	b := Gather("u", "th", "w", v, "t", []Memory{forgotten})
 	var items []string
 	for _, e := range b.Evidence {
 		items = append(items, e.Source.Item)
 	}
-	if strings.Join(items, ",") != "m0,c,a" || b.Scope != General || b.Status != conversation.Completed {
+	if strings.Join(items, ",") != "m0,c,a" || b.Scope != Workspace || b.Status != conversation.Completed {
 		t.Fatalf("evidence %v of %+v", items, b)
 	}
 	var call map[string]any

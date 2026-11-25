@@ -32,10 +32,14 @@ func ask(t *testing.T, st store.Store, thread string) {
 		if err := tx.EnsureUser("u", account.NewEnvironment("This computer", "local", nil)); err != nil {
 			return err
 		}
-		if err := tx.CreateThread(store.Thread{User: "u", Thread: account.Thread{ID: thread, Created: now, Updated: now}}); err != nil {
+		scratch, err := scratchOf(tx, "u")
+		if err != nil {
 			return err
 		}
-		_, err := tx.Append(thread, conversation.Entry{Turn: "t1", Body: conversation.TurnQueued{}},
+		if err := tx.CreateThread(store.Thread{User: "u", Thread: account.Thread{ID: thread, Workspace: scratch, Created: now, Updated: now}}); err != nil {
+			return err
+		}
+		_, err = tx.Append(thread, conversation.Entry{Turn: "t1", Body: conversation.TurnQueued{}},
 			conversation.Entry{Turn: "t1", Item: "m1", Body: conversation.UserMessage{Text: "hi"}})
 		return err
 	})
@@ -248,4 +252,15 @@ func TestATaskThatOverrunsReportsItsLimit(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+}
+
+// scratchOf is the scratch workspace of the user's first environment, where
+// a conversation started in no workspace is.
+func scratchOf(r store.Reader, user string) (string, error) {
+	envs, err := r.Environments(user)
+	if err != nil {
+		return "", err
+	}
+	w, err := r.Scratch(user, envs[0].ID)
+	return w.ID, err
 }

@@ -24,7 +24,11 @@ func TestACronJobMadeInAConversationIsListedPausedAndDeleted(t *testing.T) {
 		if err := tx.EnsureUser("u", account.NewEnvironment("This computer", "local", nil)); err != nil {
 			return err
 		}
-		return tx.CreateThread(store.Thread{User: "u", Thread: account.Thread{ID: "th", Title: "news", Created: now, Updated: now}})
+		scratch, err := scratchOf(tx, "u")
+		if err != nil {
+			return err
+		}
+		return tx.CreateThread(store.Thread{User: "u", Thread: account.Thread{ID: "th", Workspace: scratch, Title: "news", Created: now, Updated: now}})
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -52,4 +56,15 @@ func TestACronJobMadeInAConversationIsListedPausedAndDeleted(t *testing.T) {
 	if out, _ := call(listTool, map[string]any{}); len(out.(map[string]any)["jobs"].([]listedJob)) != 0 {
 		t.Errorf("left %+v", out)
 	}
+}
+
+// scratchOf is the scratch workspace of the user's first environment, where
+// a conversation started in no workspace is.
+func scratchOf(r store.Reader, user string) (string, error) {
+	envs, err := r.Environments(user)
+	if err != nil {
+		return "", err
+	}
+	w, err := r.Scratch(user, envs[0].ID)
+	return w.ID, err
 }

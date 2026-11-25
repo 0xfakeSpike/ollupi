@@ -31,10 +31,14 @@ func start(t *testing.T, s *Store, owner, thread string) {
 		if err := tx.EnsureUser(owner, account.NewEnvironment("This computer", "local", nil)); err != nil {
 			return err
 		}
-		if err := tx.CreateThread(store.Thread{User: owner, Thread: account.Thread{ID: thread, Title: "a chat", Created: now, Updated: now}}); err != nil {
+		scratch, err := scratchOf(tx, owner)
+		if err != nil {
 			return err
 		}
-		_, err := tx.Append(thread,
+		if err := tx.CreateThread(store.Thread{User: owner, Thread: account.Thread{ID: thread, Workspace: scratch, Title: "a chat", Created: now, Updated: now}}); err != nil {
+			return err
+		}
+		_, err = tx.Append(thread,
 			conversation.Entry{Turn: "t1", Body: conversation.TurnQueued{Role: "full-main-agent"}},
 			conversation.Entry{Turn: "t1", Item: "m1", Body: conversation.UserMessage{Text: "hi"}})
 		return err
@@ -50,7 +54,8 @@ func TestAnAppendIsKeptFoldedAndToldOnceCommitted(t *testing.T) {
 	var heard []store.Event
 	s.Feed().Subscribe("u", func(e store.Event) { heard = append(heard, e) })
 	start(t, s, "u", "th")
-	if len(heard) != 2 || heard[0].Seq != 1 || heard[0].Change == nil || heard[0].Change.Header == nil || len(heard[0].Change.Entries) != 2 || !heard[0].Change.Header.Runnable || heard[1].Owned == nil || heard[1].Owned.Environment == nil {
+	if len(heard) != 3 || heard[0].Seq != 1 || heard[0].Change == nil || heard[0].Change.Header == nil || len(heard[0].Change.Entries) != 2 || !heard[0].Change.Header.Runnable ||
+		heard[1].Owned == nil || heard[1].Owned.Environment == nil || heard[2].Owned == nil || heard[2].Owned.Workspace == nil || !heard[2].Owned.Workspace.Scratch() {
 		t.Fatalf("heard %+v", heard)
 	}
 	v := view(t, s, "th")
@@ -73,7 +78,7 @@ func TestAnAppendIsKeptFoldedAndToldOnceCommitted(t *testing.T) {
 	if !errors.Is(err, conversation.ErrRefused) {
 		t.Fatalf("a call started while it waits for approval: %v", err)
 	}
-	if len(heard) != 2 {
+	if len(heard) != 3 {
 		t.Error("a transaction that failed was told")
 	}
 	if v := view(t, s, "th"); v.Head != 2 {
@@ -206,10 +211,14 @@ func TestDeletingAUserRemovesTheirConversationData(t *testing.T) {
 		if err := tx.EnsureUser("gone", account.NewEnvironment("This computer", "local", nil)); err != nil {
 			return err
 		}
-		if err := tx.CreateThread(store.Thread{User: "gone", Thread: account.Thread{ID: "th", Title: "x", Created: now, Updated: now}}); err != nil {
+		scratch, err := scratchOf(tx, "gone")
+		if err != nil {
 			return err
 		}
-		_, err := tx.Append("th",
+		if err := tx.CreateThread(store.Thread{User: "gone", Thread: account.Thread{ID: "th", Workspace: scratch, Title: "x", Created: now, Updated: now}}); err != nil {
+			return err
+		}
+		_, err = tx.Append("th",
 			conversation.Entry{Turn: "t1", Body: conversation.TurnQueued{}},
 			conversation.Entry{Turn: "t1", Item: "m1", Body: conversation.UserMessage{Text: "hi"}},
 			conversation.Entry{Turn: "t1", Body: conversation.TurnEnded{Status: conversation.Completed}})
@@ -219,7 +228,7 @@ func TestDeletingAUserRemovesTheirConversationData(t *testing.T) {
 		if _, err := tx.AddTodo("gone", account.Todo{Title: "x", Status: account.TodoOpen, Thread: "th", Created: now, Updated: now}); err != nil {
 			return err
 		}
-		return tx.PutMemory(memory.Memory{ID: "mem", User: "gone", Place: memory.GlobalPlace, Topic: "t", Kind: memory.Fact, Text: "x", Status: memory.Active, Created: now, Updated: now})
+		return tx.PutMemory(memory.Memory{ID: "mem", User: "gone", Place: memory.GlobalPlace, Origin: scratch, Topic: "t", Kind: memory.Fact, Text: "x", Status: memory.Active, Created: now, Updated: now})
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -291,10 +300,14 @@ func TestASubagentWaitingOnTheUserMakesItsParentWait(t *testing.T) {
 	start(t, s, "u", "th")
 	now := time.Now().UTC()
 	update(t, s, func(tx store.Tx) error {
-		if err := tx.CreateThread(store.Thread{User: "u", Thread: account.Thread{ID: "child", Parent: "th", ParentItem: "launch", Created: now, Updated: now}}); err != nil {
+		scratch, err := scratchOf(tx, "u")
+		if err != nil {
 			return err
 		}
-		_, err := tx.Append("child", conversation.Entry{Turn: "c1", Body: conversation.TurnQueued{Role: "general-sub-agent"}},
+		if err := tx.CreateThread(store.Thread{User: "u", Thread: account.Thread{ID: "child", Workspace: scratch, Parent: "th", ParentItem: "launch", Created: now, Updated: now}}); err != nil {
+			return err
+		}
+		_, err = tx.Append("child", conversation.Entry{Turn: "c1", Body: conversation.TurnQueued{Role: "general-sub-agent"}},
 			conversation.Entry{Turn: "c1", Item: "m1", Body: conversation.UserMessage{Text: "look"}})
 		return err
 	})
@@ -323,4 +336,15 @@ func TestASubagentWaitingOnTheUserMakesItsParentWait(t *testing.T) {
 	if th := thread(t, s, "th"); th.Status != conversation.ThreadActive {
 		t.Errorf("the parent once answered %s", th.Status)
 	}
+}
+
+// scratchOf is the scratch workspace of the user's first environment, where
+// a conversation started in no workspace is.
+func scratchOf(r store.Reader, user string) (string, error) {
+	envs, err := r.Environments(user)
+	if err != nil {
+		return "", err
+	}
+	w, err := r.Scratch(user, envs[0].ID)
+	return w.ID, err
 }

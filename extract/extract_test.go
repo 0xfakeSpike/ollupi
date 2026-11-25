@@ -60,10 +60,14 @@ func converse(t *testing.T, st store.Store, user, th string) {
 		if err := tx.EnsureUser(user, account.NewEnvironment("This computer", "local", nil)); err != nil {
 			return err
 		}
-		if err := tx.CreateThread(store.Thread{User: user, Thread: account.Thread{ID: th, Title: "chat", Created: now, Updated: now}}); err != nil {
+		scratch, err := scratchOf(tx, user)
+		if err != nil {
 			return err
 		}
-		_, err := tx.Append(th,
+		if err := tx.CreateThread(store.Thread{User: user, Thread: account.Thread{ID: th, Workspace: scratch, Title: "chat", Created: now, Updated: now}}); err != nil {
+			return err
+		}
+		_, err = tx.Append(th,
 			conversation.Entry{Turn: "t1", Body: conversation.TurnQueued{}},
 			conversation.Entry{Turn: "t1", Item: "m1", Body: conversation.UserMessage{Text: "I use vim"}},
 			conversation.Entry{Turn: "t1", Body: conversation.ModelResponded{Response: "r"}},
@@ -95,7 +99,7 @@ func TestATurnTeachesANoteAndIsReadOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	notes := read(t, st, func(r store.Reader) ([]memory.Memory, error) { return r.Memories("u") })
-	if len(notes) != 1 || notes[0].Text != "Uses vim." || notes[0].Scope != memory.General {
+	if len(notes) != 1 || notes[0].Text != "Uses vim." || notes[0].Scope != memory.Workspace {
 		t.Fatalf("notes %+v", notes)
 	}
 	state := read(t, st, func(r store.Reader) (memory.State, error) { return r.MemoryState("u") })
@@ -157,7 +161,8 @@ func TestTheUsersEditMeanwhileComesFirst(t *testing.T) {
 	x, st := setup(t, m)
 	converse(t, st, "u", "th")
 	now := time.Now().UTC().Add(-time.Hour)
-	kept := memory.Memory{ID: "k", User: "u", Place: memory.Place{Scope: memory.General}, Topic: "editor", Kind: memory.Preference, Text: "Uses emacs.",
+	scratch := read(t, st, func(r store.Reader) (string, error) { return scratchOf(r, "u") })
+	kept := memory.Memory{ID: "k", User: "u", Place: memory.Local(scratch), Topic: "editor", Kind: memory.Preference, Text: "Uses emacs.",
 		Status: memory.Active, Sources: []memory.Source{{Thread: "th", Item: "m1"}}, Created: now, Updated: now}
 	update(t, st, func(tx store.Tx) error { return tx.PutMemory(kept) })
 	m.answer = func(string) (string, error) {
@@ -200,4 +205,15 @@ func TestRunHearsATurnEnd(t *testing.T) {
 	if err := <-done; !errors.Is(err, context.Canceled) {
 		t.Errorf("run ended with %v", err)
 	}
+}
+
+// scratchOf is the scratch workspace of the user's first environment, where
+// a conversation started in no workspace is.
+func scratchOf(r store.Reader, user string) (string, error) {
+	envs, err := r.Environments(user)
+	if err != nil {
+		return "", err
+	}
+	w, err := r.Scratch(user, envs[0].ID)
+	return w.ID, err
 }

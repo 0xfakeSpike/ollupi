@@ -16,8 +16,7 @@ import (
 
 type ThreadRow struct {
 	ID             string                    `json:"id"`
-	WorkspaceID    string                    `json:"workspaceId,omitempty"`
-	EnvironmentID  string                    `json:"environmentId,omitempty"`
+	WorkspaceID    string                    `json:"workspaceId"`
 	Title          string                    `json:"title"`
 	Settings       policy.Settings           `json:"settings"`
 	ParentThreadID string                    `json:"parentThreadId,omitempty"`
@@ -33,7 +32,7 @@ type ThreadRow struct {
 
 func threadRow(t store.Thread) ThreadRow {
 	return ThreadRow{
-		ID: t.ID, WorkspaceID: t.Workspace, EnvironmentID: t.Environment, Title: t.Title, Settings: t.Settings,
+		ID: t.ID, WorkspaceID: t.Workspace, Title: t.Title, Settings: t.Settings,
 		ParentThreadID: t.Parent, ParentItemID: t.ParentItem, Role: agent.Name(t.Role), Status: t.Status, CreatedAt: t.Created, UpdatedAt: t.Updated,
 		ArchivedAt: t.Archived, RepliedAt: t.Replied, ReadAt: t.Read,
 	}

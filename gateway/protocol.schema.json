@@ -2807,7 +2807,6 @@
       "type": "string",
       "enum": [
         "global",
-        "general",
         "workspace"
       ]
     },
@@ -3547,9 +3546,6 @@
         "workspaceId": {
           "type": "string"
         },
-        "environmentId": {
-          "type": "string"
-        },
         "title": {
           "type": "string"
         },
@@ -3600,6 +3596,7 @@
       },
       "required": [
         "id",
+        "workspaceId",
         "title",
         "settings",
         "status",
@@ -4487,7 +4484,8 @@
       "type": "string",
       "enum": [
         "project",
-        "hub"
+        "hub",
+        "scratch"
       ]
     },
     "WorkspaceListResult": {

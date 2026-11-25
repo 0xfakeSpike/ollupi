@@ -122,7 +122,7 @@ func (r *Runner) closeStranded(ctx context.Context, thread string) error {
 
 type step struct {
 	th        store.Thread
-	workspace *account.Workspace
+	workspace account.Workspace
 	settings  account.Settings
 	v         conversation.View
 	items     []conversation.Item
@@ -155,14 +155,8 @@ func (r *Runner) load(ctx context.Context, thread string) (*step, error) {
 		if s.settings, err = rd.Settings(s.th.User); err != nil {
 			return err
 		}
-		if s.th.Workspace != "" {
-			w, err := rd.Workspace(s.th.User, s.th.Workspace)
-			if err != nil {
-				return err
-			}
-			s.workspace = &w
-		}
-		return nil
+		s.workspace, err = rd.Workspace(s.th.User, s.th.Workspace)
+		return err
 	})
 	if err != nil || !active {
 		return nil, err
@@ -209,11 +203,8 @@ func (s *step) permit(r *Runner, set tool.Set) error {
 }
 
 func (s *step) caller(item string) tool.Caller {
-	c := tool.Caller{User: s.th.User, Thread: s.th.ID, Workspace: s.th.Workspace, Environment: s.th.Environment,
-		Subagent: s.th.Parent != "", Role: string(s.role.Name), Item: item}
-	if s.workspace != nil {
-		c.Root = s.workspace.Root
-	}
+	c := tool.Caller{User: s.th.User, Thread: s.th.ID, Workspace: s.th.Workspace, Environment: s.workspace.Environment,
+		Root: s.workspace.Root, Subagent: s.th.Parent != "", Role: string(s.role.Name), Item: item}
 	for _, t := range s.deferred {
 		c.Deferred = append(c.Deferred, t.Name)
 	}
