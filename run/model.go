@@ -49,9 +49,8 @@ func (r *Runner) callModel(ctx context.Context, s *step, a agent.CallModel) erro
 	}
 	ans := modelAnswer{response: uuid.NewString(), message: uuid.NewString(), reasoning: uuid.NewString(), sent: time.Now().UTC()}
 	resp, err := r.send(ctx, s, req, in.Tools, choice, func(d llm.Delta) {
-		ans.hear(d)
 		var events []store.Event
-		for _, delta := range ans.deltas(s.turn.ID, d) {
+		for _, delta := range ans.hear(s.turn.ID, d) {
 			events = append(events, store.Event{User: s.th.User, Thread: s.th.ID, Delta: &delta})
 		}
 		r.st.Feed().Publish(events, nil)
@@ -94,13 +93,19 @@ type modelAnswer struct {
 	thought, said                int
 }
 
-func (a *modelAnswer) deltas(turn string, d llm.Delta) []store.Delta {
+func (a *modelAnswer) hear(turn string, d llm.Delta) []store.Delta {
 	var out []store.Delta
 	if d.Reasoning != "" {
+		if a.thought == 0 {
+			a.began = time.Now().UTC()
+		}
 		out = append(out, store.Delta{Turn: turn, Item: a.reasoning, Kind: conversation.ItemReasoning, Text: d.Reasoning, Offset: a.thought})
 		a.thought += utf16Len(d.Reasoning)
 	}
 	if d.Content != "" {
+		if a.said == 0 {
+			a.answered = time.Now().UTC()
+		}
 		out = append(out, store.Delta{Turn: turn, Item: a.message, Kind: conversation.ItemAgentMessage, Text: d.Content, Offset: a.said})
 		a.said += utf16Len(d.Content)
 	}
@@ -113,17 +118,6 @@ func utf16Len(s string) int {
 		n += utf16.RuneLen(r)
 	}
 	return n
-}
-
-func (a *modelAnswer) hear(d llm.Delta) {
-	firstThought := d.Reasoning != "" && a.began.IsZero()
-	firstAnswer := d.Content != "" && !a.began.IsZero() && a.answered.IsZero()
-	switch {
-	case firstThought:
-		a.began = time.Now().UTC()
-	case firstAnswer:
-		a.answered = time.Now().UTC()
-	}
 }
 
 func (a *modelAnswer) entries(turn string, resp llm.ChatResponse, stats conversation.ContextStats) []conversation.Entry {
