@@ -121,6 +121,40 @@ func TestALongOutputIsClippedWithHowToReadTheRest(t *testing.T) {
 	}
 }
 
+func TestAnEndedTurnKeepsLessOfItsOutputs(t *testing.T) {
+	l := &log{t: t}
+	long, _ := json.Marshal(strings.Repeat("line of output\n", 20_000))
+	for _, turn := range []string{"t1", "t2"} {
+		l.add(turn, "", conversation.TurnQueued{})
+		l.add(turn, "m"+turn, conversation.UserMessage{Text: "read it"})
+		l.add(turn, "", conversation.ModelResponded{Response: "r1" + turn})
+		l.add(turn, "c"+turn, conversation.ToolCall{Call: "call_" + turn, Tool: "read_file", Response: "r1" + turn})
+		l.add(turn, "c"+turn, conversation.ToolStarted{})
+		l.add(turn, "c"+turn, conversation.ToolResult{Output: long})
+		l.add(turn, "", conversation.ModelResponded{Response: "r2" + turn})
+		l.add(turn, "a"+turn, conversation.AgentMessage{Text: "read", Response: "r2" + turn})
+		if turn == "t1" {
+			l.add(turn, "", conversation.TurnEnded{Status: conversation.Completed})
+		}
+	}
+	r := build(t, wide, l.v)
+	var ended, current string
+	for _, m := range r.Messages {
+		switch m.ToolCallID {
+		case "call_t1":
+			ended = m.Content
+		case "call_t2":
+			current = m.Content
+		}
+	}
+	if !strings.Contains(ended, `output_id "ct1"`) || llm.EstimateTokens(ended) > endedObservationTokens+100 {
+		t.Errorf("the ended turn's output: %d tokens", llm.EstimateTokens(ended))
+	}
+	if llm.EstimateTokens(current) <= endedObservationTokens+100 {
+		t.Errorf("the current turn's output: %d tokens", llm.EstimateTokens(current))
+	}
+}
+
 func TestAnOutputKeepsItsSeparatorLines(t *testing.T) {
 	file := "---\ntitle: a\n---\n| a | b |\n|---|---|\n| 1 | 2 |\n***"
 	raw, _ := json.Marshal(map[string]any{"content": file})

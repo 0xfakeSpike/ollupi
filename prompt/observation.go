@@ -82,8 +82,9 @@ func (o *observations) callResult(it conversation.Item, outputBudget int) string
 }
 
 const (
-	maxObservationTokens = 6000
-	minOutputTokens      = 256
+	maxObservationTokens   = 6000
+	endedObservationTokens = 512
+	minOutputTokens        = 256
 )
 
 func (o *observations) render(it conversation.Item, budget int) string {

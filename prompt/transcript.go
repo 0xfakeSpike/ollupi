@@ -11,9 +11,12 @@ import (
 
 func (w Window) transcript(obs *observations, natives map[string][]byte, items []conversation.Item, limit int, compacting bool) ([]llm.ChatMessage, int, error) {
 	var out []llm.ChatMessage
-	latest := ""
+	latest, current := "", ""
 	if !compacting {
 		latest = latestResponse(items)
+		if len(items) > 0 {
+			current = items[len(items)-1].Turn
+		}
 	}
 	if s := latestRecall(items); s != nil && s.Text != "" && !compacting {
 		out = append(out, llm.ChatMessage{Role: llm.RoleUser, Content: s.Text})
@@ -45,8 +48,11 @@ func (w Window) transcript(obs *observations, natives map[string][]byte, items [
 				j++
 			}
 			budget := maxObservationTokens
-			if compacting || it.Response == latest {
+			switch {
+			case compacting || it.Response == latest:
 				budget = limit
+			case it.Turn != current:
+				budget = min(limit, endedObservationTokens)
 			}
 			out = append(out, w.response(obs, natives[it.Response], items[i:j], budget)...)
 			i = j
