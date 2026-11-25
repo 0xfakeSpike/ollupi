@@ -18,11 +18,18 @@ fail() {
 	exit 1
 }
 
+if [ "$subset" = probe ]; then
+	tasks_dir=$root/eval/probe/build
+	python3 "$root/eval/probe/tasks.py" "$tasks_dir"
+	ARCHES=${ARCHES:-$(docker version -f '{{.Server.Arch}}')}
+	export ARCHES
+fi
+
 command -v harbor >/dev/null || fail "harbor is not installed: uv tool install --python 3.12 harbor==0.25.0"
 docker info >/dev/null 2>&1 || fail "Docker is not running"
 [ -n "${OLLUPI_API_KEY:-}" ] || fail "set OLLUPI_API_KEY to the provider's key"
 
-if [ ! -d "$tasks_dir" ]; then
+if [ "$subset" != probe ] && [ ! -d "$tasks_dir" ]; then
 	echo "Downloading terminal-bench@2.0 into $tasks_dir"
 	tmp=$(mktemp -d)
 	harbor download terminal-bench@2.0 -o "$tmp"
@@ -47,7 +54,7 @@ named=
 for arg in "$@"; do
 	case $arg in -i | --include-task-name | --include-task-name=*) named=1 ;; esac
 done
-if [ -n "$named" ] || [ "$subset" = all ]; then
+if [ -n "$named" ] || [ "$subset" = all ] || [ "$subset" = probe ]; then
 	includes=
 else
 	[ -f "$root/eval/subsets/$subset.txt" ] || fail "no subset eval/subsets/$subset.txt"

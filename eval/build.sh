@@ -9,18 +9,18 @@ case $version in
 	;;
 esac
 arches=${ARCHES:-amd64}
-stamp="$version $arches"
-if [ "${1:-}" = "--if-stale" ] && [ "$(cat "$root/eval/build/STAMP" 2>/dev/null)" = "$stamp" ]; then
-	echo "eval/build is up to date ($version)"
-	exit 0
-fi
 mkdir -p "$root/eval/build"
 for arch in $arches; do
+	stamp=$root/eval/build/STAMP-$arch
+	if [ "${1:-}" = "--if-stale" ] && [ "$(cat "$stamp" 2>/dev/null)" = "$version" ]; then
+		echo "eval/build/ollupi-eval-linux-$arch is up to date ($version)"
+		continue
+	fi
 	docker run --rm --platform "linux/$arch" -v "$root:/src" -v ollupi-eval-gocache:/root/go -w /src golang:1.26-alpine sh -c "
 		apk add --no-cache build-base >/dev/null &&
 		CGO_ENABLED=1 go build -buildvcs=false -tags sqlite_fts5 \
 			-ldflags '-s -w -linkmode external -extldflags -static -X main.version=$version' \
 			-o eval/build/ollupi-eval-linux-$arch ./eval"
+	echo "$version" > "$stamp"
 	echo "eval/build/ollupi-eval-linux-$arch ($version)"
 done
-echo "$stamp" > "$root/eval/build/STAMP"

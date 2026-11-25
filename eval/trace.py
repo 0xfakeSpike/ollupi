@@ -93,7 +93,9 @@ def show_turn(turn, items, clip):
         if stats:
             peak = max(peak, stats.get("calibratedTokens") or stats.get("estimatedTokens") or 0)
             budget = stats.get("budgetTokens") or budget
-        if kind in ("reasoning", "agentMessage"):
+        if kind == "userMessage" and it.get("turn"):
+            print(f"{at(it.get('startedAt'))}  user    {clip(it.get('text', ''))}")
+        elif kind in ("reasoning", "agentMessage"):
             print(f"         {'thinks' if kind == 'reasoning' else 'says':8}{clip(it.get('text', ''))}")
         elif kind == "toolCall":
             secs = (end - start).total_seconds() if start and end else 0
@@ -123,6 +125,78 @@ def show_turn(turn, items, clip):
         print(f"context: peak {peak} of {budget} tokens" + (f", compacted {compactions} times" if compactions else ""))
 
 
+SHELL_READERS = {"cat", "head", "tail", "sed", "grep", "rg", "find", "ls", "less", "more"}
+READ_ONLY = {"read_file", "grep", "glob", "web_fetch", "read_tool_output"}
+LARGE_OUTPUT = 20_000
+
+
+def command_words(arguments):
+    """The programs a run_command call starts, looking inside sh -c and its pipes and sequences."""
+    try:
+        args = json.loads(arguments or "{}")
+    except json.JSONDecodeError:
+        return []
+    argv = [args.get("program", "")] + list(args.get("args") or [])
+    if argv[0] in ("sh", "bash", "zsh") and len(argv) > 2 and argv[1] in ("-c", "-lc"):
+        return [part.split()[0] for part in re.split(r"&&|\|\||;|\|", argv[2]) if part.split()]
+    return [argv[0]]
+
+
+def show_waste(items, clip):
+    """Calls that likely spent a model round or context for nothing: the patterns worth a look first."""
+    found = []
+    seen, read_at, responses = {}, {}, []
+    calls = [it for it in items if it["type"] == "toolCall"]
+    for n, it in enumerate(calls, 1):
+        tool, arguments = it["tool"], it.get("arguments", "")
+        key = (tool, arguments)
+        if key in seen and tool != "read_file":
+            found.append(("repeated", f"call {n} is call {seen[key]} again: {tool} {clip(arguments, 100)}"))
+        seen.setdefault(key, n)
+        try:
+            args = json.loads(arguments or "{}")
+        except json.JSONDecodeError:
+            args = {}
+        path = args.get("path") or args.get("file_path")
+        if tool in ("edit_file", "write_file") and path:
+            read_at.pop(path, None)
+        elif tool == "read_file" and path:
+            if path in read_at:
+                found.append(("read again", f"{path} with no change in between"))
+            read_at[path] = True
+        if tool == "run_command":
+            words = command_words(arguments)
+            readers = [w for w in words if w in SHELL_READERS]
+            if readers:
+                found.append(("shell read", f"{'/'.join(readers)}: {clip(arguments, 100)}"))
+            if "sleep" in words:
+                found.append(("sleep", clip(arguments, 100)))
+        output = (it.get("result") or {}).get("output")
+        size = len(json.dumps(output)) if output is not None else 0
+        if size > LARGE_OUTPUT:
+            found.append(("large output", f"{tool} returned {size} chars: {clip(arguments, 80)}"))
+        if it.get("status") != "completed":
+            found.append(("failed", f"{tool}: {clip(it.get('error') or arguments, 100)}"))
+        rid = it.get("responseId")
+        if responses and responses[-1][0] == rid:
+            responses[-1][1].append(tool)
+        else:
+            responses.append((rid, [tool]))
+    run = 0
+    for _, tools in responses + [(None, [])]:
+        if len(tools) == 1 and tools[0] in READ_ONLY:
+            run += 1
+            continue
+        if run >= 3:
+            found.append(("one read a response", f"{run} responses in a row each made a single read-only call"))
+        run = 0
+    if not found:
+        return
+    print("\nworth a look:")
+    for kind, detail in found:
+        print(f"  {kind:20} {detail}")
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("trial", type=Path, help="eval/jobs/<job>/<task>__<id>")
@@ -147,6 +221,7 @@ def main():
         return
     data = json.loads(items.read_text())
     show_turn(data["turn"], data["items"], clip)
+    show_waste(data["items"], clip)
 
 
 if __name__ == "__main__":

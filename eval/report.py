@@ -21,6 +21,10 @@ class Result:
     minutes: float
     timeout: bool
     version: str
+    responses: float
+    calls: float
+    input: float
+    output: float
 
     @property
     def rate(self):
@@ -30,12 +34,23 @@ class Result:
         mark = "pass" if self.passed == self.runs else "FAIL" if self.passed == 0 else f"{self.passed}/{self.runs}"
         return f"{mark} {self.minutes:4.1f}m" + (" T/O" if self.timeout else "") + (f" @{short(self.version)}" if tagged else "")
 
+    def spent(self):
+        if self.responses is None:
+            return "-"
+        return f"{self.responses:3.0f}r {self.calls:3.0f}t {self.input / 1000:5.0f}k/{self.output / 1000:3.0f}k"
+
 
 def summarize(trials):
     latest = max(t.job for t in trials)
     run = [t for t in trials if t.job == latest]
+    costs = [t.cost for t in run if t.cost]
+
+    def mean(field):
+        return sum(getattr(c, field) for c in costs) / len(costs) if costs else None
+
     return Result(sum(t.passed for t in run), len(run), sum(t.minutes or 0 for t in run) / len(run),
-                  any(t.timeout for t in run), run[0].version)
+                  any(t.timeout for t in run), run[0].version,
+                  mean("responses"), mean("calls"), mean("input"), mean("output"))
 
 
 def short(version):
@@ -92,6 +107,14 @@ def main():
         if compare and all(r[task] for _, _, r in columns):
             was, now = (r[task].rate for _, _, r in columns)
             line += "   fixed" if now > was else "   BROKE" if now < was else ""
+        print(line)
+    print("\nspent, the mean of a task's trials: model responses, tool calls, input/output tokens")
+    for task in tasks:
+        line = task.ljust(width) + "".join((r[task].spent() if r[task] else "-").rjust(w)
+                                           for (_, _, r), w in zip(columns, widths))
+        if compare and all(r[task] and r[task].input for _, _, r in columns):
+            was, now = (r[task].input for _, _, r in columns)
+            line += f"   {100 * (now - was) / was:+.0f}% input"
         print(line)
     print()
     for label, _, r in columns:

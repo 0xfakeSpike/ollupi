@@ -91,7 +91,8 @@ func main() {
 		log.Fatalf("eval: %v", err)
 	}
 
-	ended := make(chan conversation.Ending, 1)
+	messages := strings.Split(instruction, "\n"+nextMessage+"\n")
+	ended := make(chan endedTurn, len(messages))
 	changed := make(chan struct{}, 1)
 	sub := h.Store.Feed().Subscribe(user, func(e store.Event) {
 		if e.Change == nil {
@@ -114,7 +115,7 @@ func main() {
 		}
 		for _, t := range e.Change.Turns {
 			if t.Ended != nil {
-				ended <- *t.Ended
+				ended <- endedTurn{t.ID, *t.Ended}
 			}
 		}
 	})
@@ -123,10 +124,7 @@ func main() {
 	go func() { running <- h.Run(ctx) }()
 
 	startedAt := time.Now()
-	turn, _, err := h.App.Send(ctx, user, th.ID, app.Input{Text: instruction})
-	if err != nil {
-		log.Fatalf("eval: %v", err)
-	}
+	var turns []string
 	var saving sync.Mutex
 	save := func() conversation.View {
 		saving.Lock()
@@ -135,8 +133,8 @@ func main() {
 		if err := h.Store.Read(context.Background(), func(r store.Reader) (err error) { v, err = r.View(th.ID); return err }); err != nil {
 			log.Fatalf("eval: %v", err)
 		}
-		if *out != "" {
-			if err := writeRun(*out, v, turn.ID); err != nil {
+		if *out != "" && len(turns) > 0 {
+			if err := writeRun(*out, v, turns); err != nil {
 				log.Printf("eval: %v", err)
 			}
 		}
@@ -148,27 +146,55 @@ func main() {
 		}
 	}()
 	var end conversation.Ending
-	select {
-	case end = <-ended:
-	case err := <-running:
-		save()
-		log.Printf("eval: stopped before the turn ended: %v", cmp.Or(err, errors.New("interrupted")))
-		os.Exit(1)
+	for _, message := range messages {
+		turn, _, err := h.App.Send(ctx, user, th.ID, app.Input{Text: strings.TrimSpace(message)})
+		if err != nil {
+			log.Fatalf("eval: %v", err)
+		}
+		saving.Lock()
+		turns = append(turns, turn.ID)
+		saving.Unlock()
+		end = waitFor(turn.ID, ended, running, save)
+		if end.Status != conversation.Completed {
+			break
+		}
 	}
 	v := save()
-	items := v.ItemsOf(turn.ID)
+	items := v.ItemsOf(turns[len(turns)-1])
 	for i := len(items) - 1; i >= 0; i-- {
 		if items[i].Kind == conversation.ItemAgentMessage {
 			fmt.Println(items[i].Text)
 			break
 		}
 	}
-	log.Printf("eval: turn %s after %s, %d items", end.Status, time.Since(startedAt).Round(time.Second), len(items))
+	log.Printf("eval: %d of %d turns, the last %s after %s", len(turns), len(messages), end.Status, time.Since(startedAt).Round(time.Second))
 	stop()
 	<-running
 	if end.Status != conversation.Completed {
 		log.Printf("eval: %s", cmp.Or(end.Reason, "the turn did not complete"))
 		os.Exit(1)
+	}
+}
+
+const nextMessage = "=== next message ==="
+
+type endedTurn struct {
+	id     string
+	ending conversation.Ending
+}
+
+func waitFor(turn string, ended <-chan endedTurn, running <-chan error, save func() conversation.View) conversation.Ending {
+	for {
+		select {
+		case e := <-ended:
+			if e.id == turn {
+				return e.ending
+			}
+		case err := <-running:
+			save()
+			log.Printf("eval: stopped before the turn ended: %v", cmp.Or(err, errors.New("interrupted")))
+			os.Exit(1)
+		}
 	}
 }
 
@@ -203,6 +229,7 @@ type runTurn struct {
 
 type runItem struct {
 	ID           string                     `json:"id"`
+	Turn         int                        `json:"turn"`
 	Type         conversation.ItemKind      `json:"type"`
 	Status       conversation.ItemStatus    `json:"status"`
 	Tool         string                     `json:"tool,omitempty"`
@@ -216,29 +243,34 @@ type runItem struct {
 	CompletedAt  *time.Time                 `json:"completedAt,omitempty"`
 }
 
-func writeRun(path string, v conversation.View, turnID string) error {
-	t, _ := v.TurnOf(turnID)
-	run := runTurn{Status: "inProgress", Model: t.Model, Usage: t.Usage, StartedAt: t.QueuedAt}
-	if t.Ended != nil {
-		at := t.Ended.At
-		run.Status, run.Error, run.CompletedAt = string(t.Ended.Status), t.Ended.Reason, &at
-	}
+func writeRun(path string, v conversation.View, turnIDs []string) error {
+	first, _ := v.TurnOf(turnIDs[0])
+	run := runTurn{Status: "inProgress", Model: first.Model, StartedAt: first.QueuedAt}
 	stats := map[string]conversation.ContextStats{}
 	for _, r := range v.Responses {
 		stats[r.ID] = r.Stats
 	}
 	items := []runItem{}
-	for _, it := range v.ItemsOf(turnID) {
-		ri := runItem{ID: it.ID, Type: it.Kind, Status: it.Status, ResponseID: it.Response, Text: it.Text, Error: it.Error,
-			Result: it.Result, ContextStats: it.Stats, StartedAt: it.StartedAt, CompletedAt: it.CompletedAt}
-		if it.Call != nil {
-			ri.Tool, ri.Arguments = it.Call.Tool, it.Call.Arguments
+	for n, id := range turnIDs {
+		t, _ := v.TurnOf(id)
+		run.Usage = run.Usage.Plus(t.Usage)
+		run.Status, run.Error, run.CompletedAt = "inProgress", "", nil
+		if t.Ended != nil {
+			at := t.Ended.At
+			run.Status, run.Error, run.CompletedAt = string(t.Ended.Status), t.Ended.Reason, &at
 		}
-		if s, ok := stats[it.Response]; ok && ri.ContextStats == nil {
-			ri.ContextStats = &s
-			delete(stats, it.Response)
+		for _, it := range v.ItemsOf(id) {
+			ri := runItem{ID: it.ID, Turn: n, Type: it.Kind, Status: it.Status, ResponseID: it.Response, Text: it.Text, Error: it.Error,
+				Result: it.Result, ContextStats: it.Stats, StartedAt: it.StartedAt, CompletedAt: it.CompletedAt}
+			if it.Call != nil {
+				ri.Tool, ri.Arguments = it.Call.Tool, it.Call.Arguments
+			}
+			if s, ok := stats[it.Response]; ok && ri.ContextStats == nil {
+				ri.ContextStats = &s
+				delete(stats, it.Response)
+			}
+			items = append(items, ri)
 		}
-		items = append(items, ri)
 	}
 	raw, err := json.MarshalIndent(struct {
 		Turn  runTurn   `json:"turn"`

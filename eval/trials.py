@@ -28,6 +28,7 @@ class Trial:
     exception: str | None
     tested: bool
     passed: bool
+    cost: "Cost | None"
 
     @property
     def timeout(self):
@@ -52,6 +53,35 @@ class Trial:
             exception=(r.get("exception_info") or {}).get("exception_type"),
             tested=(path / "verifier" / "ctrf.json").is_file() and reward.is_file(),
             passed=reward.is_file() and float(reward.read_text().strip() or 0) >= 1,
+            cost=Cost.read(path / "agent" / "ollupi-items.json"),
+        )
+
+
+@dataclass
+class Cost:
+    """What a trial's turns spent: model responses, tool calls and tokens."""
+
+    responses: int
+    calls: int
+    failed: int
+    input: int
+    cached: int
+    output: int
+
+    @classmethod
+    def read(cls, path):
+        if not path.is_file():
+            return None
+        data = json.loads(path.read_text())
+        items, usage = data["items"], data["turn"].get("usage") or {}
+        calls = [it for it in items if it["type"] == "toolCall"]
+        return cls(
+            responses=len({it["responseId"] for it in items if it.get("responseId")}),
+            calls=len(calls),
+            failed=sum(it.get("status") != "completed" for it in calls),
+            input=usage.get("inputTokens", 0),
+            cached=usage.get("cachedInputTokens", 0),
+            output=usage.get("outputTokens", 0),
         )
 
 
