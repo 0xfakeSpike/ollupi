@@ -97,11 +97,11 @@ type modelAnswer struct {
 func (a *modelAnswer) deltas(turn string, d llm.Delta) []store.Delta {
 	var out []store.Delta
 	if d.Reasoning != "" {
-		out = append(out, store.Delta{Turn: turn, Item: a.reasoning, Reasoning: d.Reasoning, Offset: a.thought})
+		out = append(out, store.Delta{Turn: turn, Item: a.reasoning, Kind: conversation.ItemReasoning, Text: d.Reasoning, Offset: a.thought})
 		a.thought += utf16Len(d.Reasoning)
 	}
 	if d.Content != "" {
-		out = append(out, store.Delta{Turn: turn, Item: a.message, Text: d.Content, Offset: a.said})
+		out = append(out, store.Delta{Turn: turn, Item: a.message, Kind: conversation.ItemAgentMessage, Text: d.Content, Offset: a.said})
 		a.said += utf16Len(d.Content)
 	}
 	return out

@@ -715,6 +715,9 @@
         "itemId": {
           "type": "string"
         },
+        "type": {
+          "$ref": "#/$defs/ItemKind"
+        },
         "delta": {
           "type": "string"
         },
@@ -726,6 +729,7 @@
         "threadId",
         "turnId",
         "itemId",
+        "type",
         "delta",
         "offset"
       ],
@@ -5751,13 +5755,10 @@
     "error": {
       "$ref": "#/$defs/ErrorNotification"
     },
-    "item/agentMessage/delta": {
-      "$ref": "#/$defs/DeltaNotification"
-    },
     "item/changed": {
       "$ref": "#/$defs/ItemChangedNotification"
     },
-    "item/reasoning/textDelta": {
+    "item/delta": {
       "$ref": "#/$defs/DeltaNotification"
     },
     "mcpServer/changed": {

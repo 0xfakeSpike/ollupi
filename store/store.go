@@ -332,11 +332,11 @@ type Move struct {
 }
 
 type Delta struct {
-	Turn      string
-	Item      string
-	Text      string
-	Reasoning string
-	Offset    int
+	Turn   string
+	Item   string
+	Kind   conversation.ItemKind
+	Text   string
+	Offset int
 }
 
 // TodoFilter picks the todos to read: the given statuses, or all of them when none are given, and at most

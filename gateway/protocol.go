@@ -55,8 +55,7 @@ const (
 	notifyThreadChanged      = "thread/changed"
 	notifyTurnChanged        = "turn/changed"
 	notifyItemChanged        = "item/changed"
-	notifyAgentMessageDelta  = "item/agentMessage/delta"
-	notifyReasoningDelta     = "item/reasoning/textDelta"
+	notifyItemDelta          = "item/delta"
 	notifyWorkspaceChanged   = "workspace/changed"
 	notifyEnvironmentChanged = "environment/changed"
 	notifyCronChanged        = "cron/changed"
@@ -181,8 +180,7 @@ var protocol = struct {
 		notifyThreadChanged:      reflect.TypeFor[ThreadChangedNotification](),
 		notifyTurnChanged:        reflect.TypeFor[TurnChangedNotification](),
 		notifyItemChanged:        reflect.TypeFor[ItemChangedNotification](),
-		notifyAgentMessageDelta:  reflect.TypeFor[DeltaNotification](),
-		notifyReasoningDelta:     reflect.TypeFor[DeltaNotification](),
+		notifyItemDelta:          reflect.TypeFor[DeltaNotification](),
 		notifyWorkspaceChanged:   reflect.TypeFor[WorkspaceChangedNotification](),
 		notifyEnvironmentChanged: reflect.TypeFor[EnvironmentChangedNotification](),
 		notifyCronChanged:        reflect.TypeFor[CronChangedNotification](),
@@ -406,11 +404,12 @@ type ItemChangedNotification struct {
 }
 
 type DeltaNotification struct {
-	ThreadID string `json:"threadId"`
-	TurnID   string `json:"turnId"`
-	ItemID   string `json:"itemId"`
-	Delta    string `json:"delta"`
-	Offset   int    `json:"offset"`
+	ThreadID string                `json:"threadId"`
+	TurnID   string                `json:"turnId"`
+	ItemID   string                `json:"itemId"`
+	Type     conversation.ItemKind `json:"type"`
+	Delta    string                `json:"delta"`
+	Offset   int                   `json:"offset"`
 }
 
 type ErrorNotification struct {

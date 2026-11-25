@@ -42,7 +42,7 @@ sequenceDiagram
       R->>M: 流式请求
       M-->>R: 增量
       R-->>G: Delta（进事件队列，排在之前的提交后面）
-      G-->>C: item/agentMessage/delta
+      G-->>C: item/delta
       R->>S: Update：ModelResponded + AgentMessage + ToolCall / ApprovalAsked
       S-->>G: Change → item/changed；条目等审批时发 approval 请求
     else RunTools
@@ -119,7 +119,7 @@ flowchart TB
 | `Owned.Catalog`（不带用户） | gateway | 运营者的连接发 `catalog/changed`（含 key），每条连接发 `model/changed` |
 | `Owned.User`（不带用户） | gateway | 运营者的连接和这个用户自己的连接发 `user/changed` |
 | 其他 `Owned` | gateway | `settings/changed`、`workspace/changed`、`environment/changed`、`mcpServer/changed`、`cron/changed`、`memory/changed`、`todo/changed`、`skill/changed` |
-| `Delta` | gateway | `item/agentMessage/delta`、`item/reasoning/textDelta` |
+| `Delta` | gateway | `item/delta` |
 
 `Change` 来自会话的写入：`Append`、`CreateThread`、`UpdateThread`、`DeleteThread`。`Owned` 来自用户资源的写入：设置、工作区、执行环境、MCP 服务器、定时任务、记忆、待办、技能；模型目录（`SetCatalog`）和用户（`CreateUser`、`SetUserName`）的事件不带用户，每个订阅方都收到。`EnsureUser`、`SetMemoryState`、`PutUsage`、`PutPresence`、`CreateTask`、`StartTask`、`DeleteTask` 不发事件。后台任务之所以可见，是因为同一事务里追加了 `TaskLaunched`、`TaskReported` 这些条目。
 
@@ -130,6 +130,7 @@ flowchart TB
 - **事件按 seq 的顺序发出，靠队列而不是锁。** `store.Update` 把事务放进写队列，由一个写协程逐个执行；它提交一次，就把这次的事件放进 `store.Feed` 的事件队列，由一个分发协程按入队顺序调用订阅函数。只有写协程往里放提交的事件，所以事件天然按 seq 排好。写协程放完就去执行下一个事务，不等订阅函数；`Update` 自己要等到这次的事件发完才返回，所以调用方返回后，订阅方（比如客户端的出站队列）已经收到了。读走另外几个只读连接（WAL 下各读各的快照），不进写队列。
 - **订阅函数不能阻塞。** 所有订阅函数都在同一个分发协程上调用：一个卡住，后面的事件都发不出去；事件队列积满后写协程也会停下。订阅函数只能记下要做的事、唤醒自己的循环，不能在里面调 `store.Update`（它要等这个分发协程，会死锁）。gateway 的出站队列有上限，客户端读得太慢就断开它。
 - **Delta 不落库，但和提交排在同一个事件队列里。** 它没有 seq，断线期间的增量会丢，重连后用 `thread/read` 拿完整条目；在线时，它不会抢在之前的提交前面发出。
+- **Delta 只有一种通知 `item/delta`，带 `type`（`agentMessage` 或 `reasoning`，和 `item/changed` 里条目的 `type` 一样），客户端在条目落库前就知道怎么显示它。**
 - **Delta 带 `offset`，客户端按它拼，`item/changed` 说了算。** `offset` 是这段增量在条目最终文本里的起点，单位是 UTF-16 码元（和 JS 字符串的 `length` 一致）。客户端的规则：
   - `offset` 不超过本地已有长度时，截到 `offset` 再接上这段；
   - `offset` 超过本地长度，说明中间漏了，丢掉这段，等 `item/changed`；

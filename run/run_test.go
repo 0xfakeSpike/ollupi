@@ -554,7 +554,7 @@ func TestDeltasSayWhereTheyGoInTheFinalText(t *testing.T) {
 		if d.Offset != len(built[d.Item]) {
 			t.Errorf("a delta of %s at %d, after %d units", d.Item, d.Offset, len(built[d.Item]))
 		}
-		built[d.Item] = append(built[d.Item], utf16.Encode([]rune(d.Text+d.Reasoning))...)
+		built[d.Item] = append(built[d.Item], utf16.Encode([]rune(d.Text))...)
 	})
 	f.ask("th", "hi")
 	f.run("th")

@@ -126,11 +126,7 @@ func (c *conn) event(e store.Event) {
 	switch {
 	case e.Delta != nil:
 		d := e.Delta
-		method, text := notifyAgentMessageDelta, d.Text
-		if d.Reasoning != "" {
-			method, text = notifyReasoningDelta, d.Reasoning
-		}
-		c.rpc.Notify(method, DeltaNotification{ThreadID: e.Thread, TurnID: d.Turn, ItemID: d.Item, Delta: text, Offset: d.Offset})
+		c.rpc.Notify(notifyItemDelta, DeltaNotification{ThreadID: e.Thread, TurnID: d.Turn, ItemID: d.Item, Type: d.Kind, Delta: d.Text, Offset: d.Offset})
 	case e.Change != nil:
 		c.change(e.Seq, e.Thread, *e.Change)
 	case e.Owned != nil:
