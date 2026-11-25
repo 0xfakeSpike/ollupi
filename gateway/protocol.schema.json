@@ -5134,22 +5134,6 @@
       ],
       "additionalProperties": false
     },
-    "WorkspaceSetKindParams": {
-      "type": "object",
-      "properties": {
-        "workspaceId": {
-          "type": "string"
-        },
-        "kind": {
-          "$ref": "#/$defs/WorkspaceKind"
-        }
-      },
-      "required": [
-        "workspaceId",
-        "kind"
-      ],
-      "additionalProperties": false
-    },
     "WorkspaceStatResult": {
       "type": "object",
       "properties": {
@@ -5697,20 +5681,20 @@
         "$ref": "#/$defs/WorkspaceResult"
       }
     },
-    "workspace/setKind": {
-      "params": {
-        "$ref": "#/$defs/WorkspaceSetKindParams"
-      },
-      "result": {
-        "$ref": "#/$defs/WorkspaceResult"
-      }
-    },
     "workspace/stage": {
       "params": {
         "$ref": "#/$defs/WorkspacePathsParams"
       },
       "result": {
         "$ref": "#/$defs/Empty"
+      }
+    },
+    "workspace/startHub": {
+      "params": {
+        "$ref": "#/$defs/Empty"
+      },
+      "result": {
+        "$ref": "#/$defs/WorkspaceResult"
       }
     },
     "workspace/statFile": {
@@ -5842,7 +5826,6 @@
     "-32016": "threadBusy",
     "-32017": "searchTimedOut",
     "-32018": "refused",
-    "-32020": "secondHub",
     "-32021": "noHub",
     "-32022": "forbidden",
     "-32600": "invalidRequest",

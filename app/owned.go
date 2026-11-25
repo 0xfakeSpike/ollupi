@@ -112,37 +112,96 @@ func (a *App) UpdateWorkspaceProviders(ctx context.Context, user, id string, p a
 	})
 }
 
-func (a *App) SetWorkspaceKind(ctx context.Context, user, id string, kind account.WorkspaceKind) (account.Workspace, error) {
-	// A scratch workspace is one only by being its environment's own.
-	settable := []account.WorkspaceKind{account.ProjectWorkspace, account.HubWorkspace}
-	if !slices.Contains(settable, kind) {
-		return account.Workspace{}, fmt.Errorf("%w: a workspace is set to one of %q, not %q", account.ErrInvalidName, settable, kind)
+// HubFolder is the name of the folder a user's first environment keeps for
+// their hub, beside its own.
+const HubFolder = "super-agent"
+
+// HubName is what a hub workspace is called when it is made.
+const HubName = "Super Agent"
+
+// StartHub is the user's hub workspace: the folder their first environment
+// keeps for it, made the first time and restored if it was archived. A
+// user has one hub; a deployment that offers no hub tools has none.
+func (a *App) StartHub(ctx context.Context, user string) (account.Workspace, error) {
+	box, err := a.toolbox(ctx, user)
+	if err != nil {
+		return account.Workspace{}, err
 	}
-	if kind == account.HubWorkspace {
-		box, err := a.toolbox(ctx, user)
+	if !slices.ContainsFunc(box.Tools, func(t policy.Tool) bool { return t.Provider == agent.HubProvider }) {
+		return account.Workspace{}, ErrNoHub
+	}
+	var hub *account.Workspace
+	var first account.Environment
+	err = a.st.Read(ctx, func(r store.Reader) error {
+		all, err := r.Workspaces(user)
 		if err != nil {
-			return account.Workspace{}, err
+			return err
 		}
-		offered := slices.ContainsFunc(box.Tools, func(t policy.Tool) bool { return t.Provider == agent.HubProvider })
-		if !offered {
-			return account.Workspace{}, ErrNoHub
+		if i := slices.IndexFunc(all, func(w account.Workspace) bool { return w.Kind == account.HubWorkspace }); i >= 0 {
+			hub = &all[i]
 		}
+		first, err = environmentOf(r, user, "")
+		return err
+	})
+	if err != nil {
+		return account.Workspace{}, err
 	}
-	return a.changeWorkspace(ctx, user, id, func(tx store.Tx, w *account.Workspace) error {
-		if w.Scratch() {
-			return fmt.Errorf("workspace %s: %w", w.Name, ErrScratchWorkspace)
+	if hub != nil {
+		if hub.Archived == nil {
+			return *hub, nil
 		}
+		return a.changeWorkspace(ctx, user, hub.ID, func(_ store.Tx, w *account.Workspace) error {
+			w.Archived = nil
+			return nil
+		})
+	}
+	envBox, err := a.envs.In(ctx, user, first.ID)
+	if err != nil {
+		return account.Workspace{}, err
+	}
+	root, err := envBox.Folder(ctx, HubFolder)
+	if err != nil {
+		return account.Workspace{}, fmt.Errorf("the hub's folder: %w", err)
+	}
+	now := time.Now().UTC()
+	w := account.Workspace{ID: uuid.NewString(), Name: HubName, Environment: first.ID, Root: root, Kind: account.HubWorkspace, Created: now, Updated: now}
+	err = a.st.Update(ctx, func(tx store.Tx) error {
 		all, err := tx.Workspaces(user)
 		if err != nil {
 			return err
 		}
-		otherHub := slices.ContainsFunc(all, func(o account.Workspace) bool { return o.ID != w.ID && o.Kind == account.HubWorkspace })
-		if kind == account.HubWorkspace && otherHub {
-			return ErrSecondHub
+		if slices.ContainsFunc(all, func(o account.Workspace) bool { return o.Kind == account.HubWorkspace }) {
+			// Another start made it meanwhile.
+			return nil
 		}
-		w.Kind = kind
+		if i := slices.IndexFunc(all, func(o account.Workspace) bool { return o.Environment == first.ID && o.Root == root }); i >= 0 {
+			// The folder was added as a project before: it is the hub now.
+			w = all[i]
+			w.Kind, w.Archived, w.Updated = account.HubWorkspace, nil, now
+		}
+		return tx.PutWorkspace(user, w)
+	})
+	if err != nil {
+		return account.Workspace{}, err
+	}
+	return a.hubOf(ctx, user)
+}
+
+func (a *App) hubOf(ctx context.Context, user string) (account.Workspace, error) {
+	var hub account.Workspace
+	err := a.st.Read(ctx, func(r store.Reader) error {
+		all, err := r.Workspaces(user)
+		if err != nil {
+			return err
+		}
+		i := slices.IndexFunc(all, func(w account.Workspace) bool { return w.Kind == account.HubWorkspace })
+		if i < 0 {
+			return fmt.Errorf("the hub workspace: %w", store.ErrNotFound)
+		}
+		hub = all[i]
 		return nil
 	})
+	return hub, err
 }
 
 // ArchiveWorkspace archives a workspace or restores it; the terminal of
@@ -183,8 +242,8 @@ func (a *App) MoveWorkspace(ctx context.Context, user, id, path string) (account
 	if err := a.st.Read(ctx, func(r store.Reader) (err error) { at, err = r.Workspace(user, id); return err }); err != nil {
 		return account.Workspace{}, err
 	}
-	if at.Scratch() {
-		return account.Workspace{}, fmt.Errorf("workspace %s: %w", at.Name, ErrScratchWorkspace)
+	if at.Kept() {
+		return account.Workspace{}, fmt.Errorf("workspace %s: %w", at.Name, ErrKeptFolder)
 	}
 	box, err := a.envs.In(ctx, user, at.Environment)
 	if err != nil {

@@ -42,7 +42,6 @@ const (
 	errThreadBusy        = -32016
 	errSearchTimedOut    = -32017
 	errRefused           = -32018
-	errSecondHub         = -32020
 	errNoHub             = -32021
 	errForbidden         = -32022
 )
@@ -126,7 +125,7 @@ var protocol = struct {
 		"workspace/rename":             handle((*conn).workspaceRename),
 		"workspace/move":               handle((*conn).workspaceMove),
 		"workspace/archive":            handle((*conn).workspaceArchive),
-		"workspace/setKind":            handle((*conn).workspaceSetKind),
+		"workspace/startHub":           handle((*conn).workspaceStartHub),
 		"workspace/updatePermissions":  handle((*conn).workspacePermissions),
 		"workspace/updateInstructions": handle((*conn).workspaceInstructions),
 		"workspace/updateProviders":    handle((*conn).workspaceProviders),
@@ -221,7 +220,6 @@ var protocol = struct {
 		errThreadBusy:              "threadBusy",
 		errSearchTimedOut:          "searchTimedOut",
 		errRefused:                 "refused",
-		errSecondHub:               "secondHub",
 		errNoHub:                   "noHub",
 		errForbidden:               "forbidden",
 	},
@@ -660,11 +658,6 @@ type WorkspaceProvidersParams struct {
 	account.Providers
 }
 
-type WorkspaceSetKindParams struct {
-	WorkspaceID string                `json:"workspaceId"`
-	Kind        account.WorkspaceKind `json:"kind"`
-}
-
 type WorkspacePermissionsParams struct {
 	WorkspaceID string `json:"workspaceId"`
 	policy.Settings
@@ -962,7 +955,6 @@ var errorCodes = []struct {
 	{app.ErrNoSuchRequest, errNoSuchRequest},
 	{account.ErrWorkspaceArchived, errWorkspaceArchived},
 	{app.ErrThreadBusy, errThreadBusy},
-	{app.ErrSecondHub, errSecondHub},
 	{app.ErrNoHub, errNoHub},
 	{app.ErrThreadArchived, errThreadArchived},
 	{app.ErrWorkspaceBusy, errThreadBusy},
@@ -971,6 +963,7 @@ var errorCodes = []struct {
 	{app.ErrEnvironmentInUse, jsonrpc.CodeInvalidParams},
 	{app.ErrFirstEnvironment, jsonrpc.CodeInvalidParams},
 	{app.ErrScratchWorkspace, jsonrpc.CodeInvalidParams},
+	{app.ErrKeptFolder, jsonrpc.CodeInvalidParams},
 	{app.ErrNotARepository, jsonrpc.CodeInvalidParams},
 	{app.ErrNoTerminal, errNotFound},
 	{app.ErrInvalidEnvironment, jsonrpc.CodeInvalidParams},

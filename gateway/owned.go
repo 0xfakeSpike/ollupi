@@ -149,8 +149,10 @@ func (c *conn) workspaceProviders(ctx context.Context, p WorkspaceProvidersParam
 	return WorkspaceResult{Workspace: workspaceRow(w)}, err
 }
 
-func (c *conn) workspaceSetKind(ctx context.Context, p WorkspaceSetKindParams) (WorkspaceResult, error) {
-	w, err := c.s.app.SetWorkspaceKind(ctx, c.user, p.WorkspaceID, p.Kind)
+// workspaceStartHub is the user's hub workspace, made in the folder their
+// first environment keeps for it the first time.
+func (c *conn) workspaceStartHub(ctx context.Context, _ Empty) (WorkspaceResult, error) {
+	w, err := c.s.app.StartHub(ctx, c.user)
 	return WorkspaceResult{Workspace: workspaceRow(w)}, err
 }
 

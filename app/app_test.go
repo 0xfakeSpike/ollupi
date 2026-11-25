@@ -453,32 +453,36 @@ func TestAWorkspaceKeepsItsInstructionsAndProviders(t *testing.T) {
 	}
 }
 
-func TestAUserHasOneHubWhoseConversationsRunAsTheHub(t *testing.T) {
+func TestAUserHasOneHubInTheFolderTheirFirstEnvironmentKeeps(t *testing.T) {
 	f := setup(t)
-	dir := t.TempDir()
-	for _, name := range []string{"home", "work", "docs"} {
-		os.Mkdir(filepath.Join(dir, name), 0o755)
-	}
-	home := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", "", filepath.Join(dir, "home"), ""))
-	work := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", "", filepath.Join(dir, "work"), ""))
-	docs := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", "", filepath.Join(dir, "docs"), ""))
-	if home.Kind != account.ProjectWorkspace {
-		t.Errorf("a new workspace is %q", home.Kind)
+	docs := must[account.Workspace](t)(f.a.AddWorkspace(f.ctx, "u", "", t.TempDir(), "docs"))
+	if docs.Kind != account.ProjectWorkspace {
+		t.Errorf("a new workspace is %q", docs.Kind)
 	}
 	noHub := New(f.st, catalog{provider}, func(context.Context, string) (tool.Set, error) { return plainSet{}, nil }, noStatuses, here(f.t, f.st), f.blobs,
 		cron.NewCalendar(time.UTC), policy.Settings{})
-	if _, err := noHub.SetWorkspaceKind(f.ctx, "u", home.ID, account.HubWorkspace); !errors.Is(err, ErrNoHub) {
+	if _, err := noHub.StartHub(f.ctx, "u"); !errors.Is(err, ErrNoHub) {
 		t.Errorf("a hub where the deployment offers none: %v", err)
 	}
-	if _, err := f.a.SetWorkspaceKind(f.ctx, "u", home.ID, "inbox"); !errors.Is(err, account.ErrInvalidName) {
-		t.Errorf("an unknown kind: %v", err)
+	hub := must[account.Workspace](t)(f.a.StartHub(f.ctx, "u"))
+	scratch := must[place](t)(f.a.place(f.ctx, "u", firstScratchOf(t, f).ID))
+	if hub.Kind != account.HubWorkspace || hub.Root != filepath.Join(filepath.Dir(scratch.root), HubFolder) {
+		t.Errorf("the hub %+v is not beside the environment's folder %s", hub, scratch.root)
 	}
-	must[account.Workspace](t)(f.a.SetWorkspaceKind(f.ctx, "u", home.ID, account.HubWorkspace))
-	if _, err := f.a.SetWorkspaceKind(f.ctx, "u", work.ID, account.HubWorkspace); !errors.Is(err, ErrSecondHub) {
-		t.Errorf("a second hub: %v", err)
+	if st, err := os.Stat(hub.Root); err != nil || !st.IsDir() {
+		t.Errorf("the hub's folder was not made: %v", err)
 	}
-	must[account.Workspace](t)(f.a.SetWorkspaceKind(f.ctx, "u", home.ID, account.HubWorkspace))
-	plan := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", home.ID, "", ""))
+	if again := must[account.Workspace](t)(f.a.StartHub(f.ctx, "u")); again.ID != hub.ID {
+		t.Errorf("a second start made another hub: %s, %s", hub.ID, again.ID)
+	}
+	if _, err := f.a.MoveWorkspace(f.ctx, "u", hub.ID, t.TempDir()); !errors.Is(err, ErrKeptFolder) {
+		t.Errorf("moving the hub: %v", err)
+	}
+	must[account.Workspace](t)(f.a.ArchiveWorkspace(f.ctx, "u", hub.ID, true))
+	if back := must[account.Workspace](t)(f.a.StartHub(f.ctx, "u")); back.ID != hub.ID || back.Archived != nil {
+		t.Errorf("starting an archived hub: %+v", back)
+	}
+	plan := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", hub.ID, "", ""))
 	notes := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", docs.ID, "", ""))
 	if turn := sent(t)(f.a.Send(f.ctx, "u", plan.ID, Input{Text: "plan the week"})); turn.Role != string(agent.HubMain) {
 		t.Errorf("a turn in the hub runs as %s", turn.Role)
@@ -486,11 +490,24 @@ func TestAUserHasOneHubWhoseConversationsRunAsTheHub(t *testing.T) {
 	if turn := sent(t)(f.a.Send(f.ctx, "u", notes.ID, Input{Text: "write notes"})); turn.Role != string(agent.FullMain) {
 		t.Errorf("a turn in a project runs as %s", turn.Role)
 	}
-	must[account.Workspace](t)(f.a.SetWorkspaceKind(f.ctx, "u", home.ID, account.ProjectWorkspace))
-	must[account.Workspace](t)(f.a.SetWorkspaceKind(f.ctx, "u", work.ID, account.HubWorkspace))
-	if turn := sent(t)(f.a.Send(f.ctx, "u", plan.ID, Input{Text: "and next week"})); turn.Role != string(agent.FullMain) {
-		t.Errorf("after the hub moved, a turn in the old one runs as %s", turn.Role)
+}
+
+// firstScratchOf is the scratch workspace of the user u's first environment.
+func firstScratchOf(t *testing.T, f *fixture) account.Workspace {
+	t.Helper()
+	var w account.Workspace
+	err := f.st.Read(f.ctx, func(r store.Reader) error {
+		envs, err := r.Environments("u")
+		if err != nil {
+			return err
+		}
+		w, err = r.Scratch("u", envs[0].ID)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
+	return w
 }
 
 func TestCronJobsAreNamedOncePerConversation(t *testing.T) {
@@ -674,17 +691,11 @@ func TestAWorkspaceAndItsConversationsAreInOneEnvironment(t *testing.T) {
 	if loose := must[store.Thread](t)(f.a.StartThread(f.ctx, "u", "", other.ID, "loose there")); loose.Workspace != otherScratch.ID {
 		t.Errorf("a conversation started in another environment is in %s, not its scratch workspace", loose.Workspace)
 	}
-	for name, change := range map[string]func() error{
-		"archive": func() error { _, err := f.a.ArchiveWorkspace(f.ctx, "u", firstScratch.ID, true); return err },
-		"move":    func() error { _, err := f.a.MoveWorkspace(f.ctx, "u", firstScratch.ID, t.TempDir()); return err },
-		"kind": func() error {
-			_, err := f.a.SetWorkspaceKind(f.ctx, "u", firstScratch.ID, account.ProjectWorkspace)
-			return err
-		},
-	} {
-		if err := change(); !errors.Is(err, ErrScratchWorkspace) {
-			t.Errorf("%s a scratch workspace: %v", name, err)
-		}
+	if _, err := f.a.ArchiveWorkspace(f.ctx, "u", firstScratch.ID, true); !errors.Is(err, ErrScratchWorkspace) {
+		t.Errorf("archiving a scratch workspace: %v", err)
+	}
+	if _, err := f.a.MoveWorkspace(f.ctx, "u", firstScratch.ID, t.TempDir()); !errors.Is(err, ErrKeptFolder) {
+		t.Errorf("moving a scratch workspace: %v", err)
 	}
 
 	if err := f.a.DeleteEnvironment(f.ctx, "u", first.ID); !errors.Is(err, ErrFirstEnvironment) {

@@ -1,84 +1,12 @@
 # 事件流
 
-引擎里所有状态变化都只走一条写路径：`store.Update` 事务。事务提交后，store 把这次提交改了什么算成事件，发到进程内的 `store.Feed` 上。订阅方把事件当作唤醒信号，回到 store 读出当前状态，再决定做什么。写的一方不通知任何人，也不直接调用任何订阅方。
+写路径、读路径和通知的总述见 [architecture.md](architecture.md)。本页讲事件本身：三个让引擎转起来的环、一轮在总线上怎么走、谁听什么，以及写入方和订阅方都要守的约定。feed 上的事件不是会话日志的副本，只是"某次提交改了这些东西"的通知。
 
-会话本身用的是事件溯源：日志 `entries` 只追加，轮次和条目的状态都从日志折叠出来（见 [lifecycle.md](lifecycle.md)）。feed 上的事件不是这份日志的副本，只是“某次提交改了这些东西”的通知。
+代码在 [store/feed.go](../store/feed.go)、[store/sqlite/sqlite.go](../store/sqlite/sqlite.go)、[schedule/](../schedule/)、[run/](../run/)。
 
-本页按当前代码写。代码在 [store/feed.go](../store/feed.go)、[store/sqlite/sqlite.go](../store/sqlite/sqlite.go)、[schedule/](../schedule/)、[run/](../run/)。
+## 三个环
 
-## 总览
-
-```mermaid
-flowchart LR
-  subgraph W["写入方"]
-    direction TB
-    client["客户端请求<br/>经 gateway"]
-    app["app<br/>Send · Steer · Decide · Answer · Interrupt<br/>会话和资源的增删改"]
-    cron["cron.Run<br/>到点时提交到期的定时任务"]
-    runner["run.Runner<br/>模型 · 工具 · 子 agent · 后台任务"]
-    back["记忆抽取、用量记录<br/>回头写入"]
-    client --> app
-  end
-
-  subgraph S["store：唯一写路径"]
-    direction TB
-    tx["store.Update 进写队列<br/>写协程逐个执行事务<br/>Append：Check → Apply → 物化<br/>Put / Delete 资源"]
-    db[("SQLite<br/>entries · threads · turns · items<br/>tasks · cron_jobs · memories ……")]
-    commit["提交成功<br/>tx.events() 算出事件<br/>整次提交共用一个 seq<br/>写协程按提交顺序放进事件队列"]
-    feed{{"store.Feed<br/>事件队列 + 一个分发协程<br/>按入队顺序扇出"}}
-    tx --> db
-    tx --> commit --> feed
-  end
-
-  app --> tx
-  cron -- "app.Scheduled" --> tx
-  runner --> tx
-  back --> tx
-  runner -. "Delta：流式增量<br/>不进事务，没有 seq<br/>同样进事件队列" .-> feed
-
-  subgraph R["订阅方：记下要做的事，唤醒自己"]
-    direction TB
-    gw["gateway 连接<br/>按用户订阅"]
-    ts["线程调度器"]
-    ks["任务调度器"]
-    ex["记忆抽取"]
-    us["用量记录"]
-    mcp["MCP 连接"]
-    cr["定时任务 cron.Run"]
-  end
-
-  feed --> gw & ts & ks & ex & us & mcp & cr
-
-  subgraph O["随后：回到 store 读真相再行动"]
-    direction TB
-    o1(["通知客户端<br/>发审批、提问请求"])
-    o2(["读 Runnable，起 Run<br/>Runner 又成为写入方"])
-    o3(["读 Tasks，起 Runner.Task"])
-    o4(["读结束的轮次，调模型<br/>写记忆"])
-    o5(["读模型响应<br/>写用量行（不发事件）"])
-    o6(["断开旧连接<br/>下次取工具时重连"])
-    o7(["读最早的下次运行时间<br/>重新定闹钟"])
-  end
-
-  gw --> o1
-  ts --> o2
-  ks --> o3
-  ex --> o4
-  us --> o5
-  mcp --> o6
-  cr --> o7
-
-  classDef writer fill:#fff4df,stroke:#c98b2e,color:#33230d
-  classDef core fill:#e9f2ff,stroke:#3978b8,color:#102337
-  classDef reader fill:#eaf7ed,stroke:#3c8b53,color:#102b17
-  classDef action fill:#f4f4f4,stroke:#8a8a8a,color:#222
-  class client,app,cron,runner,back writer
-  class tx,db,commit,feed core
-  class gw,ts,ks,ex,us,mcp,cr reader
-  class o1,o2,o3,o4,o5,o6,o7 action
-```
-
-图里有三个环，它们让引擎自己转起来：
+这三个环让引擎自己转起来：
 
 - **会话环**：Runner 写日志 → 提交 → 线程调度器听到会话可运行 → 读出可运行的会话 → 起 Run。审批、回答、子 agent 汇报、后台任务汇报都只是往日志里追加一条记录，会话因此变回可运行，调度器听到后接着跑。
 - **任务环**：Runner 写 `TaskLaunched` → 任务调度器听到 → 起 `Runner.Task` → 写 `TaskReported` → 会话环接手。
@@ -187,10 +115,13 @@ flowchart TB
 | `Change` 含 `ModelResponded` | 用量记录 | 这个会话标脏，稍后补上用量行 |
 | `Owned.MCPServer` / `MCPServerDeleted` | MCP 连接 | 关掉这个用户的连接，下次取工具时重连 |
 | `Owned.CronJob` / `CronJobDeleted` | 定时任务 | 醒来提交到期的任务，再按最早的下次运行时间重定闹钟 |
-| 其他 `Owned` | gateway | `settings/changed`、`workspace/changed`、`environment/changed`、`mcpServer/changed`、`cron/changed`、`memory/changed`、`todo/changed` |
+| `Owned.Catalog`（不带用户） | host 的模型集合 | 换掉变了的模型客户端，没变的保留 |
+| `Owned.Catalog`（不带用户） | gateway | 运营者的连接发 `catalog/changed`（含 key），每条连接发 `model/changed` |
+| `Owned.User`（不带用户） | gateway | 运营者的连接和这个用户自己的连接发 `user/changed` |
+| 其他 `Owned` | gateway | `settings/changed`、`workspace/changed`、`environment/changed`、`mcpServer/changed`、`cron/changed`、`memory/changed`、`todo/changed`、`skill/changed` |
 | `Delta` | gateway | `item/agentMessage/delta`、`item/reasoning/textDelta` |
 
-`Change` 来自会话的写入：`Append`、`CreateThread`、`UpdateThread`、`DeleteThread`。`Owned` 来自用户资源的写入：设置、工作区、执行环境、MCP 服务器、定时任务、记忆、待办。`EnsureUser`、`SetMemoryState`、`PutUsage`、`PutPresence`、`CreateTask`、`StartTask`、`DeleteTask` 不发事件。后台任务之所以可见，是因为同一事务里追加了 `TaskLaunched`、`TaskReported` 这些条目。
+`Change` 来自会话的写入：`Append`、`CreateThread`、`UpdateThread`、`DeleteThread`。`Owned` 来自用户资源的写入：设置、工作区、执行环境、MCP 服务器、定时任务、记忆、待办、技能；模型目录（`SetCatalog`）和用户（`CreateUser`、`SetUserName`）的事件不带用户，每个订阅方都收到。`EnsureUser`、`SetMemoryState`、`PutUsage`、`PutPresence`、`CreateTask`、`StartTask`、`DeleteTask` 不发事件。后台任务之所以可见，是因为同一事务里追加了 `TaskLaunched`、`TaskReported` 这些条目。
 
 ## 约定
 
@@ -212,6 +143,5 @@ flowchart TB
   - 之后通知按 seq 顺序到达，seq 不超过读结果的直接丢掉。
 
   写接口的返回值不带 seq：`Update` 返回之前通知已经进了出站队列，镜像应以通知为准，不要应用写结果。
-- **模型目录在 store 里，是部署的，不属于哪个用户。** `Tx.SetCatalog` 整份替换 `providers` 和 `provider_models` 两张表，提交时发一条不带用户的事件（`store.Owned.Catalog`）。不带用户的事件每个订阅者都收到：host 的模型集合据此换掉变了的模型客户端，已经在调模型的轮次用原来的客户端跑完；网关给运营者连接发 `catalog/changed`（含 key），给每个连接发 `model/changed`（只有模型和它开新会话用哪个）。用户选哪个模型开新会话、哪个模型学记忆，存在设置里（`Settings.Model`、`Settings.LearnModel`），改动照常经事务提交，以 `settings/changed` 通知客户端。记忆抽取每次处理一个用户时都重新读它的设置，不需要监听设置的变化。
-- **用户的名字也走不带用户的事件。** `Tx.CreateUser` 和 `Tx.SetUserName` 提交一条不带用户的事件（`store.Owned.User`），每个订阅者都收到；网关只发给运营者连接和这个用户自己的连接（`user/changed`），别的用户听不到。
+- **模型目录是部署的，用户的选择在设置里。** `Tx.SetCatalog` 整份替换 `providers` 和 `provider_models`；已经在调模型的轮次用原来的客户端跑完。用户选哪个模型开新会话、哪个模型学记忆，存在 `Settings.Model`、`Settings.LearnModel`，照常经事务提交、以 `settings/changed` 通知。记忆抽取每次处理一个用户时都重新读它的设置，不需要监听设置的变化。
 - **只有这几处由时间驱动：** 定时任务按最早的下次运行时间定闹钟，最长一分钟醒一次核对时钟（Go 的计时器不计电脑睡眠的时间，归档的会话恢复时也没有定时任务事件）；抽取和用量失败后定时重试；shard 定时续租；wshub 定时 ping。

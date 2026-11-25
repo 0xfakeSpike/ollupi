@@ -207,3 +207,18 @@ func (r *remote) Trash(ctx context.Context, path string) error {
 	}
 	return nil
 }
+
+// Folder is the folder the environment keeps for name, beside its own.
+func (r *remote) Folder(ctx context.Context, name string) (string, error) {
+	if err := keptName(name); err != nil {
+		return "", err
+	}
+	if r.Machine == nil || len(r.roots) == 0 {
+		return "", errors.New("sandbox: this box has no machine to keep folders on")
+	}
+	path := filepath.Join(filepath.Dir(r.roots[0]), name)
+	if err := r.run(ctx, "mkdir", "-p", "--", path); err != nil {
+		return "", fmt.Errorf("sandbox: make %s: %w", path, err)
+	}
+	return path, nil
+}

@@ -23,8 +23,9 @@ func TestTheHubNamesTheSameTodoStatusesAsTheApp(t *testing.T) {
 
 func TestTheHubKeepsTheUsersTodos(t *testing.T) {
 	f := setup(t)
-	home, docs := f.workspace("home"), f.workspace("docs")
-	if _, err := f.a.SetWorkspaceKind(f.ctx, "u", home.ID, account.HubWorkspace); err != nil {
+	docs := f.workspace("docs")
+	home, err := f.a.StartHub(f.ctx, "u")
+	if err != nil {
 		t.Fatal(err)
 	}
 	hub, err := f.a.StartThread(f.ctx, "u", home.ID, "", "plan")

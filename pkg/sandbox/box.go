@@ -21,6 +21,10 @@ type Box interface {
 	Open(ctx context.Context, path string) (io.ReadCloser, error)
 	WriteFile(ctx context.Context, path string, data []byte, perm fs.FileMode) error
 	Move(ctx context.Context, from, to string) error
+	// Folder is the folder the environment keeps for name, beside its own
+	// (Roots()[0]), made the first time it is asked for: a workspace of its
+	// own that is no project, as a hub's.
+	Folder(ctx context.Context, name string) (string, error)
 	// MakeDir makes a folder, its parent being there, as a person does.
 	MakeDir(ctx context.Context, path string) error
 	// Trash moves a file or folder to the machine's trash, where a person

@@ -47,7 +47,9 @@ type WorkspaceKind string
 
 const (
 	ProjectWorkspace WorkspaceKind = "project"
-	HubWorkspace     WorkspaceKind = "hub"
+	// HubWorkspace is a user's hub: a folder their first environment keeps
+	// for it (StartHub), whose conversations hand work out to the projects.
+	HubWorkspace WorkspaceKind = "hub"
 	// ScratchWorkspace is the folder of an environment itself: every
 	// environment has one, made and deleted with it, and a conversation
 	// started in no workspace is in it.
@@ -100,6 +102,11 @@ func Instructions(text string) (string, error) {
 
 // Scratch is whether the workspace is its environment's own folder.
 func (w Workspace) Scratch() bool { return w.Kind == ScratchWorkspace }
+
+// Kept is whether the workspace's folder is one its environment keeps, its
+// own (scratch) or the hub's, rather than one a person chose: it does not
+// move.
+func (w Workspace) Kept() bool { return w.Kind == ScratchWorkspace || w.Kind == HubWorkspace }
 
 // NewScratch is the scratch workspace of environment e, made with it.
 func NewScratch(e Environment) Workspace {

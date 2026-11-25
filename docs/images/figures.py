@@ -144,62 +144,95 @@ class Figure:
 
 
 def architecture():
-    f = Figure(960, "OLLUPI · ARCHITECTURE", "One process hosts every session",
-                "Sessions, subagents and scheduled jobs share one scheduler, and each conversation is an append-only log in SQLite", "Every step is appended to the log before it runs", SOURCE)
-    f.card(560, 196, 480, 60, TINT, LINE)
-    f.text(800, 233, "ollupi-desktop · other clients", "hs", "middle")
-    f.arrow("M800,258 V300")
-    f.arrow("M800,300 V258")
-    f.text(816, 284, "JSON-RPC 2.0 · WebSocket", "s")
-    f.card(360, 302, 880, 64)
-    f.text(392, 342, "gateway", "h code")
-    f.text(510, 341, "Request dispatch · pushes the store's feed · contract and method table from one source", "b")
-    f.arrow("M800,368 V404")
-    f.card(330, 406, 940, 236, TINT, INDIGO, r=18)
-    f.text(360, 444, "app · run", "h code")
-    mods = [("schedule", ["Shared pool, 32 slots by default", "Slots released while waiting", "Sessions before subagents"]),
-            ("agent.Next", ["Reads the log at every step", "Model call → tool execution", "Appended before it runs"]),
-            ("Permissions · redaction", ["Four layers of permission rules", "Seatbelt or a cloud sandbox", "Secrets replaced before sending"])]
-    for i, (h, lines) in enumerate(mods):
-        x = 360 + i * 300
-        f.card(x, 466, 280, 156)
-        f.text(x + 22, 504, h, "hs code" if h in ("schedule", "agent.Next") else "hs")
+    f = Figure(1370, "OLLUPI · ARCHITECTURE", "One write path, one feed, every session in one process",
+               "Every change is one transaction through one writer; after it commits, the store tells its feed, and each listener reads the store again",
+               "Events only wake: whoever hears one reads the store, so a missed event loses no work", SOURCE)
+    f.card(560, 196, 480, 56, TINT, LINE)
+    f.text(800, 231, "ollupi-desktop · other clients", "hs", "middle")
+    f.arrow("M800,254 V296")
+    f.arrow("M800,296 V254")
+    f.text(816, 280, "JSON-RPC 2.0 over WebSocket · paths of its own for attachments, uploads, files and terminals", "s")
+    f.card(72, 300, 1456, 92)
+    f.text(100, 340, "gateway", "h code")
+    f.text(220, 338, "Authenticate names a user the store holds, or the operator · one inbox in and one outbox out per connection", "b")
+    f.text(220, 368, "Reads run side by side, 8 per connection; everything else in arrival order · every notification carries its commit's seq", "s")
+    writers = [("run.Runner", ["Model replies and tool results", "Deltas go straight to the feed"]),
+               ("app", ["Client commands: send, decide,", "answer, interrupt, hand off …"]),
+               ("cron", ["Due jobs become messages,", "queued like any other turn"]),
+               ("extract · usage", ["Learned memories", "Usage rows, which tell no one"])]
+    f.arrow("M615,394 V432")
+    f.text(631, 420, "requests", "s")
+    for i, (h, lines) in enumerate(writers):
+        x = 72 + i * 370
+        f.card(x, 436, 346, 116)
+        f.text(x + 22, 474, h, "hs code")
         for j, line in enumerate(lines):
-            f.text(x + 22, 540 + j * 26, line, "b")
-    for i, (h, lines) in enumerate([("Memory", ["Learned from ended turns", "Global · general · workspace"]),
-                                     ("Scheduled jobs", ["Sends a message when due", "Queues with other turns"])]):
-        y = 420 + i * 116
-        f.card(72, y, 228, 100)
-        f.text(94, y + 36, h, "hs")
+            f.text(x + 22, 506 + j * 26, line, "b")
+        f.arrow(f"M{x + 173},554 V588")
+    y = 592
+    f.card(72, y, 1456, 190, TINT, INDIGO, r=18)
+    f.text(100, y + 40, "store.Update", "h code")
+    f.text(100, y + 66, "Every change, one transaction", "s")
+    for k in range(6):
+        f.block(100 + k * 40, y + 86, 32, 34, [LINE, INDIGO_2, INDIGO_2, "#7d74b0", "#5a5290", INDIGO][k])
+    f.text(100, y + 144, "write queue", "s")
+    f.arrow(f"M346,{y + 103} H388")
+    f.card(392, y + 84, 150, 38, "#ffffff", INDIGO, r=10)
+    f.text(467, y + 109, "one writer", "chip", "middle", f"fill:{INDIGO}")
+    f.arrow(f"M544,{y + 103} H586")
+    f.add(f'<g transform="translate(596,{y + 80})" fill="none" stroke="{INDIGO}" stroke-width="3"><ellipse cx="22" cy="8" rx="22" ry="8"/>'
+          f'<path d="M0,8 V40 A22,8 0 0 0 44,40 V8"/><path d="M0,24 A22,8 0 0 0 44,24"/></g>')
+    f.text(656, y + 100, "SQLite", "hs")
+    f.text(656, y + 124, "WAL, one write connection", "s")
+    f.add(f'<line x1="900" y1="{y + 24}" x2="900" y2="{y + 136}" stroke="{LINE}" stroke-width="2"/>')
+    f.text(930, y + 40, "Store.Read", "h code")
+    f.text(930, y + 72, "Four read-only connections, each on a snapshot", "b")
+    f.text(930, y + 98, "of the last commit; a read never waits for a write", "b")
+    f.text(930, y + 124, "and the gateway answers reads side by side", "s")
+    f.text(100, y + 172, "append-only log → threads · turns · items  ·  tasks  ·  workspaces · environments  ·  model catalog · users · skills  ·  memories · cron jobs · todos", "s")
+    f.arrow(f"M800,{y + 192} V{y + 226}")
+    f.text(816, y + 214, "after each commit", "s")
+    y = 822
+    f.card(72, y, 1456, 76, TINT_2, INDIGO_2, r=38)
+    f.text(104, y + 46, "store.Feed", "h code")
+    for k in range(5):
+        f.block(262 + k * 30, y + 22, 24, 32, [INDIGO_2, "#7d74b0", "#5a5290", INDIGO, INDIGO][k], r=6)
+    f.arrow(f"M416,{y + 38} H446")
+    f.text(458, y + 45, "One event queue, one dispatcher: told in seq order, deltas in between · it only wakes; the work waits in SQLite", "b")
+    subs = [("gateway", ["Notifications to the", "user's connections,", "approval requests"]),
+            ("schedule.Threads", ["Runnable thread:", "a Runner in a free", "slot, top level first"]),
+            ("schedule.Tasks", ["Background call:", "runs in a task slot,", "4 per user"]),
+            ("extract", ["Turn ended: learn", "memories with the", "user's learn model"]),
+            ("cron", ["Job changed: send", "what is due, rearm", "the timer"]),
+            ("mcp.Users", ["Server changed:", "close it, reconnect", "on next use"]),
+            ("host", ["Catalog changed:", "new clients for the", "models that changed"])]
+    for i, (h, lines) in enumerate(subs):
+        x = 72 + i * 210
+        f.arrow(f"M{x + 98},{y + 78} V{y + 112}")
+        f.card(x, y + 116, 196, 128)
+        f.text(x + 18, y + 150, h, "hs code", style="font-size:16px")
         for j, line in enumerate(lines):
-            f.text(94, y + 64 + j * 24, line, "s")
-        f.arrow(f"M300,{y + 50} H326")
-    f.card(1300, 420, 228, 100)
-    f.text(1322, 456, "Model connections", "hs")
-    f.text(1322, 484, "OpenAI · Anthropic · Gemini", "s")
-    f.text(1322, 508, "Concurrency per connection", "s")
-    f.arrow("M1272,470 H1296")
-    f.card(1300, 552, 228, 90, PAPER, BASE, dash=True)
-    f.text(1322, 590, "Model providers", "hs")
-    f.text(1322, 618, "Receive placeholders only", "s")
-    f.arrow("M1414,522 V548")
-    f.arrow("M800,644 V680")
-    f.text(816, 668, "Decided as each call is written", "s")
-    tools = [("Built-in tools", "Subagent · plan · ask · web"), ("run_command", "Runs in the sandbox"), ("MCP servers", "Each user's own"), ("App tools", "kit.Provider")]
-    for i, (h, s) in enumerate(tools):
-        x = 360 + i * 226
-        f.card(x, 682, 206, 82)
-        f.text(x + 103, 716, h, "hs code" if h == "run_command" else "hs", "middle")
-        f.text(x + 103, 744, s, "s", "middle")
-    f.card(72, 796, 1456, 92, PAPER, BASE, r=16)
-    f.add(f'<g transform="translate(100,816)" fill="none" stroke="{INDIGO}" stroke-width="3"><ellipse cx="22" cy="10" rx="22" ry="8"/>'
-          f'<path d="M0,10 V44 A22,8 0 0 0 44,44 V10"/><path d="M0,27 A22,8 0 0 0 44,27"/></g>')
-    f.text(166, 836, "SQLite", "h")
-    f.text(166, 866, "conversation log → turns · items · memory · scheduled jobs · permission settings · full-text index", "b")
-    f.text(1500, 836, "Append first, then run", "hs", "end")
-    f.text(1500, 866, "Queued and in-progress turns continue after a restart", "b", "end")
-    f.arrow("M186,638 V792", dash=True)
-    f.arrow("M800,766 V792")
+            f.text(x + 18, y + 178 + j * 24, line, "s")
+    f.arrow("M380,1068 V1102")
+    f.text(396, 1092, "starts", "s")
+    y = 1106
+    f.card(72, y, 440, 128, "#ffffff", INDIGO, r=16)
+    f.text(94, y + 38, "run.Runner", "hs code")
+    for j, line in enumerate(["Each step reads the view, asks agent.Next,", "calls the model or tools, appends the result;", "waiting on a person frees the slot"]):
+        f.text(94, y + 70 + j * 24, line, "s")
+    f.arrow(f"M514,{y + 64} H532")
+    f.card(536, y, 440, 128)
+    f.text(558, y + 38, "Models", "hs")
+    for j, line in enumerate(["The deployment's catalog, kept in the store", "and set by its operator; each user chooses;", "4 calls at a time per model by default"]):
+        f.text(558, y + 70 + j * 24, line, "s")
+    f.card(1000, y, 528, 128)
+    f.text(1022, y + 38, "Tools", "hs")
+    for j, line in enumerate(["Built-in · MCP servers · the embedder's own", "Permission decided as each call is written", "Run in the sandbox of the conversation's environment"]):
+        f.text(1022, y + 70 + j * 24, line, "s")
+    f.arrow(f"M292,{y + 130} V{y + 160} H1264 V{y + 132}")
+    f.text(780, y + 154, "invokes, read-only calls side by side", "s", "middle")
+    f.arrow(f"M72,{y + 64} H44 V494 H68", dash=True)
+    f.add(f'<text class="s" transform="translate(36,{(y + 494) // 2 + 40}) rotate(-90)" text-anchor="middle">writes back through store.Update</text>')
     f.save("architecture.svg")
 
 
@@ -249,101 +282,6 @@ def comparison():
             f.add(f'<rect x="{x0 + 34}" y="{640 + i * 36 - 7}" width="8" height="8" fill="{ROSE if side == 0 else INDIGO}"/>')
             f.text(x0 + 56, 640 + i * 36, t, "b")
     f.save("cli-vs-ollupi.svg")
-
-
-def pool():
-    f = Figure(980, "OLLUPI · TWO POOLS", "Turns share the session pool, background calls the tool pool",
-               "Each pool has its own scheduler and limits; model calls are limited per connection, apart from both",
-               "A waiting turn holds no slot; a long tool call need not hold one either", SOURCE)
-    # Where turns come from.
-    for i, (h, s) in enumerate([("User messages", "Any session"), ("Subagents", "Plain sessions and turns"),
-                                ("Scheduled jobs", "Sends a message when due")]):
-        y = 212 + i * 100
-        f.card(72, y, 228, 84)
-        f.text(96, y + 36, h, "hs")
-        f.text(96, y + 62, s, "s")
-        f.arrow(f"M300,{y + 42} C338,{y + 42} 338,{360} 372,{360}")
-    # The session pool: queue, slots, and the model calls they make.
-    f.card(376, 200, 280, 320, TINT, LINE, r=18)
-    f.text(400, 240, "Session queue", "h")
-    f.text(400, 266, "Runnable turns in the database", "s")
-    for i, t in enumerate(["Session A · turn 3", "Session B · turn 1", "Subagent A-1", "Scheduled · daily digest"]):
-        f.card(400, 288 + i * 50, 232, 40, "#ffffff", LINE, r=10)
-        f.text(416, 314 + i * 50, t, "b")
-    f.arrow("M658,360 H696")
-    f.card(700, 200, 420, 320, "#ffffff", INDIGO, r=18)
-    f.text(724, 240, "Session pool", "h")
-    f.text(724, 266, "32 slots by default, a cap per user; one per running turn", "s")
-    import random
-    random.seed(7)
-    states = ["model"] * 13 + ["tool"] * 5 + ["idle"] * 14
-    random.shuffle(states)
-    for i, st in enumerate(states):
-        r, c = divmod(i, 8)
-        x, y = 724 + c * 46, 286 + r * 46
-        if st == "idle":
-            f.add(f'<rect x="{x}" y="{y}" width="38" height="38" rx="8" fill="{PAPER}" stroke="{RULE}" stroke-width="2"/>')
-        else:
-            f.add(f'<rect x="{x}" y="{y}" width="38" height="38" rx="8" fill="{INDIGO if st == "model" else PINK}"/>')
-    for i, (c, t) in enumerate([(INDIGO, "Calling the model"), (PINK, "Short tool call"), (None, "Free")]):
-        x = 724 + i * 150
-        if c:
-            f.add(f'<rect x="{x}" y="{482}" width="16" height="16" rx="4" fill="{c}"/>')
-        else:
-            f.add(f'<rect x="{x}" y="{482}" width="16" height="16" rx="4" fill="{PAPER}" stroke="{RULE}" stroke-width="2"/>')
-        f.text(x + 24, 496, t, "s")
-    f.arrow("M1122,360 H1160")
-    f.card(1164, 200, 364, 320, "#ffffff", LINE, r=18)
-    f.text(1188, 240, "Model calls", "h")
-    f.text(1188, 266, "Per provider connection, 4 by default", "s")
-    for j, conn in enumerate(["Connection A", "Connection B"]):
-        y = 306 + j * 92
-        f.text(1188, y, conn, "lab")
-        for k in range(4):
-            f.add(f'<rect x="{1188 + k * 78}" y="{y + 14}" width="68" height="38" rx="8" fill="{INDIGO}"/>')
-    f.text(1188, 496, "Tool execution takes none of these", "s")
-    # A long call moves to the tool pool; the turn goes on.
-    f.arrow("M780,522 C780,560 560,552 520,586")
-    f.text(796, 556, "Long call, background: true", "s")
-    f.card(376, 590, 280, 270, TINT, LINE, r=18)
-    f.text(400, 630, "Tool queue", "h")
-    f.text(400, 656, "Background calls, oldest first", "s")
-    for i, t in enumerate(["Download · session A", "Build · session C", "claude · subagent A-1"]):
-        f.card(400, 678 + i * 50, 232, 40, "#ffffff", LINE, r=10)
-        f.text(416, 704 + i * 50, t, "b")
-    f.arrow("M658,724 H696")
-    f.card(700, 590, 420, 270, "#ffffff", PINK, r=18)
-    f.text(724, 630, "Tool pool", "h")
-    f.text(724, 656, "32 slots, 4 per user, up to an hour each", "s")
-    tools = ["tool"] * 6 + ["idle"] * 10
-    random.shuffle(tools)
-    for i, st in enumerate(tools):
-        r, c = divmod(i, 8)
-        x, y = 724 + c * 46, 680 + r * 46
-        if st == "idle":
-            f.add(f'<rect x="{x}" y="{y}" width="38" height="38" rx="8" fill="{PAPER}" stroke="{RULE}" stroke-width="2"/>')
-        else:
-            f.add(f'<rect x="{x}" y="{y}" width="38" height="38" rx="8" fill="{PINK}"/>')
-    f.text(724, 806, "The turn has the call's \"started\" and goes on;", "s")
-    f.text(724, 830, "the result comes back as a report", "s")
-    # Waiting holds nothing.
-    f.arrow("M1080,522 C1080,560 1260,550 1300,586")
-    f.text(1318, 548, "Waits on an approval,", "s")
-    f.text(1318, 570, "an answer or a report", "s")
-    f.arrow("M1122,724 H1160")
-    f.add(f'<rect x="1164" y="590" width="364" height="270" rx="18" fill="url(#hatch)" stroke="{BASE}" stroke-width="2"/>')
-    f.add(f'<rect x="1182" y="606" width="328" height="238" rx="12" fill="#ffffff"/>')
-    f.text(1204, 644, "Waiting", "h")
-    f.text(1204, 670, "Holds no slot and no model concurrency", "s")
-    for i, t in enumerate(["approval", "answer", "report"]):
-        f.add(f'<rect x="{1204 + i * 100}" y="690" width="90" height="28" rx="14" fill="{TINT}"/>')
-        f.text(1204 + i * 100 + 45, 709, t, "chip", "middle", f"fill:{INDIGO}")
-    f.text(1204, 756, "A report comes from a subagent", "s")
-    f.text(1204, 780, "or a background call", "s")
-    f.arrow("M1346,846 V888 H340 V430 H372")
-    f.text(860, 880, "Ready again once the approval, answer or report arrives: back to the session queue", "s", "middle")
-    f.save("execution-pool.svg")
-
 
 
 class Plot:
@@ -565,7 +503,6 @@ def soak():
 
 architecture()
 comparison()
-pool()
 capacity()
 background()
 recovery()

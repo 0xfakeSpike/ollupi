@@ -2,14 +2,13 @@
 
 引擎里用户看得见的状态由四个概念组成：工作区（workspace）装着会话（thread），会话由一个个轮次（turn）组成，轮次里的每一步都是条目（item）。会话的轮次和条目不单独保存，它们是会话**日志**的投影：日志只追加、不修改，状态都从日志算出来。这一页讲每个概念是什么、怎样诞生、经过哪些状态、怎样结束，以及它们之间的约束。
 
-本页按当前代码写，面向贡献者。对外的完整文档在 [ollupi-docs](https://github.com/0xfakeSpike/ollupi-docs) 的 `docs/zh/engine/`（中文）和 `docs/en/engine/`（英文），那里描述的是 `engine.json` 记的引擎版本。
+日志怎样写、视图怎样读、变化怎样通知见 [architecture.md](architecture.md)。本页按当前代码写，面向贡献者。
 
 ```mermaid
 flowchart LR
-  user["用户"] --> ws["工作区<br/>workspaces"]
-  user --> env["执行环境<br/>environments"]
-  ws -. "0..1" .-> thread["会话<br/>threads"]
-  env --> thread
+  user["用户"] --> env["执行环境<br/>environments"]
+  env --> ws["工作区<br/>workspaces"]
+  ws --> thread["会话<br/>threads"]
   thread --> log["日志<br/>entries"]
   log -- "折叠" --> turn["轮次<br/>turns"]
   log -- "折叠" --> item["条目<br/>items"]
@@ -18,22 +17,16 @@ flowchart LR
 
 | 概念 | 是什么 | 保存在 | 归属 | 怎样结束 |
 |---|---|---|---|---|
-| 工作区 | 用户沙箱里的一个项目文件夹，带一层权限设置 | `workspaces` | 用户 | 只能归档，不能删除 |
-| 会话 | 一段对话，运行在某个环境、某个工作区里 | `threads`，日志在 `entries` | 用户；子会话还属于父会话的一个调用 | 归档或删除，二者都要求空闲 |
+| 工作区 | 某个执行环境里的一个文件夹，带一层权限设置 | `workspaces` | 用户和执行环境 | 只能归档，不能删除；草稿工作区随环境一起删 |
+| 会话 | 一段对话，在某个工作区里，运行在它所在的执行环境 | `threads`，日志在 `entries` | 用户；子会话还属于父会话的一个调用 | 归档或删除，二者都要求空闲 |
 | 轮次 | 用户（或定时任务、父 agent）交给 agent 的一件事 | 日志的投影，物化在 `turns` | 会话 | `completed` / `failed` / `interrupted` |
 | 条目 | 轮次里的一步：一条消息、一段思考、一次工具调用…… | 日志的投影，物化在 `items` | 会话和轮次 | `completed` / `failed` / `declined` |
 
-## 一条路写，一条路读，一条路通知
-
-- **写**：一切变化都是向日志追加记录（`conversation.Entry`），在 `store.Update` 的一个事务里完成。`Tx.Append` 先用 `conversation.Check` 判断每条记录能不能接在当前日志后面，不能就整个事务失败（`conversation.ErrRefused`）；能就用 `conversation.View.Apply` 折叠进视图，再把变了的轮次、条目和会话的状态列一起写下。
-- **读**：视图（`conversation.View`）由同一组纯函数从日志折叠出来；`turns`、`items` 表和 `threads` 的 `head`、`own_status`、`runnable_since` 列只是它的物化，为了查询。`status` 是会话的状态加上子会话对用户的等待：子会话在等审批或回答时，父会话也显示在等，审批排在回答前面（`conversation.RollUp`），委派会话不算在内；子会话的记录写入时，store 在同一事务里重算祖先会话的这一列。
-- **通知**：事务提交之后，它改变的东西作为一个事件发到 store 的 feed 上（`store.Event`），同一次提交的事件共用一个序号 `seq`，事件按 `seq` 的顺序发出。gateway、调度器、记忆抽取都只从 feed 得知变化；写的一方不通知任何人。
-
-代码：[conversation/](../conversation/)、[store/store.go](../store/store.go)、[store/sqlite/](../store/sqlite/)。
-
 ## 工作区
 
-工作区是某个执行环境里的一个文件夹。执行环境是部署提供的某种沙箱（`sandbox.Provider`，本机是其中一种）的一个实例，第一次用到时才建；同一个路径在两个环境里是两个文件夹。会话在工作区所在的环境里运行，不挂工作区的会话在用户选的环境里运行，默认是用户的第一个环境。会话的工具调用在这个文件夹里运行，工作区的权限设置是权限分层里的一层（部署 → 用户 → 工作区 → 会话）。会话也可以不挂工作区。
+工作区是某个执行环境里的一个文件夹。执行环境是部署提供的某种沙箱（`sandbox.Provider`，本机是其中一种）的一个实例，第一次用到时才打开；同一个路径在两个环境里是两个文件夹。每个会话都在一个工作区里，在工作区所在的环境里运行，工具调用在这个文件夹里执行；工作区的权限设置是权限分层里的一层（部署 → 用户 → 工作区 → 会话）。
+
+每个执行环境都有一个草稿工作区（`kind` 为 `scratch`），随环境一起建、一起删，`root` 为空，文件夹就是环境自己的文件夹。开会话时不指定工作区，会话就进所选环境（默认用户的第一个环境）的草稿工作区。草稿工作区不能归档、移动或改类型（`app.ErrScratchWorkspace`）。
 
 ```mermaid
 stateDiagram-v2
@@ -50,7 +43,7 @@ stateDiagram-v2
 - **归档**：已归档的工作区不能新建会话，名下的会话也不能发新消息（`account.ErrWorkspaceArchived`）。
 - **指令**：`app.UpdateWorkspaceInstructions` 给工作区一段指令（最多两万字）。这个工作区里每个会话、每个角色的系统提示词都带上它，放在角色规则之后（`# WORKSPACE INSTRUCTIONS`）。
 - **工具来源**：`app.UpdateWorkspaceProviders` 给工作区开（`enabled`）或关（`disabled`）某些 provider 的工具，名字要是用户工具里有的 provider。部署可以把一些 provider 设成默认关闭（`host.Config.OptIn`）：它们只在 `enabled` 里写了它们的工作区出现，没挂工作区的会话里也没有。这一层排在工作区权限之后（`account.Layers`），对所有角色都生效；`disabled` 优先于 `enabled`。
-- **类型**：工作区是项目（`project`，新建时的类型）或中枢（`hub`），用 `app.SetWorkspaceKind` 改。中枢默认关闭：部署打开 `host.Config.Hub` 才注册中枢工具，没有中枢工具时设成中枢会被拒绝（`app.ErrNoHub`）。一个用户最多一个中枢（`app.ErrSecondHub`）；会话不记这个类型，它在哪种工作区里，每一轮就按哪种选角色（见"轮次"）。
+- **类型**：工作区是项目（`project`，新建时的类型）、中枢（`hub`）或草稿（`scratch`），前两种之间用 `app.SetWorkspaceKind` 改。中枢默认关闭：部署打开 `host.Config.Hub` 才注册中枢工具，没有中枢工具时设成中枢会被拒绝（`app.ErrNoHub`）。一个用户最多一个中枢（`app.ErrSecondHub`）；会话不记这个类型，它在哪种工作区里，每一轮就按哪种选角色（见"轮次"）。
 - **中枢**：中枢工作区里的会话以 `hub-main-agent` 运行。它不做项目里的活，用中枢专有的工具（`tool/builtin/hub`）把工作交给项目：`list_workspaces` 列出工作区；`start_conversation` 在一个项目工作区里新建会话并发出第一条消息，`send_message` 给一个项目工作区里的会话发消息，二者都走用户自己用的 `app.StartThread` / `app.Send`。发送者记在消息上，不写进正文：`app.Input.From` 是发消息的中枢会话，app 核对它是这个用户的会话后，把它的 id 和当时的标题记进用户消息（`conversation.UserMessage.From`、`Item.From`），协议里是这条消息的 `sentByThreadId`，`read_conversation` 里是它的 `from`；给模型看的消息头写成 `[sent <时间> by the hub conversation "<标题>" on the user's behalf]`，压缩摘要里列出的早先消息也注明。会话按它所在工作区的权限运行，中枢角色自带的规则放行这两个调用；`list_conversations` 默认列出中枢工作区里任何一个会话开过的会话（按 `items_calls` 索引从这些会话日志里的 `start_conversation` 调用找，`Reader.Calls`），也能按 id 或工作区查用户的任何会话，给出状态、排队的轮次、最后一轮怎样结束、是否已读和最后回答的开头；`read_conversation` 给出一个会话最近几轮的消息。中枢不能把工作交给中枢工作区，也不能启动子 agent 或用浏览器；其他角色都没有这些工具。
 - **中枢的待办**：中枢的待办和已完成事项存在引擎里，`todos` 表（迁移 0012）是唯一的真相：一条待办有 id、标题、状态（`open` 未开始 / `handed` 已交给会话 / `done` 完成 / `dropped` 放弃）、指向的项目工作区与会话、备注、完成时的一句话结果和结束时间（`ended_at`，归档按它分月）。中枢会话用 `add_todo` / `update_todo` / `list_todos` 维护它们，不写文件，也不读 `TODO.md`；交给项目时用 `start_conversation` 的 `todo` 参数：`app.HandOff` 在一个事务里新建会话、发出第一条消息、链接待办并置 `handed`，任何一步被拒绝，三样都不留下。待办跟着用户走，不跟着文件夹：中枢换了工作区，待办还在。删掉一个会话时，挂在它上面的 `handed` 待办退回 `open` 并解除链接。桌面端用 `todo/list` 读、`todo/update` 改，每次 Add/Put 成功都收到 `todo/changed`。早先记在中枢工作区根目录 `TODO.md` 和 `done/*.md` 里的计划在第一次读待办时一次性导入，`TODO.md` 随后改名为 `TODO.md.imported-<年-月-日>`；`done/*.md` 原样留着，引擎不再读写这些文件。
 
@@ -58,10 +51,10 @@ stateDiagram-v2
 
 ## 会话
 
-会话是一段对话。它运行在一个执行环境里（不指定时是这台机器），可选地挂在一个工作区上，带一层自己的权限设置。
+会话是一段对话。它在一个工作区里，带一层自己的权限设置。
 
 - **顶层会话**：用户通过 `app.StartThread` 创建，出现在会话列表里。
-- **子会话**：子 agent 的会话。父会话里启动它的调用结束时，runner 在同一事务里创建子会话、给它排上第一个轮次和任务消息（`run.launch`）。它记着 `parent_id`、`parent_item` 和它的角色（`role`，即启动它的工具；顶层会话的角色每一轮现选，这一列为空），继承父会话的工作区、环境和权限设置（启动时把父会话的会话级权限复制一份，之后两个会话各改各的，已批准过的"总是允许"仍按所在工作区共享）。用户可以像对顶层会话一样给它发消息、插话、中断，这些轮次沿用它的角色。
+- **子会话**：子 agent 的会话。父会话里启动它的调用结束时，runner 在同一事务里创建子会话、给它排上第一个轮次和任务消息（`run.launch`）。它记着 `parent_id`、`parent_item` 和它的角色（`role`，即启动它的工具；顶层会话的角色每一轮现选，这一列为空），继承父会话的工作区和权限设置（启动时把父会话的会话级权限复制一份，之后两个会话各改各的，已批准过的"总是允许"仍按所在工作区共享）。用户可以像对顶层会话一样给它发消息、插话、中断，这些轮次沿用它的角色。
 - **子会话**：`general-sub-agent`、`browser-sub-agent`、`design-sub-agent`（画图/视觉：插图、图表、示意图、界面稿，以及 logo、海报、封面、横幅这类成品图）、`codebase-sub-agent`（通读项目、分析架构）、`frontend-sub-agent`（前端编程：界面、组件、样式，动手就打开浏览器看渲染）、`backend-sub-agent`（后端编程：接口、数据、迁移、测试）、`writing-sub-agent`（写文章：草稿、邮件、文档，贴合用户本人的语气）、`research-sub-agent`（搜集信息：读一手来源、核对、每条结论带出处）汇报：父轮次等它，它只汇报启动它的那一轮，报告写进启动它的轮次；它不出现在会话列表和搜索里，随父会话一起删除。
 
 ```mermaid
@@ -79,8 +72,8 @@ stateDiagram-v2
 - **当前轮次**：日志里第一个还没结束的轮次（`View.Active`）。其余没结束的排在它后面（`View.Behind`）。同一会话任何时刻只运行当前轮次。
 - **会话状态**从视图算出（`View.Status`）：没有当前轮次是 `idle`；当前轮次在等审批或回答是 `waitingOnApproval` / `waitingOnUserInput`；否则是 `active`。
 - **可运行**：有当前轮次且它不在等任何东西（`View.Runnable`）。store 记下它变成可运行的时刻，调度器按这个时刻先后取会话。
-- **未读**：顶层会话和委派会话的轮次结束时写 `replied_at`；标记已读时写 `read_at`。
-- **归档、删除**：要求会话空闲。已归档的会话不能发新消息（`app.ErrThreadArchived`）。删除连同日志、汇报型子会话、它们的定时任务和附件一起删掉；还有委派会话时拒绝删除。
+- **未读**：顶层会话的轮次结束时写 `replied_at`；标记已读时写 `read_at`。
+- **归档、删除**：要求会话空闲。已归档的会话不能发新消息（`app.ErrThreadArchived`）。删除连同日志、子会话、它们的定时任务和附件一起删掉。
 
 代码：[app/threads.go](../app/threads.go)、[store/sqlite/conversations.go](../store/sqlite/conversations.go)。
 
@@ -200,17 +193,6 @@ stateDiagram-v2
 
 代码：[conversation/check.go](../conversation/check.go)、[conversation/view.go](../conversation/view.go)。
 
-## token 用量
-
-每次模型响应（普通回答和上下文压缩）的 token 数记在 `usage` 表里。它不是日志的一部分：`usage` 是 `entries` 里 `modelResponded` 的索引化派生视图，由 `usage.Recorder` 在后台消费；`Tx.Append` 和 `run` 的模型调用路径不写它，记录失败也只影响用量数字，不会让轮次失败。
-
-- feed 只当唤醒信号，真相在 `entries`。进程停机或漏掉一个事件，重启后的全量扫描会补上；条目和行的对应是 `(thread_id, seq)`，重复写入按主键跳过。
-- 记忆抽取的调用不计入：它的消费不是完整的事件驱动实现，计入会让“事件唤醒 + 扫描补齐”的假设不成立。
-- `app.Usage` 按天（可带客户端时区偏移）、工作区、模型聚合半开区间 `[from, to)`，对外是 `usage/query`。
-- `usage` 行目前**没有保留期和清理**：删掉会话不会删掉它的行，仍会计入聚合。保留期清理是后续单独做的改动。
-
-代码：[usage/usage.go](../usage/usage.go)、[store/sqlite/usage.go](../store/sqlite/usage.go)、[store/sqlite/migrations/0011_usage.sql](../store/sqlite/migrations/0011_usage.sql)。
-
 ## 四者之间的约束
 
 | 操作 | 要求 | 对下层的影响 |
@@ -218,6 +200,6 @@ stateDiagram-v2
 | 归档工作区 | 无 | 不能新建会话，名下会话不能发新消息 |
 | 移动工作区 | 名下会话都空闲 | 只改 `root`，其余都按 id 引用 |
 | 归档会话 | 空闲 | 不能发新消息 |
-| 删除会话 | 空闲，且没有委派会话 | 日志、汇报型子会话、定时任务、附件一起删除 |
+| 删除会话 | 空闲 | 日志、子会话、定时任务、附件一起删除 |
 | 结束轮次 | 有当前轮次 | 还没结束的调用先关掉；它在等的子 agent 被停掉并汇报，不等的照常运行；还没汇报的后台调用记为随轮次停止并被取消；子会话被启动的那一轮向在等它的父轮次汇报；排在后面的轮次成为当前轮次 |
 | 追加记录 | 通过 `conversation.Check` | 可能让会话变得可运行，调度器从 feed 得知 |

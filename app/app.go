@@ -18,7 +18,6 @@ import (
 
 var (
 	ErrNoHub              = errors.New("this deployment offers no hub")
-	ErrSecondHub          = errors.New("the user has a hub workspace already; make it a project workspace first")
 	ErrWorkspaceBusy      = errors.New("a conversation in the workspace has a turn in progress or queued; interrupt it first")
 	ErrThreadBusy         = errors.New("the conversation has a turn in progress or queued; interrupt it first")
 	ErrThreadArchived     = errors.New("the conversation is archived; restore it before sending to it")
@@ -33,6 +32,7 @@ var (
 	ErrEnvironmentInUse   = errors.New("a conversation or a workspace is in the environment")
 	ErrFirstEnvironment   = errors.New("it is the first environment of the user, made with them, and stays")
 	ErrScratchWorkspace   = errors.New("it is the scratch workspace of its environment, its own folder, which stays with it")
+	ErrKeptFolder         = errors.New("its folder is one its environment keeps, and does not move")
 	ErrInvalidEnvironment = errors.New("invalid environment")
 	ErrInvalidQuery       = errors.New("invalid query")
 	ErrInvalidTodo        = errors.New("invalid todo")

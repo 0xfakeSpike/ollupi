@@ -102,3 +102,31 @@ func trashInfoPath(path string) string {
 	}
 	return strings.Join(parts, "/")
 }
+
+// keptName is name if it names one folder.
+func keptName(name string) error {
+	if name == "" || name == "." || name == ".." || filepath.Base(name) != name {
+		return fmt.Errorf("sandbox: %q cannot name a folder", name)
+	}
+	return nil
+}
+
+// Folder is the folder the environment keeps for name, beside its own:
+// a workspace of its own that is no project, as a hub's. It is made the
+// first time it is asked for.
+func (s *Sandbox) Folder(_ context.Context, name string) (string, error) {
+	if err := keptName(name); err != nil {
+		return "", err
+	}
+	if len(s.policy.WritableRoots) == 0 {
+		return "", errors.New("sandbox: this environment names no folder of its own")
+	}
+	path := filepath.Join(filepath.Dir(s.policy.WritableRoots[0]), name)
+	if err := s.CheckRead(path); err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		return "", err
+	}
+	return canonicalPath(path, "")
+}

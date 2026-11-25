@@ -90,3 +90,29 @@ func TestTheFreedesktopTrashRecordsWhereAFileWas(t *testing.T) {
 		}
 	}
 }
+
+func TestAnEnvironmentKeepsAFolderBesideItsOwn(t *testing.T) {
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	own := filepath.Join(dir, "scratch")
+	os.Mkdir(own, 0o755)
+	s, err := New(Config{Mode: "full-access", Roots: []string{own}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	got, err := s.Folder(context.Background(), "super-agent")
+	if err != nil || got != filepath.Join(dir, "super-agent") {
+		t.Fatalf("the kept folder %q, %v", got, err)
+	}
+	if st, err := os.Stat(got); err != nil || !st.IsDir() {
+		t.Errorf("the kept folder was not made: %v", err)
+	}
+	if again, err := s.Folder(context.Background(), "super-agent"); err != nil || again != got {
+		t.Errorf("asked again: %q, %v", again, err)
+	}
+	for _, name := range []string{"", "..", "a/b"} {
+		if _, err := s.Folder(context.Background(), name); err == nil {
+			t.Errorf("a folder kept for %q", name)
+		}
+	}
+}
