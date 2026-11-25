@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -527,7 +528,7 @@ func TestAUserKeepsTheirOwnSkills(t *testing.T) {
 
 	var list SkillListResult
 	c.call("skill/list", Empty{}, &list)
-	if len(list.Data) != 1 || len(list.Data[0].Roles) != 2 || list.Data[0].Files[0] != (SkillFileInfo{Path: "scripts/run.sh", ByteSize: 8}) {
+	if len(list.Data) != 1 || len(list.Data[0].Roles) != 2 || !slices.Equal(list.Data[0].HeldBy, []agent.Name{agent.FullMain, agent.GeneralSub}) || list.Data[0].Files[0] != (SkillFileInfo{Path: "scripts/run.sh", ByteSize: 8}) {
 		t.Errorf("skill/list: %+v", list)
 	}
 	var read SkillReadResult

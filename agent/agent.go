@@ -136,6 +136,18 @@ func Having(t policy.Tool) []Name {
 	return out
 }
 
+// HavingSkill names the roles that have a skill given to these roles, in the order of Names: the roles
+// it is given to and those that take their skills.
+func HavingSkill(given []string) []Name {
+	out := []Name{}
+	for _, name := range Names {
+		if roles[name].HasSkill(given) {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
 func MainRole(inputTokens int) Name {
 	if inputTokens < compactBelowTokens {
 		return CompactMain

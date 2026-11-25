@@ -282,4 +282,10 @@ func TestTheGeneralSubagentTakesTheMainAgentsSkills(t *testing.T) {
 	if !general.HasSkill([]string{string(GeneralSub)}) || general.HasSkill([]string{string(HubMain)}) {
 		t.Errorf("the general subagent's own skills, or the hub's, are offered wrongly")
 	}
+	if got := HavingSkill(main); !slices.Equal(got, []Name{FullMain, CompactMain, GeneralSub}) {
+		t.Errorf("HavingSkill(main) = %v", got)
+	}
+	if got := HavingSkill([]string{string(ExploreSub)}); !slices.Equal(got, []Name{ExploreSub}) {
+		t.Errorf("HavingSkill(explore) = %v", got)
+	}
 }

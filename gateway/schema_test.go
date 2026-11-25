@@ -124,6 +124,7 @@ var arrays = []field{
 	{reflect.TypeFor[SkillListResult](), "Data"},
 	{reflect.TypeFor[SkillReadResult](), "Files"},
 	{reflect.TypeFor[SkillRow](), "Roles"},
+	{reflect.TypeFor[SkillRow](), "HeldBy"},
 	{reflect.TypeFor[SkillRow](), "Files"},
 	{reflect.TypeFor[CronListResult](), "Data"},
 	{reflect.TypeFor[MemoryListResult](), "Data"},
