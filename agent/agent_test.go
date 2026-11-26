@@ -110,8 +110,13 @@ func TestTheBudgetStopsToolUse(t *testing.T) {
 	}
 	r = full()
 	r.MaxModelCalls = 2
-	if a, ok := Next(l.v, r).(CallModel); !ok || a.Notice == nil || !strings.Contains(a.Notice.Text, "model call limit (2)") {
+	if a, ok := Next(l.v, r).(CallModel); !ok || a.Notice == nil || !strings.Contains(a.Notice.Text, "model call limit (2)") || !strings.Contains(a.Notice.Text, "to the user") {
 		t.Errorf("after two responses: %#v", Next(l.v, r))
+	}
+	sub, _ := RoleOf(GeneralSub)
+	sub.MaxModelCalls = 2
+	if a, ok := Next(l.v, sub).(CallModel); !ok || a.Notice == nil || !strings.Contains(a.Notice.Text, "report to the agent that launched you") {
+		t.Errorf("a subagent at its limit: %#v", Next(l.v, sub))
 	}
 }
 

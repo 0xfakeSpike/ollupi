@@ -206,7 +206,11 @@ func Next(v conversation.View, r Role) Action {
 		return CallModel{NoTools: true}
 	}
 	if stopped != "" {
-		return CallModel{NoTools: true, Notice: &conversation.Notice{Text: fmt.Sprintf(concludeNotice, stopped)}}
+		notice := concludeNotice
+		if r.Kind == ReportingKind {
+			notice = concludeReportNotice
+		}
+		return CallModel{NoTools: true, Notice: &conversation.Notice{Text: fmt.Sprintf(notice, stopped)}}
 	}
 	return CallModel{}
 }
