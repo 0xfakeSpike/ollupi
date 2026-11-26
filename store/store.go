@@ -228,13 +228,10 @@ type UsageBucket struct {
 // Presence is one stretch of time the user spent in the app, as the desktop
 // client observed it. The client writes a stretch when it ends and may write
 // the same id again with a later end: the row is then extended, never moved.
-// Thread and Todo are a snapshot from the moment it is written, so time keeps
-// adding up to the same todo after its thread is archived and reopened.
 type Presence struct {
 	ID        string
 	User      string
 	Thread    string
-	Todo      int64
 	Workspace string
 	State     PresenceState
 	Start     time.Time
@@ -258,13 +255,12 @@ type PresenceGroup string
 
 const (
 	PresenceByThread    PresenceGroup = "thread"
-	PresenceByTodo      PresenceGroup = "todo"
 	PresenceByWorkspace PresenceGroup = "workspace"
 	PresenceByDay       PresenceGroup = "day"
 	PresenceByApp       PresenceGroup = "app"
 )
 
-var PresenceGroups = []PresenceGroup{PresenceByThread, PresenceByTodo, PresenceByWorkspace, PresenceByDay, PresenceByApp}
+var PresenceGroups = []PresenceGroup{PresenceByThread, PresenceByWorkspace, PresenceByDay, PresenceByApp}
 
 // PresenceQuery sums the time the user spent over a half-open range. From and
 // To clip a stretch that crosses them, so the buckets of adjacent ranges add
@@ -278,7 +274,7 @@ type PresenceQuery struct {
 	OffsetMinutes int
 }
 
-// PresenceBucket is a stretch of time per group key: a thread ID, a todo ID, a
+// PresenceBucket is a stretch of time per group key: a thread ID, a
 // workspace ID, a day (YYYY-MM-DD in the caller's time zone) or "" for the
 // app as a whole.
 type PresenceBucket struct {

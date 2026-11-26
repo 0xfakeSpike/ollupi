@@ -299,7 +299,7 @@ func (c *conn) usageQuery(ctx context.Context, p UsageQueryParams) (UsageQueryRe
 func (c *conn) presenceRecord(ctx context.Context, p PresenceRecordParams) (Empty, error) {
 	rows := make([]store.Presence, len(p.Rows))
 	for i, r := range p.Rows {
-		rows[i] = store.Presence{ID: r.ID, Thread: r.ThreadID, Todo: r.TodoID, Workspace: r.WorkspaceID,
+		rows[i] = store.Presence{ID: r.ID, Thread: r.ThreadID, Workspace: r.WorkspaceID,
 			State: r.State, Start: r.Start, End: r.End}
 	}
 	return Empty{}, c.s.app.RecordPresence(ctx, c.user, rows)

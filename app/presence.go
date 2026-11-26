@@ -55,12 +55,13 @@ func validPresence(p store.Presence) error {
 }
 
 // Presence sums the time the user spent in the app over a half-open range,
-// grouped by thread, todo, workspace, day or the app as a whole. Only the time
+// grouped by thread, workspace, day or the app as a whole. Only the time
 // the app was in front is recorded, so time spent in other applications is
-// missing on purpose: the sum is a lower bound on the user's attention.
+// missing on purpose: the sum is a lower bound on the user's attention. A
+// todo's time is the time of the thread it is linked to.
 func (a *App) Presence(ctx context.Context, user string, q store.PresenceQuery) ([]store.PresenceBucket, error) {
 	if !slices.Contains(store.PresenceGroups, q.Group) {
-		return nil, fmt.Errorf("%w: groupBy must be thread, todo, workspace, day or app", ErrInvalidQuery)
+		return nil, fmt.Errorf("%w: groupBy must be thread, workspace, day or app", ErrInvalidQuery)
 	}
 	if q.From.IsZero() || q.To.IsZero() || !q.From.Before(q.To) {
 		return nil, fmt.Errorf("%w: from and to are required, and from must be before to", ErrInvalidQuery)

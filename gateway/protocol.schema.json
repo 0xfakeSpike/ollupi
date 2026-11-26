@@ -2766,7 +2766,6 @@
       "type": "string",
       "enum": [
         "thread",
-        "todo",
         "workspace",
         "day",
         "app"
@@ -2780,9 +2779,6 @@
         },
         "threadId": {
           "type": "string"
-        },
-        "todoId": {
-          "type": "integer"
         },
         "workspaceId": {
           "type": "string"

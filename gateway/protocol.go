@@ -818,7 +818,6 @@ type PresenceRecordParams struct {
 type PresenceInput struct {
 	ID          string              `json:"id"`
 	ThreadID    string              `json:"threadId,omitempty"`
-	TodoID      int64               `json:"todoId,omitempty"`
 	WorkspaceID string              `json:"workspaceId,omitempty"`
 	State       store.PresenceState `json:"state"`
 	Start       time.Time           `json:"start"`
@@ -836,7 +835,7 @@ type PresenceSummaryResult struct {
 	Data []PresenceRow `json:"data"`
 }
 
-// PresenceRow is one bucket of the aggregation: a thread ID, a todo ID, a
+// PresenceRow is one bucket of the aggregation: a thread ID, a
 // workspace ID, a day (YYYY-MM-DD in the caller's time zone) or "" for the
 // whole app, and the seconds it holds.
 type PresenceRow struct {

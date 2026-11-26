@@ -41,8 +41,6 @@ func (r reader) PresenceBuckets(user string, q store.PresenceQuery) ([]store.Pre
 		switch q.Group {
 		case store.PresenceByThread:
 			key = "thread_id"
-		case store.PresenceByTodo:
-			key = "CAST(todo_id AS TEXT)"
 		case store.PresenceByWorkspace:
 			key = "workspace_id"
 		case store.PresenceByApp:
@@ -75,10 +73,10 @@ func (r reader) PresenceBuckets(user string, q store.PresenceQuery) ([]store.Pre
 }
 
 func (t *tx) PutPresence(p store.Presence) error {
-	err := t.g.Exec(`INSERT INTO presence(user_id, id, thread_id, todo_id, workspace_id, state, started_at, ended_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	err := t.g.Exec(`INSERT INTO presence(user_id, id, thread_id, workspace_id, state, started_at, ended_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(user_id, id) DO UPDATE SET ended_at = max(presence.ended_at, excluded.ended_at)`,
-		p.User, p.ID, p.Thread, p.Todo, p.Workspace, string(p.State), p.Start.UTC(), p.End.UTC()).Error
+		p.User, p.ID, p.Thread, p.Workspace, string(p.State), p.Start.UTC(), p.End.UTC()).Error
 	if err != nil {
 		return fmt.Errorf("store: presence %s: %w", p.ID, err)
 	}
