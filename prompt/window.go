@@ -67,8 +67,12 @@ func (w Window) Build(in Context) (Request, error) {
 	compactable, natural := 0, 0
 	obs := newObservations(in.Items, w.artifactBudget())
 	natives := nativesOf(in.Responses)
+	clipEnded, err := w.clipsEnded(obs, natives, in)
+	if err != nil {
+		return Request{}, err
+	}
 	r, err := w.fitted(func(limit int) (Request, error) {
-		messages, fixed, err := w.transcript(obs, natives, in.Items, limit, false)
+		messages, fixed, err := w.transcript(obs, natives, in.Items, limit, clipEnded, false)
 		if err != nil {
 			return Request{}, err
 		}
@@ -93,6 +97,19 @@ func (w Window) Build(in Context) (Request, error) {
 		return Request{}, fmt.Errorf("prompt: the request needs %d tokens even with the latest tool results clipped and nothing is left to compact; model %s allows %d", r.Stats.CalibratedTokens, w.model, w.inputTokens)
 	}
 	return r, nil
+}
+
+func (w Window) clipsEnded(obs *observations, natives map[string][]byte, in Context) (bool, error) {
+	full, _, err := w.transcript(obs, natives, in.Items, maxObservationTokens, false, false)
+	if err != nil {
+		return false, err
+	}
+	clipped, _, err := w.transcript(obs, natives, in.Items, maxObservationTokens, true, false)
+	if err != nil {
+		return false, err
+	}
+	saved := w.stats(in.System, full, in.Tools).MessagesTokens - w.stats(in.System, clipped, in.Tools).MessagesTokens
+	return saved >= percentOf(w.inputTokens, compactMinPercent), nil
 }
 
 func (w Window) fitted(build func(limit int) (Request, error)) (Request, error) {

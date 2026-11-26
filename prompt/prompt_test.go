@@ -121,7 +121,7 @@ func TestALongOutputIsClippedWithHowToReadTheRest(t *testing.T) {
 	}
 }
 
-func TestAnEndedTurnKeepsLessOfItsOutputs(t *testing.T) {
+func TestAnEndedTurnKeepsLessOfItsOutputsWhenThatSavesEnough(t *testing.T) {
 	l := &log{t: t}
 	long, _ := json.Marshal(strings.Repeat("line of output\n", 20_000))
 	for _, turn := range []string{"t1", "t2"} {
@@ -137,21 +137,26 @@ func TestAnEndedTurnKeepsLessOfItsOutputs(t *testing.T) {
 			l.add(turn, "", conversation.TurnEnded{Status: conversation.Completed})
 		}
 	}
-	r := build(t, wide, l.v)
-	var ended, current string
-	for _, m := range r.Messages {
-		switch m.ToolCallID {
-		case "call_t1":
-			ended = m.Content
-		case "call_t2":
-			current = m.Content
+	outputs := func(w Window) (ended, current string) {
+		for _, m := range build(t, w, l.v).Messages {
+			switch m.ToolCallID {
+			case "call_t1":
+				ended = m.Content
+			case "call_t2":
+				current = m.Content
+			}
 		}
+		return ended, current
 	}
+	ended, current := outputs(NewWindow("m", llm.Limits{Context: 40_000, Output: 8_000}))
 	if !strings.Contains(ended, `output_id "ct1"`) || llm.EstimateTokens(ended) > endedObservationTokens+100 {
 		t.Errorf("the ended turn's output: %d tokens", llm.EstimateTokens(ended))
 	}
 	if llm.EstimateTokens(current) <= endedObservationTokens+100 {
 		t.Errorf("the current turn's output: %d tokens", llm.EstimateTokens(current))
+	}
+	if ended, _ := outputs(wide); llm.EstimateTokens(ended) <= endedObservationTokens+100 {
+		t.Errorf("clipped though it saves under a tenth of a wide window: %d tokens", llm.EstimateTokens(ended))
 	}
 }
 

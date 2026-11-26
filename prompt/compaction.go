@@ -28,7 +28,7 @@ func (w Window) Compaction(in Context) (Request, error) {
 		if messages, ok := rendered[limit]; ok {
 			return messages, nil
 		}
-		messages, _, err := w.transcript(obs, natives, in.Items, limit, true)
+		messages, _, err := w.transcript(obs, natives, in.Items, limit, false, true)
 		rendered[limit] = messages
 		return messages, err
 	}

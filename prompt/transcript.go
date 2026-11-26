@@ -9,7 +9,7 @@ import (
 	"github.com/0xfakeSpike/ollupi/pkg/llm"
 )
 
-func (w Window) transcript(obs *observations, natives map[string][]byte, items []conversation.Item, limit int, compacting bool) ([]llm.ChatMessage, int, error) {
+func (w Window) transcript(obs *observations, natives map[string][]byte, items []conversation.Item, limit int, clipEnded, compacting bool) ([]llm.ChatMessage, int, error) {
 	var out []llm.ChatMessage
 	latest, current := "", ""
 	if !compacting {
@@ -51,7 +51,7 @@ func (w Window) transcript(obs *observations, natives map[string][]byte, items [
 			switch {
 			case compacting || it.Response == latest:
 				budget = limit
-			case it.Turn != current:
+			case clipEnded && it.Turn != current:
 				budget = min(limit, endedObservationTokens)
 			}
 			out = append(out, w.response(obs, natives[it.Response], items[i:j], budget)...)
