@@ -3428,12 +3428,6 @@
             "$ref": "#/$defs/AgentRole"
           }
         },
-        "heldBy": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/AgentRole"
-          }
-        },
         "files": {
           "type": "array",
           "items": {
@@ -3448,7 +3442,6 @@
         "name",
         "description",
         "roles",
-        "heldBy",
         "files",
         "digest"
       ],

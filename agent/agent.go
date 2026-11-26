@@ -61,30 +61,17 @@ const (
 )
 
 type Role struct {
-	Name       Name
-	Kind       Kind
-	Rules      string
-	Own        []policy.Layer
-	Core       []string
-	Recalls    bool
-	SkillsFrom []Name
+	Name    Name
+	Kind    Kind
+	Rules   string
+	Own     []policy.Layer
+	Core    []string
+	Recalls bool
 	Limits
 }
 
 // AnswersUser says whether the role's reply is shown to the user, rather than to the agent that launched it.
 func (r Role) AnswersUser() bool { return r.Kind != ReportingKind }
-
-func (r Role) HasSkill(roles []string) bool {
-	if slices.Contains(roles, string(r.Name)) {
-		return true
-	}
-	for _, from := range r.SkillsFrom {
-		if slices.Contains(roles, string(from)) {
-			return true
-		}
-	}
-	return false
-}
 
 // Reporting says whether a role's reply goes back to the agent that launched it.
 func Reporting(name string) bool { return roles[Name(name)].Kind == ReportingKind }
@@ -109,7 +96,7 @@ var roles = map[Name]Role{
 	HubMain: {Name: HubMain, Kind: MainKind, Rules: hubMainRules, Recalls: true,
 		Own: []policy.Layer{{Of: "the hub's role", Without: []string{SubagentsProvider, BrowserProvider},
 			Settings: policy.Settings{Rules: policy.Rules{Allow: []string{StartConversationTool, SendMessageTool}}}}}, Limits: standard},
-	GeneralSub: {Name: GeneralSub, Kind: ReportingKind, Rules: generalSubRules, Recalls: true, SkillsFrom: []Name{FullMain, CompactMain},
+	GeneralSub: {Name: GeneralSub, Kind: ReportingKind, Rules: generalSubRules, Recalls: true,
 		Own: []policy.Layer{{Of: "the general subagent's role", Without: []string{SubagentsProvider, CronProvider, HubProvider}}}, Limits: deep},
 	ExploreSub: {Name: ExploreSub, Kind: ReportingKind, Rules: exploreSubRules, Recalls: true,
 		Own: []policy.Layer{{Of: "the explore subagent's role", Providers: []string{WorkspaceProvider, WebProvider, BrowserProvider, OutputsProvider, SkillsProvider, PlanProvider},
@@ -130,18 +117,6 @@ func Having(t policy.Tool) []Name {
 	out := []Name{}
 	for _, name := range Names {
 		if policy.Kept(roles[name].Own, t) {
-			out = append(out, name)
-		}
-	}
-	return out
-}
-
-// HavingSkill names the roles that have a skill given to these roles, in the order of Names: the roles
-// it is given to and those that take their skills.
-func HavingSkill(given []string) []Name {
-	out := []Name{}
-	for _, name := range Names {
-		if roles[name].HasSkill(given) {
 			out = append(out, name)
 		}
 	}

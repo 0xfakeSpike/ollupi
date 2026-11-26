@@ -359,9 +359,7 @@ type SkillRow struct {
 	Description string `json:"description"`
 	Version     string `json:"version,omitempty"`
 	// Roles are the agents the skill is given to.
-	Roles []agent.Name `json:"roles"`
-	// HeldBy are the agents that have it: those it is given to and those that take their skills.
-	HeldBy []agent.Name    `json:"heldBy"`
+	Roles  []agent.Name    `json:"roles"`
 	Files  []SkillFileInfo `json:"files"`
 	Digest string          `json:"digest"`
 }
@@ -383,7 +381,6 @@ func skillRow(s skill.Skill) SkillRow {
 	for i, r := range s.Roles {
 		row.Roles[i] = agent.Name(r)
 	}
-	row.HeldBy = agent.HavingSkill(s.Roles)
 	for i, r := range s.Resources {
 		row.Files[i] = SkillFileInfo{Path: r.Path, ByteSize: r.ByteSize}
 	}

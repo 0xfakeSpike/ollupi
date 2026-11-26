@@ -209,7 +209,7 @@ func (r *Runner) input(ctx context.Context, s *step) (prompt.Context, error) {
 	}
 	var skills []prompt.Skill
 	for _, f := range found {
-		if s.role.HasSkill(f.Roles) {
+		if slices.Contains(f.Roles, string(s.role.Name)) {
 			skills = append(skills, prompt.Skill{Name: f.Name, Description: f.Description})
 		}
 	}

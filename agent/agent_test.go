@@ -276,21 +276,3 @@ func TestHavingNamesTheRolesThatKeepATool(t *testing.T) {
 		}
 	}
 }
-
-func TestTheGeneralSubagentTakesTheMainAgentsSkills(t *testing.T) {
-	general, _ := RoleOf(GeneralSub)
-	verify, _ := RoleOf(VerifySub)
-	main := []string{string(FullMain), string(CompactMain)}
-	if !general.HasSkill(main) || verify.HasSkill(main) {
-		t.Errorf("a main agent's skill: general %v, verify %v", general.HasSkill(main), verify.HasSkill(main))
-	}
-	if !general.HasSkill([]string{string(GeneralSub)}) || general.HasSkill([]string{string(HubMain)}) {
-		t.Errorf("the general subagent's own skills, or the hub's, are offered wrongly")
-	}
-	if got := HavingSkill(main); !slices.Equal(got, []Name{FullMain, CompactMain, GeneralSub}) {
-		t.Errorf("HavingSkill(main) = %v", got)
-	}
-	if got := HavingSkill([]string{string(ExploreSub)}); !slices.Equal(got, []Name{ExploreSub}) {
-		t.Errorf("HavingSkill(explore) = %v", got)
-	}
-}

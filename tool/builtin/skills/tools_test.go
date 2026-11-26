@@ -59,8 +59,8 @@ func TestACallReachesOnlyItsUsersSkillsOfItsRole(t *testing.T) {
 	if _, err := call(ts, "explore-sub-agent", toolActivateSkill, map[string]any{"name": "deploy"}); err == nil {
 		t.Error("the explore subagent activated a skill of the main agent")
 	}
-	if _, err := call(ts, "general-sub-agent", toolActivateSkill, map[string]any{"name": "deploy"}); err != nil {
-		t.Errorf("the general subagent cannot use a skill of the main agent: %v", err)
+	if _, err := call(ts, "general-sub-agent", toolActivateSkill, map[string]any{"name": "deploy"}); err == nil {
+		t.Error("the general subagent activated a skill given only to the main agent")
 	}
 	put(t, st, "v", skill.Package{Name: "review", Description: "How to review.", Instructions: "Review.", Roles: []string{"full-main-agent"}})
 	if _, err := call(ts, "full-main-agent", toolActivateSkill, map[string]any{"name": "review"}); err == nil {
