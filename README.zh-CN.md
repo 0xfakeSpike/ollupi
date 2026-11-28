@@ -79,6 +79,19 @@ Bench 使用真实的 Host、SQLite 存储、调度器和 gateway，只模拟模
 
 命令、文件和本地 MCP Server 都通过 `sandbox.Box` 访问；云沙箱只需实现 `sandbox.Machine`。对话会保留启动时选择的环境。模型流量可以使用每个用户自己的连接，附件保存在 Host 的 `attachments` 目录中。
 
+## 跑成一个服务器
+
+桌面端只是引擎的一个客户端，不是唯一的：
+
+```bash
+go install github.com/0xfakeSpike/ollupi/cmd/ollupi@latest
+export OLLUPI_GATEWAY_TOKEN=$(openssl rand -hex 32)
+export OLLUPI_OPERATOR_TOKEN=$(openssl rand -hex 32)
+ollupi serve --home ~/.ollupi --listen 127.0.0.1:7777
+```
+
+一个连接的 token 是「网关密钥.身份」（`<secret>.<profile>`）；用运营者密钥连接时还能改模型目录、新建身份。桌面端把这个地址和 token 注册成自己的一个服务器。允许的 Host 和 Origin、TLS、数据布局见 [把 ollupi 跑成一个服务器](docs/serve.md)。
+
 ## 安全与运行边界
 
 - `sandbox.Here` 让命令拥有这台机器的完整权限，只适合允许使用整台机器的用户。
@@ -92,6 +105,7 @@ Bench 使用真实的 Host、SQLite 存储、调度器和 gateway，只模拟模
 - [Bench 方法、结果与复现](bench/README.md)
 - [Terminal-Bench 评测流程](eval/README.md)
 - [工作区、会话、轮次和条目生命周期](docs/lifecycle.md)
+- [把 ollupi 跑成一个服务器](docs/serve.md)
 - [WebSocket 协议 schema](gateway/protocol.schema.json)
 - [完整的用户与部署文档](https://github.com/0xfakeSpike/ollupi-docs)
 

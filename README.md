@@ -79,6 +79,19 @@ One SQLite database is one shard. Users share a shard but remain isolated by use
 
 Commands, files, and MCP servers are reached through `sandbox.Box`. A deployment offers sandboxes as providers (`sandbox.Provider` in `host.Config.Sandboxes`): this machine is one, `sandbox.Local`, and a cloud sandbox plugs in the same way, its machine behind `sandbox.Remote`. Each environment a user has is one sandbox of a provider, made the first time a conversation needs it and found again after a restart from the state the provider keeps. Every user starts with one environment of the first provider; a workspace is a folder of one environment, and a conversation keeps the environment it started in. Model traffic may use each user's own connection, and attachments are stored under the host's `attachments` directory.
 
+## Serving
+
+The desktop app is one client of the engine, not the only one:
+
+```bash
+go install github.com/0xfakeSpike/ollupi/cmd/ollupi@latest
+export OLLUPI_GATEWAY_TOKEN=$(openssl rand -hex 32)
+export OLLUPI_OPERATOR_TOKEN=$(openssl rand -hex 32)
+ollupi serve --home ~/.ollupi --listen 127.0.0.1:7777
+```
+
+A connection's token is the gateway's secret, a dot and a profile (`<secret>.<profile>`); with the operator's secret it can also change the catalog and make profiles. The desktop app registers the address and token as one of its servers. Allowed hosts and origins, TLS, and the data layout are in [Serving a server](docs/serve.md).
+
 ## Security and operating limits
 
 - `sandbox.Local` in `full-access` mode, and `sandbox.Here`, run commands with full access to the machine. Use them only for users who may use the whole machine.
@@ -92,6 +105,7 @@ Commands, files, and MCP servers are reached through `sandbox.Box`. A deployment
 - [Benchmarks and reproduction](bench/README.md)
 - [Terminal-Bench evaluation workflow](eval/README.md)
 - [Workspace, conversation, turn, and item lifecycle](docs/lifecycle.md)
+- [Serving a server](docs/serve.md)
 - [WebSocket protocol schema](gateway/protocol.schema.json)
 - [Full user and deployment documentation](https://github.com/0xfakeSpike/ollupi-docs)
 
